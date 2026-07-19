@@ -4,8 +4,6 @@
 
 It is the part of a SaaS backend you would otherwise rebuild from scratch in every project.
 
-![PlatformKit](docs/hero.png)
-
 [![CI](https://img.shields.io/badge/CI-pending-lightgrey)](https://github.com/septagon-oss/platformkit)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 [![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8)](https://go.dev/dl/)
@@ -49,6 +47,10 @@ PlatformKit is multi-tenant, so login requires `tenant_id` in the payload.
 **Requirements:** Go 1.26+. Nothing else — no CGO, no npm, no Docker, no external
 database (SQLite by default). The first build downloads a handful of modules and
 takes tens of seconds; subsequent starts take about two seconds.
+
+For a deterministic local verification pass, run `make verify`. It checks formatting,
+vetting, tests, and a CGO-disabled build without replacing Go's shared module or build
+caches.
 
 **Port 8080 busy?** The front door listens on `:8080` and ships no config file. Run the full starter in pk-apps (`pk-apps/apps/starter-saas`, which reads `http.addr` from its `config.yaml`) or change the address in the wrapper's `main.go`.
 
@@ -106,7 +108,8 @@ such as `audit.AuditEmitter`. Dependency injection supplies the concrete type at
 startup. So you can replace one module's implementation without the change cascading
 through the others, and you add your own module the same way the nine built-ins are added.
 
-![Architecture](docs/architecture.svg)
+For the longer design rationale, see the
+[PlatformKit architecture](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.0.0/architecture.md).
 
 ---
 
@@ -144,14 +147,15 @@ infrastructure. Pro adds hosted and cloud-scale providers, enterprise identity, 
 hosted control plane — implementations that plug in behind the same interfaces.
 **The boundary is drawn at the provider, never at the contract: every public interface
 a module exposes stays in OSS, and the contracts you build against today do not move
-out of open source.** See [docs/open-core.md](docs/open-core.md).
+out of open source.** See the
+[open-core model](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.0.0/overview.md#the-open-core-model).
 
 ---
 
 ## Docs · Contributing · Security · License · Community
 
-- **Docs:** [docs/](docs/)
-- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
-- **Security:** [SECURITY.md](SECURITY.md)
+- **Docs:** [PlatformKit public documentation](https://github.com/septagon-oss/pk-docs)
+- **Contributing:** [Contribution guide](https://github.com/septagon-oss/pk-docs/blob/main/CONTRIBUTING.md)
+- **Security:** [Security policy](https://github.com/septagon-oss/pk-docs/blob/main/SECURITY.md)
 - **License:** [Apache-2.0](LICENSE)
 - **Community:** [GitHub Discussions](https://github.com/septagon-oss/platformkit/discussions)

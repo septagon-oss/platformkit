@@ -8,9 +8,9 @@
 // The front door ships no config.yaml; starterapp.DefaultConfig returns a
 // complete, bootable configuration so `go run .` works out of the box.
 //
-// ADR: ADR-0009 (ports-only module communication), ADR-0017 (composition
-// through dependency injection), ADR-0029 (file purpose declaration).
-// Convention: C-14 (every Go file declares its purpose).
+// Implements: REQ-016.
+// Per: ADR-0017, ADR-0029.
+// Discipline: C-14.
 package main
 
 import (
