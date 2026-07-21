@@ -8,6 +8,8 @@ It is the part of a SaaS backend you would otherwise rebuild from scratch in eve
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 [![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8)](https://go.dev/dl/)
 
+![PlatformKit — composable modules forming a dependency graph](docs/hero.png)
+
 ---
 
 ## Quickstart
@@ -107,6 +109,57 @@ ports like `AdminRegistrar` and `HealthRegistrar`, or a provider's published con
 such as `audit.AuditEmitter`. Dependency injection supplies the concrete type at
 startup. So you can replace one module's implementation without the change cascading
 through the others, and you add your own module the same way the nine built-ins are added.
+
+```mermaid
+%%{init: {'theme':'base','flowchart':{'htmlLabels':false},'themeVariables':{
+  'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace',
+  'primaryColor':'#1E293B','primaryTextColor':'#F8FAFC',
+  'primaryBorderColor':'#334155','lineColor':'#94A3B8',
+  'clusterBkg':'#0F172A','clusterBorder':'#334155',
+  'edgeLabelBackground':'#0F172A','tertiaryColor':'#0F172A'
+}}}%%
+flowchart LR
+  subgraph SHARED["Shared vocabulary — ports &amp; contracts"]
+    P["ports / interfaces
+(AdminRegistrar, HealthRegistrar,
+audit.AuditEmitter, store port…)"]
+  end
+
+  subgraph CORE["Core kernel"]
+    K["Module system &middot; DI graph
+(dependency injection wires
+concrete types at startup)"]
+  end
+
+  subgraph MODULES["Modules — compose into a running app"]
+    M1["tenant"]:::accent
+    M2["user"]
+    M3["auth"]
+    M4["api_key"]
+    M5["audit"]
+    M6["content"]
+    M7["notification"]
+    M8["health"]
+    M9["admin"]
+  end
+
+  subgraph CLIENTS["Clients / apps"]
+    C1["starter app
+(go run .)"]
+    C2["admin UI
+/admin"]
+    C3["pk CLI"]
+  end
+
+  SHARED -- "implemented &amp; consumed via" --> CORE
+  CORE -- "injects providers into" --> MODULES
+  MODULES -. "talk only through ports" .-> SHARED
+  MODULES -- "served to" --> CLIENTS
+
+  classDef accent fill:#0F172A,stroke:#2DD4BF,stroke-width:2px,color:#2DD4BF;
+```
+
+<sub>Static export: [docs/architecture.svg](docs/architecture.svg)</sub>
 
 For the longer design rationale, see the
 [PlatformKit architecture](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.1.0/architecture.md).
