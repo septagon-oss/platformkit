@@ -99,7 +99,7 @@ they are what keeps the architecture honest.
    (like `tenant.TenantService`). The wiring supplies the concrete type. If you
    need a capability another module has, depend on its interface, never its
    struct. See
-   [add-a-module.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.1.0/add-a-module.md)
+   [add-a-module.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/add-a-module.md)
    for the pattern.
 
 2. **Migrations are append-only.** Never edit an existing migration file. Add a
@@ -149,7 +149,7 @@ they are what keeps the architecture honest.
 ---
 
 See also:
-[add-a-module.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.1.0/add-a-module.md)
+[add-a-module.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/add-a-module.md)
 for the module pattern reviewers expect,
-[architecture.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.1.0/architecture.md)
+[architecture.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/architecture.md)
 for why the port boundary exists.

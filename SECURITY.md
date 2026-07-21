@@ -60,7 +60,7 @@ a heads-up).
 ---
 
 See also:
-[open-core.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.1.0/open-core.md)
+[open-core.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/open-core.md)
 for what the OSS security baseline covers,
-[quickstart.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.1.0/quickstart.md)
+[quickstart.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/quickstart.md)
 for the honest caveat about the open `/admin` dashboard.
