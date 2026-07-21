@@ -137,7 +137,7 @@ flowchart TB
 <sub>Static export: [docs/architecture.svg](docs/architecture.svg)</sub>
 
 For the longer design rationale, see the
-[PlatformKit architecture](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.1.0/architecture.md).
+[PlatformKit architecture](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/architecture.md).
 
 ---
 
@@ -176,7 +176,7 @@ hosted control plane — implementations that plug in behind the same interfaces
 **The boundary is drawn at the provider, never at the contract: every public interface
 a module exposes stays in OSS, and the contracts you build against today do not move
 out of open source.** See the
-[open-core model](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.1.0/open-core.md).
+[open-core model](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/open-core.md).
 
 ---
 
