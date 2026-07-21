@@ -32,19 +32,28 @@ go run .
 ============================================================
 ```
 
-That's it. Open `http://localhost:8080/admin` — note it is an open dashboard with no
-login wall today; put it behind your own auth before exposing the port.
+That's it. Open `http://localhost:8080/admin` — you'll be sent to a login page.
+Sign in with the seeded credentials (`admin@local.test` / `changeme`, tenant
+`tenant_acme`) and you're in the dashboard.
 
-The seeded credentials — `admin@local.test` / `changeme`, tenant `tenant_acme` —
-authenticate against the auth API (not an admin login screen):
+**The API requires authentication and is tenant-scoped.** Log in against the
+auth API to get a session, then send it as a bearer token — you only ever see
+your own tenant's data:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/auth/sessions \
+# 1. Log in (multi-tenant, so tenant_id is required) → returns a session
+SID=$(curl -s -X POST http://localhost:8080/api/v1/auth/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"tenant_id":"tenant_acme","email":"admin@local.test","password":"changeme"}'
+  -d '{"tenant_id":"tenant_acme","email":"admin@local.test","password":"changeme"}' \
+  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+# 2. Use the session. Anonymous requests to /api/v1 are rejected with 401.
+curl -s http://localhost:8080/api/v1/tenants -H "Authorization: Bearer $SID"
 ```
 
-PlatformKit is multi-tenant, so login requires `tenant_id` in the payload.
+Seeded credentials are a **development** convenience. Outside a development
+environment the starter refuses to boot without `seed.admin_password`, and it
+never re-asserts the password on later boots.
 
 **Requirements:** Go 1.26+. Nothing else — no CGO, no npm, no Docker, no external
 database (SQLite by default). The first build downloads a handful of modules and
@@ -69,7 +78,7 @@ Nine modules compose into the running app on the first `go run .`:
 - **Audit log** — an append trail of changes.
 - **Content** — a content store with entity CRUD.
 - **In-app notifications** — a notification store.
-- **Admin UI** — an open server-rendered dashboard at `/admin` (no login wall today), with a sidebar and entity links.
+- **Admin UI** — a server-rendered dashboard at `/admin` behind a login wall, with a sidebar and entity links.
 - **Health** — `/healthz` reports the status of the modules that own a data store.
 
 `/healthz` reports seven data/session checks; `admin` and `health` are composed
