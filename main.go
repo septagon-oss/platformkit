@@ -16,7 +16,9 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	// Register the modernc.org/sqlite driver as "sqlite" so each module's
@@ -31,6 +33,16 @@ func main() {
 	defer cancel()
 
 	cfg := starterapp.DefaultConfig()
+
+	// Let the listen address be overridden without editing code:
+	//   PORT=8090 go run .            (or)   PK_HTTP_ADDR=127.0.0.1:8090 go run .
+	// PORT is the conventional PaaS/container knob; PK_HTTP_ADDR takes a full
+	// host:port when you need to bind a specific interface.
+	if addr := strings.TrimSpace(os.Getenv("PK_HTTP_ADDR")); addr != "" {
+		cfg.HTTP.Addr = addr
+	} else if port := strings.TrimSpace(os.Getenv("PORT")); port != "" {
+		cfg.HTTP.Addr = ":" + port
+	}
 
 	if err := starterapp.Run(ctx, cfg); err != nil {
 		log.Fatalf("platformkit: %v", err)
