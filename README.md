@@ -101,12 +101,14 @@ Read this before you file an issue saying we oversold it. We agree with you in a
   port — that is exactly what the port boundary is for.
 - **Not a framework you must adopt wholesale.** Modules compose; take the ones you
   want, ignore the rest, or add your own alongside them.
-- **Early. v0.2.2 — an early public release; expect APIs to move.** The v0.2
+- **Early. v0.2.3 — an early public release; expect APIs to move.** The v0.2
   line is a breaking security rework of v0.1.0: the API now requires
   authentication and every operation is tenant-scoped, and v0.2.2 completes the
   root-cause hardening from repeated adversarial security reviews (server-owned
   request identity, within-tenant ownership on every by-id operation, uniform
-  auth timing, and a hard request-body cap). Verified on Linux/x86_64, Go
+  auth timing, and a hard request-body cap); v0.2.3 adds a conformance-tested
+  [OpenAPI spec](https://github.com/septagon-oss/pk-apps/blob/main/api/openapi.yaml)
+  and runnable godoc examples. Verified on Linux/x86_64, Go
   1.26, `modernc.org/sqlite v1.50.1`, fresh database. Things will move. Pin a
   tag if you need stability today.
 
