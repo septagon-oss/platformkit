@@ -19,8 +19,8 @@ cd platformkit
 go run .
 ```
 
-The default is deliberately predictable: the nine-module starter from
-`pk-apps`, SQLite, and a loopback-only listener.
+On a fresh database the default is deliberately predictable: the nine-module
+starter from `pk-apps`, SQLite, and a loopback-only listener.
 
 ```text
 ============================================================
@@ -41,11 +41,16 @@ surface without leaking credentials. The terminal prints the development login;
 forms, useful tables, lifecycle actions, empty/error states, and mobile
 navigation.
 
-The local development bootstrap is:
+The fresh-database local development bootstrap is:
 
 - Tenant: `tenant_local`
 - Email: `operator@local.test`
 - Password: `local-development-only`
+
+An upgraded database may retain previously released tenant and user IDs so
+downstream module rows are not orphaned. Its startup banner prints the actual
+tenant ID and resolved email to use; the visible labels and development
+password are still neutralized.
 
 Those credentials are for local development. A configured or non-development
 deployment fails closed without `seed.admin_password`, never reasserts a changed
@@ -62,10 +67,16 @@ administrator has full access. API keys cannot acquire interactive `admin` or
 `console:access` capabilities.
 
 ```bash
+# Use the exact values printed in this database's startup banner. These are the
+# fresh-database defaults; an upgraded database can retain an older tenant ID.
+TENANT_ID=tenant_local
+ADMIN_EMAIL=operator@local.test
+ADMIN_PASSWORD=local-development-only
+
 # Log in. The response contains a session ID.
 curl -s -X POST http://127.0.0.1:8080/api/v1/auth/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"tenant_id":"tenant_local","email":"operator@local.test","password":"local-development-only"}'
+  -d "{\"tenant_id\":\"$TENANT_ID\",\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 
 # Send that ID as a bearer token.
 curl -s http://127.0.0.1:8080/api/v1/tenants \
