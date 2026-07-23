@@ -1,66 +1,56 @@
 # Security
 
-**How do I report a vulnerability?**
+Report vulnerabilities privately to **hello@septagon.dev**. Do not open a
+public issue before a fix is available.
 
-Report it privately. **Do not open a public GitHub issue for a security
-vulnerability** — a public issue tells everyone about the problem before there is
-a fix.
-
-## How to report
-
-Email **security@septagon.dev** with:
-
-- a description of the issue and the impact you think it has,
-- the steps to reproduce it (a minimal proof of concept helps a lot),
-- the affected repo, version, or commit.
-
-We will acknowledge your report, work with you on a fix, and credit you when the
-fix ships if you would like the credit. Please give us a reasonable window to
-address the issue before disclosing it publicly.
+Include the affected repository and commit or version, expected impact,
+reproduction steps, and a minimal proof of concept when practical. Avoid
+including real credentials or third-party personal data. We will acknowledge
+the report, coordinate remediation and disclosure, and offer credit if wanted.
 
 ## Supported versions
 
-PlatformKit is early — **v0.1.0**, our first public release; expect APIs to
-move. There is no long-term
-support window yet. Security fixes land on the `main` branch of the affected
-repo. If you need stability today, pin to a specific commit and watch the repo
-for security updates.
+PlatformKit is pre-1.0. Security fixes land on the current `main` branch of the
+affected repository; tagged v0.x releases receive best-effort fixes. Consumers
+should pin a version and monitor repository security updates.
 
-| Version | Supported |
+| Version | Support |
 |---|---|
-| `main` (current) | Yes — fixes land here |
-| Tagged early releases (v0.x) | Best effort; upgrade to current |
+| `main` | Current fixes |
+| Latest tagged v0.x | Best effort |
+| Older v0.x | Upgrade recommended |
+
+## Security baseline
+
+The runnable starter:
+
+- binds to `127.0.0.1` unless an operator explicitly chooses another address;
+- requires a production seed password outside development;
+- never exposes credentials on the public landing or login pages;
+- resolves tenant and subject from verified sessions or API keys;
+- reserves interactive admin scopes from machine keys;
+- requires `admin` plus `console:access` for the operator console;
+- applies explicit read/write scopes to built-in data APIs;
+- caps request bodies and protects process metrics;
+- uses HttpOnly, SameSite session cookies and browser security headers.
+
+Development mode intentionally seeds a known local credential and reasserts it
+on boot. The default listener is loopback-only and prints a prominent warning.
+Exposing development mode to a network is unsafe and is not a supported
+deployment.
+
+SQLite is the zero-setup default for local and small deployments. Production
+operators remain responsible for transport security, secret injection, backups,
+network policy, rate limiting across replicas, and an environment-specific
+threat model.
 
 ## Scope
 
-This repo is the thin front door: a `main` wrapper over
-`pk-apps/pkg/starterapp`. In scope: vulnerabilities in PlatformKit's own code —
-this repo and the layers under the `septagon-oss` organization (`pk-core`,
-`pk-modules`, `pk-runtime`, `pk-apps`, `pk-tools`, and the other published
-layers), including the security baseline (CSRF, CORS, headers, password hashing,
-signed cookies, rate-limiting, signature verification) and the module/port
-boundary. If you can identify the owning layer, report it against that repo;
-when in doubt, report it here and we will route it.
+Reports are welcome for this repository and the published `septagon-oss`
+layers, including authentication, authorization, tenant isolation, request
+handling, migrations, cryptography, dependency wiring, and boundary failures.
+If the owning repository is unclear, report it here and we will route it.
 
-Worth knowing before you report:
-
-- **The starter `/admin` dashboard is open by design.** It is not behind a login
-  wall in the OSS starter; the seeded credentials authenticate against the auth
-  API, not an admin login screen. An unauthenticated `/admin` in the starter is
-  expected behavior for local development, not a vulnerability. Put it behind
-  your own auth before exposing it.
-- **SQLite is the local default, not a production-at-scale store.** "SQLite does
-  not scale to a large production deployment" is a documented limitation, not a
-  security bug — swap in your own store behind the store port for production.
-
-Out of scope: issues in your own application code built on top of PlatformKit,
-and issues in third-party dependencies (report those upstream, though we welcome
-a heads-up).
-
----
-
-See also:
-[open-core.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/open-core.md)
-for what the OSS security baseline covers,
-[quickstart.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/quickstart.md)
-for the honest caveat about the open `/admin` dashboard.
+Issues solely in downstream application code or third-party projects should be
+reported to their owners, though a heads-up is welcome when PlatformKit users
+are materially exposed.

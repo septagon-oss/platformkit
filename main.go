@@ -1,9 +1,7 @@
-// Package main is the PlatformKit OSS front door: a thin wrapper over the
-// importable starterapp package. It carries no application logic of its own —
-// the entire module composition graph, HTTP surface, first-boot seed, and serve
-// loop live in github.com/septagon-oss/pk-apps/pkg/starterapp, the same package
-// that pk-apps's own apps/starter-saas/main.go wraps. Cloning this repo and
-// running `go run .` boots the identical OSS monolith on :8080.
+// Package main is the domain-neutral PlatformKit OSS front door. It runs the
+// stable nine-module starter exactly as published by pk-apps. Product-specific
+// modules belong in downstream applications and compose through supported
+// starterapp extension points.
 //
 // The front door ships no config.yaml; starterapp.DefaultConfig returns a
 // complete, bootable configuration so `go run .` works out of the box.
@@ -21,8 +19,8 @@ import (
 	"strings"
 	"syscall"
 
-	// Register the modernc.org/sqlite driver as "sqlite" so each module's
-	// store can sql.Open against the same default driver.
+	// Register the modernc.org/sqlite driver as "sqlite" so the starter and
+	// contributed modules can use the shared database handle.
 	_ "modernc.org/sqlite"
 
 	"github.com/septagon-oss/pk-apps/pkg/starterapp"
@@ -34,17 +32,21 @@ func main() {
 
 	cfg := starterapp.DefaultConfig()
 
-	// Let the listen address be overridden without editing code:
-	//   PORT=8090 go run .            (or)   PK_HTTP_ADDR=127.0.0.1:8090 go run .
-	// PORT is the conventional PaaS/container knob; PK_HTTP_ADDR takes a full
-	// host:port when you need to bind a specific interface.
-	if addr := strings.TrimSpace(os.Getenv("PK_HTTP_ADDR")); addr != "" {
-		cfg.HTTP.Addr = addr
-	} else if port := strings.TrimSpace(os.Getenv("PORT")); port != "" {
-		cfg.HTTP.Addr = ":" + port
-	}
+	applyAddressOverrides(cfg, os.Getenv)
 
 	if err := starterapp.Run(ctx, cfg); err != nil {
 		log.Fatalf("platformkit: %v", err)
+	}
+}
+
+func applyAddressOverrides(cfg *starterapp.Config, lookup func(string) string) {
+	if addr := strings.TrimSpace(lookup("PK_HTTP_ADDR")); addr != "" {
+		cfg.HTTP.Addr = addr
+		return
+	}
+	if port := strings.TrimSpace(lookup("PORT")); port != "" {
+		// PORT changes the port, not the security posture. Binding all
+		// interfaces requires an explicit PK_HTTP_ADDR.
+		cfg.HTTP.Addr = "127.0.0.1:" + port
 	}
 }
