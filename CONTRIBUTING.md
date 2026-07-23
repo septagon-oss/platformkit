@@ -6,11 +6,11 @@ Thanks for wanting to contribute. This page tells you how to set up local
 development, run the checks, and follow the conventions that keep a PR mergeable.
 Follow these and your change reviews cleanly.
 
-> **This repo is the front door.** It is a thin `main` wrapping
-> `pk-apps/pkg/starterapp` and deliberately carries no application logic. Most
-> changes belong in the layer that owns the behavior (`pk-core`, `pk-modules`,
-> `pk-runtime`, `pk-apps`, …) — open the PR there and it will flow through to
-> this repo by version bump.
+> **This repo is the front door.** The root `main` stays a thin wrapper around
+> `pk-apps/pkg/starterapp` and remains domain-neutral. Application-owned modules
+> and examples belong in the product repository that owns them; reusable
+> framework behavior belongs in its PlatformKit layer (`pk-core`, `pk-modules`,
+> `pk-runtime`, `pk-apps`, …).
 
 ## Local development: the multi-repo workspace
 
@@ -63,10 +63,11 @@ Each repo has its own checks. Run them from inside the repo you changed.
 
 ```bash
 # This repo: build, test, and run the front door end to end
-go build ./...
-go test ./...
-make verify        # the aggregate gate
-go run .           # boots the OSS monolith on :8080
+make verify         # format, vet, staticcheck, tests, race, front-door build
+make coverage       # coverage report
+make security       # govulncheck + gosec
+make release-check  # complete release gate
+go run .            # stable starter on 127.0.0.1:8080
 
 # Per-repo build + tests (run from inside the repo you changed, e.g. pk-modules)
 cd ../pk-modules
@@ -99,25 +100,21 @@ they are what keeps the architecture honest.
    (like `tenant.TenantService`). The wiring supplies the concrete type. If you
    need a capability another module has, depend on its interface, never its
    struct. See
-   [add-a-module.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/add-a-module.md)
-   for the pattern.
+   the [public documentation](https://github.com/septagon-oss/pk-docs) for the
+   current pattern.
 
 2. **Migrations are append-only.** Never edit an existing migration file. Add a
    new one with a higher sequence number (`0002_...`, `0003_...`). Someone has
    already run the old one.
 
-3. **Every Go file declares its purpose (the C-14 convention).** Each file opens
-   with a short comment saying what the file owns, and references the relevant
-   ADR and convention. Copy the style from any existing file, for example:
+3. **Every Go file declares its purpose (the C-14 convention).** Hand-authored
+   source files carry exactly three adjacent leading lines. Tests use
+   `Validates` in place of `Implements`:
 
    ```go
-   package note
-
-   // module.go owns the singleton wiring for note_management: NewModule
-   // constructs the module and Compose() returns the catalog representation.
-   //
-   // ADR: ADR-0009 (ports-only module communication), ADR-0029 (file purpose declaration).
-   // Convention: C-14 (every Go file declares its purpose).
+   // Implements: REQ-016.
+   // Per: ADR-0017.
+   // Discipline: C-14.
    ```
 
 4. **Functional options are additive.** Never change the meaning of an existing
@@ -135,8 +132,8 @@ they are what keeps the architecture honest.
   open a PR per repo and link them.
 - **Keep the diff focused.** A reviewer should be able to hold the change in
   their head. Split unrelated changes.
-- **Run the checks before you push.** A green `make verify` (or `go test ./...`
-  for repos without a Makefile) is the bar.
+- **Run the checks before you push.** `make verify` is the pull-request bar;
+  `make release-check` is the release bar.
 - **Say what you changed and why.** A short PR body that states the problem and
   the fix beats a long one that restates the diff.
 
@@ -148,8 +145,5 @@ they are what keeps the architecture honest.
 
 ---
 
-See also:
-[add-a-module.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/add-a-module.md)
-for the module pattern reviewers expect,
-[architecture.md](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/architecture.md)
-for why the port boundary exists.
+See also the [PlatformKit documentation](https://github.com/septagon-oss/pk-docs)
+for the current module and architecture guides.

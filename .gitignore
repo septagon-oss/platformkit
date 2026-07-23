@@ -2,3 +2,7 @@
 *.test
 /platformkit
 .tmp-*/
+/pk.db
+/pk.db-journal
+/pk.db-shm
+/pk.db-wal

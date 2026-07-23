@@ -1,18 +1,17 @@
 # PlatformKit
 
-**An open-source Go backend for multi-tenant SaaS.** Clone it, run `go run .`, and you get a seeded multi-tenant app — tenants, users, auth, an admin UI, audit, API keys, content, and notifications — composed from nine modules. Pure Go: no CGO, no npm, no Docker, no external database.
+**A runnable, open-source Go foundation for multi-tenant SaaS.** Clone it, run
+one command, and get tenant isolation, users, authentication, API keys, audit,
+content, notifications, health, and a real operator console in one process.
 
-It is the part of a SaaS backend you would otherwise rebuild from scratch in every project.
-
-[![CI](https://img.shields.io/badge/CI-pending-lightgrey)](https://github.com/septagon-oss/platformkit)
+[![Go](https://github.com/septagon-oss/platformkit/actions/workflows/go.yml/badge.svg)](https://github.com/septagon-oss/platformkit/actions/workflows/go.yml)
+[![Security](https://github.com/septagon-oss/platformkit/actions/workflows/security.yml/badge.svg)](https://github.com/septagon-oss/platformkit/actions/workflows/security.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 [![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8)](https://go.dev/dl/)
 
 ![PlatformKit — composable modules forming a dependency graph](docs/hero.png)
 
----
-
-## Quickstart
+## Run the stable starter
 
 ```bash
 git clone https://github.com/septagon-oss/platformkit
@@ -20,178 +19,185 @@ cd platformkit
 go run .
 ```
 
-```
+The default is deliberately predictable: the nine-module starter from
+`pk-apps`, SQLite, and a loopback-only listener.
+
+```text
 ============================================================
  starter-saas — PlatformKit OSS monolith
-  listening:    http://localhost:8080
-  admin UI:     http://localhost:8080/admin
-  health:       http://localhost:8080/healthz
-  metrics:      http://localhost:8080/metrics
-  default login: admin@local.test / changeme
-  modules:      9 composed (admin_management, health_management, tenant_management, user_management, audit_management, auth_management, api_key_management, content_management, notification_management)
+  listening:    http://127.0.0.1:8080
+  admin UI:     http://127.0.0.1:8080/admin
+  health:       http://127.0.0.1:8080/healthz
+  OpenAPI:      http://127.0.0.1:8080/openapi/extensions.json
+  demo login:   admin@local.test / changeme
+  modules:      9 composed (...)
 ============================================================
 ```
 
-That's it. Open `http://localhost:8080/admin` — you'll be sent to a login page.
-Sign in with the seeded credentials (`admin@local.test` / `changeme`, tenant
-`tenant_acme`) and you're in the dashboard.
+Open `http://127.0.0.1:8080/`. The public landing page explains the running
+surface without leaking credentials. The terminal prints the development login;
+`/admin` presents a responsive, scope-protected operator workspace with typed
+forms, useful tables, lifecycle actions, empty/error states, and mobile
+navigation.
 
-**The API requires authentication and is tenant-scoped.** Log in against the
-auth API to get a session, then send it as a bearer token — you only ever see
-your own tenant's data:
+The development seed is:
+
+- Tenant: `tenant_acme`
+- Email: `admin@local.test`
+- Password: `changeme`
+
+Those credentials are for local development. A configured or non-development
+deployment fails closed without `seed.admin_password`, never reasserts a changed
+production password, and never prints that password. `PORT=8090 go run .`
+changes the port while staying on loopback. Listening on a network interface
+requires an explicit address such as
+`PK_HTTP_ADDR=0.0.0.0:8080 go run .`.
+
+## Use the API
+
+Authentication resolves a server-owned tenant and subject. Built-in resources
+require explicit `<resource>:read` or `<resource>:write` scopes; the seeded
+administrator has full access. API keys cannot acquire interactive `admin` or
+`console:access` capabilities.
 
 ```bash
-# 1. Log in (multi-tenant, so tenant_id is required) → returns a session
-SID=$(curl -s -X POST http://localhost:8080/api/v1/auth/sessions \
+# Log in. The response contains a session ID.
+curl -s -X POST http://127.0.0.1:8080/api/v1/auth/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"tenant_id":"tenant_acme","email":"admin@local.test","password":"changeme"}' \
-  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+  -d '{"tenant_id":"tenant_acme","email":"admin@local.test","password":"changeme"}'
 
-# 2. Use the session. Anonymous requests to /api/v1 are rejected with 401.
-curl -s http://localhost:8080/api/v1/tenants -H "Authorization: Bearer $SID"
+# Send that ID as a bearer token.
+curl -s http://127.0.0.1:8080/api/v1/tenants \
+  -H 'Authorization: Bearer YOUR_SESSION_ID'
 ```
 
-Seeded credentials are a **development** convenience. Outside a development
-environment the starter refuses to boot without `seed.admin_password`, and it
-never re-asserts the password on later boots.
+Useful runtime routes:
 
-**Requirements:** Go 1.26+. Nothing else — no CGO, no npm, no Docker, no external
-database (SQLite by default). The first build downloads a handful of modules and
-takes tens of seconds; subsequent starts take about two seconds.
+| Route | Purpose | Access |
+|---|---|---|
+| `/` | Product and runtime landing page | Public |
+| `/admin` | Schema-aware operator console | `admin` + `console:access` |
+| `/healthz`, `/live`, `/ready` | Health and orchestration probes | Public |
+| `/metrics` | `expvar` process and module metrics | `metrics:read` or admin |
+| `/openapi/extensions.json` | Validated OpenAPI 3.1 extension operations | Public |
+| `/api/v1/tenants` | Tenant management | `tenants:read/write` or admin |
+| `/api/v1/users` | User management | `users:read/write` or admin |
+| `/api/v1/api-keys` | Scoped machine credentials | `api-keys:read/write` or admin |
+| `/api/v1/audit-events` | Append-only audit query | `audit:read` or admin |
+| `/api/v1/content` | Content lifecycle | `content:read/write` or admin |
+| `/api/v1/notifications` | In-app notifications | `notifications:read/write` or admin |
 
-For a deterministic local verification pass, run `make verify`. It checks formatting,
-vetting, tests, and a CGO-disabled build without replacing Go's shared module or build
-caches.
+All request bodies are capped at 1 MiB. Anonymous mutations are rejected,
+tenant identity comes from the verified credential rather than request JSON,
+and process metrics are not public.
 
-**Port 8080 busy?** The front door listens on `:8080` and ships no config file. Run the full starter in pk-apps (`pk-apps/apps/starter-saas`, which reads `http.addr` from its `config.yaml`) or change the address in the wrapper's `main.go`.
+## Build your product on top
 
----
+This repository stays deliberately domain-neutral. Product-specific modules
+belong in your application repository, where they can be changed or replaced
+without forking PlatformKit.
 
-## What you get
+The supported `starterapp.WithModules` seam composes application-owned modules
+into the same SQLite pool, module catalog, identity perimeter, admin and health
+registrars, request limits, and OpenAPI discovery as the built-ins:
 
-Nine modules compose into the running app on the first `go run .`:
+```go
+err := starterapp.Run(
+    ctx,
+    starterapp.DefaultConfig(),
+    starterapp.WithModules(yourModule),
+)
+```
 
-- **Tenants** — tenant isolation built into the data layer and the auth flow, not bolted on.
-- **Users** — user records scoped to a tenant.
-- **Auth & sessions** — a login flow over the auth API (`POST /api/v1/auth/sessions`).
-- **API keys** — issuance and storage for programmatic access.
-- **Audit log** — an append trail of changes.
-- **Content** — a content store with entity CRUD.
-- **In-app notifications** — a notification store.
-- **Admin UI** — a server-rendered dashboard at `/admin` behind a login wall, with a sidebar and entity links.
-- **Health** — `/healthz` reports the status of the modules that own a data store.
+Start with the generic
+[`pk-apps/examples/custommodule`](https://github.com/septagon-oss/pk-apps/tree/main/examples/custommodule)
+example, then keep your domain model, migrations, routes, and policies in the
+repository that owns the product. The foundation remains reusable whether the
+result is a CRM, marketplace, internal tool, booking system, or another SaaS.
 
-`/healthz` reports seven data/session checks; `admin` and `health` are composed
-modules without SQLite stores. `GET /healthz` returns `200` with each of those
-seven reporting `healthy` on a fresh database.
+## What is included
 
----
+- **Tenants** — isolation in stores and request identity.
+- **Users** — tenant-scoped records and password lifecycle.
+- **Authentication** — browser sessions and bearer-session support.
+- **API keys** — one-time plaintext display and explicit machine scopes.
+- **Audit** — append-only operational events.
+- **Content** — draft and publish lifecycle.
+- **Notifications** — tenant/user-scoped in-app messages.
+- **Admin** — a responsive, schema-aware reference console.
+- **Health** — module health plus runtime liveness/readiness.
 
-## What this is NOT
+## Verify before shipping
 
-Read this before you file an issue saying we oversold it. We agree with you in advance.
+```bash
+make verify        # format, vet, staticcheck, tests, race, and build
+make coverage      # atomic coverage profile and function report
+make security      # govulncheck + gosec
+make release-check # all of the above
+```
 
-- **Not a no-code tool.** It is a Go codebase. You write Go to extend it.
-- **Not a Rails or Django replacement.** It is a backend substrate for multi-tenant
-  SaaS, not a full-stack web framework with an ORM, a router opinion, and a generator
-  for everything. If you want batteries-included web MVC, this is not that.
-- **Not production-hardened at scale on the default store.** SQLite is the zero-setup
-  local default so the first run needs no database. It is great for development and
-  small deployments. For production at scale, swap in your own store behind the store
-  port — that is exactly what the port boundary is for.
-- **Not a framework you must adopt wholesale.** Modules compose; take the ones you
-  want, ignore the rest, or add your own alongside them.
-- **Early. v0.3.0 — an early public release; expect APIs to move.** The v0.2
-  line is a breaking security rework of v0.1.0: the API now requires
-  authentication and every operation is tenant-scoped, and v0.2.2 completes the
-  root-cause hardening from repeated adversarial security reviews (server-owned
-  request identity, within-tenant ownership on every by-id operation, uniform
-  auth timing, and a hard request-body cap); v0.3.0 adds `starterapp.WithModules` (extend the starter with your own
-  modules — public routes included), a conformance-tested
-  [OpenAPI spec](https://github.com/septagon-oss/pk-apps/blob/main/api/openapi.yaml),
-  a tenant-isolation conformance helper, and a `PORT` env override. Verified on Linux/x86_64, Go
-  1.26, `modernc.org/sqlite v1.50.1`, fresh database. Things will move. Pin a
-  tag if you need stability today.
+GitHub Actions runs the verification and coverage gate on every pull request,
+plus dependency review, CodeQL, govulncheck, and gosec. The module has no local
+`replace` directives, so a clean clone exercises the same public dependency
+graph a user gets.
 
----
+## Boundaries and expectations
 
-## How it fits together
+- This is not a no-code product. Extension code is Go.
+- It is not a Rails/Django-style MVC framework or ORM.
+- SQLite is the zero-setup local and small-deployment default, not a claim of
+  horizontal write scalability.
+- The reference admin is a useful operator surface, not an enterprise policy
+  engine.
+- PlatformKit is pre-1.0. Pin versions and expect deliberate API evolution.
+- Modules are optional. Take the starter, select another composition, or build
+  your own through the same ports.
 
-The core defines the rules — the contracts, the kernel, the wiring. Modules add
-capabilities behind those rules — tenants, users, auth, and the rest. Clients compose
-the modules they want into a running application.
+## How the pieces fit
 
-Modules never import each other's implementations. They depend only on interfaces —
-ports like `AdminRegistrar` and `HealthRegistrar`, or a provider's published contract
-such as `audit.AuditEmitter`. Dependency injection supplies the concrete type at
-startup. So you can replace one module's implementation without the change cascading
-through the others, and you add your own module the same way the nine built-ins are added.
+`pk-core` defines module and security contracts. `pk-modules` implements the
+reference capabilities. `pk-apps/pkg/starterapp` owns the one canonical starter
+composition. This repository is the domain-neutral public front door.
+
+Modules depend on published interfaces, not one another's concrete
+implementations. Downstream products extend the starter through published
+contracts without placing their domain code in PlatformKit:
 
 ```mermaid
-flowchart TB
-  shared["shared vocabulary — ports &amp; contracts<br/>AdminRegistrar &middot; HealthRegistrar &middot; audit.AuditEmitter &middot; store port"]
-  core["core kernel<br/>module system &middot; DI graph wires concrete types at startup"]
-  modules["nine modules<br/>tenant &middot; user &middot; auth &middot; api_key &middot; audit<br/>content &middot; notification &middot; health &middot; admin"]
-  clients["clients / apps<br/>starter app (go run .) &middot; admin UI /admin &middot; pk CLI"]
+flowchart LR
+  core["pk-core\nmodule + identity contracts"]
+  modules["pk-modules\n9 reference modules"]
+  starter["pk-apps/starterapp\nstable composition"]
+  front["go run .\ndomain-neutral front door"]
+  product["your product repository\napplication-owned modules"]
 
-  shared -- "implemented &amp; consumed via" --> core
-  core -- "injects providers into" --> modules
-  modules -. "talk only through ports" .-> shared
-  modules -- "served to" --> clients
-
-  style modules stroke:#2DD4BF,stroke-width:2px
+  core --> modules
+  modules --> starter
+  starter --> front
+  starter --> product
+  core -. "published contracts" .-> product
 ```
 
-<sub>Static export: [docs/architecture.svg](docs/architecture.svg)</sub>
+<sub>Static architecture asset: [docs/architecture.svg](docs/architecture.svg)</sub>
 
-For the longer design rationale, see the
-[PlatformKit architecture](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/architecture.md).
-
----
-
-## The repositories
-
-PlatformKit is an independently versioned, independently consumable set of layers.
-A consumer depends on `pk-core` without pulling the rest. This front-door repo is a
-thin `main` wrapping `pk-apps/pkg/starterapp`; the first `go run .` downloads the
-PlatformKit modules it needs by version from the Go module proxy. There are no
-`replace` directives — `go.work` is local-dev-only.
+## Repository family
 
 | Repository | Purpose |
 |---|---|
-| `pk-core` | The composable core: contracts and kernel that define the module rules. |
-| `pk-shared` | Cross-repo vocabulary — shared types used across layers. |
-| `pk-runtime` | The host: request handling, health, and HTTP primitives. |
-| `pk-design` | Design tokens, themes, and component contracts. |
-| `pk-client` | Public client primitives. |
-| `pk-tools` | The `pk` CLI — `doctor`, `verify`, `explain`; a scaffold generator lives in `pk-tools/pkg/scaffold` as a library (not a `pk` subcommand). |
-| `pk-modules` | The reference module pack — the nine modules above and more. |
-| `pk-apps` | Runnable example compositions, including the starter. |
-| `pk-testkit` | Conformance and flow testing. |
-| `pk-docs` | Public documentation source. |
+| `pk-core` | Module, dependency, identity, and runtime contracts |
+| `pk-shared` | Cross-repository vocabulary |
+| `pk-runtime` | Hosting and health primitives |
+| `pk-design` | Design tokens and component contracts |
+| `pk-modules` | Reference business modules and admin |
+| `pk-apps` | Runnable compositions, including `starterapp` |
+| `pk-testkit` | Conformance and flow testing |
+| `pk-tools` | Developer tooling |
+| `pk-docs` | Public architecture and operating guides |
 
----
+## Project links
 
-## Open core
-
-PlatformKit is Apache-2.0, and the thing you clone and run is the whole substrate,
-not a trial slice: all the public contracts and ports, the default providers that make
-it run with zero setup (SQLite, in-memory, stdlib, file-based), the security baseline,
-the reference admin UI, the starter app, the `pk` CLI, and the nine-module essentials
-pack. That is enough to build and run a multi-tenant SaaS backend on your own
-infrastructure. Pro adds hosted and cloud-scale providers, enterprise identity, and a
-hosted control plane — implementations that plug in behind the same interfaces.
-**The boundary is drawn at the provider, never at the contract: every public interface
-a module exposes stays in OSS, and the contracts you build against today do not move
-out of open source.** See the
-[open-core model](https://github.com/septagon-oss/pk-docs/blob/main/docs/v0.2.0/open-core.md).
-
----
-
-## Docs · Contributing · Security · License · Community
-
-- **Docs:** [PlatformKit public documentation](https://github.com/septagon-oss/pk-docs)
-- **Contributing:** [Contribution guide](https://github.com/septagon-oss/pk-docs/blob/main/CONTRIBUTING.md)
-- **Security:** [Security policy](https://github.com/septagon-oss/pk-docs/blob/main/SECURITY.md)
-- **License:** [Apache-2.0](LICENSE)
-- **Community:** [GitHub Discussions](https://github.com/septagon-oss/platformkit/discussions)
+- [Documentation](https://github.com/septagon-oss/pk-docs)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Discussions](https://github.com/septagon-oss/platformkit/discussions)
+- [Apache-2.0 license](LICENSE)
