@@ -69,7 +69,17 @@ staticcheck: $(STATICCHECK_PREREQ) | $(GOTMPDIR)
 		echo "staticcheck: go list returned no packages"; \
 		exit 1; \
 	fi; \
-	$(GO_ENV) $(STATICCHECK) $$packages
+	if output="$$( $(GO_ENV) $(STATICCHECK) ./... 2>&1 )"; then \
+		status=0; \
+	else \
+		status=$$?; \
+	fi; \
+	if [[ -n "$$output" ]]; then printf '%s\n' "$$output"; fi; \
+	if [[ $$status -ne 0 ]]; then exit $$status; fi; \
+	if [[ "$$output" == *"matched no packages"* ]]; then \
+		echo "staticcheck: analyzer matched no packages"; \
+		exit 1; \
+	fi
 
 race: | $(GOTMPDIR)
 	$(RACE_ENV) $(GO) test -race -count=1 ./...
@@ -86,7 +96,17 @@ govulncheck: $(GOVULNCHECK_PREREQ) | $(GOTMPDIR)
 		echo "govulncheck: go list returned no packages"; \
 		exit 1; \
 	fi; \
-	$(GO_ENV) $(GOVULNCHECK) $$packages
+	if output="$$( $(GO_ENV) $(GOVULNCHECK) -show verbose ./... 2>&1 )"; then \
+		status=0; \
+	else \
+		status=$$?; \
+	fi; \
+	if [[ -n "$$output" ]]; then printf '%s\n' "$$output"; fi; \
+	if [[ $$status -ne 0 ]]; then exit $$status; fi; \
+	if ! grep -Fq "Govulncheck scanned the following" <<< "$$output"; then \
+		echo "govulncheck: analyzer did not report scanned modules"; \
+		exit 1; \
+	fi
 
 gosec: $(GOSEC_PREREQ) | $(GOTMPDIR)
 	@packages="$$( $(GO_ENV) $(GO) list ./... )"; \
@@ -94,7 +114,17 @@ gosec: $(GOSEC_PREREQ) | $(GOTMPDIR)
 		echo "gosec: go list returned no packages"; \
 		exit 1; \
 	fi; \
-	$(GO_ENV) $(GOSEC) -quiet $$packages
+	if output="$$( $(GO_ENV) $(GOSEC) -fmt=json ./... 2>&1 )"; then \
+		status=0; \
+	else \
+		status=$$?; \
+	fi; \
+	if [[ -n "$$output" ]]; then printf '%s\n' "$$output"; fi; \
+	if [[ $$status -ne 0 ]]; then exit $$status; fi; \
+	if ! grep -Eq '"files"[[:space:]]*:[[:space:]]*[1-9][0-9]*' <<< "$$output"; then \
+		echo "gosec: analyzer did not report scanning any files"; \
+		exit 1; \
+	fi
 
 security: govulncheck gosec
 
