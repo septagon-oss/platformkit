@@ -12,8 +12,8 @@ github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOF
 github.com/ncruces/go-strftime v1.0.0/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
-github.com/septagon-oss/pk-apps v0.3.2-0.20260723190210-b9e0df60445c h1:+DOaCZVwwnrYIYmyGIKFxMLFZHtta3EmET0Aq5w/pYw=
-github.com/septagon-oss/pk-apps v0.3.2-0.20260723190210-b9e0df60445c/go.mod h1:MTLfeFJzP0yIeiYN/YPEFopJr1CaHDmeqtWmrh7Lxug=
+github.com/septagon-oss/pk-apps v0.3.2-0.20260723193649-e859f541a279 h1:fcd5++x0vF0G/e4Z/VMmD+ZZZV4RxkMzd1u7RZ4bSWU=
+github.com/septagon-oss/pk-apps v0.3.2-0.20260723193649-e859f541a279/go.mod h1:MTLfeFJzP0yIeiYN/YPEFopJr1CaHDmeqtWmrh7Lxug=
 github.com/septagon-oss/pk-core v0.1.0 h1:FrknTc7u6nPiG8eh5yhfH+wANWMCr3vldFnS5zPg3vM=
 github.com/septagon-oss/pk-core v0.1.0/go.mod h1:Bc0Vl7PxXdpAtkyNRo4fSvayYPX6VOtgC45m/k6bsJ0=
 github.com/septagon-oss/pk-design v0.1.0 h1:L+9EC4x9h+wS5nKI1nZnXiF1GNDcrv5Gm5eEd9bKjB8=
