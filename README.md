@@ -24,12 +24,12 @@ The default is deliberately predictable: the nine-module starter from
 
 ```text
 ============================================================
- starter-saas — PlatformKit OSS monolith
+ PlatformKit OSS
   listening:    http://127.0.0.1:8080
   admin UI:     http://127.0.0.1:8080/admin
   health:       http://127.0.0.1:8080/healthz
   OpenAPI:      http://127.0.0.1:8080/openapi/extensions.json
-  demo login:   admin@local.test / changeme
+  local login:  operator@local.test / local-development-only
   modules:      9 composed (...)
 ============================================================
 ```
@@ -40,11 +40,11 @@ surface without leaking credentials. The terminal prints the development login;
 forms, useful tables, lifecycle actions, empty/error states, and mobile
 navigation.
 
-The development seed is:
+The local development bootstrap is:
 
-- Tenant: `tenant_acme`
-- Email: `admin@local.test`
-- Password: `changeme`
+- Tenant: `tenant_local`
+- Email: `operator@local.test`
+- Password: `local-development-only`
 
 Those credentials are for local development. A configured or non-development
 deployment fails closed without `seed.admin_password`, never reasserts a changed
@@ -64,7 +64,7 @@ administrator has full access. API keys cannot acquire interactive `admin` or
 # Log in. The response contains a session ID.
 curl -s -X POST http://127.0.0.1:8080/api/v1/auth/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"tenant_id":"tenant_acme","email":"admin@local.test","password":"changeme"}'
+  -d '{"tenant_id":"tenant_local","email":"operator@local.test","password":"local-development-only"}'
 
 # Send that ID as a bearer token.
 curl -s http://127.0.0.1:8080/api/v1/tenants \
@@ -110,8 +110,8 @@ err := starterapp.Run(
 ```
 
 Start with the generic
-[`pk-apps/examples/custommodule`](https://github.com/septagon-oss/pk-apps/tree/main/examples/custommodule)
-example, then keep your domain model, migrations, routes, and policies in the
+[`pk-apps/reference/custommodule`](https://github.com/septagon-oss/pk-apps/tree/main/reference/custommodule)
+reference, then keep your domain model, migrations, routes, and policies in the
 repository that owns the product. The foundation remains reusable whether the
 result is a CRM, marketplace, internal tool, booking system, or another SaaS.
 
