@@ -189,7 +189,7 @@ flowchart LR
 | `pk-runtime` | Hosting and health primitives |
 | `pk-design` | Design tokens and component contracts |
 | `pk-modules` | Reference business modules and admin |
-| `pk-apps` | Runnable compositions, including `starterapp` |
+| `pk-apps` | Canonical `starterapp` composition library and extension seam |
 | `pk-testkit` | Conformance and flow testing |
 | `pk-tools` | Developer tooling |
 | `pk-docs` | Public architecture and operating guides |
