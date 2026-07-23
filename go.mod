@@ -3,7 +3,7 @@ module github.com/septagon-oss/platformkit
 go 1.26
 
 require (
-	github.com/septagon-oss/pk-apps v0.3.2-0.20260723182735-492f94d3fed0
+	github.com/septagon-oss/pk-apps v0.3.2-0.20260723190210-b9e0df60445c
 	modernc.org/sqlite v1.50.1
 )
 
