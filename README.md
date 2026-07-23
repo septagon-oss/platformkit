@@ -29,6 +29,7 @@ The default is deliberately predictable: the nine-module starter from
   admin UI:     http://127.0.0.1:8080/admin
   health:       http://127.0.0.1:8080/healthz
   OpenAPI:      http://127.0.0.1:8080/openapi/extensions.json
+  local tenant: tenant_local
   local login:  operator@local.test / local-development-only
   modules:      9 composed (...)
 ============================================================
