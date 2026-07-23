@@ -3,7 +3,7 @@ module github.com/septagon-oss/platformkit
 go 1.26
 
 require (
-	github.com/septagon-oss/pk-apps v0.3.2-0.20260723135542-74fd72f0bee7
+	github.com/septagon-oss/pk-apps v0.3.2-0.20260723141548-407eac12ffdb
 	modernc.org/sqlite v1.50.1
 )
 
@@ -15,7 +15,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/septagon-oss/pk-core v0.1.0 // indirect
 	github.com/septagon-oss/pk-design v0.1.0 // indirect
-	github.com/septagon-oss/pk-modules v0.3.1-0.20260723135325-246963067027 // indirect
+	github.com/septagon-oss/pk-modules v0.3.1-0.20260723141307-d1047434f54e // indirect
 	github.com/septagon-oss/pk-runtime v0.1.0 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
