@@ -92,16 +92,26 @@ Useful runtime routes:
 | `/healthz`, `/live`, `/ready` | Health and orchestration probes | Public |
 | `/metrics` | `expvar` process and module metrics | `metrics:read` or admin |
 | `/openapi/extensions.json` | Validated OpenAPI 3.1 extension operations | Public |
-| `/api/v1/tenants` | Tenant management | `tenants:read/write` or admin |
+| `/api/v1/tenants` | Read/update/delete the caller's tenant; provisioning is out of band | `tenants:read/write` or admin |
 | `/api/v1/users` | User management | `users:read/write` or admin |
 | `/api/v1/api-keys` | Scoped machine credentials | `api-keys:read/write` or admin |
 | `/api/v1/audit-events` | Append-only audit query | `audit:read` or admin |
-| `/api/v1/content` | Content lifecycle | `content:read/write` or admin |
-| `/api/v1/notifications` | In-app notifications | `notifications:read/write` or admin |
+| `/api/v1/content` | Stored content and publish lifecycle | `content:read/write` or admin |
+| `/api/v1/notifications` | Stored in-app notification records | `notifications:read/write` or admin |
 
-All request bodies are capped at 1 MiB. Anonymous mutations are rejected,
-tenant identity comes from the verified credential rather than request JSON,
-and process metrics are not public.
+All request bodies are capped at 1 MiB. Mutating JSON rejects unknown fields
+and trailing values, malformed or negative pagination returns `400`, and API
+key scopes must be built in or declared by an application module. Anonymous
+mutations are rejected, tenant identity comes from the verified credential
+rather than request JSON, and process metrics are not public.
+
+The generic starter does not invent end-user presentation. Creating a
+notification persists a user-scoped record for the API/operator surface; it
+does not display a navbar bell, toast, email, SMS, or push message. Creating or
+publishing content persists its lifecycle state; it does not create a public
+page, template, or URL. Those delivery and rendering choices belong in the
+downstream application. See the
+[current runtime boundaries](https://github.com/septagon-oss/pk-docs/blob/main/docs/current/runtime-surfaces.md).
 
 ## Build your product on top
 
@@ -126,6 +136,9 @@ Start with the generic
 reference, then keep your domain model, migrations, routes, and policies in the
 repository that owns the product. The foundation remains reusable whether the
 result is a CRM, marketplace, internal tool, booking system, or another SaaS.
+The reference declares application API-key scopes, enforces them on every
+route, uses append-only embedded migrations, derives identity from the
+authenticated principal, and tests tenant isolation and strict inputs.
 
 ## What is included
 
@@ -164,6 +177,8 @@ graph a user gets.
 - PlatformKit is pre-1.0. Pin versions and expect deliberate API evolution.
 - Modules are optional. Take the starter, select another composition, or build
   your own through the same ports.
+- Notification email/SMS/push delivery, a navbar inbox/toast UI, and public
+  content rendering are downstream features, not hidden starter behavior.
 
 ## How the pieces fit
 
