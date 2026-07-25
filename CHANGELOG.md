@@ -13,7 +13,7 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
-## [0.6.1] — 2026-07-25
+## [0.6.2] — 2026-07-25
 
 ### Fixed
 
@@ -195,8 +195,8 @@ module proxy recorded, and are **retracted** in `go.mod`.
 - First public release: the runnable front door for the nine-module starter over
   SQLite, on a loopback-only listener.
 
-[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...HEAD
-[0.6.1]: https://github.com/septagon-oss/platformkit/compare/v0.6.0...v0.6.1
+[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/septagon-oss/platformkit/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/septagon-oss/platformkit/compare/v0.4.0...v0.5.0
