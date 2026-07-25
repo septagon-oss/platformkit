@@ -194,11 +194,11 @@ graph a user gets.
   your own through the same ports.
 - Notification email/SMS/push delivery, a navbar inbox/toast UI, and public
   content rendering are downstream features, not hidden starter behavior.
-- This is a backend foundation. The admin is server-rendered Go, not a component
-  library, so there is deliberately no Storybook, component gallery, Figma
-  library export, renderer adapter, or Tailwind config generation here.
-  `pk-design` publishes the token, theme, and component *contracts*; turning
-  those into rendered UI belongs to downstream distributions.
+- The frontend stack is Go end to end. `pk-design` publishes the canonical
+  theme, `tw` compiles typed utility classes and emits their CSS, and `pk-ui`
+  renders accessible components — no Node, no Tailwind build, no bundler.
+  There is still deliberately no Storybook gallery or Figma export here;
+  those belong to downstream distributions.
 - Schemas are Go modules compiled into the binary, not collections defined at
   runtime through the admin UI. If you want to add a field by clicking in a
   dashboard, a runtime-collection backend such as PocketBase or Directus fits
@@ -248,6 +248,9 @@ flowchart LR
 | `pk-modules` | Reference business modules and admin |
 | `pk-apps` | Canonical `starterapp` composition library and extension seam |
 | `pk-client` | Client primitives for calling a PlatformKit API |
+| `pk-ui` | Component contracts, ARIA builder, and gomponents renderers |
+| `tw` | Typed utility-class DSL and CSS emission for the design system |
+| `styleengine` | Typed Go-native CSS construction, parsing, and sanitizing |
 | `pk-testkit` | Conformance and flow testing |
 | `pk-tools` | Developer tooling |
 | `pk-docs` | Public architecture and operating guides — [published site](https://septagon-oss.github.io/pk-docs/) |
