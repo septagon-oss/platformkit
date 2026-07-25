@@ -13,6 +13,22 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-07-25
+
+### Changed
+
+- **The whole console renders on the design system.** The admin shell's five
+  text/templates and the sign-in page are retired in favor of typed Go views
+  (`pk-modules` v0.11.0, `pk-apps` v0.10.0). Components — buttons, fields,
+  tables, status pills, pagination — are `tw` class lists, the same layer any
+  module admin page composes; the console's editorial voice stays product
+  chrome aligned through the shared `--pk-*` tokens. The login page's palette
+  is now generated from `themes.Default()` instead of hand-copied hex, and
+  the admin script styles its runtime-built elements from the same compiled
+  class strings via an embedded class-name bridge.
+- Mobile resource tables scroll inside their shell with the header row
+  visible, replacing the stacked-card transform.
+
 ## [0.8.0] — 2026-07-25
 
 ### Added
@@ -210,6 +226,7 @@ module proxy recorded, and are **retracted** in `go.mod`.
   SQLite, on a loopback-only listener.
 
 [Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.8.0...HEAD
+[0.9.0]: https://github.com/septagon-oss/platformkit/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...v0.8.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
