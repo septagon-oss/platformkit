@@ -140,6 +140,12 @@ The reference declares application API-key scopes, enforces them on every
 route, uses append-only embedded migrations, derives identity from the
 authenticated principal, and tests tenant isolation and strict inputs.
 
+When you need to see the seam carry a full domain rather than a minimal one,
+[`pk-apps/reference/polls`](https://github.com/septagon-oss/pk-apps/tree/main/reference/polls)
+adds a lifecycle, an audit outbox committed atomically with each mutation,
+signed anonymous voter identity, per-network throttling, `/metrics` counters,
+and a public browser surface beside the JSON API.
+
 ## What is included
 
 - **Tenants** — isolation in stores and request identity.
@@ -179,6 +185,11 @@ graph a user gets.
   your own through the same ports.
 - Notification email/SMS/push delivery, a navbar inbox/toast UI, and public
   content rendering are downstream features, not hidden starter behavior.
+- This is a backend foundation. The admin is server-rendered Go, not a component
+  library, so there is deliberately no Storybook, component gallery, Figma
+  library export, renderer adapter, or Tailwind config generation here.
+  `pk-design` publishes the token, theme, and component *contracts*; turning
+  those into rendered UI belongs to downstream distributions.
 
 ## How the pieces fit
 
@@ -217,6 +228,7 @@ flowchart LR
 | `pk-design` | Design tokens and component contracts |
 | `pk-modules` | Reference business modules and admin |
 | `pk-apps` | Canonical `starterapp` composition library and extension seam |
+| `pk-client` | Client primitives for calling a PlatformKit API |
 | `pk-testkit` | Conformance and flow testing |
 | `pk-tools` | Developer tooling |
 | `pk-docs` | Public architecture and operating guides |
@@ -224,6 +236,7 @@ flowchart LR
 ## Project links
 
 - [Documentation](https://github.com/septagon-oss/pk-docs)
+- [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Discussions](https://github.com/septagon-oss/platformkit/discussions)
