@@ -1,67 +1,61 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="PlatformKit layered architecture: contracts and tokens at the foundation, a runtime host, nine reference modules that talk only through published ports, one composition in pk-apps, and the platformkit front door; client, testkit and tools sit alongside">
   <title>PlatformKit architecture</title>
-  <rect width="1200" height="660" rx="14" fill="#0f172a"/>
-  <g transform="translate(40,26) scale(0.30)"><path d="M 52.81,4.09 L 84.15,19.18 L 74.50,27.89 L 52.01,17.06 Z" fill="#2563eb"/>
-<path d="M 87.65,23.57 L 95.39,57.48 L 82.56,55.37 L 77.01,31.04 Z" fill="#60a5fa"/>
-<path d="M 94.14,62.95 L 72.45,90.15 L 66.11,78.80 L 81.66,59.29 Z" fill="#60a5fa"/>
-<path d="M 67.39,92.59 L 32.61,92.59 L 37.52,80.55 L 62.48,80.55 Z" fill="#2563eb"/>
-<path d="M 27.55,90.15 L 5.86,62.95 L 18.34,59.29 L 33.89,78.80 Z" fill="#2563eb"/>
-<path d="M 4.61,57.48 L 12.35,23.57 L 22.99,31.04 L 17.44,55.37 Z" fill="#2563eb"/>
-<path d="M 15.85,19.18 L 47.19,4.09 L 47.99,17.06 L 25.50,27.89 Z" fill="#2563eb"/></g>
-  <text x="78" y="48" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="19" font-weight="700" fill="#ffffff">PlatformKit architecture</text>
-  <text x="1160" y="48" text-anchor="end" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#94a3b8">every edge is a published contract</text>
+  <rect width="1200" height="660" fill="#f2efe7"/>
+  <rect width="1200" height="64" fill="#12201d"/>
+  <g transform="translate(32,17) scale(0.3)"><rect x="2" y="2" width="96" height="96" fill="none" stroke="rgba(255,255,255,.38)" stroke-width="3"/><rect x="18" y="18" width="27" height="41" fill="#d8f35d"/><rect x="55.5" y="18.5" width="26" height="40" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="3"/><rect x="18" y="69" width="64" height="13" fill="#d8f35d"/></g>
+  <text x="78" y="38" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="14" font-weight="700" letter-spacing="0.06em" fill="#eff4e9">PLATFORMKIT / ARCHITECTURE</text>
+  <text x="1168" y="38" text-anchor="end" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11.5" fill="#aebbb2">EVERY EDGE IS A PUBLISHED CONTRACT</text>
 
-  <rect x="24" y="74" width="1152" height="104" rx="10" fill="none" stroke="#334155" opacity="0.4"/><text x="40" y="93" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#94a3b8">FOUNDATION</text>
-  <rect x="56" y="102" width="300" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="206.0" y="128" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-core</text>
-<text x="206.0" y="147" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">module, identity, runtime contracts</text>
-  <rect x="376" y="102" width="220" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="486.0" y="128" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-design</text>
-<text x="486.0" y="147" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">design tokens and themes</text>
-  <rect x="616" y="102" width="240" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="736.0" y="128" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-shared</text>
-<text x="736.0" y="147" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">vocabulary and primitives</text>
-  <rect x="876" y="102" width="282" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="1017.0" y="128" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-runtime</text>
-<text x="1017.0" y="147" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">host, request, health, HTTP</text>
+  <rect x="28" y="92" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="112" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">FOUNDATION</text>
+  <rect x="56" y="120" width="296" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="204.0" y="146" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-core</text>
+<text x="204.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">module, identity, runtime contracts</text>
+  <rect x="368" y="120" width="212" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="474.0" y="146" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-design</text>
+<text x="474.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">design tokens and themes</text>
+  <rect x="596" y="120" width="232" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="712.0" y="146" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-shared</text>
+<text x="712.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">vocabulary and primitives</text>
+  <rect x="844" y="120" width="300" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="994.0" y="146" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-runtime</text>
+<text x="994.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">host, request, health, HTTP</text>
 
-  <path d="M 206 178 L 206 207" stroke="#334155" stroke-width="1.6" fill="none"/>
-<path d="M 202 207 L 206 214 L 210 207 Z" fill="#334155"/>
-<text x="216" y="200" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">implemented by</text>
-  <rect x="24" y="206" width="1152" height="104" rx="10" fill="none" stroke="#334155" opacity="0.4"/><text x="40" y="225" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#94a3b8">MODULES</text>
-  <rect x="56" y="234" width="1102" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="607.0" y="260" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-modules</text>
-<text x="607.0" y="279" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">tenant · user · auth · api_key · audit · content · notification · admin · health</text>
-  <text x="1148" y="266" text-anchor="end" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="#94a3b8"></text>
+  <path d="M 204 196 L 204 226" stroke="#8f988f" stroke-width="1.4" fill="none"/>
+<path d="M 200.5 226 L 204 232 L 207.5 226 Z" fill="#8f988f"/>
+<text x="215" y="218" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">implemented by</text>
+  <rect x="28" y="224" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="244" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">MODULES</text>
+  <rect x="56" y="252" width="1088" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="600.0" y="278" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-modules</text>
+<text x="600.0" y="295" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">tenant · user · auth · api_key · audit · content · notification · admin · health</text>
 
-  <path d="M 206 310 L 206 339" stroke="#334155" stroke-width="1.6" fill="none"/>
-<path d="M 202 339 L 206 346 L 210 339 Z" fill="#334155"/>
-<text x="216" y="332" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">composed by</text>
-  <rect x="24" y="338" width="1152" height="104" rx="10" fill="none" stroke="#334155" opacity="0.4"/><text x="40" y="357" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#94a3b8">COMPOSITION</text>
-  <rect x="56" y="366" width="540" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="326.0" y="392" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-apps/pkg/starterapp</text>
-<text x="326.0" y="411" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">one canonical composition; WithModules is the only extension seam</text>
-  <rect x="616" y="366" width="542" height="58" rx="9" fill="none" stroke="#7c3aed"/>
-<text x="887.0" y="392" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#60a5fa">pk-apps/reference/</text>
-<text x="887.0" y="411" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">custommodule and polls — copyable, never installed</text>
+  <path d="M 204 328 L 204 358" stroke="#8f988f" stroke-width="1.4" fill="none"/>
+<path d="M 200.5 358 L 204 364 L 207.5 358 Z" fill="#8f988f"/>
+<text x="215" y="350" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">composed by</text>
+  <rect x="28" y="356" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="376" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">COMPOSITION</text>
+  <rect x="56" y="384" width="536" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="324.0" y="410" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-apps/pkg/starterapp</text>
+<text x="324.0" y="427" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">one canonical composition; WithModules is the only extension seam</text>
+  <rect x="608" y="384" width="536" height="56" fill="none" stroke="#0f5d4e" stroke-width="1"/>
+<text x="876.0" y="410" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#0f5d4e">pk-apps/reference/</text>
+<text x="876.0" y="427" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#0f5d4e">custommodule and polls — copyable, never installed</text>
 
-  <path d="M 206 442 L 206 471" stroke="#60a5fa" stroke-width="1.6" fill="none"/>
-<path d="M 202 471 L 206 478 L 210 471 Z" fill="#60a5fa"/>
-<text x="216" y="464" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">run by</text>
-  <rect x="24" y="470" width="1152" height="104" rx="10" fill="none" stroke="#334155" opacity="0.4"/><text x="40" y="489" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#94a3b8">ENTRY POINT</text>
-  <rect x="56" y="498" width="540" height="58" rx="9" fill="#2563eb" stroke="#60a5fa"/>
-<text x="326.0" y="524" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#ffffff">platformkit</text>
-<text x="326.0" y="543" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#dbeafe">go run github.com/septagon-oss/platformkit@latest</text>
-  <rect x="616" y="498" width="170" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="701.0" y="524" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-client</text>
-<text x="701.0" y="543" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">call the API</text>
-  <rect x="806" y="498" width="170" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="891.0" y="524" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-testkit</text>
-<text x="891.0" y="543" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">conformance</text>
-  <rect x="996" y="498" width="162" height="58" rx="9" fill="#1e293b" stroke="#334155"/>
-<text x="1077.0" y="524" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#e2e8f0">pk-tools</text>
-<text x="1077.0" y="543" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#94a3b8">CLI and scaffold</text>
+  <path d="M 204 460 L 204 490" stroke="#0f5d4e" stroke-width="1.4" fill="none"/>
+<path d="M 200.5 490 L 204 496 L 207.5 490 Z" fill="#0f5d4e"/>
+<text x="215" y="482" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">run by</text>
+  <rect x="28" y="488" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="508" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">ENTRY POINT</text>
+  <rect x="56" y="516" width="536" height="56" fill="#d8f35d" stroke="#15221f" stroke-width="1.5"/>
+<text x="324.0" y="542" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">platformkit</text>
+<text x="324.0" y="559" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#15221f">go run github.com/septagon-oss/platformkit@latest</text>
+  <rect x="608" y="516" width="168" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="692.0" y="542" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-client</text>
+<text x="692.0" y="559" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">call the API</text>
+  <rect x="792" y="516" width="168" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="876.0" y="542" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-testkit</text>
+<text x="876.0" y="559" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">conformance</text>
+  <rect x="976" y="516" width="168" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="1060.0" y="542" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-tools</text>
+<text x="1060.0" y="559" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">CLI and scaffold</text>
 
-  <text x="24" y="612" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" fill="#94a3b8">Modules depend on published interfaces, never on one another's concrete types. Identifiers cross HTTP as one canonical opaque segment; slugs stay readable.</text>
-  <text x="24" y="634" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" fill="#94a3b8">SQLite is the zero-setup default. Extension code is Go — schemas are modules compiled in, not collections defined at runtime.</text>
+  <text x="28" y="616" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="12.5" fill="#5f6b65">Modules depend on published interfaces, never on one another's concrete types. Identifiers cross HTTP as one canonical opaque segment; slugs stay readable.</text>
+  <text x="28" y="638" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="12.5" fill="#5f6b65">SQLite is the zero-setup default. Extension code is Go — schemas are modules compiled in, not collections defined at runtime.</text>
 </svg>
