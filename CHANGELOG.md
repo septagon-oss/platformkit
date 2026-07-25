@@ -13,6 +13,39 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-25
+
+### Changed
+
+- **Breaking — an entity identifier in a path is now one canonical opaque
+  segment.** Every `/api/v1/<resource>/{id}` route accepts only the form
+  produced by `pathsegment.EncodeOpaqueID`: the literal prefix `id-` followed by
+  the lowercase-hex encoding of the identifier's bytes. A raw identifier returns
+  `400` and the response names the expected form.
+
+  ```bash
+  ID='1784965307450776349-tenant_local-welcome'
+  SEGMENT="id-$(printf '%s' "$ID" | od -An -tx1 | tr -d ' \n')"
+  curl -s "http://127.0.0.1:8080/api/v1/content/$SEGMENT" -H "Authorization: Bearer $SID"
+  ```
+
+  This closes a real defect rather than tightening a rule for its own sake.
+  `pk-client` already encoded identifiers this way while every handler read the
+  path segment raw, so the two halves of the project disagreed on the wire
+  format and **every by-id call from the client returned 404**. Both ends now
+  share one implementation. Encoding also means an identifier containing a
+  slash, a percent escape, or a control character cannot change which route a
+  request resolves to, and an entity is reachable by exactly one spelling.
+
+  A malformed segment answers `400`, not `404`: the request is malformed rather
+  than naming something absent.
+
+  Slugs are not identifiers and are never encoded — a route that addresses
+  something by slug, such as a public page, stays readable.
+
+  See [the API contract](https://septagon-oss.github.io/pk-docs/docs/current-api-contract/)
+  for the full rule.
+
 ## [0.4.0] — 2026-07-25
 
 ### Changed
@@ -108,7 +141,8 @@ cover changes to the module surface itself.
 - First public release: the runnable front door for the nine-module starter over
   SQLite, on a loopback-only listener.
 
-[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/septagon-oss/platformkit/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/septagon-oss/platformkit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/septagon-oss/platformkit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/septagon-oss/platformkit/compare/v0.2.3...v0.3.0
