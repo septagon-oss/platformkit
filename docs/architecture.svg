@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="PlatformKit layered architecture: contracts and tokens at the foundation, a runtime host, nine reference modules that talk only through published ports, one composition in pk-apps, and the platformkit front door; client, testkit and tools sit alongside">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 740" width="1200" height="740" role="img" aria-label="PlatformKit layered architecture: contracts and tokens at the foundation, the Go-native design system (styleengine, tw, pk-ui), nine reference modules, one composition in pk-apps, and the platformkit front door; client, testkit and tools sit alongside">
   <title>PlatformKit architecture</title>
-  <rect width="1200" height="660" fill="#f2efe7"/>
+  <rect width="1200" height="740" fill="#f2efe7"/>
   <rect width="1200" height="64" fill="#12201d"/>
   <g transform="translate(32,17) scale(0.3)"><rect x="2" y="2" width="96" height="96" fill="none" stroke="rgba(255,255,255,.38)" stroke-width="3"/><rect x="18" y="18" width="27" height="41" fill="#d8f35d"/><rect x="55.5" y="18.5" width="26" height="40" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="3"/><rect x="18" y="69" width="64" height="13" fill="#d8f35d"/></g>
   <text x="78" y="38" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="14" font-weight="700" letter-spacing="0.06em" fill="#eff4e9">PLATFORMKIT / ARCHITECTURE</text>
@@ -12,7 +12,7 @@
 <text x="204.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">module, identity, runtime contracts</text>
   <rect x="368" y="120" width="212" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
 <text x="474.0" y="146" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-design</text>
-<text x="474.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">design tokens and themes</text>
+<text x="474.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">canonical theme + token machinery</text>
   <rect x="596" y="120" width="232" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
 <text x="712.0" y="146" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-shared</text>
 <text x="712.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">vocabulary and primitives</text>
@@ -20,42 +20,56 @@
 <text x="994.0" y="146" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-runtime</text>
 <text x="994.0" y="163" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">host, request, health, HTTP</text>
 
-  <path d="M 204 196 L 204 226" stroke="#8f988f" stroke-width="1.4" fill="none"/>
-<path d="M 200.5 226 L 204 232 L 207.5 226 Z" fill="#8f988f"/>
-<text x="215" y="218" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">implemented by</text>
-  <rect x="28" y="224" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="244" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">MODULES</text>
-  <rect x="56" y="252" width="1088" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
-<text x="600.0" y="278" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-modules</text>
-<text x="600.0" y="295" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">tenant · user · auth · api_key · audit · content · notification · admin · health</text>
+  <path d="M 474 196 L 474 226" stroke="#8f988f" stroke-width="1.4" fill="none"/>
+<path d="M 470.5 226 L 474 232 L 477.5 226 Z" fill="#8f988f"/>
+<text x="485" y="218" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">themes</text>
+  <rect x="28" y="212" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="232" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">DESIGN SYSTEM — GO END TO END, NO NODE</text>
+  <rect x="56" y="240" width="296" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="204.0" y="266" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">styleengine</text>
+<text x="204.0" y="283" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">typed CSS engine</text>
+  <rect x="368" y="240" width="212" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="474.0" y="266" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">tw</text>
+<text x="474.0" y="283" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">utility classes + emission</text>
+  <rect x="596" y="240" width="548" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="870.0" y="266" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-ui</text>
+<text x="870.0" y="283" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">component contracts · ARIA · gomponents renderers</text>
 
-  <path d="M 204 328 L 204 358" stroke="#8f988f" stroke-width="1.4" fill="none"/>
-<path d="M 200.5 358 L 204 364 L 207.5 358 Z" fill="#8f988f"/>
-<text x="215" y="350" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">composed by</text>
-  <rect x="28" y="356" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="376" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">COMPOSITION</text>
-  <rect x="56" y="384" width="536" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
-<text x="324.0" y="410" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-apps/pkg/starterapp</text>
-<text x="324.0" y="427" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">one canonical composition; WithModules is the only extension seam</text>
-  <rect x="608" y="384" width="536" height="56" fill="none" stroke="#0f5d4e" stroke-width="1"/>
-<text x="876.0" y="410" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#0f5d4e">pk-apps/reference/</text>
-<text x="876.0" y="427" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#0f5d4e">custommodule and polls — copyable, never installed</text>
+  <path d="M 206 300 L 206 346" stroke="#8f988f" stroke-width="1.4" fill="none"/>
+<path d="M 202.5 346 L 206 352 L 209.5 346 Z" fill="#8f988f"/>
+<text x="217" y="330" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">implemented by</text>
+  <rect x="28" y="332" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="352" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">MODULES</text>
+  <rect x="56" y="360" width="1088" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="600.0" y="386" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-modules</text>
+<text x="600.0" y="403" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">tenant · user · auth · api_key · audit · content · notification · admin (serves the four-layer stylesheet) · health</text>
 
-  <path d="M 204 460 L 204 490" stroke="#0f5d4e" stroke-width="1.4" fill="none"/>
-<path d="M 200.5 490 L 204 496 L 207.5 490 Z" fill="#0f5d4e"/>
-<text x="215" y="482" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">run by</text>
-  <rect x="28" y="488" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="508" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">ENTRY POINT</text>
-  <rect x="56" y="516" width="536" height="56" fill="#d8f35d" stroke="#15221f" stroke-width="1.5"/>
-<text x="324.0" y="542" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">platformkit</text>
-<text x="324.0" y="559" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#15221f">go run github.com/septagon-oss/platformkit@latest</text>
-  <rect x="608" y="516" width="168" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
-<text x="692.0" y="542" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-client</text>
-<text x="692.0" y="559" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">call the API</text>
-  <rect x="792" y="516" width="168" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
-<text x="876.0" y="542" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-testkit</text>
-<text x="876.0" y="559" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">conformance</text>
-  <rect x="976" y="516" width="168" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
-<text x="1060.0" y="542" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-tools</text>
-<text x="1060.0" y="559" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">CLI and scaffold</text>
+  <path d="M 206 436 L 206 466" stroke="#8f988f" stroke-width="1.4" fill="none"/>
+<path d="M 202.5 466 L 206 472 L 209.5 466 Z" fill="#8f988f"/>
+<text x="217" y="458" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">composed by</text>
+  <rect x="28" y="452" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="472" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">COMPOSITION</text>
+  <rect x="56" y="480" width="540" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="326.0" y="506" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-apps/pkg/starterapp</text>
+<text x="326.0" y="523" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">one canonical composition; WithModules is the only extension seam</text>
+  <rect x="616" y="480" width="528" height="56" fill="none" stroke="#0f5d4e" stroke-width="1"/>
+<text x="880.0" y="506" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#0f5d4e">pk-apps/reference/</text>
+<text x="880.0" y="523" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#0f5d4e">custommodule · polls (module-owned admin page on pk-ui)</text>
 
-  <text x="28" y="616" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="12.5" fill="#5f6b65">Modules depend on published interfaces, never on one another's concrete types. Identifiers cross HTTP as one canonical opaque segment; slugs stay readable.</text>
-  <text x="28" y="638" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="12.5" fill="#5f6b65">SQLite is the zero-setup default. Extension code is Go — schemas are modules compiled in, not collections defined at runtime.</text>
+  <path d="M 206 556 L 206 586" stroke="#0f5d4e" stroke-width="1.4" fill="none"/>
+<path d="M 202.5 586 L 206 592 L 209.5 586 Z" fill="#0f5d4e"/>
+<text x="217" y="578" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">run by</text>
+  <rect x="28" y="572" width="1144" height="104" fill="none" stroke="#cbc5b8"/><text x="44" y="592" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="0.16em" fill="#0f5d4e">ENTRY POINT</text>
+  <rect x="56" y="600" width="540" height="56" fill="#d8f35d" stroke="#15221f" stroke-width="1.5"/>
+<text x="326.0" y="626" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">platformkit</text>
+<text x="326.0" y="643" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#15221f">go run github.com/septagon-oss/platformkit@latest</text>
+  <rect x="616" y="600" width="168" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="700.0" y="626" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-client</text>
+<text x="700.0" y="643" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">call the API</text>
+  <rect x="800" y="600" width="168" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="884.0" y="626" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-testkit</text>
+<text x="884.0" y="643" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">conformance</text>
+  <rect x="984" y="600" width="160" height="56" fill="#fffdf7" stroke="#cbc5b8" stroke-width="1"/>
+<text x="1064.0" y="626" text-anchor="middle" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14" font-weight="600" fill="#15221f">pk-tools</text>
+<text x="1064.0" y="643" text-anchor="middle" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="11.5" fill="#5f6b65">CLI and scaffold</text>
+
+  <text x="28" y="700" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="12.5" fill="#5f6b65">Modules depend on published interfaces, never on one another's concrete types. Components declare their classes as values; the stylesheet derives from the declarations.</text>
+  <text x="28" y="722" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="12.5" fill="#5f6b65">Identifiers cross HTTP as one canonical opaque segment; slugs stay readable. SQLite is the zero-setup default. Extension code is Go.</text>
 </svg>

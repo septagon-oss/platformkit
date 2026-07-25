@@ -47,5 +47,5 @@
 
   <rect x="56" y="396" width="1088" height="42" fill="#12201d"/>
   <text x="76" y="423" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="14.5" fill="#d8f35d">$ <tspan fill="#eff4e9">go run github.com/septagon-oss/platformkit@latest</tspan></text>
-  <text x="1124" y="423" text-anchor="end" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11.5" fill="#aebbb2">NO CLONE REQUIRED</text>
+  <text x="1124" y="423" text-anchor="end" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="11.5" fill="#aebbb2">GO END TO END · NO CLONE REQUIRED</text>
 </svg>
