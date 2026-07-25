@@ -10,6 +10,9 @@
 // how a released binary reaches environment=production and seed.admin_password
 // without a downstream Go wrapper.
 //
+// The binary is a small cobra CLI (see cli.go): running with no subcommand
+// serves, exactly as every release before it did.
+//
 // Implements: REQ-016.
 // Per: ADR-0017, ADR-0029.
 // Discipline: C-14.
@@ -33,7 +36,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := run(ctx, os.Getenv, starterapp.Run); err != nil {
+	if err := newRootCmd().ExecuteContext(ctx); err != nil {
 		log.Fatalf("platformkit: %v", err)
 	}
 }
@@ -53,15 +56,9 @@ func configPath(lookup func(string) string) string {
 	return ""
 }
 
+// run is the historical zero-flag boot path: resolve the optional config
+// file, apply environment overrides, and start. Kept as the seam the boot
+// tests exercise; the CLI reaches the same code through runWith.
 func run(ctx context.Context, lookup func(string) string, start starterRunner) error {
-	cfg := starterapp.DefaultConfig()
-	if path := configPath(lookup); path != "" {
-		loaded, err := starterapp.LoadConfig(path)
-		if err != nil {
-			return err
-		}
-		cfg = loaded
-	}
-	starterapp.ApplyAddressOverrides(cfg, lookup)
-	return start(ctx, cfg)
+	return runWith(ctx, lookup, start, serveFlags{})
 }
