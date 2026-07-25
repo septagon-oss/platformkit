@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/septagon-oss/pk-apps v0.3.2-0.20260724102235-d51ea2f4d1d7
-	modernc.org/sqlite v1.50.1
+	modernc.org/sqlite v1.54.0
 )
 
 require (
@@ -18,8 +18,8 @@ require (
 	github.com/septagon-oss/pk-modules v0.3.1-0.20260724100825-05095a2fa84d // indirect
 	github.com/septagon-oss/pk-runtime v0.1.0 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	modernc.org/libc v1.72.3 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	modernc.org/libc v1.74.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
