@@ -30,6 +30,10 @@ cover changes to the module surface itself.
   is testable without binding a port.
 - The dev-mode banner now states plainly that the built-in password is
   re-asserted on every boot and that the process is not safe to expose.
+- Every PlatformKit dependency is pinned to a released tag. Earlier versions
+  pinned pseudo-versions of `pk-apps` and `pk-modules`, so the module graph of a
+  release could not be reproduced from tags alone.
+- `modernc.org/sqlite` moves to 1.54.0.
 
 ### Added
 
