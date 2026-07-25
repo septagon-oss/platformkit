@@ -13,6 +13,20 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-07-25
+
+### Added
+
+- **The front door is now a cobra CLI.** Running with no subcommand still
+  serves, so `go run github.com/septagon-oss/platformkit@latest` keeps working
+  unchanged. New: `serve` with `--addr/--port/--config/--env/--db-dsn/
+  --admin-email/--admin-password` flags (precedence: defaults → config.yaml →
+  environment → flags), `version [--json]`, `modules [--json]` and `openapi`
+  (both compose the app against a throwaway in-memory database — no `./pk.db`
+  side effects), and `config init`, which writes a commented, fail-closed
+  production `config.yaml` template. New environment variables `PK_ADMIN_EMAIL`
+  and `PK_ADMIN_PASSWORD` seed the administrator without a config file.
+
 ## [0.9.0] — 2026-07-25
 
 ### Changed
@@ -225,7 +239,8 @@ module proxy recorded, and are **retracted** in `go.mod`.
 - First public release: the runnable front door for the nine-module starter over
   SQLite, on a loopback-only listener.
 
-[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/septagon-oss/platformkit/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/septagon-oss/platformkit/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...v0.8.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
