@@ -250,11 +250,11 @@ flowchart LR
 | `pk-client` | Client primitives for calling a PlatformKit API |
 | `pk-testkit` | Conformance and flow testing |
 | `pk-tools` | Developer tooling |
-| `pk-docs` | Public architecture and operating guides |
+| `pk-docs` | Public architecture and operating guides — [published site](https://septagon-oss.github.io/pk-docs/) |
 
 ## Project links
 
-- [Documentation](https://github.com/septagon-oss/pk-docs)
+- [Documentation](https://septagon-oss.github.io/pk-docs/) ([source](https://github.com/septagon-oss/pk-docs))
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
