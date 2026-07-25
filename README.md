@@ -13,6 +13,15 @@ content, notifications, health, and a real operator console in one process.
 
 ## Run the stable starter
 
+No clone required. `@latest` resolves the newest release through the Go module
+proxy, so this command does not go stale:
+
+```bash
+go run github.com/septagon-oss/platformkit@latest
+```
+
+Clone instead when you want the source to read, extend, or verify:
+
 ```bash
 git clone https://github.com/septagon-oss/platformkit
 cd platformkit
