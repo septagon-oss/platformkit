@@ -13,6 +13,25 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-07-25
+
+### Fixed
+
+- The boot banner and the OpenAPI document now report the shipped release.
+  Both said `0.4.0` while `@latest` installed v0.6.0: the version was a
+  hand-maintained constant that survived two breaking releases unbumped. It is
+  now single-sourced from `portslib.ReleaseVersion` (`0.6.0`), and the
+  conformance tests pin the banner, module metadata, and `api/openapi.yaml`
+  together so they cannot disagree again.
+
+### Changed
+
+- The admin console's design tokens now come from `pk-design`'s canonical
+  theme, `themes.Default()`, instead of a literal private to the admin shell.
+  The three type stacks join the token block as `fontFamily` tokens. Rendering
+  is pixel-identical — verified by a line-set diff of the emitted custom
+  properties and a screenshot comparison of the login page.
+
 ## [0.6.0] — 2026-07-25
 
 Same code as 0.5.1. This release exists because the history of 0.4.0 through
@@ -176,7 +195,8 @@ module proxy recorded, and are **retracted** in `go.mod`.
 - First public release: the runnable front door for the nine-module starter over
   SQLite, on a loopback-only listener.
 
-[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/septagon-oss/platformkit/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/septagon-oss/platformkit/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/septagon-oss/platformkit/compare/v0.4.0...v0.5.0
