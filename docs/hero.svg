@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 470" width="1200" height="470" role="img" aria-label="PlatformKit dependency graph: pk-core contracts and pk-design tokens feed nine reference modules, which pk-apps composes into the starter that the platformkit front door runs; your own module joins through WithModules">
+  <title>PlatformKit — composable modules forming a dependency graph</title>
+  <rect width="1200" height="470" rx="14" fill="#0f172a"/>
+
+  <g transform="translate(52,40) scale(0.42)"><path d="M 52.81,4.09 L 84.15,19.18 L 74.50,27.89 L 52.01,17.06 Z" fill="#2563eb"/>
+<path d="M 87.65,23.57 L 95.39,57.48 L 82.56,55.37 L 77.01,31.04 Z" fill="#60a5fa"/>
+<path d="M 94.14,62.95 L 72.45,90.15 L 66.11,78.80 L 81.66,59.29 Z" fill="#60a5fa"/>
+<path d="M 67.39,92.59 L 32.61,92.59 L 37.52,80.55 L 62.48,80.55 Z" fill="#2563eb"/>
+<path d="M 27.55,90.15 L 5.86,62.95 L 18.34,59.29 L 33.89,78.80 Z" fill="#2563eb"/>
+<path d="M 4.61,57.48 L 12.35,23.57 L 22.99,31.04 L 17.44,55.37 Z" fill="#2563eb"/>
+<path d="M 15.85,19.18 L 47.19,4.09 L 47.99,17.06 L 25.50,27.89 Z" fill="#2563eb"/></g>
+  <text x="105" y="72" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="27" font-weight="700" fill="#ffffff">PlatformKit</text>
+  <text x="1148" y="60" text-anchor="end" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="#94a3b8">Apache-2.0</text>
+  <text x="1148" y="80" text-anchor="end" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" fill="#94a3b8">Go 1.26+</text>
+  <text x="52" y="122" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="15" fill="#94a3b8">A runnable Go foundation for multi-tenant SaaS. Nine modules, one process, one command.</text>
+
+  <rect x="52" y="158" width="182" height="58" rx="10" fill="#1e293b" stroke="#334155"/>
+<text x="143.0" y="184" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="15" font-weight="600" fill="#e2e8f0">pk-core</text>
+<text x="143.0" y="203" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#94a3b8">module contracts</text>
+  <rect x="52" y="226" width="182" height="58" rx="10" fill="#1e293b" stroke="#334155"/>
+<text x="143.0" y="252" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="15" font-weight="600" fill="#e2e8f0">pk-design</text>
+<text x="143.0" y="271" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#94a3b8">design tokens</text>
+  <path d="M 234 187 L 265 187" stroke="#334155" stroke-width="1.6" fill="none"/><path d="M 265 183 L 272 187 L 265 191 Z" fill="#334155"/>
+  <path d="M 234 255 L 265 255" stroke="#334155" stroke-width="1.6" fill="none"/><path d="M 265 251 L 272 255 L 265 259 Z" fill="#334155"/>
+  <rect x="272" y="158" width="206" height="126" rx="10" fill="#1e293b" stroke="#334155"/>
+<text x="375.0" y="218" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="15" font-weight="600" fill="#e2e8f0">pk-modules</text>
+<text x="375.0" y="237" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#94a3b8">nine reference modules</text>
+  <path d="M 478 221 L 509 221" stroke="#334155" stroke-width="1.6" fill="none"/><path d="M 509 217 L 516 221 L 509 225 Z" fill="#334155"/>
+  <rect x="516" y="193" width="206" height="56" rx="10" fill="#1e293b" stroke="#334155"/>
+<text x="619.0" y="218" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="15" font-weight="600" fill="#e2e8f0">pk-apps</text>
+<text x="619.0" y="237" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#94a3b8">starterapp composition</text>
+  <path d="M 722 221 L 753 221" stroke="#334155" stroke-width="1.6" fill="none"/><path d="M 753 217 L 760 221 L 753 225 Z" fill="#334155"/>
+  <rect x="760" y="193" width="206" height="56" rx="10" fill="#2563eb" stroke="#60a5fa"/>
+<text x="863.0" y="218" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="15" font-weight="600" fill="#ffffff">platformkit</text>
+<text x="863.0" y="237" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#94a3b8">the front door</text>
+  <path d="M 966 221 L 997 221" stroke="#60a5fa" stroke-width="1.6" fill="none"/><path d="M 997 217 L 1004 221 L 997 225 Z" fill="#60a5fa"/>
+  <rect x="1004" y="193" width="144" height="56" rx="10" fill="none" stroke="#7c3aed"/>
+<text x="1076.0" y="218" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="15" font-weight="600" fill="#60a5fa">your module</text>
+<text x="1076.0" y="237" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#94a3b8">WithModules</text>
+
+  <path d="M 52 306 L 1148 306" stroke="#334155" stroke-width="1" opacity="0.55"/>
+<rect x="52" y="330" width="74" height="30" rx="15" fill="none" stroke="#334155"/><text x="89" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">tenant</text>
+<rect x="137" y="330" width="58" height="30" rx="15" fill="none" stroke="#334155"/><text x="166" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">user</text>
+<rect x="206" y="330" width="58" height="30" rx="15" fill="none" stroke="#334155"/><text x="235" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">auth</text>
+<rect x="275" y="330" width="82" height="30" rx="15" fill="none" stroke="#334155"/><text x="316" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">api_key</text>
+<rect x="368" y="330" width="66" height="30" rx="15" fill="none" stroke="#334155"/><text x="401" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">audit</text>
+<rect x="445" y="330" width="82" height="30" rx="15" fill="none" stroke="#334155"/><text x="486" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">content</text>
+<rect x="538" y="330" width="122" height="30" rx="15" fill="none" stroke="#334155"/><text x="599" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">notification</text>
+<rect x="671" y="330" width="66" height="30" rx="15" fill="none" stroke="#334155"/><text x="704" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">admin</text>
+<rect x="748" y="330" width="74" height="30" rx="15" fill="none" stroke="#334155"/><text x="785" y="350" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" fill="#94a3b8">health</text>
+
+  <rect x="52" y="392" width="1096" height="42" rx="8" fill="#111827" stroke="#334155"/>
+  <text x="72" y="419" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="15" fill="#60a5fa">$ <tspan fill="#e2e8f0">go run github.com/septagon-oss/platformkit@latest</tspan></text>
+  <text x="1128" y="419" text-anchor="end" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" fill="#94a3b8">no clone required</text>
+</svg>

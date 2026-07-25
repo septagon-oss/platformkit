@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="PlatformKit">
+  <title>PlatformKit</title>
+  <rect width="100" height="100" rx="18" fill="#0f172a"/>
+<path d="M 52.81,4.09 L 84.15,19.18 L 74.50,27.89 L 52.01,17.06 Z" fill="#2563eb"/>
+<path d="M 87.65,23.57 L 95.39,57.48 L 82.56,55.37 L 77.01,31.04 Z" fill="#60a5fa"/>
+<path d="M 94.14,62.95 L 72.45,90.15 L 66.11,78.80 L 81.66,59.29 Z" fill="#60a5fa"/>
+<path d="M 67.39,92.59 L 32.61,92.59 L 37.52,80.55 L 62.48,80.55 Z" fill="#2563eb"/>
+<path d="M 27.55,90.15 L 5.86,62.95 L 18.34,59.29 L 33.89,78.80 Z" fill="#2563eb"/>
+<path d="M 4.61,57.48 L 12.35,23.57 L 22.99,31.04 L 17.44,55.37 Z" fill="#2563eb"/>
+<path d="M 15.85,19.18 L 47.19,4.09 L 47.99,17.06 L 25.50,27.89 Z" fill="#2563eb"/>
+</svg>

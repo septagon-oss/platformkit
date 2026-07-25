@@ -9,7 +9,7 @@ content, notifications, health, and a real operator console in one process.
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 [![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8)](https://go.dev/dl/)
 
-![PlatformKit — composable modules forming a dependency graph](docs/hero.png)
+![PlatformKit — pk-core contracts and pk-design tokens feed nine reference modules, which pk-apps composes into the starter the platformkit front door runs](docs/hero.svg)
 
 ## Run the stable starter
 
