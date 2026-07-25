@@ -13,6 +13,28 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-07-25
+
+### Fixed
+
+- **The admin console works again.** 0.5.0 required the canonical opaque segment
+  on every `/api/v1/<resource>/{id}` route, but the console's script still built
+  those URLs with `encodeURIComponent`. The result was a console that could list
+  entities and could not open, edit, delete, or publish any of them — every
+  by-id call answered `400`. **Anyone running 0.5.0 should upgrade.**
+
+  The coupling was invisible to Go tooling: `AdminResource.APIPath` is
+  marshalled into the page and read back in the browser, so neither the Go
+  source nor the script mentions `/api/v1` literally, and the blast-radius
+  check for 0.5.0 missed it. A test now pins the two halves together and fails
+  against the previous script.
+
+### Added
+
+- The boundaries section names what PlatformKit is not, relative to
+  runtime-collection tools: schemas are Go modules compiled in, not collections
+  defined at runtime through the admin UI.
+
 ## [0.5.0] — 2026-07-25
 
 ### Changed
@@ -141,7 +163,8 @@ cover changes to the module surface itself.
 - First public release: the runnable front door for the nine-module starter over
   SQLite, on a loopback-only listener.
 
-[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/septagon-oss/platformkit/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/septagon-oss/platformkit/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/septagon-oss/platformkit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/septagon-oss/platformkit/compare/v0.3.0...v0.3.1

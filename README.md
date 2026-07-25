@@ -199,6 +199,16 @@ graph a user gets.
   library export, renderer adapter, or Tailwind config generation here.
   `pk-design` publishes the token, theme, and component *contracts*; turning
   those into rendered UI belongs to downstream distributions.
+- Schemas are Go modules compiled into the binary, not collections defined at
+  runtime through the admin UI. If you want to add a field by clicking in a
+  dashboard, a runtime-collection backend such as PocketBase or Directus fits
+  better. PlatformKit trades that for multi-tenancy, scoped machine credentials,
+  an append-only audit trail, and module contracts the compiler checks.
+- Content is stored and administered, not published. The built-in content module
+  gives you a tenant-scoped store, an API, and an operator console; it serves no
+  visitor-facing page. Public rendering is a downstream concern —
+  [`pk-apps/reference/polls`](https://github.com/septagon-oss/pk-apps/tree/main/reference/polls)
+  shows a module serving its own public page.
 
 ## How the pieces fit
 
