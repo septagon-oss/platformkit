@@ -13,6 +13,20 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-25
+
+### Added
+
+- **The design system is now the frontend baseline.** The admin stylesheet
+  carries four layers — theme tokens (`pk-design`), role variables, one rule
+  for every utility class `tw` can compile, and the bespoke shell rules — so a
+  module admin page renders `pk-ui` components with no extra request, no build
+  step, and no authored CSS. `reference/polls` ships the proof: a module-owned
+  insights page, verified live at desktop and mobile widths.
+- Three repositories join the public family: `pk-ui` (component contracts +
+  renderers), `tw` (typed utility classes + CSS emission), `styleengine`
+  (typed CSS engine).
+
 ## [0.6.2] — 2026-07-25
 
 ### Fixed
@@ -195,7 +209,8 @@ module proxy recorded, and are **retracted** in `go.mod`.
 - First public release: the runnable front door for the nine-module starter over
   SQLite, on a loopback-only listener.
 
-[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/septagon-oss/platformkit/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/septagon-oss/platformkit/compare/v0.5.0...v0.5.1
