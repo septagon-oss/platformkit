@@ -1,0 +1,15 @@
+PlatformKit
+Copyright 2026 Septagon
+
+This product includes software developed at Septagon (https://septagon.dev/).
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+PlatformKit resolves its dependencies through the Go module proxy and does not
+redistribute third-party source or binaries. Run `go list -m all` for the
+resolved dependency graph of a given release, and see each module's own license
+for its terms.
