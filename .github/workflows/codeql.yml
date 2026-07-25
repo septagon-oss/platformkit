@@ -20,7 +20,7 @@ jobs:
       - uses: github/codeql-action/init@v4
         with:
           languages: go
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - uses: github/codeql-action/autobuild@v4
