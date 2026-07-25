@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="PlatformKit">
-  <title>PlatformKit</title>
-  <rect width="100" height="100" rx="18" fill="#0f172a"/>
-<path d="M 52.81,4.09 L 84.15,19.18 L 74.50,27.89 L 52.01,17.06 Z" fill="#2563eb"/>
-<path d="M 87.65,23.57 L 95.39,57.48 L 82.56,55.37 L 77.01,31.04 Z" fill="#60a5fa"/>
-<path d="M 94.14,62.95 L 72.45,90.15 L 66.11,78.80 L 81.66,59.29 Z" fill="#60a5fa"/>
-<path d="M 67.39,92.59 L 32.61,92.59 L 37.52,80.55 L 62.48,80.55 Z" fill="#2563eb"/>
-<path d="M 27.55,90.15 L 5.86,62.95 L 18.34,59.29 L 33.89,78.80 Z" fill="#2563eb"/>
-<path d="M 4.61,57.48 L 12.35,23.57 L 22.99,31.04 L 17.44,55.37 Z" fill="#2563eb"/>
-<path d="M 15.85,19.18 L 47.19,4.09 L 47.99,17.06 L 25.50,27.89 Z" fill="#2563eb"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" role="img" aria-label="Septagon OSS">
+  <title>Septagon OSS</title>
+  <rect width="100" height="100" fill="#0f172a"/>
+  <path d="M 52.08,16.06 L 75.24,27.22 L 67.82,33.92 L 51.47,26.04 Z" fill="#2563eb"/>
+  <path d="M 77.83,30.46 L 83.55,55.53 L 73.68,53.90 L 69.64,36.21 Z" fill="#60a5fa"/>
+  <path d="M 82.62,59.58 L 66.59,79.68 L 61.71,70.95 L 73.03,56.76 Z" fill="#60a5fa"/>
+  <path d="M 62.85,81.48 L 37.15,81.48 L 40.93,72.22 L 59.07,72.22 Z" fill="#2563eb"/>
+  <path d="M 33.41,79.68 L 17.38,59.58 L 26.97,56.76 L 38.29,70.95 Z" fill="#2563eb"/>
+  <path d="M 16.45,55.53 L 22.17,30.46 L 30.36,36.21 L 26.32,53.90 Z" fill="#2563eb"/>
+  <path d="M 24.76,27.22 L 47.92,16.06 L 48.53,26.04 L 32.18,33.92 Z" fill="#2563eb"/>
 </svg>
