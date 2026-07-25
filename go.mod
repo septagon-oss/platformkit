@@ -4,12 +4,14 @@ go 1.26
 
 require (
 	github.com/septagon-oss/pk-apps v0.9.0
+	github.com/spf13/cobra v1.10.2
 	modernc.org/sqlite v1.54.0
 )
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -20,6 +22,7 @@ require (
 	github.com/septagon-oss/pk-shared v0.2.0 // indirect
 	github.com/septagon-oss/styleengine v0.1.0 // indirect
 	github.com/septagon-oss/tw v0.2.2 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tdewolff/minify/v2 v2.24.13 // indirect
 	github.com/tdewolff/parse/v2 v2.8.13 // indirect
 	golang.org/x/crypto v0.52.0 // indirect

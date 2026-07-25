@@ -13,6 +13,18 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+### Added
+
+- **The front door is now a cobra CLI.** Running with no subcommand still
+  serves, so `go run github.com/septagon-oss/platformkit@latest` keeps working
+  unchanged. New: `serve` with `--addr/--port/--config/--env/--db-dsn/
+  --admin-email/--admin-password` flags (precedence: defaults → config.yaml →
+  environment → flags), `version [--json]`, `modules [--json]` and `openapi`
+  (both compose the app against a throwaway in-memory database — no `./pk.db`
+  side effects), and `config init`, which writes a commented, fail-closed
+  production `config.yaml` template. New environment variables `PK_ADMIN_EMAIL`
+  and `PK_ADMIN_PASSWORD` seed the administrator without a config file.
+
 ## [0.8.0] — 2026-07-25
 
 ### Added

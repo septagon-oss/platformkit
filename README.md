@@ -68,6 +68,27 @@ changes the port while staying on loopback. Listening on a network interface
 requires an explicit address such as
 `PK_HTTP_ADDR=0.0.0.0:8080 go run .`.
 
+## The CLI
+
+The binary is a small cobra CLI. Running with no subcommand serves, so the
+quickstart above never changes. Configuration precedence, lowest to highest:
+built-in defaults → `config.yaml` → environment variables → flags.
+
+```bash
+go run github.com/septagon-oss/platformkit@latest --port 9090   # loopback port
+go run github.com/septagon-oss/platformkit@latest config init   # commented config.yaml template
+go run github.com/septagon-oss/platformkit@latest version --json
+go run github.com/septagon-oss/platformkit@latest modules --json
+go run github.com/septagon-oss/platformkit@latest openapi > openapi.json
+```
+
+`modules` and `openapi` compose the real application against a throwaway
+in-memory database, so they never create or migrate `./pk.db`. Serve flags:
+`--addr`, `--port`, `--config`, `--env`, `--db-dsn`, `--admin-email`, and
+`--admin-password` (prefer the `PK_ADMIN_PASSWORD` environment variable so the
+secret stays out of the process list). `platformkit --help` documents all of
+it, including the environment variables.
+
 ## Use the API
 
 Authentication resolves a server-owned tenant and subject. Built-in resources
