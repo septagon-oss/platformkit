@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/septagon-oss/pk-apps v0.13.0
+	github.com/septagon-oss/pk-apps v0.14.0
 	github.com/spf13/cobra v1.10.2
 	modernc.org/sqlite v1.54.0
 )

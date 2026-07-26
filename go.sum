@@ -29,8 +29,8 @@ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZN
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
-github.com/septagon-oss/pk-apps v0.13.0 h1:GVj9oocSDtNvopJuLlWa5Tvooqfb/A+Isx9i83HIVCI=
-github.com/septagon-oss/pk-apps v0.13.0/go.mod h1:TuDNx7RtHEUn8B05m1f3jDlUtYIhDSvuRZqNmacFsmo=
+github.com/septagon-oss/pk-apps v0.14.0 h1:S9xmrC/5gDih8TXK8uUmdJRWCxcHaCTHw67/2yGTRYs=
+github.com/septagon-oss/pk-apps v0.14.0/go.mod h1:TuDNx7RtHEUn8B05m1f3jDlUtYIhDSvuRZqNmacFsmo=
 github.com/septagon-oss/pk-core v0.1.0 h1:FrknTc7u6nPiG8eh5yhfH+wANWMCr3vldFnS5zPg3vM=
 github.com/septagon-oss/pk-core v0.1.0/go.mod h1:Bc0Vl7PxXdpAtkyNRo4fSvayYPX6VOtgC45m/k6bsJ0=
 github.com/septagon-oss/pk-design v0.2.0 h1:su0vGi2RijPbHn10QxY3QfTITbA0BgGAbDu+GbM7P/E=

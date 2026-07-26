@@ -13,6 +13,34 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-07-26
+
+### Security
+
+- **Cross-origin state-changing requests that rely on the session cookie are
+  refused.** The cookie is `SameSite=Lax`, which stops a cross-*site* POST, but
+  "site" means registrable domain — so any sibling subdomain was same-site and
+  could forge authenticated mutations, and that single attribute was the whole
+  defense. Unsafe methods carrying the ambient cookie must now be same-origin,
+  checked via `Sec-Fetch-Site` with an `Origin` fallback. Requests presenting an
+  `Authorization` header are exempt, because a bearer token cannot be attached
+  by a cross-site page: SPAs on another host, mobile clients, CI, and `curl` are
+  unaffected. Verified on the running binary — the console's own mutation
+  succeeds, cross-site and same-site forgeries are refused, token clients work
+  from anywhere.
+
+### Removed
+
+- **The boot-path SQL rewriter.** It kept one SQLite spelling of each statement
+  and translated it for Postgres at runtime; a probe found three defects
+  immediately — a `?` in a comment consumed a placeholder number, a blanket type
+  replacement corrupted identifiers merely containing the word (`last_datetime`
+  → `last_TIMESTAMPTZ`), and appending `ON CONFLICT DO NOTHING` to a statement
+  ending in a comment put the clause inside the comment, silently dropping
+  insert-if-absent semantics. None could fire on the five statements that
+  existed, but they were landmines for the sixth. Each engine now carries its
+  statements explicitly.
+
 ## [0.13.1] — 2026-07-26
 
 ### Fixed
@@ -334,6 +362,7 @@ module proxy recorded, and are **retracted** in `go.mod`.
 [0.12.0]: https://github.com/septagon-oss/platformkit/compare/v0.11.0...v0.12.0
 [0.13.0]: https://github.com/septagon-oss/platformkit/compare/v0.12.0...v0.13.0
 [0.13.1]: https://github.com/septagon-oss/platformkit/compare/v0.13.0...v0.13.1
+[0.14.0]: https://github.com/septagon-oss/platformkit/compare/v0.13.1...v0.14.0
 [0.8.0]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...v0.8.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
