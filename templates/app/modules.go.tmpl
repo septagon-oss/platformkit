@@ -1,0 +1,20 @@
+// modules.go is the additive registry for your modules. `platformkit new
+// module <name>` writes a file whose init() calls registerModule, so the list
+// grows without anything here or in main.go ever being edited. The order is
+// stable: modules run in the order they were registered.
+package main
+
+import "github.com/septagon-oss/pk-apps/pkg/starterapp"
+
+var registered []starterapp.ExtraModule
+
+// registerModule adds a module to the application. Generated module files call
+// this from their init(); you can call it by hand for a module you write.
+func registerModule(m starterapp.ExtraModule) {
+	registered = append(registered, m)
+}
+
+// extraModules returns every registered module, in registration order.
+func extraModules() []starterapp.ExtraModule {
+	return registered
+}

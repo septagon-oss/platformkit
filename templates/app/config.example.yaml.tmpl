@@ -1,0 +1,36 @@
+# {{.Name}} configuration — copy to config.yaml for a real deployment.
+#
+# The PRESENCE of config.yaml is the production signal: environment defaults to
+# production, which REQUIRES an admin password. Provide it through the
+# environment, not this file:
+#
+#     export PK_ADMIN_PASSWORD='a-long-random-secret'
+#
+# The process applies PK_ADMIN_PASSWORD after loading this file, so the secret
+# stays out of your config, your git history, and your image layers. compose.yaml
+# already passes it through. Leave seed.admin_password commented out.
+#
+# Without a config.yaml, {{.Name}} runs a zero-config loopback development
+# instance with a seeded local tenant and administrator — no password needed.
+
+app_name: {{.Name}}
+environment: production # development | production
+
+http:
+  addr: 127.0.0.1:8080 # set an explicit non-loopback address to expose
+  read_timeout: 30s
+  write_timeout: 30s
+  shutdown_timeout: 30s
+
+database:
+  driver: sqlite
+  dsn: "file:./{{.Name}}.db?_pragma=busy_timeout(5000)&cache=shared&mode=rwc"
+
+cache:
+  provider: memory
+
+seed:
+  admin_email: admin@example.com
+  # Prefer PK_ADMIN_PASSWORD (see above). Uncommenting this is a fallback for
+  # environments that inject secrets as files rather than variables:
+  # admin_password: generate-a-long-random-secret

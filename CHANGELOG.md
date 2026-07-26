@@ -13,6 +13,37 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-07-26
+
+### Added
+
+- **Postgres is a supported database.** Set `database.driver: postgres` (and a
+  `dsn`) and the whole application runs on Postgres — every module store has a
+  Postgres adapter that passes the *same* store conformance suite the SQLite
+  adapters pass, so tenant isolation is held by an executable check on both
+  engines rather than by review. SQLite remains the zero-setup default for
+  local development and small single-node deployments. The binary registers
+  both drivers, so switching engines needs no code change.
+- The Postgres profile uses a real connection pool; SQLite keeps its
+  single-connection pin (it is a single-writer engine).
+
+### Changed
+
+- `auth` gained the `store.Store` interface it was missing, so its session
+  store can be any engine — it was the one module bound to a concrete adapter.
+
+### Removed
+
+- **The pre-v0.4 bootstrap migration path is gone** (~3,900 lines). It existed
+  to adopt databases seeded with the retired public development identity
+  (`tenant_acme` / `user_admin` / `changeme`) and to rewrite their labels and
+  credentials. PlatformKit has not launched, no deployment carries that data,
+  and the machinery was pure SQLite-coupled complexity standing between the
+  project and a portable boot path. What remains is the durable bootstrap
+  identity ledger itself, which is what actually keeps a database's tenant and
+  user IDs stable across restarts. A password published in this project's
+  history is still refused outright.
+
 ## [0.12.0] — 2026-07-26
 
 ### Changed
@@ -284,6 +315,7 @@ module proxy recorded, and are **retracted** in `go.mod`.
 [0.10.0]: https://github.com/septagon-oss/platformkit/compare/v0.9.0...v0.10.0
 [0.11.0]: https://github.com/septagon-oss/platformkit/compare/v0.10.0...v0.11.0
 [0.12.0]: https://github.com/septagon-oss/platformkit/compare/v0.11.0...v0.12.0
+[0.13.0]: https://github.com/septagon-oss/platformkit/compare/v0.12.0...v0.13.0
 [0.8.0]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...v0.8.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0

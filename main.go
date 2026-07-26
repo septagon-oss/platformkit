@@ -25,8 +25,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	// Register the modernc.org/sqlite driver as "sqlite" so the starter and
-	// contributed modules can use the shared database handle.
+	// Register both supported drivers so `database.driver` selects an engine
+	// with no code change: "sqlite" (embedded, the zero-setup default) and
+	// "postgres"/"pgx" (the production profile). Registering a driver only adds
+	// it to database/sql's table — the unused one costs a few hundred KB of
+	// binary and nothing at runtime.
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 
 	"github.com/septagon-oss/pk-apps/pkg/starterapp"

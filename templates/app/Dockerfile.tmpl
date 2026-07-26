@@ -1,0 +1,18 @@
+# Build a static {{.Name}} binary, then ship it on a minimal base.
+FROM golang:1.26 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# CGO is off: modernc.org/sqlite is pure Go, so the binary is static.
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/{{.Name}} .
+
+FROM gcr.io/distroless/static-debian12
+WORKDIR /app
+# The database and config live on a mounted volume in production.
+COPY --from=build /out/{{.Name}} /app/{{.Name}}
+EXPOSE 8080
+# Provide config.yaml (production) via the volume, and the admin password via
+# PK_ADMIN_PASSWORD. Without a config.yaml the process runs development mode.
+ENV PK_HTTP_ADDR=0.0.0.0:8080
+ENTRYPOINT ["/app/{{.Name}}"]

@@ -1,0 +1,73 @@
+# Working on {{.Name}} (for AI coding agents)
+
+{{.Name}} is a PlatformKit application: a single Go binary that composes a
+nine-module multi-tenant SaaS starter (auth, users, tenants, API keys, audit,
+content, notifications, health, admin console) and mounts your own modules
+beside it. Server-rendered HTML, no Node, no frontend build.
+
+This file is the contract for extending {{.Name}} safely. Follow it exactly;
+the same rules the kit holds itself to are the rules that make generated code
+pass review.
+
+## The one command you need
+
+```bash
+platformkit new module <name>     # e.g. platformkit new module invoice
+```
+
+It writes `mod_<name>.go`, `mod_<name>_test.go`, and a migration. The module
+**registers itself** (an `init()` calls `registerModule`), so you never edit
+`main.go` or `modules.go`. Build and run — it's mounted.
+
+Do NOT hand-write a module from scratch. Generate it, then edit the generated
+files. The generated code already embodies every rule below.
+
+## Non-negotiable rules (a reviewer will reject a violation)
+
+1. **Every store query is tenant-scoped.** Every SELECT/UPDATE/DELETE carries
+   `WHERE tenant_id = ?`. A by-id read is `WHERE id = ? AND tenant_id = ?` —
+   never id alone. This is the tenant-isolation boundary; there is no second
+   layer catching a miss.
+2. **The server owns identity.** Never trust a `tenant_id` or `owner_id` from
+   the request body. Bind them from the authenticated principal via
+   `portslib.RequestActor(w, r)`. A client-supplied tenant is ignored.
+3. **Authorize every route.** Reads check `<name>:read`, writes check
+   `<name>:write` (admins pass either). The generated `requestActorWithScope`
+   helper does this — use it on every handler branch.
+4. **Entity IDs on the wire are canonical opaque segments.** A path like
+   `/api/v1/<name>/{id}` is decoded with `portslib.EntityIDFromPath`, which
+   accepts only the `id-<hex>` form and returns 400 (not 404) on a malformed
+   segment. Never parse the id out of the path yourself.
+5. **Migrations are append-only.** Add `NNNN_description.up.sql` with the next
+   number. Never edit a shipped migration.
+6. **Every Go file starts with a purpose comment** (what it does, which ADR it
+   follows). See any generated file for the shape.
+
+## The verify loop — run this after every change
+
+```bash
+make verify        # go vet + go test -race ./...
+```
+
+Generated modules ship with a test that exercises tenant isolation and the
+authz gate. If `make verify` is green, the module honors the contract. Treat a
+red result as "not done", never as "probably fine".
+
+## Inspecting the running app
+
+```bash
+platformkit modules --json     # the composed module list
+platformkit openapi            # the OpenAPI document for every route
+go run .                       # boots on http://127.0.0.1:8080/admin
+```
+
+## What NOT to do
+
+- Do not add a frontend build step, npm, or a JS framework. HTML is rendered in
+  Go from pk-ui components.
+- Do not reach into another module's store or tables. Modules talk through
+  ports (typed Go interfaces), never direct imports.
+- Do not put secrets in `config.yaml`. The admin password comes from
+  `PK_ADMIN_PASSWORD`; other secrets follow the same pattern.
+- Do not weaken a `WHERE tenant_id = ?` clause to "make a query work". If you
+  need cross-tenant data you are modeling something wrong — stop and ask.

@@ -1,0 +1,38 @@
+# {{.Name}}
+
+> A PlatformKit application: one Go binary composing a nine-module multi-tenant
+> SaaS starter (auth, users, tenants, API keys, audit, content, notifications,
+> health, admin console) plus your own modules. Server-rendered HTML, no Node.
+
+Extend it with `platformkit new module <name>`, which generates a
+self-registering, tenant-scoped module. Read AGENTS.md before writing code —
+it is the contract that keeps generated code correct.
+
+## Key files
+
+- [AGENTS.md](AGENTS.md): the rules for extending the app safely (tenant
+  scoping, server-owned identity, per-route authz, canonical entity IDs,
+  append-only migrations). Read this first.
+- [main.go](main.go): boots the starter via `starterapp.Run` with the
+  registered modules.
+- [modules.go](modules.go): the additive module registry.
+- [Makefile](Makefile): `make verify` is the gate (`go vet` + `go test -race`).
+- [config.example.yaml](config.example.yaml): deployment config; the admin
+  password comes from `PK_ADMIN_PASSWORD`, never the file.
+
+## Commands
+
+- `go run .` — boot a development instance at http://127.0.0.1:8080/admin
+- `platformkit new module <name>` — scaffold a tenant-scoped module
+- `platformkit modules --json` — list composed modules
+- `platformkit openapi` — the OpenAPI document
+- `make verify` — vet + race tests
+
+## Rules that generated code already follows
+
+- Every store query is scoped `WHERE tenant_id = ?`; by-id is `id AND tenant_id`.
+- The server binds tenant and owner from the principal (`portslib.RequestActor`);
+  the request body's tenant_id is ignored.
+- Every route checks a scope (`<name>:read` / `<name>:write`; admin passes).
+- Path IDs are canonical `id-<hex>` segments via `portslib.EntityIDFromPath`.
+- Migrations are append-only.
