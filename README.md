@@ -77,6 +77,7 @@ built-in defaults → `config.yaml` → environment variables → flags.
 
 ```bash
 go run github.com/septagon-oss/platformkit@latest --port 9090   # loopback port
+go run github.com/septagon-oss/platformkit@latest new app acme  # scaffold your own application
 go run github.com/septagon-oss/platformkit@latest config init   # commented config.yaml template
 go run github.com/septagon-oss/platformkit@latest version --json
 go run github.com/septagon-oss/platformkit@latest modules --json
@@ -89,6 +90,46 @@ in-memory database, so they never create or migrate `./pk.db`. Serve flags:
 `--admin-password` (prefer the `PK_ADMIN_PASSWORD` environment variable so the
 secret stays out of the process list). `platformkit --help` documents all of
 it, including the environment variables.
+
+## Make it your product
+
+`new app` writes a Go application that boots this starter and is ready for your
+own modules; `new module` adds one.
+
+```bash
+platformkit new app acme && cd acme
+platformkit new module invoice
+make verify        # go vet + go test -race, including the generated module's tests
+go run .           # your app, your name on the console
+```
+
+A scaffolded application carries a container image, a Makefile whose `verify`
+target is the same gate this project holds itself to, a `config.example.yaml`
+that keeps secrets in the environment, and an agent pack (`AGENTS.md`,
+`llms.txt`) that teaches an AI coding agent the rules for extending it safely.
+
+Generated modules register themselves, so adding one never edits `main.go`. Each
+ships tenant-scoped queries, per-route scope checks, canonical entity IDs,
+append-only migrations, and a test that fails the moment tenant isolation
+breaks — the same contract a hand-written module must meet.
+
+## Choose a database
+
+SQLite is the default and needs no setup. For a real deployment, point the
+driver at Postgres:
+
+```yaml
+database:
+  driver: postgres
+  dsn: "postgres://user:pass@host:5432/db?sslmode=require"
+```
+
+The binary registers both drivers, so the engine is configuration, not a
+rebuild. Every module store has a real Postgres adapter, and both adapter sets
+pass the same store conformance suite, so a missing tenant predicate fails a
+test on either engine. Supply the administrator password through
+`PK_ADMIN_PASSWORD`; it is applied after `config.yaml` loads, so the secret stays
+out of your config, git history, and image layers.
 
 ## Use the API
 
