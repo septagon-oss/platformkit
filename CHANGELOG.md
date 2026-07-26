@@ -13,6 +13,19 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-07-26
+
+### Changed
+
+- **The resource list page is one pk-ui organism.** The admin composes
+  `DataGrid` (pk-ui v0.3.0) — toolbar, sortable table, cursor pagination —
+  and slots its live status region and empty panels into the organism's
+  children seam. Atomic design runs the full ladder: atoms → molecules →
+  organism → page. The status line renders between the table and the
+  pagination, an order the organism owns.
+- pk-modules v0.14.0 also brings store conformance checks for list scope,
+  tenant immutability, and retired rows, run against the sqlite adapters.
+
 ## [0.11.0] — 2026-07-26
 
 ### Added
@@ -270,6 +283,7 @@ module proxy recorded, and are **retracted** in `go.mod`.
 [0.9.0]: https://github.com/septagon-oss/platformkit/compare/v0.8.0...v0.9.0
 [0.10.0]: https://github.com/septagon-oss/platformkit/compare/v0.9.0...v0.10.0
 [0.11.0]: https://github.com/septagon-oss/platformkit/compare/v0.10.0...v0.11.0
+[0.12.0]: https://github.com/septagon-oss/platformkit/compare/v0.11.0...v0.12.0
 [0.8.0]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...v0.8.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
