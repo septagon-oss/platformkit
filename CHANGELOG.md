@@ -13,10 +13,27 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-07-26
+
+### Fixed
+
+- Documented `platformkit new`. The scaffolder shipped in 0.13.0 but appeared in
+  no changelog entry, README section, or release note — a working command nobody
+  could discover. The 0.13.0 entry below now records it where it landed, and the
+  README covers it alongside the database profiles.
+
 ## [0.13.0] — 2026-07-26
 
 ### Added
 
+- **`platformkit new app` and `new module`.** One command turns the kit into
+  your own Go application: a module seam, a container image, a Makefile whose
+  `verify` target is this project's own gate, a `config.example.yaml` that keeps
+  secrets in the environment, and an agent pack (`AGENTS.md`, `llms.txt`) so an
+  AI coding agent can extend it under the same rules a person follows.
+  `new module` generates a tenant-scoped module — contract, store, migration,
+  routes, and a test that fails the moment tenant isolation breaks — which
+  registers itself, so adding one never edits `main.go`.
 - **Postgres is a supported database.** Set `database.driver: postgres` (and a
   `dsn`) and the whole application runs on Postgres — every module store has a
   Postgres adapter that passes the *same* store conformance suite the SQLite
@@ -316,6 +333,7 @@ module proxy recorded, and are **retracted** in `go.mod`.
 [0.11.0]: https://github.com/septagon-oss/platformkit/compare/v0.10.0...v0.11.0
 [0.12.0]: https://github.com/septagon-oss/platformkit/compare/v0.11.0...v0.12.0
 [0.13.0]: https://github.com/septagon-oss/platformkit/compare/v0.12.0...v0.13.0
+[0.13.1]: https://github.com/septagon-oss/platformkit/compare/v0.13.0...v0.13.1
 [0.8.0]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...v0.8.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
