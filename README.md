@@ -29,7 +29,8 @@ go run .
 ```
 
 On a fresh database the default is deliberately predictable: the nine-module
-starter from `pk-apps`, SQLite, and a loopback-only listener.
+starter from `pk-apps`, SQLite, and a loopback-only listener. Point
+`database.driver` at `postgres` when you are ready to deploy.
 
 ```text
 ============================================================
@@ -206,8 +207,10 @@ graph a user gets.
 
 - This is not a no-code product. Extension code is Go.
 - It is not a Rails/Django-style MVC framework or ORM.
-- SQLite is the zero-setup local and small-deployment default, not a claim of
-  horizontal write scalability.
+- SQLite is the zero-setup default for local development and small single-node
+  deployments; set `database.driver: postgres` for the production profile. Both
+  adapter sets pass the same store conformance suite, so the engine is a
+  configuration choice, not a rewrite.
 - The reference admin is a useful operator surface, not an enterprise policy
   engine.
 - PlatformKit is pre-1.0. Pin versions and expect deliberate API evolution.

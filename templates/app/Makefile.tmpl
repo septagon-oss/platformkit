@@ -1,0 +1,23 @@
+.PHONY: run build verify test tidy docker
+
+# Boot a loopback development instance (seeded local tenant + admin).
+run:
+	go run .
+
+build:
+	CGO_ENABLED=0 go build -trimpath -o bin/{{.Name}} .
+
+# The same gate the kit holds itself to: vet, then the full test suite with the
+# race detector. Generated modules ship with tests, so this covers them.
+verify:
+	go vet ./...
+	go test -race -count=1 ./...
+
+test:
+	go test ./...
+
+tidy:
+	go mod tidy
+
+docker:
+	docker build -t {{.Name}}:local .

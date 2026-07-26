@@ -1,0 +1,10 @@
+module {{.Module}}
+
+go 1.26
+
+require (
+	github.com/septagon-oss/pk-apps {{if .AppsVersion}}{{.AppsVersion}}{{else}}v0.12.0{{end}}
+	github.com/septagon-oss/pk-core v0.1.0
+	github.com/septagon-oss/pk-modules v0.14.0
+	modernc.org/sqlite {{if .SQLiteVersion}}{{.SQLiteVersion}}{{else}}v1.50.1{{end}}
+)

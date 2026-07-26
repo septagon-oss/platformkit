@@ -1,0 +1,57 @@
+// {{.Name}} is a PlatformKit application. It boots the batteries-included
+// nine-module starter (auth, users, tenants, API keys, audit, content,
+// notifications, health, and the admin console) and mounts your own modules
+// alongside it — each one registers itself in modules.go, so adding a module
+// never means editing this file.
+//
+// Zero-config runs a loopback development instance with a seeded local tenant
+// and administrator. A config.yaml next to the process switches to fail-closed
+// production. See README.md.
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	// Registers the modernc.org/sqlite driver as "sqlite" so the starter and
+	// your modules share one database handle.
+	_ "modernc.org/sqlite"
+
+	"github.com/septagon-oss/pk-apps/pkg/starterapp"
+)
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	cfg := starterapp.DefaultConfig()
+	cfg.AppName = "{{.Name}}"
+
+	// A config.yaml next to the process (or named by PK_CONFIG) is a real
+	// deployment: it switches to fail-closed production. Without one, this is a
+	// zero-config development instance. Copy config.example.yaml to config.yaml
+	// to go to production, or run `platformkit config init`.
+	path := os.Getenv("PK_CONFIG")
+	if path == "" {
+		path = "config.yaml"
+	}
+	if _, err := os.Stat(path); err == nil {
+		loaded, err := starterapp.LoadConfig(path)
+		if err != nil {
+			log.Fatalf("{{.Name}}: %v", err)
+		}
+		cfg = loaded
+	}
+
+	starterapp.ApplyAddressOverrides(cfg, os.Getenv)
+	if v := os.Getenv("PK_ADMIN_PASSWORD"); v != "" {
+		cfg.Seed.AdminPassword = v
+	}
+
+	if err := starterapp.Run(ctx, cfg, starterapp.WithModules(extraModules()...)); err != nil {
+		log.Fatalf("{{.Name}}: %v", err)
+	}
+}

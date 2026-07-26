@@ -1,0 +1,17 @@
+# Run {{.Name}} with a persistent data volume.
+#   PK_ADMIN_PASSWORD=... docker compose up --build
+services:
+  {{.Name}}:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # config.yaml on the volume selects production; set a strong secret here.
+      PK_ADMIN_PASSWORD: ${PK_ADMIN_PASSWORD:?set PK_ADMIN_PASSWORD}
+    volumes:
+      - {{.Name}}-data:/app/data
+    working_dir: /app/data
+    restart: unless-stopped
+
+volumes:
+  {{.Name}}-data:

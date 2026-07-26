@@ -1,0 +1,262 @@
+// mod_{{.Singular}}.go is a tenant-scoped {{.Singular}} module. It registers
+// itself with the app (see the init at the bottom), builds its store on the
+// starter's shared *sql.DB, and mounts CRUD routes that inherit the identity
+// middleware, the anonymous-mutation gate, and the request-body cap.
+//
+// The rules this file follows — every reviewer checks them:
+//   - Every query is scoped WHERE tenant_id = ?; a by-id read is id AND tenant.
+//   - The server owns identity: tenant and owner come from the principal via
+//     portslib.RequestActor, never from the request body.
+//   - Every route checks {{.Scope}}:read or {{.Scope}}:write (admin passes either).
+//   - Path IDs are canonical id-<hex> segments via portslib.EntityIDFromPath.
+package main
+
+import (
+	"crypto/rand"
+	"database/sql"
+	"embed"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/septagon-oss/pk-apps/pkg/starterapp"
+	"github.com/septagon-oss/pk-core/pkg/security/identity"
+	"github.com/septagon-oss/pk-modules/pkg/portslib"
+)
+
+const (
+	{{.Var}}ReadScope  = "{{.Scope}}:read"
+	{{.Var}}WriteScope = "{{.Scope}}:write"
+)
+
+// {{.Var}}Module is the ExtraModule the app composes. It has no cross-module
+// dependencies, so it supplies no Compose — it is a routes-only contribution.
+func {{.Var}}Module(env starterapp.ModuleEnv) (starterapp.ModulePlugin, error) {
+	store, err := new{{.Struct}}Store(env.DB)
+	if err != nil {
+		return starterapp.ModulePlugin{}, err
+	}
+	h := &{{.Var}}Handler{store: store}
+	return starterapp.ModulePlugin{
+		ID:           "{{.Singular}}",
+		RegisterRoutes: h.RegisterRoutes,
+		APIKeyScopes:   []string{ {{.Var}}ReadScope, {{.Var}}WriteScope },
+		OpenAPI: []starterapp.OpenAPIOperation{
+			{OperationID: "list{{.Struct}}s", Method: http.MethodGet, Path: "{{.Route}}",
+				Summary: "List {{.Plural}} in the authenticated tenant", SuccessStatus: http.StatusOK},
+			{OperationID: "create{{.Struct}}", Method: http.MethodPost, Path: "{{.Route}}",
+				Summary: "Create a {{.Singular}} owned by the authenticated actor", SuccessStatus: http.StatusCreated},
+			{OperationID: "get{{.Struct}}", Method: http.MethodGet, Path: "{{.Route}}/{id}",
+				Summary: "Get a {{.Singular}} in the authenticated tenant", SuccessStatus: http.StatusOK},
+		},
+	}, nil
+}
+
+func init() { registerModule({{.Var}}Module) }
+
+// --- a tenant-scoped store on the shared DB ---
+
+type {{.Struct}} struct {
+	ID       string `json:"id"`
+	TenantID string `json:"tenant_id"`
+	OwnerID  string `json:"owner_id"`
+	Name     string `json:"name"`
+}
+
+type {{.Var}}Store struct{ db *sql.DB }
+
+func new{{.Struct}}Store(db *sql.DB) (*{{.Var}}Store, error) {
+	if err := apply{{.Struct}}Migrations(db); err != nil {
+		return nil, err
+	}
+	return &{{.Var}}Store{db: db}, nil
+}
+
+var err{{.Struct}}NotFound = errors.New("{{.Singular}}: not found")
+
+func (s *{{.Var}}Store) create(m *{{.Struct}}) error {
+	_, err := s.db.Exec(`INSERT INTO {{.Table}} (id, tenant_id, owner_id, name) VALUES (?, ?, ?, ?)`,
+		m.ID, m.TenantID, m.OwnerID, m.Name)
+	return err
+}
+
+func (s *{{.Var}}Store) list(tenantID string) ([]*{{.Struct}}, error) {
+	rows, err := s.db.Query(`SELECT id, tenant_id, owner_id, name FROM {{.Table}} WHERE tenant_id = ? ORDER BY id`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*{{.Struct}}{}
+	for rows.Next() {
+		m := &{{.Struct}}{}
+		if err := rows.Scan(&m.ID, &m.TenantID, &m.OwnerID, &m.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (s *{{.Var}}Store) get(tenantID, id string) (*{{.Struct}}, error) {
+	m := &{{.Struct}}{}
+	err := s.db.QueryRow(`SELECT id, tenant_id, owner_id, name FROM {{.Table}} WHERE id = ? AND tenant_id = ?`, id, tenantID).
+		Scan(&m.ID, &m.TenantID, &m.OwnerID, &m.Name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, err{{.Struct}}NotFound
+	}
+	return m, err
+}
+
+// --- the HTTP surface: RequestActor binds tenant + owner from the principal ---
+
+type {{.Var}}Handler struct{ store *{{.Var}}Store }
+
+func (h *{{.Var}}Handler) RegisterRoutes(mux *http.ServeMux) {
+	mux.Handle("{{.Route}}", h)
+	mux.Handle("{{.Route}}/", h)
+}
+
+// {{.Var}}ActorWithScope binds the tenant and subject from the authenticated
+// principal and enforces the scope. It is the one place authz lives, so no
+// handler branch can forget it.
+func {{.Var}}ActorWithScope(w http.ResponseWriter, r *http.Request, scope string) (tenantID, subject string, ok bool) {
+	tenantID, subject, ok = portslib.RequestActor(w, r)
+	if !ok {
+		return "", "", false
+	}
+	principal := identity.PrincipalFromContext(r.Context())
+	if !principal.HasScope("admin") && !principal.HasScope(scope) {
+		http.Error(w, "forbidden: "+scope+" scope required", http.StatusForbidden)
+		return "", "", false
+	}
+	return tenantID, subject, true
+}
+
+func (h *{{.Var}}Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	id, _, err := portslib.EntityIDFromPath(r.URL.Path, "{{.Route}}")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	switch {
+	case id == "" && r.Method == http.MethodGet:
+		tenant, _, ok := {{.Var}}ActorWithScope(w, r, {{.Var}}ReadScope)
+		if !ok {
+			return
+		}
+		items, err := h.store.list(tenant)
+		write{{.Struct}}JSON(w, http.StatusOK, items, err)
+	case id == "" && r.Method == http.MethodPost:
+		tenant, owner, ok := {{.Var}}ActorWithScope(w, r, {{.Var}}WriteScope)
+		if !ok {
+			return
+		}
+		var m {{.Struct}}
+		if err := portslib.DecodeJSONBody(r.Body, &m); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(m.Name) == "" {
+			http.Error(w, "{{.Singular}}: name is required", http.StatusBadRequest)
+			return
+		}
+		m.TenantID, m.OwnerID = tenant, owner // server owns identity
+		m.ID, err = new{{.Struct}}ID()
+		if err != nil {
+			http.Error(w, "{{.Singular}}: generate ID", http.StatusInternalServerError)
+			return
+		}
+		write{{.Struct}}JSON(w, http.StatusCreated, &m, h.store.create(&m))
+	case id != "" && r.Method == http.MethodGet:
+		tenant, _, ok := {{.Var}}ActorWithScope(w, r, {{.Var}}ReadScope)
+		if !ok {
+			return
+		}
+		m, err := h.store.get(tenant, id)
+		write{{.Struct}}JSON(w, http.StatusOK, m, err)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func new{{.Struct}}ID() (string, error) {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return "{{.Var}}_" + hex.EncodeToString(random[:]), nil
+}
+
+func write{{.Struct}}JSON(w http.ResponseWriter, status int, v any, err error) {
+	if errors.Is(err, err{{.Struct}}NotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// --- append-only migrations, isolated to this module ---
+//
+// The embed is scoped to this module's own subdirectory, so each module runs
+// only its own migrations even though they share one database. Add the next
+// numbered .up.sql file under migrations/{{.Singular}}/; never edit a shipped one.
+
+//go:embed migrations/{{.Singular}}/*.sql
+var {{.Var}}MigrationFiles embed.FS
+
+func apply{{.Struct}}Migrations(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS {{.Var}}_schema_migrations (
+		name TEXT PRIMARY KEY,
+		applied_at DATETIME NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("{{.Singular}} migrations ledger: %w", err)
+	}
+	entries, err := fs.ReadDir({{.Var}}MigrationFiles, "migrations/{{.Singular}}")
+	if err != nil {
+		return fmt.Errorf("{{.Singular}} migrations list: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		var applied int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM {{.Var}}_schema_migrations WHERE name = ?`, entry.Name()).Scan(&applied); err != nil {
+			return fmt.Errorf("{{.Singular}} migration %s lookup: %w", entry.Name(), err)
+		}
+		if applied != 0 {
+			continue
+		}
+		statement, err := {{.Var}}MigrationFiles.ReadFile("migrations/{{.Singular}}/" + entry.Name())
+		if err != nil {
+			return fmt.Errorf("{{.Singular}} migration %s read: %w", entry.Name(), err)
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("{{.Singular}} migration %s begin: %w", entry.Name(), err)
+		}
+		if _, err := tx.Exec(string(statement)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("{{.Singular}} migration %s apply: %w", entry.Name(), err)
+		}
+		if _, err := tx.Exec(`INSERT INTO {{.Var}}_schema_migrations (name, applied_at) VALUES (?, ?)`, entry.Name(), time.Now().UTC()); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("{{.Singular}} migration %s record: %w", entry.Name(), err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("{{.Singular}} migration %s commit: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+

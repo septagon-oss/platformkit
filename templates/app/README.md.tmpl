@@ -1,0 +1,65 @@
+# {{.Name}}
+
+A [PlatformKit](https://github.com/septagon-oss/platformkit) application — one
+Go binary that composes a nine-module multi-tenant SaaS starter (auth, users,
+tenants, API keys, audit, content, notifications, health, and an admin console)
+and mounts your own modules beside it. Server-rendered HTML, no Node, no
+frontend build.
+
+## Run it
+
+```bash
+go run .
+```
+
+Boots a zero-config development instance at http://127.0.0.1:8080/admin with a
+seeded local tenant and administrator (the login prints on first boot).
+
+## Add a module
+
+```bash
+platformkit new module invoice
+make verify
+```
+
+The module registers itself — no wiring. It's tenant-scoped, authorized, and
+ships with a test. See [AGENTS.md](AGENTS.md) for the rules that keep a module
+correct (they apply to humans and AI agents alike).
+
+## Deploy
+
+Production is signalled by the presence of `config.yaml`:
+
+```bash
+cp config.example.yaml config.yaml         # edit addr, db, email
+export PK_ADMIN_PASSWORD='a-long-random-secret'
+go build -o {{.Name}} . && ./{{.Name}}
+```
+
+The admin password comes from the environment, never `config.yaml`. Or with
+containers:
+
+```bash
+PK_ADMIN_PASSWORD='...' docker compose up --build
+```
+
+## Commands
+
+| Command | What |
+|---|---|
+| `go run .` | Boot a development instance |
+| `platformkit new module <name>` | Scaffold a tenant-scoped module |
+| `platformkit modules --json` | List composed modules |
+| `platformkit openapi` | Print the OpenAPI document |
+| `make verify` | `go vet` + `go test -race ./...` |
+
+## Layout
+
+```
+main.go        boots the starter with your modules
+modules.go     the additive module registry
+mod_*.go       your modules (each self-registers)
+migrations/    append-only SQL migrations
+config.example.yaml   deployment config template
+AGENTS.md      the contract for extending safely
+```

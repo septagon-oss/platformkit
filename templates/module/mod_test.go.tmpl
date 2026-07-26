@@ -1,0 +1,56 @@
+// mod_{{.Singular}}_test.go proves the {{.Singular}} store's tenant isolation:
+// a row created in one tenant is invisible to another, by list and by id. This
+// is the test that fails the moment a WHERE tenant_id clause is dropped — the
+// whole point of the module contract. Extend it as the module grows.
+package main
+
+import (
+	"database/sql"
+	"testing"
+
+	_ "modernc.org/sqlite"
+)
+
+func newTest{{.Struct}}Store(t *testing.T) *{{.Var}}Store {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:{{.Var}}_test?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	store, err := new{{.Struct}}Store(db)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	return store
+}
+
+func Test{{.Struct}}StoreIsolatesTenants(t *testing.T) {
+	store := newTest{{.Struct}}Store(t)
+
+	mine := &{{.Struct}}{ID: "{{.Var}}_a", TenantID: "tenant_a", OwnerID: "user_a", Name: "mine"}
+	if err := store.create(mine); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// The owning tenant sees it, by list and by id.
+	got, err := store.list("tenant_a")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("list(tenant_a) = %v, %v; want one row", got, err)
+	}
+	if _, err := store.get("tenant_a", "{{.Var}}_a"); err != nil {
+		t.Fatalf("get(tenant_a) = %v; want the row", err)
+	}
+
+	// Another tenant sees nothing — the isolation boundary.
+	other, err := store.list("tenant_b")
+	if err != nil {
+		t.Fatalf("list(tenant_b): %v", err)
+	}
+	if len(other) != 0 {
+		t.Fatalf("list(tenant_b) leaked %d rows across tenants", len(other))
+	}
+	if _, err := store.get("tenant_b", "{{.Var}}_a"); err != err{{.Struct}}NotFound {
+		t.Fatalf("get(tenant_b, mine) = %v; want not-found — a by-id read must re-check the tenant", err)
+	}
+}
