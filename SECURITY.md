@@ -32,7 +32,14 @@ The runnable starter:
 - requires `admin` plus `console:access` for the operator console;
 - applies explicit read/write scopes to built-in data APIs;
 - caps request bodies and protects process metrics;
-- uses HttpOnly, SameSite session cookies and browser security headers.
+- uses HttpOnly, SameSite session cookies and browser security headers;
+- refuses cross-origin state-changing requests that rely on the session
+  cookie, checked via `Sec-Fetch-Site` with an `Origin` fallback. This is
+  deliberate defence in depth: `SameSite=Lax` alone stops a cross-*site* POST,
+  but "site" is the registrable domain, so a sibling subdomain would otherwise
+  be able to forge authenticated writes. Requests presenting an
+  `Authorization` header are exempt — a bearer token cannot be attached by a
+  cross-site page, so API clients are unaffected by origin policy.
 
 Development mode intentionally seeds a known local credential and reasserts it
 on boot. The default listener is loopback-only and prints a prominent warning.
