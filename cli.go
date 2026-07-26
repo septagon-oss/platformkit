@@ -164,7 +164,7 @@ func newRootCmd() *cobra.Command {
 	}
 	addServeFlags(serve, &f)
 
-	root.AddCommand(serve, newVersionCmd(), newModulesCmd(), newOpenAPICmd(), newConfigCmd())
+	root.AddCommand(serve, newNewCmd(), newVersionCmd(), newModulesCmd(), newOpenAPICmd(), newConfigCmd())
 	return root
 }
 
@@ -274,7 +274,14 @@ func newOpenAPICmd() *cobra.Command {
 // a fresh production config must fail closed until the operator sets one.
 const configTemplate = `# PlatformKit configuration.
 # The presence of this file signals a real deployment: environment defaults
-# to production and seed.admin_password becomes REQUIRED.
+# to production, which REQUIRES an admin password. Provide it through the
+# environment, not this file:
+#
+#     export PK_ADMIN_PASSWORD='a-long-random-secret'
+#
+# The process applies PK_ADMIN_PASSWORD after loading this file, so the secret
+# stays out of your config, your git history, and your image layers. Leave
+# seed.admin_password commented out.
 
 app_name: platformkit
 environment: production # development | production
