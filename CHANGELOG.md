@@ -13,6 +13,32 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-07-26
+
+### Added
+
+- **Resource tables sort.** Every column header in the admin console is a
+  keyboard-operable button with `aria-sort`, ordering the loaded page with
+  shareable state in the URL hash (`#sort=email:desc`). Sort is page-scoped
+  like the filter beside it, and the status line says so.
+- **Honest cursor pagination.** Previous is disabled on the first page, the
+  controls carry `data-pk-pagination` hooks, and the page label announces
+  politely.
+
+### Changed
+
+- **The console composes only pk-ui components** (`pk-modules` v0.12.0,
+  `pk-apps` v0.11.0, `pk-ui` v0.2.4). The shell declares no component
+  styling of its own; runtime-built rows, badges, and actions wear complete
+  pk-ui class lists via the embedded bridge, and the legacy `pk-*` fallbacks
+  are gone. The sign-in page's controls are pk-ui renderers with the lime
+  call to action re-colored by a page-scoped role remap; the 403
+  interstitial becomes a typed view, retiring the product's last
+  `html/template`.
+- pk-ui's variant styling is collision-free by construction, with a
+  structural guard test; destructive row actions wear the danger button
+  variant.
+
 ## [0.10.0] — 2026-07-25
 
 ### Added
@@ -242,6 +268,8 @@ module proxy recorded, and are **retracted** in `go.mod`.
 [Unreleased]: https://github.com/septagon-oss/platformkit/compare/v0.10.0...HEAD
 [0.10.0]: https://github.com/septagon-oss/platformkit/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/septagon-oss/platformkit/compare/v0.8.0...v0.9.0
+[0.10.0]: https://github.com/septagon-oss/platformkit/compare/v0.9.0...v0.10.0
+[0.11.0]: https://github.com/septagon-oss/platformkit/compare/v0.10.0...v0.11.0
 [0.8.0]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...v0.8.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
