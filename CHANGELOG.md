@@ -13,6 +13,26 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-07-27
+
+### Fixed
+
+- **Concurrent replicas can boot on Postgres.** Measured before the fix: six
+  replicas starting simultaneously against a virgin database produced one
+  success and five failures (`duplicate key value violates unique constraint
+  "pg_type_typname_nsp_index"`). `CREATE TABLE IF NOT EXISTS` reads as
+  idempotent but is not concurrency-safe on Postgres — competing backends
+  collide in the system catalog — so a rollout starting several pods at once
+  against a new database had most of them crash-loop. This shipped in 0.13.0
+  with the Postgres profile.
+
+  A session-scoped advisory lock is now held for the whole boot rather than one
+  call, because schema is created in three places: the built-in stores, the
+  bootstrap ledger, and any contributed module's constructor. Seeding falls
+  inside it, so first-boot inserts serialize too. Verified with six real
+  processes against a virgin database: all six start, and the tenant and
+  administrator are seeded exactly once. SQLite is unaffected.
+
 ## [0.14.0] — 2026-07-26
 
 ### Security
@@ -363,6 +383,7 @@ module proxy recorded, and are **retracted** in `go.mod`.
 [0.13.0]: https://github.com/septagon-oss/platformkit/compare/v0.12.0...v0.13.0
 [0.13.1]: https://github.com/septagon-oss/platformkit/compare/v0.13.0...v0.13.1
 [0.14.0]: https://github.com/septagon-oss/platformkit/compare/v0.13.1...v0.14.0
+[0.14.1]: https://github.com/septagon-oss/platformkit/compare/v0.14.0...v0.14.1
 [0.8.0]: https://github.com/septagon-oss/platformkit/compare/v0.7.0...v0.8.0
 [0.6.2]: https://github.com/septagon-oss/platformkit/compare/v0.6.1...v0.6.2
 [0.6.0]: https://github.com/septagon-oss/platformkit/compare/v0.5.1...v0.6.0
