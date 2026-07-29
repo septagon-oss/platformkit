@@ -2,7 +2,7 @@
   <title>PlatformKit — composable modules forming a dependency graph</title>
   <rect width="1200" height="470" fill="#f2efe7"/>
   <rect width="1200" height="72" fill="#12201d"/>
-  <g transform="translate(40,19) scale(0.34)"><rect x="2" y="2" width="96" height="96" fill="none" stroke="rgba(255,255,255,.38)" stroke-width="3"/><rect x="18" y="18" width="27" height="41" fill="#d8f35d"/><rect x="55.5" y="18.5" width="26" height="40" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="3"/><rect x="18" y="69" width="64" height="13" fill="#d8f35d"/></g>
+  <g transform="translate(40,19) scale(0.34)" stroke="#d8f35d" stroke-width="10" stroke-linecap="butt"><line x1="53.10" y1="7.49" x2="81.30" y2="21.08"/><line x1="85.17" y1="25.92" x2="92.13" y2="56.44"/><line x1="90.75" y1="62.48" x2="71.23" y2="86.96"/><line x1="65.65" y1="89.64" x2="34.35" y2="89.64"/><line x1="28.77" y1="86.96" x2="9.25" y2="62.48"/><line x1="7.87" y1="56.44" x2="14.83" y2="25.92"/><line x1="18.70" y1="21.08" x2="46.90" y2="7.49"/></g>
   <text x="94" y="42" font-family="'IBM Plex Sans',Aptos,'Helvetica Neue',sans-serif" font-size="15" font-weight="700" letter-spacing="0.06em" fill="#eff4e9">PLATFORMKIT / OSS</text>
   <circle cx="1092" cy="36" r="4" fill="#d8f35d"/>
   <text x="1160" y="41" text-anchor="end" font-family="'IBM Plex Mono','SFMono-Regular',Consolas,monospace" font-size="12" fill="#aebbb2">APACHE-2.0 · GO 1.26+</text>
