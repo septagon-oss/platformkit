@@ -157,8 +157,8 @@ func TestModulesAndOpenAPICommands(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &ids); err != nil {
 		t.Fatalf("modules --json output %q: %v", out, err)
 	}
-	if len(ids) != 9 {
-		t.Fatalf("modules = %v, want the nine-module starter set", ids)
+	if len(ids) != 10 {
+		t.Fatalf("modules = %v, want the ten-module starter set (incl. branding_management)", ids)
 	}
 	found := false
 	for _, id := range ids {

@@ -29,7 +29,6 @@ package main
 import (
 	"embed"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -395,19 +394,4 @@ func newNewModuleCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", ".", "app directory to write the module into")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing module files")
 	return cmd
-}
-
-// templateNames is exported for the test that renders every template.
-func templateNames() ([]string, error) {
-	var out []string
-	err := fs.WalkDir(scaffoldTemplates, "templates", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() {
-			out = append(out, path)
-		}
-		return nil
-	})
-	return out, err
 }

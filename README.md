@@ -2,14 +2,15 @@
 
 **A runnable, open-source Go foundation for multi-tenant SaaS.** Clone it, run
 one command, and get tenant isolation, users, authentication, API keys, audit,
-content, notifications, health, and a real operator console in one process.
+content, notifications, tenant branding, health, and a real operator console in
+one process.
 
 [![Go](https://github.com/septagon-oss/platformkit/actions/workflows/go.yml/badge.svg)](https://github.com/septagon-oss/platformkit/actions/workflows/go.yml)
 [![Security](https://github.com/septagon-oss/platformkit/actions/workflows/security.yml/badge.svg)](https://github.com/septagon-oss/platformkit/actions/workflows/security.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 [![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8)](https://go.dev/dl/)
 
-![PlatformKit — pk-core contracts and pk-design tokens feed nine reference modules, which pk-apps composes into the starter the platformkit front door runs](docs/hero.svg)
+![PlatformKit — pk-core contracts and pk-design tokens feed ten reference modules, which pk-apps composes into the starter the platformkit front door runs](docs/hero.svg)
 
 ## Run the stable starter
 
@@ -28,7 +29,7 @@ cd platformkit
 go run .
 ```
 
-On a fresh database the default is deliberately predictable: the nine-module
+On a fresh database the default is deliberately predictable: the ten-module
 starter from `pk-apps`, SQLite, and a loopback-only listener. Point
 `database.driver` at `postgres` when you are ready to deploy.
 
@@ -41,7 +42,7 @@ starter from `pk-apps`, SQLite, and a loopback-only listener. Point
   OpenAPI:      http://127.0.0.1:8080/openapi/extensions.json
   local tenant: tenant_local
   local login:  operator@local.test / local-development-only
-  modules:      9 composed (...)
+  modules:      10 composed (...)
 ============================================================
 ```
 
@@ -125,9 +126,12 @@ database:
 ```
 
 The binary registers both drivers, so the engine is configuration, not a
-rebuild. Every module store has a real Postgres adapter, and both adapter sets
-pass the same store conformance suite, so a missing tenant predicate fails a
-test on either engine. Supply the administrator password through
+rebuild. Nine of the ten module stores have a real Postgres adapter, and both
+adapter sets pass the same store conformance suite, so a missing tenant
+predicate fails a test on either engine. The exception is the new branding
+module: its Postgres adapter has not landed yet, so a Postgres deployment
+composes nine modules (stock chrome) and refuses to boot if branding seed
+values are configured — the gap is loud, not silent. Supply the administrator password through
 `PK_ADMIN_PASSWORD`; it is applied after `config.yaml` loads, so the secret stays
 out of your config, git history, and image layers.
 
@@ -227,6 +231,7 @@ and a public browser surface beside the JSON API.
 - **Audit** — append-only operational events.
 - **Content** — draft and publish lifecycle.
 - **Notifications** — tenant/user-scoped in-app messages.
+- **Branding** — tenant logo and palette with WCAG-corrected derivation; themed chrome and first-login setup.
 - **Admin** — a responsive, schema-aware reference console.
 - **Health** — module health plus runtime liveness/readiness.
 
@@ -288,7 +293,7 @@ contracts without placing their domain code in PlatformKit:
 ```mermaid
 flowchart LR
   core["pk-core\nmodule + identity contracts"]
-  modules["pk-modules\n9 reference modules"]
+  modules["pk-modules\n10 reference modules"]
   starter["pk-apps/starterapp\nstable composition"]
   front["go run .\ndomain-neutral front door"]
   product["your product repository\napplication-owned modules"]
@@ -304,21 +309,31 @@ flowchart LR
 
 ## Repository family
 
-| Repository | Purpose |
-|---|---|
-| `pk-core` | Module, dependency, identity, and runtime contracts |
-| `pk-shared` | Cross-repository vocabulary |
-| `pk-runtime` | Hosting and health primitives |
-| `pk-design` | Design tokens and component contracts |
-| `pk-modules` | Reference business modules and admin |
-| `pk-apps` | Canonical `starterapp` composition library and extension seam |
-| `pk-client` | Client primitives for calling a PlatformKit API |
-| `pk-ui` | Component contracts, ARIA builder, and gomponents renderers |
-| `tw` | Typed utility-class DSL and CSS emission for the design system |
-| `styleengine` | Typed Go-native CSS construction, parsing, and sanitizing |
-| `pk-testkit` | Conformance and flow testing |
-| `pk-tools` | Developer tooling |
-| `pk-docs` | Public architecture and operating guides — [published site](https://septagon-oss.github.io/pk-docs/) |
+Everything is pre-1.0: pin versions and expect deliberate API evolution.
+The tiers say how each repository moves, not how finished it is. **Released
+set** repositories move together — this front door pins an exact set that is
+boot-tested as a whole, and their tags are cut in dependency order. **Toolchain**
+repositories gate and generate code but are not linked into your binary.
+**Foundations** move fastest; consume them through the released set unless you
+are extending the design system itself.
+
+| Repository | Purpose | Tier |
+|---|---|---|
+| `platformkit` (this repo) | Domain-neutral front door | Released set |
+| `pk-apps` | Canonical `starterapp` composition library and extension seam | Released set |
+| `pk-modules` | Reference business modules and admin | Released set |
+| `pk-core` | Module, dependency, identity, and runtime contracts | Released set |
+| `pk-shared` | Cross-repository vocabulary | Released set |
+| `pk-runtime` | Hosting and health primitives | Released set |
+| `pk-guard` | Composable `go/analysis` guardrails; the modules' verify gate | Toolchain |
+| `pk-tools` | Developer tooling — `pk new module`, `pk explain` | Toolchain |
+| `pk-testkit` | Conformance and flow testing | Toolchain |
+| `pk-design` | Design tokens, component contracts, WCAG contrast machinery | Foundations |
+| `pk-ui` | Component contracts, ARIA builder, and gomponents renderers | Foundations |
+| `tw` | Typed utility-class DSL and CSS emission for the design system | Foundations |
+| `styleengine` | Typed Go-native CSS construction, parsing, and sanitizing | Foundations |
+| `pk-client` | Client primitives for calling a PlatformKit API | Foundations |
+| `pk-docs` | Public architecture and operating guides — [published site](https://septagon-oss.github.io/pk-docs/) | Docs |
 
 ## Project links
 

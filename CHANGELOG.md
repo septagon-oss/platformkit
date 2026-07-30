@@ -13,6 +13,32 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-07-30
+
+### Added
+
+- **Tenant branding — the tenth module.** The starter now composes
+  `branding_management` from `pk-modules` v0.18.0: a tenant logo and palette
+  store, a branding API and admin page with a first-login setup flow, and
+  WCAG-corrected palette derivation (`pk-design` v0.3.0's contrast machinery
+  corrects tenant-supplied brand colors to an AA-compliant ink). Seeded
+  development databases bypass the first-login gate. Known gap: branding has
+  no Postgres adapter yet — the Postgres profile composes the other nine
+  modules and fails boot loudly if branding seed values are configured.
+- **Stability tiers.** The repository family table now says how each
+  repository moves: the released set is boot-tested and tagged together, the
+  toolchain gates it, foundations move fastest.
+- **Dependabot** across the organization, grouped weekly for gomod and
+  GitHub Actions.
+
+### Changed
+
+- `pk-modules` adopted `pk-guard` v0.1.0 as part of its verify gate; every
+  discarded-error finding in the module surface was fixed or concretely
+  justified, including two real bugs (migration advisory-lock release
+  failures could strand the lock in a pooled session; corrupt API-key scope
+  JSON silently collapsed to an empty scope set instead of surfacing).
+
 ## [0.14.1] — 2026-07-27
 
 ### Fixed
