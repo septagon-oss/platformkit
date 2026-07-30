@@ -13,6 +13,18 @@ cover changes to the module surface itself.
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-07-30
+
+### Security
+
+- Bump `golang.org/x/text` to v0.39.0. govulncheck flagged GO-2026-5970
+  (infinite loop on invalid input) as reachable from `BuildApp` through
+  Unicode normalization at v0.37.0. Use 0.15.1 rather than 0.15.0.
+- The Security workflow is green for the first time since it was added: the
+  scaffolder now creates directories 0750 and files 0600, and its two
+  by-design variable-path operations carry explicit, justified `#nosec G304`
+  annotations. The gate had been failing on every run since 0.13.0.
+
 ## [0.15.0] — 2026-07-30
 
 ### Added

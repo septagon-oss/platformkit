@@ -172,10 +172,12 @@ func renderTemplate(tmplPath, dst string, data any, force bool) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	// #nosec G304 -- dst is the scaffold output path the operator chose via
+	// --dir; writing files there is this command's whole purpose.
+	f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -277,6 +279,8 @@ func generateModule(dir string, data moduleData, force bool) ([]string, error) {
 // generated module's test can import the app package. Empty when dir is not a
 // module root (the module still generates; only the test's import is a stub).
 func moduleGoPath(dir string) string {
+	// #nosec G304 -- reads go.mod from the operator-chosen scaffold directory
+	// to derive the module path for the generated test's import.
 	raw, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 	if err != nil {
 		return ""
