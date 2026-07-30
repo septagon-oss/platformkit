@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 740" width="1200" height="740" role="img" aria-label="PlatformKit layered architecture: contracts and tokens at the foundation, the Go-native design system (styleengine, tw, pk-ui), nine reference modules, one composition in pk-apps, and the platformkit front door; client, testkit and tools sit alongside">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 740" width="1200" height="740" role="img" aria-label="PlatformKit layered architecture: contracts and tokens at the foundation, the Go-native design system (styleengine, tw, pk-ui), ten reference modules, one composition in pk-apps, and the platformkit front door; client, testkit and tools sit alongside">
   <title>PlatformKit architecture</title>
   <rect width="1200" height="740" fill="#f2efe7"/>
   <rect width="1200" height="64" fill="#12201d"/>

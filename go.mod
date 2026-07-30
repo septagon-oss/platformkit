@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/septagon-oss/pk-apps v0.14.1
+	github.com/septagon-oss/pk-apps v0.15.0
 	github.com/spf13/cobra v1.10.2
 	modernc.org/sqlite v1.54.0
 )
@@ -20,8 +20,8 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/septagon-oss/pk-core v0.1.0 // indirect
-	github.com/septagon-oss/pk-design v0.2.0 // indirect
-	github.com/septagon-oss/pk-modules v0.15.0 // indirect
+	github.com/septagon-oss/pk-design v0.3.0 // indirect
+	github.com/septagon-oss/pk-modules v0.18.0 // indirect
 	github.com/septagon-oss/pk-runtime v0.1.0 // indirect
 	github.com/septagon-oss/pk-shared v0.2.0 // indirect
 	github.com/septagon-oss/pk-ui v0.3.0 // indirect
