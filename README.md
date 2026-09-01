@@ -1,3 +1,5 @@
+<img src="docs/logo.png" alt="PlatformKit — seven modular segments assembling into one heptagon" width="96" align="right">
+
 # PlatformKit
 
 **A runnable, open-source Go foundation for multi-tenant SaaS.** Clone it, run
