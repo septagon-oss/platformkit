@@ -229,5 +229,22 @@ func Gallery() []Example {
 		e("Overlay", "Modal / form", ModalForm(g.Text("Fields"))),
 		e("Overlay", "Modal / close button", ModalCloseButton("Close", "")),
 		e("Overlay", "Modal / cancel button", ModalCancelButton("Cancel", "")),
+		e("Overlay", "ConfirmDialog", ConfirmDialog(ConfirmDialogProps{
+			Title: "Delete this row?", AcceptLabel: "Delete", CancelLabel: "Keep"})),
+
+		e("Frame", "SkipLink", SkipLink("content", "Skip to content")),
+		e("Frame", "Toolbar", Toolbar(ToolbarProps{Title: "Tasks", Subtitle: "12 records"},
+			Button(ButtonProps{Label: "New task", Href: "/admin/task/tasks/new"}))),
+		e("Frame", "Form", Form(FormProps{Action: "/admin/task/tasks", Label: "New task"},
+			Input(InputProps{Name: "title", Label: "Title", Required: true}),
+			FormActions(FormActionsProps{},
+				Button(ButtonProps{Label: "Cancel", Variant: "secondary", Href: "/admin/task/tasks"}),
+				Button(ButtonProps{Label: "Create", Type: "submit"})))),
+		e("Frame", "Shell", Shell(ShellProps{SkipTarget: "gallery-main"}, ShellSlots{
+			Sidebar: []g.Node{Sidebar(SidebarProps{Items: []SidebarItem{{Label: "Tasks", Href: "/admin/task/tasks"}}})},
+			Header:  []g.Node{Text(TextProps{Content: "Acme", Weight: "semibold"})},
+			Main:    []g.Node{Text(TextProps{Content: "Page content"})},
+			Footer:  []g.Node{Text(TextProps{Content: "PlatformKit", Size: "xs", Color: "muted"})},
+		})),
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
@@ -121,6 +122,12 @@ func compose(cfg config.Config) composition {
 		Tenants:       active,
 		RetentionDays: cfg.Audit.RetentionDays,
 	}))
+	// The shell is last, and for the same kind of reason audit is next to last:
+	// it generates a screen for every resource the modules above it mounted, so
+	// composing it earlier would generate screens for a prefix of the
+	// application, silently. It draws navigation from the list it is handed and
+	// asks the same authorizer the kernel enforces with.
+	mods = append(mods, admin.Module(admin.Deps{Modules: mods, Authorize: auths, Tenants: tenants}))
 
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths, notify: notify, mail: mail}
 }

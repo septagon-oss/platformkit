@@ -19,6 +19,37 @@ func buttonLoadingIndicator(color style.Color) style.ClassList {
 }
 
 var (
+
+	// The application frame. See shell.go: markup written outside this package
+	// would have no rules in the stylesheet, so the frame is a component too.
+	clShell = style.New().Display(style.DisplayFlex).MinHeightScreen().
+		Bg(style.SurfaceSecondary).TextColor(style.FgPrimary)
+	clShellColumn = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).
+			MinWidth(style.S0).Overflow(style.OverflowHidden)
+	clShellHeader = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
+			Justify(style.JustifyBetween).Gap(style.S4).PaddingX(style.S6).PaddingY(style.S3).
+			Bg(style.SurfacePrimary).BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
+	clShellMain   = style.New().Flex1().PaddingX(style.S6).PaddingY(style.S6).SpaceY(style.S6)
+	clShellFooter = style.New().PaddingX(style.S6).PaddingY(style.S4).FontSize(style.TextXS).
+			TextColor(style.FgMuted).BorderTop(style.Border1).BorderColor(style.BorderPrimary)
+	clSkipLink = style.New().SrOnly().
+			On(style.StateFocus, func(c style.ClassList) style.ClassList {
+			return c.NotSrOnly().Position(style.PositionAbsolute).Left(style.S4).Top(style.S4).
+				ZLayer(style.ZOverlay).Rounded(style.RadiusMD).PaddingX(style.S3).PaddingY(style.S2).
+				Bg(style.SurfacePrimary).TextColor(style.FgPrimary).Shadow(style.ShadowLG)
+		})
+	clToolbar = style.New().Display(style.DisplayFlex).Items(style.ItemsStart).
+			Justify(style.JustifyBetween).Gap(style.S4).FlexWrap()
+	clToolbarCopy    = style.New().SpaceY(style.S1)
+	clToolbarActions = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2)
+	clForm           = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S4)
+	clFormActions    = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
+				Justify(style.JustifyEnd).Gap(style.S2).PaddingTop(style.S2)
+	clConfirmDialog = style.New().MaxWScaled(style.MaxWSM).Rounded(style.RadiusLG).
+			Border(style.Border1).BorderColor(style.BorderPrimary).Bg(style.SurfacePrimary).
+			TextColor(style.FgPrimary).Padding(style.S6).SpaceY(style.S3).Shadow(style.ShadowLG)
+	clConfirmTitle   = style.New().FontSize(style.TextLG).FontWeight(style.FontSemibold)
+	clConfirmMessage = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary)
 	// Shared fragments.
 	clIcon     = style.New().Display(style.DisplayInlineBlock).FlexShrink0()
 	clIconSize = map[string]style.ClassList{
@@ -660,6 +691,9 @@ var (
 //	sheet, err := emission.For(web.ClassLists()...)
 func ClassLists() []style.ClassList {
 	out := []style.ClassList{
+		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clSkipLink,
+		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions,
+		clConfirmDialog, clConfirmTitle, clConfirmMessage,
 		clIcon, clFocusRing, clButtonBase, clButtonFull, clButtonIconOnly, clButtonDisabledLink,
 		clBadgeBase, clBadgeDot, clBadgeCount, clBadgeRemove,
 		clAlertBase, clAlertRegular, clAlertCompact, clAlertBordered,

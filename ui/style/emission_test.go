@@ -365,6 +365,8 @@ func baseClasses() []string {
 	// No-argument toggles.
 	add(New().Truncate())
 	add(New().SrOnly())
+	add(New().NotSrOnly())
+	add(New().MinHeightScreen())
 	add(New().Italic())
 	add(New().NotItalic())
 	add(New().Underline())

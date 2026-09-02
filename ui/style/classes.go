@@ -266,6 +266,14 @@ func (cl ClassList) Truncate() ClassList { return cl.append(classTruncate) }
 // SrOnly makes content accessible only to screen readers.
 func (cl ClassList) SrOnly() ClassList { return cl.append(classSrOnly) }
 
+// NotSrOnly undoes SrOnly, which is what a skip link needs: hidden until it is
+// focused, and then a real control in the corner of the page.
+func (cl ClassList) NotSrOnly() ClassList { return cl.append(classNotSrOnly) }
+
+// MinHeightScreen is min-h-screen: at least the viewport. It is not a Spacing
+// step, so it is a method of its own rather than a value MinHeight takes.
+func (cl ClassList) MinHeightScreen() ClassList { return cl.append(classMinHScreen) }
+
 // Uppercase / Lowercase / Capitalize / NormalCase set text-transform.
 // NormalCase is the default text-transform (no transform) and is
 // required when a base class carries uppercase/lowercase/capitalize
