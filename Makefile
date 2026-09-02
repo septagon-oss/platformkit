@@ -6,9 +6,11 @@
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
-# something. `make up` starts a database that matches these defaults.
-PLATFORMKIT_TEST_ADMIN_URL ?= postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable
-PLATFORMKIT_TEST_DATABASE_URL ?= postgres://platformkit_app:platformkit@localhost:5432/platformkit?sslmode=disable
+# something. `make up` starts a database that matches these defaults, on the
+# same PLATFORMKIT_PG_PORT, so overriding the port once moves both.
+PLATFORMKIT_PG_PORT ?= 5432
+PLATFORMKIT_TEST_ADMIN_URL ?= postgres://postgres:platformkit@localhost:$(PLATFORMKIT_PG_PORT)/platformkit?sslmode=disable
+PLATFORMKIT_TEST_DATABASE_URL ?= postgres://platformkit_app:platformkit@localhost:$(PLATFORMKIT_PG_PORT)/platformkit?sslmode=disable
 export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
 

@@ -14,6 +14,8 @@ make run
 open http://platformkit.localhost:8080
 ```
 
+Ports can be overridden with `PLATFORMKIT_PG_PORT` / `PLATFORMKIT_NATS_PORT`.
+
 ## Status
 
 Being extracted from a larger private codebase; see [docs/adr](docs/adr) and the

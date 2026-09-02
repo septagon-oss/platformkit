@@ -35,6 +35,13 @@ escaping the tenant at runtime requires the database to be wrong.
 
 ## Evidence
 
+The runtime half, as `platformkit_app` against a real Postgres:
+
 ```sh
-go test ./kit/db -run TestTenantIsolationBlocksCrossTenantReads   # E1
+go test ./kit/db -run 'TestTenantIsolationIsEnforcedByPostgres|TestOpenRefusesSuperuser'
 ```
+
+The compile-time half is `kit/db/scope_compile_test.go`: five lines showing that
+a `Tx[System]` cannot be passed where a `Tx[Tenant]` is expected. It carries
+`//go:build never`, so it documents the guarantee without being part of any
+build; removing the tag is how you watch it fail.
