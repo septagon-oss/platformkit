@@ -1,18 +1,21 @@
 // Package app assembles a running application from a configuration and a list
 // of modules.
 //
-// New checks the composition; Run applies the migrations, opens the connection,
-// builds the API, lets each module register its routes, proves that every
-// registered operation declared its authorization, and then serves until the
-// context is done. The order is written here, once, in the order it happens —
-// which is the whole argument of docs/adr/0002: a startup sequence that is read
-// rather than derived.
+// New checks the composition; Run migrates, opens the connection, and then does
+// whichever half of the work this process's role names: web builds the API,
+// proves that every operation declared its authorization and every event it
+// publishes was promised, and serves; worker relays the outbox, consumes
+// subscriptions, schedules the periodic jobs and answers the two probes; all
+// does both in one process. The order is written here, once, in the order it
+// happens — which is the whole argument of docs/adr/0002: a startup sequence
+// that is read rather than derived.
 package app
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -20,19 +23,50 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 )
 
-// Options are the cross-cutting implementations main chooses. They are the
-// three questions the kernel cannot answer for itself — which host is which
-// tenant, who is calling, and what they may do — plus where to log.
+// Role is which half of the application a process runs. One binary and one
+// image; the role is a flag. See docs/adr/0005.
+type Role string
+
+const (
+	// Web serves the API and nothing else.
+	Web Role = "web"
+	// Worker relays the outbox, consumes events and runs the periodic jobs.
+	Worker Role = "worker"
+	// All is both in one process, which is what a laptop and a small
+	// deployment want. It is the default, so a deployment that says nothing
+	// gets a whole application.
+	All Role = "all"
+)
+
+// Options are the cross-cutting implementations main chooses: the three
+// questions the kernel cannot answer for itself — which host is which tenant,
+// who is calling, and what they may do — plus the role, the event transport,
+// the tenant list the periodic jobs walk, and where to log.
 type Options struct {
 	Tenants      httpx.TenantLoader
 	Authorize    httpx.Authorizer
 	Authenticate func(r *http.Request) (httpx.Principal, bool)
 	Log          *slog.Logger
+
+	// Role defaults to All.
+	Role Role
+
+	// Transport carries events between the relay and the handlers. It defaults
+	// to events.Memory() for All, which needs no broker because there is no
+	// second process, and to JetStream on config's nats.url otherwise.
+	Transport events.Transport
+
+	// AllTenants lists every tenant, for jobs that walk them. The tenant module
+	// implements it; a job that needs it and does not have it fails loudly
+	// rather than quietly doing nothing.
+	AllTenants jobs.TenantLister
 }
 
 // App is a composed application that has not started yet.
@@ -46,6 +80,14 @@ type App struct {
 // shutdownGrace bounds the wait for in-flight requests once the context is done.
 const shutdownGrace = 10 * time.Second
 
+// The built-in jobs, in every worker. The relay is a second because an event is
+// asynchronous, not slow; the purge is hourly because a week of history does
+// not need attention more often than that.
+const (
+	relayEvery = time.Second
+	purgeCron  = "0 * * * *"
+)
+
 // New checks the composition and returns the application it describes. Every
 // error it can return is a wiring mistake, so they all surface before anything
 // is opened, listened on or migrated.
@@ -58,6 +100,14 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	case opts.Authenticate == nil:
 		return nil, errors.New("app: Options.Authenticate is required")
 	}
+	if opts.Role == "" {
+		opts.Role = All
+	}
+	switch opts.Role {
+	case Web, Worker, All:
+	default:
+		return nil, fmt.Errorf("app: role %q is not one of %q, %q or %q", opts.Role, Web, Worker, All)
+	}
 	if err := module.Validate(mods); err != nil {
 		return nil, err
 	}
@@ -69,32 +119,81 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	for _, m := range mods {
 		names = append(names, m.Name)
 	}
-	log.InfoContext(ctx, "app: composed", "modules", names)
+	log.InfoContext(ctx, "app: composed", "modules", names, "role", opts.Role)
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
 }
 
-// Run migrates, serves, and returns when ctx is done or the server stops.
-//
-// It is single-role: web. --role web|worker arrives with kit/jobs in E1.3.
+// Run migrates, then serves or works or both, and returns when ctx is done.
 func (a *App) Run(ctx context.Context) error {
-	// 1. The ledger, as the owner role. Every module's SQL is applied in list
-	//    order through the one ledger; see sources.
-	src, err := sources(a.mods)
-	if err != nil {
+	if err := a.migrate(ctx); err != nil {
 		return err
 	}
-	if err := db.Migrate(ctx, a.cfg.Database.MigrateURL, src); err != nil {
-		return err
-	}
-
-	// 2. The application connection, as the role row-level security binds.
-	conn, err := db.Open(ctx, a.cfg.Database.URL)
+	conn, err := a.openConn(ctx)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	// 3. The API and its middleware chain.
+	if a.opts.Role == Web {
+		_, router, err := a.buildAPI(ctx, conn)
+		if err != nil {
+			return err
+		}
+		return a.serve(ctx, router)
+	}
+
+	transport, err := a.transport()
+	if err != nil {
+		return err
+	}
+	if closer, ok := transport.(io.Closer); ok {
+		defer closer.Close()
+	}
+	if a.opts.Role == Worker {
+		return a.work(ctx, conn, transport, a.probes(conn))
+	}
+
+	_, router, err := a.buildAPI(ctx, conn)
+	if err != nil {
+		return err
+	}
+	// One process, both halves. The web half owns the listener, so the worker
+	// half is given no handler of its own.
+	return a.both(ctx, conn, transport, router)
+}
+
+// migrate applies the ledger as the owner role. Every role does, worker
+// included: the advisory lock makes the race safe, which removes the ordering
+// problem instead of sequencing it. See docs/adr/0005.
+func (a *App) migrate(ctx context.Context) error {
+	src, err := sources(a.mods)
+	if err != nil {
+		return err
+	}
+	return db.Migrate(ctx, a.cfg.Database.MigrateURL, src)
+}
+
+// openConn opens the application connection, as the role row-level security
+// binds.
+func (a *App) openConn(ctx context.Context) (*db.Conn, error) {
+	return db.Open(ctx, a.cfg.Database.URL)
+}
+
+// transport is the event transport this role uses.
+func (a *App) transport() (events.Transport, error) {
+	if a.opts.Transport != nil {
+		return a.opts.Transport, nil
+	}
+	if a.opts.Role == All {
+		return events.Memory(), nil
+	}
+	return events.JetStream(a.cfg.NATS.URL)
+}
+
+// buildAPI builds the API, lets every module register its routes and checks,
+// and runs the boot gates. It returns before anything listens, so a composition
+// that fails a gate never takes the port.
+func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (*httpx.API, http.Handler, error) {
 	api, router := httpx.New(httpx.Options{
 		PublicHost:   a.cfg.Server.PublicHost,
 		Docs:         a.cfg.Server.Docs,
@@ -105,7 +204,6 @@ func (a *App) Run(ctx context.Context) error {
 		Log:          a.log,
 	})
 
-	// 4. The routes and the checks, module by module, in list order.
 	checks := []health.Check{health.DatabaseCheck(conn)}
 	for _, m := range a.mods {
 		if m.Routes != nil {
@@ -115,20 +213,111 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	health.Register(api, checks...)
 
-	// 5. The gates. An operation that declares no authorization, or one guarded
-	//    by a permission no module defines, fails startup — with no warn mode:
-	//    this repository has no deployment to migrate and no reason to run a
-	//    build it knows is unprotected or unreachable.
+	// The gates. An operation that declares no authorization, one guarded by a
+	// permission no module defines, or one that would publish an event no
+	// module promised, fails startup — with no warn mode: this repository has
+	// no deployment to migrate and no reason to run a build it knows is
+	// unprotected, unreachable or unannounced.
 	if err := api.ValidateDeclarations(); err != nil {
-		return err
+		return nil, nil, err
 	}
 	if err := validatePermissions(api, a.mods); err != nil {
+		return nil, nil, err
+	}
+	if err := validateEvents(api, a.mods); err != nil {
+		return nil, nil, err
+	}
+	a.log.InfoContext(ctx, "app: operations declared", "count", len(api.Recorded()), "events", len(api.Events()))
+	return api, router, nil
+}
+
+// work is the worker role: the outbox relay, the outbox purge, every module's
+// jobs, and every module's subscriptions. probes is the handler it serves, or
+// nil when the web half of the same process is already serving them.
+func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
+	scheduled := []jobs.Job{
+		{Name: "outbox-relay", Every: relayEvery, Run: func(ctx context.Context) error {
+			return events.Relay(ctx, conn, transport)
+		}},
+		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context) error {
+			return events.Purge(ctx, conn)
+		}},
+	}
+	var subs []events.Subscription
+	for _, m := range a.mods {
+		scheduled = append(scheduled, m.Jobs...)
+		subs = append(subs, m.Subscriptions...)
+	}
+	if err := events.Consume(ctx, conn, transport, subs); err != nil {
 		return err
 	}
-	a.log.InfoContext(ctx, "app: operations declared", "count", len(api.Recorded()))
+	a.log.InfoContext(ctx, "app: working", "jobs", len(scheduled), "subscriptions", len(subs))
 
-	// 6. Serve.
-	return a.serve(ctx, router)
+	scheduler := jobs.NewScheduler(conn, a.log, scheduled...)
+	if probes == nil {
+		return scheduler.Run(ctx)
+	}
+	return a.race(ctx,
+		func(ctx context.Context) error { return scheduler.Run(ctx) },
+		func(ctx context.Context) error { return a.serve(ctx, probes) })
+}
+
+// both runs the web half and the worker half in one process.
+func (a *App) both(ctx context.Context, conn *db.Conn, transport events.Transport, router http.Handler) error {
+	return a.race(ctx,
+		func(ctx context.Context) error { return a.work(ctx, conn, transport, nil) },
+		func(ctx context.Context) error { return a.serve(ctx, router) })
+}
+
+// race runs two halves and returns the first failure, having stopped the other.
+// Either half stopping means this process is stopping: there is no half of an
+// application worth keeping alive on its own.
+func (a *App) race(ctx context.Context, halves ...func(context.Context) error) error {
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	done := make(chan error, len(halves))
+	for _, half := range halves {
+		go func() { done <- half(ctx) }()
+	}
+	first := <-done
+	stop()
+	for range halves[1:] {
+		<-done
+	}
+	return first
+}
+
+// probes is the worker's whole HTTP surface: liveness and readiness, on the
+// same address the web role listens on, so one orchestrator manifest describes
+// both roles. It is a plain mux rather than an API because a worker has no
+// tenant, no session and no operation to declare.
+func (a *App) probes(conn *db.Conn) http.Handler {
+	checks := []health.Check{health.DatabaseCheck(conn)}
+	for _, m := range a.mods {
+		checks = append(checks, m.Health...)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		var failed []string
+		for _, c := range checks {
+			if err := c.Check(r.Context()); err != nil {
+				a.log.ErrorContext(r.Context(), "app: check failed", "check", c.Name(), "error", err)
+				failed = append(failed, c.Name())
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if len(failed) > 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprintf(w, `{"status":"not ready: %s"}`, strings.Join(failed, ", "))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	return mux
 }
 
 // validatePermissions is the declaration gate's mirror: every permission a
@@ -155,6 +344,29 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 		len(missing), strings.Join(missing, ", "))
 }
 
+// validateEvents is the same gate for the other direction: an operation that
+// will publish an event no module declared is an event no subscriber can be
+// written against, because the manifest is where a subscriber looks.
+func validateEvents(api *httpx.API, mods []module.Module) error {
+	declared := map[string]bool{}
+	for _, m := range mods {
+		for _, e := range m.Events {
+			declared[e] = true
+		}
+	}
+	var missing []string
+	for _, e := range api.Events() {
+		if !declared[e] {
+			missing = append(missing, e)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("app: %d event(s) would be published by a route and are declared by no module: %s",
+		len(missing), strings.Join(missing, ", "))
+}
+
 func (a *App) serve(ctx context.Context, h http.Handler) error {
 	srv := &http.Server{
 		Addr:    a.cfg.Server.Addr,
@@ -171,7 +383,7 @@ func (a *App) serve(ctx context.Context, h http.Handler) error {
 	}
 	stopped := make(chan error, 1)
 	go func() { stopped <- srv.ListenAndServe() }()
-	a.log.InfoContext(ctx, "app: listening", "addr", a.cfg.Server.Addr)
+	a.log.InfoContext(ctx, "app: listening", "addr", a.cfg.Server.Addr, "role", a.opts.Role)
 
 	select {
 	case err := <-stopped:

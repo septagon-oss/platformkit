@@ -17,11 +17,14 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/migrations"
 )
 
 const tenantHost = "acme.test"
@@ -84,8 +87,8 @@ func hello() module.Module {
 		Events:      []string{"hello.note_written"},
 		Nav:         []module.NavEntry{{Label: "Notes", Path: "/hello", Permission: "note:write", Order: 1}},
 		Migrations: fstest.MapFS{
-			"000002_notes.up.sql":   {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
-			"000002_notes.down.sql": {Data: []byte(`DROP TABLE notes`)},
+			"000003_notes.up.sql":   {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
+			"000003_notes.down.sql": {Data: []byte(`DROP TABLE notes`)},
 		},
 		Routes: func(api *httpx.API) {
 			httpx.Register(api, huma.Operation{
@@ -165,39 +168,10 @@ func TestBootMigratesAndServes(t *testing.T) {
 	}
 }
 
-// TestBootRefusesAnUndeclaredOperation is gate 7. The operation is hidden, so
-// it is in no OpenAPI document; only the adapter recording sees it.
-func TestBootRefusesAnUndeclaredOperation(t *testing.T) {
-	cfg, opts := compose(t)
-	// The only way left to mount an operation without a declaration: the
-	// recording adapter, which is exactly what makes it visible to the gate.
-	backdoor := module.Module{Name: "backdoor", Routes: func(api *httpx.API) {
-		api.Adapter().Handle(&huma.Operation{
-			OperationID: "backdoor", Method: http.MethodGet, Path: "/backdoor", Hidden: true,
-		}, func(huma.Context) {})
-	}}
-	a, err := New(t.Context(), cfg, []module.Module{backdoor}, opts)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	err = a.Run(t.Context())
-	if err == nil {
-		t.Fatal("Run served an application with an undeclared operation")
-	}
-	if !strings.Contains(err.Error(), "GET /backdoor (backdoor)") {
-		t.Errorf("the error does not name the operation: %v", err)
-	}
-	// Run returned while its context was still alive, so it never reached the
-	// listener; nothing is serving on the port it would have taken.
-	if c, dialErr := net.DialTimeout("tcp", cfg.Server.Addr, time.Second); dialErr == nil {
-		_ = c.Close()
-		t.Error("the application listened before validating its declarations")
-	}
-}
-
 // TestBootRefusesARouteNoModuleCanReach is the declaration gate's mirror: a
-// permission no module defines is a route nobody can ever be granted.
+// permission no module defines is a route nobody can ever be granted. The other
+// half of gate 7 — an operation with no declaration at all — cannot be written
+// from out here any more, and lives in kit/httpx's internal test.
 func TestBootRefusesARouteNoModuleCanReach(t *testing.T) {
 	cfg, opts := compose(t)
 	ghost := module.Module{Name: "ghost", Routes: func(api *httpx.API) {
@@ -214,6 +188,12 @@ func TestBootRefusesARouteNoModuleCanReach(t *testing.T) {
 	err = a.Run(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "ghost:read") {
 		t.Fatalf("Run = %v, want the undefined permission", err)
+	}
+	// Run returned while its context was still alive, so it never reached the
+	// listener; nothing is serving on the port it would have taken.
+	if c, dialErr := net.DialTimeout("tcp", cfg.Server.Addr, time.Second); dialErr == nil {
+		_ = c.Close()
+		t.Error("the application listened before validating its composition")
 	}
 }
 
@@ -268,7 +248,7 @@ func TestMigrationVersionsAreGlobal(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	for _, want := range []string{"000001_tenancy.up.sql", "000002_notes.up.sql"} {
+	for _, want := range []string{"000001_tenancy.up.sql", "000003_notes.up.sql"} {
 		if !strings.Contains(strings.Join(names, " "), want) {
 			t.Errorf("the merged directory lacks %s: %v", want, names)
 		}
@@ -302,4 +282,174 @@ func get(t *testing.T, addr, host, path string) (int, string) {
 	defer res.Body.Close()
 	body, _ := io.ReadAll(res.Body)
 	return res.StatusCode, string(body)
+}
+
+// Widget is an entity mounted through kit/crud, for the boot gate below.
+type Widget struct {
+	crud.Base
+	Name string `json:"name"`
+}
+
+func (Widget) TableName() string { return "widgets" }
+
+// TestBootRefusesAnEventNoModulePromised is the third gate. A crud.Spec
+// publishes three events; a module that mounts one and declares none is a
+// module whose events no subscriber could ever be written against, because the
+// manifest is where a subscriber looks.
+func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
+	cfg, opts := compose(t)
+	shop := func(events []string) module.Module {
+		return module.Module{
+			Name:        "shop",
+			Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
+			Events:      events,
+			Routes: func(api *httpx.API) {
+				crud.Spec[*Widget]{
+					Module: "shop", Entity: "widget", Path: "/widgets",
+					Read: "widget:read", Write: "widget:write",
+				}.Mount(api)
+			},
+		}
+	}
+
+	a, err := New(t.Context(), cfg, []module.Module{shop(nil)}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = a.Run(t.Context())
+	if err == nil {
+		t.Fatal("Run served routes that publish events no module declared")
+	}
+	for _, want := range []string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not name %s: %v", want, err)
+		}
+	}
+
+	// Declaring them is all it takes, and then the composition boots.
+	cfg, opts = compose(t)
+	declared := shop([]string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"})
+	a, err = New(t.Context(), cfg, []module.Module{declared}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+// TestWorkerRelaysAndAnswersItsProbes is the worker role end to end: it
+// migrates, answers the two probes an orchestrator calls, relays the outbox and
+// runs the module's subscription — for a row this test wrote through a
+// connection of its own, which is what "another process" looks like from here.
+func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
+	migrateURL, appURL := dbtest.URLs(t)
+	// The worker migrates too, but the test writes its event first, so the
+	// schema has to exist before Run does anything. Applying it twice is the
+	// ordinary case: see docs/adr/0005.
+	if err := db.Migrate(t.Context(), migrateURL, migrations.FS); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	conn, err := db.Open(t.Context(), appURL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	cfg := config.Config{
+		Server:   config.Server{Addr: freeAddr(t), PublicHost: tenantHost},
+		Database: config.Database{URL: appURL, MigrateURL: migrateURL},
+		NATS:     config.NATS{URL: "nats://localhost:4222"},
+		Log:      config.Log{Level: "error"},
+	}
+	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
+	handled := make(chan events.Event, 4)
+	ledger := module.Module{
+		Name:   "ledger",
+		Events: []string{"ledger.entry_written"},
+		Subscriptions: []events.Subscription{{
+			Module: "ledger", Name: "ledger.entry_written",
+			Handler: func(_ context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+				if db.TenantOf(tx).ID != ev.TenantID {
+					return errors.New("the handler ran in the wrong tenant")
+				}
+				handled <- ev
+				return nil
+			},
+		}},
+	}
+	opts := Options{
+		Tenants:      fixture{tenant: tenant},
+		Authorize:    fixture{},
+		Authenticate: func(*http.Request) (httpx.Principal, bool) { return httpx.Principal{}, false },
+		Log:          slog.New(slog.DiscardHandler),
+		Role:         Worker,
+		// The transport a single worker uses to talk to itself. JetStream is
+		// the default for this role and kit/events tests it; what is under test
+		// here is that the worker relays at all.
+		Transport: events.Memory(),
+	}
+
+	a, err := New(t.Context(), cfg, []module.Module{ledger}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+
+	// A worker serves the two probes and nothing else.
+	for _, path := range []string{"/health", "/ready"} {
+		if code, body := get(t, cfg.Server.Addr, cfg.Server.Addr, path); code != http.StatusOK {
+			t.Errorf("%s = %d %s, want 200", path, code, body)
+		}
+	}
+	if code, _ := get(t, cfg.Server.Addr, cfg.Server.Addr, "/openapi.json"); code != http.StatusNotFound {
+		t.Errorf("a worker answered /openapi.json with %d; it serves two routes", code)
+	}
+
+	writeErr := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		return events.Publish(tx, "ledger.entry_written", map[string]any{"amount": 7})
+	})
+	if writeErr != nil {
+		t.Fatalf("publish: %v", writeErr)
+	}
+
+	select {
+	case ev := <-handled:
+		if ev.TenantID != tenant.ID || !strings.Contains(string(ev.Payload), "7") {
+			t.Errorf("the subscription saw %+v", ev)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the worker never relayed the row")
+	}
+
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+// TestRoleIsAClosedSet: a role nobody implements would be a process that
+// silently does half the work, so it is refused where it is written.
+func TestRoleIsAClosedSet(t *testing.T) {
+	cfg, opts := compose(t)
+	opts.Role = "migrate"
+	if _, err := New(t.Context(), cfg, nil, opts); err == nil || !strings.Contains(err.Error(), "migrate") {
+		t.Errorf("New = %v, want the unknown role", err)
+	}
+	opts.Role = ""
+	a, err := New(t.Context(), cfg, nil, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if a.opts.Role != All {
+		t.Errorf("the default role is %q, want %q", a.opts.Role, All)
+	}
 }

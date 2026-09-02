@@ -9,8 +9,11 @@
 #   1. db.Tx[db.Tenant] and db.Tx[db.System] are different types, so crossing
 #      the tenant by accident does not compile;
 #   2. this grep, so crossing it deliberately cannot be done quietly;
-#   3. the re-read in db.Run and db.Pending.Close, so a transaction that crossed
-#      it anyway rolls back instead of committing.
+#   3. the re-read in db.Run and db.Pending.Close, which catches the naive
+#      escape: code that sets a setting and does not put it back rolls back
+#      instead of committing. It catches nothing else — an escape that restores
+#      the value before returning re-reads clean — so this grep, and not the
+#      re-read, is the control for a deliberate one.
 #
 # What the database enforces on its own is the forgotten predicate: a query with
 # no WHERE tenant_id returns this tenant's rows and no one else's. That is the
@@ -29,7 +32,10 @@ while IFS= read -r file; do
 	if found="$(grep -Hn -e "set_config('platformkit\." -e "SET LOCAL platformkit\." "$file")"; then
 		hits="$hits$found"$'\n'
 	fi
-done < <(git ls-files -c -o --exclude-standard -- '*.go' ':!:kit/db/*')
+# The exclusion is kit/db's own files and not its subdirectories: kit/db/dbtest
+# opens owner connections for tests and has no more business writing a tenancy
+# setting than any other package.
+done < <(git ls-files -c -o --exclude-standard -- '*.go' ':(exclude,glob)kit/db/*.go')
 
 if [ -n "$hits" ]; then
 	printf '%s' "$hits" >&2

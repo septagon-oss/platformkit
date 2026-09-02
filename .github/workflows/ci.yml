@@ -40,6 +40,18 @@ jobs:
 
       # Service containers ignore /docker-entrypoint-initdb.d, so the role that
       # compose creates on first boot is created here by hand, from the same file.
+      # Service containers cannot take a command, and NATS needs --jetstream, so
+      # it is started as a step. The port matches the compose stack's default,
+      # which is what the Makefile's test URL points at.
+      - name: Start NATS with JetStream
+        run: |
+          docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:2-alpine --jetstream --http_port 8222
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8222/healthz >/dev/null; then echo "nats is up"; exit 0; fi
+            sleep 1
+          done
+          echo "NATS did not become healthy" >&2; docker logs nats; exit 1
+
       - name: Create the platformkit_app role
         env:
           PGPASSWORD: platformkit
