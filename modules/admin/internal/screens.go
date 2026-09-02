@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	g "maragu.dev/gomponents"
@@ -158,7 +159,7 @@ func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.No
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
-			cells[f.Name] = display(row[f.Name])
+			cells[f.Name] = display(f, row[f.Name])
 		}
 		out = append(out, components.TableRow{ID: text(row["id"]), Cells: cells})
 	}
@@ -188,7 +189,7 @@ func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.No
 				return nil
 			}
 			return components.Link(components.LinkProps{
-				Label: display(row.Cells[c.Key]), Href: at + "/" + row.ID})
+				Label: text(row.Cells[c.Key]), Href: at + "/" + row.ID})
 		},
 	})
 }
@@ -200,7 +201,7 @@ func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.No
 func details(r httpx.Resource, row map[string]any) g.Node {
 	items := make([]components.DetailItem, 0, len(r.Schema.Fields))
 	for _, f := range r.Schema.Fields {
-		items = append(items, components.DetailItem{Label: humanize(f.Name), Value: display(row[f.Name])})
+		items = append(items, components.DetailItem{Label: humanize(f.Name), Value: display(f, row[f.Name])})
 	}
 	return components.DetailList(components.DetailListProps{Items: items})
 }
@@ -368,6 +369,16 @@ func label(row map[string]any, fields []crud.Field) string {
 	return text(row["id"])
 }
 
+// moment is how a screen writes an instant. The wire form is RFC 3339 with
+// microseconds, which is right for a machine and unreadable in a table cell.
+func moment(v any) string {
+	at, err := time.Parse(time.RFC3339, text(v))
+	if err != nil {
+		return text(v)
+	}
+	return at.UTC().Format("2006-01-02 15:04")
+}
+
 // text is a value as a form and a link read it. Everything arrives as
 // encoding/json made it, so a number is a float64 and a list is a []any.
 func text(v any) string {
@@ -389,13 +400,18 @@ func text(v any) string {
 	}
 }
 
-// display is text with a dash for nothing, because a blank cell reads as a bug
+// display is a field's value as a screen shows it: an instant in the form a
+// person reads, and a dash for nothing, because a blank cell reads as a bug
 // rather than as an empty field.
-func display(v any) string {
-	if out := text(v); out != "" {
-		return out
+func display(f crud.Field, v any) string {
+	out := text(v)
+	if out != "" && f.Type == crud.TypeTime {
+		out = moment(v)
 	}
-	return "—"
+	if out == "" {
+		return "—"
+	}
+	return out
 }
 
 // humanize turns a JSON name into a label: "slaDeadline" becomes "Sla

@@ -188,14 +188,21 @@ type result struct {
 // checks runs every module's check, plus the database. The database one is not
 // in any manifest — kit/app adds it — so it is added here for the same reason:
 // an instance that cannot reach Postgres is the failure this page exists for.
+//
+// They run on a detached context. A check is about the instance and not about
+// this tenant, and this request has already opened a tenant transaction to
+// recognise its caller: a readiness query joined to that one would be a scope
+// mismatch, which is what /ready never hits because a probe queries nothing
+// before it. See db.Detached.
 func (s *Shell) checks(ctx context.Context) []result {
 	all := s.Checks
 	if conn, reachable := httpx.ConnFrom(ctx); reachable {
 		all = append([]health.Check{health.DatabaseCheck(conn)}, all...)
 	}
+	loose := db.Detached(ctx)
 	out := make([]result, 0, len(all))
 	for _, c := range all {
-		out = append(out, result{name: c.Name(), err: c.Check(ctx)})
+		out = append(out, result{name: c.Name(), err: c.Check(loose)})
 	}
 	return out
 }

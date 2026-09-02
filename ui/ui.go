@@ -131,6 +131,14 @@ func base() *css.Sheet {
 		css.Decl("font", css.Literal("inherit")),
 		css.Decl("color", css.Literal("inherit")))
 	s.Select("table", css.Decl("border-collapse", css.Literal("collapse")))
+	// A navigation list is not a bulleted list. The marker inherits the
+	// document's text colour rather than the link's, so on the inverted sidebar
+	// it was invisible in the light theme and a row of dots in the dark one —
+	// which is how a defect ships: it looked right in the theme it was built in.
+	s.Select("nav ul, nav ol",
+		css.Decl("list-style", css.Literal("none")),
+		css.Decl("margin", css.Literal("0")),
+		css.Decl("padding", css.Literal("0")))
 	s.Select("a", css.Decl("color", css.Literal("inherit")), css.Decl("text-decoration", css.Literal("none")))
 	s.Select("img, svg", css.Decl("display", css.Literal("block")), css.Decl("max-width", css.Literal("100%")))
 	s.Select("dialog::backdrop", css.Decl("background", css.Literal("rgb(0 0 0 / 0.45)")))

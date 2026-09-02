@@ -133,10 +133,11 @@ func (s *Shell) sidebar(ctx context.Context) g.Node {
 		components.SidebarItem{Label: "Health", Href: adminRoot + "/health", Icon: "check-circle"},
 		components.SidebarItem{Label: "Components", Href: adminRoot + "/_gallery", Icon: "info"},
 	)
-	return components.SidebarWithSlots(components.SidebarProps{
+	// BrandLabel rather than the Brand slot: the sidebar is inverted, and the
+	// colour that is legible on it is one the component owns.
+	return components.Sidebar(components.SidebarProps{
 		Current: current, NavigationLabel: "Admin navigation", Items: items,
-	}, components.SidebarSlots{
-		Brand: []g.Node{components.Text(components.TextProps{Content: "PlatformKit", Weight: "semibold"})},
+		BrandLabel: fallback(tenant.Name, "PlatformKit"), BrandHref: adminRoot,
 	})
 }
 
