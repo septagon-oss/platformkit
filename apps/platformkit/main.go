@@ -70,6 +70,12 @@ func run(args []string) error {
 	defer stop()
 
 	c := compose(cfg)
+	if !cfg.Mail.Enabled() {
+		// Said out loud, because the failure it warns about is silent: every
+		// notification is still written and still visible in the application,
+		// and the ones asking for mail are logged instead of sent.
+		slog.WarnContext(ctx, "app: mail is not configured, so notifications marked for email are recorded and not sent; set mail.host")
+	}
 	a, err := app.New(ctx, cfg, c.modules, app.Options{
 		Tenants:      c.tenants,
 		Authorize:    c.auth,

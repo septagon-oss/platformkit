@@ -45,3 +45,25 @@ auth:
     client_id: ""
     client_secret: ""
     redirect_path: "/api/v1/auth/oidc/callback"
+
+# The one outgoing mail server. An empty host — which is the default — means
+# there is none: every notification is still recorded and the ones marked for
+# email are logged rather than sent, which is what a development machine wants
+# and what a production one has to notice at boot. There is one sender and no
+# provider abstraction; SMTP is what every service worth naming speaks.
+#
+# The password belongs in PLATFORMKIT_MAIL_PASSWORD, not here.
+mail:
+  host: ""
+  # Submission with STARTTLS, which is what a modern relay listens on.
+  port: 587
+  username: ""
+  password: ""
+  from: ""
+
+# How long the audit trail is kept. It is the one thing modules/audit cannot
+# decide for itself: a retention period is a compliance obligation, and a module
+# that chose one would be choosing somebody else's. Zero means the default of a
+# year; "keep it forever" is spelled with a large number.
+audit:
+  retention_days: 365
