@@ -44,6 +44,8 @@ const (
 	tenantPath = "/api/v1/tenant/tenants"
 	auditPath  = "/api/v1/audit/events"
 	noticePath = "/api/v1/notification/notifications"
+	plansPath  = "/api/v1/billing/plans"
+	subPath    = "/api/v1/billing/subscription"
 	adminEmail = "root@acme.localhost"
 	adminPass  = "correct horse battery staple"
 )
@@ -191,6 +193,24 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	eventually(t, "the notice reaches the mailbox", func() bool { return len(box.Sent()) == 1 })
 	if sent := box.Sent()[0]; sent.To != adminEmail || !strings.Contains(sent.Body, "chiller-2") {
 		t.Errorf("the mailbox holds %+v, want the notice addressed to the administrator", sent)
+	}
+
+	// Billing: a plan, and the tenant on it. The first period is a trial —
+	// this application serves it before it asks for anything — and the
+	// subscription is a singleton, so there is one to read and no list.
+	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, plansPath,
+		`{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","interval":"month","active":true}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s = %d %s, want 201", plansPath, code, body)
+	}
+	planID := field(t, body, "id")
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, subPath+"/subscribe", `{"planId":"`+planID+`"}`); code != http.StatusOK ||
+		!strings.Contains(body, `"status":"trial"`) {
+		t.Fatalf("subscribe = %d %s, want 200 and a trial", code, body)
+	}
+	if code, body = do(t, cfg, admin, http.MethodGet, acmeHost, subPath, ""); code != http.StatusOK ||
+		!strings.Contains(body, planID) {
+		t.Errorf("GET %s = %d %s, want the subscription", subPath, code, body)
 	}
 
 	// A second tenant, through the control-plane API, as the administrator of
