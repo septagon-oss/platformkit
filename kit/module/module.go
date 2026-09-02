@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io/fs"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -48,6 +49,23 @@ type Module struct {
 	// Subscriptions are the events this module handles. The worker role
 	// subscribes each one; the name has to be an event some module emits.
 	Subscriptions []events.Subscription
+
+	// SubscribeAll says this module handles every event the application emits,
+	// whichever module emits it. The kernel expands the one subscription above
+	// into one per declared event, after every manifest has been read.
+	//
+	// There is one such module, modules/audit, and the field exists because the
+	// alternative failed quietly. main used to compute the list and hand it over
+	// as a dependency, which made the trail correct only as long as audit was
+	// composed last and only as long as whoever added a module noticed: a module
+	// listed after it was a module nothing recorded, and nothing said so.
+	// Expanding here removes the ordering from the answer — the kernel has every
+	// manifest before it expands anything, so where a module sits in the list
+	// cannot change what is audited.
+	//
+	// A manifest that sets it declares exactly one subscription, with no Name:
+	// the name is what the kernel fills in, once per event.
+	SubscribeAll bool
 
 	// Jobs are this module's periodic work. The worker role schedules each one,
 	// and exactly one instance in the cluster runs it per tick.
@@ -175,12 +193,22 @@ func Validate(mods []Module) error {
 		}
 	}
 	for _, m := range mods {
+		// A manifest that says SubscribeAll declares the handler once, with no
+		// name: Expand is what writes the names, and a second subscription
+		// beside it would be one the expansion silently ignored.
+		if m.SubscribeAll && len(m.Subscriptions) != 1 {
+			add("module %q: SubscribeAll declares %d subscriptions; it takes exactly one, the handler every event goes to",
+				m.Name, len(m.Subscriptions))
+		}
 		for _, s := range m.Subscriptions {
 			switch {
 			case s.Handler == nil:
 				add("module %q: subscription to %q has no handler", m.Name, s.Name)
 			case s.Module != m.Name:
 				add("module %q: subscription to %q is attributed to module %q", m.Name, s.Name, s.Module)
+			case m.SubscribeAll && s.Name == "":
+				// Unexpanded, which is a composition nobody ran through
+				// Expand. Validate is called by kit/app, which expands first.
 			case !emitted[s.Name]:
 				add("module %q: subscribes to %q, which no module emits", m.Name, s.Name)
 			}
@@ -203,24 +231,51 @@ func Validate(mods []Module) error {
 	return errors.New("module: invalid composition:\n  " + strings.Join(bad, "\n  "))
 }
 
-// EventNames is every event the given modules emit, once each and sorted, so
-// that the subscriptions built from it are registered in a stable order.
+// Expand turns every SubscribeAll manifest's one subscription into one per
+// event the composition emits, and returns the modules with that done.
 //
-// It exists for one composition: modules/audit subscribes to everything, and
-// "everything" is a list main computes after the other modules are constructed
-// rather than one somebody maintains by hand. A module missing from a
-// hand-written copy is an event nobody records, and nothing fails.
-func EventNames(mods []Module) []string {
-	seen := map[string]bool{}
-	var out []string
+// One subscription per event rather than one wildcard, because the kernel's
+// durable consumers are named after the subscription: a wildcard would be a
+// single consumer whose backlog is every event in the system, and one slow
+// payload would hold up the trail of everything else.
+//
+// It runs before Validate and before anything is constructed, so a module that
+// arrives after the subscriber in the list is still subscribed to — which is
+// the whole reason the field exists. The order is sorted, so the consumers are
+// registered the same way on every replica.
+//
+// The argument is not modified: the returned slice is a copy, and in it the
+// expanded manifest's SubscribeAll is cleared, because the flag is a request
+// and this is it answered.
+func Expand(mods []Module) []Module {
+	names := map[string]bool{}
 	for _, m := range mods {
 		for _, e := range m.Events {
-			if !seen[e] {
-				seen[e] = true
-				out = append(out, e)
-			}
+			names[e] = true
 		}
 	}
-	sort.Strings(out)
+	all := make([]string, 0, len(names))
+	for e := range names {
+		all = append(all, e)
+	}
+	sort.Strings(all)
+
+	out := slices.Clone(mods)
+	for i, m := range out {
+		if !m.SubscribeAll || len(m.Subscriptions) != 1 {
+			continue
+		}
+		template := m.Subscriptions[0]
+		subs := make([]events.Subscription, 0, len(all))
+		for _, e := range all {
+			subs = append(subs, events.Subscription{Module: template.Module, Name: e, Handler: template.Handler})
+		}
+		out[i].Subscriptions = subs
+		// Cleared, because the flag is a request and this is it answered. It
+		// is also what lets Validate keep saying "SubscribeAll takes exactly
+		// one subscription" without that sentence firing at the expansion it
+		// asked for.
+		out[i].SubscribeAll = false
+	}
 	return out
 }

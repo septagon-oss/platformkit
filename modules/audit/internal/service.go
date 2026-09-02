@@ -31,10 +31,12 @@ var _ contracts.Service = (*Service)(nil)
 
 // Record writes one event into the trail. The insert is by hand because the row
 // is not a crud.Entity — nothing here is updated or soft-deleted — and because
-// the conflict clause is the point: recording is idempotent by the event's own
-// id, the second lock behind the kernel's handled table. That one claims each
-// delivery of each subscription; this one covers what it cannot, which is an
-// operator replaying an outbox row or a handler that failed after writing.
+// the conflict clause is the point: recording is idempotent by the tenant and
+// the event's own id, the second lock behind the kernel's handled table. That
+// one claims each delivery of each subscription; this one covers what it
+// cannot, which is an operator replaying an outbox row or a handler that failed
+// after writing. The tenant is part of the key because the thing being made
+// idempotent is a row in one tenant's trail — see migrations/000015.
 //
 // The tenant comes from the transaction and not from ev.TenantID. The two
 // always agree, because Consume opened this transaction in the event's own
@@ -47,7 +49,7 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	}
 	err := tx.DB().Exec("INSERT INTO "+table+
 		" (tenant_id, occurred_at, name, actor, event_id, payload) VALUES (?, ?, ?, ?, ?, ?::jsonb)"+
-		" ON CONFLICT (event_id) DO NOTHING",
+		" ON CONFLICT (tenant_id, event_id) DO NOTHING",
 		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload)).Error
 	if err != nil {
 		return fmt.Errorf("audit: record %s: %w", ev.Name, err)

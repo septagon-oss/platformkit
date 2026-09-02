@@ -7,7 +7,6 @@ import (
 	"regexp"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -169,38 +168,4 @@ func Register[I, O any](api *API, op huma.Operation, auth Auth, handler func(con
 	}
 	declare(&op, auth)
 	huma.Register(api.api, op, handler)
-}
-
-// Principal is who is making a request. It is established once per request by
-// Options.Authenticate and never derived again: a handler that wants to know
-// the caller reads it from the context, and nothing else may put one there.
-//
-// There is no tenant on it. The hook runs after the host has resolved and
-// inside that tenant's own transaction, so a credential belonging to another
-// tenant is a row row-level security does not show — the principal that would
-// have had to be refused is a principal that is never built. A field the
-// middleware could only ever compare with the tenant it just set itself is a
-// check that proves nothing.
-type Principal struct {
-	// UserID identifies the person or machine account.
-	UserID uuid.UUID
-	// Roles are the roles the credential carries, for an Authorizer that wants
-	// them without a second lookup.
-	Roles []string
-}
-
-// principalKey is unexported so only this package can put a principal on a
-// context, the same discipline kit/tenancy applies to the tenant.
-type principalKey struct{}
-
-// WithPrincipal returns a copy of ctx carrying p.
-func WithPrincipal(ctx context.Context, p Principal) context.Context {
-	return context.WithValue(ctx, principalKey{}, p)
-}
-
-// PrincipalFrom returns the principal ctx carries, if any. Absence means the
-// caller is anonymous, which only a Public operation serves.
-func PrincipalFrom(ctx context.Context) (Principal, bool) {
-	p, ok := ctx.Value(principalKey{}).(Principal)
-	return p, ok
 }

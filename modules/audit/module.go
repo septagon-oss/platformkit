@@ -1,13 +1,35 @@
 // Package audit is the module manifest: what the kernel needs to know about the
 // audit trail that it cannot learn from a function call.
 //
-// It is composed last and takes the whole composition as an argument, because
-// what it does is subscribe to everything: main computes the union of every
-// other module's declared events with module.EventNames and hands it over. A
-// module that emits an event is audited by having emitted it, and nothing is
-// registered anywhere to make that true.
+// What it does is subscribe to everything, and the manifest says so with one
+// field: module.SubscribeAll. The kernel expands it into one subscription per
+// declared event once every manifest is in hand, so a module that emits an
+// event is audited by having emitted it — wherever it sits in the composition,
+// and with nothing registered anywhere to make that true.
+//
+// main used to compute the list and pass it in, which worked only while audit
+// was composed last. A module listed after it was a module nothing recorded,
+// and the failure was silence.
 //
 // It declares no events of its own. An audit of audits is a loop.
+//
+// # What a payload may carry
+//
+// The trail stores every payload as its module published it, verbatim, and that
+// is the design: what happened is the event's name and the module's own
+// account of it, and a schema that tried to normalise those would be a schema
+// every new module had to be taught. The price is a convention, and it is
+// stated here because this is the module that pays it — an event carries
+// identifiers, not content.
+//
+// It is a convention rather than a check, because nothing can read a payload
+// and tell a title from a secret. What it is now is a convention with one
+// enforced case: notification.email_requested used to carry the whole message,
+// address and body and link, which put every notice in the audit trail and
+// would have put every set-password link there the day one was mailed. It
+// carries two identifiers now, and the worker reads the row back. A payload
+// that carries content is a payload kept for a year in a table an
+// administrator can read.
 package audit
 
 import (
@@ -21,12 +43,6 @@ import (
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
-	// Events is every event the trail records: the union of what every other
-	// module declares, which main computes with module.EventNames after the
-	// others are constructed. A hand-written list here would be one somebody
-	// has to remember to extend, and the failure of that is silence.
-	Events []string
-
 	// Tenants is how the retention sweep reaches every tenant.
 	Tenants jobs.TenantLister
 
@@ -51,14 +67,6 @@ func Module(deps Deps) module.Module {
 	if days <= 0 {
 		days = retentionDays
 	}
-	// One subscription per event name rather than one wildcard: the kernel's
-	// durable consumers are named after the subscription, so a wildcard would
-	// be a single consumer whose backlog is every event in the system and one
-	// slow payload would hold up the trail of everything else.
-	subs := make([]events.Subscription, 0, len(deps.Events))
-	for _, name := range deps.Events {
-		subs = append(subs, events.Subscription{Module: "audit", Name: name, Handler: svc.Record})
-	}
 	return module.Module{
 		Name:        "audit",
 		Permissions: permissions,
@@ -67,8 +75,13 @@ func Module(deps Deps) module.Module {
 		Nav: []module.NavEntry{
 			{Label: "Audit", Path: "/admin/audit/events", Permission: contracts.PermissionAuditRead},
 		},
-		Jobs:          []jobs.Job{internal.Retention(deps.Tenants, days)},
-		Subscriptions: subs,
+		Jobs: []jobs.Job{internal.Retention(deps.Tenants, days)},
+		// One handler, and the kernel writes the names: SubscribeAll is
+		// expanded into one subscription per declared event after every
+		// manifest has been read, so a module added to the composition after
+		// this one is audited by having emitted an event and by nothing else.
+		SubscribeAll:  true,
+		Subscriptions: []events.Subscription{{Module: "audit", Handler: svc.Record}},
 		Routes:        func(api *httpx.API) { internal.RegisterRoutes(api, svc) },
 	}
 }

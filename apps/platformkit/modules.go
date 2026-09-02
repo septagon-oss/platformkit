@@ -16,7 +16,6 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
-	"github.com/septagon-oss/platformkit/modules/notification/contracts/notificationtest"
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -52,10 +51,10 @@ type composition struct {
 // it, and this line is where the two orders meet — visibly, in one file,
 // checked by the compiler.
 //
-// Audit is last, and for a different reason: it subscribes to every event every
-// other module declares, so it takes the list the composition above it produced
-// (module.EventNames). Composing it earlier would audit a prefix of the
-// application, silently.
+// Audit is last only because it reads well there. It subscribes to every event
+// every other module declares, and the kernel expands that after every manifest
+// has been read — so moving this line would change nothing, which is exactly
+// what the earlier design could not say.
 //
 // A dependency somebody forgot is a compile error on the line that forgot it,
 // and a cycle cannot be expressed. See docs/adr/0002.
@@ -63,12 +62,18 @@ func compose(cfg config.Config) composition {
 	users, userModule := user.Module(user.Deps{})
 
 	mail := mailer(cfg)
+	// hosts is filled in once the tenant module exists, for the same reason
+	// active is: this module is composed before it. See deferred.
+	hosts := &tenantHosts{}
 	notify, notificationModule := notification.Module(notification.Deps{
-		// The app adapts, so notification never names user: the interface is
-		// declared in notification/contracts and satisfied here.
+		// The app adapts, so notification never names user or tenant: both
+		// interfaces are declared in notification/contracts and satisfied here.
 		Recipients: recipients{users: users},
+		Hosts:      hosts,
 		Mailer:     mail,
-		PublicHost: cfg.Server.PublicHost,
+		// The same rule the session cookie's Secure flag follows, so there is
+		// one answer to "is this deployment https" and one place it is decided.
+		Secure: !config.Local(cfg.Server.PublicHost),
 	})
 
 	// active is the tenant list the periodic jobs walk, and it is filled in
@@ -104,6 +109,7 @@ func compose(cfg config.Config) composition {
 	// Active rather than the service itself: the periodic jobs walk the tenants
 	// that are being served, and a suspended one is not.
 	active.lister = tenantcontracts.Active{Service: tenants}
+	hosts.tenants = tenants
 	mods := []module.Module{
 		userModule,
 		notificationModule,
@@ -112,7 +118,6 @@ func compose(cfg config.Config) composition {
 		task.Module(task.Deps{Tenants: active}),
 	}
 	mods = append(mods, audit.Module(audit.Deps{
-		Events:        module.EventNames(mods),
 		Tenants:       active,
 		RetentionDays: cfg.Audit.RetentionDays,
 	}))
@@ -127,7 +132,7 @@ func compose(cfg config.Config) composition {
 // application, and says what it would have sent. run() warns at boot.
 func mailer(cfg config.Config) notificationcontracts.Mailer {
 	if !cfg.Mail.Enabled() {
-		return notificationtest.NewMailbox()
+		return notification.NewMailbox()
 	}
 	return notification.SMTP(notification.Mail{
 		Host: cfg.Mail.Host, Port: cfg.Mail.Port, Username: cfg.Mail.Username,
@@ -152,6 +157,26 @@ func (d *deferred) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Ten
 		return nil, errors.New("app: the tenant list was never wired; see compose")
 	}
 	return d.lister.List(ctx, tx)
+}
+
+// tenantHosts is the adapter that lets the notification module build a link to
+// the recipient's own host without naming the tenant module.
+//
+// The lookup runs in the worker's own tenant transaction, so what it reads is
+// the one tenant's rows the policy shows it; the first host is the one a mailed
+// link is built from, because a tenant with several answers at all of them and
+// a message has to pick one.
+type tenantHosts struct{ tenants tenantcontracts.Service }
+
+func (h *tenantHosts) PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error) {
+	if h.tenants == nil {
+		return "", errors.New("app: the tenant service was never wired; see compose")
+	}
+	hosts, err := h.tenants.Hosts(ctx, tx)
+	if err != nil || len(hosts) == 0 {
+		return "", err
+	}
+	return hosts[0], nil
 }
 
 // recipients is the adapter that lets the notification module send an email

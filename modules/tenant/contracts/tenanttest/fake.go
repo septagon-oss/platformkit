@@ -30,6 +30,12 @@ type Fake struct {
 
 	// Hooks are what Create runs, the same list the real module takes in Deps.
 	Hooks []contracts.Hook
+
+	// Only is the tenant a tenant-scoped read answers about. The real service
+	// takes it from the transaction and the policy; there is no transaction
+	// here, so a consumer that wants Hosts to answer says which tenant it is
+	// pretending to be.
+	Only uuid.UUID
 }
 
 // NewFake returns an empty control plane.
@@ -175,6 +181,22 @@ func (f *Fake) ByHost(_ context.Context, _ db.Tx[db.System], host string) (tenan
 		return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 	}
 	return t.Tenancy(), nil
+}
+
+// Hosts is what the real service answers under a tenant transaction, with one
+// difference this fake cannot close: there is no policy here, so the tenant is
+// the one Only names rather than the one a transaction was scoped to. A
+// consumer testing a mailed link against this is testing the shape of the
+// answer; that it is this tenant's and nobody else's is a claim only Postgres
+// can be held to, and modules/tenant's own test holds it.
+func (f *Fake) Hosts(_ context.Context, _ db.Tx[db.Tenant]) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tenants[f.Only]
+	if f.Only == uuid.Nil || !ok {
+		return nil, nil
+	}
+	return slices.Clone(t.Hosts), nil
 }
 
 // copy is a detached copy, so a caller that mutates what it was handed does not

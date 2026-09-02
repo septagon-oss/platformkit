@@ -28,7 +28,7 @@ type Mail struct {
 // provider abstraction, because SMTP is what every service worth naming speaks.
 type SMTP struct{ cfg Mail }
 
-// NewSMTP returns the sender for cfg. main wires notificationtest.Mailbox
+// NewSMTP returns the sender for cfg. main wires notification.Mailbox
 // instead when no host is configured, and says so at boot.
 func NewSMTP(cfg Mail) *SMTP { return &SMTP{cfg: cfg} }
 

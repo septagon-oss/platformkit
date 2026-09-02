@@ -115,8 +115,8 @@ func mount(t *testing.T, s rest.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
 	}
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
-		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
-			return httpx.Principal{UserID: principal}, true, nil
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
+			return tenancy.Principal{UserID: principal}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
@@ -453,8 +453,8 @@ func TestNoEventsMountsTheSameRoutesSilently(t *testing.T) {
 	}
 	api, _ := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
-		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
-			return httpx.Principal{}, false, nil
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
+			return tenancy.Principal{}, false, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})

@@ -126,7 +126,7 @@ type Options struct {
 	// Public operation serves them. An error is an outage: the request is a 500
 	// and the reason is logged, because a session store that cannot be reached
 	// must not read as "you are not signed in".
-	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (Principal, bool, error)
+	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error)
 
 	// Log receives the reason behind every denial and every rolled-back
 	// transaction. Defaults to slog.Default().
