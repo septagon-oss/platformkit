@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
@@ -68,8 +71,20 @@ func compose(cfg config.Config) composition {
 		PublicHost: cfg.Server.PublicHost,
 	})
 
+	// active is the tenant list the periodic jobs walk, and it is filled in
+	// three lines below, once the tenant module exists.
+	//
+	// The knot is real and this is where it is tied. By construction the tenant
+	// module comes after auth, because it is handed auth's role-seeding hook;
+	// by need, auth's hourly sweep walks every tenant. Two edges pointing
+	// opposite ways, and one of them has to be late. It is read at the first
+	// tick of an hourly job, long after compose has returned, and a nil one is
+	// an error the job reports rather than a panic.
+	active := &deferred{}
 	auths, authModule := auth.Module(auth.Deps{
-		Users: users,
+		Users:   users,
+		Notify:  notify,
+		Tenants: active,
 		// The permissions the operator's own administrator is granted by name.
 		// The auth module cannot name tenant:manage — it is composed before the
 		// module that declares it, and naming another module's manifest is gate
@@ -88,7 +103,7 @@ func compose(cfg config.Config) composition {
 
 	// Active rather than the service itself: the periodic jobs walk the tenants
 	// that are being served, and a suspended one is not.
-	active := tenantcontracts.Active{Service: tenants}
+	active.lister = tenantcontracts.Active{Service: tenants}
 	mods := []module.Module{
 		userModule,
 		notificationModule,
@@ -118,6 +133,25 @@ func mailer(cfg config.Config) notificationcontracts.Mailer {
 		Host: cfg.Mail.Host, Port: cfg.Mail.Port, Username: cfg.Mail.Username,
 		Password: cfg.Mail.Password, From: cfg.Mail.From,
 	})
+}
+
+// deferred is the tenant list the modules composed before modules/tenant walk,
+// filled in by compose as soon as that module exists.
+//
+// It is the one late binding in the wiring graph and it is written down rather
+// than hidden. Composition order is dependency order everywhere else; here two
+// dependencies point opposite ways — the tenant module takes a hook the auth
+// module owns, and the auth module's sweep takes the list the tenant module
+// answers — so one of them is a value that arrives a few lines later. Nothing
+// reads it until the first tick of an hourly job, and a composition that forgot
+// to fill it in is an error in that job's log rather than a nil dereference.
+type deferred struct{ lister jobs.TenantLister }
+
+func (d *deferred) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant, error) {
+	if d.lister == nil {
+		return nil, errors.New("app: the tenant list was never wired; see compose")
+	}
+	return d.lister.List(ctx, tx)
 }
 
 // recipients is the adapter that lets the notification module send an email

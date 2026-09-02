@@ -65,7 +65,10 @@ func call(t *testing.T, r http.Handler, method, path, body string) (int, string)
 	t.Helper()
 	req := httptest.NewRequest(method, "http://"+host+path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer test") // see kit/httpx.credentialed
+	// The session cookie is the one credential shape the kernel recognises, so
+	// a test that wants its identity hook called presents one. The value is not
+	// read: this file's hook answers without looking. See kit/httpx.credentialed.
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
 	// A cross-site write is refused by the kernel when a session cookie is
 	// present; these requests carry a bearer credential instead.
 	w := httptest.NewRecorder()

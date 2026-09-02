@@ -10,11 +10,19 @@
 package auth
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+
 	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 // OIDC is one OpenID Connect provider. It has the same shape as config.OIDC, so
@@ -24,10 +32,21 @@ type OIDC = internal.OIDC
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
-	// Users is how a password login finds the person an address belongs to.
-	// It is narrower than the user module's own Service: a consumer depends on
-	// the capability it uses.
+	// Users is how a password login finds the person an address belongs to,
+	// and how a password that has been earned is stored. It is narrower than
+	// the user module's own Service: a consumer depends on the capability it
+	// uses.
 	Users contracts.Users
+
+	// Notify is how a set-password or reset link reaches somebody. A
+	// composition that wires none issues no token either — a link nobody is
+	// sent is a live credential in a table for an hour, for nothing — and the
+	// forgotten-password route still answers 200, because it always does.
+	Notify contracts.Notifier
+
+	// Tenants is how the hourly sweep reaches every tenant, to delete the
+	// sessions and tokens that have expired.
+	Tenants jobs.TenantLister
 
 	// OIDC is the optional identity provider. An empty issuer means there is
 	// none, and then the two OIDC routes are not registered at all.
@@ -54,20 +73,38 @@ type Deps struct {
 // value to kit/app as the authorizer and the identity hook, and hands its
 // SeedRoles to the tenant module as a create hook.
 func Module(deps Deps) (contracts.Auth, module.Module) {
-	svc := internal.NewService(deps.Users, deps.Operator)
+	svc := internal.NewService(deps.Users, deps.Notify, deps.Operator)
 	secure := !config.Local(deps.PublicHost)
 	cookies := internal.NewCookies(secure)
 	return svc, module.Module{
-		Name: "auth",
-		// None, and the absence is a decision: see contracts/permissions.go.
-		Permissions: nil,
-		Events: []string{
-			contracts.EventLoggedIn, contracts.EventLoggedOut, contracts.EventLoginFailed,
+		Name:        "auth",
+		Permissions: permissions,
+		Events:      contracts.Events,
+		Nav: []module.NavEntry{
+			{Label: "Roles", Path: "/admin/auth/roles", Permission: contracts.PermissionRoleManage},
 		},
-		Nav:           nil,
-		Jobs:          nil,
-		Subscriptions: nil,
+		Jobs: []jobs.Job{internal.Sweep(svc, deps.Tenants)},
+		// One subscription, and it is the invitation flow: the user module
+		// creates somebody with no password and says so, and this module is
+		// what turns that into a link they can use. It is a subscription rather
+		// than a call inside Invite because sending mail is somebody else's
+		// machine, and a request that waited on one would hold a transaction
+		// open across it.
+		Subscriptions: []events.Subscription{{
+			Module: "auth", Name: usercontracts.EventInvited,
+			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+				var invited usercontracts.Invited
+				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
+					return fmt.Errorf("auth: read the invitation: %w", err)
+				}
+				return svc.Offer(ctx, tx, invited.UserID)
+			},
+		}},
 		Routes: func(api *httpx.API) {
+			// The catalogue, taken at the one moment the kernel has it and this
+			// module is being wired. The hourly sweep reads it back to say which
+			// roles name a permission nothing defines any more.
+			svc.Declare(api.Permissions())
 			internal.RegisterRoutes(api, svc, cookies)
 			if deps.OIDC.Issuer != "" {
 				internal.RegisterOIDCRoutes(api, svc, deps.Users,
@@ -76,3 +113,8 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 		},
 	}
 }
+
+// permissions is what the manifest declares: one, guarding the two roles
+// routes. Every other route here is about the caller themselves. See
+// contracts/permissions.go.
+var permissions = []module.Permission{{Key: contracts.PermissionRoleManage}}

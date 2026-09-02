@@ -68,7 +68,10 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *db.Conn) {
 func call(t *testing.T, r http.Handler, method, at, body string) (int, string) {
 	t.Helper()
 	req := httptest.NewRequest(method, "http://"+host+at, strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer test") // see kit/httpx.credentialed
+	// The session cookie is the one credential shape the kernel recognises, so
+	// a test that wants its identity hook called presents one. The value is not
+	// read: this file's hook answers without looking. See kit/httpx.credentialed.
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

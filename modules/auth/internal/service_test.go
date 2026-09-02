@@ -55,7 +55,8 @@ func TestServiceConforms(t *testing.T) {
 	authtest.RunService(t, func(t *testing.T, run func(authtest.Fixture)) {
 		_, conn := dbtest.Schema(t)
 		users := realUsers()
-		svc := internal.NewService(users, operatorPermissions)
+		notices := &authtest.Notices{}
+		svc := internal.NewService(users, notices, operatorPermissions)
 		seed(t, conn, svc, acme)
 
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
@@ -63,6 +64,14 @@ func TestServiceConforms(t *testing.T) {
 			run(authtest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
 				Published: func() []string { return outbox(t, tx) },
+				Sent:      notices.Sent,
+				Sessions: func(user uuid.UUID) int {
+					var n int64
+					if err := tx.DB().Table("sessions").Where("user_id = ?", user).Count(&n).Error; err != nil {
+						t.Fatalf("count the sessions of %s: %v", user, err)
+					}
+					return int(n)
+				},
 				Role: func(name string, permissions ...string) {
 					err := tx.DB().Exec("INSERT INTO roles (tenant_id, name, permissions) VALUES (?, ?, ?)",
 						acme.ID, name, pq.StringArray(permissions)).Error
@@ -136,7 +145,7 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, operatorPermissions)
+	svc := internal.NewService(users, nil, operatorPermissions)
 	seed(t, conn, svc, acme)
 	seed(t, conn, svc, globex)
 
@@ -179,7 +188,7 @@ func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, operatorPermissions)
+	svc := internal.NewService(users, nil, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -207,10 +216,10 @@ func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 
 	// Age one session past its expiry, and push the other's last use back far
 	// enough that the next request touches it.
-	exec(t, admin, `UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE id = $1`, expired)
-	exec(t, admin, `UPDATE sessions SET last_seen_at = now() - interval '1 hour' WHERE id = $1`, live)
+	exec(t, admin, `UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE id_hash = $1`, contracts.Hash(expired.String()))
+	exec(t, admin, `UPDATE sessions SET last_seen_at = now() - interval '1 hour' WHERE id_hash = $1`, contracts.Hash(live.String()))
 	var before time.Time
-	row(t, admin, `SELECT expires_at FROM sessions WHERE id = $1`, live).Scan(&before)
+	row(t, admin, `SELECT expires_at FROM sessions WHERE id_hash = $1`, contracts.Hash(live.String())).Scan(&before)
 
 	err = db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if _, err := svc.Identify(ctx, tx, expired, nobody); !errors.Is(err, crud.ErrNotFound) {
@@ -226,7 +235,7 @@ func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 	}
 
 	var after time.Time
-	row(t, admin, `SELECT expires_at FROM sessions WHERE id = $1`, live).Scan(&after)
+	row(t, admin, `SELECT expires_at FROM sessions WHERE id_hash = $1`, contracts.Hash(live.String())).Scan(&after)
 	if !after.After(before) {
 		t.Errorf("the expiry did not slide: %s then %s", before, after)
 	}
@@ -241,7 +250,7 @@ func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the second use: %v", err)
 	}
-	row(t, admin, `SELECT expires_at FROM sessions WHERE id = $1`, live).Scan(&again)
+	row(t, admin, `SELECT expires_at FROM sessions WHERE id_hash = $1`, contracts.Hash(live.String())).Scan(&again)
 	if !again.Equal(after) {
 		t.Errorf("the expiry moved twice inside %s: %s then %s", contracts.SessionTouch, after, again)
 	}
@@ -252,7 +261,7 @@ func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, operatorPermissions)
+	svc := internal.NewService(users, nil, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -291,7 +300,7 @@ func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 func TestAFailedLoginIsRecordedThoughItsRequestIsRolledBack(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, operatorPermissions)
+	svc := internal.NewService(users, nil, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -325,4 +334,241 @@ func exec(t *testing.T, admin *sql.DB, query string, args ...any) {
 func row(t *testing.T, admin *sql.DB, query string, args ...any) *sql.Row {
 	t.Helper()
 	return admin.QueryRowContext(t.Context(), query, args...)
+}
+
+// TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes.
+//
+// A sliding expiry on its own is not an expiry: a browser used every day keeps
+// one session for as long as the machine lasts, and a cookie stolen from it
+// works for as long as the thief keeps using it. Ninety days from created_at is
+// the moment something has to be proved again, and the row is deleted on the
+// way past rather than left for the sweep — a refused credential that is still
+// in the table is still something a copy of the table teaches an attacker.
+func TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	users := realUsers()
+	svc := internal.NewService(users, nil, operatorPermissions)
+	seed(t, conn, svc, acme)
+	ctx := httpx.WithConn(t.Context(), conn)
+
+	var session uuid.UUID
+	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		u, err := users.Invite(ctx, tx, "ada@acme.example.com", "Ada")
+		if err != nil {
+			return err
+		}
+		if err := users.SetPassword(ctx, tx, u.ID, authtest.Password); err != nil {
+			return err
+		}
+		s, _, err := svc.Login(ctx, tx, "ada@acme.example.com", authtest.Password, nobody)
+		session = s.ID
+		return err
+	})
+	if err != nil {
+		t.Fatalf("sign in: %v", err)
+	}
+	hash := contracts.Hash(session.String())
+
+	// Used ten minutes ago and opened ninety-one days ago: the sliding limit is
+	// nowhere near, which is the whole point of the case.
+	exec(t, admin, `UPDATE sessions SET created_at = now() - interval '91 days',
+		last_seen_at = now() - interval '10 minutes', expires_at = now() + interval '29 days' WHERE id_hash = $1`, hash)
+
+	err = db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if _, err := svc.Identify(ctx, tx, session, nobody); !errors.Is(err, crud.ErrNotFound) {
+			t.Errorf("a session ninety-one days old = %v, want ErrNotFound", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("the identifying transaction: %v", err)
+	}
+	var left int
+	row(t, admin, `SELECT count(*) FROM sessions WHERE id_hash = $1`, hash).Scan(&left)
+	if left != 0 {
+		t.Errorf("the refused session left %d rows behind", left)
+	}
+}
+
+// TestTheSlideNeverPassesTheCap: the last use before ninety days leaves a
+// session that expires at ninety days, not one that expires thirty days later
+// and is refused anyway.
+func TestTheSlideNeverPassesTheCap(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	users := realUsers()
+	svc := internal.NewService(users, nil, operatorPermissions)
+	seed(t, conn, svc, acme)
+	ctx := httpx.WithConn(t.Context(), conn)
+
+	var session uuid.UUID
+	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		u, err := users.Invite(ctx, tx, "ada@acme.example.com", "Ada")
+		if err != nil {
+			return err
+		}
+		if err := users.SetPassword(ctx, tx, u.ID, authtest.Password); err != nil {
+			return err
+		}
+		s, _, err := svc.Login(ctx, tx, "ada@acme.example.com", authtest.Password, nobody)
+		session = s.ID
+		return err
+	})
+	if err != nil {
+		t.Fatalf("sign in: %v", err)
+	}
+	hash := contracts.Hash(session.String())
+	exec(t, admin, `UPDATE sessions SET created_at = now() - interval '89 days',
+		last_seen_at = now() - interval '1 hour' WHERE id_hash = $1`, hash)
+
+	err = db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		_, err := svc.Identify(ctx, tx, session, nobody)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("the identifying transaction: %v", err)
+	}
+	var expires, cap time.Time
+	row(t, admin, `SELECT expires_at, created_at + interval '90 days' FROM sessions WHERE id_hash = $1`, hash).
+		Scan(&expires, &cap)
+	if expires.After(cap) {
+		t.Errorf("the slide pushed the expiry to %s, past the cap at %s", expires, cap)
+	}
+}
+
+// TestThePurgeTakesExpiredCredentials, which is what stops the two tables being
+// a history of who signed in from where.
+func TestThePurgeTakesExpiredCredentials(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	users := realUsers()
+	notices := &authtest.Notices{}
+	svc := internal.NewService(users, notices, operatorPermissions)
+	seed(t, conn, svc, acme)
+	ctx := httpx.WithConn(t.Context(), conn)
+
+	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		u, err := users.Invite(ctx, tx, "ada@acme.example.com", "Ada")
+		if err != nil {
+			return err
+		}
+		if err := users.SetPassword(ctx, tx, u.ID, authtest.Password); err != nil {
+			return err
+		}
+		// Three sessions and a token: one live session, one past its sliding
+		// expiry, one past the absolute cap, and one spent link.
+		for range 3 {
+			if _, _, err := svc.Login(ctx, tx, "ada@acme.example.com", authtest.Password, nobody); err != nil {
+				return err
+			}
+		}
+		return svc.Forget(ctx, tx, "ada@acme.example.com")
+	})
+	if err != nil {
+		t.Fatalf("seed the credentials: %v", err)
+	}
+	exec(t, admin, `UPDATE sessions SET expires_at = now() - interval '1 day'
+		WHERE id_hash = (SELECT id_hash FROM sessions ORDER BY id_hash LIMIT 1)`)
+	exec(t, admin, `UPDATE sessions SET created_at = now() - interval '91 days'
+		WHERE id_hash = (SELECT id_hash FROM sessions ORDER BY id_hash DESC LIMIT 1)`)
+	exec(t, admin, `UPDATE password_tokens SET expires_at = now() - interval '1 minute'`)
+
+	var gone int64
+	err = db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var err error
+		gone, err = svc.Purge(ctx, tx)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Purge: %v", err)
+	}
+	if gone != 3 {
+		t.Errorf("Purge took %d rows, want three: two sessions and one token", gone)
+	}
+	var sessions, tokens int
+	row(t, admin, `SELECT count(*) FROM sessions`).Scan(&sessions)
+	row(t, admin, `SELECT count(*) FROM password_tokens`).Scan(&tokens)
+	if sessions != 1 || tokens != 0 {
+		t.Errorf("%d sessions and %d tokens are left, want one and none", sessions, tokens)
+	}
+}
+
+// TestOnePendingLinkPerPerson: asking again replaces the last link rather than
+// adding a second, so a mailbox with four of these mails still has one that
+// works — and it is the newest.
+func TestOnePendingLinkPerPerson(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	users := realUsers()
+	notices := &authtest.Notices{}
+	svc := internal.NewService(users, notices, operatorPermissions)
+	seed(t, conn, svc, acme)
+	ctx := httpx.WithConn(t.Context(), conn)
+
+	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		u, err := users.Invite(ctx, tx, "ada@acme.example.com", "Ada")
+		if err != nil {
+			return err
+		}
+		if err := users.SetPassword(ctx, tx, u.ID, authtest.Password); err != nil {
+			return err
+		}
+		for range 3 {
+			if err := svc.Forget(ctx, tx, "ada@acme.example.com"); err != nil {
+				return err
+			}
+		}
+		sent := notices.Sent()
+		if len(sent) != 3 {
+			t.Fatalf("three requests sent %d mails, want three", len(sent))
+		}
+		// The first two links are dead and the last one works.
+		for _, stale := range sent[:2] {
+			if err := svc.Reset(ctx, tx, authtest.TokenIn(stale.Link), "a different passphrase"); !errors.Is(err, contracts.ErrCredentials) {
+				t.Errorf("a superseded link = %v, want ErrCredentials", err)
+			}
+		}
+		return svc.Reset(ctx, tx, authtest.TokenIn(sent[2].Link), "a different passphrase")
+	})
+	if err != nil {
+		t.Fatalf("the transaction: %v", err)
+	}
+	var tokens int
+	row(t, admin, `SELECT count(*) FROM password_tokens`).Scan(&tokens)
+	if tokens != 0 {
+		t.Errorf("%d tokens are left after the link was used, want none", tokens)
+	}
+}
+
+// TestTheTokenTableHoldsNoToken. It is the same claim the session table makes,
+// and it is the reason both are hashed: a copy of either is a list of digests
+// rather than a set of live credentials.
+func TestTheTokenTableHoldsNoToken(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	users := realUsers()
+	notices := &authtest.Notices{}
+	svc := internal.NewService(users, notices, operatorPermissions)
+	seed(t, conn, svc, acme)
+	ctx := httpx.WithConn(t.Context(), conn)
+
+	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		u, err := users.Invite(ctx, tx, "ada@acme.example.com", "Ada")
+		if err != nil {
+			return err
+		}
+		if err := users.SetPassword(ctx, tx, u.ID, authtest.Password); err != nil {
+			return err
+		}
+		return svc.Forget(ctx, tx, "ada@acme.example.com")
+	})
+	if err != nil {
+		t.Fatalf("the transaction: %v", err)
+	}
+	token := authtest.TokenIn(notices.Sent()[0].Link)
+	if token == "" {
+		t.Fatal("no token reached the mailbox")
+	}
+	var byHash, byToken int
+	row(t, admin, `SELECT count(*) FROM password_tokens WHERE token_hash = $1`, contracts.Hash(token)).Scan(&byHash)
+	row(t, admin, `SELECT count(*) FROM password_tokens WHERE token_hash = $1`, []byte(token)).Scan(&byToken)
+	if byHash != 1 || byToken != 0 {
+		t.Errorf("%d rows under the hash and %d under the token itself; want one and none", byHash, byToken)
+	}
 }

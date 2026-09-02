@@ -271,6 +271,36 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		t.Errorf("GET %s at an unknown host = %d, want 404", tasksPath, code)
 	}
 
+	// Inviting somebody is the loop this stage closes: the user module creates
+	// a person with no password and publishes user.invited, the auth module
+	// subscribes to that, issues a one-time token and asks the notification
+	// module to mail the link, and the worker sends it. Nothing in the user
+	// module knows any of that happens.
+	invite(t, cfg, c, "grace@acme.localhost")
+	var link string
+	eventually(t, "the invitation to be mailed", func() bool {
+		for _, sent := range box.Sent() {
+			if sent.To == "grace@acme.localhost" {
+				link = sent.Body
+				return true
+			}
+		}
+		return false
+	})
+	token := tokenIn(t, link)
+
+	// The link works, once, and it is what turns an invitation into somebody
+	// who can sign in.
+	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+token+`","new":"a chosen passphrase for grace"}`); code != http.StatusOK {
+		t.Fatalf("the reset = %d %s, want 200", code, body)
+	}
+	signIn(t, cfg, acmeHost, "grace@acme.localhost", "a chosen passphrase for grace")
+	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+token+`","new":"another passphrase entirely"}`); code != http.StatusUnauthorized {
+		t.Errorf("the link worked twice = %d %s, want 401", code, body)
+	}
+
 	// Signing out ends it: the same cookie is nobody afterwards.
 	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, "/api/v1/auth/logout", ""); code != http.StatusOK {
 		t.Fatalf("logout = %d %s, want 200", code, body)
@@ -601,6 +631,50 @@ func grant(t *testing.T, cfg config.Config, tenantID uuid.UUID, email string) {
 	if err != nil {
 		t.Fatalf("grant tenant:manage in %s: %v", tenantID, err)
 	}
+}
+
+// invite creates somebody with no password, through the service main holds.
+//
+// It is the service and not a route because inviting is user.Service.Invite,
+// and the module mounts no route for it: the generic create publishes
+// user.user.created and this flow is driven by user.invited. That the two are
+// different events is the user module's business; what this test is about is
+// what the auth module does when it sees the second one.
+func invite(t *testing.T, cfg config.Config, c composition, email string) {
+	t.Helper()
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+	var acme tenancy.Tenant
+	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("resolve %s: %v", acmeHost, err)
+	}
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		_, err := c.users.Invite(ctx, tx, email, "")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("invite %s: %v", email, err)
+	}
+}
+
+// tokenIn is the set-password token a mailed link carries. The message is the
+// notification module's plain-text template with the auth module's link in it,
+// so this is the one place a test reads across the two.
+func tokenIn(t *testing.T, body string) string {
+	t.Helper()
+	_, after, ok := strings.Cut(body, "token=")
+	if !ok {
+		t.Fatalf("no token in the mail:\n%s", body)
+	}
+	token, _, _ := strings.Cut(after, "\n")
+	return strings.TrimSpace(token)
 }
 
 // signIn returns a client holding the session cookie the login set.

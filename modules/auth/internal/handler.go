@@ -13,17 +13,21 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 // Path is where this module's routes live.
 const Path = "/api/v1/auth"
 
-// RegisterRoutes mounts login, logout and me.
+// RegisterRoutes mounts signing in and out, the caller's own identity, the
+// three password routes and the two roles routes.
 //
-// All three are about the caller themselves, which is why none of them declares
-// a permission: login is Public because somebody who is not signed in is the
-// only caller it is for, and the other two are SignedIn because there is no
-// resource to name a permission on.
+// All but the last two are about the caller themselves, which is why they
+// declare no permission: the public ones are for somebody who cannot sign in,
+// and the signed-in ones are about a person rather than a resource. The roles
+// routes are the exception and say so with role:manage — a role is what
+// everybody else in the tenant may do.
 func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 	httpx.Register(api, huma.Operation{
 		OperationID: "auth-login",
@@ -100,6 +104,127 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		}
 		return &identityOutput{Body: identity}, nil
 	})
+
+	httpx.Register(api, huma.Operation{
+		OperationID: "auth-password-change",
+		Method:      http.MethodPost,
+		Path:        Path + "/password",
+		Summary:     "Change my password",
+		Description: "Requires the password in force. Every other session of this person ends; the one making the request does not, so changing a password does not sign you out of the page you changed it on.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
+		Extensions:  map[string]any{httpx.EventsExtension: []string{usercontracts.EventPasswordSet}},
+	}, httpx.SignedIn(), func(ctx context.Context, in *changeInput) (*doneOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		p, ok := httpx.PrincipalFrom(ctx)
+		if !ok || p.UserID == uuid.Nil {
+			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
+		}
+		// The session to keep is the caller's own, read off the cookie the
+		// kernel already recognised. A caller who arrived some other way keeps
+		// nothing, which is the safe direction.
+		keep, _ := sessionOf(ctx)
+		if err := svc.ChangePassword(ctx, tx, p.UserID, keep, in.Body.Current, in.Body.New); err != nil {
+			return nil, refusal(err)
+		}
+		return done(), nil
+	})
+
+	httpx.Register(api, huma.Operation{
+		OperationID: "auth-password-forgot",
+		Method:      http.MethodPost,
+		Path:        Path + "/password/forgot",
+		Summary:     "Send me a reset link",
+		Description: "Always answers 200. An address nobody has and an address somebody has are the same answer, because a public route that told them apart would be an account enumeration oracle; the mail that does not arrive is the message.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusServiceUnavailable},
+		Extensions: map[string]any{httpx.EventsExtension: []string{
+			notificationcontracts.EventCreated, notificationcontracts.EventEmailRequested,
+		}},
+	}, httpx.Public(), func(ctx context.Context, in *forgotInput) (*doneOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := svc.Forget(ctx, tx, in.Body.Email); err != nil {
+			return nil, rest.Fault(err)
+		}
+		return done(), nil
+	})
+
+	httpx.Register(api, huma.Operation{
+		OperationID: "auth-password-reset",
+		Method:      http.MethodPost,
+		Path:        Path + "/password/reset",
+		Summary:     "Set a password with a link",
+		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds. A token that is unknown, spent or expired is one answer.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
+		Extensions: map[string]any{httpx.EventsExtension: []string{
+			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
+		}},
+	}, httpx.Public(), func(ctx context.Context, in *resetInput) (*clearOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := svc.Reset(ctx, tx, in.Body.Token, in.Body.New); err != nil {
+			return nil, refusal(err)
+		}
+		// The cookie goes too. Every session ended, so one left in the browser
+		// is a credential that names nothing, and clearing it is what makes the
+		// next page load a sign-in rather than a silent 403.
+		out := &clearOutput{SetCookie: cookies.Clear()}
+		out.Body.SignedOut = true
+		return out, nil
+	})
+
+	httpx.Register(api, huma.Operation{
+		OperationID: "auth-role-list",
+		Method:      http.MethodGet,
+		Path:        Path + "/roles",
+		Summary:     "List this tenant's roles",
+		Description: "What every role name grants here, which is what everybody holding one may do.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusServiceUnavailable},
+	}, httpx.Permission(contracts.PermissionRoleManage), func(ctx context.Context, _ *struct{}) (*rolesOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		roles, err := svc.Roles(ctx, tx)
+		if err != nil {
+			return nil, rest.Fault(err)
+		}
+		out := &rolesOutput{}
+		out.Body.Items, out.Body.Total = roles, len(roles)
+		return out, nil
+	})
+
+	httpx.Register(api, huma.Operation{
+		OperationID: "auth-role-set",
+		Method:      http.MethodPut,
+		Path:        Path + "/roles/{name}",
+		Summary:     "Set what a role grants",
+		Description: "Creates the role if it is new. Every permission has to be one some module defines, and an operator permission is refused outside the operator's own tenant: both would otherwise be grants that look like authority and are not.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRoleSet}},
+	}, httpx.Permission(contracts.PermissionRoleManage), func(ctx context.Context, in *roleInput) (*roleOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// The catalogue comes from the kernel, which read it off every
+		// manifest before any route was registered. Asking each module would
+		// make this one know its neighbours; asking the kernel makes it know
+		// only that there is a list. See httpx.API.Declare.
+		role, err := svc.SetRole(ctx, tx, in.Name, in.Body.Permissions, api.Permissions())
+		return &roleOutput{Body: role}, rest.Fault(err)
+	})
 }
 
 // sessionOf is the session id the caller presented, read back off the request
@@ -111,12 +236,20 @@ func sessionOf(ctx context.Context) (uuid.UUID, bool) {
 	if !ok {
 		return uuid.Nil, false
 	}
-	cookie, err := r.Cookie(httpx.SessionCookie)
-	if err != nil {
+	cookie, ok := httpx.SessionCookieOf(r)
+	if !ok {
 		return uuid.Nil, false
 	}
 	id, err := uuid.Parse(cookie.Value)
 	return id, err == nil
+}
+
+// done is the answer to a command with nothing to report: a body that says it
+// worked rather than an empty one, the shape clearOutput already uses.
+func done() *doneOutput {
+	out := &doneOutput{}
+	out.Body.Done = true
+	return out
 }
 
 // refusal is the one mapping for a login that did not work: 401 for credentials
@@ -166,4 +299,50 @@ type clearOutput struct {
 
 type identityOutput struct {
 	Body *contracts.Identity
+}
+
+type changeInput struct {
+	Body struct {
+		Current string `json:"current" maxLength:"256" doc:"The password in force"`
+		New     string `json:"new" minLength:"12" maxLength:"256" doc:"The new password; at least twelve characters"`
+	} `required:"true"`
+}
+
+type forgotInput struct {
+	Body struct {
+		Email string `json:"email" format:"email" maxLength:"320" doc:"The address to send a reset link to"`
+	} `required:"true"`
+}
+
+type resetInput struct {
+	Body struct {
+		Token string `json:"token" maxLength:"128" doc:"The token the link carried"`
+		New   string `json:"new" minLength:"12" maxLength:"256" doc:"The new password; at least twelve characters"`
+	} `required:"true"`
+}
+
+// doneOutput is the answer to a command with nothing to report. A body that
+// says it worked beats an empty one, for the reason clearOutput's does.
+type doneOutput struct {
+	Body struct {
+		Done bool `json:"done"`
+	}
+}
+
+type roleInput struct {
+	Name string `path:"name" maxLength:"64" doc:"The role's name, a lower-case identifier"`
+	Body struct {
+		Permissions []string `json:"permissions" doc:"What this role grants from now on" example:"task:read"`
+	} `required:"true"`
+}
+
+type roleOutput struct {
+	Body *contracts.Role
+}
+
+type rolesOutput struct {
+	Body struct {
+		Items []*contracts.Role `json:"items"`
+		Total int               `json:"total"`
+	}
 }
