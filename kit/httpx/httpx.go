@@ -108,10 +108,18 @@ type Options struct {
 	// Authorize answers the permission questions the declarations ask.
 	Authorize Authorizer
 
-	// Authenticate reads the caller's principal off the raw request, before
-	// routing. It reports false for an anonymous caller, which is not an error:
-	// a Public operation serves them. Sessions replace the hook in E3.
-	Authenticate func(r *http.Request) (Principal, bool)
+	// Authenticate recognises the caller. It runs after the host has resolved
+	// to a tenant and is handed that request's own transaction, so a session
+	// lookup is an ordinary tenant-scoped query under row-level security: the
+	// auth module neither resolves the host a second time nor asks for a
+	// capability to read across tenants, because a credential belonging to
+	// somebody else's tenant is a row it cannot see.
+	//
+	// It reports false for an anonymous caller, which is not an error — a
+	// Public operation serves them. An error is an outage: the request is a 500
+	// and the reason is logged, because a session store that cannot be reached
+	// must not read as "you are not signed in".
+	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (Principal, bool, error)
 
 	// Log receives the reason behind every denial and every rolled-back
 	// transaction. Defaults to slog.Default().
@@ -130,13 +138,14 @@ type API struct {
 	// chain. A file has no tenant and no transaction, so it does not pay for
 	// one, and a large one is not buffered waiting for a commit that will
 	// never happen.
-	root  *chi.Mux
-	inner *chi.Mux
-	opts  Options
-	log   *slog.Logger
-	hosts *hostCache
-	token tenancy.SystemToken
-	lazy  tenancy.SystemToken
+	root   *chi.Mux
+	inner  *chi.Mux
+	opts   Options
+	log    *slog.Logger
+	hosts  *hostCache
+	token  tenancy.SystemToken
+	lazy   tenancy.SystemToken
+	system tenancy.SystemToken
 	// resolving collapses concurrent lookups of one host into one query, so a
 	// cold cache under load is one round trip and not one per request.
 	resolving singleflight.Group
@@ -181,13 +190,14 @@ func New(cfg Options) (*API, *chi.Mux) {
 
 	root, inner := chi.NewMux(), chi.NewMux()
 	a := &API{
-		root:  root,
-		inner: inner,
-		opts:  cfg,
-		log:   cfg.Log,
-		hosts: &hostCache{hosts: map[string]hostEntry{}},
-		token: syscap.NewSystemToken("tenant resolution"),
-		lazy:  syscap.NewSystemToken("request transaction"),
+		root:   root,
+		inner:  inner,
+		opts:   cfg,
+		log:    cfg.Log,
+		hosts:  &hostCache{hosts: map[string]hostEntry{}},
+		token:  syscap.NewSystemToken("tenant resolution"),
+		lazy:   syscap.NewSystemToken("request transaction"),
+		system: syscap.NewSystemToken("a module's control-plane routes"),
 	}
 	if a.log == nil {
 		a.log = slog.Default()
@@ -199,10 +209,12 @@ func New(cfg Options) (*API, *chi.Mux) {
 	//
 	// The request id goes first, because everything below logs it and every
 	// problem body carries it. respond is second, holding the response and
-	// catching a panic, outside the transaction on purpose. Authentication is
-	// last, because its hook reads an *http.Request and a principal is a
-	// property of the caller rather than of the route.
-	inner.Use(a.requestID, a.respond, a.authenticate)
+	// catching a panic, outside the transaction on purpose. csrf is third: a
+	// cross-site write is refused before it reaches a router, a tenant or a
+	// transaction. carry is last and does nothing but put the request itself on
+	// the context, for the authentication hook further down, which runs inside
+	// the tenant transaction and still has to read the caller's cookies.
+	inner.Use(a.requestID, a.respond, a.csrf, a.carry)
 
 	// huma.NewAPI mounts its own documentation routes through the adapter it is
 	// handed, so the recorder declares those Public as they arrive: they serve
@@ -214,17 +226,34 @@ func New(cfg Options) (*API, *chi.Mux) {
 	a.adapter = rec
 
 	// The huma half of the chain, in order. Tenant first, because everything
-	// after it is scoped to one. Transaction second, so that authorization can
-	// read the tenant's own rows: a permission check in E3 is a query, and it
-	// belongs inside the same transaction as the work it guards. Authorization
-	// last, so a denial rolls that transaction back untouched.
-	a.api.UseMiddleware(a.tenant, a.transaction, a.authorize)
+	// after it is scoped to one. Transaction second, so that authentication and
+	// authorization can read the tenant's own rows: both are queries, and they
+	// belong inside the same transaction as the work they guard. Authentication
+	// third, because a session is a row of the tenant that has just resolved.
+	// Authorization last, so a denial rolls that transaction back untouched.
+	a.api.UseMiddleware(a.tenant, a.transaction, a.authenticate, a.authorize)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
 	root.Mount("/", inner)
 	return a, root
 }
+
+// SystemToken is the capability that opens a cross-tenant transaction, handed
+// to a module at the one moment it is being wired: Module.Routes is given this
+// API, and a module that registers a control-plane route takes the token there.
+//
+// It is a method rather than something kit/internal/syscap would mint for
+// anybody, because the point is that the set of modules holding one is short and
+// visible. `grep -rn 'SystemToken()' modules/` is that list, and there is no
+// other door: nothing outside kit/ can construct or implement a token, so a
+// module that wants to cross tenants has to write this call where a reviewer
+// reading the manifest will see it. See docs/adr/0006.
+//
+// A route that holds one still runs inside its own tenant's transaction, so it
+// opens the system transaction on a detached context (db.Detached) — two
+// transactions, and the control-plane one commits on its own.
+func (a *API) SystemToken() tenancy.SystemToken { return a.system }
 
 // Static mounts a file tree beside the API, on the router that carries neither
 // the request middleware nor the transaction. Static assets are not operations:

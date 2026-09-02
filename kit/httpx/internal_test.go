@@ -30,11 +30,13 @@ func (nothing) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { 
 func TestReachingAroundRegisterIsStillRecorded(t *testing.T) {
 	_, app := dbtest.Schema(t)
 	a, _ := New(Options{
-		Tenants:      nothing{},
-		Conn:         app,
-		Authorize:    nothing{},
-		Authenticate: func(*http.Request) (Principal, bool) { return Principal{}, false },
-		Log:          slog.New(slog.DiscardHandler),
+		Tenants:   nothing{},
+		Conn:      app,
+		Authorize: nothing{},
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (Principal, bool, error) {
+			return Principal{}, false, nil
+		},
+		Log: slog.New(slog.DiscardHandler),
 	})
 	Register(a, huma.Operation{
 		OperationID: "declared", Method: http.MethodGet, Path: "/declared",
@@ -83,8 +85,8 @@ func TestHostOnlyIsTheKeyEveryLoaderSees(t *testing.T) {
 		{"[::1]", "::1"},
 		{"[2001:DB8::1]:80", "2001:db8::1"},
 	} {
-		if got := hostOnly(tt.in); got != tt.want {
-			t.Errorf("hostOnly(%q) = %q, want %q", tt.in, got, tt.want)
+		if got := HostOnly(tt.in); got != tt.want {
+			t.Errorf("HostOnly(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }

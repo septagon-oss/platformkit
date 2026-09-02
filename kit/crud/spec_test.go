@@ -49,8 +49,8 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *sql.DB) {
 	}
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
-		Authenticate: func(*http.Request) (httpx.Principal, bool) {
-			return httpx.Principal{UserID: uuid.New(), TenantID: acme.ID}, true
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
+			return httpx.Principal{UserID: uuid.New()}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
@@ -65,6 +65,10 @@ func call(t *testing.T, r http.Handler, method, path, body string) (int, string)
 	t.Helper()
 	var reader *strings.Reader = strings.NewReader(body)
 	req := httptest.NewRequest(method, "http://"+host+path, reader)
+	// The kernel asks the identity hook only about a request that presents
+	// something to recognise, so a request that expects to be signed in carries
+	// one. See kit/httpx.credentialed.
+	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -263,8 +267,10 @@ func TestNoEventsMountsTheSameRoutesSilently(t *testing.T) {
 	}
 	api, _ := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
-		Authenticate: func(*http.Request) (httpx.Principal, bool) { return httpx.Principal{}, false },
-		Log:          slog.New(slog.DiscardHandler),
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
+			return httpx.Principal{}, false, nil
+		},
+		Log: slog.New(slog.DiscardHandler),
 	})
 	quiet := spec
 	quiet.NoEvents = true

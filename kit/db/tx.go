@@ -92,6 +92,24 @@ func current(ctx context.Context) (openTx, bool) {
 	return openTx{}, false
 }
 
+// Detached returns ctx with no transaction on it, so that a Run or a RunSystem
+// below it opens its own instead of joining — or refusing to join — the one the
+// caller already holds.
+//
+// It exists for one shape of work: a request that has resolved a tenant, opened
+// a tenant transaction to recognise its caller, and now has to touch a table
+// that belongs to no tenant. Those are two transactions and they cannot be one,
+// because a system transaction cannot widen a tenant one half way through.
+//
+// The consequence is the thing to understand, and it is why this is spelled out
+// rather than hidden: the detached transaction commits on its own, so its work
+// survives a request that afterwards fails. A caller uses it for a control-plane
+// write it means to keep — creating a tenant, recording a failed login — and for
+// nothing else.
+func Detached(ctx context.Context) context.Context {
+	return context.WithValue(context.WithValue(ctx, txKey{}, nil), pendingKey{}, nil)
+}
+
 // Run opens a tenant-scoped transaction for the tenant in ctx and applies it
 // with set_config('platformkit.tenant_id', ..., true), which is what the
 // row-level security policies in migrations/ read. Nested calls join the

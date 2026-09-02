@@ -136,13 +136,16 @@ func Register[I, O any](api *API, op huma.Operation, auth Auth, handler func(con
 // Principal is who is making a request. It is established once per request by
 // Options.Authenticate and never derived again: a handler that wants to know
 // the caller reads it from the context, and nothing else may put one there.
+//
+// There is no tenant on it. The hook runs after the host has resolved and
+// inside that tenant's own transaction, so a credential belonging to another
+// tenant is a row row-level security does not show — the principal that would
+// have had to be refused is a principal that is never built. A field the
+// middleware could only ever compare with the tenant it just set itself is a
+// check that proves nothing.
 type Principal struct {
 	// UserID identifies the person or machine account.
 	UserID uuid.UUID
-	// TenantID is the tenant the credential belongs to. The authorization
-	// middleware refuses a principal whose tenant is not the one the request
-	// host resolved to, so a session for one tenant cannot act on another.
-	TenantID uuid.UUID
 	// Roles are the roles the credential carries, for an Authorizer that wants
 	// them without a second lookup.
 	Roles []string

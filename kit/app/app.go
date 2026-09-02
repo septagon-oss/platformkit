@@ -53,7 +53,7 @@ const (
 type Options struct {
 	Tenants      httpx.TenantLoader
 	Authorize    httpx.Authorizer
-	Authenticate func(r *http.Request) (httpx.Principal, bool)
+	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (httpx.Principal, bool, error)
 	Log          *slog.Logger
 
 	// Role defaults to All.

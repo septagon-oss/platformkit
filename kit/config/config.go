@@ -6,14 +6,12 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"net"
 	"net/url"
 	"os"
 	"slices"
 	"strings"
-
-	"github.com/google/uuid"
-	"gopkg.in/yaml.v3"
 )
 
 // levels is the closed set log.level may name. slog has four; a fifth spelling
@@ -26,7 +24,7 @@ type Config struct {
 	Database Database `yaml:"database"`
 	NATS     NATS     `yaml:"nats"`
 	Log      Log      `yaml:"log"`
-	Dev      Dev      `yaml:"dev"`
+	Auth     Auth     `yaml:"auth"`
 }
 
 // Server is where the app listens, what host it believes it is reached at, and
@@ -58,38 +56,29 @@ type Log struct {
 	Level string `yaml:"level"`
 }
 
-// Dev stands in for the tenant and auth modules until stage E3 ships them: a
-// list of hosts that are tenants, and one principal every request is.
-//
-// It is deleted in E3 along with apps/platformkit/dev.go, which reads it. Until
-// then it is the reason `make run` boots on an empty database with no seeding
-// step, and it is dangerous by construction — it hands every caller every
-// permission — so Load refuses it unless server.public_host is a local name.
-type Dev struct {
-	// Enabled turns the whole block on. It defaults to false, so a deployment
-	// that says nothing gets no development identity.
-	Enabled bool `yaml:"enabled"`
-	// Principal is who every request is. Empty is not allowed when Enabled.
-	Principal DevPrincipal `yaml:"principal"`
-	// Tenants are the hosts that resolve, and what they resolve to.
-	Tenants []DevTenant `yaml:"tenants"`
+// Auth is what the auth module cannot decide for itself. Passwords and sessions
+// need no configuration — the parameters are constants in the module, because a
+// deployment that lowers them is a deployment that has weakened itself — so this
+// is one optional identity provider and nothing else.
+type Auth struct {
+	OIDC OIDC `yaml:"oidc"`
 }
 
-// DevPrincipal is the caller the development identity hook returns for every
-// request. Its tenant is the one the request host resolved to, so it is not
-// named here.
-type DevPrincipal struct {
-	UserID string   `yaml:"user_id"`
-	Roles  []string `yaml:"roles"`
+// OIDC is one OpenID Connect provider. An empty issuer means there is none, and
+// then the two OIDC routes are not registered at all: a route that would answer
+// "this application has no identity provider" is a route with nothing to say.
+type OIDC struct {
+	Issuer       string `yaml:"issuer"`
+	ClientID     string `yaml:"client_id"`
+	ClientSecret string `yaml:"client_secret"`
+	// RedirectPath is the path the provider sends the browser back to. The host
+	// is the request's own, because every tenant is reached at its own host and
+	// one registered redirect per host is what the provider expects.
+	RedirectPath string `yaml:"redirect_path"`
 }
 
-// DevTenant is one host and the tenant it is.
-type DevTenant struct {
-	Host string `yaml:"host"`
-	ID   string `yaml:"id"`
-	Slug string `yaml:"slug"`
-	Name string `yaml:"name"`
-}
+// Enabled reports whether a provider is configured.
+func (o OIDC) Enabled() bool { return o.Issuer != "" }
 
 // Load reads path, applies the environment overrides, and validates the result.
 func Load(path string) (Config, error) {
@@ -114,6 +103,10 @@ func Load(path string) (Config, error) {
 		{"PLATFORMKIT_DATABASE_MIGRATE_URL", &c.Database.MigrateURL},
 		{"PLATFORMKIT_NATS_URL", &c.NATS.URL},
 		{"PLATFORMKIT_LOG_LEVEL", &c.Log.Level},
+		// The one secret in the surface, and the one key that has an override
+		// for a reason rather than for symmetry: rule 7 says never commit a
+		// secret, and config.yaml is a file somebody will commit.
+		{"PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", &c.Auth.OIDC.ClientSecret},
 	} {
 		if v, ok := os.LookupEnv(o.env); ok {
 			*o.field = v
@@ -156,54 +149,53 @@ func Load(path string) (Config, error) {
 			return Config{}, fmt.Errorf("config %s: %s has scheme %q; PlatformKit speaks postgres and nothing else", path, u.key, parsed.Scheme)
 		}
 	}
-	if err := c.Dev.validate(path, c.Server.PublicHost); err != nil {
+	if err := c.Auth.OIDC.validate(path); err != nil {
 		return Config{}, err
 	}
 	return c, nil
 }
 
-// validate refuses a development block that is either off a laptop or missing
-// something the hook it feeds cannot invent.
-//
-// The public-host rule is the important one and it lives here rather than in
-// kit/app, which knows nothing about a development identity and should not
-// start to: this is the one place both keys are already in hand. A localhost
-// name is not a security boundary — it is a deployment that has to be
-// deliberate about turning "everyone is an admin" on.
-func (d Dev) validate(path, publicHost string) error {
-	if !d.Enabled {
+// defaultRedirectPath is where the provider sends a browser back to, and it is
+// the path the auth module registers. A deployment only sets it when a provider
+// was registered against a different one.
+const defaultRedirectPath = "/api/v1/auth/oidc/callback"
+
+// validate refuses a half-written provider. All of it or none of it: a block
+// with an issuer and no client id is a login route that exists and cannot work,
+// which is worse than no login route.
+func (o *OIDC) validate(path string) error {
+	if !o.Enabled() {
+		switch {
+		case o.ClientID != "" || o.ClientSecret != "":
+			return fmt.Errorf("config %s: auth.oidc has credentials and no issuer", path)
+		}
 		return nil
 	}
-	if !local(publicHost) {
-		return fmt.Errorf("config %s: dev.enabled is true and server.public_host is %q; the development identity makes every caller an administrator of every tenant, so it is refused anywhere but a local name", path, publicHost)
+	u, err := url.Parse(o.Issuer)
+	switch {
+	case err != nil || u.Scheme != "https" && !Local(u.Host):
+		return fmt.Errorf("config %s: auth.oidc.issuer is %q; an issuer is an https URL", path, o.Issuer)
+	case o.ClientID == "":
+		return fmt.Errorf("config %s: auth.oidc.client_id is empty", path)
+	case o.ClientSecret == "":
+		return fmt.Errorf("config %s: auth.oidc.client_secret is empty; set %s rather than committing it", path, "PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET")
 	}
-	if _, err := uuid.Parse(d.Principal.UserID); err != nil {
-		return fmt.Errorf("config %s: dev.principal.user_id is %q, which is not a uuid", path, d.Principal.UserID)
+	if o.RedirectPath == "" {
+		o.RedirectPath = defaultRedirectPath
 	}
-	if len(d.Tenants) == 0 {
-		return fmt.Errorf("config %s: dev.enabled is true and dev.tenants is empty, so no host would resolve", path)
-	}
-	for i, t := range d.Tenants {
-		switch {
-		case t.Host == "":
-			return fmt.Errorf("config %s: dev.tenants[%d] has no host", path, i)
-		case t.Slug == "":
-			return fmt.Errorf("config %s: dev.tenants[%d] (%s) has no slug", path, i, t.Host)
-		case t.Name == "":
-			return fmt.Errorf("config %s: dev.tenants[%d] (%s) has no name", path, i, t.Host)
-		}
-		if _, err := uuid.Parse(t.ID); err != nil {
-			return fmt.Errorf("config %s: dev.tenants[%d] (%s) has id %q, which is not a uuid", path, i, t.Host, t.ID)
-		}
+	if !strings.HasPrefix(o.RedirectPath, "/") {
+		return fmt.Errorf("config %s: auth.oidc.redirect_path is %q, which is not a path", path, o.RedirectPath)
 	}
 	return nil
 }
 
-// local reports whether host is a name that only reaches this machine. The set
-// is closed and short on purpose: anything cleverer is a rule somebody will
-// find a way past, and the answer to "I want the development identity on a real
-// host" is no.
-func local(host string) bool {
+// Local reports whether host is a name that only reaches this machine. The set
+// is closed and short on purpose: anything cleverer is a rule somebody will find
+// a way past. It is exported because the auth module asks the same question
+// about the same key: a session cookie is marked Secure unless the application
+// is being reached at a local name, and http://localhost is the one place a
+// browser would refuse one.
+func Local(host string) bool {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}

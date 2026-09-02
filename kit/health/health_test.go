@@ -32,6 +32,14 @@ func (s sites) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.
 
 func (sites) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return false, nil }
 
+// anonymous is the identity hook for a file about probes: the two probes are
+// Public and carry no credential, so the kernel never asks it anything. It is
+// here because httpx.New requires one — an API that could not recognise a
+// caller could only fail closed on every request.
+func anonymous(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
+	return httpx.Principal{}, false, nil
+}
+
 func serve(t *testing.T, checks ...health.Check) (http.Handler, *db.Conn) {
 	t.Helper()
 	_, app := dbtest.Schema(t)
@@ -39,7 +47,7 @@ func serve(t *testing.T, checks ...health.Check) (http.Handler, *db.Conn) {
 		Tenants:      sites{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}},
 		Conn:         app,
 		Authorize:    sites{},
-		Authenticate: func(*http.Request) (httpx.Principal, bool) { return httpx.Principal{}, false },
+		Authenticate: anonymous,
 	})
 	health.Register(api, checks...)
 	if err := api.ValidateDeclarations(); err != nil {
@@ -123,7 +131,7 @@ func TestReadinessIs503WhenTheDatabaseIsDown(t *testing.T) {
 		Tenants:      sites{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}},
 		Conn:         app,
 		Authorize:    sites{},
-		Authenticate: func(*http.Request) (httpx.Principal, bool) { return httpx.Principal{}, false },
+		Authenticate: anonymous,
 	})
 	health.Register(api, health.DatabaseCheck(app))
 

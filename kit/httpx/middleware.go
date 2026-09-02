@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -122,7 +123,7 @@ func (a *API) respond(next http.Handler) http.Handler {
 				a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: handler panicked",
 					"method", r.Method, "path", r.URL.Path, "panic", v, "stack", string(debug.Stack()))
 				if b.reset() {
-					writeProblem(b, http.StatusInternalServerError, RequestIDFrom(r.Context()))
+					writeProblem(b, http.StatusInternalServerError, RequestIDFrom(r.Context()), "")
 				}
 			}
 			b.send()
@@ -236,8 +237,8 @@ func bufferFrom(ctx context.Context) (*buffer, bool) {
 
 // writeProblem answers with the one error shape, without huma: the recovery
 // runs outside any huma context, and a panic during routing has none at all.
-func writeProblem(w http.ResponseWriter, status int, id string) {
-	p := problem.New(status, "")
+func writeProblem(w http.ResponseWriter, status int, id, detail string) {
+	p := problem.New(status, detail)
 	if id != "" {
 		p.Instance = "urn:request:" + id
 	}
@@ -268,17 +269,162 @@ func (a *API) rlog(ctx context.Context) *slog.Logger {
 	return a.log
 }
 
-// authenticate establishes the caller's principal before routing. A hook that
-// reports false leaves the context anonymous, which is not an error here: only
-// the authorization middleware knows whether the operation minds.
-func (a *API) authenticate(next http.Handler) http.Handler {
+// SessionCookie is the cookie a browser session travels in. The name is here,
+// and not in the auth module that mints it, because the kernel has to recognise
+// it twice without knowing anything else about sessions: to refuse a cross-site
+// write (csrf) and to decide that a request is worth authenticating at all.
+const SessionCookie = "platformkit_session"
+
+// carry puts the request itself on the context, because the authentication hook
+// runs inside the tenant transaction — below huma's routing — and still has to
+// read the caller's cookies and headers. It is two lines rather than an adapter
+// unwrap so that this package does not care which adapter huma was built on.
+func (a *API) carry(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if p, ok := a.opts.Authenticate(r); ok {
-			r = r.WithContext(WithPrincipal(r.Context(), p))
-		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestKey{}, r)))
 	})
 }
+
+// unsafeMethod reports whether a method may change state. The four safe ones are
+// the closed set RFC 9110 calls safe; everything else is guarded.
+func unsafeMethod(m string) bool {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return false
+	}
+	return true
+}
+
+// csrf refuses a state-changing request that a cookie session authorised and
+// another site sent.
+//
+// A cookie is attached by the browser whichever page made the request, so a
+// session cookie is a credential the caller did not choose to present. The check
+// is the browser's own account of where the request came from: Sec-Fetch-Site,
+// which a page cannot forge, and an Origin whose host is this one for the older
+// clients that do not send it. A request carrying no session cookie is not
+// guarded, because nothing was attached on its behalf — a bearer token is
+// presented deliberately and a cross-site page cannot read one to present.
+func (a *API) csrf(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := r.Cookie(SessionCookie); err != nil || !unsafeMethod(r.Method) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch site := r.Header.Get("Sec-Fetch-Site"); site {
+		case "same-origin", "none":
+			next.ServeHTTP(w, r)
+			return
+		case "":
+			// No Sec-Fetch-Site at all: an older client, or a non-browser. The
+			// Origin header is the fallback, and its absence is accepted for the
+			// same reason — a caller that is not a browser attaches no cookie
+			// unless somebody wrote the code that does.
+			if origin := r.Header.Get("Origin"); origin == "" || sameHost(origin, r.Host) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		a.rlog(r.Context()).InfoContext(r.Context(), "httpx: cross-site write refused",
+			"method", r.Method, "path", r.URL.Path, "site", r.Header.Get("Sec-Fetch-Site"), "origin", r.Header.Get("Origin"))
+		writeProblem(w, http.StatusForbidden, RequestIDFrom(r.Context()),
+			"csrf: this request carries a session cookie and came from another site")
+	})
+}
+
+// sameHost reports whether origin names this request's own host.
+func sameHost(origin, host string) bool {
+	u, err := url.Parse(origin)
+	return err == nil && u.Host != "" && HostOnly(u.Host) == HostOnly(host)
+}
+
+// requestKey carries the *http.Request past huma's routing. See carry.
+type requestKey struct{}
+
+// RequestFrom is the request being served.
+//
+// A handler wants it for the things huma's typed input cannot express and that
+// are properties of the connection rather than of the operation: the host an
+// absolute redirect has to be built for, and the address and user agent a
+// session records so that a person can recognise it in a list. Reading the body
+// through it is a mistake — huma has already decoded it — and reading the
+// context off it is another, because this is the request as it was before the
+// tenant, the transaction and the principal were put on it.
+func RequestFrom(ctx context.Context) (*http.Request, bool) {
+	r, ok := ctx.Value(requestKey{}).(*http.Request)
+	return r, ok
+}
+
+// authenticate establishes the caller's principal, inside the tenant
+// transaction the request has just been given.
+//
+// It asks the hook only when the request carries something to recognise. That
+// is not an optimisation: obtaining the transaction opens it, and a request that
+// opens a transaction is a request that fails while the database is down — which
+// is exactly what the lazy transaction exists to avoid for a liveness probe
+// addressed to a tenant host.
+//
+// A hook that reports false leaves the context anonymous, which is not an error
+// here: only the authorization middleware knows whether the operation minds. A
+// hook that returns an error is an outage and answers 500, because a session
+// store that cannot be read must not read as "you are not signed in".
+func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
+	r, ok := RequestFrom(ctx.Context())
+	if !ok || !credentialed(r) {
+		next(ctx)
+		return
+	}
+	tx, ok := TxFrom(ctx.Context())
+	if !ok {
+		// No tenant, or no transaction. Either way there is nowhere to look the
+		// caller up, and the transaction middleware has already logged the cause.
+		next(ctx)
+		return
+	}
+	p, ok, err := a.opts.Authenticate(ctx.Context(), tx, r)
+	if err != nil {
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: could not recognise the caller",
+			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
+		_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
+		return
+	}
+	if !ok {
+		next(ctx)
+		return
+	}
+	next(huma.WithContext(ctx, WithPrincipal(ctx.Context(), p)))
+}
+
+// credentialed reports whether the request presents something the application
+// could recognise: the session cookie, or an Authorization header for a caller
+// that is not a browser. A request with neither is anonymous without a query.
+func credentialed(r *http.Request) bool {
+	if _, err := r.Cookie(SessionCookie); err == nil {
+		return true
+	}
+	return r.Header.Get("Authorization") != ""
+}
+
+// ConnFrom is the application connection this request is served on.
+//
+// It is the second half of SystemToken: db.RunSystem takes a connection and a
+// capability, and a module holds neither until it is handed them. A module that
+// has not taken a token can do nothing with this that it could not already do
+// with the request's own transaction.
+func ConnFrom(ctx context.Context) (*db.Conn, bool) {
+	c, ok := ctx.Value(connKey{}).(*db.Conn)
+	return c, ok
+}
+
+// WithConn puts a connection on ctx. The transaction middleware calls it for
+// every request; it is exported so that a test can put a service in the same
+// position a request puts it in, rather than the service growing a second code
+// path that exists to be testable.
+func WithConn(ctx context.Context, c *db.Conn) context.Context {
+	return context.WithValue(ctx, connKey{}, c)
+}
+
+type connKey struct{}
 
 // hostTTL is how long a resolved host is believed. Long enough that a busy site
 // costs one query per half minute, short enough that adding a domain is a
@@ -335,7 +481,7 @@ const resolveTimeout = 2 * time.Second
 // InvalidateHost forgets a cached resolution, so a rename or a removal takes
 // effect now rather than within hostTTL. The tenant module calls it when it
 // changes a host; nothing else has any reason to.
-func (a *API) InvalidateHost(host string) { a.hosts.remove(hostOnly(host)) }
+func (a *API) InvalidateHost(host string) { a.hosts.remove(HostOnly(host)) }
 
 // resolve maps a host to a tenant, through the loader, inside a cross-tenant
 // transaction the kernel opens for it. The loader is a module: it cannot mint
@@ -392,7 +538,7 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 // addressing the pod by IP, say — and then proceeds with no tenant and, below,
 // no transaction.
 func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
-	host := hostOnly(ctx.Host())
+	host := HostOnly(ctx.Host())
 	t, err := a.resolve(ctx.Context(), host)
 	if err == nil {
 		next(huma.WithContext(ctx, tenancy.WithTenant(ctx.Context(), t)))
@@ -417,11 +563,15 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 	_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "this host cannot be resolved right now")
 }
 
-// hostOnly is the loader's key: the Host header without its port and without
+// HostOnly is the loader's key: the Host header without its port and without
 // the brackets an IPv6 literal carries, lower-cased, without the trailing dot a
 // fully qualified name may have. Normalising here means every TenantLoader is
 // spared doing it, and doing it differently.
-func hostOnly(host string) string {
+//
+// It is exported because the module that stores a host has to spell it the same
+// way as the middleware that looks one up, and two normalisations that drift is
+// a domain that resolves for nobody.
+func HostOnly(host string) string {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	} else if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
@@ -452,6 +602,9 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// Close is idempotent, so this covers the panic path and nothing else.
 	defer func() { _ = p.Close(false) }()
 
+	// The connection travels with the transaction: a control-plane route needs
+	// both it and a token to open a transaction of its own. See ConnFrom.
+	rctx = WithConn(rctx, a.opts.Conn)
 	inner := huma.WithContext(ctx, context.WithValue(rctx, txKey{}, p))
 	next(inner)
 
@@ -535,10 +688,9 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		a.deny(ctx, "AUTH_NO_TENANT", "this operation is tenant work and the host resolved to none")
 		return
 	}
-	if p.TenantID != t.ID {
-		a.deny(ctx, "AUTH_TENANT_MISMATCH", "the principal belongs to another tenant than the host serves")
-		return
-	}
+	// There is no principal-belongs-to-this-tenant check, because there is no
+	// way for it to fail: the principal was built from a row read inside this
+	// tenant's own transaction. See Principal.
 	if auth.kind == kindSignedIn {
 		next(ctx)
 		return
