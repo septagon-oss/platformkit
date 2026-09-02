@@ -33,4 +33,5 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
+	maragu.dev/gomponents v1.3.0 // indirect
 )
