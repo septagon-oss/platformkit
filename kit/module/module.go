@@ -71,19 +71,22 @@ type Module struct {
 	Routes func(api *httpx.API)
 }
 
-// Permission is one thing a role can be granted.
+// Permission is one thing a role can be granted. It is a struct of one field
+// rather than a string because E3's roles screen needs somewhere to hang what a
+// permission means, and a description nothing reads yet is a description that
+// would go stale — so the field is not here until something renders it.
 type Permission struct {
-	Key         string
-	Description string
+	Key string
 }
 
 // NavEntry is one link in the application's navigation, shown to a caller who
-// holds Permission.
+// holds Permission. There is no Order: nav is rendered in composition order,
+// which is the order main lists the modules in, and a second ordering nothing
+// reads is a number every module would guess at.
 type NavEntry struct {
 	Label      string
 	Path       string
 	Permission string
-	Order      int
 }
 
 // moduleName is the grammar of a module name. It is the prefix of every event

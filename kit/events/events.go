@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -27,14 +28,36 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// The two tables, each named once here and once in migrations/.
+// The three tables, each named once here and once in migrations/.
 const (
-	table   = "platformkit_outbox"  // 000002
-	handled = "platformkit_handled" // 000003
+	table       = "platformkit_outbox"       // 000002
+	handled     = "platformkit_handled"      // 000003
+	deadLetters = "platformkit_dead_letters" // 000005
 )
+
+// maxDeliveries bounds how many times one event is handed to one subscription
+// before both transports give up on it: a poison event — one that fails for a
+// reason no retry can fix — would otherwise come back forever and spend the
+// worker on it. The last attempt terminates the message and writes a row to
+// platformkit_dead_letters instead.
+//
+// backoff is the wait before each redelivery, so it is one shorter than
+// maxDeliveries: the first delivery does not wait. Both are variables rather
+// than constants only so that internal_test.go can run the whole ladder in
+// milliseconds; nothing outside this package can see them.
+var (
+	maxDeliveries = 5
+	backoff       = []time.Duration{time.Second, 5 * time.Second, 15 * time.Second, 30 * time.Second}
+)
+
+// deadLetterToken is the capability the dead-letter write needs. It is a system
+// transaction and not the event's own tenant transaction because the reason a
+// delivery failed may be that the tenant transaction could not be opened.
+var deadLetterToken = syscap.NewSystemToken("record an event no subscription could handle")
 
 // Event is one thing that happened in one tenant.
 type Event struct {
@@ -89,14 +112,27 @@ type Handler func(ctx context.Context, tx db.Tx[db.Tenant], ev Event) error
 
 // Transport carries events between processes. There are two implementations
 // and no third: Memory for a single-process run and its tests, JetStream for a
-// fleet. Both deliver at least once.
+// fleet. Both deliver at least once, both give up after maxDeliveries, and both
+// dead-letter what they gave up on — a transport that agreed with the other
+// about everything except when to stop would be two policies, not one.
 type Transport interface {
 	Publish(ctx context.Context, ev Event) error
-	// Subscribe delivers every event called name to h until ctx is done.
-	// durable names the subscription so a consumer that restarts resumes where
-	// it stopped rather than replaying from the beginning; an error from h is a
-	// negative acknowledgement and the event comes back.
-	Subscribe(ctx context.Context, durable, name string, h func(ctx context.Context, ev Event) error) error
+	// Subscribe delivers every event called name to sink until ctx is done.
+	// durable names the subscription, so a consumer that restarts resumes where
+	// it stopped rather than replaying from the beginning.
+	Subscribe(ctx context.Context, durable, name string, sink Sink) error
+}
+
+// Sink is what a transport does with one event. Handle runs the handler and an
+// error from it is a negative acknowledgement, so the event comes back; Dead is
+// called instead once the transport has stopped bringing it back.
+//
+// It is a struct rather than a second parameter because the two belong to one
+// subscription, and a transport that had only Handle could only choose between
+// losing a poison event and retrying it forever.
+type Sink struct {
+	Handle func(ctx context.Context, ev Event) error
+	Dead   func(ctx context.Context, ev Event, cause error)
 }
 
 // Subscription is one module's interest in one event. A module lists its
@@ -127,19 +163,34 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 			return fmt.Errorf("events: subscription %s to %s has no handler", s.Module, s.Name)
 		}
 		h, durable := s.Handler, s.durable()
-		deliver := func(ctx context.Context, ev Event) error {
-			// Only the id is known here. It is all kit/db needs to scope the
-			// transaction, and it is what row-level security reads.
-			ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
-			return db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				first, err := claim(tx, ev.ID, durable)
-				if err != nil || !first {
-					return err
+		sink := Sink{
+			Handle: func(ctx context.Context, ev Event) error {
+				// A handler holds a transaction, so it is bounded: a handler
+				// still running when the transport's acknowledgement deadline
+				// passes is a handler whose event is redelivered while its
+				// first attempt is still writing. handlerTimeout is shorter
+				// than the JetStream AckWait for exactly that reason.
+				ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
+				defer cancel()
+				// Only the id is known here. It is all kit/db needs to scope
+				// the transaction, and it is what row-level security reads.
+				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
+				return db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+					first, err := claim(tx, ev.ID, durable)
+					if err != nil || !first {
+						return err
+					}
+					return h(ctx, tx, ev)
+				})
+			},
+			Dead: func(ctx context.Context, ev Event, cause error) {
+				if err := deadLetter(ctx, conn, ev, durable, cause); err != nil {
+					slog.ErrorContext(ctx, "events: could not record a dead letter",
+						"event", ev.Name, "id", ev.ID, "durable", durable, "error", err)
 				}
-				return h(ctx, tx, ev)
-			})
+			},
 		}
-		if err := t.Subscribe(ctx, durable, s.Name, deliver); err != nil {
+		if err := t.Subscribe(ctx, durable, s.Name, sink); err != nil {
 			return fmt.Errorf("events: subscribe %s to %s: %w", s.Module, s.Name, err)
 		}
 	}
@@ -163,4 +214,30 @@ func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable string) (bool, error) {
 		return false, fmt.Errorf("events: claim %s for %s: %w", id, durable, res.Error)
 	}
 	return res.RowsAffected == 1, nil
+}
+
+// handlerTimeout bounds one delivery. It is shorter than the JetStream
+// acknowledgement deadline (ackWait), because a handler that is still running
+// when that passes has its event redelivered while its own transaction is still
+// open — two handlers writing the same tenant's rows for the same event, which
+// is the one thing the claim in platformkit_handled cannot prevent, since
+// neither has committed.
+const handlerTimeout = 25 * time.Second
+
+// deadLetter records an event that no number of redeliveries could get handled,
+// with the last error, and says so in the log. A row is an alert and not a
+// queue: nothing redelivers from that table.
+//
+// ON CONFLICT DO NOTHING because a transport may hand the same exhausted event
+// over more than once, and the first account of the failure is the useful one.
+func deadLetter(ctx context.Context, conn *db.Conn, ev Event, durable string, cause error) error {
+	slog.ErrorContext(ctx, "events: giving up on an event",
+		"event", ev.Name, "id", ev.ID, "durable", durable, "attempts", maxDeliveries, "error", cause)
+	// WithoutCancel: this runs on the way out of a failed delivery, and a
+	// cancelled worker context would lose the only record of it.
+	ctx = context.WithoutCancel(ctx)
+	return db.RunSystem(ctx, conn, deadLetterToken, func(_ context.Context, tx db.Tx[db.System]) error {
+		return tx.DB().Exec("INSERT INTO "+deadLetters+" (event_id, durable, tenant_id, name, error) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+			ev.ID, durable, ev.TenantID, ev.Name, cause.Error()).Error
+	})
 }

@@ -83,9 +83,9 @@ type helloOut struct {
 func hello() module.Module {
 	return module.Module{
 		Name:        "hello",
-		Permissions: []module.Permission{{Key: "note:write", Description: "Write notes"}},
+		Permissions: []module.Permission{{Key: "note:write"}},
 		Events:      []string{"hello.note_written"},
-		Nav:         []module.NavEntry{{Label: "Notes", Path: "/hello", Permission: "note:write", Order: 1}},
+		Nav:         []module.NavEntry{{Label: "Notes", Path: "/hello", Permission: "note:write"}},
 		Migrations: fstest.MapFS{
 			"000009_notes.up.sql":   {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
 			"000009_notes.down.sql": {Data: []byte(`DROP TABLE notes`)},
@@ -171,7 +171,8 @@ func TestBootMigratesAndServes(t *testing.T) {
 // TestBootRefusesARouteNoModuleCanReach is the declaration gate's mirror: a
 // permission no module defines is a route nobody can ever be granted. The other
 // half of gate 7 — an operation with no declaration at all — cannot be written
-// from out here any more, and lives in kit/httpx's internal test.
+// from out here any more, and lives in kit/httpx's internal test. Every role
+// runs the same gate; see TestEveryRoleRunsTheBootGates.
 func TestBootRefusesARouteNoModuleCanReach(t *testing.T) {
 	cfg, opts := compose(t)
 	ghost := module.Module{Name: "ghost", Routes: func(api *httpx.API) {
@@ -451,5 +452,62 @@ func TestRoleIsAClosedSet(t *testing.T) {
 	}
 	if a.opts.Role != All {
 		t.Errorf("the default role is %q, want %q", a.opts.Role, All)
+	}
+}
+
+// TestEveryRoleRunsTheBootGates. The gates used to be the web role's alone, so
+// a composition the web role refuses would have started as a worker: the same
+// image and the same modules, two answers to "will this start?", and a rollout
+// that looked half healthy while half of it was refusing to boot.
+func TestEveryRoleRunsTheBootGates(t *testing.T) {
+	ghost := module.Module{Name: "ghost", Routes: func(api *httpx.API) {
+		httpx.Register(api, huma.Operation{
+			OperationID: "haunt", Method: http.MethodGet, Path: "/haunt",
+		}, httpx.Permission("ghost:read"), func(context.Context, *struct{}) (*helloOut, error) {
+			return &helloOut{}, nil
+		})
+	}}
+	for _, role := range []Role{Web, Worker, All} {
+		t.Run(string(role), func(t *testing.T) {
+			cfg, opts := compose(t)
+			opts.Role, opts.Transport = role, events.Memory()
+			a, err := New(t.Context(), cfg, []module.Module{ghost}, opts)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if err := a.Run(t.Context()); err == nil || !strings.Contains(err.Error(), "ghost:read") {
+				t.Fatalf("Run as %s = %v, want the undefined permission", role, err)
+			}
+			if c, dialErr := net.DialTimeout("tcp", cfg.Server.Addr, time.Second); dialErr == nil {
+				_ = c.Close()
+				t.Errorf("the %s role listened before validating its composition", role)
+			}
+		})
+	}
+}
+
+// TestTheWorkerAnswersTheSameProbeShapeAsTheWeb: two roles, one orchestrator
+// manifest, so the readiness body an operator learns has to be the same one.
+func TestTheWorkerAnswersTheSameProbeShapeAsTheWeb(t *testing.T) {
+	cfg, opts := compose(t)
+	opts.Role, opts.Transport = Worker, events.Memory()
+	a, err := New(t.Context(), cfg, nil, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+
+	for path, want := range map[string]string{"/health": `{"status":"ok"}`, "/ready": `{"status":"ok"}`} {
+		code, body := get(t, cfg.Server.Addr, cfg.Server.Addr, path)
+		if code != http.StatusOK || !strings.Contains(body, want) {
+			t.Errorf("%s = %d %s, want 200 and %s", path, code, body, want)
+		}
+	}
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 }

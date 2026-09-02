@@ -17,7 +17,10 @@ CREATE TABLE platformkit_outbox (
 	tenant_id    uuid NOT NULL,
 	name         text NOT NULL,
 	payload      jsonb NOT NULL,
-	created_at   timestamptz NOT NULL DEFAULT now(),
+	-- clock_timestamp() and not now(): now() is the transaction's start time, so
+	-- every event one transaction publishes would carry the same timestamp and
+	-- the relay's ORDER BY created_at, id would order them by a random uuid.
+	created_at   timestamptz NOT NULL DEFAULT clock_timestamp(),
 	published_at timestamptz
 );
 

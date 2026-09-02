@@ -35,7 +35,10 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
    Delivery is at-least-once and handling is exactly-once: `Consume` claims each
    event for each subscription in the handler's own transaction. (E1)
 7. **One migration directory, one ledger.** All SQL lives in `migrations/`,
-   numbered once, applied by the owner role at startup or by `--role migrate`. (E1)
+   numbered once, applied by the owner role at every process's startup. Files
+   are append-only from v1.0.0; before it they are the schema this repository
+   would create today, and correcting one in place is cheaper than shipping a
+   history nobody ran. (E1)
 8. **Screens derive from schemas.** List, detail and form come from an entity's
    schema; a hand-written screen is an exception that has to earn itself. (E4)
 9. **A client is configuration.** One image, one binary, `--role web|worker|all`;

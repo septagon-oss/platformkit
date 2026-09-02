@@ -50,15 +50,10 @@ func New(status int, detail string) *Problem {
 	return &Problem{Type: "about:blank", Title: title, Status: status, Detail: detail}
 }
 
-// BadRequest is 400: the request is malformed.
-func BadRequest(detail string) *Problem { return New(http.StatusBadRequest, detail) }
-
-// Unauthorized is 401: the caller is not identified.
-func Unauthorized(detail string) *Problem { return New(http.StatusUnauthorized, detail) }
-
-// Forbidden is 403: the caller is identified and still may not.
-func Forbidden(detail string) *Problem { return New(http.StatusForbidden, detail) }
-
+// New is the constructor for every status; the two below are the only ones with
+// a name of their own, because they are the two kit/crud returns often enough
+// that spelling the status at each site would be the thing that goes wrong.
+//
 // NotFound is 404: no such thing, or none this tenant may see.
 func NotFound(detail string) *Problem { return New(http.StatusNotFound, detail) }
 

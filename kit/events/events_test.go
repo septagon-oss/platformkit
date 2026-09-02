@@ -26,6 +26,9 @@ type recorder struct {
 	mu   sync.Mutex
 	got  []events.Event
 	fail error
+	// failAfter refuses everything past the nth event, which is what a broker
+	// that goes away mid-batch looks like from here.
+	failAfter int
 }
 
 func (r *recorder) Publish(_ context.Context, ev events.Event) error {
@@ -34,13 +37,14 @@ func (r *recorder) Publish(_ context.Context, ev events.Event) error {
 	if r.fail != nil {
 		return r.fail
 	}
+	if r.failAfter > 0 && len(r.got) >= r.failAfter {
+		return errors.New("the broker went away")
+	}
 	r.got = append(r.got, ev)
 	return nil
 }
 
-func (r *recorder) Subscribe(context.Context, string, string, func(context.Context, events.Event) error) error {
-	return nil
-}
+func (r *recorder) Subscribe(context.Context, string, string, events.Sink) error { return nil }
 
 func (r *recorder) names() []string {
 	r.mu.Lock()
@@ -505,5 +509,107 @@ func TestPurgeForgetsTheMarksItNoLongerNeeds(t *testing.T) {
 	}
 	if left != 1 {
 		t.Errorf("%d marks survived the purge, want the recent one", left)
+	}
+}
+
+// TestConcurrentRelaysEachTakeTheirOwnRows: the relay holds no lock, so the
+// claim that stops two workers publishing one row twice is FOR UPDATE SKIP
+// LOCKED and nothing else. Two passes at once, forty rows, forty deliveries.
+func TestConcurrentRelaysEachTakeTheirOwnRows(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	for range 40 {
+		publish(t, conn, acme, "billing.invoice_issued", nil)
+	}
+
+	r := &recorder{}
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := events.Relay(t.Context(), conn, r); err != nil {
+				t.Errorf("relay: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := len(r.names()); got != 40 {
+		t.Errorf("two concurrent relays published %d rows, want 40 with no duplicates", got)
+	}
+	if unpublished, published := pending(t, conn); unpublished != 0 || published != 40 {
+		t.Errorf("after the relays: %d unpublished, %d published", unpublished, published)
+	}
+}
+
+// TestOneRelayPassDrainsTheQueue: a pass loops until it sees a short batch, so
+// a backlog of more than one batch does not take a tick per batch to clear.
+func TestOneRelayPassDrainsTheQueue(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	const rows = 150 // more than one batch of 100
+	for range rows {
+		publish(t, conn, acme, "billing.invoice_issued", nil)
+	}
+	r := &recorder{}
+	if err := events.Relay(t.Context(), conn, r); err != nil {
+		t.Fatalf("relay: %v", err)
+	}
+	if got := len(r.names()); got != rows {
+		t.Errorf("one pass published %d of %d rows", got, rows)
+	}
+}
+
+// TestEventsFromOneTransactionRelayInTheOrderTheyWerePublished. created_at used
+// to default to now(), which is the transaction's start time, so every event a
+// transaction published carried one timestamp and ORDER BY created_at, id fell
+// through to a random uuid. clock_timestamp() is what makes the order real.
+func TestEventsFromOneTransactionRelayInTheOrderTheyWerePublished(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		for i := range 6 {
+			if err := events.Publish(tx, "billing.invoice_issued", map[string]any{"n": i}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	r := &recorder{}
+	if err := events.Relay(t.Context(), conn, r); err != nil {
+		t.Fatalf("relay: %v", err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var got []string
+	for _, ev := range r.got {
+		got = append(got, string(ev.Payload))
+	}
+	// jsonb, so Postgres has reprinted the payload; the order is what is under test.
+	want := `{"n": 0} {"n": 1} {"n": 2} {"n": 3} {"n": 4} {"n": 5}`
+	if strings.Join(got, " ") != want {
+		t.Errorf("the relay published %q, want %q", strings.Join(got, " "), want)
+	}
+}
+
+// TestAPublishThatFailsPartWayLeavesTheWholeBatchUnstamped: the stamp is one
+// statement for the batch and it runs after every publish, so a transport that
+// takes three of five events and then refuses leaves all five to go again. That
+// is the at-least-once bargain, and it is the reason handlers deduplicate.
+func TestAPublishThatFailsPartWayLeavesTheWholeBatchUnstamped(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	for range 5 {
+		publish(t, conn, acme, "billing.invoice_issued", nil)
+	}
+	r := &recorder{failAfter: 3}
+	if err := events.Relay(t.Context(), conn, r); err == nil {
+		t.Fatal("Relay reported success while the transport refused part way")
+	}
+	if got := len(r.names()); got != 3 {
+		t.Errorf("the transport took %d events, want the 3 before it refused", got)
+	}
+	if unpublished, published := pending(t, conn); unpublished != 5 || published != 0 {
+		t.Errorf("after the failed relay: %d unpublished, %d published; want 5 and 0", unpublished, published)
 	}
 }

@@ -59,20 +59,27 @@ func Module(deps Deps) module.Module {
 	if every == 0 {
 		every = sweepEvery
 	}
+	// The one thing about this entity that is not generic on the way in: a task
+	// created with a deadline already behind it is breached on arrival, in the
+	// create's own transaction, rather than a minute later when the sweep gets
+	// to it. The hook is set here and not in the spec literal above because it
+	// needs the service, and the service is constructed here.
+	mounted := spec
+	mounted.AfterCreate = internal.BreachOnArrival(svc)
 	return module.Module{
 		Name:        "task",
 		Permissions: contracts.Permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{
-			{Label: "Tasks", Path: "/admin/task/tasks", Permission: contracts.PermissionTaskRead, Order: 40},
+			{Label: "Tasks", Path: "/admin/task/tasks", Permission: contracts.PermissionTaskRead},
 		},
 		Jobs: []jobs.Job{internal.SLASweep(deps.Tenants, svc, every)},
 		// Written out so the absence is a decision: a task is raised by whoever
 		// raises it, and this module has no opinion about anybody else's events.
 		Subscriptions: nil,
 		Routes: func(api *httpx.API) {
-			spec.Mount(api)
-			internal.RegisterRoutes(api, svc, spec.Path)
+			mounted.Mount(api)
+			internal.RegisterRoutes(api, svc, mounted.Path)
 		},
 	}
 }

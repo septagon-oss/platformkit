@@ -13,14 +13,6 @@ import (
 // simply slows the next relay pass, which is the correct back pressure.
 const queue = 256
 
-// retry is the first delay before a failed handler sees the event again, and
-// cap is the longest. The shape matches JetStream's redelivery: keep trying,
-// slower, until it works or the process stops.
-const (
-	retryFirst = 25 * time.Millisecond
-	retryMax   = 5 * time.Second
-)
-
 // Memory is the in-process transport: a single-process deployment and every
 // test that does not want a broker. Delivery is asynchronous — the relay hands
 // the event over and returns, and the handler runs on the subscription's own
@@ -36,6 +28,12 @@ type memory struct {
 // Publish hands the event to every subscription of that name. An event nobody
 // subscribes to is delivered nowhere and that is not an error: the relay's job
 // is to get it out of the database, not to find it a reader.
+//
+// A subscription that has fallen a full queue behind makes this block, and the
+// select on ctx.Done is what keeps that from being a deadlock: the relay runs
+// under a deadline, so a wedged subscription costs one abandoned relay pass and
+// the rows go again next tick. Before the deadline existed, one poison handler
+// stopped the relay, and with it every other subscription and every other job.
 func (m *memory) Publish(ctx context.Context, ev Event) error {
 	m.mu.Lock()
 	chans := slices.Clone(m.subs[ev.Name])
@@ -54,7 +52,7 @@ func (m *memory) Publish(ctx context.Context, ev Event) error {
 // nothing to resume across a restart when the queue lives in the process that
 // restarted, and an event that was in flight is still unstamped in the outbox,
 // so the relay sends it again.
-func (m *memory) Subscribe(ctx context.Context, _, name string, h func(context.Context, Event) error) error {
+func (m *memory) Subscribe(ctx context.Context, _, name string, sink Sink) error {
 	ch := make(chan Event, queue)
 	m.mu.Lock()
 	m.subs[name] = append(m.subs[name], ch)
@@ -66,24 +64,34 @@ func (m *memory) Subscribe(ctx context.Context, _, name string, h func(context.C
 			case <-ctx.Done():
 				return
 			case ev := <-ch:
-				m.deliver(ctx, ev, h)
+				m.deliver(ctx, ev, sink)
 			}
 		}
 	}()
 	return nil
 }
 
-// deliver retries one event until the handler accepts it or the process stops.
-// It holds the subscription while it retries, so a poisoned event stalls that
-// subscription rather than being dropped; the log line says which one.
-func (m *memory) deliver(ctx context.Context, ev Event, h func(context.Context, Event) error) {
-	for wait := retryFirst; ; wait = min(wait*2, retryMax) {
-		err := h(ctx, ev)
+// deliver retries one event on the backoff ladder and gives up after
+// maxDeliveries, which is the same policy the JetStream transport applies with
+// nats.MaxDeliver: two transports that disagreed about when to stop would be
+// two policies to reason about during an incident.
+//
+// It holds the subscription while it retries, so a poison event delays that
+// subscription rather than being dropped silently — and then dead-letters,
+// which is what stops it delaying anything forever.
+func (m *memory) deliver(ctx context.Context, ev Event, sink Sink) {
+	for attempt := 1; ; attempt++ {
+		err := sink.Handle(ctx, ev)
 		if err == nil {
 			return
 		}
+		if attempt >= maxDeliveries {
+			sink.Dead(ctx, ev, err)
+			return
+		}
+		wait := backoff[min(attempt, len(backoff))-1]
 		slog.WarnContext(ctx, "events: handler failed, redelivering",
-			"event", ev.Name, "id", ev.ID, "in", wait, "error", err)
+			"event", ev.Name, "id", ev.ID, "attempt", attempt, "in", wait, "error", err)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():

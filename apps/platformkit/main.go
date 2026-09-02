@@ -41,7 +41,7 @@ func run(path string, role app.Role) error {
 	if err != nil {
 		return err
 	}
-	log := logger(cfg.Log.Level)
+	logger(cfg.Log.Level)
 
 	// SIGINT and SIGTERM cancel the context every part of the application is
 	// running under, which is how a rolling deploy drains: kit/app stops
@@ -63,7 +63,6 @@ func run(path string, role app.Role) error {
 		Authorize:    d,
 		Authenticate: d.Authenticate,
 		Role:         role,
-		Log:          log,
 	})
 	if err != nil {
 		return err
@@ -71,18 +70,17 @@ func run(path string, role app.Role) error {
 	return a.Run(ctx)
 }
 
-// logger is the process's logger: JSON on stderr, at the configured level.
-func logger(level string) *slog.Logger {
+// logger sets the process's default logger: JSON on stderr, at the configured
+// level. It is the default and not a value passed anywhere — kit/app builds the
+// same logger from the same key — because the kernel's packages that take no
+// logger log through slog.Default, and a process whose two loggers disagreed
+// about the level would be a log with a hole in it.
+func logger(level string) {
 	var l slog.Level
 	// config.Load has already refused anything outside the four, so the error
 	// here cannot happen; ignoring it would leave the default, which is info.
 	if err := l.UnmarshalText([]byte(level)); err != nil {
 		l = slog.LevelInfo
 	}
-	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
-	// The kernel's packages log through slog.Default when they are given no
-	// logger of their own, so the default is set here rather than left at
-	// whatever the runtime starts with.
-	slog.SetDefault(log)
-	return log
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: l})))
 }

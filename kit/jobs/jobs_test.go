@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -227,5 +228,117 @@ func TestValidRefusesAJobThatCouldNotRun(t *testing.T) {
 		if err := Valid(job); err != nil {
 			t.Errorf("Valid(%s) = %v", job.Name, err)
 		}
+	}
+}
+
+// poison is a lister with one tenant whose work always fails.
+type failing struct{ bad string }
+
+func (f failing) run(_ context.Context, tx db.Tx[db.Tenant]) error {
+	if db.TenantOf(tx).Slug == f.bad {
+		return errors.New("this tenant's data is broken")
+	}
+	return nil
+}
+
+// TestOneTenantsFailureDoesNotStopTheRest. Returning at the first failure meant
+// a single tenant with bad data stopped every tenant after it in the list, on
+// every tick, forever — and the order is whatever the lister returns, so which
+// tenants those were was arbitrary.
+func TestOneTenantsFailureDoesNotStopTheRest(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	tenants := lister{
+		{ID: uuid.New(), Slug: "a"},
+		{ID: uuid.New(), Slug: "poison"},
+		{ID: uuid.New(), Slug: "c"},
+	}
+
+	var seen []string
+	f := failing{bad: "poison"}
+	err := ForEachTenant(t.Context(), conn, tenants, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		seen = append(seen, db.TenantOf(tx).Slug)
+		return f.run(ctx, tx)
+	})
+	if err == nil || !strings.Contains(err.Error(), "poison") {
+		t.Errorf("ForEachTenant = %v, want the failing tenant named", err)
+	}
+	if got := strings.Join(seen, " "); got != "a poison c" {
+		t.Errorf("visited %q; the tenant after the failure has to run too", got)
+	}
+}
+
+// TestAParallelJobTakesNoLock. The relay says Parallel because SKIP LOCKED is
+// already its concurrency control, and because a job that blocks while holding
+// its lock stops that job on every other replica as well.
+func TestAParallelJobTakesNoLock(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	name := unique("shared")
+
+	var mu sync.Mutex
+	runs := 0
+	job := Job{Name: name, Every: time.Hour, Parallel: true, Run: func(context.Context, *db.Conn) error {
+		mu.Lock()
+		runs++
+		mu.Unlock()
+		return nil
+	}}
+	first, second := NewScheduler(conn, quiet(), job), NewScheduler(conn, quiet(), job)
+
+	// A lock held by somebody else, which a locked job would wait behind.
+	unlock, ok, err := db.TryLock(t.Context(), conn, "job:"+name)
+	if err != nil || !ok {
+		t.Fatalf("TryLock = %v, %v", ok, err)
+	}
+	defer unlock()
+
+	first.run(t.Context(), job)
+	second.run(t.Context(), job)
+	mu.Lock()
+	defer mu.Unlock()
+	if runs != 2 {
+		t.Errorf("a parallel job ran %d times with its name locked, want 2", runs)
+	}
+}
+
+// TestTryLockPinsTheConnectionItTookTheLockOn. The lock is session-level, so it
+// lives on one connection out of the pool and has to stay there: a second
+// caller drawing a different connection from the same pool must be told no, and
+// the lock must be gone from pg_locks once it is released.
+func TestTryLockPinsTheConnectionItTookTheLockOn(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	name := unique("pinned")
+	held := func() int {
+		t.Helper()
+		var n int
+		// pg_locks splits a bigint advisory key across two oid columns, high
+		// half in classid and low half in objid, and hashtext is signed — so
+		// both halves are masked into oid range before they are compared.
+		const q = `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'
+			AND classid = ((hashtext($1)::bigint >> 32) & 4294967295)::oid
+			AND objid = (hashtext($1)::bigint & 4294967295)::oid`
+		if err := admin.QueryRowContext(t.Context(), q, name).Scan(&n); err != nil {
+			t.Fatalf("read pg_locks: %v", err)
+		}
+		return n
+	}
+
+	if n := held(); n != 0 {
+		t.Fatalf("%d locks before anybody took one", n)
+	}
+	unlock, ok, err := db.TryLock(t.Context(), conn, name)
+	if err != nil || !ok {
+		t.Fatalf("the first TryLock = %v, %v", ok, err)
+	}
+	if n := held(); n != 1 {
+		t.Errorf("%d locks while one is held, want 1", n)
+	}
+	// The same pool, a different connection: the answer is no rather than a
+	// second holder of the same lock.
+	if _, again, err := db.TryLock(t.Context(), conn, name); err != nil || again {
+		t.Errorf("a second TryLock on the same pool = %v, %v; want false", again, err)
+	}
+	unlock()
+	if n := held(); n != 0 {
+		t.Errorf("%d locks after the unlock, want 0; the connection went back to the pool holding it", n)
 	}
 }

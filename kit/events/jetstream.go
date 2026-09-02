@@ -74,8 +74,13 @@ func (j *jetstream) Publish(ctx context.Context, ev Event) error {
 	return nil
 }
 
-func (j *jetstream) Subscribe(ctx context.Context, durable, name string, h func(context.Context, Event) error) error {
-	_, err := j.js.Subscribe(subject+name, func(msg *nats.Msg) {
+// ackWait is how long JetStream waits for an acknowledgement before it decides
+// the delivery was lost. It is longer than events.handlerTimeout, so a handler
+// that runs to its own deadline is never redelivered while it is still running.
+const ackWait = 30 * time.Second
+
+func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Sink) error {
+	sub, err := j.js.Subscribe(subject+name, func(msg *nats.Msg) {
 		var ev Event
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
 			// A message that will never parse would be redelivered forever.
@@ -84,19 +89,48 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, h func(
 			_ = msg.Term()
 			return
 		}
-		if err := h(ctx, ev); err != nil {
-			slog.WarnContext(ctx, "events: handler failed, redelivering",
-				"event", ev.Name, "id", ev.ID, "error", err)
-			_ = msg.Nak()
+		err := sink.Handle(ctx, ev)
+		if err == nil {
+			_ = msg.Ack()
 			return
 		}
-		_ = msg.Ack()
+		// Nak alone, with no delivery cap, is what turned one poison event into
+		// a redelivery storm: the server has nothing to wait for and hands it
+		// straight back. MaxDeliver and BackOff below bound that, and this is
+		// the end of the ladder — terminate the message so it stops coming, and
+		// record it, because an event that is simply dropped is an integration
+		// that failed silently.
+		if last := exhausted(msg); last {
+			_ = msg.Term()
+			sink.Dead(ctx, ev, err)
+			return
+		}
+		slog.WarnContext(ctx, "events: handler failed, redelivering",
+			"event", ev.Name, "id", ev.ID, "error", err)
+		_ = msg.Nak()
 	}, nats.Durable(durable), nats.ManualAck(), nats.AckExplicit(), nats.DeliverAll(),
-		nats.AckWait(30*time.Second), nats.BindStream(stream))
+		nats.AckWait(ackWait), nats.MaxDeliver(maxDeliveries), nats.BackOff(backoff),
+		nats.BindStream(stream))
 	if err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}
+	// The subscription outlives this call, so the worker's shutdown has to
+	// reach it: without this a handler kept running after the context was
+	// cancelled, on a connection nobody was closing yet.
+	go func() {
+		<-ctx.Done()
+		_ = sub.Drain()
+	}()
 	return nil
+}
+
+// exhausted reports whether this was the last delivery JetStream will make.
+// Metadata is unavailable on a message that did not come from a stream, and the
+// safe reading of "I cannot tell" is that there are more attempts to come —
+// terminating on a doubt would drop an event that was going to succeed.
+func exhausted(msg *nats.Msg) bool {
+	meta, err := msg.Metadata()
+	return err == nil && meta.NumDelivered >= uint64(maxDeliveries)
 }
 
 // Close releases the connection. It is not part of Transport, because the

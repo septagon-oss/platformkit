@@ -279,3 +279,47 @@ func TestNoEventsMountsTheSameRoutesSilently(t *testing.T) {
 		t.Errorf("%d operations, want the five routes", len(api.Recorded()))
 	}
 }
+
+// TestARequestWithNoBodyIsARefusalAndNotAPanic. The entity is a pointer type
+// and huma reads a pointer body as optional, so a POST with nothing in it used
+// to reach the handler as a nil entity and panic on the first field the create
+// stamped — one request took the process's goroutine down to a 500 and a stack.
+func TestARequestWithNoBodyIsARefusalAndNotAPanic(t *testing.T) {
+	_, router, _ := mounted(t)
+	for _, body := range []string{"", "null"} {
+		code, out := call(t, router, http.MethodPost, "/api/tasks", body)
+		if code != http.StatusUnprocessableEntity && code != http.StatusBadRequest {
+			t.Errorf("POST with body %q = %d %s, want a refusal", body, code, out)
+		}
+		if !strings.Contains(out, `"status":`) {
+			t.Errorf("POST with body %q answered %s, which is not a problem document", body, out)
+		}
+	}
+	// And the route still works, which is what says the refusal is the body's
+	// and not the route's.
+	if code, out := call(t, router, http.MethodPost, "/api/tasks", `{"title":"present"}`); code != http.StatusCreated {
+		t.Errorf("POST with a body = %d %s, want 201", code, out)
+	}
+}
+
+// TestTwoPatchesOfDifferentFieldsBothSurvive, through the routes: the update
+// handler writes the columns the body named and no others.
+func TestTwoPatchesOfDifferentFieldsBothSurvive(t *testing.T) {
+	_, router, _ := mounted(t)
+	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"shared","priority":1}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, body)
+	}
+	at := "/api/tasks/" + id(t, body)
+
+	if code, body = call(t, router, http.MethodPatch, at, `{"priority":99}`); code != http.StatusOK {
+		t.Fatalf("the first PATCH = %d %s", code, body)
+	}
+	if code, body = call(t, router, http.MethodPatch, at, `{"status":"done"}`); code != http.StatusOK {
+		t.Fatalf("the second PATCH = %d %s", code, body)
+	}
+	code, body = call(t, router, http.MethodGet, at, "")
+	if code != http.StatusOK || !strings.Contains(body, `"priority":99`) || !strings.Contains(body, `"status":"done"`) {
+		t.Errorf("after two patches the row is %s; both fields should be there", body)
+	}
+}

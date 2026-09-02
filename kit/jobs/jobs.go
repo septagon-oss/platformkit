@@ -10,6 +10,11 @@
 // the others log at Debug and go back to sleep. There is no leader election to
 // configure, no lease to renew and no split brain: the lock lives on the
 // connection that holds it, so a worker that dies releases it.
+//
+// A job that says Parallel skips the lock, because it has a concurrency control
+// of its own. There is one, and the reason is worth stating: a locked job that
+// blocks stops that job on every replica, so a job that does not need the lock
+// must not take it.
 package jobs
 
 import (
@@ -37,6 +42,14 @@ type Job struct {
 	// Every is a fixed interval, for work that runs faster than a cron
 	// expression can say. The relay uses it: once a second.
 	Every time.Duration
+	// Parallel says this job is safe to run on every replica at once, so the
+	// scheduler does not take its lock. There is one such job — the outbox
+	// relay, whose FOR UPDATE SKIP LOCKED is already the concurrency control —
+	// and the reason it matters is the opposite of throughput: a job that
+	// blocks while holding the lock stops that job on every other replica too,
+	// so a job that does not need the lock must not take it.
+	Parallel bool
+
 	// Run is the work. It is given the worker's context, so a shutdown
 	// cancels it, and the application connection, because periodic work that
 	// touches nothing is periodic work with nothing to do.
@@ -169,18 +182,20 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 // run takes the job's lock and runs it, or reports that somebody else has it.
 // A job that fails is logged and scheduled again; there is no retry of its own,
-// because the next tick is the retry.
+// because the next tick is the retry. A Parallel job takes no lock.
 func (s *Scheduler) run(ctx context.Context, j Job) {
-	unlock, ok, err := db.TryLock(ctx, s.conn, "job:"+j.Name)
-	if err != nil {
-		s.log.ErrorContext(ctx, "jobs: could not take the lock", "job", j.Name, "error", err)
-		return
+	if !j.Parallel {
+		unlock, ok, err := db.TryLock(ctx, s.conn, "job:"+j.Name)
+		if err != nil {
+			s.log.ErrorContext(ctx, "jobs: could not take the lock", "job", j.Name, "error", err)
+			return
+		}
+		if !ok {
+			s.log.DebugContext(ctx, "jobs: another instance is running this", "job", j.Name)
+			return
+		}
+		defer unlock()
 	}
-	if !ok {
-		s.log.DebugContext(ctx, "jobs: another instance is running this", "job", j.Name)
-		return
-	}
-	defer unlock()
 	if err := j.Run(ctx, s.conn); err != nil {
 		s.log.ErrorContext(ctx, "jobs: job failed", "job", j.Name, "error", err)
 	}
@@ -204,6 +219,13 @@ var listToken = syscap.NewSystemToken("list the tenants for periodic work")
 // transaction opens: a tenant transaction cannot nest inside a system one, and
 // holding a cross-tenant transaction open for the length of the whole job would
 // be the widest lock in the system.
+//
+// One tenant's failure does not stop the others. Returning at the first one
+// meant that a single tenant with bad data stopped every tenant after it in the
+// list, on every tick, forever — and the tenants are in whatever order the
+// lister returns, so which ones those were was arbitrary. Every failure is
+// logged where it happened and they come back joined, so the job still reports
+// as failed.
 func ForEachTenant(ctx context.Context, conn *db.Conn, lister TenantLister, fn func(context.Context, db.Tx[db.Tenant]) error) error {
 	if lister == nil {
 		return errors.New("jobs: this job walks every tenant and the application was given no TenantLister")
@@ -217,10 +239,13 @@ func ForEachTenant(ctx context.Context, conn *db.Conn, lister TenantLister, fn f
 	if err != nil {
 		return fmt.Errorf("jobs: list the tenants: %w", err)
 	}
+	var failed []error
 	for _, t := range tenants {
 		if err := db.Run(tenancy.WithTenant(ctx, t), conn, fn); err != nil {
-			return fmt.Errorf("jobs: tenant %s: %w", t.Slug, err)
+			slog.ErrorContext(ctx, "jobs: a tenant failed; continuing with the rest",
+				"tenant", t.Slug, "error", err)
+			failed = append(failed, fmt.Errorf("tenant %s: %w", t.Slug, err))
 		}
 	}
-	return nil
+	return errors.Join(failed...)
 }

@@ -50,12 +50,12 @@ func TestValidateAcceptsAWellFormedComposition(t *testing.T) {
 	mods := []Module{
 		{
 			Name:        "accounts",
-			Permissions: []Permission{{Key: "user:read", Description: "See users"}},
+			Permissions: []Permission{{Key: "user:read"}},
 			Events:      []string{"accounts.user_created", "accounts.user_deleted"},
 		},
 		{
 			Name: "billing",
-			Nav:  []NavEntry{{Label: "Users", Path: "/users", Permission: "user:read", Order: 1}},
+			Nav:  []NavEntry{{Label: "Users", Path: "/users", Permission: "user:read"}},
 		},
 	}
 	if err := Validate(mods); err != nil {
