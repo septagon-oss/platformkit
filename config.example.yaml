@@ -74,3 +74,13 @@ mail:
 # year; "keep it forever" is spelled with a large number.
 audit:
   retention_days: 365
+
+# Where uploaded bytes go, and how large one upload may be. They are the two
+# things modules/file cannot decide for itself: a directory is a deployment's
+# disk and a limit is how much of it a deployment is willing to lose to one
+# mistake. The path is relative, so a laptop needs no absolute one and a
+# container mounts a volume at it; an empty dir means data/files and a zero
+# limit means 25 MB.
+files:
+  dir: "data/files"
+  max_bytes: 26214400

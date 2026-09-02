@@ -17,6 +17,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/billing"
 	"github.com/septagon-oss/platformkit/modules/content"
+	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
@@ -120,9 +121,15 @@ func compose(cfg config.Config) composition {
 		authModule,
 		tenantModule,
 		task.Module(task.Deps{Tenants: active}),
+		// The four reference modules a product is actually made of: what a
+		// tenant pays, what it publishes, what its site looks like, and the
+		// bytes behind both. Each takes the one thing it cannot decide for
+		// itself — how money is taken, where files go — from here, which is the
+		// file that names every module by definition.
 		billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()}),
 		content.Module(content.Deps{}),
 		site.Module(site.Deps{}),
+		file.Module(file.Deps{Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes}),
 	}
 	mods = append(mods, audit.Module(audit.Deps{
 		Tenants:       active,
