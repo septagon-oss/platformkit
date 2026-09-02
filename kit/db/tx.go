@@ -196,7 +196,15 @@ func pendingOf(ctx context.Context) (*Pending, bool) {
 
 // Lazy puts a Pending for the tenant in ctx on the returned context. Nothing
 // reaches the database until something asks for the transaction.
-func Lazy(ctx context.Context, c *Conn) (context.Context, *Pending, error) {
+//
+// It takes a kernel token for the same reason RunSystem does. A Pending is a
+// transaction whose commit is somebody else's decision, which is a capability
+// no module may hold: Run opens and closes its own transaction in one call,
+// and that is the only door outside kit/. Only kit/httpx mints a token for it.
+func Lazy(ctx context.Context, c *Conn, tok tenancy.SystemToken) (context.Context, *Pending, error) {
+	if tok == nil {
+		return ctx, nil, ErrNoSystemToken
+	}
 	t, ok := tenancy.FromContext(ctx)
 	if !ok {
 		return ctx, nil, ErrNoTenant
@@ -267,13 +275,20 @@ func (p *Pending) Close(keep bool) error {
 // sealed refuses to commit a transaction that ends under different settings
 // than the ones its runner placed.
 //
-// This is the runtime half of the tenancy claim. platformkit.tenant_id and
+// This is a backstop, and the precise claim matters. platformkit.tenant_id and
 // platformkit.system_access are placeholder GUCs, which are USERSET: any
 // statement inside the transaction can rewrite them, and no database privilege
-// prevents it. The type parameter makes crossing the tenant accidentally
-// impossible and scripts/check_gucs.sh makes writing the settings greppable;
-// this last check makes a transaction that did it anyway roll back instead of
-// commit. It costs one round trip per transaction, both settings in one query.
+// prevents it. This check catches the naive escape — code that sets a setting
+// and leaves it set — and it catches nothing else: an escape that restores the
+// value before returning re-reads clean and commits. There is no way to close
+// that with a re-read, because the state it inspects is the state the escape
+// restored.
+//
+// So the control for a deliberate escape is not here. It is scripts/check_gucs.sh,
+// which fails the build when any .go file outside kit/db writes either setting,
+// and the type parameter, which makes crossing the tenant by accident
+// impossible. This costs one round trip per transaction, both settings in one
+// query, and it is worth that because the naive escape is the one that happens.
 func sealed(gtx *gorm.DB, wantTenant, wantSystem string) error {
 	var tenant, system string
 	const q = `SELECT coalesce(current_setting('platformkit.tenant_id', true), ''),

@@ -8,10 +8,10 @@
 //
 // The manifest below is what the kernel needs to know about a module that it
 // cannot learn from a function call: the permissions it defines, the events it
-// emits, where it appears in navigation, what makes it healthy, its SQL, and
-// its routes. Nothing else belongs in it — a field the kernel never reads is a
-// field a module will fill in and no one will honour, which is why scheduled
-// work arrives here with kit/jobs and not before.
+// emits and consumes, its periodic work, where it appears in navigation, what
+// makes it healthy, its SQL, and its routes. Nothing else belongs in it — a
+// field the kernel never reads is a field a module will fill in and no one will
+// honour.
 package module
 
 import (
@@ -22,8 +22,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/jobs"
 )
 
 // Module is one business capability, described to the kernel.
@@ -37,8 +39,19 @@ type Module struct {
 	// Permissions are the permission keys this module defines, "<resource>:<action>".
 	Permissions []Permission
 
-	// Events are the event names this module emits, "<name>.<event>".
+	// Events are the event names this module emits, "<name>.<event>". Every
+	// event a crud.Spec would publish has to appear here, or the app refuses to
+	// start: a module that emits something it never promised is an integration
+	// nobody can find.
 	Events []string
+
+	// Subscriptions are the events this module handles. The worker role
+	// subscribes each one; the name has to be an event some module emits.
+	Subscriptions []events.Subscription
+
+	// Jobs are this module's periodic work. The worker role schedules each one,
+	// and exactly one instance in the cluster runs it per tick.
+	Jobs []jobs.Job
 
 	// Nav is where this module appears in navigation.
 	Nav []NavEntry
@@ -76,14 +89,11 @@ type NavEntry struct {
 // the module emits, so it has to be an identifier.
 var moduleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
-// eventName is the grammar of an event: the module's name, a dot, and a
-// lower-case path.
-var eventName = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
-
 // Validate checks a set of modules against the rules that make the namespacing
 // real: names are unique and well-formed, no two modules define the same
-// permission, every nav entry points at a permission somebody declared, and
-// every event a module emits is namespaced by that module's name.
+// permission, every nav entry points at a permission somebody declared, every
+// event a module emits is namespaced by that module's name, every subscription
+// names an event somebody emits, and every job has a schedule that parses.
 //
 // It reports every violation in one error rather than the first, because a
 // composition is fixed once and the whole list is what a person needs.
@@ -124,8 +134,14 @@ func Validate(mods []Module) error {
 			}
 		}
 
+		for _, j := range m.Jobs {
+			if err := jobs.Valid(j); err != nil {
+				add("module %q: %s", m.Name, err)
+			}
+		}
+
 		for _, e := range m.Events {
-			if !eventName.MatchString(e) {
+			if !events.ValidName(e) {
 				add("module %q: event %q is not %q", m.Name, e, "<name>.<event>")
 				continue
 			}
@@ -135,10 +151,26 @@ func Validate(mods []Module) error {
 		}
 	}
 
-	// Nav is checked after every module has been read, so an entry may point at
-	// a permission another module defines: a link is about what the reader may
-	// see, not about who owns the permission.
+	// Nav and subscriptions are checked after every module has been read,
+	// because both point at something another module owns: a link is about what
+	// the reader may see, and a subscription is about what somebody else emits.
+	emitted := map[string]bool{}
 	for _, m := range mods {
+		for _, e := range m.Events {
+			emitted[e] = true
+		}
+	}
+	for _, m := range mods {
+		for _, s := range m.Subscriptions {
+			switch {
+			case s.Handler == nil:
+				add("module %q: subscription to %q has no handler", m.Name, s.Name)
+			case s.Module != m.Name:
+				add("module %q: subscription to %q is attributed to module %q", m.Name, s.Name, s.Module)
+			case !emitted[s.Name]:
+				add("module %q: subscribes to %q, which no module emits", m.Name, s.Name)
+			}
+		}
 		for _, n := range m.Nav {
 			if n.Permission == "" {
 				add("module %q: nav entry %q declares no permission; a link everyone sees is still a decision", m.Name, n.Label)

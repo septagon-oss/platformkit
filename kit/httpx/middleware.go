@@ -112,7 +112,7 @@ func givenID(s string) string {
 // rolls back on its way out, and arrives with an empty buffer.
 func (a *API) respond(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b := &buffer{ResponseWriter: w}
+		b := &buffer{ResponseWriter: w, header: w.Header().Clone()}
 		r = r.WithContext(context.WithValue(r.Context(), bufferKey{}, b))
 		defer func() {
 			if v := recover(); v != nil {
@@ -141,13 +141,29 @@ func (a *API) respond(next http.Handler) http.Handler {
 //
 // A handler that calls Flush is streaming and knows what it is doing: from that
 // call on this is a passthrough, and its response reaches the wire before the
-// commit like any other streaming response.
+// commit like any other streaming response. A huma StreamResponse that never
+// calls Flush is not streaming in any sense the network can see: it is buffered
+// whole, like every other response, and it is bounded like every other response.
+//
+// The bound is maxBuffer. Holding a response costs one copy of it, and a
+// download that is larger than that is a response nobody should be copying:
+// past the limit the buffer sends what it holds and becomes a passthrough, with
+// the same honest consequence as Flush — the bytes are on the wire before the
+// commit, and a commit that then fails is a log line rather than a 500.
 type buffer struct {
 	http.ResponseWriter
+	// header is what the response headers were when the buffer was built, so
+	// reset can put them back. A Location set by a handler whose transaction
+	// then failed to commit must not survive into the 500 that replaces it.
+	header http.Header
 	status int
 	body   bytes.Buffer
 	direct bool
 }
+
+// maxBuffer is the most a held response may hold. Two megabytes is far past any
+// JSON document this API produces and far below anything worth copying.
+const maxBuffer = 2 << 20
 
 func (b *buffer) WriteHeader(status int) {
 	if b.direct {
@@ -160,6 +176,9 @@ func (b *buffer) WriteHeader(status int) {
 }
 
 func (b *buffer) Write(p []byte) (int, error) {
+	if !b.direct && b.body.Len()+len(p) > maxBuffer {
+		b.send()
+	}
 	if b.direct {
 		return b.ResponseWriter.Write(p)
 	}
@@ -190,16 +209,25 @@ func (b *buffer) send() {
 	}
 }
 
-// reset discards the held response so another can replace it. It reports false
-// once the response has begun, which is the case a caller cannot take back.
+// reset discards the held response, headers included, so another can replace
+// it. It reports false once the response has begun, which is the case a caller
+// cannot take back.
 func (b *buffer) reset() bool {
 	if b.direct {
 		return false
 	}
 	b.status = 0
 	b.body.Reset()
+	h := b.ResponseWriter.Header()
+	clear(h)
+	for k, v := range b.header {
+		h[k] = v
+	}
 	return true
 }
+
+// begun reports whether any of the response has reached the wire.
+func (b *buffer) begun() bool { return b.direct }
 
 func bufferFrom(ctx context.Context) (*buffer, bool) {
 	b, ok := ctx.Value(bufferKey{}).(*buffer)
@@ -275,10 +303,22 @@ func (c *hostCache) get(host string) (tenancy.Tenant, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.hosts[host]
-	if !ok || time.Now().After(e.until) {
+	if !ok {
+		return tenancy.Tenant{}, false
+	}
+	if time.Now().After(e.until) {
+		// Dropped on the way past, so a host that stopped being served stops
+		// occupying the map instead of waiting for a restart.
+		delete(c.hosts, host)
 		return tenancy.Tenant{}, false
 	}
 	return e.tenant, true
+}
+
+func (c *hostCache) remove(host string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.hosts, host)
 }
 
 func (c *hostCache) put(host string, t tenancy.Tenant) {
@@ -287,22 +327,48 @@ func (c *hostCache) put(host string, t tenancy.Tenant) {
 	c.hosts[host] = hostEntry{tenant: t, until: time.Now().Add(hostTTL)}
 }
 
+// resolveTimeout bounds the one query every request makes before it is a
+// request. Without it a database that accepts connections and answers nothing
+// holds every arriving request open on the client's patience rather than ours.
+const resolveTimeout = 2 * time.Second
+
+// InvalidateHost forgets a cached resolution, so a rename or a removal takes
+// effect now rather than within hostTTL. The tenant module calls it when it
+// changes a host; nothing else has any reason to.
+func (a *API) InvalidateHost(host string) { a.hosts.remove(hostOnly(host)) }
+
 // resolve maps a host to a tenant, through the loader, inside a cross-tenant
 // transaction the kernel opens for it. The loader is a module: it cannot mint
 // the capability itself, and it never holds one outside this call.
+//
+// Concurrent misses for one host share a single query. A cold cache at the
+// front of a traffic spike is otherwise one lookup per request, all of them
+// asking the same question.
 func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) {
 	if t, ok := a.hosts.get(host); ok {
 		return t, nil
 	}
-	var t tenancy.Tenant
-	err := db.RunSystem(ctx, a.opts.Conn, a.token, func(rctx context.Context, tx db.Tx[db.System]) error {
-		var err error
-		t, err = a.opts.Tenants.ByHost(rctx, tx, host)
-		return err
+	shared, err, _ := a.resolving.Do(host, func() (any, error) {
+		if t, ok := a.hosts.get(host); ok {
+			return t, nil
+		}
+		// WithoutCancel, because this lookup is shared: the request that
+		// happened to arrive first must not take everyone else's answer with
+		// it when it gives up. The timeout is what bounds it instead.
+		qctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), resolveTimeout)
+		defer cancel()
+		var t tenancy.Tenant
+		err := db.RunSystem(qctx, a.opts.Conn, a.token, func(rctx context.Context, tx db.Tx[db.System]) error {
+			var err error
+			t, err = a.opts.Tenants.ByHost(rctx, tx, host)
+			return err
+		})
+		return t, err
 	})
 	if err != nil {
 		return tenancy.Tenant{}, err
 	}
+	t := shared.(tenancy.Tenant)
 	if t.ID == uuid.Nil {
 		// A loader that answers with the zero Tenant and no error has resolved
 		// nothing and does not know it. Taking it at its word would scope the
@@ -377,7 +443,7 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		next(ctx)
 		return
 	}
-	rctx, p, err := db.Lazy(ctx.Context(), a.opts.Conn)
+	rctx, p, err := db.Lazy(ctx.Context(), a.opts.Conn, a.lazy)
 	if err != nil {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: no transaction for this request", "error", err)
 		_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
@@ -395,7 +461,21 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: could not open the request transaction",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", openErr)
 	}
-	if err := p.Close(inner.Status() < http.StatusBadRequest); err == nil {
+
+	// A status of zero is not a success. huma leaves it at zero on the
+	// streaming path, where the handler has already written the answer itself,
+	// and it is also what a handler that returned without deciding anything
+	// leaves behind. The two are told apart by whether the response has begun:
+	// if bytes are on the wire the answer is 200 whatever this middleware
+	// thinks, so commit and say so; if nothing has been sent, nobody decided,
+	// and a transaction nobody decided about must not commit.
+	keep, undecided := statusOf(ctx, a, inner.Status())
+	if err := p.Close(keep); err == nil {
+		if undecided {
+			if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
+				_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
+			}
+		}
 		return
 	} else if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
 		// Nothing has been sent yet, so the response can still tell the truth.
@@ -406,6 +486,23 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: request transaction failed after the response was written",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 	}
+}
+
+// statusOf decides whether the request's transaction commits, and whether the
+// response has to be replaced because nothing decided it. See the caller.
+func statusOf(ctx huma.Context, a *API, status int) (keep, undecided bool) {
+	if status != 0 {
+		return status < http.StatusBadRequest, false
+	}
+	b, ok := bufferFrom(ctx.Context())
+	if ok && b.begun() {
+		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: the response was streamed without a status; committing as 200",
+			"method", ctx.Method(), "path", ctx.URL().Path)
+		return true, false
+	}
+	a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the handler decided no status; rolling back",
+		"method", ctx.Method(), "path", ctx.URL().Path)
+	return false, true
 }
 
 // authorize enforces the operation's declaration.

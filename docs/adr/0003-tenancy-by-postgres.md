@@ -42,15 +42,24 @@ settings.** `platformkit.tenant_id` and `platformkit.system_access` are
 placeholder GUCs, and Postgres classes placeholders `USERSET`: any role may set
 them, and there is no privilege to withhold. One
 `set_config('platformkit.system_access', 'true', true)` inside a tenant
-transaction turns the policy off for the rest of it. So the deliberate escape is
-closed by three things that are not privileges:
+transaction turns the policy off for the rest of it. So the escape is closed by
+two things that are not privileges, and softened by a third:
 
 1. the type parameter, so it cannot happen by accident;
 2. `scripts/check_gucs.sh`, which fails the build when any `.go` file outside
-   `kit/db` writes either setting, so it cannot happen quietly;
+   `kit/db` writes either setting, so it cannot happen quietly. **This is the
+   control.** A deliberate escape has to be written, and this is what stops it
+   being written;
 3. a re-read in `db.Run` and `db.RunSystem`: before committing, each re-reads
-   both settings and rolls back if either differs from what it placed, so a
-   transaction that did it anyway keeps nothing.
+   both settings and rolls back if either differs from what it placed.
+
+The third one is a backstop and its limit is exact: it catches the escape that
+sets a setting and leaves it set, which is the escape that happens by mistake.
+It does not catch an escape that restores the value before the transaction
+ends — that transaction re-reads clean and commits, with whatever it read or
+wrote across tenants. No re-read can catch that, because the state it inspects
+is the state the escape restored. `TestARestoringEscapeIsNotCaughtByTheReread`
+is that gap, written down and asserted, so that nobody has to discover it.
 
 A tenant table also needs `FORCE`, not only `ENABLE`: `ENABLE` exempts the
 table's owner from its own policy, and the application role owns any table it
@@ -79,6 +88,7 @@ The runtime half, as `platformkit_app` against a real Postgres:
 go test ./kit/db -run 'TestTenantIsolationIsEnforcedByPostgres|TestOpenRefusesSuperuser'
 go test ./kit/db -run 'TestForceRowLevelSecurityIsWhatBindsTheOwner'
 go test ./kit/db -run 'TestATransactionThatRewritesItsOwnSettingsIsRolledBack'
+go test ./kit/db -run 'TestARestoringEscapeIsNotCaughtByTheReread'
 ./scripts/check_gucs.sh
 ```
 

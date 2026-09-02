@@ -9,10 +9,16 @@
 # something. `make up` starts a database that matches these defaults, on the
 # same PLATFORMKIT_PG_PORT, so overriding the port once moves both.
 PLATFORMKIT_PG_PORT ?= 5432
+PLATFORMKIT_NATS_PORT ?= 4222
 PLATFORMKIT_TEST_ADMIN_URL ?= postgres://postgres:platformkit@localhost:$(PLATFORMKIT_PG_PORT)/platformkit?sslmode=disable
 PLATFORMKIT_TEST_DATABASE_URL ?= postgres://platformkit_app:platformkit@localhost:$(PLATFORMKIT_PG_PORT)/platformkit?sslmode=disable
+# The JetStream transport is tested against the same NATS `make up` starts. The
+# test fails rather than skips when this is unset: a suite that quietly skips
+# the transport it ships proves nothing.
+PLATFORMKIT_TEST_NATS_URL ?= nats://localhost:$(PLATFORMKIT_NATS_PORT)
 export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
+export PLATFORMKIT_TEST_NATS_URL
 
 help: ## List the targets
 	@grep -hE '^[a-z][a-z-]*:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t 18
@@ -25,6 +31,9 @@ test: ## Run the tests against the compose Postgres
 
 vet: ## Run go vet
 	go vet ./...
+
+run: ## Run the reference app (the binary arrives in stage E2)
+	@echo "make run arrives with E2, when apps/platformkit exists"
 
 check-loc: ## Fail when a bucket exceeds its line ceiling
 	go run ./tools/locbudget --check

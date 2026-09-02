@@ -19,9 +19,12 @@
 // included, declared Public where they are mounted. ValidateDeclarations reads
 // that recording and kit/app refuses to start when it reports anything.
 //
-// The huma.API is an unexported field, so the only huma.API reachable from
-// outside this package is the recording one: an operation registered around
-// Register is still recorded, and still fails the boot gate.
+// The huma.API and the adapter are both unexported fields, and neither has an
+// accessor. That is not tidiness: a handler mounted straight on the adapter is
+// recorded, so it passes the boot gate, and yet it is mounted below this
+// package's middleware, so it resolves no tenant, opens no transaction and is
+// never authorized. A door that satisfies the gate and skips the enforcement is
+// worse than no gate, so there is no door. Everything mounts through Register.
 //
 // # The transaction
 //
@@ -46,6 +49,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
@@ -122,11 +126,20 @@ type API struct {
 	// which the recording — and therefore the boot gate — never saw.
 	api     huma.API
 	adapter huma.Adapter
-	router  *chi.Mux
-	opts    Options
-	log     *slog.Logger
-	hosts   *hostCache
-	token   tenancy.SystemToken
+	// root carries the static trees; inner carries the API and the middleware
+	// chain. A file has no tenant and no transaction, so it does not pay for
+	// one, and a large one is not buffered waiting for a commit that will
+	// never happen.
+	root  *chi.Mux
+	inner *chi.Mux
+	opts  Options
+	log   *slog.Logger
+	hosts *hostCache
+	token tenancy.SystemToken
+	lazy  tenancy.SystemToken
+	// resolving collapses concurrent lookups of one host into one query, so a
+	// cold cache under load is one round trip and not one per request.
+	resolving singleflight.Group
 
 	mu  sync.Mutex
 	ops []*huma.Operation
@@ -166,13 +179,15 @@ func New(cfg Options) (*API, *chi.Mux) {
 	}
 	config.Transformers = append(config.Transformers, stampRequestID)
 
-	router := chi.NewMux()
+	root, inner := chi.NewMux(), chi.NewMux()
 	a := &API{
-		router: router,
-		opts:   cfg,
-		log:    cfg.Log,
-		hosts:  &hostCache{hosts: map[string]hostEntry{}},
-		token:  syscap.NewSystemToken("tenant resolution"),
+		root:  root,
+		inner: inner,
+		opts:  cfg,
+		log:   cfg.Log,
+		hosts: &hostCache{hosts: map[string]hostEntry{}},
+		token: syscap.NewSystemToken("tenant resolution"),
+		lazy:  syscap.NewSystemToken("request transaction"),
 	}
 	if a.log == nil {
 		a.log = slog.Default()
@@ -187,13 +202,13 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// catching a panic, outside the transaction on purpose. Authentication is
 	// last, because its hook reads an *http.Request and a principal is a
 	// property of the caller rather than of the route.
-	router.Use(a.requestID, a.respond, a.authenticate)
+	inner.Use(a.requestID, a.respond, a.authenticate)
 
 	// huma.NewAPI mounts its own documentation routes through the adapter it is
 	// handed, so the recorder declares those Public as they arrive: they serve
 	// no tenant data and have no module to declare them, and Recorded is only
 	// worth reading if it is the whole list.
-	rec := &recordingAdapter{Adapter: humachi.NewAdapter(router), api: a, builtin: true}
+	rec := &recordingAdapter{Adapter: humachi.NewAdapter(inner), api: a, builtin: true}
 	a.api = huma.NewAPI(config, rec)
 	rec.builtin = false
 	a.adapter = rec
@@ -204,21 +219,21 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// belongs inside the same transaction as the work it guards. Authorization
 	// last, so a denial rolls that transaction back untouched.
 	a.api.UseMiddleware(a.tenant, a.transaction, a.authorize)
-	return a, router
+
+	// The API is mounted last and at the root, so a static tree registered
+	// afterwards still takes precedence over it for its own prefix.
+	root.Mount("/", inner)
+	return a, root
 }
 
-// Adapter returns the recording adapter. It is the only huma-level handle this
-// package exposes, and it is safe to expose precisely because it records: an
-// operation mounted through it, by whatever route, is seen by Recorded and so
-// by the boot gate. What is not reachable is the bare adapter underneath.
-func (a *API) Adapter() huma.Adapter { return a.adapter }
-
-// Static mounts a file tree on the router, outside the API. Static assets are
-// not operations: there is no handler to authorize, no tenant transaction to
-// open and nothing to declare, so they never appear in Recorded.
+// Static mounts a file tree beside the API, on the router that carries neither
+// the request middleware nor the transaction. Static assets are not operations:
+// there is no handler to authorize, no tenant transaction to open and nothing
+// to declare, so they never appear in Recorded and never hold a response in
+// memory waiting for a commit.
 func (a *API) Static(prefix string, fsys fs.FS) {
-	a.router.Handle(strings.TrimSuffix(prefix, "/")+"/*",
-		http.StripPrefix(strings.TrimSuffix(prefix, "/"), http.FileServerFS(fsys)))
+	at := strings.TrimSuffix(prefix, "/")
+	a.root.Handle(at+"/*", http.StripPrefix(at, http.FileServerFS(fsys)))
 }
 
 // recordingAdapter is where every registration made through this API is seen:
@@ -293,6 +308,33 @@ func (a *API) Permissions() []string {
 		}
 		seen[auth.permission] = true
 		out = append(out, auth.permission)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// EventsExtension is the OpenAPI extension an operation lists the events its
+// handler publishes under. kit/crud writes it when it mounts a Spec, and
+// kit/app reads it back to check that some module declared each one — the same
+// recording, the same object and the same gate as the authorization
+// declaration, rather than a second channel to keep in step.
+const EventsExtension = "x-platformkit-events"
+
+// Events lists, once each, every event a recorded operation says it publishes.
+func (a *API) Events() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, op := range a.Recorded() {
+		if op.Extensions == nil {
+			continue
+		}
+		names, _ := op.Extensions[EventsExtension].([]string)
+		for _, n := range names {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
 	}
 	sort.Strings(out)
 	return out

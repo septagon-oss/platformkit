@@ -3,6 +3,9 @@ package db_test
 import (
 	"context"
 	"database/sql"
+	"io/fs"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -38,9 +41,32 @@ func TestMigrateIsIdempotent(t *testing.T) {
 		dirty   bool
 	)
 	scan(t, admin, `SELECT version, dirty FROM schema_migrations`, &version, &dirty)
-	if version != 1 || dirty {
-		t.Errorf("ledger at version %d dirty=%v, want 1 and clean", version, dirty)
+	if want := latest(t); version != want || dirty {
+		t.Errorf("ledger at version %d dirty=%v, want %d and clean", version, dirty, want)
 	}
+}
+
+// latest is the highest version in migrations/, so the ledger assertion above
+// says "everything is applied" rather than a number that goes stale with the
+// next migration.
+func latest(t *testing.T) int {
+	t.Helper()
+	entries, err := fs.ReadDir(migrations.FS, ".")
+	if err != nil {
+		t.Fatalf("read migrations/: %v", err)
+	}
+	highest := 0
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".up.sql") {
+			continue
+		}
+		v, err := strconv.Atoi(strings.TrimLeft(strings.SplitN(e.Name(), "_", 2)[0], "0"))
+		if err != nil {
+			t.Fatalf("%s has no version: %v", e.Name(), err)
+		}
+		highest = max(highest, v)
+	}
+	return highest
 }
 
 // TestTenantHelperFailsClosedOnGarbage: current_setting returns whatever text

@@ -22,8 +22,9 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
    another tenant's rows. `db.Tx[db.Tenant]` and `db.Tx[db.System]` are distinct
    types, so crossing the tenant by accident does not compile and crossing it on
    purpose is one grep. The settings themselves are `USERSET` and no privilege
-   can withhold them, so a gate and a re-read before commit close that door
-   instead; see `docs/adr/0003`. (E1)
+   can withhold them, so the grep gate is what closes that door; the re-read
+   before commit is a backstop that catches the careless escape and not the
+   deliberate one. See `docs/adr/0003`. (E1)
 5. **Authorization is declared, not remembered.** Every operation registers an
    `Auth` value alongside its route; the app validates the recorded operation set
    at boot and refuses to start when one is undeclared. (E1)

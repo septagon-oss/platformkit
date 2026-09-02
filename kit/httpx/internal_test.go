@@ -54,6 +54,19 @@ func TestReachingAroundRegisterIsStillRecorded(t *testing.T) {
 	if !strings.Contains(err.Error(), "GET /backdoor (backdoor)") {
 		t.Errorf("the error does not name the operation: %v", err)
 	}
+
+	// The adapter is the other way around Register, and it used to be exported.
+	// It is recorded too — but recording is not enforcement: a handler mounted
+	// here sits below this package's huma middleware, so it resolves no tenant,
+	// opens no transaction and is never authorized, while carrying whatever
+	// declaration it likes. That is why there is no accessor for it any more,
+	// and this is what it would have bought.
+	a.adapter.Handle(&huma.Operation{
+		OperationID: "cellar", Method: http.MethodGet, Path: "/cellar", Hidden: true,
+	}, func(huma.Context) {})
+	if err := a.ValidateDeclarations(); err == nil || !strings.Contains(err.Error(), "GET /cellar (cellar)") {
+		t.Errorf("ValidateDeclarations = %v, want the operation mounted on the adapter", err)
+	}
 }
 
 // TestHostOnlyIsTheKeyEveryLoaderSees, so no TenantLoader has to normalise a

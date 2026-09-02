@@ -164,6 +164,47 @@ func TestATransactionThatRewritesItsOwnSettingsIsRolledBack(t *testing.T) {
 	}
 }
 
+// TestARestoringEscapeIsNotCaughtByTheReread is this repository's known gap,
+// written down rather than discovered.
+//
+// The re-read in Run compares the settings at the end against the ones it
+// placed. An escape that turns system access on, reads or writes across
+// tenants, and turns it back off again ends with exactly the settings the
+// runner placed — so the re-read is satisfied and the transaction commits. No
+// re-read can catch this, because the state it inspects is the state the escape
+// restored; catching it would need Postgres to refuse the SET, and placeholder
+// GUCs are USERSET, which is precisely what it will not do.
+//
+// So the re-read is a backstop for the careless escape, and the control for a
+// deliberate one is scripts/check_gucs.sh: no .go file outside kit/db may write
+// either setting, and this test is the only place in the repository that does
+// what the gate exists to forbid. See docs/adr/0003.
+func TestARestoringEscapeIsNotCaughtByTheReread(t *testing.T) {
+	ctx := t.Context()
+	admin, app := dbtest.Schema(t)
+	createThings(t, ctx, admin)
+
+	acme, globex := newTenant("acme"), newTenant("globex")
+	err := db.Run(tenancy.WithTenant(ctx, acme), app, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		on := `SELECT set_config('platformkit.system_access', 'true', true)`
+		off := `SELECT set_config('platformkit.system_access', '', true)`
+		if err := tx.DB().Exec(on).Error; err != nil {
+			return err
+		}
+		if err := insert(tx.DB(), globex.ID, "stolen"); err != nil {
+			return err
+		}
+		// Put it back, and the re-read has nothing to see.
+		return tx.DB().Exec(off).Error
+	})
+	if err != nil {
+		t.Fatalf("Run = %v; the gap is that this commits, and a test that asserted otherwise would be describing a control this repository does not have", err)
+	}
+	if n := countAs(t, tenancy.WithTenant(ctx, globex), app); n != 1 {
+		t.Errorf("the restoring escape wrote %d rows into another tenant, want 1: this test documents the gap and has to fail when the gap closes", n)
+	}
+}
+
 // TestForceRowLevelSecurityIsWhatBindsTheOwner. ENABLE alone exempts the table's
 // owner from its own policy, and the application role owns any table it creates
 // itself, so the second ALTER is not decoration.

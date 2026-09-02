@@ -1,6 +1,7 @@
 package httpx_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -537,4 +538,152 @@ func notes(t *testing.T, f *fixture) int {
 		t.Fatalf("count notes: %v", err)
 	}
 	return n
+}
+
+// TestAFailedCommitDoesNotKeepTheHandlersHeaders. The handler answered 201 with
+// a Location, and then its transaction did not commit: the 500 that replaces
+// the response must not point at a resource that does not exist.
+func TestAFailedCommitDoesNotKeepTheHandlersHeaders(t *testing.T) {
+	api, router, f := setup(t)
+	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL,
+		CONSTRAINT notes_unique UNIQUE (tenant_id, body) DEFERRABLE INITIALLY DEFERRED)`)
+
+	type created struct {
+		Location string `header:"Location"`
+		Body     struct{}
+	}
+	httpx.Register(api, huma.Operation{
+		OperationID: "create-note", Method: http.MethodPost, Path: "/notes",
+		DefaultStatus: http.StatusCreated,
+	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*created, error) {
+		tx, _ := httpx.TxFrom(ctx)
+		for range 2 {
+			if err := tx.DB().Exec("INSERT INTO notes (tenant_id, body) VALUES (?, ?)",
+				f.tenant.ID.String(), "same").Error; err != nil {
+				return nil, err
+			}
+		}
+		return &created{Location: "/notes/1"}, nil
+	})
+
+	res := request(t, router, http.MethodPost, "/notes", host)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("a commit that failed returned %d, want 500", res.Code)
+	}
+	if loc := res.Header().Get("Location"); loc != "" {
+		t.Errorf("the 500 still carries Location: %q", loc)
+	}
+	if id := res.Header().Get(httpx.RequestIDHeader); id == "" {
+		t.Error("the reset dropped the request id, which was set before the handler ran")
+	}
+}
+
+// TestALargeResponseStopsBeingHeld. Holding a response is what makes
+// "committed before 200" possible, and it costs a copy; past the limit the copy
+// is the wrong trade, so the buffer sends what it has and streams the rest —
+// with the same consequence a Flush has.
+func TestALargeResponseStopsBeingHeld(t *testing.T) {
+	api, router, _ := setup(t)
+	type blob struct {
+		Body []byte
+	}
+	httpx.Register(api, huma.Operation{
+		OperationID: "big", Method: http.MethodGet, Path: "/big",
+	}, httpx.Public(), func(context.Context, *struct{}) (*blob, error) {
+		return &blob{Body: bytes.Repeat([]byte("x"), 3<<20)}, nil
+	})
+	res := get(t, router, "/big")
+	if res.Code != http.StatusOK || res.Body.Len() != 3<<20 {
+		t.Errorf("a 3 MB response = %d, %d bytes", res.Code, res.Body.Len())
+	}
+}
+
+// TestAStreamedResponseCommits: huma never sets a status on the streaming path,
+// and a status of zero is not a success — but a response already on the wire is
+// a 200 whatever this package thinks, so it commits.
+func TestAStreamedResponseCommits(t *testing.T) {
+	api, router, f := setup(t)
+	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL)`)
+
+	write := func(ctx context.Context) error {
+		tx, ok := httpx.TxFrom(ctx)
+		if !ok {
+			return errors.New("no transaction")
+		}
+		return tx.DB().Exec("INSERT INTO notes (tenant_id, body) VALUES (?, ?)", f.tenant.ID.String(), "streamed").Error
+	}
+	httpx.Register(api, huma.Operation{
+		OperationID: "flushed", Method: http.MethodGet, Path: "/flushed",
+	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*huma.StreamResponse, error) {
+		if err := write(ctx); err != nil {
+			return nil, err
+		}
+		return &huma.StreamResponse{Body: func(hctx huma.Context) {
+			w := hctx.BodyWriter()
+			_, _ = w.Write([]byte("chunk"))
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}}, nil
+	})
+
+	res := get(t, router, "/flushed")
+	if res.Code != http.StatusOK || res.Body.String() != "chunk" {
+		t.Fatalf("streamed response = %d %q", res.Code, res.Body.String())
+	}
+	if n := notes(t, f); n != 1 {
+		t.Errorf("%d notes after a streamed response, want 1: the transaction has to commit", n)
+	}
+}
+
+// TestAResponseNobodyDecidedIsNotCommitted is the other half of the same rule.
+// A handler that wrote no status and never began the response has decided
+// nothing, and a transaction nobody decided about is a 500, not a 200.
+func TestAResponseNobodyDecidedIsNotCommitted(t *testing.T) {
+	api, router, f := setup(t)
+	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL)`)
+
+	httpx.Register(api, huma.Operation{
+		OperationID: "undecided", Method: http.MethodGet, Path: "/undecided",
+	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*huma.StreamResponse, error) {
+		tx, _ := httpx.TxFrom(ctx)
+		if err := tx.DB().Exec("INSERT INTO notes (tenant_id, body) VALUES (?, ?)",
+			f.tenant.ID.String(), "undecided").Error; err != nil {
+			return nil, err
+		}
+		return &huma.StreamResponse{Body: func(huma.Context) {}}, nil
+	})
+
+	res := get(t, router, "/undecided")
+	if res.Code != http.StatusInternalServerError {
+		t.Errorf("an undecided response = %d, want 500", res.Code)
+	}
+	if n := notes(t, f); n != 0 {
+		t.Errorf("%d notes after an undecided response, want 0", n)
+	}
+}
+
+// TestInvalidateHostForgetsTheResolution, so renaming a site takes effect now
+// rather than within the cache's half minute.
+func TestInvalidateHostForgetsTheResolution(t *testing.T) {
+	api, router, f := setup(t)
+	httpx.Register(api, huma.Operation{
+		OperationID: "ping", Method: http.MethodGet, Path: "/ping",
+	}, httpx.Public(), ok)
+
+	for range 3 {
+		if code := get(t, router, "/ping").Code; code != http.StatusOK {
+			t.Fatalf("GET /ping = %d", code)
+		}
+	}
+	if n := f.loads.Load(); n != 1 {
+		t.Fatalf("the loader was asked %d times for three requests, want 1", n)
+	}
+	api.InvalidateHost(strings.ToUpper(host) + ":8080")
+	if code := get(t, router, "/ping").Code; code != http.StatusOK {
+		t.Fatalf("GET /ping after invalidation = %d", code)
+	}
+	if n := f.loads.Load(); n != 2 {
+		t.Errorf("the loader was asked %d times, want 2: the invalidation did not take", n)
+	}
 }

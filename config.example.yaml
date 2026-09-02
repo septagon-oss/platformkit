@@ -15,10 +15,12 @@ server:
 
 database:
   # The app connects as platformkit_app: no superuser, no BYPASSRLS, so tenant
-  # row-level security applies to every query it makes.
-  url: "postgres://platformkit_app:platformkit@localhost:5432/platformkit?sslmode=disable"
+  # row-level security applies to every query it makes. connect_timeout bounds
+  # the dial: a database that accepts nothing has to fail rather than hold a
+  # request open on the caller's patience.
+  url: "postgres://platformkit_app:platformkit@localhost:5432/platformkit?sslmode=disable&connect_timeout=5"
   # Migrations connect as the owner, which holds the DDL rights.
-  migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable"
+  migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable&connect_timeout=5"
 
 nats:
   # JetStream endpoint the outbox relay publishes module events to.
