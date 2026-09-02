@@ -32,6 +32,15 @@ var spec = crud.Spec[*contracts.User]{
 	Read:       contracts.PermissionUserRead,
 	Write:      contracts.PermissionUserManage,
 	SoftDelete: true,
+	// status is moved by Deactivate, which publishes user.deactivated; a
+	// caller who could set it through the generic update would deactivate
+	// somebody and tell nobody.
+	//
+	// roles is not here and cannot be: kit/crud's schema covers a closed set of
+	// field types and a slice is not one of them, so `roles` is refused by the
+	// PATCH already — as a field that does not exist, which is the right answer
+	// arrived at for the wrong reason. Naming it here would panic at mount.
+	Immutable: []string{"status"},
 }
 
 // Module is the manifest, and the service it is built on: the auth module takes
@@ -58,7 +67,7 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 		Subscriptions: nil,
 		Routes: func(api *httpx.API) {
 			mounted.Mount(api)
-			internal.RegisterRoutes(api, svc, mounted.Path)
+			internal.RegisterRoutes(api, mounted, svc)
 		},
 	}
 }

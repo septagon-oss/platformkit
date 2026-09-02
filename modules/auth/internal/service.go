@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -33,11 +32,6 @@ func NewService(users contracts.Users) *Service {
 }
 
 var _ contracts.Service = (*Service)(nil)
-
-// now is the one clock this module reads: UTC, because an expiry that depends
-// on where the process runs cannot be compared, and truncated to the
-// microsecond, because that is what Postgres stores.
-func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
 // Login verifies a password and opens a session.
 //
@@ -89,7 +83,7 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, f
 
 // open writes the session row and its event in the caller's transaction.
 func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, from contracts.Client, method string) (*contracts.Session, *contracts.Identity, error) {
-	at := now()
+	at := db.Now()
 	session := &contracts.Session{
 		ID: uuid.New(), TenantID: db.TenantOf(tx).ID, UserID: user.ID,
 		CreatedAt: at, ExpiresAt: at.Add(contracts.SessionLifetime), LastSeenAt: at,
@@ -112,7 +106,7 @@ func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], user *usercontr
 // caller's roles arrive with them and the authorizer needs no second query.
 func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client) (*contracts.Identity, error) {
 	var session contracts.Session
-	err := tx.DB().Where("id = ? AND expires_at > ?", id, now()).Take(&session).Error
+	err := tx.DB().Where("id = ? AND expires_at > ?", id, db.Now()).Take(&session).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, crud.ErrNotFound
 	}
@@ -139,7 +133,7 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 // throttle a read-only page load would take a row lock on the session it read,
 // and two tabs of the same person would wait on each other.
 func (s *Service) slide(tx db.Tx[db.Tenant], session *contracts.Session, from contracts.Client) error {
-	at := now()
+	at := db.Now()
 	if at.Sub(session.LastSeenAt) < contracts.SessionTouch {
 		return nil
 	}
@@ -168,7 +162,7 @@ func (s *Service) Logout(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) e
 		return fmt.Errorf("auth: end the session: %w", err)
 	}
 	return events.Publish(tx, contracts.EventLoggedOut, contracts.LoggedOut{
-		UserID: session.UserID, SessionID: session.ID, At: now(),
+		UserID: session.UserID, SessionID: session.ID, At: db.Now(),
 	})
 }
 
@@ -257,7 +251,7 @@ func (s *Service) recordFailure(ctx context.Context, email string, from contract
 	}
 	err := db.Run(db.Detached(context.WithoutCancel(ctx)), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
 		return events.Publish(tx, contracts.EventLoginFailed, contracts.LoginFailed{
-			Email: contracts.EmailKey(email), IP: clip(from.IP, 60), Locked: locked, At: now(),
+			Email: contracts.EmailKey(email), IP: clip(from.IP, 60), Locked: locked, At: db.Now(),
 		})
 	})
 	if err != nil {

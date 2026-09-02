@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -72,7 +71,7 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 		f.mu.Unlock()
 		return nil, fmt.Errorf("%w: tenant_hosts_pkey", crud.ErrConflict)
 	}
-	at := time.Now().UTC().Truncate(time.Microsecond)
+	at := db.Now()
 	t := contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
 		Hosts: []string{host}, CreatedAt: at, UpdatedAt: at,
@@ -132,7 +131,7 @@ func (f *Fake) Suspend(_ context.Context, _ db.Tx[db.System], id uuid.UUID) (*co
 		return nil, crud.ErrNotFound
 	}
 	already := t.Status == contracts.StatusSuspended
-	t.Status, t.UpdatedAt = contracts.StatusSuspended, time.Now().UTC().Truncate(time.Microsecond)
+	t.Status, t.UpdatedAt = contracts.StatusSuspended, db.Now()
 	f.tenants[id] = t
 	f.mu.Unlock()
 	if !already {

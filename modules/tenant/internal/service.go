@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -30,11 +29,6 @@ func NewService(hooks []contracts.Hook) *Service { return &Service{hooks: hooks}
 
 var _ contracts.Service = (*Service)(nil)
 
-// now is the one clock this module reads: UTC, because a creation time that
-// depends on where the process runs cannot be compared, and truncated to the
-// microsecond, because that is what Postgres stores.
-func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
-
 // Create writes the tenant, its first host and whatever the hooks add, all in
 // the caller's transaction, so an installation is either whole or absent.
 func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.NewTenant) (*contracts.Tenant, error) {
@@ -49,7 +43,7 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	if in.Name == "" {
 		return nil, fmt.Errorf("%w: a tenant needs a name", crud.ErrInvalid)
 	}
-	at := now()
+	at := db.Now()
 	t := &contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
 		CreatedAt: at, UpdatedAt: at,
@@ -90,7 +84,7 @@ func (s *Service) AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 		return nil, err
 	}
 	return t, events.PublishFor(tx, t.ID, contracts.EventHostAdded, contracts.HostAdded{
-		TenantID: t.ID, Host: httpx.HostOnly(host), At: now(),
+		TenantID: t.ID, Host: httpx.HostOnly(host), At: db.Now(),
 	})
 }
 
@@ -104,7 +98,7 @@ func (s *Service) Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	if t.Status == contracts.StatusSuspended {
 		return t, nil
 	}
-	t.Status, t.UpdatedAt = contracts.StatusSuspended, now()
+	t.Status, t.UpdatedAt = contracts.StatusSuspended, db.Now()
 	// The two columns this changed, and no others: writing the whole row would
 	// put every field back to what this transaction read.
 	if err := tx.DB().Model(t).Select("status", "updated_at").Updates(t).Error; err != nil {

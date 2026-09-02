@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -30,11 +29,6 @@ func NewService() *Service { return &Service{} }
 
 var _ contracts.Service = (*Service)(nil)
 
-// now is the one clock this module reads: UTC, because a timestamp that depends
-// on where the process runs cannot be compared, and truncated to the
-// microsecond, because that is what Postgres stores.
-func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
-
 // Invite creates a user with no password. They cannot sign in until somebody
 // sets one, which in E3.2 is a link in an email a subscriber to this event
 // sends; until then it is SetPassword, called by an administrator.
@@ -44,7 +38,7 @@ func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displa
 		return nil, err
 	}
 	return u, events.Publish(tx, contracts.EventInvited, contracts.Invited{
-		UserID: u.ID, Email: u.Email, Status: u.Status, At: now(),
+		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
 	})
 }
 
@@ -72,7 +66,7 @@ func (s *Service) SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 	if err := crud.Update(ctx, tx, u, "password_hash", "status", "updated_at"); err != nil {
 		return err
 	}
-	return events.Publish(tx, contracts.EventPasswordSet, contracts.PasswordSet{UserID: u.ID, At: now()})
+	return events.Publish(tx, contracts.EventPasswordSet, contracts.PasswordSet{UserID: u.ID, At: db.Now()})
 }
 
 // SetRoles replaces the roles this user holds. The same set again — in any
@@ -93,7 +87,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return nil, err
 	}
 	return u, events.Publish(tx, contracts.EventRolesSet, contracts.RolesSet{
-		UserID: u.ID, Was: was, Now: want, At: now(),
+		UserID: u.ID, Was: was, Now: want, At: db.Now(),
 	})
 }
 
@@ -110,7 +104,7 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	if err := crud.Update(ctx, tx, u, "status", "updated_at"); err != nil {
 		return nil, err
 	}
-	return u, events.Publish(tx, contracts.EventDeactivated, contracts.Deactivated{UserID: u.ID, At: now()})
+	return u, events.Publish(tx, contracts.EventDeactivated, contracts.Deactivated{UserID: u.ID, At: db.Now()})
 }
 
 // Get is one user of this tenant.
@@ -145,7 +139,7 @@ func (s *Service) Provision(_ context.Context, tx db.Tx[db.System], tenantID uui
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
-	at := now()
+	at := db.Now()
 	u := &contracts.User{
 		Email: email, DisplayName: displayName, Status: contracts.StatusActive,
 		Roles: normalise(roles), PasswordHash: hash,
