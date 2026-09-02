@@ -298,7 +298,7 @@ type commandInput[I any] struct {
 // rolled back is never seen, because it rolled back too.
 func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T, hook func(context.Context, db.Tx[db.Tenant], T) error) error {
 	if !s.NoEvents {
-		if err := events.Publish(tx, s.Event(verb), e); err != nil {
+		if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
 			return err
 		}
 	}

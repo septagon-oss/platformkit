@@ -58,7 +58,7 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 			return nil, fmt.Errorf("tenant: %s: %w", t.Slug, err)
 		}
 	}
-	return t, events.PublishFor(tx, t.ID, contracts.EventCreated, contracts.Created{
+	return t, events.PublishFor(ctx, tx, t.ID, contracts.EventCreated, contracts.Created{
 		TenantID: t.ID, Slug: t.Slug, Name: t.Name, Host: host, At: at,
 	})
 }
@@ -82,7 +82,7 @@ func (s *Service) AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	if err := s.attach(tx, t, host); err != nil {
 		return nil, err
 	}
-	return t, events.PublishFor(tx, t.ID, contracts.EventHostAdded, contracts.HostAdded{
+	return t, events.PublishFor(ctx, tx, t.ID, contracts.EventHostAdded, contracts.HostAdded{
 		TenantID: t.ID, Host: httpx.HostOnly(host), At: db.Now(),
 	})
 }
@@ -103,7 +103,7 @@ func (s *Service) Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	if err := tx.DB().Model(t).Select("status", "updated_at").Updates(t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
-	return t, events.PublishFor(tx, t.ID, contracts.EventSuspended, contracts.Suspended{
+	return t, events.PublishFor(ctx, tx, t.ID, contracts.EventSuspended, contracts.Suspended{
 		TenantID: t.ID, Slug: t.Slug, At: t.UpdatedAt,
 	})
 }

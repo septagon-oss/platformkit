@@ -27,13 +27,15 @@ var (
 	purgeToken = syscap.NewSystemToken("outbox purge")
 )
 
-// row is one outbox record as the relay reads it.
+// row is one outbox record as the relay reads it. Actor is a pointer because
+// the column is null for everything nobody asked for.
 type row struct {
 	ID        uuid.UUID
 	TenantID  uuid.UUID
 	Name      string
 	Payload   []byte
 	CreatedAt time.Time
+	Actor     *uuid.UUID
 }
 
 // Relay moves every unpublished row to the transport, a batch at a time, and
@@ -68,7 +70,7 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 	var moved int
 	err := db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var rows []row
-		const q = `SELECT id, tenant_id, name, payload, created_at FROM ` + table + `
+		const q = `SELECT id, tenant_id, name, payload, created_at, actor FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
@@ -79,6 +81,9 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		ids := make([]uuid.UUID, 0, len(rows))
 		for _, r := range rows {
 			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt}
+			if r.Actor != nil {
+				ev.Actor = *r.Actor
+			}
 			if err := t.Publish(ctx, ev); err != nil {
 				// The rows published so far are still unstamped, so they go
 				// again next tick. That is the at-least-once bargain.

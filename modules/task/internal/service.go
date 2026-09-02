@@ -55,7 +55,7 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 	if err := crud.Update(ctx, tx, task, "assignee_id", "status", "updated_at"); err != nil {
 		return nil, err
 	}
-	return task, events.Publish(tx, contracts.EventAssigned, contracts.Assigned{
+	return task, events.Publish(ctx, tx, contracts.EventAssigned, contracts.Assigned{
 		TaskID: task.ID, Assignee: assignee, Status: task.Status, At: db.Now(),
 	})
 }
@@ -86,7 +86,7 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 	if err := crud.Update(ctx, tx, task, "status", "resolution", "resolved_at", "updated_at"); err != nil {
 		return nil, err
 	}
-	return task, events.Publish(tx, contracts.EventResolved, contracts.Resolved{
+	return task, events.Publish(ctx, tx, contracts.EventResolved, contracts.Resolved{
 		TaskID: task.ID, Resolution: task.Resolution, At: at,
 	})
 }
@@ -107,7 +107,7 @@ func (s *Service) CheckSLA(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := crud.Update(ctx, tx, task, "sla_breached", "updated_at"); err != nil {
 		return nil, err
 	}
-	return task, events.Publish(tx, contracts.EventSLABreached, contracts.SLABreached{
+	return task, events.Publish(ctx, tx, contracts.EventSLABreached, contracts.SLABreached{
 		TaskID: task.ID, Priority: task.Priority, Deadline: *task.SLADeadline, At: db.Now(),
 	})
 }

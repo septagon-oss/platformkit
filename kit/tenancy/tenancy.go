@@ -51,3 +51,29 @@ func FromContext(ctx context.Context) (Tenant, bool) {
 // interface for it is httpx.TenantLoader, declared where both kit/db and this
 // package are already imported.
 type SystemToken = syscap.SystemToken
+
+// actorKey is unexported for the same reason contextKey is: only this package
+// can put an actor on a context, and only kit/httpx calls WithActor.
+type actorKey struct{}
+
+// WithActor returns a copy of ctx carrying the user who is making the request.
+//
+// It lives here, beside the tenant, because the two are one thing: the identity
+// of a request is which customer it is about and who is asking. kit/httpx calls
+// it once, immediately after Options.Authenticate recognises the caller, and
+// kit/events reads it back so that every event an operation writes carries the
+// person who caused it without any module remembering to pass it along.
+//
+// Work with no person behind it — a job, the relay, an event handler — leaves
+// it unset, and that is the honest answer rather than a sentinel: the outbox
+// column is null and the audit row says the system did it.
+func WithActor(ctx context.Context, userID uuid.UUID) context.Context {
+	return context.WithValue(ctx, actorKey{}, userID)
+}
+
+// ActorFrom returns the user ctx carries, if any. The nil UUID is not an actor:
+// a zero principal must not read as somebody.
+func ActorFrom(ctx context.Context) (uuid.UUID, bool) {
+	id, ok := ctx.Value(actorKey{}).(uuid.UUID)
+	return id, ok && id != uuid.Nil
+}

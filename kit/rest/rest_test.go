@@ -79,6 +79,11 @@ CREATE POLICY rest_tasks_tenant ON rest_tasks
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 
+// principal is who every request in this file is made by. It is fixed rather
+// than fresh per request so that one case can ask whether the event a route
+// published names them.
+var principal = uuid.New()
+
 // caller is the three answers httpx.New needs, all of them yes.
 type caller struct{}
 
@@ -111,7 +116,7 @@ func mount(t *testing.T, s rest.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
-			return httpx.Principal{UserID: uuid.New()}, true, nil
+			return httpx.Principal{UserID: principal}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
@@ -335,8 +340,8 @@ func TestThePatchRefusesTheFieldsACommandOwns(t *testing.T) {
 // publishes and nobody declared is invisible. Both halves are below.
 func TestAHooksEventsAreDeclaredWhereTheGateLooks(t *testing.T) {
 	const hooked = "tasks.task.escalated"
-	hook := func(_ context.Context, tx db.Tx[db.Tenant], e *Task) error {
-		return events.Publish(tx, hooked, e)
+	hook := func(ctx context.Context, tx db.Tx[db.Tenant], e *Task) error {
+		return events.Publish(ctx, tx, hooked, e)
 	}
 
 	undeclared := spec
@@ -559,5 +564,30 @@ func TestASchemaCarriesAListAndNothingSortsOnIt(t *testing.T) {
 		if op.OperationID == "tasks-task-list" && strings.Contains(op.Description, "tags") {
 			t.Errorf("the list route offers to sort by a list: %s", op.Description)
 		}
+	}
+}
+
+// TestAnEventNamesTheCallerWhoCausedIt.
+//
+// The actor is on the envelope and not in any payload, so it is the same
+// question about every event whatever module wrote it, and no module passes it
+// along: kit/httpx puts the recognised caller on the request context and
+// kit/events.Publish reads it there. What a route publishes therefore names the
+// person who called it without the route, the Spec or the entity knowing that
+// anybody was asked.
+func TestAnEventNamesTheCallerWhoCausedIt(t *testing.T) {
+	_, router, admin := mounted(t)
+
+	if code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"first"}`); code != http.StatusCreated {
+		t.Fatalf("POST = %d %s, want 201", code, body)
+	}
+	var actor *uuid.UUID
+	err := admin.QueryRowContext(t.Context(),
+		`SELECT actor FROM platformkit_outbox WHERE name = $1`, "tasks.task.created").Scan(&actor)
+	if err != nil {
+		t.Fatalf("read the actor: %v", err)
+	}
+	if actor == nil || *actor != principal {
+		t.Errorf("the created event names %v, want the caller %s", actor, principal)
 	}
 }

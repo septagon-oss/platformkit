@@ -96,7 +96,7 @@ func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], user *usercontr
 	if err != nil {
 		return nil, nil, err
 	}
-	return session, identity, events.Publish(tx, contracts.EventLoggedIn, contracts.LoggedIn{
+	return session, identity, events.Publish(ctx, tx, contracts.EventLoggedIn, contracts.LoggedIn{
 		UserID: user.ID, SessionID: session.ID, Method: method, IP: session.IP, At: at,
 	})
 }
@@ -149,7 +149,7 @@ func (s *Service) slide(tx db.Tx[db.Tenant], session *contracts.Session, from co
 
 // Logout ends a session. Ending one that is already gone is not an error: the
 // caller wanted to be signed out and they are.
-func (s *Service) Logout(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
+func (s *Service) Logout(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
 	var session contracts.Session
 	err := tx.DB().Where("id = ?", id).Take(&session).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -161,7 +161,7 @@ func (s *Service) Logout(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) e
 	if err := tx.DB().Where("id = ?", id).Delete(&contracts.Session{}).Error; err != nil {
 		return fmt.Errorf("auth: end the session: %w", err)
 	}
-	return events.Publish(tx, contracts.EventLoggedOut, contracts.LoggedOut{
+	return events.Publish(ctx, tx, contracts.EventLoggedOut, contracts.LoggedOut{
 		UserID: session.UserID, SessionID: session.ID, At: db.Now(),
 	})
 }
@@ -250,7 +250,7 @@ func (s *Service) recordFailure(ctx context.Context, email string, from contract
 		return
 	}
 	err := db.Run(db.Detached(context.WithoutCancel(ctx)), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		return events.Publish(tx, contracts.EventLoginFailed, contracts.LoginFailed{
+		return events.Publish(ctx, tx, contracts.EventLoginFailed, contracts.LoginFailed{
 			Email: contracts.EmailKey(email), IP: clip(from.IP, 60), Locked: locked, At: db.Now(),
 		})
 	})

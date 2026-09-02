@@ -1,0 +1,14 @@
+-- The actor on the event envelope: the user whose request caused an event, and
+-- NULL for everything nobody asked for — a periodic job, an event handler, the
+-- bootstrap.
+--
+-- It is a column on the outbox rather than a key inside the payload because it
+-- is the same question about every event, whatever its module, and a subscriber
+-- that wanted it would otherwise have to know the shape of every payload there
+-- is. modules/audit is that subscriber. kit/events.Publish reads the value off
+-- the request context (kit/tenancy.WithActor), so no module passes it along and
+-- none can forget to.
+--
+-- Nullable and with no default: "nobody" is an answer, and the nil UUID would
+-- be a user id that is not a user.
+ALTER TABLE platformkit_outbox ADD COLUMN actor uuid;

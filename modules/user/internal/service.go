@@ -37,7 +37,7 @@ func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displa
 	if err := crud.Create(ctx, tx, u); err != nil {
 		return nil, err
 	}
-	return u, events.Publish(tx, contracts.EventInvited, contracts.Invited{
+	return u, events.Publish(ctx, tx, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
 	})
 }
@@ -66,7 +66,7 @@ func (s *Service) SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 	if err := crud.Update(ctx, tx, u, "password_hash", "status", "updated_at"); err != nil {
 		return err
 	}
-	return events.Publish(tx, contracts.EventPasswordSet, contracts.PasswordSet{UserID: u.ID, At: db.Now()})
+	return events.Publish(ctx, tx, contracts.EventPasswordSet, contracts.PasswordSet{UserID: u.ID, At: db.Now()})
 }
 
 // SetRoles replaces the roles this user holds. The same set again — in any
@@ -86,7 +86,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := crud.Update(ctx, tx, u, "roles", "updated_at"); err != nil {
 		return nil, err
 	}
-	return u, events.Publish(tx, contracts.EventRolesSet, contracts.RolesSet{
+	return u, events.Publish(ctx, tx, contracts.EventRolesSet, contracts.RolesSet{
 		UserID: u.ID, Was: was, Now: want, At: db.Now(),
 	})
 }
@@ -104,7 +104,7 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	if err := crud.Update(ctx, tx, u, "status", "updated_at"); err != nil {
 		return nil, err
 	}
-	return u, events.Publish(tx, contracts.EventDeactivated, contracts.Deactivated{UserID: u.ID, At: db.Now()})
+	return u, events.Publish(ctx, tx, contracts.EventDeactivated, contracts.Deactivated{UserID: u.ID, At: db.Now()})
 }
 
 // Get is one user of this tenant.
@@ -132,7 +132,7 @@ func (s *Service) ByEmail(_ context.Context, tx db.Tx[db.Tenant], email string) 
 // transaction that belongs to no tenant. See contracts.Service.Provision: this
 // is the bootstrap's door, and the tenant is a parameter because the tenant is
 // being created in the same transaction.
-func (s *Service) Provision(_ context.Context, tx db.Tx[db.System], tenantID uuid.UUID,
+func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID,
 	email, displayName, password string, roles []string,
 ) (*contracts.User, error) {
 	hash, err := contracts.HashPassword(password)
@@ -145,13 +145,13 @@ func (s *Service) Provision(_ context.Context, tx db.Tx[db.System], tenantID uui
 		Roles: normalise(roles), PasswordHash: hash,
 	}
 	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, at, at
-	if err := u.Validate(context.Background()); err != nil {
+	if err := u.Validate(ctx); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
 	if err := tx.DB().Create(u).Error; err != nil {
 		return nil, fmt.Errorf("user: provision %s: %w", u.Email, err)
 	}
-	return u, events.PublishFor(tx, tenantID, contracts.EventInvited, contracts.Invited{
+	return u, events.PublishFor(ctx, tx, tenantID, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: at,
 	})
 }
