@@ -1,0 +1,12 @@
+{
+  "name": "platformkit-e2e",
+  "private": true,
+  "description": "Gate 10: one Playwright spec, against a real instance of the reference app.",
+  "scripts": {
+    "test": "playwright test",
+    "install:browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  }
+}

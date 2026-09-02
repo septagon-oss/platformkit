@@ -1,8 +1,13 @@
-# Fourteen targets, no more. `make check` is what CI runs and what a pull
+# Fifteen targets, no more. `make check` is what CI runs and what a pull
 # request must pass; everything else is a convenience.
+#
+# The fifteenth is `e2e`, gate 10, which arrived with the stage that gave it
+# something to check. It is not a prerequisite of `check`: it needs a browser
+# and it takes a minute, and a gate that a laptop cannot run is a gate people
+# learn to skip. CI runs both.
 
 .DEFAULT_GOAL := help
-.PHONY: help build test vet run check-loc check-packages check-gucs fmt-check check fmt image up down
+.PHONY: help build test vet run e2e check-loc check-packages check-gucs fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -21,7 +26,7 @@ export PLATFORMKIT_TEST_DATABASE_URL
 export PLATFORMKIT_TEST_NATS_URL
 
 help: ## List the targets
-	@grep -hE '^[a-z][a-z-]*:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t 18
+	@grep -hE '^[a-z][a-z0-9-]*:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t 18
 
 build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -o /dev/null ./...
@@ -34,6 +39,9 @@ vet: ## Run go vet
 
 run: ## Run the reference app (needs config.yaml; see config.example.yaml)
 	cd apps/platformkit && go run . --config ../../config.yaml
+
+e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
+	./scripts/e2e.sh
 
 check-loc: ## Fail when a bucket exceeds its line ceiling
 	go run ./tools/locbudget --check

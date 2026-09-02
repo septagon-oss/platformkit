@@ -134,20 +134,25 @@ func writable(sent map[string]any, r httpx.Resource) map[string]any {
 	return out
 }
 
-// table is the list screen's rows: every field the schema does not hide, with
-// the first one linking to the row.
+// table is the list screen's rows: the field a row is known by first, as the
+// link into it, then every other field the schema does not hide.
+//
+// The id is not a column. It is the row's identity and it is already the link's
+// href; a table that leads with a UUID is a table nobody can read.
 func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.Node {
-	var columns []components.TableColumn
-	var shown []crud.Field
+	primary := known(r.Schema.Fields)
+	shown := []crud.Field{primary}
 	for _, f := range r.Schema.Fields {
-		if f.HideList || f.Type == crud.TypeList && f.Name == "id" {
+		if f.HideList || f.Name == primary.Name || f.Name == "id" {
 			continue
 		}
-		columns = append(columns, components.TableColumn{
-			Key: f.Name, Label: humanize(f.Name), Sortable: f.Type != crud.TypeList,
-			Primary: len(shown) == 0,
-		})
 		shown = append(shown, f)
+	}
+	columns := make([]components.TableColumn, 0, len(shown))
+	for i, f := range shown {
+		columns = append(columns, components.TableColumn{
+			Key: f.Name, Label: humanize(f.Name), Sortable: f.Type != crud.TypeList, Primary: i == 0,
+		})
 	}
 	out := make([]components.TableRow, 0, len(rows))
 	for _, row := range rows {
@@ -183,7 +188,7 @@ func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.No
 				return nil
 			}
 			return components.Link(components.LinkProps{
-				Label: text(row.Cells[c.Key]), Href: at + "/" + row.ID})
+				Label: display(row.Cells[c.Key]), Href: at + "/" + row.ID})
 		},
 	})
 }
@@ -339,18 +344,26 @@ func direction(sort string) string {
 	return "asc"
 }
 
-// label is what a row is called: its first string field, or its id. A schema
-// has no "this is the title" flag and inventing one would be a tag every entity
-// would have to remember; the first field an entity declares is the one it
-// leads with, which is the same convention the list's primary column uses.
-func label(row map[string]any, fields []crud.Field) string {
+// known is the field a row is recognised by: the first writable string the
+// entity declares. A schema has no "this is the title" flag, and inventing one
+// would be a tag every entity would have to remember; the field an entity leads
+// with is the one it leads with.
+func known(fields []crud.Field) crud.Field {
 	for _, f := range fields {
-		if f.ReadOnly || f.Type != crud.TypeString {
-			continue
+		if !f.ReadOnly && f.Type == crud.TypeString {
+			return f
 		}
-		if v := text(row[f.Name]); v != "" {
-			return v
-		}
+	}
+	if len(fields) > 0 {
+		return fields[0]
+	}
+	return crud.Field{Name: "id"}
+}
+
+// label is what one row is called.
+func label(row map[string]any, fields []crud.Field) string {
+	if v := text(row[known(fields).Name]); v != "" {
+		return v
 	}
 	return text(row["id"])
 }
