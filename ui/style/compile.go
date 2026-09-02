@@ -648,6 +648,8 @@ const (
 	classUnderline   = "underline"
 	classNoUnderline = "no-underline"
 	classSrOnly      = "sr-only"
+	classNotSrOnly   = "not-sr-only"
+	classMinHScreen  = "min-h-screen"
 	classTruncate    = "truncate"
 	classRelative    = "relative"
 	classAntialiased = "antialiased"
