@@ -159,6 +159,9 @@ type API struct {
 	mu       sync.Mutex
 	ops      []*huma.Operation
 	declared []tenancy.Grant
+	// resources are the entities kit/rest has mounted, for the screens that
+	// are generated from them rather than written. See schemas.go.
+	resources []Resource
 }
 
 // errorShape guards the one package-global huma reads per request.

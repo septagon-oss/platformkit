@@ -131,6 +131,7 @@ func (s Spec[T]) Schema() crud.Schema {
 func (s Spec[T]) Mount(api *httpx.API) {
 	s.check()
 	schema := s.Schema()
+	api.RegisterResource(s.resource()) // the same entity, for the generated screens
 
 	httpx.Register(api, s.op("list", http.MethodGet, s.Path, 0,
 		"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
