@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: platformkit
+          POSTGRES_DB: platformkit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platformkit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Service containers ignore /docker-entrypoint-initdb.d, so the role that
+      # compose creates on first boot is created here by hand, from the same file.
+      - name: Create the platformkit_app role
+        env:
+          PGPASSWORD: platformkit
+        run: psql -h localhost -U postgres -d platformkit -v ON_ERROR_STOP=1 -f deploy/postgres/init.sql
+
+      - name: make check
+        run: make check

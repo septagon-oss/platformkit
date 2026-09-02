@@ -1,0 +1,26 @@
+# Go build output
+/platformkit
+*.exe
+*.test
+*.out
+
+# Local configuration and secrets
+config.yaml
+.env
+
+# Dependencies and generated assets
+node_modules/
+ui/assets/css/main.min.css
+
+# Scratch space
+.tmp/
+
+# Python (tooling only)
+*.pyc
+__pycache__/
+
+# Editor junk
+.DS_Store
+*.swp
+.idea/
+.vscode/
