@@ -301,9 +301,9 @@ func conditions(fields []Field, filter map[string]any) ([]string, []any, error) 
 	where := make([]string, 0, len(filter))
 	args := make([]any, 0, len(filter))
 	for name, v := range filter {
-		f, ok := FieldNamed(fields, name)
-		if !ok {
-			return nil, nil, fmt.Errorf("%w: there is no field %q to filter on", ErrInvalid, name)
+		f, err := comparable(fields, name, "filter")
+		if err != nil {
+			return nil, nil, err
 		}
 		where = append(where, f.Column+" = ?")
 		args = append(args, v)
@@ -321,11 +321,28 @@ func ordering(fields []Field, sort string) (string, error) {
 	if name[0] == '-' {
 		name, dir = name[1:], "DESC"
 	}
-	f, ok := FieldNamed(fields, name)
-	if !ok {
-		return "", fmt.Errorf("%w: there is no field %q to sort on", ErrInvalid, sort)
+	f, err := comparable(fields, name, "sort")
+	if err != nil {
+		return "", err
 	}
 	return f.Column + " " + dir + ", id", nil
+}
+
+// comparable is the field with this name, refused when a query cannot compare
+// against it. A list column holds many values, so "roles = ?" is not a question
+// about any of them and ORDER BY roles is an order nobody asked for; a
+// containment filter is a different operator and it does not exist yet. Saying
+// so is better than the silence a name outside the schema used to get, which
+// was the accident that kept roles unpatchable.
+func comparable(fields []Field, name, what string) (Field, error) {
+	f, ok := FieldNamed(fields, name)
+	switch {
+	case !ok:
+		return Field{}, fmt.Errorf("%w: there is no field %q to %s on", ErrInvalid, name, what)
+	case f.Type == TypeList:
+		return Field{}, fmt.Errorf("%w: %s is a list, which is not something to %s on", ErrInvalid, name, what)
+	}
+	return f, nil
 }
 
 // FieldNamed is the field with this JSON name, which is the only name a caller

@@ -41,6 +41,9 @@ type Task struct {
 	Notes    string     `json:"notes,omitempty" gorm:"type:text"`
 	DueAt    *time.Time `json:"dueAt,omitempty"`
 	Secret   string     `json:"-" gorm:"-"`
+	// A list field, gorm:"-" because the array codec is not what is under test
+	// here; modules/user's Roles is the one that is really stored.
+	Tags []string `json:"tags,omitempty" gorm:"-"`
 }
 
 func (Task) TableName() string { return "rest_tasks" }
@@ -523,5 +526,38 @@ func TestSpecRefusesToMountNonsense(t *testing.T) {
 			}()
 			spec.Mount(&httpx.API{})
 		})
+	}
+}
+
+// TestASchemaCarriesAListAndNothingSortsOnIt. A list renders — a user's roles
+// is the case that made the type necessary — and it is not something a query
+// compares against: "tags = ?" is not a question about any of the values in the
+// column, so the two routes that take a field name refuse it rather than
+// producing SQL nobody meant.
+func TestASchemaCarriesAListAndNothingSortsOnIt(t *testing.T) {
+	recorded, router, _ := mounted(t)
+
+	var tags crud.Field
+	for _, f := range spec.Schema().Fields {
+		if f.Name == "tags" {
+			tags = f
+		}
+	}
+	if tags.Type != crud.TypeList || tags.Elem != crud.TypeString {
+		t.Errorf("the schema says tags is %+v, want a list of strings", tags)
+	}
+
+	for _, q := range []string{"?sort=tags", "?filter=tags:red"} {
+		if code, body := call(t, router, http.MethodGet, "/api/tasks"+q, ""); code != http.StatusUnprocessableEntity {
+			t.Errorf("GET /api/tasks%s = %d %s, want 422", q, code, body)
+		}
+	}
+
+	// And the list route does not offer it: a document that named a field every
+	// request for it is refused on would be describing a 422.
+	for _, op := range recorded.Recorded() {
+		if op.OperationID == "tasks-task-list" && strings.Contains(op.Description, "tags") {
+			t.Errorf("the list route offers to sort by a list: %s", op.Description)
+		}
 	}
 }

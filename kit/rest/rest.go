@@ -545,10 +545,15 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 	return columns, nil
 }
 
+// names are the fields the list route can be sorted and filtered by, which is
+// every field but a list: a column holding many values is not one an equality
+// compares against, and a document that offered it would be describing a 422.
 func names(fields []crud.Field) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
-		out = append(out, f.Name)
+		if f.Type != crud.TypeList {
+			out = append(out, f.Name)
+		}
 	}
 	return out
 }
