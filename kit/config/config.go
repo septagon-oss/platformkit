@@ -6,10 +6,13 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"slices"
+	"strings"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,6 +26,7 @@ type Config struct {
 	Database Database `yaml:"database"`
 	NATS     NATS     `yaml:"nats"`
 	Log      Log      `yaml:"log"`
+	Dev      Dev      `yaml:"dev"`
 }
 
 // Server is where the app listens, what host it believes it is reached at, and
@@ -52,6 +56,39 @@ type NATS struct {
 // Log is the logging surface: one level.
 type Log struct {
 	Level string `yaml:"level"`
+}
+
+// Dev stands in for the tenant and auth modules until stage E3 ships them: a
+// list of hosts that are tenants, and one principal every request is.
+//
+// It is deleted in E3 along with apps/platformkit/dev.go, which reads it. Until
+// then it is the reason `make run` boots on an empty database with no seeding
+// step, and it is dangerous by construction — it hands every caller every
+// permission — so Load refuses it unless server.public_host is a local name.
+type Dev struct {
+	// Enabled turns the whole block on. It defaults to false, so a deployment
+	// that says nothing gets no development identity.
+	Enabled bool `yaml:"enabled"`
+	// Principal is who every request is. Empty is not allowed when Enabled.
+	Principal DevPrincipal `yaml:"principal"`
+	// Tenants are the hosts that resolve, and what they resolve to.
+	Tenants []DevTenant `yaml:"tenants"`
+}
+
+// DevPrincipal is the caller the development identity hook returns for every
+// request. Its tenant is the one the request host resolved to, so it is not
+// named here.
+type DevPrincipal struct {
+	UserID string   `yaml:"user_id"`
+	Roles  []string `yaml:"roles"`
+}
+
+// DevTenant is one host and the tenant it is.
+type DevTenant struct {
+	Host string `yaml:"host"`
+	ID   string `yaml:"id"`
+	Slug string `yaml:"slug"`
+	Name string `yaml:"name"`
 }
 
 // Load reads path, applies the environment overrides, and validates the result.
@@ -119,5 +156,58 @@ func Load(path string) (Config, error) {
 			return Config{}, fmt.Errorf("config %s: %s has scheme %q; PlatformKit speaks postgres and nothing else", path, u.key, parsed.Scheme)
 		}
 	}
+	if err := c.Dev.validate(path, c.Server.PublicHost); err != nil {
+		return Config{}, err
+	}
 	return c, nil
+}
+
+// validate refuses a development block that is either off a laptop or missing
+// something the hook it feeds cannot invent.
+//
+// The public-host rule is the important one and it lives here rather than in
+// kit/app, which knows nothing about a development identity and should not
+// start to: this is the one place both keys are already in hand. A localhost
+// name is not a security boundary — it is a deployment that has to be
+// deliberate about turning "everyone is an admin" on.
+func (d Dev) validate(path, publicHost string) error {
+	if !d.Enabled {
+		return nil
+	}
+	if !local(publicHost) {
+		return fmt.Errorf("config %s: dev.enabled is true and server.public_host is %q; the development identity makes every caller an administrator of every tenant, so it is refused anywhere but a local name", path, publicHost)
+	}
+	if _, err := uuid.Parse(d.Principal.UserID); err != nil {
+		return fmt.Errorf("config %s: dev.principal.user_id is %q, which is not a uuid", path, d.Principal.UserID)
+	}
+	if len(d.Tenants) == 0 {
+		return fmt.Errorf("config %s: dev.enabled is true and dev.tenants is empty, so no host would resolve", path)
+	}
+	for i, t := range d.Tenants {
+		switch {
+		case t.Host == "":
+			return fmt.Errorf("config %s: dev.tenants[%d] has no host", path, i)
+		case t.Slug == "":
+			return fmt.Errorf("config %s: dev.tenants[%d] (%s) has no slug", path, i, t.Host)
+		case t.Name == "":
+			return fmt.Errorf("config %s: dev.tenants[%d] (%s) has no name", path, i, t.Host)
+		}
+		if _, err := uuid.Parse(t.ID); err != nil {
+			return fmt.Errorf("config %s: dev.tenants[%d] (%s) has id %q, which is not a uuid", path, i, t.Host, t.ID)
+		}
+	}
+	return nil
+}
+
+// local reports whether host is a name that only reaches this machine. The set
+// is closed and short on purpose: anything cleverer is a rule somebody will
+// find a way past, and the answer to "I want the development identity on a real
+// host" is no.
+func local(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") ||
+		host == "127.0.0.1" || host == "::1" || host == "[::1]"
 }

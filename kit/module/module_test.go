@@ -145,7 +145,7 @@ func TestValidateChecksSubscriptionsAgainstWhatIsEmitted(t *testing.T) {
 // never fires, which is a composition error and not a runtime surprise.
 func TestValidateChecksJobs(t *testing.T) {
 	err := Validate([]Module{{Name: "billing", Jobs: []jobs.Job{
-		{Name: "sweep", Cron: "every hour", Run: func(context.Context) error { return nil }},
+		{Name: "sweep", Cron: "every hour", Run: func(context.Context, *db.Conn) error { return nil }},
 	}}})
 	if err == nil || !strings.Contains(err.Error(), "five-field cron expression") {
 		t.Errorf("Validate = %v, want the unparseable schedule", err)

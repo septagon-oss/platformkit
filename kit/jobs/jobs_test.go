@@ -60,8 +60,8 @@ func TestBothKindsOfScheduleFire(t *testing.T) {
 	)
 	ctx, stop := context.WithCancel(t.Context())
 	defer stop()
-	record := func(name string) func(context.Context) error {
-		return func(context.Context) error {
+	record := func(name string) func(context.Context, *db.Conn) error {
+		return func(context.Context, *db.Conn) error {
 			mu.Lock()
 			defer mu.Unlock()
 			if len(fire) < 13 {
@@ -111,7 +111,7 @@ func TestOnlyOneSchedulerRunsAJob(t *testing.T) {
 	var runs sync.WaitGroup
 	var mu sync.Mutex
 	count := 0
-	job := Job{Name: name, Every: time.Hour, Run: func(context.Context) error {
+	job := Job{Name: name, Every: time.Hour, Run: func(context.Context, *db.Conn) error {
 		mu.Lock()
 		count++
 		mu.Unlock()
@@ -206,7 +206,7 @@ func TestForEachTenantRunsInEachTenantsOwnTransaction(t *testing.T) {
 // TestValidRefusesAJobThatCouldNotRun. Every one of these is a composition
 // error kit/module reports at boot rather than a job that silently never fires.
 func TestValidRefusesAJobThatCouldNotRun(t *testing.T) {
-	run := func(context.Context) error { return nil }
+	run := func(context.Context, *db.Conn) error { return nil }
 	for what, job := range map[string]Job{
 		"no name":             {Every: time.Minute, Run: run},
 		"nothing to run":      {Name: "a", Every: time.Minute},

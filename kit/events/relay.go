@@ -72,15 +72,25 @@ func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
 	})
 }
 
-// Purge deletes published rows older than a week. kit/jobs calls it hourly in
-// the worker role. Unpublished rows are never touched, however old: a row that
-// has not gone out is a queue entry, not history.
+// Purge deletes published rows older than a week, and the handled marks of the
+// same age. kit/jobs calls it hourly in the worker role. Unpublished rows are
+// never touched, however old: a row that has not gone out is a queue entry, not
+// history.
+//
+// The two windows are one window on purpose. A mark exists to recognise a
+// redelivery of its own event, and an event whose outbox row is gone cannot be
+// relayed again, so a mark older than the row it guards guards nothing. The
+// exact residue is an event a transport still holds unacknowledged a week after
+// the outbox forgot it, which JetStream's own limits make a deployment choice
+// rather than a possibility this code can rule out.
 func Purge(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, purgeToken, func(ctx context.Context, tx db.Tx[db.System]) error {
-		err := tx.DB().Exec("DELETE FROM "+table+" WHERE published_at IS NOT NULL AND published_at < ?",
-			time.Now().Add(-keep)).Error
-		if err != nil {
+		before := time.Now().Add(-keep)
+		if err := tx.DB().Exec("DELETE FROM "+table+" WHERE published_at IS NOT NULL AND published_at < ?", before).Error; err != nil {
 			return fmt.Errorf("events: purge: %w", err)
+		}
+		if err := tx.DB().Exec("DELETE FROM "+handled+" WHERE handled_at < ?", before).Error; err != nil {
+			return fmt.Errorf("events: purge the handled marks: %w", err)
 		}
 		return nil
 	})

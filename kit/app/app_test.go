@@ -87,8 +87,8 @@ func hello() module.Module {
 		Events:      []string{"hello.note_written"},
 		Nav:         []module.NavEntry{{Label: "Notes", Path: "/hello", Permission: "note:write", Order: 1}},
 		Migrations: fstest.MapFS{
-			"000003_notes.up.sql":   {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
-			"000003_notes.down.sql": {Data: []byte(`DROP TABLE notes`)},
+			"000009_notes.up.sql":   {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
+			"000009_notes.down.sql": {Data: []byte(`DROP TABLE notes`)},
 		},
 		Routes: func(api *httpx.API) {
 			httpx.Register(api, huma.Operation{
@@ -248,7 +248,7 @@ func TestMigrationVersionsAreGlobal(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	for _, want := range []string{"000001_tenancy.up.sql", "000003_notes.up.sql"} {
+	for _, want := range []string{"000001_tenancy.up.sql", "000009_notes.up.sql"} {
 		if !strings.Contains(strings.Join(names, " "), want) {
 			t.Errorf("the merged directory lacks %s: %v", want, names)
 		}

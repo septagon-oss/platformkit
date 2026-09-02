@@ -24,9 +24,18 @@ instance in the cluster runs a job per tick.
 ## Consequences
 
 - Delivery is at-least-once. The relay publishes and then stamps `published_at`,
-  because the other order loses events and this one repeats them. **Every
-  handler must be idempotent**, keyed on `Event.ID`: stable across redeliveries
-  of one event, unique across different ones.
+  because the other order loses events and this one repeats them.
+- Handling is exactly-once, and the kernel does it rather than each handler.
+  `Consume` claims `(Event.ID, durable)` in `platformkit_handled` inside the
+  handler's own transaction, before the handler runs; a redelivery finds the
+  claim taken and skips. The claim and the handler's writes commit together, so
+  a handler that fails rolls its claim back with its work and sees the event
+  again, and one that succeeded never runs twice. The key includes the
+  subscription because two modules interested in one event are two pieces of
+  work. A handler is still free to be idempotent on its own terms — this closes
+  the redelivery hole, not every hole — and the marks are purged on the same
+  week-long window as the outbox rows they recognise, because a mark that
+  outlives its event guards nothing.
 - Enqueueing cannot fail separately from the write it belongs to: both are one
   `INSERT` in one transaction. Ordering is per stream, not per aggregate.
 - Retries are the transport's: an error nacks and the event comes back, slower

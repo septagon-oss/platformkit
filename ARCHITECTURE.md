@@ -8,11 +8,13 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
 ## The ten ideas
 
 1. **Composition is a list.** An application is a slice of modules constructed in
-   `apps/platformkit/main.go` with typed dependency structs in dependency order,
-   so the compiler checks the wiring graph and there is no container to learn. (E2)
+   `apps/platformkit/modules.go` with typed dependency structs in dependency
+   order, so the compiler checks the wiring graph and there is no container to
+   learn. A module is `Module(Deps{...})`: one function, one struct. (E2)
 2. **A module is three things.** `contracts/` (interfaces, DTOs, events,
    permission tokens, and a conformance suite), `internal/` (every
-   implementation), and `module.go` (the manifest). (E2)
+   implementation), and `module.go` (the manifest). `modules/task` is the
+   exemplar every later module copies. (E2)
 3. **Cross-module dependencies are Go interfaces.** A consumer takes an
    interface declared in the provider's `contracts/`; `internal/` makes any
    other coupling a compile error. (E2)
@@ -29,7 +31,9 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
    `Auth` value alongside its route; the app validates the recorded operation set
    at boot and refuses to start when one is undeclared. (E1)
 6. **Events leave through one door.** A module writes an event in the same
-   transaction as its state change; one outbox relay publishes to JetStream. (E1)
+   transaction as its state change; one outbox relay publishes to JetStream.
+   Delivery is at-least-once and handling is exactly-once: `Consume` claims each
+   event for each subscription in the handler's own transaction. (E1)
 7. **One migration directory, one ledger.** All SQL lives in `migrations/`,
    numbered once, applied by the owner role at startup or by `--role migrate`. (E1)
 8. **Screens derive from schemas.** List, detail and form come from an entity's
@@ -73,8 +77,9 @@ ratchet only ever lowers them; raising one is an owner commit with a reason.
 
 ## Gates
 
-`make check` runs gates 1 to 5, 7 and 8 today; 6, 9 and 10 arrive with the stage
-that gives them something to check. The list stops at ten.
+`make check` runs gates 1 to 5, and 7 to 9, today; 6 and 10 arrive with the
+stage that gives them something to check — a second module, and a screen. The
+list stops at ten.
 
 | # | Gate | Proves | Stage |
 |---|---|---|---|
@@ -83,8 +88,8 @@ that gives them something to check. The list stops at ten.
 | 3 | `make test` | the suite passes against a real Postgres | E0 |
 | 4 | `make check-loc` | no bucket exceeds its ceiling | E0 |
 | 5 | `make check-packages` | the app links ≤ 400 first-party packages | E2 |
-| 6 | `scripts/check_imports.sh` | a module imports only another module's `contracts/` | E2 |
+| 6 | `scripts/check_imports.sh` | a module imports only another module's `contracts/` | E3 |
 | 7 | boot validation test | no operation ships without an `Auth` declaration, and no route requires a permission no module defines | E1 |
 | 8 | tenant isolation test + `make check-gucs` | RLS blocks cross-tenant reads as the app role, and only `kit/db` writes the tenancy settings | E1 |
 | 9 | empty-database boot test | the app migrates and serves from nothing | E2 |
-| 10 | one Playwright spec | the admin shell renders and a CRUD screen works | E2 |
+| 10 | one Playwright spec | the admin shell renders and a CRUD screen works | E4 |

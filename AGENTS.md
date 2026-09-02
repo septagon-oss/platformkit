@@ -27,4 +27,4 @@ and the gates. `docs/adr/` says why. Nothing else is required context.
     make up               # Postgres and NATS, waiting for both
     make check            # build, vet, fmt-check, test, check-loc,
                           #   check-packages, check-gucs
-    make run              # the reference app (arrives in stage E2)
+    make run              # the reference app, on config.yaml

@@ -6,15 +6,18 @@ gates. Read [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Run it
 
-The kernel is here; the reference binary it runs is stage E2, so today the five
-commands are four and the last one is `make check` rather than `make run`.
-
 ```sh
 git clone https://github.com/septagon-oss/platformkit && cd platformkit
 make up
 cp config.example.yaml config.yaml
-make check
+make run
+curl -H 'Host: platformkit.localhost' localhost:8080/ready
 ```
+
+The database starts empty; the app migrates it and serves. `config.example.yaml`
+ships a `dev:` block that stands in for the tenant and auth modules until stage
+E3: `platformkit.localhost` is a tenant and every caller is an administrator of
+it. It is refused unless `server.public_host` is a local name.
 
 Ports can be overridden with `PLATFORMKIT_PG_PORT` / `PLATFORMKIT_NATS_PORT`.
 
@@ -22,9 +25,10 @@ Ports can be overridden with `PLATFORMKIT_PG_PORT` / `PLATFORMKIT_NATS_PORT`.
 
 `make check` runs seven commands: `build`, `vet`, `fmt-check`, `test`,
 `check-loc`, `check-packages` and `check-gucs`. Against
-[ARCHITECTURE.md](ARCHITECTURE.md)'s ten gates that is seven of them real today
-— `check-packages` passes trivially until there is an app to link — and three
-waiting for the stage that gives them something to check.
+[ARCHITECTURE.md](ARCHITECTURE.md)'s ten gates that is eight of them real today
+— `check-packages` counts an app now, and the empty-database boot test is in
+`apps/platformkit` — and two waiting for the stage that gives them something to
+check.
 
 ## Status
 

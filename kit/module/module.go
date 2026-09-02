@@ -60,10 +60,11 @@ type Module struct {
 	Health []health.Check
 
 	// Migrations is this module's SQL, with the files at the root of the given
-	// fs.FS. It is optional and temporary: E2 merges every module's SQL into
-	// migrations/, which is where ARCHITECTURE.md says it lives. Until then the
-	// files must still be numbered uniquely across the whole application,
-	// because there is one ledger; app.Run refuses a collision.
+	// fs.FS. Every module in this repository leaves it nil and puts its SQL in
+	// migrations/ instead, which is where ARCHITECTURE.md says SQL lives; the
+	// field is the door for a module that ships its own, and the files it
+	// carries are still numbered uniquely across the whole application, because
+	// there is one ledger. app.Run refuses a collision.
 	Migrations fs.FS
 
 	// Routes registers this module's operations, each with its authorization.

@@ -62,11 +62,6 @@ type Options struct {
 	// to events.Memory() for All, which needs no broker because there is no
 	// second process, and to JetStream on config's nats.url otherwise.
 	Transport events.Transport
-
-	// AllTenants lists every tenant, for jobs that walk them. The tenant module
-	// implements it; a job that needs it and does not have it fails loudly
-	// rather than quietly doing nothing.
-	AllTenants jobs.TenantLister
 }
 
 // App is a composed application that has not started yet.
@@ -236,10 +231,10 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (*httpx.API, http.Han
 // nil when the web half of the same process is already serving them.
 func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
 	scheduled := []jobs.Job{
-		{Name: "outbox-relay", Every: relayEvery, Run: func(ctx context.Context) error {
+		{Name: "outbox-relay", Every: relayEvery, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Relay(ctx, conn, transport)
 		}},
-		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context) error {
+		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
 		}},
 	}

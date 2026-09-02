@@ -1,6 +1,6 @@
 # Copy to config.yaml (git-ignored) and edit. The defaults match `make up`.
-# This is the whole configuration surface; stage E1 adds keys as it needs them,
-# and a key that nothing reads does not belong here.
+# This is the whole configuration surface, and a key that nothing reads does not
+# belong here.
 
 server:
   # Address the HTTP server listens on.
@@ -29,3 +29,21 @@ nats:
 log:
   # debug | info | warn | error
   level: "info"
+
+# Development tenancy and identity, until the tenant and auth modules arrive in
+# stage E3. It is what makes the app boot on an empty database with nothing to
+# seed: these hosts are the tenants, and every request is the principal below,
+# holding every permission.
+#
+# It is refused unless server.public_host is a local name, because "everyone is
+# an administrator of every tenant" is not a thing to leave on by accident.
+dev:
+  enabled: true
+  principal:
+    user_id: "00000000-0000-0000-0000-0000000000a1"
+    roles: ["admin"]
+  tenants:
+    - host: "platformkit.localhost"
+      id: "00000000-0000-0000-0000-0000000000b1"
+      slug: "platformkit"
+      name: "PlatformKit"
