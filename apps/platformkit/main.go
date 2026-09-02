@@ -1,10 +1,11 @@
 // Command platformkit is the reference application: one binary, one image, and
-// a --role flag that says which half of the work this process does.
+// two subcommands — `run`, which serves, and `bootstrap`, which creates the
+// first tenant of an empty installation.
 //
-// It is short on purpose. Everything it does is read a configuration, choose
-// the three implementations the kernel cannot choose for itself, hand kit/app
-// the list of modules, and run until something stops it. There is no framework
-// between this file and the modules it composes.
+// It is short on purpose. Everything it does is read a configuration, compose
+// the modules, choose the three implementations the kernel cannot choose for
+// itself, and run until something stops it. There is no framework between this
+// file and the modules it composes.
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/septagon-oss/platformkit/kit/app"
@@ -21,11 +23,23 @@ import (
 )
 
 func main() {
-	path := flag.String("config", "config.yaml", "Path to the configuration file")
-	role := flag.String("role", string(app.All), "web, worker, or all")
-	flag.Parse()
-
-	if err := run(*path, app.Role(*role)); err != nil {
+	// `platformkit` alone is `platformkit run`, because running is what the
+	// image does and an entrypoint should not need an argument. A first
+	// argument that is not a flag is the subcommand.
+	command, args := "run", os.Args[1:]
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		command, args = args[0], args[1:]
+	}
+	var err error
+	switch command {
+	case "run":
+		err = run(args)
+	case "bootstrap":
+		err = bootstrap(args)
+	default:
+		err = fmt.Errorf("%q is not a command; there are two, run and bootstrap", command)
+	}
+	if err != nil {
 		// The error goes to stderr rather than through the logger, because the
 		// failures this returns include the ones that happen before there is a
 		// configured logger to write to.
@@ -34,10 +48,16 @@ func main() {
 	}
 }
 
-// run is main with an error return, so every failure has one exit and the
-// deferred work still happens.
-func run(path string, role app.Role) error {
-	cfg, err := config.Load(path)
+// run serves. It is main with an error return, so every failure has one exit
+// and the deferred work still happens.
+func run(args []string) error {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	path := fs.String("config", "config.yaml", "Path to the configuration file")
+	role := fs.String("role", string(app.All), "web, worker, or all")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	cfg, err := config.Load(*path)
 	if err != nil {
 		return err
 	}
@@ -49,20 +69,12 @@ func run(path string, role app.Role) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// The development tenancy and identity, until E3. See dev.go.
-	if !cfg.Dev.Enabled {
-		return fmt.Errorf("dev.enabled is false, and the tenant and auth modules that would replace it arrive in stage E3; see config.example.yaml")
-	}
-	d, err := newDev(cfg)
-	if err != nil {
-		return err
-	}
-
-	a, err := app.New(ctx, cfg, modules(d), app.Options{
-		Tenants:      d,
-		Authorize:    d,
-		Authenticate: d.Authenticate,
-		Role:         role,
+	c := compose(cfg)
+	a, err := app.New(ctx, cfg, c.modules, app.Options{
+		Tenants:      c.tenants,
+		Authorize:    c.auth,
+		Authenticate: c.auth.Authenticate,
+		Role:         app.Role(*role),
 	})
 	if err != nil {
 		return err

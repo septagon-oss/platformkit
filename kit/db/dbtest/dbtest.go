@@ -14,14 +14,17 @@ package dbtest
 import (
 	"context"
 	"database/sql"
+	"math/rand/v2"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/migrations"
 )
 
@@ -137,10 +140,19 @@ func mustEnv(t *testing.T, name string) string {
 	return v
 }
 
+// run makes a schema name unique to this test binary.
+//
+// `go test ./...` runs one process per package, in parallel, and two packages
+// with a test of the same name — a conformance suite is exactly that — would
+// otherwise create and drop the same schema underneath each other. The id is
+// per process rather than per test so that a name stays readable in psql while
+// somebody is looking at it.
+var run = strconv.FormatUint(rand.Uint64(), 36)
+
 // schemaName turns a test name into a Postgres identifier.
 func schemaName(test string) string {
 	var b strings.Builder
-	b.WriteString("t_")
+	b.WriteString("t_" + run + "_")
 	for _, r := range strings.ToLower(test) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
@@ -156,3 +168,20 @@ func schemaName(test string) string {
 }
 
 func quote(id string) string { return `"` + strings.ReplaceAll(id, `"`, `""`) + `"` }
+
+// systemToken is the capability a test needs to write the control plane.
+//
+// It is minted here rather than in a module's test because kit/internal/syscap
+// is closed to everything outside kit/, which is the point: a module cannot
+// give itself cross-tenant access, and neither can a module's test. This
+// package is already the place where a test is handed what the application
+// deliberately withholds — the owner connection, the DDL rights — so it is the
+// place for this too.
+var systemToken = syscap.NewSystemToken("a test writing across tenants")
+
+// System runs fn in a cross-tenant transaction, for a test that has to reach
+// the tables no tenant owns: the tenant registry, and the outbox as the relay
+// sees it.
+func System(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx[db.System]) error) error {
+	return db.RunSystem(ctx, conn, systemToken, fn)
+}

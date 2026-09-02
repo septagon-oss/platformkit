@@ -42,6 +42,14 @@ func (f fixture) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenanc
 
 func (fixture) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return true, nil }
 
+// anonymous is the identity hook for a file about booting: no route here needs
+// a principal, and no request in it carries a credential, so the kernel never
+// asks. httpx.New requires one all the same — an API that could not recognise a
+// caller could only fail closed on every request.
+func anonymous(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
+	return httpx.Principal{}, false, nil
+}
+
 func compose(t *testing.T) (config.Config, Options) {
 	t.Helper()
 	migrateURL, appURL := dbtest.URLs(t)
@@ -54,7 +62,7 @@ func compose(t *testing.T) (config.Config, Options) {
 	opts := Options{
 		Tenants:      fixture{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}},
 		Authorize:    fixture{},
-		Authenticate: func(*http.Request) (httpx.Principal, bool) { return httpx.Principal{}, false },
+		Authenticate: anonymous,
 		Log:          slog.New(slog.DiscardHandler),
 	}
 	return cfg, opts
@@ -387,7 +395,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	opts := Options{
 		Tenants:      fixture{tenant: tenant},
 		Authorize:    fixture{},
-		Authenticate: func(*http.Request) (httpx.Principal, bool) { return httpx.Principal{}, false },
+		Authenticate: anonymous,
 		Log:          slog.New(slog.DiscardHandler),
 		Role:         Worker,
 		// The transport a single worker uses to talk to itself. JetStream is

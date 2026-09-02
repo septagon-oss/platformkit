@@ -39,6 +39,10 @@ type fixture struct {
 	// exec runs one DDL statement as the schema owner, which is all a test
 	// wants the admin connection for.
 	exec func(query string)
+
+	// authnErr makes the identity hook fail, which is an outage rather than an
+	// anonymous caller.
+	authnErr error
 }
 
 func (f *fixture) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
@@ -59,16 +63,28 @@ func (f *fixture) Allowed(context.Context, tenancy.Tenant, string) (bool, error)
 	return f.allow, f.authErr
 }
 
-func (f *fixture) authenticate(*http.Request) (httpx.Principal, bool) {
-	if f.principal == nil {
-		return httpx.Principal{}, false
+// authenticate is the identity hook in its E3 shape: it runs after the host has
+// resolved, inside that tenant's transaction, so a real implementation looks a
+// session up under row-level security. This one answers from a field, and takes
+// the transaction only to prove it was given one.
+func (f *fixture) authenticate(_ context.Context, tx db.Tx[db.Tenant], _ *http.Request) (httpx.Principal, bool, error) {
+	if f.authnErr != nil {
+		return httpx.Principal{}, false, f.authnErr
 	}
-	return *f.principal, true
+	if f.principal == nil {
+		return httpx.Principal{}, false, nil
+	}
+	if db.TenantOf(tx).ID != f.tenant.ID {
+		return httpx.Principal{}, false, errors.New("the hook was handed another tenant's transaction")
+	}
+	return *f.principal, true, nil
 }
 
-// signedIn makes the caller a member of the tenant the host resolves to.
+// signedIn makes the caller somebody. There is no tenant to give them: the hook
+// runs inside one tenant's transaction, so the principal it produces belongs to
+// that tenant by construction.
 func (f *fixture) signedIn() {
-	f.principal = &httpx.Principal{UserID: uuid.New(), TenantID: f.tenant.ID}
+	f.principal = &httpx.Principal{UserID: uuid.New()}
 }
 
 func setup(t *testing.T) (*httpx.API, *chi.Mux, *fixture) {
@@ -116,6 +132,12 @@ func get(t *testing.T, r http.Handler, path string) *httptest.ResponseRecorder {
 func request(t *testing.T, r http.Handler, method, path, h string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, "http://"+h+path, nil)
+	// The kernel asks the identity hook only about a request that presents
+	// something to recognise, so that a request carrying no credential — a
+	// liveness probe, an anonymous read — never opens a transaction to be told
+	// it is anonymous. Every request in this file that expects to be recognised
+	// therefore carries one.
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
@@ -133,12 +155,13 @@ func TestPermissionIsCheckedAgainstTheAuthorizer(t *testing.T) {
 		t.Errorf("anonymous caller got %d, want 403", got)
 	}
 
-	// A session minted for another tenant is not a session here.
-	f.principal = &httpx.Principal{UserID: uuid.New(), TenantID: uuid.New()}
-	res := get(t, router, "/widgets")
-	if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "AUTH_TENANT_MISMATCH") {
-		t.Errorf("caller from another tenant got %d %s, want 403 AUTH_TENANT_MISMATCH", res.Code, res.Body.String())
+	// An identity hook that could not answer is an outage, not an anonymous
+	// caller: a session store nobody can read must not read as "not signed in".
+	f.authnErr = errors.New("the session store is unreachable")
+	if got := get(t, router, "/widgets").Code; got != http.StatusInternalServerError {
+		t.Errorf("a failing identity hook got %d, want 500", got)
 	}
+	f.authnErr = nil
 
 	f.signedIn()
 	f.allow = false
@@ -153,7 +176,7 @@ func TestPermissionIsCheckedAgainstTheAuthorizer(t *testing.T) {
 
 	// An authorizer that cannot answer is not an authorizer that said no.
 	f.authErr = errors.New("policy store unreachable")
-	res = get(t, router, "/widgets")
+	res := get(t, router, "/widgets")
 	if res.Code != http.StatusServiceUnavailable {
 		t.Errorf("unavailable authorizer got %d, want 503", res.Code)
 	}

@@ -30,20 +30,18 @@ log:
   # debug | info | warn | error
   level: "info"
 
-# Development tenancy and identity, until the tenant and auth modules arrive in
-# stage E3. It is what makes the app boot on an empty database with nothing to
-# seed: these hosts are the tenants, and every request is the principal below,
-# holding every permission.
+# The optional identity provider. An empty issuer — which is the default — means
+# there is none, and the two OIDC routes are not registered at all: a route that
+# would answer "this application has no identity provider" is a route with
+# nothing to say. Passwords need no configuration; the argon2id parameters are
+# constants in modules/user, because a deployment that lowers them has weakened
+# itself and would have no reason to write it down.
 #
-# It is refused unless server.public_host is a local name, because "everyone is
-# an administrator of every tenant" is not a thing to leave on by accident.
-dev:
-  enabled: true
-  principal:
-    user_id: "00000000-0000-0000-0000-0000000000a1"
-    roles: ["admin"]
-  tenants:
-    - host: "platformkit.localhost"
-      id: "00000000-0000-0000-0000-0000000000b1"
-      slug: "platformkit"
-      name: "PlatformKit"
+# The client secret belongs in PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET, not here:
+# this file is the one somebody commits by accident.
+auth:
+  oidc:
+    issuer: ""
+    client_id: ""
+    client_secret: ""
+    redirect_path: "/api/v1/auth/oidc/callback"

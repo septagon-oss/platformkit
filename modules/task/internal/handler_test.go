@@ -45,8 +45,8 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *db.Conn) {
 	_, conn := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
-		Authenticate: func(*http.Request) (httpx.Principal, bool) {
-			return httpx.Principal{UserID: uuid.New(), TenantID: acme.ID}, true
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
+			return httpx.Principal{UserID: uuid.New()}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
@@ -60,6 +60,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *db.Conn) {
 func call(t *testing.T, r http.Handler, method, at, body string) (int, string) {
 	t.Helper()
 	req := httptest.NewRequest(method, "http://"+host+at, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer test") // see kit/httpx.credentialed
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

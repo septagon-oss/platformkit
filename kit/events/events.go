@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
@@ -87,6 +88,32 @@ func ValidName(name string) bool { return eventName.MatchString(name) }
 // and it cannot fail because a broker is down: the row commits with the state
 // change and the relay carries it from there.
 func Publish(tx db.Tx[db.Tenant], name string, payload any) error {
+	// The tenant comes from the transaction, never from the caller: an event
+	// belongs to the tenant whose data changed, by construction.
+	return write(tx.DB(), db.TenantOf(tx).ID, name, payload)
+}
+
+// PublishFor writes an event from a cross-tenant transaction, naming the tenant
+// it belongs to.
+//
+// It exists for one shape of work and is the only place in the program where a
+// tenant is an argument to an event. The control plane creates a tenant, and the
+// event that says so has to be written in the transaction that created it — a
+// transaction that belongs to no tenant, about a tenant that did not exist a
+// statement earlier. Publish cannot express that, and publishing afterwards in
+// a second transaction would be an event that can be lost while its cause is
+// kept, which is the exact failure the outbox exists to remove.
+//
+// A caller needs a db.Tx[db.System] to reach it, so the audience is the modules
+// that already hold the capability. See docs/adr/0006.
+func PublishFor(tx db.Tx[db.System], tenantID uuid.UUID, name string, payload any) error {
+	if tenantID == uuid.Nil {
+		return fmt.Errorf("events: %s: an event belongs to a tenant", name)
+	}
+	return write(tx.DB(), tenantID, name, payload)
+}
+
+func write(gdb *gorm.DB, tenantID uuid.UUID, name string, payload any) error {
 	if !ValidName(name) {
 		return fmt.Errorf("events: %q is not %q", name, "<module>.<event>")
 	}
@@ -94,11 +121,9 @@ func Publish(tx db.Tx[db.Tenant], name string, payload any) error {
 	if err != nil {
 		return fmt.Errorf("events: %s: marshal the payload: %w", name, err)
 	}
-	// The tenant comes from the transaction, never from the caller: an event
-	// belongs to the tenant whose data changed, by construction.
-	if err := tx.DB().Exec(
+	if err := gdb.Exec(
 		"INSERT INTO "+table+" (id, tenant_id, name, payload) VALUES (?, ?, ?, ?::jsonb)",
-		uuid.New(), db.TenantOf(tx).ID, name, string(body),
+		uuid.New(), tenantID, name, string(body),
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}

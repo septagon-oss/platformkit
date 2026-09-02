@@ -10,16 +10,31 @@ gates. Read [ARCHITECTURE.md](ARCHITECTURE.md).
 git clone https://github.com/septagon-oss/platformkit && cd platformkit
 make up
 cp config.example.yaml config.yaml
+go run ./apps/platformkit bootstrap --config config.yaml \
+    --tenant acme --host acme.localhost --name Acme --admin-email you@acme.localhost
 make run
-curl -H 'Host: platformkit.localhost' localhost:8080/ready
 ```
 
-The database starts empty; the app migrates it and serves. `config.example.yaml`
-ships a `dev:` block that stands in for the tenant and auth modules until stage
-E3: `platformkit.localhost` is a tenant and every caller is an administrator of
-it. It is refused unless `server.public_host` is a local name.
+The database starts empty. `bootstrap` migrates it, creates the first tenant,
+the two roles a tenant starts with, and the administrator who signs in to it,
+all in one transaction — and refuses to run again once any tenant exists, which
+is what makes it safe to leave in the binary. The password is printed once, to
+stderr, or taken from `PLATFORMKIT_BOOTSTRAP_PASSWORD`.
 
-Ports can be overridden with `PLATFORMKIT_PG_PORT` / `PLATFORMKIT_NATS_PORT`.
+Then sign in and do something, in a fifth command:
+
+```sh
+curl -sc jar -H 'Host: acme.localhost' -H 'Content-Type: application/json' \
+    -d '{"email":"you@acme.localhost","password":"<the printed password>"}' \
+    localhost:8080/api/v1/auth/login
+curl -sb jar -H 'Host: acme.localhost' -H 'Content-Type: application/json' \
+    -d '{"title":"chiller-2 supply temperature"}' \
+    localhost:8080/api/v1/task/tasks
+```
+
+Every tenant is reached at its own host, so the `Host` header is what decides
+whose data a request sees. Ports can be overridden with `PLATFORMKIT_PG_PORT` /
+`PLATFORMKIT_NATS_PORT`.
 
 ## Gates
 
