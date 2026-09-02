@@ -66,13 +66,24 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
 Ceilings, not baselines. `loc-budget.json` ships with these numbers and the
 ratchet only ever lowers them; raising one is an owner commit with a reason.
 
+Two of the rows say something the file could not say by path alone. The
+reference binary and the gates that guard it are budgeted apart, because a
+ceiling shared between them is a ceiling neither owns. And a module's `*test`
+package — its fake and its conformance suite, `tasktest` and the ones every
+later module copies — is test support that happens to compile like production
+code: no `_test.go` suffix, importable by any consumer. It is counted by the
+package's own name (`dir_suffixes`) rather than by where it sits, so a fake is
+never priced as if it were a feature of the module it stands in for.
+
 | Bucket | Ceiling (production lines) |
 |---|---|
 | `kit/` (kernel) | 15,000 |
 | `modules/` | 150,000 |
 | `ui/` + `design/` | 40,000 |
-| `apps/` + `tools/` | 8,000 |
+| `apps/` | 6,000 |
+| `tools/` | 2,000 |
 | total production Go | 250,000 |
+| test support Go (`*test` packages) | 10,000 |
 | test Go | 250,000 |
 | browser JavaScript | 6,000 |
 | markdown | 20,000 |

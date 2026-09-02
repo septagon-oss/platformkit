@@ -21,15 +21,25 @@ import (
 	"strings"
 )
 
-// Bucket selects tracked files by path prefix, suffix and content.
+// Bucket selects tracked files by path prefix, directory name, suffix and
+// content.
+//
+// DirSuffixes matches the last element of a file's directory, which in Go is
+// its package: "test" selects tasktest and tenanttest and nothing else. That is
+// the distinction the budget needs and a path prefix cannot make — a fake and a
+// conformance suite live beside the code they are about, they are shipped
+// rather than compiled out, and counting them against the production ceiling of
+// the module they belong to prices a fake as if it were a feature.
 type Bucket struct {
-	Name            string   `json:"name"`
-	Paths           []string `json:"paths,omitempty"`            // path prefixes; empty means all
-	Suffixes        []string `json:"suffixes"`                   // any of these suffixes
-	ExcludeSuffixes []string `json:"exclude_suffixes,omitempty"` // none of these suffixes
-	ExcludePaths    []string `json:"exclude_paths,omitempty"`    // none of these prefixes
-	Contains        string   `json:"contains,omitempty"`         // file must contain this substring
-	Max             int      `json:"max"`
+	Name               string   `json:"name"`
+	Paths              []string `json:"paths,omitempty"`                // path prefixes; empty means all
+	Suffixes           []string `json:"suffixes"`                       // any of these suffixes
+	ExcludeSuffixes    []string `json:"exclude_suffixes,omitempty"`     // none of these suffixes
+	ExcludePaths       []string `json:"exclude_paths,omitempty"`        // none of these prefixes
+	DirSuffixes        []string `json:"dir_suffixes,omitempty"`         // directory name ends in any of these
+	ExcludeDirSuffixes []string `json:"exclude_dir_suffixes,omitempty"` // directory name ends in none of these
+	Contains           string   `json:"contains,omitempty"`             // file must contain this substring
+	Max                int      `json:"max"`
 }
 
 // Budget is the committed file.
@@ -66,6 +76,13 @@ func (b Bucket) matches(rel string) bool {
 		return false
 	}
 	if hasAnySuffix(rel, b.ExcludeSuffixes) {
+		return false
+	}
+	dir := filepath.Base(filepath.Dir(rel))
+	if len(b.DirSuffixes) > 0 && !hasAnySuffix(dir, b.DirSuffixes) {
+		return false
+	}
+	if hasAnySuffix(dir, b.ExcludeDirSuffixes) {
 		return false
 	}
 	return true

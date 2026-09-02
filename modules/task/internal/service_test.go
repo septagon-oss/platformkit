@@ -2,7 +2,9 @@ package internal_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +41,18 @@ func TestServiceConforms(t *testing.T) {
 					t.Fatalf("seed a task: %v", err)
 				}
 				return task.ID
+			}, Published: func() []string {
+				// The rows this transaction has written, which no other
+				// transaction can see: an event is exactly as visible as the
+				// change it describes. created_at is clock_timestamp(), so the
+				// order is the order they were published in.
+				var names []string
+				err := tx.DB().Raw(`SELECT name FROM `+outbox+` WHERE tenant_id = ? ORDER BY created_at, id`, acme.ID).
+					Scan(&names).Error
+				if err != nil {
+					t.Fatalf("read the outbox: %v", err)
+				}
+				return names
 			}})
 			return errRollback
 		})
@@ -50,6 +64,10 @@ func TestServiceConforms(t *testing.T) {
 
 // errRollback ends a conformance case's transaction without committing it.
 var errRollback = errors.New("rolled back on purpose")
+
+// outbox is the table kit/events writes to, named here because the conformance
+// fixture reads what the commands published and only kit/events writes it.
+const outbox = "platformkit_outbox"
 
 // TestTheCommandsPublishInTheCallersTransaction is what the conformance suite
 // cannot see, because the fake has no outbox: a state change and the event that
@@ -207,3 +225,149 @@ func TestTheSweepBreachesTheOverdueAndNothingElse(t *testing.T) {
 type lister []tenancy.Tenant
 
 func (l lister) List(context.Context, db.Tx[db.System]) ([]tenancy.Tenant, error) { return l, nil }
+
+// TestAConcurrentPatchOfAnotherFieldSurvivesAnAssign. Every command reads a row
+// and then writes it, and between the two there is a window; a request that
+// changes a different field in that window must not be undone. Assign writes
+// the three columns it changed, so it is not — where writing the whole row
+// would put the description back to the value the Assign happened to read.
+//
+// The window is made deterministic with a row lock rather than a sleep: the
+// other writer holds the row, so the Assign has certainly read it and is
+// certainly waiting on its own write by the time that writer commits.
+func TestAConcurrentPatchOfAnotherFieldSurvivesAnAssign(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	svc := internal.NewService()
+
+	var id uuid.UUID
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		task := &contracts.Task{Title: "chiller", Description: "as it was"}
+		if err := crud.Create(ctx, tx, task); err != nil {
+			return err
+		}
+		id = task.ID
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	locked, release := make(chan struct{}), make(chan struct{})
+	patched := make(chan error, 1)
+	go func() {
+		patched <- db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+			if err := tx.DB().Exec("SELECT id FROM tasks WHERE id = ? FOR UPDATE", id).Error; err != nil {
+				return err
+			}
+			close(locked)
+			<-release
+			return tx.DB().Exec("UPDATE tasks SET description = ? WHERE id = ?", "the other patch", id).Error
+		})
+	}()
+	<-locked
+
+	assigned := make(chan error, 1)
+	go func() {
+		assigned <- db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			_, err := svc.Assign(ctx, tx, id, uuid.New())
+			return err
+		})
+	}()
+	waitForABlockedUpdate(t, admin)
+	close(release)
+
+	if err := <-patched; err != nil {
+		t.Fatalf("the concurrent patch: %v", err)
+	}
+	if err := <-assigned; err != nil {
+		t.Fatalf("the assign: %v", err)
+	}
+
+	var description, status string
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT description, status FROM tasks WHERE id = $1`, id).Scan(&description, &status); err != nil {
+		t.Fatalf("read the task: %v", err)
+	}
+	if description != "the other patch" || status != contracts.StatusAcknowledged {
+		t.Errorf("the task is %q/%q; the assign writes the columns it changed, so the other patch is still there",
+			description, status)
+	}
+}
+
+// waitForABlockedUpdate returns once some backend is waiting on a lock to
+// update a task, which is the assign having read the row and reached its write.
+func waitForABlockedUpdate(t *testing.T, admin *sql.DB) {
+	t.Helper()
+	const q = `SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE "tasks" SET%'`
+	for range 500 {
+		var n int
+		if err := admin.QueryRowContext(t.Context(), q).Scan(&n); err != nil {
+			t.Fatalf("read pg_stat_activity: %v", err)
+		}
+		if n > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("the assign never blocked on the row lock, so there was no window to test")
+}
+
+// TestTheSweepPassesALegacyRowAndBreachesTheRest. A row an older writer left in
+// a shape Validate refuses — a priority that is no longer one of the four — used
+// to roll the whole tenant's pass back with it, on every tick, forever. Each
+// task has its own transaction now, so the bad row costs itself, the sweep
+// carries on, and the failure comes back naming the task it belongs to.
+func TestTheSweepPassesALegacyRowAndBreachesTheRest(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	svc := internal.NewService()
+
+	var legacy, healthy uuid.UUID
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		// The legacy row's deadline is the older one, so the sweep reaches it
+		// first: a failure that stopped the pass would stop it before the
+		// healthy task ever came up.
+		for _, seed := range []struct {
+			title string
+			ago   time.Duration
+			id    *uuid.UUID
+		}{
+			{"legacy", 2 * time.Hour, &legacy},
+			{"healthy", time.Hour, &healthy},
+		} {
+			deadline := time.Now().Add(-seed.ago)
+			task := &contracts.Task{Title: seed.title, SLADeadline: &deadline}
+			if err := crud.Create(ctx, tx, task); err != nil {
+				return err
+			}
+			*seed.id = task.ID
+		}
+		// Straight at the column, because nothing in this repository can write
+		// it: a row that predates the closed set is exactly what this is about.
+		return tx.DB().Exec("UPDATE tasks SET priority = 'urgent' WHERE id = ?", legacy).Error
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	sweep := internal.SLASweep(lister{acme}, svc, time.Minute)
+	if err := sweep.Run(t.Context(), conn); err == nil || !strings.Contains(err.Error(), legacy.String()) {
+		t.Errorf("the sweep reported %v; it names the task it could not check", err)
+	}
+
+	var breached bool
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT sla_breached FROM tasks WHERE id = $1`, healthy).Scan(&breached); err != nil {
+		t.Fatalf("read the healthy task: %v", err)
+	}
+	if !breached {
+		t.Error("the healthy task is not breached: one row the sweep could not write stopped the rest")
+	}
+	var published int
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM platformkit_outbox WHERE name = $1`, contracts.EventSLABreached).Scan(&published); err != nil {
+		t.Fatalf("count the events: %v", err)
+	}
+	if published != 1 {
+		t.Errorf("%d breach events, want the healthy task's alone", published)
+	}
+}

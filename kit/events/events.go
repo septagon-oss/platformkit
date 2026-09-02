@@ -232,6 +232,18 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 // handler that succeeded can never run twice. A separate transaction would
 // leave a window between the two in which a crash loses one or repeats the
 // other, which is the problem this exists to remove.
+//
+// The cost is a lock, and it is worth naming. An INSERT ... ON CONFLICT DO
+// NOTHING against a row another open transaction has already inserted does not
+// return zero rows: it blocks on that row's lock until the first transaction
+// commits or rolls back, and only then learns which. So a redelivery that
+// arrives while the first attempt is still running does not run the handler
+// twice and does not skip it either — it waits. What bounds the wait is
+// handlerTimeout: the first attempt holds its transaction for at most that
+// long, so the second waits at most that long before it is told the work is
+// done (commit) or given the work itself (rollback). Two deliveries of one
+// event are therefore serialized rather than concurrent, and the timeout is
+// what keeps "serialized" from meaning "stuck".
 func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable string) (bool, error) {
 	res := tx.DB().Exec("INSERT INTO "+handled+" (event_id, durable, tenant_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
 		id, durable, db.TenantOf(tx).ID)
@@ -244,14 +256,27 @@ func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable string) (bool, error) {
 // handlerTimeout bounds one delivery. It is shorter than the JetStream
 // acknowledgement deadline (ackWait), because a handler that is still running
 // when that passes has its event redelivered while its own transaction is still
-// open — two handlers writing the same tenant's rows for the same event, which
-// is the one thing the claim in platformkit_handled cannot prevent, since
-// neither has committed.
+// open. The claim in platformkit_handled turns that overlap into a wait rather
+// than into two concurrent handlers — see claim — so this constant is also the
+// bound on how long a redelivery blocks: a handler that runs to this timeout is
+// a handler that has held every later delivery of the same event for as long.
+// That is why it is a bound on the handler and not only a deadline for the
+// transport.
 const handlerTimeout = 25 * time.Second
 
 // deadLetter records an event that no number of redeliveries could get handled,
 // with the last error, and says so in the log. A row is an alert and not a
 // queue: nothing redelivers from that table.
+//
+// It leaves no claim, and that has a consequence worth stating. Every attempt
+// rolled its claim back with its work, so platformkit_handled holds nothing for
+// this event and this subscription. Exactly-once handling is therefore a
+// promise about deliveries the transport makes, not about the outbox row: if
+// the row were relayed again — by an operator replaying it, or by a purge that
+// had not yet reached it after the transport forgot the message — the handler
+// would run again, from the top, however many times it already failed. The
+// dead-letter row is what an operator reads before deciding whether that is
+// what they want.
 //
 // ON CONFLICT DO NOTHING because a transport may hand the same exhausted event
 // over more than once, and the first account of the failure is the useful one.

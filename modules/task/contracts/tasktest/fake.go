@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -112,7 +111,7 @@ func (f *Fake) Resolve(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, reso
 		}
 		return nil, fmt.Errorf("%w: this task is resolved with a different resolution", crud.ErrConflict)
 	}
-	at := time.Now().UTC().Truncate(time.Microsecond)
+	at := db.Now()
 	task.Status, task.Resolution, task.ResolvedAt = contracts.StatusResolved, resolution, &at
 	return f.commit(task, contracts.EventResolved), nil
 }
@@ -125,7 +124,7 @@ func (f *Fake) CheckSLA(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*c
 	if err != nil {
 		return nil, err
 	}
-	if task.SLABreached || !task.IsOverdue(time.Now()) {
+	if task.SLABreached || !task.IsOverdue(db.Now()) {
 		return task, nil
 	}
 	task.SLABreached = true
@@ -145,7 +144,7 @@ func (f *Fake) get(id uuid.UUID) (*contracts.Task, error) {
 // commit stores the changed task and records the event. The caller holds the
 // lock.
 func (f *Fake) commit(task *contracts.Task, event string) *contracts.Task {
-	task.UpdatedAt = time.Now().UTC().Truncate(time.Microsecond)
+	task.UpdatedAt = db.Now()
 	f.tasks[task.ID] = *task
 	f.published = append(f.published, event)
 	return task

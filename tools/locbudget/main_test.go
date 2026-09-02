@@ -181,3 +181,39 @@ func TestSourceFilesCountsWhatIsNotCommittedYet(t *testing.T) {
 		}
 	}
 }
+
+// TestDirSuffixesSelectTestSupportPackages. A module's fake and its conformance
+// suite are production files by every other measure — no _test.go suffix, they
+// compile into anything that imports them — and they are test support all the
+// same. The package name is what says so, so that is what the budget matches.
+func TestDirSuffixesSelectTestSupportPackages(t *testing.T) {
+	files := []string{
+		"modules/task/internal/service.go",
+		"modules/task/contracts/tasktest/fake.go",
+		"modules/task/contracts/tasktest/fake_test.go",
+	}
+	dir := t.TempDir()
+	writeFile(t, dir, files[0], "package internal\n// one\n")
+	writeFile(t, dir, files[1], "package tasktest\n")
+	writeFile(t, dir, files[2], "package tasktest_test\n")
+
+	support := Bucket{Name: "go_testsupport", Suffixes: []string{".go"},
+		ExcludeSuffixes: []string{"_test.go"}, DirSuffixes: []string{"test"}}
+	got, err := support.Count(dir, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 1 {
+		t.Errorf("go_testsupport counted %d lines, want the fake's one", got)
+	}
+
+	prod := Bucket{Name: "modules", Paths: []string{"modules/"}, Suffixes: []string{".go"},
+		ExcludeSuffixes: []string{"_test.go"}, ExcludeDirSuffixes: []string{"test"}}
+	got, err = prod.Count(dir, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 2 {
+		t.Errorf("modules counted %d lines, want the service's two", got)
+	}
+}

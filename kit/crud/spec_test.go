@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -41,7 +43,11 @@ var spec = crud.Spec[*Task]{
 // mounted is the Spec behind the real API, with the real middleware chain: the
 // tenant resolved from the host, the transaction opened lazily, the permission
 // checked, and the response held until the commit.
-func mounted(t *testing.T) (*httpx.API, chi.Router, *sql.DB) {
+func mounted(t *testing.T) (*httpx.API, chi.Router, *sql.DB) { return mount(t, spec) }
+
+// mount is mounted for a Spec that is not the plain one, so a case can vary a
+// field and still get the whole chain.
+func mount(t *testing.T, s crud.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
 	t.Helper()
 	admin, app := dbtest.Schema(t)
 	if _, err := admin.ExecContext(t.Context(), ddl); err != nil {
@@ -54,7 +60,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *sql.DB) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	spec.Mount(api)
+	s.Mount(api)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -213,6 +219,123 @@ func TestEveryRouteCarriesItsDeclaration(t *testing.T) {
 	if got := strings.Join(spec.Events(), " "); got != "tasks.task.created tasks.task.updated tasks.task.deleted" {
 		t.Errorf("Spec.Events = %q", got)
 	}
+	// And every route says it can answer 503. A handler that cannot reach the
+	// database answers with one, so a document that does not list it describes
+	// a response a caller will nevertheless get.
+	for _, op := range api.Recorded() {
+		if !strings.HasPrefix(op.OperationID, "tasks-task-") {
+			continue
+		}
+		if !slices.Contains(op.Errors, http.StatusServiceUnavailable) {
+			t.Errorf("%s declares %v, which does not include the 503 it can answer", op.OperationID, op.Errors)
+		}
+	}
+}
+
+// TestThePatchRefusesTheFieldsACommandOwns. An immutable field is not
+// read-only: the server does not own it, one route does, and a PATCH that could
+// set it would make the change without the rule and without the event that
+// route publishes. So the refusal names the field, which is how a caller finds
+// the door.
+func TestThePatchRefusesTheFieldsACommandOwns(t *testing.T) {
+	owned := spec
+	owned.Immutable = []string{"status", "done"}
+	_, router, _ := mount(t, owned)
+
+	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"owned","status":"open"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, body)
+	}
+	at := "/api/tasks/" + id(t, body)
+
+	for _, tt := range []struct{ field, patch string }{
+		{"status", `{"status":"done"}`},
+		{"done", `{"done":true}`},
+	} {
+		code, body := call(t, router, http.MethodPatch, at, tt.patch)
+		if code != http.StatusUnprocessableEntity {
+			t.Errorf("PATCH %s = %d %s, want 422", tt.patch, code, body)
+		}
+		if !strings.Contains(body, tt.field+" is changed by a command of its own") {
+			t.Errorf("PATCH %s answered %s, which does not say which field it refused", tt.patch, body)
+		}
+	}
+
+	// A field nobody reserved is still a patch, which is what says the refusal
+	// is about these fields and not about PATCH.
+	if code, body := call(t, router, http.MethodPatch, at, `{"title":"renamed"}`); code != http.StatusOK ||
+		!strings.Contains(body, `"renamed"`) {
+		t.Errorf("PATCH of a field no command owns = %d %s, want 200", code, body)
+	}
+}
+
+// TestAHooksEventsAreDeclaredWhereTheGateLooks. A hook publishes from inside
+// the write's transaction and nothing reads a hook, so a Spec has to say what
+// its hooks emit. HookEvents puts that on the write operations, which is the
+// recording kit/app's boot gate reads.
+//
+// The gate compares what the routes declare with what the manifests declare —
+// never with what a handler does — so this closes one direction: an event
+// declared and unnamed by any manifest fails startup, and an event a hook
+// publishes and nobody declared is invisible. Both halves are below.
+func TestAHooksEventsAreDeclaredWhereTheGateLooks(t *testing.T) {
+	const hooked = "tasks.task.escalated"
+	hook := func(_ context.Context, tx db.Tx[db.Tenant], e *Task) error {
+		return events.Publish(tx, hooked, e)
+	}
+
+	undeclared := spec
+	undeclared.AfterCreate = hook
+	quiet, router, admin := mount(t, undeclared)
+	if slices.Contains(quiet.Events(), hooked) {
+		t.Errorf("an undeclared hook event reached the recording as %v", quiet.Events())
+	}
+	// And it is published all the same: the hook runs, the row is written, and
+	// no gate anywhere saw it coming. That is the hole HookEvents closes.
+	if code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"escalated"}`); code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, body)
+	}
+	if got := count(t, admin, hooked); got != 1 {
+		t.Fatalf("the hook published %d events, want the one nothing declared", got)
+	}
+
+	declared := undeclared
+	declared.HookEvents = []string{hooked}
+	api, _, _ := mount(t, declared)
+	if !slices.Contains(api.Events(), hooked) {
+		t.Fatalf("the routes declare %v, which does not include the hook's event", api.Events())
+	}
+	// kit/app's gate, which is this comparison and nothing else.
+	if got := missing(api.Events(), spec.Events()); len(got) != 1 || got[0] != hooked {
+		t.Errorf("a manifest naming only the Spec's own events leaves %v undeclared, want just the hook's", got)
+	}
+	if got := missing(api.Events(), append(spec.Events(), hooked)); len(got) != 0 {
+		t.Errorf("a manifest naming every event still leaves %v undeclared", got)
+	}
+}
+
+// missing is kit/app's validateEvents: every event the routes say they publish
+// that no manifest declared. It is spelled here because the gate is in kit/app
+// and this is the recording it reads.
+func missing(routes, manifest []string) []string {
+	var out []string
+	for _, e := range routes {
+		if !slices.Contains(manifest, e) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// count is how many outbox rows carry this event name.
+func count(t *testing.T, admin *sql.DB, name string) int {
+	t.Helper()
+	var n int
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM platformkit_outbox WHERE name = $1`, name).Scan(&n); err != nil {
+		t.Fatalf("count %s: %v", name, err)
+	}
+	return n
 }
 
 // TestAWriteAndItsEventCommitTogether: the outbox row is written by the same
