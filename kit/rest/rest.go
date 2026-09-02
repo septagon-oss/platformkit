@@ -438,11 +438,10 @@ type patchInput struct {
 // Item is one entity as a response body, and Page is a page of them.
 //
 // They are exported because a module that writes its own handlers answers in
-// the same shape as the five routes here: modules/audit and
-// modules/notification both mount routes by hand — an append-only trail and a
-// per-recipient list are not what a Spec is — and a response shape each of them
-// declared separately would be three spellings of the same JSON for a client to
-// discover the hard way.
+// the same shape as the five routes here — modules/audit and
+// modules/notification both do, an append-only trail and a per-recipient list
+// being things a Spec is not — and three separately declared response shapes
+// are three spellings of the same JSON for a client to discover the hard way.
 type Item[T any] struct {
 	Body T
 }

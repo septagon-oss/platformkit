@@ -67,14 +67,12 @@ func Permission(token string) Auth {
 // OperatorPermission requires the caller to hold token, and requires the tenant
 // the request resolved to be the operator's own.
 //
-// It exists because the control plane is served on every tenant's host — an
+// It exists because the control plane is served at every tenant's host — an
 // installation has no host of its own, only its customers' — so a permission
-// alone is not enough to guard it. A customer's administrator holds the
-// wildcard in their own tenant, and without this declaration that wildcard
-// would list, create and suspend the tenants beside them. The kernel refuses
-// such a route on an ordinary tenant before it asks the Authorizer anything,
-// and the Authorizer refuses to let a wildcard satisfy one: the role has to
-// name it.
+// alone does not guard it: a customer's administrator holds the wildcard in
+// their own tenant, and that wildcard used to list, create and suspend the
+// tenants beside them. The kernel refuses such a route on an ordinary tenant
+// before it asks the Authorizer anything, and no wildcard satisfies one.
 func OperatorPermission(token string) Auth {
 	if !ValidPermission(token) {
 		panic(fmt.Sprintf("httpx.OperatorPermission(%q): a permission is %q, both lower-case identifiers", token, "<resource>:<action>"))

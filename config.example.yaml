@@ -8,10 +8,17 @@ server:
   # Host the app believes it is reached at. Absolute URLs and cookie scope are
   # derived from it, and tenant subdomains are resolved against it.
   public_host: "platformkit.localhost:8080"
-  # Serve /openapi.json, /openapi.yaml and /docs. They need no session and they
-  # list every route and permission the app has; on for a development machine,
-  # a decision for anything public.
-  docs: true
+  # Serve /openapi.json, /openapi.yaml and /docs.
+  #
+  # They need no session and they list every route and every permission the
+  # application has — including which routes are the operator's — so they are a
+  # map worth having before an attack and worth withholding during one. This
+  # file is the one a deployment starts from, so it says no: turning them on is
+  # a line somebody writes on a development machine, and leaving them on is a
+  # line somebody has to have written.
+  #
+  # The JSON Schema route stays either way, because response bodies link to it.
+  docs: false
 
 database:
   # The app connects as platformkit_app: no superuser, no BYPASSRLS, so tenant

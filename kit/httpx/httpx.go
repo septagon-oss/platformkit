@@ -81,10 +81,9 @@ type TenantLoader interface {
 //
 // The grant carries the operator flag as well as the permission, and the
 // implementation is held to it: a wildcard must not satisfy an operator grant,
-// because "may do everything in my tenant" is not "may do everything to every
-// tenant". This package has already refused an operator grant on a tenant that
-// is not the operator's, so an implementation is answering the narrower
-// question of whether the caller's roles name it.
+// because "everything in my tenant" is not "everything to every tenant". This
+// package has already refused such a grant on a tenant that is not the
+// operator's, so the question left is whether the caller's roles name it.
 type Authorizer interface {
 	Allowed(ctx context.Context, tenant tenancy.Tenant, grant tenancy.Grant) (bool, error)
 }
@@ -333,11 +332,10 @@ func (a *API) ValidateDeclarations() error {
 }
 
 // Required lists, once each, every grant a recorded operation asks for, with
-// the operator flag the route declared. kit/app checks it against what the
-// modules declare, so a route guarded by a permission nobody defines — or one
-// whose route and manifest disagree about whether it is an operator permission
-// — fails startup instead of denying everyone forever or, worse, letting a
-// customer's wildcard through the control plane.
+// the operator flag the route declared. kit/app checks it against the
+// manifests, so a permission nobody defines — or one the two sides disagree
+// about — fails startup rather than denying everyone forever or, worse, letting
+// a customer's wildcard through the control plane.
 func (a *API) Required() []tenancy.Grant {
 	seen := map[tenancy.Grant]bool{}
 	var out []tenancy.Grant
@@ -360,12 +358,11 @@ func (a *API) Required() []tenancy.Grant {
 // Declare records every permission the composition defines. kit/app calls it
 // once, from the manifests, before any module registers its routes.
 //
-// It is here rather than in each module's Deps because the modules that need
-// the list — one, the auth module, which refuses a role naming a permission
-// nobody defines — would otherwise have to be handed what every other module
-// declares, and a module that knows the catalogue is a module that knows its
-// neighbours. Module.Routes is given this API, which is the one moment the
-// kernel has the whole list and the module is being wired.
+// It is here rather than in a module's Deps because the one module that needs
+// the list — auth, which refuses a role naming a permission nobody defines —
+// would otherwise be handed what every other module declares, and a module that
+// knows the catalogue knows its neighbours. Module.Routes is given this API,
+// which is the one moment the kernel has the whole list.
 func (a *API) Declare(grants []tenancy.Grant) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -374,8 +371,7 @@ func (a *API) Declare(grants []tenancy.Grant) {
 }
 
 // Permissions is every permission the composition defines, in name order. A
-// module validating a list somebody typed — a role's permissions — asks this
-// rather than each of its neighbours.
+// module validating a list somebody typed asks this, not its neighbours.
 func (a *API) Permissions() []tenancy.Grant {
 	a.mu.Lock()
 	defer a.mu.Unlock()

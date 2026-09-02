@@ -46,6 +46,16 @@ var spec = rest.Spec[*contracts.User]{
 	Immutable: []string{"status", "roles"},
 }
 
+// permissions is what the manifest declares. kit/app checks every route's
+// declaration against it at boot, so a route guarded by a permission that is
+// not here fails startup instead of denying everyone forever. It lives beside
+// the manifest and not in contracts/ because it was the only thing there that
+// needed kit/module.
+var permissions = []module.Permission{
+	{Key: contracts.PermissionUserRead},
+	{Key: contracts.PermissionUserManage},
+}
+
 // Module is the manifest, and the service it is built on: the auth module takes
 // this value from main, because signing somebody in means finding them first.
 func Module(_ Deps) (contracts.Service, module.Module) {
@@ -53,11 +63,8 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 	mounted := spec
 	mounted.AfterCreate = refuseRolesOnCreate
 	return svc, module.Module{
-		Name: "user",
-		Permissions: []module.Permission{
-			{Key: contracts.PermissionUserRead},
-			{Key: contracts.PermissionUserManage},
-		},
+		Name:        "user",
+		Permissions: permissions,
 		Events: []string{
 			contracts.EventCreated, contracts.EventUpdated, contracts.EventDeleted,
 			contracts.EventInvited, contracts.EventPasswordSet,

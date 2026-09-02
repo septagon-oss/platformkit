@@ -29,12 +29,11 @@ const bootstrapLock = "platformkit:bootstrap"
 // applies, modules included, because a bootstrap that migrated less than the
 // process it is bootstrapping would leave a schema the app then has to finish.
 //
-// The lock is what makes "it refuses to run again once any tenant exists" true
-// of two bootstraps racing rather than only of two run in sequence. Both would
-// otherwise read an empty tenants table inside their own snapshot, both would
-// find no tenant, and both would create one — after which the installation has
+// The lock makes "it refuses once any tenant exists" true of two bootstraps
+// racing and not only of two run in sequence: both would otherwise read an
+// empty tenants table in their own snapshot and both would create one, leaving
 // two first tenants and two administrators who each believe they are the only
-// one. pg_advisory_xact_lock serializes the pair, so the second reads the first
+// one. pg_advisory_xact_lock serializes them, so the second reads the first
 // one's tenant and refuses.
 func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn func(context.Context, db.Tx[db.System]) error) error {
 	src, err := sources(mods)

@@ -26,22 +26,19 @@ type Tenant struct {
 	Slug string
 	Name string
 	// Operator says this tenant is the installation's own, the one whose
-	// administrators may reach the control plane. Every other tenant is a
-	// customer, and a customer's administrator holding "may do everything in
-	// my tenant" must not thereby be able to list, create or suspend the
-	// tenants beside it. The column is written by the bootstrap and by nothing
-	// else; see Grant and docs/adr/0006.
+	// administrators may reach the control plane. A customer's administrator
+	// holds "may do everything in my tenant", which must not become the power
+	// to list, create and suspend the tenants beside them. The column is
+	// written by the bootstrap and by nothing else; see Grant and docs/adr/0006.
 	Operator bool
 }
 
 // Grant is a permission question: which token, and whether that token is one
 // only the operator's own tenant may exercise.
 //
-// It is a struct rather than a string because "may this caller do X" and "may
-// this caller do X, here, in a tenant entitled to X at all" are two questions
-// and the second one has to be asked first. It lives beside Tenant because both
-// halves of the answer are here: the flag on the permission and the flag on the
-// tenant.
+// It is a struct rather than a string because "may this caller do X" and "is
+// this a tenant entitled to X at all" are two questions and the second is asked
+// first. It lives beside Tenant because both halves of the answer are here.
 type Grant struct {
 	Permission string
 	Operator   bool
@@ -72,24 +69,18 @@ func FromContext(ctx context.Context) (Tenant, bool) {
 // package are already imported.
 type SystemToken = syscap.SystemToken
 
-// Principal is who is making a request. It is established once per request by
-// the HTTP layer's identity hook and never derived again: a handler that wants
-// to know the caller reads it from the context, and nothing else may put one
-// there.
+// Principal is who is making a request, established once per request by the
+// HTTP layer's identity hook and never derived again.
 //
-// It lives here, beside Tenant and the actor, because the three are one thing:
-// the identity of a request is which customer it is about, who is asking, and
-// what the asking was recorded as. It used to live in kit/httpx, and the cost
-// of that was a module's contracts/ package naming the HTTP kernel to describe
-// its own caller — which linked huma and chi into the build graph of anything
-// that only wanted to name a Session.
+// It lives here, beside Tenant and the actor, because the three are one thing.
+// It used to live in kit/httpx, and the cost was a module's contracts/ package
+// naming the HTTP kernel to describe its own caller — which linked huma and chi
+// into the build graph of anything that only wanted to name a Session.
 //
-// There is no tenant on it. The hook runs after the host has resolved and
-// inside that tenant's own transaction, so a credential belonging to another
-// tenant is a row row-level security does not show — the principal that would
-// have had to be refused is a principal that is never built. A field the
-// middleware could only ever compare with the tenant it just set itself is a
-// check that proves nothing.
+// There is no tenant on it: the hook runs inside the resolved tenant's own
+// transaction, so a credential belonging to another is a row row-level security
+// does not show, and the principal that would have had to be refused is never
+// built.
 type Principal struct {
 	// UserID identifies the person or machine account.
 	UserID uuid.UUID
