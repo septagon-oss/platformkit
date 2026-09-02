@@ -85,6 +85,23 @@ type RecipientLookup interface {
 	Email(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (string, error)
 }
 
+// HostLookup is how this module turns a tenant into the host its people reach
+// the application at, without naming the module that knows.
+//
+// A mail client has no base to resolve a path against, so a notice's link has
+// to become a URL somewhere — and the URL has to be the recipient's own host.
+// Every tenant is reached at its own name, so a link built from the
+// application's public host is a link that signs nobody in and, worse, sends
+// one customer's people to another customer's front door.
+//
+// It takes the worker's own tenant transaction, so the answer is read under the
+// tenant's own policy: the row it looks for is the one row of tenant_hosts that
+// transaction can see. The application satisfies it over the tenant module, the
+// way it satisfies RecipientLookup over the user module.
+type HostLookup interface {
+	PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error)
+}
+
 // Message is one email, already rendered: the whole of what a Mailer is asked.
 type Message struct {
 	To      string

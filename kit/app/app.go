@@ -55,7 +55,7 @@ const (
 type Options struct {
 	Tenants      httpx.TenantLoader
 	Authorize    httpx.Authorizer
-	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (httpx.Principal, bool, error)
+	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error)
 	Log          *slog.Logger
 
 	// Role defaults to All.
@@ -121,6 +121,10 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	default:
 		return nil, fmt.Errorf("app: role %q is not one of %q, %q or %q", opts.Role, Web, Worker, All)
 	}
+	// Expanded before it is checked: a module that subscribes to everything is
+	// given the names here, once every manifest is in hand, so where it sits in
+	// the list cannot change what it hears.
+	mods = module.Expand(mods)
 	if err := module.Validate(mods); err != nil {
 		return nil, err
 	}

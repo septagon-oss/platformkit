@@ -134,7 +134,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 
 	httpx.Register(api, s.op("list", http.MethodGet, s.Path, 0,
 		"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
-		httpx.Permission(s.Read), func(ctx context.Context, in *listInput) (*listOutput[T], error) {
+		httpx.Permission(s.Read), func(ctx context.Context, in *listInput) (*Page[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -147,14 +147,14 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, Fault(err)
 			}
-			out := &listOutput[T]{}
+			out := &Page[T]{}
 			out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
 			return out, nil
 		})
 
 	httpx.Register(api, s.op("create", http.MethodPost, s.Path, http.StatusCreated,
 		"Create a "+s.Entity, "The tenant, the id and the timestamps are set by the server."),
-		httpx.Permission(s.Write), func(ctx context.Context, in *bodyInput[T]) (*itemOutput[T], error) {
+		httpx.Permission(s.Write), func(ctx context.Context, in *bodyInput[T]) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -167,12 +167,12 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err := s.emit(ctx, tx, Created, e, s.AfterCreate); err != nil {
 				return nil, Fault(err)
 			}
-			return &itemOutput[T]{Body: e}, nil
+			return &Item[T]{Body: e}, nil
 		})
 
 	httpx.Register(api, s.op("read", http.MethodGet, s.item(), 0,
 		"Read a "+s.Entity, ""),
-		httpx.Permission(s.Read), func(ctx context.Context, in *idInput) (*itemOutput[T], error) {
+		httpx.Permission(s.Read), func(ctx context.Context, in *idInput) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -181,12 +181,12 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, Fault(err)
 			}
-			return &itemOutput[T]{Body: e}, nil
+			return &Item[T]{Body: e}, nil
 		})
 
 	httpx.Register(api, s.op("update", http.MethodPatch, s.item(), 0,
 		"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
-		httpx.Permission(s.Write), func(ctx context.Context, in *patchInput) (*itemOutput[T], error) {
+		httpx.Permission(s.Write), func(ctx context.Context, in *patchInput) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -208,7 +208,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err := s.emit(ctx, tx, Updated, e, s.AfterUpdate); err != nil {
 				return nil, Fault(err)
 			}
-			return &itemOutput[T]{Body: e}, nil
+			return &Item[T]{Body: e}, nil
 		})
 
 	httpx.Register(api, s.op("delete", http.MethodDelete, s.item(), http.StatusNoContent,
@@ -268,7 +268,7 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 		op.Extensions = map[string]any{httpx.EventsExtension: events}
 	}
 	httpx.Register(api, op, httpx.Permission(spec.Write),
-		func(ctx context.Context, in *commandInput[I]) (*itemOutput[T], error) {
+		func(ctx context.Context, in *commandInput[I]) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -281,7 +281,7 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 			if err != nil {
 				return nil, Fault(err)
 			}
-			return &itemOutput[T]{Body: e}, nil
+			return &Item[T]{Body: e}, nil
 		})
 }
 
@@ -435,11 +435,21 @@ type patchInput struct {
 	Body map[string]any `doc:"The writable fields to change"`
 }
 
-type itemOutput[T any] struct {
+// Item is one entity as a response body, and Page is a page of them.
+//
+// They are exported because a module that writes its own handlers answers in
+// the same shape as the five routes here: modules/audit and
+// modules/notification both mount routes by hand — an append-only trail and a
+// per-recipient list are not what a Spec is — and a response shape each of them
+// declared separately would be three spellings of the same JSON for a client to
+// discover the hard way.
+type Item[T any] struct {
 	Body T
 }
 
-type listOutput[T any] struct {
+// Page is a page of rows and the total it came from. The limit and the offset
+// are echoed, so a caller that sent neither knows what it got.
+type Page[T any] struct {
 	Body struct {
 		Items  []T   `json:"items"`
 		Total  int64 `json:"total"`

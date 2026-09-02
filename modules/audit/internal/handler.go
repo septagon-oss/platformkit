@@ -43,7 +43,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		Tags:   []string{"audit"},
 		Errors: faults,
 	}, httpx.Permission(contracts.PermissionAuditRead),
-		func(ctx context.Context, in *listInput) (*listOutput, error) {
+		func(ctx context.Context, in *listInput) (*rest.Page[*contracts.Event], error) {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
 				return nil, unavailable
@@ -55,7 +55,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 			if err != nil {
 				return nil, rest.Fault(err)
 			}
-			out := &listOutput{}
+			out := &rest.Page[*contracts.Event]{}
 			out.Body.Items, out.Body.Total = items, total
 			out.Body.Limit, out.Body.Offset = in.Limit, in.Offset
 			return out, nil
@@ -69,13 +69,13 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		Tags:        []string{"audit"},
 		Errors:      faults,
 	}, httpx.Permission(contracts.PermissionAuditRead),
-		func(ctx context.Context, in *idInput) (*itemOutput, error) {
+		func(ctx context.Context, in *idInput) (*rest.Item[*contracts.Event], error) {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
 				return nil, unavailable
 			}
 			row, err := svc.Get(ctx, tx, in.ID)
-			return &itemOutput{Body: row}, rest.Fault(err)
+			return &rest.Item[*contracts.Event]{Body: row}, rest.Fault(err)
 		})
 }
 
@@ -93,17 +93,4 @@ type listInput struct {
 	Until  time.Time `query:"until" doc:"Only events before this instant"`
 	Limit  int       `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`
 	Offset int       `query:"offset" minimum:"0" doc:"Rows to skip"`
-}
-
-type itemOutput struct {
-	Body *contracts.Event
-}
-
-type listOutput struct {
-	Body struct {
-		Items  []*contracts.Event `json:"items"`
-		Total  int64              `json:"total"`
-		Limit  int                `json:"limit"`
-		Offset int                `json:"offset"`
-	}
 }

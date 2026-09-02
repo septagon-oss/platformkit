@@ -26,8 +26,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
-	"github.com/septagon-oss/platformkit/modules/notification/contracts/notificationtest"
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -184,7 +184,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// audit module has never heard of publishes, and the row appears.
 	waitForAudit(t, cfg, admin, notificationcontracts.EventRead)
 
-	box, ok := c.mail.(*notificationtest.Mailbox)
+	box, ok := c.mail.(*notification.Mailbox)
 	if !ok {
 		t.Fatalf("the composition wired %T as its mailer, want the mailbox", c.mail)
 	}
@@ -287,6 +287,16 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		}
 		return false
 	})
+	// The link carries the tenant's own host, not the application's public one:
+	// every tenant is reached at its own name, so a link built from
+	// server.public_host would send one customer's people to a front door that
+	// is not theirs — and to a sign-in page their session does not answer at.
+	if !strings.Contains(link, "http://"+acmeHost+"/auth/reset") {
+		t.Errorf("the invitation link is not acme's own host:\n%s", link)
+	}
+	if strings.Contains(link, cfg.Server.PublicHost) {
+		t.Errorf("the invitation link carries the application's public host:\n%s", link)
+	}
 	token := tokenIn(t, link)
 
 	// The link works, once, and it is what turns an invitation into somebody

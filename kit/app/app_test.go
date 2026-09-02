@@ -49,8 +49,8 @@ func (fixture) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, er
 // a principal, and no request in it carries a credential, so the kernel never
 // asks. httpx.New requires one all the same — an API that could not recognise a
 // caller could only fail closed on every request.
-func anonymous(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
-	return httpx.Principal{}, false, nil
+func anonymous(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
+	return tenancy.Principal{}, false, nil
 }
 
 func compose(t *testing.T) (config.Config, Options) {

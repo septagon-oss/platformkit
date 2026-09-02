@@ -48,8 +48,8 @@ func mount(t *testing.T) chi.Router {
 	_, conn := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: everything{}, Conn: conn, Authorize: everything{},
-		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
-			return httpx.Principal{UserID: uuid.New()}, true, nil
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
+			return tenancy.Principal{UserID: uuid.New()}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})

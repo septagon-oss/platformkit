@@ -36,8 +36,8 @@ func (sites) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, erro
 // Public and carry no credential, so the kernel never asks it anything. It is
 // here because httpx.New requires one — an API that could not recognise a
 // caller could only fail closed on every request.
-func anonymous(context.Context, db.Tx[db.Tenant], *http.Request) (httpx.Principal, bool, error) {
-	return httpx.Principal{}, false, nil
+func anonymous(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
+	return tenancy.Principal{}, false, nil
 }
 
 func serve(t *testing.T, checks ...health.Check) (http.Handler, *db.Conn) {

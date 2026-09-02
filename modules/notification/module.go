@@ -21,7 +21,7 @@ import (
 type Mail = internal.Mail
 
 // SMTP is the production Mailer for a configured server. main wires it, or
-// notificationtest.Mailbox when there is none, so the choice is visible in the
+// the in-memory Mailbox when there is none, so the choice is visible in the
 // file that composes the application.
 var SMTP = internal.NewSMTP
 
@@ -36,10 +36,18 @@ type Deps struct {
 	// Mailer sends the rendered message, in the worker.
 	Mailer contracts.Mailer
 
-	// PublicHost is the name the application is reached at. One thing is
-	// decided from it: the absolute URL a notice's link becomes in an email,
-	// because a mail client has no base to resolve a path against.
-	PublicHost string
+	// Hosts turns the tenant an event belongs to into the host its people reach
+	// the application at, which is what a notice's link has to become for a mail
+	// client. It is declared in this module's contracts/ and satisfied by an
+	// adapter over the tenant module in apps/platformkit, the same way
+	// Recipients is satisfied over the user module.
+	Hosts contracts.HostLookup
+
+	// Secure says the application is reached over https, which is the scheme a
+	// mailed link is built with. It is one bool rather than a host because it is
+	// the same decision the session cookie's Secure flag is: a laptop reached at
+	// a local name gets http, and everything else gets https.
+	Secure bool
 }
 
 // Module is the manifest, and the service it is built on: main holds the
@@ -52,7 +60,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	// A wiring mistake fails where it is written rather than as a nil
 	// dereference in the worker an hour later.
 	if deps.Mailer == nil {
-		panic("notification.Module: Deps.Mailer is required; wire notificationtest.NewMailbox() when there is no mail server")
+		panic("notification.Module: Deps.Mailer is required; wire notification.NewMailbox() when there is no mail server")
 	}
 	svc := internal.NewService(deps.Recipients)
 	return svc, module.Module{
@@ -68,7 +76,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		// No periodic work: a notification is caused by something happening,
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
-		Subscriptions: []events.Subscription{internal.SendMail(deps.Mailer, deps.PublicHost)},
+		Subscriptions: []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Secure)},
 		Routes:        func(api *httpx.API) { internal.RegisterRoutes(api, svc) },
 	}
 }

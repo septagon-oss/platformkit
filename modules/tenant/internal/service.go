@@ -174,6 +174,21 @@ func (s *Service) ByHost(_ context.Context, tx db.Tx[db.System], host string) (t
 	return t.Tenancy(), nil
 }
 
+// Hosts are the names the transaction's own tenant is served at.
+//
+// One query, under the tenant's own policy: tenant_hosts lets a tenant
+// transaction see its own rows and nothing else, so this needs no capability
+// and grants none. The order is the same as everywhere else here, so "the first
+// host" means the same thing to a mailed link as it does to a screen.
+func (s *Service) Hosts(_ context.Context, tx db.Tx[db.Tenant]) ([]string, error) {
+	var hosts []string
+	err := tx.DB().Table("tenant_hosts").Order("host").Pluck("host", &hosts).Error
+	if err != nil {
+		return nil, crud.Classify(err)
+	}
+	return hosts, nil
+}
+
 // attach writes one host row and adds it to the tenant in hand.
 func (s *Service) attach(tx db.Tx[db.System], t *contracts.Tenant, host string) error {
 	key := httpx.HostOnly(host)

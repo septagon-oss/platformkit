@@ -435,7 +435,7 @@ func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
 	// kit/events stamps on every event this request publishes. Deriving the
 	// second here rather than at each Publish is what keeps "who did this" out
 	// of every module's argument lists.
-	next(huma.WithContext(ctx, tenancy.WithActor(WithPrincipal(ctx.Context(), p), p.UserID)))
+	next(huma.WithContext(ctx, tenancy.WithActor(tenancy.WithPrincipal(ctx.Context(), p), p.UserID)))
 }
 
 // credentialed reports whether the request presents something the application
@@ -725,7 +725,7 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 
-	p, hasPrincipal := PrincipalFrom(ctx.Context())
+	p, hasPrincipal := tenancy.PrincipalFrom(ctx.Context())
 	if !hasPrincipal || p.UserID == uuid.Nil {
 		a.deny(ctx, "AUTH_ANONYMOUS", "this operation requires a signed-in caller")
 		return

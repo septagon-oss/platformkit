@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -119,7 +120,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		if err != nil {
 			return nil, err
 		}
-		p, ok := httpx.PrincipalFrom(ctx)
+		p, ok := tenancy.PrincipalFrom(ctx)
 		if !ok || p.UserID == uuid.Nil {
 			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
 		}

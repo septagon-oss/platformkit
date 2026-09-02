@@ -160,6 +160,21 @@ type Service interface {
 	// nobody serves and for a host whose tenant is suspended, because from
 	// outside those are the same fact and neither is an outage.
 	ByHost(ctx context.Context, tx db.Tx[db.System], host string) (tenancy.Tenant, error)
+
+	// Hosts are the names the transaction's own tenant is served at, first
+	// first.
+	//
+	// It is the one read here that takes a tenant transaction rather than a
+	// system one, and that is what it is for: a worker handling one tenant's
+	// event needs the host that tenant's people reach the application at — to
+	// turn a notice's path into a URL a mail client can follow — and it has no
+	// business seeing anybody else's. The policy on tenant_hosts already says
+	// so, so this needs no capability and grants none: the rows a tenant
+	// transaction can see are that tenant's.
+	//
+	// It answers no error and no hosts for a tenant that has none, which cannot
+	// happen through Create and can happen to a row somebody edited.
+	Hosts(ctx context.Context, tx db.Tx[db.Tenant]) ([]string, error)
 }
 
 // Active adapts a Service to jobs.TenantLister: the tenants the periodic jobs

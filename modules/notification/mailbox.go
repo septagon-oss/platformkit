@@ -1,12 +1,4 @@
-// Package notificationtest is the conformance suite for contracts.Service, a
-// fake that passes it, and the in-memory Mailer.
-//
-// The Mailbox is here rather than in the module because it is the same thing a
-// test wants and a deployment with no mail server wants: somewhere for a
-// message to go that is not a mail server. main wires it when config.Mail names
-// no host, which is why this package holds no test-only import in the file that
-// declares it.
-package notificationtest
+package notification
 
 import (
 	"context"
@@ -20,6 +12,15 @@ import (
 // Mailbox is contracts.Mailer over a slice. It keeps every message and logs
 // each one, so a development machine can read what would have been sent and a
 // test can assert on it.
+//
+// It lives in the module and not in notificationtest, and the reason is a link
+// rather than a taste. A deployment with no mail server wires this, so it is
+// production code by use; notificationtest also holds a conformance suite,
+// which imports "testing", and a package is linked whole — so the reference
+// binary used to carry the testing package, its flag registrations and its
+// init, because of where one struct sat. The test suite still uses this one:
+// what a test wants and what an unconfigured deployment wants is the same
+// thing, which is somewhere for a message to go that is not a mail server.
 type Mailbox struct {
 	mu   sync.Mutex
 	sent []contracts.Message

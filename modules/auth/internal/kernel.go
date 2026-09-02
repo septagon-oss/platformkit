@@ -29,23 +29,23 @@ import (
 // those is an outage, and answering 500 to somebody with a stale cookie would
 // make signing out of a deleted account look like a broken deployment. A
 // database that cannot be read is an error, and kit/httpx answers 500.
-func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (httpx.Principal, bool, error) {
+func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error) {
 	cookie, ok := httpx.SessionCookieOf(r)
 	if !ok {
-		return httpx.Principal{}, false, nil
+		return tenancy.Principal{}, false, nil
 	}
 	id, err := uuid.Parse(cookie.Value)
 	if err != nil {
-		return httpx.Principal{}, false, nil
+		return tenancy.Principal{}, false, nil
 	}
 	identity, err := s.Identify(ctx, tx, id, ClientOf(r))
 	if errors.Is(err, crud.ErrNotFound) {
-		return httpx.Principal{}, false, nil
+		return tenancy.Principal{}, false, nil
 	}
 	if err != nil {
-		return httpx.Principal{}, false, err
+		return tenancy.Principal{}, false, err
 	}
-	return httpx.Principal{UserID: identity.UserID, Roles: identity.Roles}, true, nil
+	return tenancy.Principal{UserID: identity.UserID, Roles: identity.Roles}, true, nil
 }
 
 // Allowed is kit/httpx's authorizer: one query per request that asks a
@@ -62,7 +62,7 @@ func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http
 // reads is inside that tenant's own transaction. A second comparison here would
 // be a check that cannot fail.
 func (s *Service) Allowed(ctx context.Context, _ tenancy.Tenant, grant tenancy.Grant) (bool, error) {
-	principal, ok := httpx.PrincipalFrom(ctx)
+	principal, ok := tenancy.PrincipalFrom(ctx)
 	if !ok || len(principal.Roles) == 0 {
 		return false, nil
 	}

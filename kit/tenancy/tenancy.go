@@ -72,6 +72,47 @@ func FromContext(ctx context.Context) (Tenant, bool) {
 // package are already imported.
 type SystemToken = syscap.SystemToken
 
+// Principal is who is making a request. It is established once per request by
+// the HTTP layer's identity hook and never derived again: a handler that wants
+// to know the caller reads it from the context, and nothing else may put one
+// there.
+//
+// It lives here, beside Tenant and the actor, because the three are one thing:
+// the identity of a request is which customer it is about, who is asking, and
+// what the asking was recorded as. It used to live in kit/httpx, and the cost
+// of that was a module's contracts/ package naming the HTTP kernel to describe
+// its own caller — which linked huma and chi into the build graph of anything
+// that only wanted to name a Session.
+//
+// There is no tenant on it. The hook runs after the host has resolved and
+// inside that tenant's own transaction, so a credential belonging to another
+// tenant is a row row-level security does not show — the principal that would
+// have had to be refused is a principal that is never built. A field the
+// middleware could only ever compare with the tenant it just set itself is a
+// check that proves nothing.
+type Principal struct {
+	// UserID identifies the person or machine account.
+	UserID uuid.UUID
+	// Roles are the roles the credential carries, for an authorizer that wants
+	// them without a second lookup.
+	Roles []string
+}
+
+// principalKey is unexported for the same reason contextKey is.
+type principalKey struct{}
+
+// WithPrincipal returns a copy of ctx carrying p.
+func WithPrincipal(ctx context.Context, p Principal) context.Context {
+	return context.WithValue(ctx, principalKey{}, p)
+}
+
+// PrincipalFrom returns the principal ctx carries, if any. Absence means the
+// caller is anonymous, which only a public operation serves.
+func PrincipalFrom(ctx context.Context) (Principal, bool) {
+	p, ok := ctx.Value(principalKey{}).(Principal)
+	return p, ok
+}
+
 // actorKey is unexported for the same reason contextKey is: only this package
 // can put an actor on a context, and only kit/httpx calls WithActor.
 type actorKey struct{}

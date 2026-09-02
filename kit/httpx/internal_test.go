@@ -35,8 +35,8 @@ func TestReachingAroundRegisterIsStillRecorded(t *testing.T) {
 		Tenants:   nothing{},
 		Conn:      app,
 		Authorize: nothing{},
-		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (Principal, bool, error) {
-			return Principal{}, false, nil
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
+			return tenancy.Principal{}, false, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})

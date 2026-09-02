@@ -27,7 +27,6 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/septagon-oss/platformkit/kit/db"
-	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -369,5 +368,10 @@ type Auth interface {
 
 	// Authenticate is httpx.Options.Authenticate: the query that turns the
 	// session cookie into the caller, inside the tenant's own transaction.
-	Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (httpx.Principal, bool, error)
+	//
+	// The signature names net/http and kit/tenancy and nothing else, which is
+	// the point: this package is what every consumer of this module compiles
+	// against, so a mention of kit/httpx here would link huma and chi into the
+	// build graph of anything that only wanted to name a Session.
+	Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error)
 }

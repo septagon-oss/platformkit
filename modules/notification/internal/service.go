@@ -50,24 +50,34 @@ func (s *Service) Notify(ctx context.Context, tx db.Tx[db.Tenant], n contracts.N
 	if !n.Email {
 		return row, nil
 	}
-	to, err := s.address(ctx, tx, row.RecipientID)
+	to, err := address(ctx, tx, s.recipients, row.RecipientID)
 	if err != nil || to == "" {
 		return row, err
 	}
+	// Two identifiers and nothing else: the worker reads the row back and
+	// resolves the address itself. See contracts.EmailRequested — an outbox row
+	// is kept for a week and copied into the audit trail, so a payload with a
+	// body in it is every notice in a table nobody treats as a mailbox.
+	//
+	// The address is resolved here all the same, and thrown away: a recipient
+	// with none gets the row and no mail, and asking now is what keeps the
+	// decision in the transaction that made it.
 	return row, events.Publish(ctx, tx, contracts.EventEmailRequested, contracts.EmailRequested{
-		NotificationID: row.ID, Recipient: row.RecipientID, To: to,
-		Title: row.Title, Body: row.Body, Link: row.Link, At: at,
+		NotificationID: row.ID, Recipient: row.RecipientID, At: at,
 	})
 }
 
 // address is the recipient's email, or "" when there is nobody to ask or
 // nothing to send to. A composition that wired no lookup is the second case:
 // saying so beats a nil dereference, and the row is written either way.
-func (s *Service) address(ctx context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID) (string, error) {
-	if s.recipients == nil {
+//
+// It is a function rather than a method because the worker asks the same
+// question, in its own transaction, when the mail is actually sent.
+func address(ctx context.Context, tx db.Tx[db.Tenant], recipients contracts.RecipientLookup, recipient uuid.UUID) (string, error) {
+	if recipients == nil {
 		return "", nil
 	}
-	to, err := s.recipients.Email(ctx, tx, recipient)
+	to, err := recipients.Email(ctx, tx, recipient)
 	if errors.Is(err, crud.ErrNotFound) {
 		return "", nil
 	}

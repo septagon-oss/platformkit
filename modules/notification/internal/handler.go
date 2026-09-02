@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
@@ -44,7 +45,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		Description: "The caller's own notifications, newest first. There is no route that lists anybody else's.",
 		Tags:        []string{"notification"},
 		Errors:      faults,
-	}, httpx.SignedIn(), func(ctx context.Context, in *listInput) (*listOutput, error) {
+	}, httpx.SignedIn(), func(ctx context.Context, in *listInput) (*rest.Page[*contracts.Notification], error) {
 		tx, me, err := caller(ctx)
 		if err != nil {
 			return nil, err
@@ -53,7 +54,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		if err != nil {
 			return nil, rest.Fault(err)
 		}
-		out := &listOutput{}
+		out := &rest.Page[*contracts.Notification]{}
 		out.Body.Items, out.Body.Total = items, total
 		out.Body.Limit, out.Body.Offset = in.Limit, in.Offset
 		return out, nil
@@ -68,20 +69,20 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		Tags:        []string{"notification"},
 		Errors:      faults,
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRead}},
-	}, httpx.SignedIn(), func(ctx context.Context, in *idInput) (*itemOutput, error) {
+	}, httpx.SignedIn(), func(ctx context.Context, in *idInput) (*rest.Item[*contracts.Notification], error) {
 		tx, me, err := caller(ctx)
 		if err != nil {
 			return nil, err
 		}
 		row, err := svc.MarkRead(ctx, tx, in.ID, me)
-		return &itemOutput{Body: row}, rest.Fault(err)
+		return &rest.Item[*contracts.Notification]{Body: row}, rest.Fault(err)
 	})
 }
 
 // caller is the request's transaction and the person making it, which both
 // routes need and neither may take from a parameter.
 func caller(ctx context.Context) (tx db.Tx[db.Tenant], me uuid.UUID, err error) {
-	p, ok := httpx.PrincipalFrom(ctx)
+	p, ok := tenancy.PrincipalFrom(ctx)
 	if !ok || p.UserID == uuid.Nil {
 		return tx, me, anonymous
 	}
@@ -100,17 +101,4 @@ type listInput struct {
 	Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`
 	Offset int    `query:"offset" minimum:"0" doc:"Rows to skip"`
 	Sort   string `query:"sort" doc:"A field name, or a field name prefixed with - for descending"`
-}
-
-type itemOutput struct {
-	Body *contracts.Notification
-}
-
-type listOutput struct {
-	Body struct {
-		Items  []*contracts.Notification `json:"items"`
-		Total  int64                     `json:"total"`
-		Limit  int                       `json:"limit"`
-		Offset int                       `json:"offset"`
-	}
 }

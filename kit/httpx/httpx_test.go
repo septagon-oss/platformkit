@@ -33,7 +33,7 @@ type fixture struct {
 	resolveNil bool
 	loadErr    error
 	loads      atomic.Int32
-	principal  *httpx.Principal
+	principal  *tenancy.Principal
 	allow      bool
 	authErr    error
 	app        *db.Conn
@@ -68,15 +68,15 @@ func (f *fixture) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool,
 // resolved, inside that tenant's transaction, so a real implementation looks a
 // session up under row-level security. This one answers from a field, and takes
 // the transaction only to prove it was given one.
-func (f *fixture) authenticate(_ context.Context, tx db.Tx[db.Tenant], _ *http.Request) (httpx.Principal, bool, error) {
+func (f *fixture) authenticate(_ context.Context, tx db.Tx[db.Tenant], _ *http.Request) (tenancy.Principal, bool, error) {
 	if f.authnErr != nil {
-		return httpx.Principal{}, false, f.authnErr
+		return tenancy.Principal{}, false, f.authnErr
 	}
 	if f.principal == nil {
-		return httpx.Principal{}, false, nil
+		return tenancy.Principal{}, false, nil
 	}
 	if db.TenantOf(tx).ID != f.tenant.ID {
-		return httpx.Principal{}, false, errors.New("the hook was handed another tenant's transaction")
+		return tenancy.Principal{}, false, errors.New("the hook was handed another tenant's transaction")
 	}
 	return *f.principal, true, nil
 }
@@ -85,7 +85,7 @@ func (f *fixture) authenticate(_ context.Context, tx db.Tx[db.Tenant], _ *http.R
 // runs inside one tenant's transaction, so the principal it produces belongs to
 // that tenant by construction.
 func (f *fixture) signedIn() {
-	f.principal = &httpx.Principal{UserID: uuid.New()}
+	f.principal = &tenancy.Principal{UserID: uuid.New()}
 }
 
 func setup(t *testing.T) (*httpx.API, *chi.Mux, *fixture) {
