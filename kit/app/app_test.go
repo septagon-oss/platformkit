@@ -18,6 +18,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -29,9 +30,9 @@ const tenantHost = "acme.test"
 // who is calling, and what they may do.
 type fixture struct{ tenant tenancy.Tenant }
 
-func (f fixture) ByHost(_ context.Context, h string) (tenancy.Tenant, error) {
+func (f fixture) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
 	if h != tenantHost {
-		return tenancy.Tenant{}, errors.New("no tenant at " + h)
+		return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 	}
 	return f.tenant, nil
 }
@@ -40,9 +41,9 @@ func (fixture) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { 
 
 func compose(t *testing.T) (config.Config, Options) {
 	t.Helper()
-	migrateURL, appURL := db.TestSchemaURLs(t)
+	migrateURL, appURL := dbtest.URLs(t)
 	cfg := config.Config{
-		Server:   config.Server{Addr: freeAddr(t), PublicHost: tenantHost},
+		Server:   config.Server{Addr: freeAddr(t), PublicHost: tenantHost, Docs: true},
 		Database: config.Database{URL: appURL, MigrateURL: migrateURL},
 		NATS:     config.NATS{URL: "nats://localhost:4222"},
 		Log:      config.Log{Level: "error"},
@@ -168,10 +169,12 @@ func TestBootMigratesAndServes(t *testing.T) {
 // it is in no OpenAPI document; only the adapter recording sees it.
 func TestBootRefusesAnUndeclaredOperation(t *testing.T) {
 	cfg, opts := compose(t)
+	// The only way left to mount an operation without a declaration: the
+	// recording adapter, which is exactly what makes it visible to the gate.
 	backdoor := module.Module{Name: "backdoor", Routes: func(api *httpx.API) {
-		huma.Register(api, huma.Operation{
+		api.Adapter().Handle(&huma.Operation{
 			OperationID: "backdoor", Method: http.MethodGet, Path: "/backdoor", Hidden: true,
-		}, func(context.Context, *struct{}) (*helloOut, error) { return &helloOut{}, nil })
+		}, func(huma.Context) {})
 	}}
 	a, err := New(t.Context(), cfg, []module.Module{backdoor}, opts)
 	if err != nil {
@@ -190,6 +193,27 @@ func TestBootRefusesAnUndeclaredOperation(t *testing.T) {
 	if c, dialErr := net.DialTimeout("tcp", cfg.Server.Addr, time.Second); dialErr == nil {
 		_ = c.Close()
 		t.Error("the application listened before validating its declarations")
+	}
+}
+
+// TestBootRefusesARouteNoModuleCanReach is the declaration gate's mirror: a
+// permission no module defines is a route nobody can ever be granted.
+func TestBootRefusesARouteNoModuleCanReach(t *testing.T) {
+	cfg, opts := compose(t)
+	ghost := module.Module{Name: "ghost", Routes: func(api *httpx.API) {
+		httpx.Register(api, huma.Operation{
+			OperationID: "haunt", Method: http.MethodGet, Path: "/haunt",
+		}, httpx.Permission("ghost:read"), func(context.Context, *struct{}) (*helloOut, error) {
+			return &helloOut{}, nil
+		})
+	}}
+	a, err := New(t.Context(), cfg, []module.Module{ghost}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = a.Run(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "ghost:read") {
+		t.Fatalf("Run = %v, want the undefined permission", err)
 	}
 }
 

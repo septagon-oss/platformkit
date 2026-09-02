@@ -1,11 +1,14 @@
-package db
+package db_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/migrations"
 )
 
@@ -13,18 +16,14 @@ import (
 // already-applied set has to be a no-op rather than an error.
 func TestMigrateIsIdempotent(t *testing.T) {
 	ctx := t.Context()
-	// The ledger is what this test is about, so it migrates into the test's own
-	// schema rather than the shared one: pg_tables is database-wide, and a
-	// second ledger anywhere would otherwise be indistinguishable from two here.
-	migrateURL, _ := TestSchemaURLs(t)
-	admin, err := openOwner(migrateURL)
-	if err != nil {
-		t.Fatalf("db: test admin connection: %v", err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
+	// The ledger is what this test is about, so it counts in the test's own
+	// schema: pg_tables is database-wide, and a second ledger anywhere would
+	// otherwise be indistinguishable from two here.
+	migrateURL, _ := dbtest.URLs(t)
+	admin := dbtest.Open(t, migrateURL)
 
 	for i := range 2 {
-		if err := Migrate(ctx, migrateURL, migrations.FS); err != nil {
+		if err := db.Migrate(ctx, migrateURL, migrations.FS); err != nil {
 			t.Fatalf("migrate run %d: %v", i+1, err)
 		}
 	}
@@ -50,14 +49,16 @@ func TestMigrateIsIdempotent(t *testing.T) {
 // instead of into an empty result.
 func TestTenantHelperFailsClosedOnGarbage(t *testing.T) {
 	ctx := t.Context()
-	admin, _ := TestSchema(t)
-	if err := Migrate(ctx, mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL"), migrations.FS); err != nil {
-		t.Fatalf("migrate: %v", err)
+	pool, _ := dbtest.Schema(t)
+	// set_config(..., false) is session-scoped, so the write and the reads have
+	// to happen on one connection rather than on whichever the pool hands out.
+	admin, err := pool.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin a connection: %v", err)
 	}
+	t.Cleanup(func() { _ = admin.Close() })
 
-	if err := admin.Exec(ctx, `SELECT set_config('platformkit.tenant_id', 'not-a-uuid', false)`); err != nil {
-		t.Fatalf("set garbage: %v", err)
-	}
+	exec(t, ctx, admin, `SELECT set_config('platformkit.tenant_id', 'not-a-uuid', false)`)
 	var got sql.NullString
 	scan(t, admin, `SELECT platformkit_current_tenant_id()::text`, &got)
 	if got.Valid {
@@ -66,9 +67,7 @@ func TestTenantHelperFailsClosedOnGarbage(t *testing.T) {
 
 	// A valid setting still comes back, so the guard is not simply refusing.
 	want := uuid.New()
-	if err := admin.Exec(ctx, `SELECT set_config('platformkit.tenant_id', $1, false)`, want.String()); err != nil {
-		t.Fatalf("set tenant: %v", err)
-	}
+	exec(t, ctx, admin, `SELECT set_config('platformkit.tenant_id', '`+want.String()+`', false)`)
 	scan(t, admin, `SELECT platformkit_current_tenant_id()::text`, &got)
 	if got.String != want.String() {
 		t.Errorf("platformkit_current_tenant_id() = %q, want %q", got.String, want)
@@ -82,11 +81,24 @@ func TestTenantHelperFailsClosedOnGarbage(t *testing.T) {
 	}
 }
 
-// scan reads one row through a connection's pool. It reaches into Conn because
-// only tests need to query outside a scoped transaction.
-func scan(t *testing.T, c *Conn, query string, dest ...any) {
+// sqlDB is what both *sql.DB and *sql.Conn offer a test: statements, and one
+// row back. A test that needs its statements on one connection asks for a
+// *sql.Conn and nothing else changes.
+type sqlDB interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func scan(t *testing.T, admin sqlDB, query string, dest ...any) {
 	t.Helper()
-	if err := c.db.Raw(query).Row().Scan(dest...); err != nil {
+	if err := admin.QueryRowContext(t.Context(), query).Scan(dest...); err != nil {
 		t.Fatalf("query %q: %v", query, err)
+	}
+}
+
+func exec(t *testing.T, ctx context.Context, admin sqlDB, query string) {
+	t.Helper()
+	if _, err := admin.ExecContext(ctx, query); err != nil {
+		t.Fatalf("%s: %v", query, err)
 	}
 }

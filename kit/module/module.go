@@ -8,13 +8,13 @@
 //
 // The manifest below is what the kernel needs to know about a module that it
 // cannot learn from a function call: the permissions it defines, the events it
-// emits, where it appears in navigation, the work it schedules, what makes it
-// healthy, its SQL, and its routes. Nothing else belongs in it — a field the
-// kernel never reads is a field a module will fill in and no one will honour.
+// emits, where it appears in navigation, what makes it healthy, its SQL, and
+// its routes. Nothing else belongs in it — a field the kernel never reads is a
+// field a module will fill in and no one will honour, which is why scheduled
+// work arrives here with kit/jobs and not before.
 package module
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -28,8 +28,10 @@ import (
 
 // Module is one business capability, described to the kernel.
 type Module struct {
-	// Name is the module's namespace: its permissions and events are prefixed
-	// with it, so a token says which module answers for it.
+	// Name is the module's namespace: its events are prefixed with it, so an
+	// event name says which module emitted it. Permissions are named after the
+	// resource they guard, not after the module, because a permission outlives
+	// the module that first defined it.
 	Name string
 
 	// Permissions are the permission keys this module defines, "<resource>:<action>".
@@ -40,9 +42,6 @@ type Module struct {
 
 	// Nav is where this module appears in navigation.
 	Nav []NavEntry
-
-	// Jobs is the scheduled work this module owns. kit/jobs runs them (E1.3).
-	Jobs []Job
 
 	// Health are the checks that must pass before an instance serves.
 	Health []health.Check
@@ -73,15 +72,8 @@ type NavEntry struct {
 	Order      int
 }
 
-// Job is one piece of scheduled work.
-type Job struct {
-	Name string
-	Cron string
-	Run  func(context.Context) error
-}
-
-// moduleName is the grammar of a module name. It is the prefix of every
-// permission and event the module owns, so it has to be an identifier.
+// moduleName is the grammar of a module name. It is the prefix of every event
+// the module emits, so it has to be an identifier.
 var moduleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // eventName is the grammar of an event: the module's name, a dot, and a
@@ -107,7 +99,7 @@ func Validate(mods []Module) error {
 			add("a module has no name")
 			continue
 		case !moduleName.MatchString(m.Name):
-			add("module %q: a name is a lower-case identifier, because permissions and events are prefixed with it", m.Name)
+			add("module %q: a name is a lower-case identifier, because the events it emits are prefixed with it", m.Name)
 		}
 		if names[m.Name] {
 			add("module %q: declared twice", m.Name)
@@ -129,12 +121,6 @@ func Validate(mods []Module) error {
 		for i, c := range m.Health {
 			if c == nil {
 				add("module %q: health check %d is nil; /ready would panic on it", m.Name, i)
-			}
-		}
-
-		for _, j := range m.Jobs {
-			if j.Name == "" || j.Cron == "" || j.Run == nil {
-				add("module %q: job %q needs a name, a schedule and something to run", m.Name, j.Name)
 			}
 		}
 

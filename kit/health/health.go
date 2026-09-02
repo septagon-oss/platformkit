@@ -3,10 +3,10 @@
 //
 // GET /health is liveness: it runs no check of its own, because a probe that
 // fails when the database is briefly unreachable gets the process killed instead
-// of getting the database fixed. It is still an operation, so a probe sent to a
-// host that resolves to a tenant opens that request's transaction like any
-// other; an orchestrator addresses the instance directly, which resolves to no
-// tenant and therefore touches nothing.
+// of getting the database fixed. It is still an operation, but it queries
+// nothing, and kit/httpx opens a request's transaction only when something asks
+// for it — so a liveness probe answers 200 at a tenant host with the database
+// down, which is the whole point of a liveness probe.
 //
 // GET /ready is readiness: it runs every registered check and answers 503 with
 // the names that failed, so a rolling deploy holds traffic off an instance that
@@ -76,7 +76,6 @@ func Register(api *httpx.API, checks ...Check) {
 		Description: "200 when every registered check passes, 503 naming those that did not.",
 		Errors:      []int{http.StatusServiceUnavailable},
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*statusOutput, error) {
-		ctx = probe{ctx}
 		var failed []string
 		for _, c := range checks {
 			if err := c.Check(ctx); err != nil {
@@ -96,19 +95,10 @@ func Register(api *httpx.API, checks ...Check) {
 	})
 }
 
-// probe strips the request's values while keeping its deadline and
-// cancellation. A readiness check reports on the process, not on the request
-// that happened to trigger it: it must run outside whatever transaction the
-// request opened, both because kit/db refuses a system transaction nested in a
-// tenant one and because a check answered from inside a request's transaction
-// would be answering about that transaction.
-type probe struct{ context.Context }
-
-func (probe) Value(any) any { return nil }
-
 // DatabaseCheck reports whether the application connection can reach Postgres,
 // with the cheapest statement there is. It runs as a system transaction because
-// readiness belongs to no tenant.
+// readiness belongs to no tenant; the probe request has opened none of its own,
+// so there is no tenant transaction for this one to be nested in.
 func DatabaseCheck(conn *db.Conn) Check {
 	token := syscap.NewSystemToken("readiness")
 	return Func{N: "database", F: func(ctx context.Context) error {

@@ -7,11 +7,18 @@ package tenancy
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 )
+
+// ErrNoSuchHost is what a tenant loader returns when it looked and there is no
+// site at that host. It is the one loader failure that is an answer rather than
+// an outage: the HTTP layer turns it into 404 and everything else into 503, so
+// a database the loader cannot reach never reads as "these hosts do not exist".
+var ErrNoSuchHost = errors.New("tenancy: no tenant at this host")
 
 // Tenant is one customer of the platform.
 type Tenant struct {
@@ -34,13 +41,13 @@ func FromContext(ctx context.Context) (Tenant, bool) {
 	return t, ok
 }
 
-// Resolver maps an incoming host to a tenant. Implemented by the tenant module.
-type Resolver interface {
-	ByHost(ctx context.Context, host string) (Tenant, error)
-}
-
 // SystemToken is a capability that lets kernel runners open cross-tenant work.
-// Its only constructor lives in kit/internal/syscap, so packages outside kit/
-// can name a token but cannot mint one: the compiler enforces that modules
-// never bypass tenancy.
+// It is an interface whose only implementation and only constructor live in
+// kit/internal/syscap, so packages outside kit/ can name a token but can
+// neither mint nor implement one: the compiler enforces that modules never
+// bypass tenancy.
+//
+// Resolving a host to a tenant is a query, so it needs a transaction; the
+// interface for it is httpx.TenantLoader, declared where both kit/db and this
+// package are already imported.
 type SystemToken = syscap.SystemToken

@@ -85,21 +85,14 @@ func TestValidateRejectsMalformedTokens(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsAManifestThatCannotRun: a nil check panics inside /ready
-// and a job with no schedule is work that silently never happens, so both are
-// composition errors rather than runtime surprises.
+// TestValidateRejectsAManifestThatCannotRun: a nil check panics inside /ready,
+// so it is a composition error rather than a runtime surprise.
 func TestValidateRejectsAManifestThatCannotRun(t *testing.T) {
-	err := Validate([]Module{{
-		Name:   "billing",
-		Health: []health.Check{nil},
-		Jobs:   []Job{{Name: "sweep"}},
-	}})
+	err := Validate([]Module{{Name: "billing", Health: []health.Check{nil}}})
 	if err == nil {
 		t.Fatal("Validate accepted a manifest that cannot run")
 	}
-	for _, want := range []string{"health check 0 is nil", `job "sweep" needs a name, a schedule`} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error does not report %s\ngot:\n%v", want, err)
-		}
+	if !strings.Contains(err.Error(), "health check 0 is nil") {
+		t.Errorf("error does not report the nil check\ngot:\n%v", err)
 	}
 }

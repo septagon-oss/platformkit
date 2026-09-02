@@ -74,9 +74,9 @@ func (b Bucket) matches(rel string) bool {
 // Count returns the total newline count of matching files under root. It
 // counts newlines, so a file with no trailing newline counts one line short;
 // that is stable and monotone, which is all the ratchet needs.
-func (b Bucket) Count(root string, tracked []string) (int, error) {
+func (b Bucket) Count(root string, files []string) (int, error) {
 	total := 0
-	for _, rel := range tracked {
+	for _, rel := range files {
 		if !b.matches(rel) {
 			continue
 		}
@@ -145,8 +145,13 @@ func (bu *Budget) Ratchet(counts map[string]int) {
 	}
 }
 
-func trackedFiles(root string) ([]string, error) {
-	cmd := exec.Command("git", "-C", root, "ls-files", "-z")
+// sourceFiles lists what the repository counts as its source: everything git
+// tracks, plus everything it would track if committed now. A budget that
+// ignored new files would only fail after the commit that broke it, which is
+// the one place a ratchet is useless; --exclude-standard keeps build output and
+// anything else .gitignore names out of the count.
+func sourceFiles(root string) ([]string, error) {
+	cmd := exec.Command("git", "-C", root, "ls-files", "-z", "-c", "-o", "--exclude-standard")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git ls-files: %w", err)
@@ -196,7 +201,7 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "unknown bucket %q\n", *bucket)
 		return 2
 	}
-	files, err := trackedFiles(*root)
+	files, err := sourceFiles(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2

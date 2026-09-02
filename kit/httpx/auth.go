@@ -1,11 +1,13 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 )
 
 // AuthExtension is the OpenAPI extension an operation's declaration is written
@@ -56,21 +58,13 @@ func Permission(token string) Auth {
 }
 
 // Public admits every caller, signed in or not. It is the declaration that has
-// to be justified in review, which is what PublicMutations exists to support.
+// to be justified in review.
 func Public() Auth { return Auth{kind: kindPublic} }
 
 // SignedIn admits any caller carrying a principal for the resolved tenant,
 // whatever that principal may do. It is for operations about the caller
 // themselves, where there is no resource to name a permission on.
 func SignedIn() Auth { return Auth{kind: kindSignedIn} }
-
-// String describes the declaration for an error message or a log line.
-func (a Auth) String() string {
-	if a.kind == kindPermission {
-		return "permission " + a.permission
-	}
-	return string(a.kind)
-}
 
 // MarshalJSON writes the declaration into the OpenAPI document as
 // {"kind":"permission|public|signed_in","permission":"..."}. huma renders the
@@ -100,9 +94,9 @@ func (a Auth) declared() bool {
 // one at all.
 //
 // Only a value this package minted counts. An operation registered straight
-// through huma.Register carries nothing under the key; one carrying a
-// hand-written map carries something that is not an Auth. Both are undeclared,
-// which is what ValidateDeclarations reports and what the middleware denies.
+// through huma carries nothing under the key; one carrying a hand-written map
+// carries something that is not an Auth. Both are undeclared, which is what
+// ValidateDeclarations reports and what the middleware denies.
 //
 // Because the declaration is one typed value under one key, "declares two
 // contradictory authorizations" is not a state a caller can reach; the older
@@ -117,4 +111,55 @@ func declarationOf(op *huma.Operation) (Auth, bool) {
 		return Auth{}, false
 	}
 	return a, true
+}
+
+// declare writes auth into op.Extensions, which is where the recorder, the
+// OpenAPI document and the request-time middleware all read it.
+func declare(op *huma.Operation, auth Auth) {
+	if op.Extensions == nil {
+		op.Extensions = map[string]any{}
+	}
+	op.Extensions[AuthExtension] = auth
+}
+
+// Register mounts an operation together with the authorization it declares. It
+// is the only way a module registers a handler, and the declaration is a
+// parameter rather than a field, so an operation cannot be written without one.
+func Register[I, O any](api *API, op huma.Operation, auth Auth, handler func(context.Context, *I) (*O, error)) {
+	if !auth.declared() {
+		panic("httpx.Register: " + describe(&op) + " was passed the zero Auth; use Permission, Public or SignedIn")
+	}
+	declare(&op, auth)
+	huma.Register(api.api, op, handler)
+}
+
+// Principal is who is making a request. It is established once per request by
+// Options.Authenticate and never derived again: a handler that wants to know
+// the caller reads it from the context, and nothing else may put one there.
+type Principal struct {
+	// UserID identifies the person or machine account.
+	UserID uuid.UUID
+	// TenantID is the tenant the credential belongs to. The authorization
+	// middleware refuses a principal whose tenant is not the one the request
+	// host resolved to, so a session for one tenant cannot act on another.
+	TenantID uuid.UUID
+	// Roles are the roles the credential carries, for an Authorizer that wants
+	// them without a second lookup.
+	Roles []string
+}
+
+// principalKey is unexported so only this package can put a principal on a
+// context, the same discipline kit/tenancy applies to the tenant.
+type principalKey struct{}
+
+// WithPrincipal returns a copy of ctx carrying p.
+func WithPrincipal(ctx context.Context, p Principal) context.Context {
+	return context.WithValue(ctx, principalKey{}, p)
+}
+
+// PrincipalFrom returns the principal ctx carries, if any. Absence means the
+// caller is anonymous, which only a Public operation serves.
+func PrincipalFrom(ctx context.Context) (Principal, bool) {
+	p, ok := ctx.Value(principalKey{}).(Principal)
+	return p, ok
 }

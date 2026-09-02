@@ -8,6 +8,10 @@ server:
   # Host the app believes it is reached at. Absolute URLs and cookie scope are
   # derived from it, and tenant subdomains are resolved against it.
   public_host: "platformkit.localhost:8080"
+  # Serve /openapi.json, /openapi.yaml and /docs. They need no session and they
+  # list every route and permission the app has; on for a development machine,
+  # a decision for anything public.
+  docs: true
 
 database:
   # The app connects as platformkit_app: no superuser, no BYPASSRLS, so tenant
