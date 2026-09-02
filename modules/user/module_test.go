@@ -72,15 +72,17 @@ func call(t *testing.T, r http.Handler, method, path, body string) (int, string)
 	return w.Code, string(out)
 }
 
-// TestRolesAreGrantedByTheCommandAndByNothingElse.
+// TestALifecycleChangeHasExactlyOneDoor.
 //
-// A grant is the one change to a user that an audit has to be able to find, so
-// it has exactly one door: POST {path}/{id}/roles, which publishes
-// user.roles_set. The two generic doors are shut, and they are shut for two
-// different reasons worth knowing apart — the create is refused by the module's
-// own hook, and the patch is refused by kit/crud's schema, which covers a closed
-// set of field types that a slice is not in.
-func TestRolesAreGrantedByTheCommandAndByNothingElse(t *testing.T) {
+// A grant and a deactivation are the two changes to a user that an audit has to
+// be able to find, so each has one route and each publishes. The generic doors
+// are shut, and they are shut for three different reasons worth knowing apart:
+// the create is refused by the module's own AfterCreate hook, `status` by
+// Spec.Immutable, and `roles` by kit/crud's schema — which covers a closed set
+// of field types that a slice is not in, so the field does not exist as far as
+// a patch is concerned. The last of those is the right answer arrived at for
+// the wrong reason, and it is the one to revisit when the schema learns lists.
+func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 	router := mount(t)
 
 	code, body := call(t, router, http.MethodPost, at, `{"email":"ada@acme.test","roles":["admin"]}`)
@@ -100,6 +102,14 @@ func TestRolesAreGrantedByTheCommandAndByNothingElse(t *testing.T) {
 	code, body = call(t, router, http.MethodPatch, at+"/"+id, `{"roles":["admin"]}`)
 	if code != http.StatusUnprocessableEntity {
 		t.Errorf("patching roles = %d %s, want 422", code, body)
+	}
+
+	// status is refused by name, because Deactivate owns it and publishes
+	// user.deactivated: a caller who could patch it would deactivate somebody
+	// and tell nobody.
+	code, body = call(t, router, http.MethodPatch, at+"/"+id, `{"status":"inactive"}`)
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "command of its own") {
+		t.Errorf("patching status = %d %s, want 422 naming the door", code, body)
 	}
 
 	code, body = call(t, router, http.MethodPost, at+"/"+id+"/roles", `{"roles":["admin"]}`)

@@ -97,7 +97,7 @@ func (f *Fake) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from
 }
 
 func (f *Fake) open(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
-	at := time.Now().UTC().Truncate(time.Microsecond)
+	at := db.Now()
 	session := contracts.Session{
 		ID: uuid.New(), UserID: user.ID, CreatedAt: at,
 		ExpiresAt: at.Add(contracts.SessionLifetime), LastSeenAt: at,
@@ -129,7 +129,7 @@ func (f *Fake) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 	if user.Status != usercontracts.StatusActive {
 		return nil, crud.ErrNotFound
 	}
-	if at := time.Now().UTC().Truncate(time.Microsecond); at.Sub(session.LastSeenAt) >= contracts.SessionTouch {
+	if at := db.Now(); at.Sub(session.LastSeenAt) >= contracts.SessionTouch {
 		session.LastSeenAt, session.ExpiresAt, session.IP = at, at.Add(contracts.SessionLifetime), from.IP
 		f.mu.Lock()
 		f.sessions[id] = session

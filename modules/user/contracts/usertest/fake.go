@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -53,7 +52,7 @@ func (f *Fake) Invite(_ context.Context, _ db.Tx[db.Tenant], email, displayName 
 			return nil, fmt.Errorf("%w: users_tenant_email", crud.ErrConflict)
 		}
 	}
-	u.ID, u.CreatedAt, u.UpdatedAt = uuid.New(), stamp(), stamp()
+	u.ID, u.CreatedAt, u.UpdatedAt = uuid.New(), db.Now(), db.Now()
 	f.users[u.ID] = *u
 	f.published = append(f.published, contracts.EventInvited)
 	return f.get(u.ID)
@@ -74,7 +73,7 @@ func (f *Fake) SetPassword(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, 
 	if err != nil {
 		return fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
-	u.PasswordHash, u.Status, u.UpdatedAt = hash, contracts.StatusActive, stamp()
+	u.PasswordHash, u.Status, u.UpdatedAt = hash, contracts.StatusActive, db.Now()
 	f.users[id] = *u
 	f.published = append(f.published, contracts.EventPasswordSet)
 	return nil
@@ -92,7 +91,7 @@ func (f *Fake) SetRoles(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, rol
 	if slices.Equal([]string(u.Roles), want) {
 		return u, nil
 	}
-	u.Roles, u.UpdatedAt = want, stamp()
+	u.Roles, u.UpdatedAt = want, db.Now()
 	if err := u.Validate(context.Background()); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
@@ -112,7 +111,7 @@ func (f *Fake) Deactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 	if u.Status == contracts.StatusInactive {
 		return u, nil
 	}
-	u.Status, u.UpdatedAt = contracts.StatusInactive, stamp()
+	u.Status, u.UpdatedAt = contracts.StatusInactive, db.Now()
 	f.users[id] = *u
 	f.published = append(f.published, contracts.EventDeactivated)
 	return f.get(id)
@@ -150,7 +149,7 @@ func (f *Fake) Provision(_ context.Context, _ db.Tx[db.System], tenantID uuid.UU
 		Email: email, DisplayName: displayName, Status: contracts.StatusActive,
 		Roles: Normalise(roles), PasswordHash: hash,
 	}
-	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, stamp(), stamp()
+	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, db.Now(), db.Now()
 	if err := u.Validate(context.Background()); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
@@ -187,5 +186,3 @@ func Normalise(roles []string) contracts.Roles {
 	slices.Sort(out)
 	return out
 }
-
-func stamp() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
