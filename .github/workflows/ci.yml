@@ -91,3 +91,22 @@ jobs:
 
       - name: make check
         run: make check
+
+      # Gate 10. It runs after the other nine because it is the slowest and the
+      # only one that needs a browser: a failure in gate 1 should not wait for a
+      # download. The browser is chromium alone, because this is a gate and not
+      # a compatibility matrix.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install the browser
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: make e2e
+        run: make e2e
