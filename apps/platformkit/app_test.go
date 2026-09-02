@@ -26,6 +26,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification/contracts/notificationtest"
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -40,6 +42,8 @@ const (
 
 	tasksPath  = "/api/v1/task/tasks"
 	tenantPath = "/api/v1/tenant/tenants"
+	auditPath  = "/api/v1/audit/events"
+	noticePath = "/api/v1/notification/notifications"
 	adminEmail = "root@acme.localhost"
 	adminPass  = "correct horse battery staple"
 )
@@ -147,6 +151,46 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, tasksPath+"/"+id+"/assign", `{"assigneeId":"`+who+`"}`)
 	if code != http.StatusOK || !strings.Contains(body, `"`+taskcontracts.StatusAcknowledged+`"`) {
 		t.Fatalf("assign = %d %s, want 200 and an acknowledged task", code, body)
+	}
+
+	// The worker half of this process is running, so what the routes published
+	// is on its way. Audit subscribes to every event every other module
+	// declares — main computes that list with module.EventNames — so the task
+	// the administrator just created is in the trail, with the administrator as
+	// its actor. Nothing registered that: the task module emitted an event and
+	// the kernel put the caller on the envelope.
+	me := field(t, whoami(t, cfg, admin), "userId")
+	created := waitForAudit(t, cfg, admin, taskcontracts.EventCreated)
+	if created["actor"] != me {
+		t.Errorf("the trail credits the task to %v, want the administrator %s", created["actor"], me)
+	}
+	if got := waitForAudit(t, cfg, admin, taskcontracts.EventAssigned)["actor"]; got != me {
+		t.Errorf("the trail credits the assignment to %v, want %s", got, me)
+	}
+
+	// A notification, raised the way another module will raise one: through the
+	// service main holds, inside a tenant transaction. It asks for mail, so the
+	// worker renders it and hands it to the mailbox this composition wired
+	// because config.Mail names no server.
+	notice := notify(t, cfg, c, uuid.MustParse(me))
+	if code, body = do(t, cfg, admin, http.MethodGet, acmeHost, noticePath, ""); code != http.StatusOK ||
+		!strings.Contains(body, `"total":1`) || !strings.Contains(body, notice.String()) {
+		t.Fatalf("GET %s = %d %s, want the administrator's own notice", noticePath, code, body)
+	}
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, noticePath+"/"+notice.String()+"/read", ""); code != http.StatusOK {
+		t.Fatalf("marking it read = %d %s, want 200", code, body)
+	}
+	// And the trail records that too, which is the loop closing: a module the
+	// audit module has never heard of publishes, and the row appears.
+	waitForAudit(t, cfg, admin, notificationcontracts.EventRead)
+
+	box, ok := c.mail.(*notificationtest.Mailbox)
+	if !ok {
+		t.Fatalf("the composition wired %T as its mailer, want the mailbox", c.mail)
+	}
+	eventually(t, "the notice reaches the mailbox", func() bool { return len(box.Sent()) == 1 })
+	if sent := box.Sent()[0]; sent.To != adminEmail || !strings.Contains(sent.Body, "chiller-2") {
+		t.Errorf("the mailbox holds %+v, want the notice addressed to the administrator", sent)
 	}
 
 	// A second tenant, through the control-plane API, as the administrator of
@@ -354,6 +398,96 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// whoami is the caller's own identity, which is where the test learns the
+// administrator's user id: the same id the kernel stamps on every event their
+// requests publish.
+func whoami(t *testing.T, cfg config.Config, client *http.Client) string {
+	t.Helper()
+	code, body := do(t, cfg, client, http.MethodGet, acmeHost, "/api/v1/auth/me", "")
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/v1/auth/me = %d %s, want 200", code, body)
+	}
+	return body
+}
+
+// waitForAudit is the first trail row with this event name, once the worker has
+// got to it. The relay runs once a second, so this is a wait and not a read:
+// what it proves is that the row arrives, not how soon.
+func waitForAudit(t *testing.T, cfg config.Config, client *http.Client, name string) map[string]any {
+	t.Helper()
+	var row map[string]any
+	eventually(t, "the trail to record "+name, func() bool {
+		code, body := do(t, cfg, client, http.MethodGet, acmeHost, auditPath+"?name="+name, "")
+		if code != http.StatusOK {
+			t.Fatalf("GET %s = %d %s, want 200", auditPath, code, body)
+		}
+		var out struct {
+			Items []map[string]any `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(body), &out); err != nil {
+			t.Fatalf("read the trail from %s: %v", body, err)
+		}
+		if len(out.Items) == 0 {
+			return false
+		}
+		row = out.Items[0]
+		return true
+	})
+	return row
+}
+
+// notify raises one notification the way another module will: through the
+// service main holds, inside the tenant's own transaction. It asks for mail, so
+// the worker has something to send.
+func notify(t *testing.T, cfg config.Config, c composition, recipient uuid.UUID) uuid.UUID {
+	t.Helper()
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+
+	var acme tenancy.Tenant
+	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("resolve %s: %v", acmeHost, err)
+	}
+
+	var id uuid.UUID
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		row, err := c.notify.Notify(ctx, tx, notificationcontracts.Notice{
+			Recipient: recipient, Title: "chiller-2 supply temp is out of band",
+			Body: "The task is waiting for somebody.", Link: "/admin/task/tasks", Email: true,
+		})
+		if err == nil {
+			id = row.ID
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatalf("notify the administrator: %v", err)
+	}
+	return id
+}
+
+// eventually waits for something the worker does. Everything it is used for is
+// asynchronous by design — the relay ticks once a second — so a test that read
+// once would be testing the tick and not the behaviour.
+func eventually(t *testing.T, what string, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if done() {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
 }
 
 // provision gives a tenant its own administrator, the way the bootstrap gives

@@ -192,3 +192,25 @@ func Validate(mods []Module) error {
 	sort.Strings(bad)
 	return errors.New("module: invalid composition:\n  " + strings.Join(bad, "\n  "))
 }
+
+// EventNames is every event the given modules emit, once each and sorted, so
+// that the subscriptions built from it are registered in a stable order.
+//
+// It exists for one composition: modules/audit subscribes to everything, and
+// "everything" is a list main computes after the other modules are constructed
+// rather than one somebody maintains by hand. A module missing from a
+// hand-written copy is an event nobody records, and nothing fails.
+func EventNames(mods []Module) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range mods {
+		for _, e := range m.Events {
+			if !seen[e] {
+				seen[e] = true
+				out = append(out, e)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}

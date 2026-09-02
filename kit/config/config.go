@@ -25,6 +25,8 @@ type Config struct {
 	NATS     NATS     `yaml:"nats"`
 	Log      Log      `yaml:"log"`
 	Auth     Auth     `yaml:"auth"`
+	Mail     Mail     `yaml:"mail"`
+	Audit    Audit    `yaml:"audit"`
 }
 
 // Server is where the app listens, what host it believes it is reached at, and
@@ -80,6 +82,38 @@ type OIDC struct {
 // Enabled reports whether a provider is configured.
 func (o OIDC) Enabled() bool { return o.Issuer != "" }
 
+// Mail is the one outgoing mail server, and there is one sender behind it: SMTP
+// is what every service worth naming speaks. An empty host means there is none,
+// and then main wires the in-memory mailbox and says so at boot — a deployment
+// without mail still records every notification and simply sends none.
+//
+// Username and Password are optional, because a relay on a private network
+// authenticates by being unreachable from anywhere else. From is not: a message
+// with no sender is refused by the far end, hours later, in somebody else's log.
+type Mail struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	From     string `yaml:"from"`
+}
+
+// Enabled reports whether a mail server is configured.
+func (m Mail) Enabled() bool { return m.Host != "" }
+
+// Audit is how long the audit trail is kept: the one thing modules/audit cannot
+// decide for itself, because a retention period is a compliance obligation and
+// a module that chose one would be choosing somebody else's. Zero means the
+// default and not "forever" — a table nothing ever deletes from is an outage
+// with a date on it, and "forever" is spelled with a large number.
+type Audit struct {
+	RetentionDays int `yaml:"retention_days"`
+}
+
+// DefaultRetentionDays is a year, the shortest period the obligations that ask
+// for an audit trail at all tend to accept.
+const DefaultRetentionDays = 365
+
 // Load reads path, applies the environment overrides, and validates the result.
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
@@ -107,6 +141,8 @@ func Load(path string) (Config, error) {
 		// for a reason rather than for symmetry: rule 7 says never commit a
 		// secret, and config.yaml is a file somebody will commit.
 		{"PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", &c.Auth.OIDC.ClientSecret},
+		// The second secret, for the same reason as the first.
+		{"PLATFORMKIT_MAIL_PASSWORD", &c.Mail.Password},
 	} {
 		if v, ok := os.LookupEnv(o.env); ok {
 			*o.field = v
@@ -152,7 +188,44 @@ func Load(path string) (Config, error) {
 	if err := c.Auth.OIDC.validate(path); err != nil {
 		return Config{}, err
 	}
+	if err := c.Mail.validate(path); err != nil {
+		return Config{}, err
+	}
+	if c.Audit.RetentionDays == 0 {
+		c.Audit.RetentionDays = DefaultRetentionDays
+	}
+	if c.Audit.RetentionDays < 1 {
+		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; a retention period is a number of days", path, c.Audit.RetentionDays)
+	}
 	return c, nil
+}
+
+// defaultSMTPPort is submission with STARTTLS, what a modern relay listens on.
+const defaultSMTPPort = 587
+
+// validate refuses a half-written mail server, the all-or-none rule the
+// identity provider follows: a host with no sender is a mailer that exists and
+// cannot send, which is worse than no mailer.
+func (m *Mail) validate(path string) error {
+	if !m.Enabled() {
+		if m.Username != "" || m.Password != "" || m.From != "" {
+			return fmt.Errorf("config %s: mail has credentials or a sender and no host", path)
+		}
+		return nil
+	}
+	if m.From == "" {
+		return fmt.Errorf("config %s: mail.from is empty; a message with no sender is refused by the far end", path)
+	}
+	if m.Port == 0 {
+		m.Port = defaultSMTPPort
+	}
+	if m.Port < 1 || m.Port > 65535 {
+		return fmt.Errorf("config %s: mail.port is %d, which is not a port", path, m.Port)
+	}
+	if m.Password != "" && m.Username == "" {
+		return fmt.Errorf("config %s: mail.password is set and mail.username is empty", path)
+	}
+	return nil
 }
 
 // defaultRedirectPath is where the provider sends a browser back to, and it is
