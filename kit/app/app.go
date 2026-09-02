@@ -236,7 +236,13 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	// The catalogue before the routes: a module that validates a permission
 	// somebody typed asks the kernel for the list, and Routes is the one moment
 	// it is being wired and the whole composition is known.
-	api.Declare(declared(a.mods))
+	var catalogue []tenancy.Grant
+	for _, m := range a.mods {
+		for _, p := range m.Permissions {
+			catalogue = append(catalogue, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+		}
+	}
+	api.Declare(catalogue)
 
 	checks := []health.Check{health.DatabaseCheck(conn)}
 	for _, m := range a.mods {
@@ -339,28 +345,20 @@ func (a *App) probes(conn *db.Conn) http.Handler {
 	return health.Mux(a.log, checks...)
 }
 
-// declared is every permission the modules define, as the kernel's grants.
-func declared(mods []module.Module) []tenancy.Grant {
-	var out []tenancy.Grant
-	for _, m := range mods {
-		for _, p := range m.Permissions {
-			out = append(out, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
-		}
-	}
-	return out
-}
+// routeKind names the constructor a route used, for the one error that has to
+// say which of the two sides is wrong.
+var routeKind = map[bool]string{false: "httpx.Permission", true: "httpx.OperatorPermission"}
 
 // validatePermissions is the declaration gate's mirror, and it checks two
 // things about the same list.
 //
 // Every permission a route requires has to be one some module defines, or the
-// route is guarded by a token no role can ever be granted and everybody is
-// denied for good. And the route and the manifest have to agree about whether
-// it is the operator's: a control-plane route declared with httpx.Permission is
-// reachable by every customer's administrator through the wildcard they hold in
-// their own tenant, and an ordinary route declared with
-// httpx.OperatorPermission is reachable by nobody outside the operator's. Both
-// are silent in production and loud here.
+// route is guarded by a token no role can ever be granted. And the route and
+// the manifest have to agree about whether it is the operator's: a
+// control-plane route declared with httpx.Permission is reachable by every
+// customer's administrator through the wildcard they hold in their own tenant,
+// and an ordinary route declared with httpx.OperatorPermission is reachable by
+// nobody outside it. Both are silent in production and loud here.
 //
 // Every violation is reported at once, because a composition is fixed once.
 func validatePermissions(api *httpx.API, mods []module.Module) error {
@@ -377,9 +375,11 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 		case !defined[g.Permission]:
 			bad = append(bad, fmt.Sprintf("%s guards a route and is defined by no module", g.Permission))
 		case kind[g.Permission] != g.Operator:
-			bad = append(bad, fmt.Sprintf(
-				"%s is declared %s by its route and %s by the module that defines it",
-				g.Permission, declaredAs(g.Operator), declaredAs(kind[g.Permission])))
+			// httpx.Permission goes with Operator: false and
+			// httpx.OperatorPermission with Operator: true; this names which
+			// side is which, because either mismatch is silent in production.
+			bad = append(bad, fmt.Sprintf("%s: its route declares %s and its manifest declares Operator: %v",
+				g.Permission, routeKind[g.Operator], kind[g.Permission]))
 		}
 	}
 	if len(bad) == 0 {
@@ -387,14 +387,6 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 	}
 	sort.Strings(bad)
 	return fmt.Errorf("app: %d permission(s) do not check out:\n  %s", len(bad), strings.Join(bad, "\n  "))
-}
-
-// declaredAs names the two kinds the way the two sides spell them.
-func declaredAs(operator bool) string {
-	if operator {
-		return "httpx.OperatorPermission / module.Permission{Operator: true}"
-	}
-	return "httpx.Permission / module.Permission{Operator: false}"
 }
 
 // validateEvents is the same gate for the other direction: an operation that

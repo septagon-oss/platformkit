@@ -279,20 +279,15 @@ const SessionCookie = "platformkit_session"
 // CookieName is the name a first-party cookie is set under, which depends on
 // whether it will carry Secure.
 //
-// The __Host- prefix is a rule the browser enforces rather than one we ask it
-// to: a cookie whose name starts with it is only accepted with Secure, with
-// Path=/ and with no Domain, and a page on another host cannot set one that the
-// browser will send here. That last part is the reason it matters in this
-// application in particular. Every tenant is reached at its own host, often as
-// siblings under one registrable domain, so without the prefix a page served at
-// one customer's host can set platformkit_session for the parent domain and the
-// browser will attach it at every other customer's. The prefix makes that
-// cookie unsettable rather than merely unhelpful.
-//
-// It is dropped when the cookie is not Secure, because a browser refuses a
-// Secure cookie over http://localhost and a development machine nobody can sign
-// in to is a development machine nobody uses. Both names are recognised on the
-// way in — a deployment is one or the other, so only one is ever presented.
+// __Host- is a rule the browser enforces: a cookie named with it is accepted
+// only with Secure, Path=/ and no Domain, and a page on another host cannot set
+// one the browser will send here. That last part is why it matters here — every
+// tenant is reached at its own host, often as siblings under one registrable
+// domain, so without the prefix a page at one customer's host can set
+// platformkit_session for the parent domain and have it attached at every
+// other customer's. It is dropped when the cookie is not Secure, because a
+// browser refuses one of those over http://localhost; both names are recognised
+// on the way in, and a deployment only ever presents one.
 func CookieName(base string, secure bool) string {
 	if secure {
 		return "__Host-" + base
@@ -301,9 +296,9 @@ func CookieName(base string, secure bool) string {
 }
 
 // SessionCookieOf is the session cookie the request presents, under either
-// name. It is exported because the auth module reads the same cookie the kernel
-// recognised, and two spellings of "which cookie is the session" is a session
-// one half of the program can see and the other cannot.
+// name. It is exported because the auth module reads the one the kernel
+// recognised: two spellings of "which cookie is the session" is a session one
+// half of the program can see and the other cannot.
 func SessionCookieOf(r *http.Request) (*http.Cookie, bool) {
 	for _, secure := range []bool{true, false} {
 		if c, err := r.Cookie(CookieName(SessionCookie, secure)); err == nil && c.Value != "" {
@@ -343,6 +338,19 @@ func unsafeMethod(m string) bool {
 // clients that do not send it. A request carrying no session cookie is not
 // guarded, because nothing was attached on its behalf — a bearer token is
 // presented deliberately and a cross-site page cannot read one to present.
+//
+// # What this accepts
+//
+// One case is let through that a per-form token would not, and it is named here
+// rather than implied: a state-changing request with a session cookie, no
+// Sec-Fetch-Site and no Origin. No browser in support produces it — every
+// current engine sends the first, and the ones before it sent the second on a
+// cross-origin POST, and a page that could suppress both could suppress a token
+// header too. What does produce it is a script or a mobile client, which
+// attached the cookie because somebody wrote the code that attaches it. That is
+// the deliberate presentation this check exists to tell from the automatic one.
+// If a client that suppresses both headers and can be driven cross-site ever
+// exists, this is the line that changes, and it is one line.
 func (a *API) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := SessionCookieOf(r); !ok || !unsafeMethod(r.Method) {
@@ -442,11 +450,10 @@ func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
 // could recognise, which today is the session cookie and nothing else.
 //
 // It used to accept an Authorization header too, which was a query for every
-// request carrying one and a recognition for none: nothing in this application
-// issues a bearer token, so the hook could only ever answer "not signed in" and
-// the only effect was to open a transaction the request did not need. When
-// something issues bearers, this is where they are let in, and the CSRF
-// middleware's own comment says why they are exempt from that check.
+// request carrying one and a recognition for none: nothing here issues a bearer
+// token, so the hook could only answer "not signed in" and the only effect was
+// a transaction the request did not need. When something issues bearers, this
+// is where they are let in.
 func credentialed(r *http.Request) bool {
 	_, ok := SessionCookieOf(r)
 	return ok
@@ -744,14 +751,12 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	}
 
 	grant, _ := auth.grant()
-	// The operator check comes before the Authorizer, and that order is the
-	// whole point of the declaration. The control plane is served on every
-	// tenant's host, so an operator route is reachable at a customer's host by
-	// a customer's administrator; asking the roles table first would mean the
-	// wildcard that administrator legitimately holds in their own tenant
-	// answering a question about everybody's. A tenant that is not the
-	// operator's cannot exercise this permission however its roles are
-	// written, and there is nothing to ask.
+	// Before the Authorizer, and that order is the point of the declaration.
+	// The control plane is served at every tenant's host, so an operator route
+	// is reachable by a customer's administrator; asking the roles table first
+	// would let the wildcard they legitimately hold in their own tenant answer
+	// a question about everybody's. A tenant that is not the operator's cannot
+	// exercise this permission however its roles are written.
 	if grant.Operator && !t.Operator {
 		a.deny(ctx, "AUTH_NOT_OPERATOR", grant.Permission+" is the operator's, and this is not the operator's tenant")
 		return

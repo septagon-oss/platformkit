@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -223,9 +224,10 @@ func TestBootRefusesARouteAndAManifestThatDisagreeAboutTheOperator(t *testing.T)
 		name     string
 		declared bool
 		route    func(string) httpx.Auth
+		says     string
 	}{
-		{"a route that forgot the operator", true, httpx.Permission},
-		{"a route that invented one", false, httpx.OperatorPermission},
+		{"a route that forgot the operator", true, httpx.Permission, "httpx.Permission"},
+		{"a route that invented one", false, httpx.OperatorPermission, "httpx.OperatorPermission"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, opts := compose(t)
@@ -248,7 +250,9 @@ func TestBootRefusesARouteAndAManifestThatDisagreeAboutTheOperator(t *testing.T)
 			if err == nil {
 				t.Fatal("Run served a route whose kind its manifest contradicts")
 			}
-			for _, want := range []string{"fleet:manage", "httpx.OperatorPermission", "httpx.Permission"} {
+			// The message names which side is which, because either mismatch
+			// is silent in production and the fix is on one of the two.
+			for _, want := range []string{"fleet:manage", tt.says, fmt.Sprintf("Operator: %v", tt.declared)} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("the error does not name %q: %v", want, err)
 				}

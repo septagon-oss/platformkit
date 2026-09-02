@@ -53,9 +53,16 @@ type Deps struct {
 // Module is the manifest, and the service it is built on: main holds the
 // service because the modules that raise notices are wired against it.
 //
-// This module declares no permissions. Both routes are about the caller
-// themselves, which is what httpx.SignedIn is for, and a permission that every
-// signed-in person must hold is a permission that decides nothing.
+// permissions is what the manifest declares, and it is empty. It is a var
+// rather than a nil literal in the manifest so that all six modules answer the
+// question in the same place and in the same shape: a reader looking for what a
+// module lets a role be granted finds one name, whatever the answer is.
+//
+// The answer here is nothing. Both routes are about the caller themselves,
+// which is what httpx.SignedIn is for, and a permission every signed-in person
+// must hold is a permission that decides nothing.
+var permissions []module.Permission
+
 func Module(deps Deps) (contracts.Service, module.Module) {
 	// A wiring mistake fails where it is written rather than as a nil
 	// dereference in the worker an hour later.
@@ -65,7 +72,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService(deps.Recipients)
 	return svc, module.Module{
 		Name:        "notification",
-		Permissions: nil,
+		Permissions: permissions,
 		Events:      contracts.Events,
 		// No nav entry, and it is the same fact as the empty Permissions: a
 		// nav entry names the permission that decides who sees the link, and
