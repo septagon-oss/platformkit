@@ -12,6 +12,7 @@ package tasktest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -33,6 +34,27 @@ type Fixture struct {
 	// the suite cannot do through the interface, because the interface is the
 	// lifecycle and creating a task is kit/crud's five routes.
 	Seed func(*contracts.Task) uuid.UUID
+	// Published is the events the implementation has published so far, in
+	// order. The fake returns what it recorded; the real service's harness
+	// reads the outbox rows its transaction has written.
+	//
+	// It is part of the fixture because half of what the lifecycle promises is
+	// silence: every command is idempotent, and an idempotent command that
+	// publishes is a subscriber told twice about one thing. A suite that could
+	// only see return values could not check that, and it is the half a retry
+	// exercises every day.
+	Published func() []string
+}
+
+// silent runs step and fails if it published anything. It is how the suite
+// says "and this changed nothing", which is the claim a retry depends on.
+func (f Fixture) silent(t *testing.T, what string, step func()) {
+	t.Helper()
+	before := len(f.Published())
+	step()
+	if after := f.Published(); len(after) != before {
+		t.Errorf("%s published %v; repeating a command changes nothing, so it says nothing", what, after[before:])
+	}
 }
 
 // Harness builds one Fixture and calls run with it. It is written this way
@@ -89,13 +111,20 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"assign is idempotent for the same assignee": func(t *testing.T, f Fixture) {
 			id, who := f.Seed(open("chiller")), uuid.New()
+			before := len(f.Published())
 			if _, err := f.Service.Assign(f.Ctx, f.Tx, id, who); err != nil {
 				t.Fatalf("the first Assign: %v", err)
 			}
-			got, err := f.Service.Assign(f.Ctx, f.Tx, id, who)
-			if err != nil {
-				t.Fatalf("the second Assign: %v", err)
+			if len(f.Published()) != before+1 {
+				t.Fatalf("the first Assign published %v, want one event", f.Published()[before:])
 			}
+			var got *contracts.Task
+			f.silent(t, "assigning the same person again", func() {
+				var err error
+				if got, err = f.Service.Assign(f.Ctx, f.Tx, id, who); err != nil {
+					t.Fatalf("the second Assign: %v", err)
+				}
+			})
 			if got.Status != contracts.StatusAcknowledged || *got.AssigneeID != who {
 				t.Errorf("the second Assign left %q/%v", got.Status, got.AssigneeID)
 			}
@@ -119,18 +148,24 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"resolve is idempotent for the same resolution": func(t *testing.T, f Fixture) {
 			id := f.Seed(open("chiller"))
+			before := len(f.Published())
 			first, err := f.Service.Resolve(f.Ctx, f.Tx, id, "swapped the valve")
 			if err != nil {
 				t.Fatalf("the first Resolve: %v", err)
 			}
+			if len(f.Published()) != before+1 {
+				t.Fatalf("the first Resolve published %v, want one event", f.Published()[before:])
+			}
 			for _, again := range []string{"swapped the valve", ""} {
-				got, err := f.Service.Resolve(f.Ctx, f.Tx, id, again)
-				if err != nil {
-					t.Fatalf("Resolve(%q) after resolving: %v", again, err)
-				}
-				if !got.ResolvedAt.Equal(*first.ResolvedAt) {
-					t.Errorf("Resolve(%q) moved the resolution time; the loop closed once", again)
-				}
+				f.silent(t, fmt.Sprintf("Resolve(%q) after resolving", again), func() {
+					got, err := f.Service.Resolve(f.Ctx, f.Tx, id, again)
+					if err != nil {
+						t.Fatalf("Resolve(%q) after resolving: %v", again, err)
+					}
+					if !got.ResolvedAt.Equal(*first.ResolvedAt) {
+						t.Errorf("Resolve(%q) moved the resolution time; the loop closed once", again)
+					}
+				})
 			}
 		},
 
@@ -148,6 +183,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			overdue.SLADeadline = past()
 			id := f.Seed(overdue)
 
+			before := len(f.Published())
 			got, err := f.Service.CheckSLA(f.Ctx, f.Tx, id)
 			if err != nil {
 				t.Fatalf("CheckSLA: %v", err)
@@ -155,11 +191,16 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if !got.SLABreached {
 				t.Fatal("a deadline an hour ago with the task unresolved is a breach")
 			}
-			// The sweep runs every minute forever, so the second call is the
-			// ordinary case and it has to be a no-op.
-			if got, err = f.Service.CheckSLA(f.Ctx, f.Tx, id); err != nil || !got.SLABreached {
-				t.Errorf("the second CheckSLA = %v, %v", got, err)
+			if len(f.Published()) != before+1 {
+				t.Fatalf("the first CheckSLA published %v, want one event", f.Published()[before:])
 			}
+			// The sweep runs every minute forever, so the second call is the
+			// ordinary case: it changes nothing and, above all, says nothing.
+			f.silent(t, "the second CheckSLA", func() {
+				if got, err = f.Service.CheckSLA(f.Ctx, f.Tx, id); err != nil || !got.SLABreached {
+					t.Errorf("the second CheckSLA = %v, %v", got, err)
+				}
+			})
 		},
 
 		"check-sla leaves a future deadline alone": func(t *testing.T, f Fixture) {

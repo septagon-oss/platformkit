@@ -25,6 +25,13 @@ const host = "acme.test"
 
 const path = "/api/v1/task/tasks"
 
+// spec is what module.go mounts, as far as the command routes can tell: the
+// resource they hang off, and the permission they ask for.
+var spec = crud.Spec[*contracts.Task]{
+	Module: "task", Entity: "task", Path: path,
+	Read: contracts.PermissionTaskRead, Write: contracts.PermissionTaskUpdate,
+}
+
 // caller is the three answers httpx.New needs. The tenant module and the auth
 // module give the real ones in E3.
 type caller struct{}
@@ -50,7 +57,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *db.Conn) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	internal.RegisterRoutes(api, internal.NewService(), path)
+	internal.RegisterRoutes(api, spec, internal.NewService())
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}

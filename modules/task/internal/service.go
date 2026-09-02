@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -50,11 +49,14 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 	if task.Status == contracts.StatusOpen {
 		task.Status = contracts.StatusAcknowledged
 	}
-	if err := crud.Update(ctx, tx, task); err != nil {
+	// The three columns this command changed, and no others: a concurrent
+	// patch of the description has to survive an assignment, and writing the
+	// whole row would put every field back to what this transaction read.
+	if err := crud.Update(ctx, tx, task, "assignee_id", "status", "updated_at"); err != nil {
 		return nil, err
 	}
 	return task, events.Publish(tx, contracts.EventAssigned, contracts.Assigned{
-		TaskID: task.ID, Assignee: assignee, Status: task.Status, At: now(),
+		TaskID: task.ID, Assignee: assignee, Status: task.Status, At: db.Now(),
 	})
 }
 
@@ -77,11 +79,11 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 		}
 		return nil, fmt.Errorf("%w: this task is resolved with a different resolution", crud.ErrConflict)
 	}
-	at := now()
+	at := db.Now()
 	task.Status = contracts.StatusResolved
 	task.Resolution = resolution
 	task.ResolvedAt = &at
-	if err := crud.Update(ctx, tx, task); err != nil {
+	if err := crud.Update(ctx, tx, task, "status", "resolution", "resolved_at", "updated_at"); err != nil {
 		return nil, err
 	}
 	return task, events.Publish(tx, contracts.EventResolved, contracts.Resolved{
@@ -98,21 +100,14 @@ func (s *Service) CheckSLA(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	if task.SLABreached || !task.IsOverdue(now()) {
+	if task.SLABreached || !task.IsOverdue(db.Now()) {
 		return task, nil
 	}
 	task.SLABreached = true
-	if err := crud.Update(ctx, tx, task); err != nil {
+	if err := crud.Update(ctx, tx, task, "sla_breached", "updated_at"); err != nil {
 		return nil, err
 	}
 	return task, events.Publish(tx, contracts.EventSLABreached, contracts.SLABreached{
-		TaskID: task.ID, Priority: task.Priority, Deadline: *task.SLADeadline, At: now(),
+		TaskID: task.ID, Priority: task.Priority, Deadline: *task.SLADeadline, At: db.Now(),
 	})
 }
-
-// now is the one clock the commands read: UTC, because a resolution time that
-// depends on where the process runs cannot be compared, and truncated to the
-// microsecond, because that is what Postgres stores — without it the timestamp
-// a command returns and the one the next command reads back differ in their
-// last three digits, and every equality on them is a coin toss.
-func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }

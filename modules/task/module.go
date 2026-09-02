@@ -48,6 +48,24 @@ var spec = crud.Spec[*contracts.Task]{
 	Read:       contracts.PermissionTaskRead,
 	Write:      contracts.PermissionTaskUpdate,
 	SoftDelete: true,
+	// The four fields a command owns. A PATCH that could set assigneeId would
+	// make somebody responsible without moving the status and without
+	// task.assigned; one that could set slaBreached would forge the fact the
+	// SLA report counts. Each of the four has a route.
+	Immutable: []string{"assigneeId", "slaBreached", "resolvedAt", "resolution"},
+	// What AfterCreate publishes, so the create operation declares it and the
+	// boot gate can check it against Events below. See internal.BreachOnArrival.
+	HookEvents: []string{contracts.EventSLABreached},
+}
+
+// permissions is what the manifest declares. kit/app checks every route's
+// declaration against it at boot, so a route guarded by a permission that is
+// not here fails startup instead of denying everyone forever. It lives beside
+// the manifest and not in contracts/ because it was the only thing there that
+// needed kit/module.
+var permissions = []module.Permission{
+	{Key: contracts.PermissionTaskRead},
+	{Key: contracts.PermissionTaskUpdate},
 }
 
 // Module is the manifest. The implementation is constructed here, in one line,
@@ -68,7 +86,7 @@ func Module(deps Deps) module.Module {
 	mounted.AfterCreate = internal.BreachOnArrival(svc)
 	return module.Module{
 		Name:        "task",
-		Permissions: contracts.Permissions,
+		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Tasks", Path: "/admin/task/tasks", Permission: contracts.PermissionTaskRead},
@@ -79,7 +97,7 @@ func Module(deps Deps) module.Module {
 		Subscriptions: nil,
 		Routes: func(api *httpx.API) {
 			mounted.Mount(api)
-			internal.RegisterRoutes(api, svc, mounted.Path)
+			internal.RegisterRoutes(api, mounted, svc)
 		},
 	}
 }

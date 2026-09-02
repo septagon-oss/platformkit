@@ -358,6 +358,8 @@ func TestSpecRefusesToMountNonsense(t *testing.T) {
 		"no path":        {Module: "tasks", Entity: "task", Path: "api", Read: "task:read", Write: "task:write"},
 		"no event name":  {Module: "Tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write"},
 		"bad permission": {Module: "tasks", Entity: "task", Path: "/api", Read: "read", Write: "task:write"},
+		"immutable nothing": {Module: "tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write",
+			Immutable: []string{"nonesuch"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			defer func() {

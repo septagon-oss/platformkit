@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -43,6 +44,34 @@ type Spec[T Entity] struct {
 	// the negative so that the zero Spec is the one that emits events: a
 	// silence nobody asked for is how an integration goes missing.
 	NoEvents bool
+
+	// Immutable names, by json field name, the fields a PATCH refuses because
+	// a command of their own owns them: a task's assigneeId belongs to Assign,
+	// which also moves the status and publishes task.assigned, so a caller who
+	// could set it through the generic update would move the field alone and
+	// tell nobody. The refusal is a 422 naming the field, so the caller is
+	// told which door to use rather than left wondering why nothing happened.
+	//
+	// This is not ReadOnly. ReadOnly is the four fields Base contributes — the
+	// server owns those at every door, and the create route discards whatever
+	// a caller sent for them. An immutable field is writable, by exactly one
+	// route. Every name here is checked against the entity's schema at mount,
+	// so a misspelled one panics where it is written instead of silently
+	// guarding nothing.
+	Immutable []string
+
+	// HookEvents names the events the hooks below publish. They are appended
+	// to the create, update and delete operations' x-platformkit-events, so
+	// the OpenAPI document says what a write can emit and kit/app's boot gate
+	// sees it.
+	//
+	// It closes one direction and it is worth being plain about which. The
+	// gate compares what the routes declare against what the manifests
+	// declare; nothing reads what a handler actually publishes. So an event
+	// named here and missing from a manifest fails startup, and an event a
+	// hook publishes that nobody named here is still invisible to everything
+	// but the outbox.
+	HookEvents []string
 
 	// The hooks run inside the request's transaction, after the write and
 	// after the event, so a hook can publish more events or write more rows and
@@ -151,7 +180,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, Fault(err)
 			}
-			columns, err := merge(e, schema.Fields, in.Body)
+			columns, err := merge(e, schema.Fields, s.Immutable, in.Body)
 			if err != nil {
 				return nil, Fault(err)
 			}
@@ -191,6 +220,64 @@ func (s Spec[T]) Mount(api *httpx.API) {
 		})
 }
 
+// Command registers one lifecycle route on a Spec's resource: POST
+// {Path}/{id}/{verb}, guarded by the Spec's Write permission, taking the
+// request's transaction, declaring the events it publishes, and answering
+// failures with the same mapping the five routes above use.
+//
+// It is here rather than in each module because a command is the one thing a
+// Spec cannot express — each is a rule about the state the entity is in, and
+// each publishes an event of its own — while everything around it is what
+// every module would otherwise write again and disagree with: a module with
+// its own error mapping is a second opinion about what a 409 means, and one
+// that forgot the events extension is a route the boot gate cannot see.
+//
+// I is the request body and it is optional, so a command that takes no
+// arguments is a POST with no body at all; run is handed the zero I in that
+// case. A command whose argument is missing is refused by run, with
+// ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
+// and "an assignee that is not a user" the same 422.
+func Command[I any, T Entity](api *httpx.API, spec Spec[T], verb, summary, description string, events []string,
+	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error),
+) {
+	op := huma.Operation{
+		OperationID: spec.Module + "-" + spec.Entity + "-" + verb,
+		Method:      http.MethodPost,
+		Path:        spec.item() + "/" + verb,
+		Summary:     summary,
+		Description: description,
+		Tags:        []string{spec.Module},
+		Errors:      faults,
+	}
+	if len(events) > 0 {
+		op.Extensions = map[string]any{httpx.EventsExtension: events}
+	}
+	httpx.Register(api, op, httpx.Permission(spec.Write),
+		func(ctx context.Context, in *commandInput[I]) (*itemOutput[T], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			var body I
+			if in.Body != nil {
+				body = *in.Body
+			}
+			e, err := run(ctx, tx, in.ID, body)
+			if err != nil {
+				return nil, Fault(err)
+			}
+			return &itemOutput[T]{Body: e}, nil
+		})
+}
+
+// commandInput is a command's path id and its body. The body is a pointer
+// because huma reads a struct body as required, and "{}" is not something a
+// caller should have to send to say nothing.
+type commandInput[I any] struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"The row's id"`
+	Body *I
+}
+
 // emit publishes the event for a write and then runs the module's hook, both
 // inside the request's transaction: an event that describes a change that
 // rolled back is never seen, because it rolled back too.
@@ -206,9 +293,20 @@ func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T
 	return hook(ctx, tx, e)
 }
 
+// faults are the statuses every operation here can answer with: the three a
+// caller can act on, and the one that says the database is not reachable. They
+// are declared so the OpenAPI document lists them; Fault and transaction are
+// what produce them.
+var faults = []int{http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusServiceUnavailable}
+
+// writes maps the three operations that change something to the event each
+// publishes.
+var writes = map[string]string{"create": Created, "update": Updated, "delete": Deleted}
+
 // op builds the operation, including the declaration of the events the handler
-// will publish. kit/app reads that declaration back off the recorded operations
-// and refuses to start when a module did not promise them.
+// will publish — its own, and whatever its hook promises in HookEvents.
+// kit/app reads that declaration back off the recorded operations and refuses
+// to start when a module did not promise them.
 func (s Spec[T]) op(verb, method, path string, status int, summary, description string) huma.Operation {
 	op := huma.Operation{
 		OperationID:   s.Module + "-" + s.Entity + "-" + verb,
@@ -218,10 +316,19 @@ func (s Spec[T]) op(verb, method, path string, status int, summary, description 
 		Description:   description,
 		Tags:          []string{s.Module},
 		DefaultStatus: status,
-		Errors:        []int{http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
+		Errors:        faults,
 	}
-	if published, ok := map[string]string{"create": Created, "update": Updated, "delete": Deleted}[verb]; ok && !s.NoEvents {
-		op.Extensions = map[string]any{httpx.EventsExtension: []string{s.Event(published)}}
+	published, ok := writes[verb]
+	if !ok {
+		return op
+	}
+	var names []string
+	if !s.NoEvents {
+		names = append(names, s.Event(published))
+	}
+	names = append(names, s.HookEvents...)
+	if len(names) > 0 {
+		op.Extensions = map[string]any{httpx.EventsExtension: names}
 	}
 	return op
 }
@@ -242,6 +349,16 @@ func (s Spec[T]) check() {
 		bad = fmt.Sprintf("Read %q is not %q", s.Read, "<resource>:<action>")
 	case !httpx.ValidPermission(s.Write):
 		bad = fmt.Sprintf("Write %q is not %q", s.Write, "<resource>:<action>")
+	}
+	// An Immutable name the entity has no field for guards nothing, silently
+	// and forever, so it is a mount-time panic like everything else here.
+	for _, name := range s.Immutable {
+		if bad != "" {
+			break
+		}
+		if _, ok := fieldNamed(fieldsOf[T](), name); !ok {
+			bad = fmt.Sprintf("Immutable names %q, which is not a field of the entity", name)
+		}
 	}
 	if bad != "" {
 		panic("crud: Spec for " + s.Path + ": " + bad)
@@ -381,10 +498,11 @@ func coerce(f Field, raw string) (any, error) {
 
 // merge applies a PATCH body to an entity, field by field, through the schema,
 // and reports the database columns it changed so that Update writes those and
-// no others. A name the schema does not know, or one it knows as read-only, is
-// refused rather than ignored, because a caller who spells a field wrong has to
-// be told.
-func merge(e any, fields []Field, patch map[string]any) ([]string, error) {
+// no others. A name the schema does not know, one it knows as read-only, or one
+// the Spec reserved to a command of its own is refused rather than ignored,
+// because a caller who spells a field wrong — or reaches for the wrong door —
+// has to be told.
+func merge(e any, fields []Field, immutable []string, patch map[string]any) ([]string, error) {
 	target := reflect.ValueOf(e).Elem()
 	columns := make([]string, 0, len(patch))
 	for name, value := range patch {
@@ -394,6 +512,8 @@ func merge(e any, fields []Field, patch map[string]any) ([]string, error) {
 			return nil, fmt.Errorf("%w: there is no field %q", ErrInvalid, name)
 		case f.ReadOnly:
 			return nil, fmt.Errorf("%w: %s is read-only", ErrInvalid, name)
+		case slices.Contains(immutable, name):
+			return nil, fmt.Errorf("%w: %s is changed by a command of its own, not by a patch", ErrInvalid, name)
 		}
 		// Round-tripping through JSON is what makes this the same decoder the
 		// request body went through: one set of rules for "3" as an int and for
