@@ -108,7 +108,7 @@ func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 	id := field(t, body, "id")
 
 	code, body = call(t, router, http.MethodPatch, at+"/"+id, `{"roles":["admin"]}`)
-	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "command of its own") {
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "route of its own") {
 		t.Errorf("patching roles = %d %s, want 422 naming the door", code, body)
 	}
 
@@ -123,7 +123,7 @@ func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 	// user.deactivated: a caller who could patch it would deactivate somebody
 	// and tell nobody.
 	code, body = call(t, router, http.MethodPatch, at+"/"+id, `{"status":"inactive"}`)
-	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "command of its own") {
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "route of its own") {
 		t.Errorf("patching status = %d %s, want 422 naming the door", code, body)
 	}
 

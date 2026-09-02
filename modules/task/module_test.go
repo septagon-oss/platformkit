@@ -95,7 +95,7 @@ func TestThePatchRefusesTheFieldsTheLifecycleOwns(t *testing.T) {
 		if code != http.StatusUnprocessableEntity {
 			t.Errorf("PATCH %s = %d %s, want 422: %s belongs to a command", tt.patch, code, body, tt.field)
 		}
-		if !strings.Contains(body, tt.field+" is changed by a command of its own") {
+		if !strings.Contains(body, tt.field+" belongs to a route of its own") {
 			t.Errorf("PATCH %s answered %s, which does not name the field it refused", tt.patch, body)
 		}
 	}

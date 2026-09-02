@@ -319,7 +319,7 @@ func TestThePatchRefusesTheFieldsACommandOwns(t *testing.T) {
 		if code != http.StatusUnprocessableEntity {
 			t.Errorf("PATCH %s = %d %s, want 422", tt.patch, code, body)
 		}
-		if !strings.Contains(body, tt.field+" is changed by a command of its own") {
+		if !strings.Contains(body, tt.field+" belongs to a route of its own") {
 			t.Errorf("PATCH %s answered %s, which does not say which field it refused", tt.patch, body)
 		}
 	}
