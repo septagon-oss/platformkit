@@ -40,7 +40,7 @@ type Module struct {
 	Permissions []Permission
 
 	// Events are the event names this module emits, "<name>.<event>". Every
-	// event a crud.Spec would publish has to appear here, or the app refuses to
+	// event a rest.Spec would publish has to appear here, or the app refuses to
 	// start: a module that emits something it never promised is an integration
 	// nobody can find.
 	Events []string

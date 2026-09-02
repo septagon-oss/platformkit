@@ -32,7 +32,7 @@ type Fixture struct {
 	Service contracts.Service
 	// Seed stores a task and returns the id it was given. It is the one thing
 	// the suite cannot do through the interface, because the interface is the
-	// lifecycle and creating a task is kit/crud's five routes.
+	// lifecycle and creating a task is kit/rest's five routes.
 	Seed func(*contracts.Task) uuid.UUID
 	// Published is the events the implementation has published so far, in
 	// order. The fake returns what it recorded; the real service's harness

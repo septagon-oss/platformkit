@@ -7,7 +7,7 @@ import (
 )
 
 // The three events this module emits. There are no CRUD events, because this
-// module mounts no crud.Spec: a session is not a resource somebody edits.
+// module mounts no rest.Spec: a session is not a resource somebody edits.
 const (
 	EventLoggedIn    = "auth.logged_in"
 	EventLoggedOut   = "auth.logged_out"

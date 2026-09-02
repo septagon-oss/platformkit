@@ -343,7 +343,7 @@ func (a *API) Permissions() []string {
 }
 
 // EventsExtension is the OpenAPI extension an operation lists the events its
-// handler publishes under. kit/crud writes it when it mounts a Spec, and
+// handler publishes under. kit/rest writes it when it mounts a Spec, and
 // kit/app reads it back to check that some module declared each one — the same
 // recording, the same object and the same gate as the authorization
 // declaration, rather than a second channel to keep in step.

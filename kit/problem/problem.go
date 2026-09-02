@@ -51,7 +51,7 @@ func New(status int, detail string) *Problem {
 }
 
 // New is the constructor for every status; the two below are the only ones with
-// a name of their own, because they are the two kit/crud returns often enough
+// a name of their own, because they are the two kit/rest answers with often enough
 // that spelling the status at each site would be the thing that goes wrong.
 //
 // NotFound is 404: no such thing, or none this tenant may see.

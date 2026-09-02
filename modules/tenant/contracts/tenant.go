@@ -36,7 +36,7 @@ const (
 // It does not embed crud.Base, and that is the whole shape of this module. Base
 // contributes a tenant_id column and row-level security matches on it; a tenant
 // has no tenant to belong to. So the entity is a plain struct, there is no
-// crud.Spec, and the five routes are written by hand in internal/ — which is
+// rest.Spec, and the five routes are written by hand in internal/ — which is
 // what an exception to a generic mechanism should cost.
 type Tenant struct {
 	ID     uuid.UUID `json:"id"`

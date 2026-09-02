@@ -23,6 +23,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/migrations"
 )
@@ -293,7 +294,7 @@ func get(t *testing.T, addr, host, path string) (int, string) {
 	return res.StatusCode, string(body)
 }
 
-// Widget is an entity mounted through kit/crud, for the boot gate below.
+// Widget is an entity mounted through kit/rest, for the boot gate below.
 type Widget struct {
 	crud.Base
 	Name string `json:"name"`
@@ -301,7 +302,7 @@ type Widget struct {
 
 func (Widget) TableName() string { return "widgets" }
 
-// TestBootRefusesAnEventNoModulePromised is the third gate. A crud.Spec
+// TestBootRefusesAnEventNoModulePromised is the third gate. A rest.Spec
 // publishes three events; a module that mounts one and declares none is a
 // module whose events no subscriber could ever be written against, because the
 // manifest is where a subscriber looks.
@@ -313,7 +314,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 			Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
 			Events:      events,
 			Routes: func(api *httpx.API) {
-				crud.Spec[*Widget]{
+				rest.Spec[*Widget]{
 					Module: "shop", Entity: "widget", Path: "/widgets",
 					Read: "widget:read", Write: "widget:write",
 				}.Mount(api)

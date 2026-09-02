@@ -1,15 +1,17 @@
-package crud_test
+package rest_test
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -19,10 +21,60 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 const host = "acme.test"
+
+// Task is a module's entity, written the way a module writes one: a struct in a
+// contracts/ package, an embedded crud.Base, a table name and nothing else. It
+// is declared here as well as in kit/crud's own tests because the two packages
+// are the two halves of the same idea and each has to be exercised without the
+// other.
+type Task struct {
+	crud.Base
+	Title    string     `json:"title" validate:"required" ui:"widget:text"`
+	Status   string     `json:"status,omitempty" enum:"open,done" ui:"widget:select"`
+	Priority int        `json:"priority,omitempty"`
+	Done     bool       `json:"done,omitempty" ui:"hide:list"`
+	Notes    string     `json:"notes,omitempty" gorm:"type:text"`
+	DueAt    *time.Time `json:"dueAt,omitempty"`
+	Secret   string     `json:"-" gorm:"-"`
+}
+
+func (Task) TableName() string { return "rest_tasks" }
+
+// Validate is the optional check. An empty title is 422, not 500.
+func (t *Task) Validate(context.Context) error {
+	if strings.TrimSpace(t.Title) == "" {
+		return errors.New("a task needs a title")
+	}
+	return nil
+}
+
+const ddl = `
+CREATE TABLE rest_tasks (
+	id uuid PRIMARY KEY,
+	tenant_id uuid NOT NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	deleted_at timestamptz,
+	title text NOT NULL,
+	status text NOT NULL DEFAULT 'open',
+	priority int NOT NULL DEFAULT 0,
+	done boolean NOT NULL DEFAULT false,
+	notes text NOT NULL DEFAULT '',
+	due_at timestamptz,
+	UNIQUE (tenant_id, title)
+);
+ALTER TABLE rest_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rest_tasks FORCE ROW LEVEL SECURITY;
+CREATE POLICY rest_tasks_tenant ON rest_tasks
+	USING (platformkit_tenant_match(tenant_id))
+	WITH CHECK (platformkit_tenant_match(tenant_id));`
+
+var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 
 // caller is the three answers httpx.New needs, all of them yes.
 type caller struct{}
@@ -35,7 +87,7 @@ func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.T
 }
 func (caller) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return true, nil }
 
-var spec = crud.Spec[*Task]{
+var spec = rest.Spec[*Task]{
 	Module: "tasks", Entity: "task", Path: "/api/tasks",
 	Read: "task:read", Write: "task:write", SoftDelete: true,
 }
@@ -47,7 +99,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *sql.DB) { return mount(t, s
 
 // mount is mounted for a Spec that is not the plain one, so a case can vary a
 // field and still get the whole chain.
-func mount(t *testing.T, s crud.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
+func mount(t *testing.T, s rest.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
 	t.Helper()
 	admin, app := dbtest.Schema(t)
 	if _, err := admin.ExecContext(t.Context(), ddl); err != nil {
@@ -450,5 +502,26 @@ func TestTwoPatchesOfDifferentFieldsBothSurvive(t *testing.T) {
 	code, body = call(t, router, http.MethodGet, at, "")
 	if code != http.StatusOK || !strings.Contains(body, `"priority":99`) || !strings.Contains(body, `"status":"done"`) {
 		t.Errorf("after two patches the row is %s; both fields should be there", body)
+	}
+}
+
+// TestSpecRefusesToMountNonsense: a Spec that could only produce broken routes
+// fails at the mount site, like every other wiring mistake in this kernel.
+func TestSpecRefusesToMountNonsense(t *testing.T) {
+	for name, spec := range map[string]rest.Spec[*Task]{
+		"no path":        {Module: "tasks", Entity: "task", Path: "api", Read: "task:read", Write: "task:write"},
+		"no event name":  {Module: "Tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write"},
+		"bad permission": {Module: "tasks", Entity: "task", Path: "/api", Read: "read", Write: "task:write"},
+		"immutable nothing": {Module: "tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write",
+			Immutable: []string{"nonesuch"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Error("Mount accepted it")
+				}
+			}()
+			spec.Mount(&httpx.API{})
+		})
 	}
 }

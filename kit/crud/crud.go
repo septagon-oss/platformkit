@@ -1,10 +1,19 @@
 // Package crud is the five operations every tenant-owned resource needs, and
 // the schema a generated screen reads.
 //
-// A module declares one Spec per entity and gets list, create, read, update and
-// delete as declared routes, each with its permission, each emitting the events
-// the manifest promises. What a module writes is the struct and the Spec; what
-// it does not write is a repository, a service, a handler, a DTO or a mapper.
+// A module writes a struct with an embedded Base and gets read, list, create,
+// update and delete, each refusing what row-level security would refuse anyway.
+// What it does not write is a repository, a DTO or a mapper.
+//
+// # This half links no web server
+//
+// A module's contracts/ package imports this one, because the entity is
+// declared there, and a contracts/ package is what every consumer compiles
+// against. So nothing about HTTP is here: the five routes, the PATCH merge and
+// the OpenAPI declarations are kit/rest, which imports this package. The
+// division is the entity and its storage against the entity's projection onto a
+// protocol, and it is what keeps huma, chi and NATS out of the build graph of
+// anything that only wanted to name a Task.
 //
 // # Instantiate with the pointer type
 //
@@ -104,13 +113,9 @@ const (
 // Get reads one row of this tenant. A soft-deleted row is not found.
 func Get[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
 	e := blank[T]()
-	err := tx.DB().Where("id = ? AND deleted_at IS NULL", id).Take(e).Error
-	if err != nil {
+	if err := tx.DB().Where("id = ? AND deleted_at IS NULL", id).Take(e).Error; err != nil {
 		var zero T
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return zero, ErrNotFound
-		}
-		return zero, classify(err)
+		return zero, Classify(err)
 	}
 	return e, nil
 }
@@ -119,7 +124,7 @@ func Get[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
 // The order always ends in the id, so two pages of equal-keyed rows do not
 // overlap or skip.
 func List[T Entity](tx db.Tx[db.Tenant], q Query) ([]T, int64, error) {
-	fields := fieldsOf[T]()
+	fields := Fields[T]()
 	where, args, err := conditions(fields, q.Filter)
 	if err != nil {
 		return nil, 0, err
@@ -146,11 +151,11 @@ func List[T Entity](tx db.Tx[db.Tenant], q Query) ([]T, int64, error) {
 	}
 	var total int64
 	if err := build().Count(&total).Error; err != nil {
-		return nil, 0, classify(err)
+		return nil, 0, Classify(err)
 	}
 	var out []T
 	if err := build().Order(order).Limit(limit).Offset(max(q.Offset, 0)).Find(&out).Error; err != nil {
-		return nil, 0, classify(err)
+		return nil, 0, Classify(err)
 	}
 	return out, total, nil
 }
@@ -179,7 +184,7 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 		return err
 	}
 	if err := tx.DB().Create(e).Error; err != nil {
-		return classify(err)
+		return Classify(err)
 	}
 	return nil
 }
@@ -228,7 +233,7 @@ func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T, columns ...
 	}
 	res := q.Updates(e)
 	if res.Error != nil {
-		return classify(res.Error)
+		return Classify(res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return ErrNotFound
@@ -247,13 +252,19 @@ func Delete[T Entity](tx db.Tx[db.Tenant], id uuid.UUID, soft bool) error {
 		res = res.Delete(e)
 	}
 	if res.Error != nil {
-		return classify(res.Error)
+		return Classify(res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return ErrNotFound
 	}
 	return nil
 }
+
+// Reset clears the four fields the server owns, whatever a caller sent for them.
+// A create route calls it on the body it decoded, so a caller can neither choose
+// an id nor backdate a row; base() is unexported, which is what makes this the
+// only door.
+func Reset[T Entity](e T) { *e.base() = Base{} }
 
 // blank is a new zero entity. T is a pointer type, so new(T) would be a pointer
 // to a pointer; this is the one place the package needs reflection to say
@@ -290,7 +301,7 @@ func conditions(fields []Field, filter map[string]any) ([]string, []any, error) 
 	where := make([]string, 0, len(filter))
 	args := make([]any, 0, len(filter))
 	for name, v := range filter {
-		f, ok := fieldNamed(fields, name)
+		f, ok := FieldNamed(fields, name)
 		if !ok {
 			return nil, nil, fmt.Errorf("%w: there is no field %q to filter on", ErrInvalid, name)
 		}
@@ -310,14 +321,17 @@ func ordering(fields []Field, sort string) (string, error) {
 	if name[0] == '-' {
 		name, dir = name[1:], "DESC"
 	}
-	f, ok := fieldNamed(fields, name)
+	f, ok := FieldNamed(fields, name)
 	if !ok {
 		return "", fmt.Errorf("%w: there is no field %q to sort on", ErrInvalid, sort)
 	}
 	return f.Column + " " + dir + ", id", nil
 }
 
-func fieldNamed(fields []Field, name string) (Field, bool) {
+// FieldNamed is the field with this JSON name, which is the only name a caller
+// ever uses. It is exported for kit/rest, whose PATCH merge and query parsing
+// resolve a caller's field names through the same schema the SQL here does.
+func FieldNamed(fields []Field, name string) (Field, bool) {
 	for _, f := range fields {
 		if f.Name == name {
 			return f, true
@@ -326,11 +340,22 @@ func fieldNamed(fields []Field, name string) (Field, bool) {
 	return Field{}, false
 }
 
-// classify names the one database failure a caller can do something about. A
-// unique violation is the caller's problem; everything else is ours.
-func classify(err error) error {
+// Classify names the two database failures a caller can do something about: a
+// row that is not there, and a unique constraint the write contradicts.
+// Everything else is ours and comes back unchanged, to be logged and answered
+// with a 500.
+//
+// It is exported because a module that writes rows this package cannot still
+// has to answer with the same errors. A tenant carries no tenant_id, so it is
+// not an Entity and modules/tenant writes it by hand; it used to carry a copy
+// of this function, which was a second opinion about what a 409 means waiting
+// to drift.
+func Classify(err error) error {
 	var pg *pgconn.PgError
-	if errors.As(err, &pg) && pg.Code == "23505" {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return ErrNotFound
+	case errors.As(err, &pg) && pg.Code == "23505":
 		return fmt.Errorf("%w: %s", ErrConflict, pg.ConstraintName)
 	}
 	return err

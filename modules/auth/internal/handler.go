@@ -8,10 +8,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
@@ -66,7 +66,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		}
 		if id, ok := sessionOf(ctx); ok {
 			if err := svc.Logout(ctx, tx, id); err != nil {
-				return nil, crud.Fault(err)
+				return nil, rest.Fault(err)
 			}
 		}
 		out := &clearOutput{SetCookie: cookies.Clear()}
@@ -96,7 +96,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		r, _ := httpx.RequestFrom(ctx)
 		identity, err := svc.Identify(ctx, tx, id, ClientOf(r))
 		if err != nil {
-			return nil, crud.Fault(err)
+			return nil, rest.Fault(err)
 		}
 		return &identityOutput{Body: identity}, nil
 	})
@@ -129,7 +129,7 @@ func refusal(err error) error {
 	case errors.Is(err, contracts.ErrTooManyAttempts):
 		return problem.New(http.StatusTooManyRequests, "too many failed attempts for that address; wait and try again")
 	}
-	return crud.Fault(err)
+	return rest.Fault(err)
 }
 
 // transaction is the request's, or a 503 saying why there is none.

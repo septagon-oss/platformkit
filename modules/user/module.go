@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/user/internal"
 )
@@ -25,7 +26,7 @@ type Deps struct{}
 
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads.
-var spec = crud.Spec[*contracts.User]{
+var spec = rest.Spec[*contracts.User]{
 	Module:     "user",
 	Entity:     "user",
 	Path:       "/api/v1/user/users",

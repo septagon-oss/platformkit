@@ -5,9 +5,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 )
 
@@ -18,25 +18,25 @@ import (
 // the state the task is in and each publishes an event: a caller who could
 // write status="resolved" through the generic update would close the loop with
 // no resolution time and tell nobody. spec.Immutable is the other half of that
-// argument — it refuses those fields at the PATCH — and crud.Command is the
+// argument — it refuses those fields at the PATCH — and rest.Command is the
 // part all three commands share, so what is written here is only what each
 // command is.
-func RegisterRoutes(api *httpx.API, spec crud.Spec[*contracts.Task], svc contracts.Service) {
-	crud.Command(api, spec, "assign",
+func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.Task], svc contracts.Service) {
+	rest.Command(api, spec, "assign",
 		"Assign a task", "Makes somebody responsible, and acknowledges an open task. Assigning the same person again changes nothing.",
 		[]string{contracts.EventAssigned},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in assignBody) (*contracts.Task, error) {
 			return svc.Assign(ctx, tx, id, in.AssigneeID)
 		})
 
-	crud.Command(api, spec, "resolve",
+	rest.Command(api, spec, "resolve",
 		"Resolve a task", "Closes the loop. Repeating it with the same resolution changes nothing; a different one is refused.",
 		[]string{contracts.EventResolved},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in resolveBody) (*contracts.Task, error) {
 			return svc.Resolve(ctx, tx, id, in.Resolution)
 		})
 
-	crud.Command(api, spec, "check-sla",
+	rest.Command(api, spec, "check-sla",
 		"Check a task's SLA", "Records a breach if the deadline has passed with the task unresolved. Records at most one.",
 		[]string{contracts.EventSLABreached},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Task, error) {

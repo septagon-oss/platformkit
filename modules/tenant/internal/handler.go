@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
@@ -26,7 +27,7 @@ const path = "/api/v1/tenant/tenants"
 
 // RegisterRoutes mounts the five control-plane routes.
 //
-// They are written by hand rather than mounted from a crud.Spec because a
+// They are written by hand rather than mounted from a rest.Spec because a
 // tenant is not a crud.Entity: it carries no tenant_id, so the generic
 // repository — which stamps one from the transaction — has nothing to stamp.
 // That is the whole cost of the exception, and it is five short handlers.
@@ -55,7 +56,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 				out.Body.Items, out.Body.Total = items, len(items)
 				return err
 			})
-			return out, crud.Fault(err)
+			return out, rest.Fault(err)
 		})
 
 	httpx.Register(api, op("create", http.MethodPost, path, http.StatusCreated, "Create a tenant",
@@ -69,7 +70,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 				out.Body = t
 				return err
 			})
-			return out, crud.Fault(err)
+			return out, rest.Fault(err)
 		})
 
 	httpx.Register(api, op("read", http.MethodGet, path+"/{id}", 0, "Read a tenant", "", nil),
@@ -81,7 +82,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 				out.Body = t
 				return err
 			})
-			return out, crud.Fault(err)
+			return out, rest.Fault(err)
 		})
 
 	httpx.Register(api, op("suspend", http.MethodPost, path+"/{id}/suspend", 0, "Suspend a tenant",
@@ -103,7 +104,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 					api.InvalidateHost(host)
 				}
 			}
-			return out, crud.Fault(err)
+			return out, rest.Fault(err)
 		})
 
 	httpx.Register(api, op("add-host", http.MethodPost, path+"/{id}/hosts", http.StatusCreated, "Give a tenant another host",
@@ -117,7 +118,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 				out.Body = t
 				return err
 			})
-			return out, crud.Fault(err)
+			return out, rest.Fault(err)
 		})
 }
 

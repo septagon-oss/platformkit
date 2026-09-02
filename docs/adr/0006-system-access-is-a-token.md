@@ -69,9 +69,10 @@ so the kernel opens a system one and hands it to `platformkit bootstrap`.
 
 ## Consequences
 
-- The tenant module's five routes are hand-written rather than a `crud.Spec`,
+- The tenant module's five routes are hand-written rather than a `rest.Spec`,
   because a `crud.Entity` carries a `tenant_id` and a tenant does not. That is
-  what the exception costs, and it is five short handlers.
+  what the exception costs, and it is five short handlers; the errors are still
+  `kit/crud`'s, through `crud.Classify`, so a 404 means the same thing here.
 - `tenants` and `tenant_hosts` are declared exempt from tenant scoping, in the
   comment the convention uses, and they are not unprotected: the policy lets a
   system transaction see everything and an ordinary tenant transaction see

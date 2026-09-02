@@ -19,6 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
@@ -163,7 +164,7 @@ func RegisterOIDCRoutes(api *httpx.API, svc contracts.Service, users contracts.U
 			return nil, problem.New(http.StatusForbidden, "there is no account here for that address")
 		}
 		if err != nil {
-			return nil, crud.Fault(err)
+			return nil, rest.Fault(err)
 		}
 		session, _, err := svc.Open(ctx, tx, user.ID, ClientOf(r))
 		if err != nil {

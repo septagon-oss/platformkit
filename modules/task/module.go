@@ -11,10 +11,10 @@ package task
 import (
 	"time"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
 )
@@ -41,7 +41,7 @@ const sweepEvery = time.Minute
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads. Everything
 // generic about a task is this value; internal/ holds only what is not.
-var spec = crud.Spec[*contracts.Task]{
+var spec = rest.Spec[*contracts.Task]{
 	Module:     "task",
 	Entity:     "task",
 	Path:       "/api/v1/task/tasks",

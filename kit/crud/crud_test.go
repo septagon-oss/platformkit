@@ -12,7 +12,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
-	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -310,12 +309,12 @@ func TestListPagesSortsAndFilters(t *testing.T) {
 }
 
 // TestSchemaIsDerivedFromTheStruct: every tag a module can write, read back.
+// The derivation is the entity's, not a route's, so it is asked for here by
+// type and kit/rest is what gives the answer a name and a path.
 func TestSchemaIsDerivedFromTheStruct(t *testing.T) {
-	spec := crud.Spec[*Task]{Module: "tasks", Entity: "task", Path: "/api/tasks",
-		Read: "task:read", Write: "task:write"}
-	schema := spec.Schema()
+	fields := crud.Fields[*Task]()
 	byName := map[string]crud.Field{}
-	for _, f := range schema.Fields {
+	for _, f := range fields {
 		byName[f.Name] = f
 	}
 
@@ -345,30 +344,6 @@ func TestSchemaIsDerivedFromTheStruct(t *testing.T) {
 			strings.Join(got.Enum, ",") != strings.Join(want.Enum, ",") {
 			t.Errorf("field %s = %+v, want %+v", want.Name, got, want)
 		}
-	}
-	if schema.Module != "tasks" || schema.Entity != "task" || schema.Path != "/api/tasks" {
-		t.Errorf("schema = %+v, want the Spec's own names", schema)
-	}
-}
-
-// TestSpecRefusesToMountNonsense: a Spec that could only produce broken routes
-// fails at the mount site, like every other wiring mistake in this kernel.
-func TestSpecRefusesToMountNonsense(t *testing.T) {
-	for name, spec := range map[string]crud.Spec[*Task]{
-		"no path":        {Module: "tasks", Entity: "task", Path: "api", Read: "task:read", Write: "task:write"},
-		"no event name":  {Module: "Tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write"},
-		"bad permission": {Module: "tasks", Entity: "task", Path: "/api", Read: "read", Write: "task:write"},
-		"immutable nothing": {Module: "tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write",
-			Immutable: []string{"nonesuch"}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			defer func() {
-				if recover() == nil {
-					t.Error("Mount accepted it")
-				}
-			}()
-			spec.Mount(&httpx.API{})
-		})
 	}
 }
 
