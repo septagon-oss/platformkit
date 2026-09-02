@@ -28,6 +28,7 @@ type Config struct {
 	Auth     Auth     `yaml:"auth"`
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
+	Files    Files    `yaml:"files"`
 }
 
 // Server is where the app listens, what host it believes it is reached at, and
@@ -115,6 +116,23 @@ type Audit struct {
 // for an audit trail at all tend to accept.
 const DefaultRetentionDays = 365
 
+// Files is where uploaded bytes go and how large one upload may be: the two
+// things modules/file cannot decide for itself, because a directory is a
+// deployment's disk and a limit is how much of it a deployment is willing to
+// lose to one mistake.
+type Files struct {
+	Dir      string `yaml:"dir"`
+	MaxBytes int64  `yaml:"max_bytes"`
+}
+
+// The defaults. Twenty-five megabytes is what a mail attachment limit taught
+// everybody to expect; the directory is relative, so a laptop needs no absolute
+// path and a container mounts a volume at it.
+const (
+	DefaultFilesDir      = "data/files"
+	DefaultFilesMaxBytes = 25 << 20
+)
+
 // Load reads path, applies the environment overrides, and validates the result.
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
@@ -197,6 +215,15 @@ func Load(path string) (Config, error) {
 	}
 	if c.Audit.RetentionDays < 1 {
 		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; a retention period is a number of days", path, c.Audit.RetentionDays)
+	}
+	if c.Files.Dir == "" {
+		c.Files.Dir = DefaultFilesDir
+	}
+	if c.Files.MaxBytes == 0 {
+		c.Files.MaxBytes = DefaultFilesMaxBytes
+	}
+	if c.Files.MaxBytes < 1 {
+		return Config{}, fmt.Errorf("config %s: files.max_bytes is %d; a limit is a number of bytes", path, c.Files.MaxBytes)
 	}
 	return c, nil
 }

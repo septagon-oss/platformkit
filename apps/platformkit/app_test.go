@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/textproto"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +52,7 @@ const (
 	subPath     = "/api/v1/billing/subscription"
 	contentPath = "/api/v1/content/contents"
 	sitePath    = "/api/v1/site/settings"
+	filesPath   = "/api/v1/file/files"
 	adminEmail  = "root@acme.localhost"
 	adminPass   = "correct horse battery staple"
 )
@@ -62,10 +67,14 @@ func configure(t *testing.T) (string, config.Config) {
 	t.Helper()
 	migrateURL, appURL := dbtest.URLs(t)
 	path := t.TempDir() + "/config.yaml"
+	// The file module keeps its bytes under a directory of this test's own, so
+	// a suite that uploads something leaves nothing behind and two suites
+	// running at once do not share a disk.
 	body := "server:\n  addr: \"" + freeAddr(t) + "\"\n  public_host: \"platformkit.localhost\"\n  docs: true\n" +
 		"database:\n  url: \"" + appURL + "\"\n  migrate_url: \"" + migrateURL + "\"\n" +
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
 		"log:\n  level: \"error\"\n" +
+		"files:\n  dir: \"" + t.TempDir() + "\"\n" +
 		"auth:\n  oidc:\n    issuer: \"\"\n    client_id: \"\"\n    client_secret: \"\"\n    redirect_path: \"\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the config: %v", err)
@@ -197,6 +206,9 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		t.Errorf("the mailbox holds %+v, want the notice addressed to the administrator", sent)
 	}
 
+	// The four modules a product is made of, one round trip each, as the
+	// administrator the bootstrap created.
+	//
 	// Billing: a plan, and the tenant on it. The first period is a trial —
 	// this application serves it before it asks for anything — and the
 	// subscription is a singleton, so there is one to read and no list.
@@ -254,6 +266,30 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if strings.Contains(body, "tagline") || strings.Contains(body, "homeSlug") {
 		t.Errorf("the public site carries what only an administrator asked for:\n%s", body)
 	}
+
+	// File: a kilobyte up, the same kilobyte back, and then gone — the row now
+	// and the bytes once the worker has handled file.deleted, which is the one
+	// thing in this architecture that happens exactly after a commit.
+	const kilobyte = 1024
+	code, body = putFile(t, cfg, admin, filesPath, "notes.txt", "text/plain", strings.Repeat("x", kilobyte))
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s = %d %s, want 201", filesPath, code, body)
+	}
+	fileID := field(t, body, "id")
+	if code, body = do(t, cfg, admin, http.MethodGet, acmeHost, filesPath+"/"+fileID+"/content", ""); code != http.StatusOK ||
+		len(body) != kilobyte {
+		t.Fatalf("the download = %d, %d bytes, want the kilobyte back", code, len(body))
+	}
+	if got := blobs(t, cfg); got != 1 {
+		t.Fatalf("the storage holds %d blobs, want the one that was uploaded", got)
+	}
+	if code, body = do(t, cfg, admin, http.MethodDelete, acmeHost, filesPath+"/"+fileID, ""); code != http.StatusNoContent {
+		t.Fatalf("DELETE %s = %d %s, want 204", filesPath, code, body)
+	}
+	if code, _ = do(t, cfg, admin, http.MethodGet, acmeHost, filesPath+"/"+fileID+"/content", ""); code != http.StatusNotFound {
+		t.Errorf("the deleted file's content = %d, want 404", code)
+	}
+	eventually(t, "the worker to remove the bytes behind a deleted file", func() bool { return blobs(t, cfg) == 0 })
 
 	// A second tenant, through the control-plane API, as the administrator of
 	// the first. Acme is the operator's own tenant — the bootstrap created it —
@@ -824,4 +860,58 @@ func field(t *testing.T, body, name string) string {
 		t.Fatalf("no %s in %s", name, body)
 	}
 	return s
+}
+
+// putFile uploads one multipart form with one file part in it, which is the
+// shape the file module's upload route takes: the bytes are streamed to storage
+// as they arrive, so there is no JSON body anywhere in this.
+func putFile(t *testing.T, cfg config.Config, client *http.Client, path, name, contentType, body string) (int, string) {
+	t.Helper()
+	var form bytes.Buffer
+	w := multipart.NewWriter(&form)
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", `form-data; name="file"; filename="`+name+`"`)
+	header.Set("Content-Type", contentType)
+	part, err := w.CreatePart(header)
+	if err != nil {
+		t.Fatalf("build the form: %v", err)
+	}
+	if _, err := part.Write([]byte(body)); err != nil {
+		t.Fatalf("write the part: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close the form: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://"+cfg.Server.Addr+path, &form)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Host = acmeHost
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer res.Body.Close()
+	out, _ := io.ReadAll(res.Body)
+	return res.StatusCode, string(out)
+}
+
+// blobs is how many files are under the directory this installation stores
+// uploads in. It is the only way to see that the bytes went, because nothing in
+// the API answers for them once the row is gone.
+func blobs(t *testing.T, cfg config.Config) int {
+	t.Helper()
+	count := 0
+	err := filepath.WalkDir(cfg.Files.Dir, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		count++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", cfg.Files.Dir, err)
+	}
+	return count
 }

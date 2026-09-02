@@ -1,0 +1,291 @@
+package internal
+
+import (
+	"context"
+	"errors"
+	"io"
+	"mime"
+	"net/http"
+	"strconv"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/file/contracts"
+)
+
+// The two paths: the collection an administrator works with, and the one route
+// a visitor reaches. They are siblings rather than one path with two
+// authorizations, because a route is guarded by what it is and not by who asks.
+const (
+	path       = "/api/v1/file/files"
+	publicPath = "/api/v1/file/public/{id}"
+)
+
+var faults = []int{
+	http.StatusNotFound, http.StatusRequestEntityTooLarge,
+	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
+}
+
+// RegisterRoutes mounts the six routes a file has.
+//
+// There is no rest.Spec, and the reason is one sentence: a Spec's create route
+// takes a JSON body, and a file arrives as bytes. The list and the read below
+// are the two Spec routes that would have made sense, written out; the create
+// is a multipart upload, the update does not exist because a file's bytes are
+// what they are, and the delete has an event to publish that the generic one
+// could not carry.
+func RegisterRoutes(api *httpx.API, svc contracts.Service) {
+	httpx.Register(api, huma.Operation{
+		OperationID: "file-file-list",
+		Method:      http.MethodGet,
+		Path:        path,
+		Summary:     "List files",
+		Description: "The tenant's files, newest first. The bytes are at /{id}/content.",
+		Tags:        []string{"file"},
+		Errors:      faults,
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *listInput) (*rest.Page[*contracts.File], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			items, total, err := crud.List[*contracts.File](tx, crud.Query{Limit: in.Limit, Offset: in.Offset, Sort: in.Sort})
+			if err != nil {
+				return nil, fault(err)
+			}
+			out := &rest.Page[*contracts.File]{}
+			out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, in.Limit, in.Offset
+			return out, nil
+		})
+
+	httpx.Register(api, huma.Operation{
+		OperationID: "file-file-read",
+		Method:      http.MethodGet,
+		Path:        path + "/{id}",
+		Summary:     "Read a file's record",
+		Description: "What is known about the file. The bytes are at /{id}/content.",
+		Tags:        []string{"file"},
+		Errors:      faults,
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *idInput) (*rest.Item[*contracts.File], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			f, err := crud.Get[*contracts.File](tx, in.ID)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.File]{Body: f}, nil
+		})
+
+	httpx.Register(api, huma.Operation{
+		OperationID:   "file-file-upload",
+		Method:        http.MethodPost,
+		Path:          path,
+		Summary:       "Upload a file",
+		Description:   "A multipart form with one file part. The bytes are streamed to storage as they arrive, hashed and counted on the way past; an upload larger than this deployment accepts is refused with 413 and nothing is kept.",
+		Tags:          []string{"file"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        faults,
+		Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventUploaded}},
+		// Declared by hand, with no schema, which is what keeps huma from
+		// reading the body: a schema here would make it decode the whole form
+		// into memory before this handler ran, and the point of the handler is
+		// that nothing is ever held.
+		RequestBody: &huma.RequestBody{
+			Required: true,
+			Content:  map[string]*huma.MediaType{"multipart/form-data": {}},
+		},
+	}, httpx.Permission(contracts.PermissionFileManage),
+		func(ctx context.Context, in *uploadInput) (*rest.Item[*contracts.File], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			up, err := arriving(ctx)
+			if err != nil {
+				return nil, err
+			}
+			up.Visibility = in.Visibility
+			f, err := svc.Upload(ctx, tx, up)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.File]{Body: f}, nil
+		})
+
+	httpx.Register(api, huma.Operation{
+		OperationID: "file-file-content",
+		Method:      http.MethodGet,
+		Path:        path + "/{id}/content",
+		Summary:     "Download a file",
+		Description: "The bytes, whatever the file's visibility. The public door is at " + publicPath + ".",
+		Tags:        []string{"file"},
+		Errors:      faults,
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *idInput) (*huma.StreamResponse, error) {
+			return download(ctx, svc, in.ID, false)
+		})
+
+	// The public door. It is Public because that is what a public file is, and
+	// it is safe to be because the tenant still comes from the request's own
+	// host, the query still runs under that tenant's policy, and a file that is
+	// not public is not found rather than forbidden.
+	httpx.Register(api, huma.Operation{
+		OperationID: "file-file-public",
+		Method:      http.MethodGet,
+		Path:        publicPath,
+		Summary:     "Download a public file",
+		Description: "The bytes of a file whose visibility is public. Anything else is a 404, so an anonymous caller learns nothing about what this tenant has.",
+		Tags:        []string{"file"},
+		Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
+	}, httpx.Public(), func(ctx context.Context, in *idInput) (*huma.StreamResponse, error) {
+		if _, ok := tenancy.FromContext(ctx); !ok {
+			return nil, problem.NotFound("no site is served at this host")
+		}
+		return download(ctx, svc, in.ID, true)
+	})
+
+	httpx.Register(api, huma.Operation{
+		OperationID:   "file-file-delete",
+		Method:        http.MethodDelete,
+		Path:          path + "/{id}",
+		Summary:       "Delete a file",
+		Description:   "Removes the record now and the bytes once this commits: a blob delete cannot be rolled back, so it is done by whoever handles file.deleted.",
+		Tags:          []string{"file"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        faults,
+		Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventDeleted}},
+	}, httpx.Permission(contracts.PermissionFileManage),
+		func(ctx context.Context, in *idInput) (*struct{}, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := svc.Delete(ctx, tx, in.ID); err != nil {
+				return nil, fault(err)
+			}
+			return nil, nil
+		})
+}
+
+// arriving is the file part of a multipart request, as a reader nothing has
+// consumed yet.
+//
+// It reads the request straight off kit/httpx rather than through huma's own
+// multipart decoding, and that is the whole reason the operation above declares
+// its body by hand: huma's decoder parses the form before the handler runs,
+// which spools every upload past a few kilobytes to a temporary file. Streaming
+// means the bytes go to storage once, and an upload past the limit is refused
+// having written only as much as the limit.
+func arriving(ctx context.Context) (contracts.Upload, error) {
+	r, ok := httpx.RequestFrom(ctx)
+	if !ok {
+		return contracts.Upload{}, problem.New(http.StatusServiceUnavailable, "this request cannot be read")
+	}
+	parts, err := r.MultipartReader()
+	if err != nil {
+		return contracts.Upload{}, problem.New(http.StatusUnprocessableEntity,
+			"an upload is a multipart form with one file part: "+err.Error())
+	}
+	for {
+		part, err := parts.NextPart()
+		if errors.Is(err, io.EOF) {
+			return contracts.Upload{}, problem.New(http.StatusUnprocessableEntity, "this form carries no file")
+		}
+		if err != nil {
+			return contracts.Upload{}, problem.New(http.StatusUnprocessableEntity, "this form cannot be read: "+err.Error())
+		}
+		if part.FileName() == "" {
+			// A field rather than a file. Everything this route needs besides
+			// the bytes is a query parameter, so there is nothing to read here.
+			_ = part.Close()
+			continue
+		}
+		// Declared is -1 and not the request's Content-Length: that is the
+		// whole form, boundaries included, and a part declares no length of
+		// its own. It is the honest answer, and it is why Storage.Put has to
+		// accept one — an implementation that needs a length up front cannot
+		// get it from a stream, and pretending otherwise would hand an object
+		// store a number that is wrong by the size of a MIME header.
+		return contracts.Upload{
+			Name: part.FileName(), ContentType: part.Header.Get("Content-Type"),
+			Declared: -1, Body: part,
+		}, nil
+	}
+}
+
+// download answers with the bytes. The response is a stream rather than a body
+// huma marshals, so a large file is not copied through a buffer on its way out;
+// kit/httpx holds a response until the transaction commits and gives up on that
+// past two megabytes, which is where a download stops being something worth
+// holding.
+func download(ctx context.Context, svc contracts.Service, id uuid.UUID, anonymous bool) (*huma.StreamResponse, error) {
+	tx, err := transaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f, body, err := svc.Open(ctx, tx, id, anonymous)
+	if err != nil {
+		return nil, fault(err)
+	}
+	return &huma.StreamResponse{Body: func(hctx huma.Context) {
+		defer body.Close()
+		hctx.SetHeader("Content-Type", f.ContentType)
+		hctx.SetHeader("Content-Length", strconv.FormatInt(f.Size, 10))
+		// The stored type is what the upload declared, so a browser must not be
+		// allowed to decide it is something more interesting.
+		hctx.SetHeader("X-Content-Type-Options", "nosniff")
+		if disposition := mime.FormatMediaType("inline", map[string]string{"filename": f.Name}); disposition != "" {
+			hctx.SetHeader("Content-Disposition", disposition)
+		}
+		hctx.SetStatus(http.StatusOK)
+		_, _ = io.Copy(hctx.BodyWriter(), body)
+	}}, nil
+}
+
+// transaction is the request's, or a 503 saying why there is none.
+func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
+	tx, ok := httpx.TxFrom(ctx)
+	if !ok {
+		return tx, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
+	}
+	return tx, nil
+}
+
+// fault is kit/rest's mapping plus the one status this module has that nothing
+// else does: an upload past the limit is 413, which is the only answer a caller
+// can act on by sending something smaller.
+func fault(err error) error {
+	if errors.Is(err, contracts.ErrTooLarge) {
+		return problem.New(http.StatusRequestEntityTooLarge, err.Error())
+	}
+	return rest.Fault(err)
+}
+
+type idInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"The file's id"`
+}
+
+type listInput struct {
+	Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`
+	Offset int    `query:"offset" minimum:"0" doc:"Rows to skip"`
+	Sort   string `query:"sort" doc:"A field name, or a field name prefixed with - for descending"`
+}
+
+// uploadInput is everything about an upload that is not the bytes. Visibility
+// is a query parameter and not a form field, because a form field can arrive
+// after the file and this handler streams the file the moment it reaches it: a
+// decision that arrived too late to be applied is worse than one that has to be
+// made in the URL.
+type uploadInput struct {
+	Visibility string `query:"visibility" enum:"private,public" default:"private" doc:"Who may read the file once it is stored"`
+}

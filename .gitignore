@@ -15,6 +15,10 @@ e2e/node_modules/
 e2e/test-results/
 e2e/playwright-report/
 
+# Uploaded bytes. config.example.yaml puts them here, so a laptop needs no
+# absolute path and a container mounts a volume at it; see kit/config.Files.
+/data/
+
 # Scratch space
 .tmp/
 
