@@ -29,6 +29,10 @@ type Fake struct {
 	// invites somebody through the same interface the real module takes.
 	Users contracts.Users
 
+	// Operator are the permissions the operator's own administrator is granted
+	// by name, the same list the application hands the real module.
+	Operator []string
+
 	limiter *contracts.Limiter
 
 	mu        sync.Mutex
@@ -150,12 +154,18 @@ func (f *Fake) Logout(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) error
 	return nil
 }
 
-// SeedRoles mirrors internal.Service.SeedRoles.
-func (f *Fake) SeedRoles(context.Context, db.Tx[db.System], uuid.UUID) error {
+// SeedRoles mirrors internal.Service.SeedRoles, Operator and all: the fake is
+// held to the same rule, so a consumer testing against it sees the same refusal
+// the real service gives.
+func (f *Fake) SeedRoles(_ context.Context, _ db.Tx[db.System], _ uuid.UUID, operator bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	admin := []string{contracts.Wildcard}
+	if operator {
+		admin = append(admin, f.Operator...)
+	}
 	for name, permissions := range map[string][]string{
-		contracts.RoleAdmin:  {contracts.Wildcard},
+		contracts.RoleAdmin:  admin,
 		contracts.RoleMember: {},
 	} {
 		if _, taken := f.roles[name]; !taken {

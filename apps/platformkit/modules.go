@@ -69,7 +69,15 @@ func compose(cfg config.Config) composition {
 	})
 
 	auths, authModule := auth.Module(auth.Deps{
-		Users:      users,
+		Users: users,
+		// The permissions the operator's own administrator is granted by name.
+		// The auth module cannot name tenant:manage — it is composed before the
+		// module that declares it, and naming another module's manifest is gate
+		// 6 — so the application, which names every module by definition, says
+		// which permissions belong to the installation rather than to a
+		// customer. kit/app refuses to start if a route and a manifest disagree
+		// about that, so a name that drifts is a boot failure and not a hole.
+		Operator:   []string{tenantcontracts.PermissionTenantManage},
 		OIDC:       auth.OIDC(cfg.Auth.OIDC),
 		PublicHost: cfg.Server.PublicHost,
 	})
@@ -135,6 +143,9 @@ func (r recipients) Email(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.
 // application crosses a tenant boundary on purpose.
 func seedRoles(a authcontracts.Auth) tenantcontracts.Hook {
 	return func(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
-		return a.SeedRoles(ctx, tx, t.ID)
+		// The operator's own tenant gets the control plane's permission by
+		// name; every customer's gets the wildcard, which is everything in
+		// their own tenant and nothing outside it.
+		return a.SeedRoles(ctx, tx, t.ID, t.Operator)
 	}
 }

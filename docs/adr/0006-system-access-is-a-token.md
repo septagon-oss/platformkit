@@ -44,10 +44,16 @@ Three things follow, and each is a property rather than a convention.
 1. **The set of modules that cross tenants is one grep.** `grep -rn
    'SystemToken()' modules/` lists them, next to the manifest a reviewer is
    already reading. Today it is one line, in `modules/tenant`.
-2. **A handler holds no ambient authority.** The token is obtained at
-   registration and closed over by the handlers that need it. There is no way
-   to ask for one from inside a request, so a module that did not take it at
-   wiring time cannot acquire it later.
+2. **A handler holds no ambient authority.** The token is obtained where a
+   reviewer sees it — in `Module.Routes`, next to the manifest — and closed over
+   by the handlers that need it. `(*API).SystemToken()` is a method on a value
+   the kernel passes to `Routes`, so the door is the wiring moment and the grep
+   is the whole list. It is not a claim that the capability is unreachable
+   afterwards: a module that kept the `*httpx.API` in a field could call the
+   method later, and the first version of this ADR said "cannot acquire it
+   later", which was an overclaim. What is true is the property this design was
+   chosen for — every module that crosses tenants writes one line where the
+   manifest is read.
 3. **The transaction is a second one, and says so.** A request that reached a
    control-plane route has already opened its tenant transaction — recognising
    the caller was a query in it — and `db.RunSystem` refuses to widen a tenant
@@ -66,6 +72,45 @@ transaction that created it.
 `kit/app.Bootstrap` is the same decision at the other end of the life cycle: an
 installation with no tenants has no tenant transaction to do its first write in,
 so the kernel opens a system one and hands it to `platformkit bootstrap`.
+
+## The capability is not the authorization
+
+The token says a module may open a cross-tenant transaction. It says nothing
+about who may make the request that reaches the handler holding it, and the two
+were confused once, in this repository, with a real consequence.
+
+The control plane is served on every tenant's host, because an installation has
+no host of its own — only its customers'. So `POST /api/v1/tenant/tenants` is
+reachable at `acme.example.com` and at `globex.example.com` alike, and what was
+supposed to keep it safe was the permission `tenant:manage`. It did not: a
+permission is a string in a tenant's own `roles` table, and every tenant's
+`admin` role holds `'*'` by construction. E3.1's review signed in as a second
+customer's administrator and listed, created and suspended tenants.
+
+So a route may now declare `httpx.OperatorPermission` instead of
+`httpx.Permission`, and the permission is declared `Operator: true` in the
+manifest that defines it. Three things follow, and the first is the one that
+closes the hole:
+
+1. **The kernel refuses the request before it asks anything.** `tenancy.Tenant`
+   carries `Operator`, one row in `tenants` has it — the one `platformkit
+   bootstrap` created — and the authorize middleware answers 403 to an operator
+   grant on any other tenant. No roles table is consulted, so no way of writing
+   a role changes the answer.
+2. **The wildcard stops answering for it.** `auth.Grants` lets `'*'` satisfy an
+   ordinary permission and never an operator one: the role has to name it.
+   `'*'` means "everything in this tenant", and the control plane is not in this
+   tenant.
+3. **The two declarations have to agree.** `kit/app` refuses to start when a
+   route and the manifest that defines its permission disagree about the kind,
+   naming both. A control-plane route that declared the ordinary kind is
+   indistinguishable from a working one until somebody tries it from the wrong
+   tenant, which is precisely how this was missed.
+
+The `Operator` column is written by the bootstrap and by nothing else.
+`NewTenant.Operator` is `json:"-"`, so the create route has no field to fill in
+however the body is written, and a unique partial index says there is at most
+one.
 
 ## Consequences
 

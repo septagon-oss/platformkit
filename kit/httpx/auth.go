@@ -8,6 +8,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // AuthExtension is the OpenAPI extension an operation's declaration is written
@@ -17,13 +19,19 @@ import (
 const AuthExtension = "x-platformkit-auth"
 
 // authKind is the closed set of things an operation can say about who may call
-// it. There are three, and Auth has one constructor for each.
+// it. There are four, and Auth has one constructor for each.
 type authKind string
 
 const (
 	kindPermission authKind = "permission"
-	kindPublic     authKind = "public"
-	kindSignedIn   authKind = "signed_in"
+	// kindOperator is a permission only the operator's own tenant may exercise
+	// at all. It is a kind of its own rather than a flag inside kindPermission
+	// so that the declaration a reviewer reads in /openapi.json says which of
+	// the two a route is, and so that a route and a manifest disagreeing about
+	// it is a startup failure rather than a silent widening.
+	kindOperator authKind = "operator_permission"
+	kindPublic   authKind = "public"
+	kindSignedIn authKind = "signed_in"
 )
 
 // permissionToken is the grammar of a permission: "<resource>:<action>", both
@@ -57,6 +65,24 @@ func Permission(token string) Auth {
 	return Auth{kind: kindPermission, permission: token}
 }
 
+// OperatorPermission requires the caller to hold token, and requires the tenant
+// the request resolved to be the operator's own.
+//
+// It exists because the control plane is served on every tenant's host — an
+// installation has no host of its own, only its customers' — so a permission
+// alone is not enough to guard it. A customer's administrator holds the
+// wildcard in their own tenant, and without this declaration that wildcard
+// would list, create and suspend the tenants beside them. The kernel refuses
+// such a route on an ordinary tenant before it asks the Authorizer anything,
+// and the Authorizer refuses to let a wildcard satisfy one: the role has to
+// name it.
+func OperatorPermission(token string) Auth {
+	if !ValidPermission(token) {
+		panic(fmt.Sprintf("httpx.OperatorPermission(%q): a permission is %q, both lower-case identifiers", token, "<resource>:<action>"))
+	}
+	return Auth{kind: kindOperator, permission: token}
+}
+
 // Public admits every caller, signed in or not. It is the declaration that has
 // to be justified in review.
 func Public() Auth { return Auth{kind: kindPublic} }
@@ -83,11 +109,23 @@ func (a Auth) declared() bool {
 	switch a.kind {
 	case kindPublic, kindSignedIn:
 		return true
-	case kindPermission:
+	case kindPermission, kindOperator:
 		return ValidPermission(a.permission)
 	default:
 		return false
 	}
+}
+
+// grant is the permission question this declaration asks, and whether it asks
+// one at all. Public and SignedIn ask none.
+func (a Auth) grant() (tenancy.Grant, bool) {
+	switch a.kind {
+	case kindPermission:
+		return tenancy.Grant{Permission: a.permission}, true
+	case kindOperator:
+		return tenancy.Grant{Permission: a.permission, Operator: true}, true
+	}
+	return tenancy.Grant{}, false
 }
 
 // declarationOf returns the authorization op declares, and whether it declares

@@ -39,7 +39,9 @@ func (everything) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenan
 	return acme, nil
 }
 
-func (everything) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return true, nil }
+func (everything) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
+	return true, nil
+}
 
 func mount(t *testing.T) chi.Router {
 	t.Helper()

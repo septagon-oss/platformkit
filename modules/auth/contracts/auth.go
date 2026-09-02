@@ -155,7 +155,13 @@ type Service interface {
 	// SeedRoles installs admin and member in a tenant that has just been
 	// created. It takes a system transaction because it is called from the one
 	// that creates the tenant, as a hook the tenant module was handed.
-	SeedRoles(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID) error
+	//
+	// operator says the tenant is the installation's own, and it is the one
+	// thing that differs: the operator's admin is granted the control plane's
+	// permission by name as well as the wildcard, because a wildcard does not
+	// satisfy an operator grant. Every other tenant's admin gets the wildcard
+	// and nothing else, which is "everything in this tenant".
+	SeedRoles(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, operator bool) error
 
 	// Permissions is the union of what these roles grant in this tenant. A role
 	// nobody defined grants nothing rather than failing: a user carrying a role
@@ -163,12 +169,21 @@ type Service interface {
 	Permissions(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]string, error)
 }
 
-// Grants reports whether a set of permissions includes one. It is a function
-// rather than a method so that the rule — Wildcard grants everything, and
-// otherwise a permission is granted by naming it — is written once and is the
+// Grants reports whether a set of permissions satisfies a grant. It is a
+// function rather than a method so that the rule is written once and is the
 // same rule in the authorizer, in a test and in a screen.
-func Grants(held []string, permission string) bool {
-	return slices.Contains(held, Wildcard) || slices.Contains(held, permission)
+//
+// The rule has two halves. An ordinary permission is granted by the wildcard or
+// by naming it. An operator permission is granted only by naming it, and that
+// exception is the point: Wildcard means "everything in this tenant", and the
+// control plane is not in this tenant — it is every tenant. A customer's
+// administrator holds the wildcard by construction (SeedRoles), so letting it
+// answer for an operator permission would hand every customer the installation.
+func Grants(held []string, g tenancy.Grant) bool {
+	if g.Operator {
+		return slices.Contains(held, g.Permission)
+	}
+	return slices.Contains(held, Wildcard) || slices.Contains(held, g.Permission)
 }
 
 // Auth is the whole capability main is wired with: the lifecycle in Service,
@@ -184,7 +199,7 @@ type Auth interface {
 	Service
 
 	// Allowed is httpx.Authorizer.
-	Allowed(ctx context.Context, tenant tenancy.Tenant, permission string) (bool, error)
+	Allowed(ctx context.Context, tenant tenancy.Tenant, grant tenancy.Grant) (bool, error)
 
 	// Authenticate is httpx.Options.Authenticate: the query that turns the
 	// session cookie into the caller, inside the tenant's own transaction.

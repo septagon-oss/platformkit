@@ -71,12 +71,22 @@ type Module struct {
 	Routes func(api *httpx.API)
 }
 
-// Permission is one thing a role can be granted. It is a struct of one field
-// rather than a string because E3's roles screen needs somewhere to hang what a
-// permission means, and a description nothing reads yet is a description that
-// would go stale — so the field is not here until something renders it.
+// Permission is one thing a role can be granted.
 type Permission struct {
 	Key string
+
+	// Operator says this permission belongs to the installation rather than to
+	// a customer: only the operator's own tenant may exercise it at all, and no
+	// wildcard satisfies it — a role has to name it.
+	//
+	// It is a field on the manifest as well as a route declaration
+	// (httpx.OperatorPermission) because the two have to agree, and a check
+	// needs both sides to read. kit/app refuses to start when a route and the
+	// manifest that defines its permission disagree, naming both: a control
+	// plane route that declared the ordinary kind would be reachable by every
+	// customer's administrator, and an ordinary route that declared this one
+	// would be reachable by nobody but the operator.
+	Operator bool
 }
 
 // NavEntry is one link in the application's navigation, shown to a caller who

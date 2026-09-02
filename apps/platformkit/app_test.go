@@ -194,11 +194,27 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	}
 
 	// A second tenant, through the control-plane API, as the administrator of
-	// the first: tenant:manage is the permission that reaches every tenant.
+	// the first. Acme is the operator's own tenant — the bootstrap created it —
+	// so its admin role names tenant:manage and the kernel lets the request
+	// through. That is the only tenant in the installation where this works.
+	//
+	// A body that asks to be an operator is refused outright, and that is the
+	// schema rather than a check somebody wrote: NewTenant.Operator is
+	// json:"-", so the field is in no request body and huma refuses the
+	// property it does not know.
+	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, tenantPath,
+		`{"slug":"evil","name":"Evil","host":"evil.localhost","operator":true}`)
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "operator") {
+		t.Fatalf("POST %s with an operator flag = %d %s, want 422 naming it", tenantPath, code, body)
+	}
+
 	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, tenantPath,
 		`{"slug":"globex","name":"Globex","host":"`+globexHost+`"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST %s = %d %s, want 201", tenantPath, code, body)
+	}
+	if strings.Contains(body, `"operator":true`) {
+		t.Fatalf("POST %s made an operator tenant: %s", tenantPath, body)
 	}
 	globexID := uuid.MustParse(field(t, body, "id"))
 
@@ -216,6 +232,38 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if code, body = do(t, cfg, other, http.MethodGet, globexHost, tasksPath, ""); code != http.StatusOK ||
 		!strings.Contains(body, `"total":0`) {
 		t.Errorf("GET %s as globex = %d %s, want an empty list", tasksPath, code, body)
+	}
+
+	// The probe E3.1's review ran, inverted. It signed in as the second
+	// tenant's administrator and listed, created and suspended tenants — with
+	// the wildcard that tenant's admin role holds by construction, at that
+	// tenant's own host, because the control plane is served at every host and
+	// tenant:manage was an ordinary permission a wildcard satisfied.
+	//
+	// Globex's administrator holds the same wildcard now. Every one of these is
+	// a 403 before the roles table is consulted at all: the permission is
+	// declared Operator, and Globex is not the operator's tenant.
+	for _, probe := range []struct{ method, path, body string }{
+		{http.MethodGet, tenantPath, ""},
+		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/suspend", ""},
+		{http.MethodGet, tenantPath + "/" + globexID.String(), ""},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
+	} {
+		code, body = do(t, cfg, other, probe.method, globexHost, probe.path, probe.body)
+		if code != http.StatusForbidden {
+			t.Errorf("%s %s as globex's admin = %d %s, want 403", probe.method, probe.path, code, body)
+		}
+		if !strings.Contains(body, "AUTH_NOT_OPERATOR") {
+			t.Errorf("%s %s was refused for the wrong reason: %s", probe.method, probe.path, body)
+		}
+	}
+	// And a role in a non-operator tenant that names the permission outright is
+	// still refused: the kernel never asks.
+	grant(t, cfg, globexID, "root@globex.localhost")
+	other = signIn(t, cfg, globexHost, "root@globex.localhost", adminPass)
+	if code, body = do(t, cfg, other, http.MethodGet, globexHost, tenantPath, ""); code != http.StatusForbidden {
+		t.Errorf("a globex role naming tenant:manage = %d %s, want 403", code, body)
 	}
 
 	// A host nobody serves is a 404, not a 500 and not somebody's data.
@@ -288,33 +336,49 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 		}
 		switch read.Kind {
 		case "public", "signed_in":
-		case "permission":
+		case "permission", "operator_permission":
 			if read.Permission == "" {
 				t.Errorf("%s %s requires a permission with no name", op.Method, op.Path)
 			}
 		default:
-			t.Errorf("%s %s declares %q, which is not one of the three", op.Method, op.Path, read.Kind)
+			t.Errorf("%s %s declares %q, which is not one of the four", op.Method, op.Path, read.Kind)
 		}
 		kinds[read.Kind]++
 	}
 	// Every kind is used, which is what makes the closed set worth having.
-	for _, kind := range []string{"public", "signed_in", "permission"} {
+	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission"} {
 		if kinds[kind] == 0 {
 			t.Errorf("no operation declares %q", kind)
 		}
 	}
-	// And every permission a route asks for is defined by some module, which is
-	// the other half of the gate.
+	// And every permission a route asks for is defined by some module, with the
+	// same kind on both sides. The kind is the half that matters most: a
+	// control-plane route declared as an ordinary permission is a route every
+	// customer's administrator reaches through the wildcard they hold in their
+	// own tenant, which is exactly the hole E3.1's review found.
+	operatorOf := map[string]bool{}
 	defined := map[string]bool{}
 	for _, m := range c.modules {
 		for _, p := range m.Permissions {
-			defined[p.Key] = true
+			defined[p.Key], operatorOf[p.Key] = true, p.Operator
 		}
 	}
-	for _, p := range api.Permissions() {
-		if !defined[p] {
-			t.Errorf("permission %q guards a route and is defined by no module", p)
+	operators := 0
+	for _, g := range api.Required() {
+		switch {
+		case !defined[g.Permission]:
+			t.Errorf("permission %q guards a route and is defined by no module", g.Permission)
+		case operatorOf[g.Permission] != g.Operator:
+			t.Errorf("permission %q is operator=%v on its route and operator=%v in its manifest",
+				g.Permission, g.Operator, operatorOf[g.Permission])
 		}
+		if g.Operator {
+			operators++
+		}
+	}
+	// One route kind is only worth having if something declares it.
+	if operators == 0 {
+		t.Error("no route declares an operator permission; the control plane is guarded by an ordinary one")
 	}
 }
 
@@ -506,6 +570,36 @@ func provision(t *testing.T, cfg config.Config, tenantID uuid.UUID, email string
 	})
 	if err != nil {
 		t.Fatalf("provision %s: %v", email, err)
+	}
+}
+
+// grant writes a role in a tenant that names the control plane's permission
+// outright, and puts the user in it: the strongest thing a customer with
+// database access to their own rows could do for themselves.
+//
+// It is the case the operator flag exists for. The wildcard not satisfying an
+// operator grant is one refusal; this is the other, and it is the kernel's — no
+// role in this tenant is ever asked about, because the tenant is not the
+// operator's.
+func grant(t *testing.T, cfg config.Config, tenantID uuid.UUID, email string) {
+	t.Helper()
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+	err = dbtest.System(t.Context(), conn, func(_ context.Context, tx db.Tx[db.System]) error {
+		if err := tx.DB().Exec(
+			`INSERT INTO roles (tenant_id, name, permissions) VALUES (?, 'operator', ARRAY['tenant:manage'])`,
+			tenantID).Error; err != nil {
+			return err
+		}
+		return tx.DB().Exec(
+			`UPDATE users SET roles = ARRAY['admin','operator'] WHERE tenant_id = ? AND email = ?`,
+			tenantID, email).Error
+	})
+	if err != nil {
+		t.Fatalf("grant tenant:manage in %s: %v", tenantID, err)
 	}
 }
 

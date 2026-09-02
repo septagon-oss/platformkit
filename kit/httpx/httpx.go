@@ -73,13 +73,20 @@ type TenantLoader interface {
 	ByHost(ctx context.Context, tx db.Tx[db.System], host string) (tenancy.Tenant, error)
 }
 
-// Authorizer decides whether the caller of a request may exercise a permission
-// in a tenant. The auth module implements it; a test implements it in three
-// lines. It is the only thing this package knows about roles. It runs inside
-// the request, so an implementation that needs the tenant's own rows reaches
-// them with TxFrom.
+// Authorizer decides whether the caller of a request may exercise a grant in a
+// tenant. The auth module implements it; a test implements it in three lines.
+// It is the only thing this package knows about roles. It runs inside the
+// request, so an implementation that needs the tenant's own rows reaches them
+// with TxFrom.
+//
+// The grant carries the operator flag as well as the permission, and the
+// implementation is held to it: a wildcard must not satisfy an operator grant,
+// because "may do everything in my tenant" is not "may do everything to every
+// tenant". This package has already refused an operator grant on a tenant that
+// is not the operator's, so an implementation is answering the narrower
+// question of whether the caller's roles name it.
 type Authorizer interface {
-	Allowed(ctx context.Context, tenant tenancy.Tenant, permission string) (bool, error)
+	Allowed(ctx context.Context, tenant tenancy.Tenant, grant tenancy.Grant) (bool, error)
 }
 
 // Options are the collaborators main chooses for the HTTP layer. Every field
@@ -150,8 +157,9 @@ type API struct {
 	// cold cache under load is one round trip and not one per request.
 	resolving singleflight.Group
 
-	mu  sync.Mutex
-	ops []*huma.Operation
+	mu       sync.Mutex
+	ops      []*huma.Operation
+	declared []tenancy.Grant
 }
 
 // errorShape guards the one package-global huma reads per request.
@@ -324,22 +332,54 @@ func (a *API) ValidateDeclarations() error {
 		len(bad), strings.Join(bad, "\n  "))
 }
 
-// Permissions lists, once each, every permission a recorded operation requires.
-// kit/app checks it against what the modules declare, so a route guarded by a
-// permission nobody defines fails startup instead of denying everyone forever.
-func (a *API) Permissions() []string {
-	seen := map[string]bool{}
-	var out []string
+// Required lists, once each, every grant a recorded operation asks for, with
+// the operator flag the route declared. kit/app checks it against what the
+// modules declare, so a route guarded by a permission nobody defines — or one
+// whose route and manifest disagree about whether it is an operator permission
+// — fails startup instead of denying everyone forever or, worse, letting a
+// customer's wildcard through the control plane.
+func (a *API) Required() []tenancy.Grant {
+	seen := map[tenancy.Grant]bool{}
+	var out []tenancy.Grant
 	for _, op := range a.Recorded() {
 		auth, ok := declarationOf(op)
-		if !ok || auth.kind != kindPermission || seen[auth.permission] {
+		if !ok {
 			continue
 		}
-		seen[auth.permission] = true
-		out = append(out, auth.permission)
+		g, asks := auth.grant()
+		if !asks || seen[g] {
+			continue
+		}
+		seen[g] = true
+		out = append(out, g)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Permission < out[j].Permission })
 	return out
+}
+
+// Declare records every permission the composition defines. kit/app calls it
+// once, from the manifests, before any module registers its routes.
+//
+// It is here rather than in each module's Deps because the modules that need
+// the list — one, the auth module, which refuses a role naming a permission
+// nobody defines — would otherwise have to be handed what every other module
+// declares, and a module that knows the catalogue is a module that knows its
+// neighbours. Module.Routes is given this API, which is the one moment the
+// kernel has the whole list and the module is being wired.
+func (a *API) Declare(grants []tenancy.Grant) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.declared = slices.Clone(grants)
+	sort.Slice(a.declared, func(i, j int) bool { return a.declared[i].Permission < a.declared[j].Permission })
+}
+
+// Permissions is every permission the composition defines, in name order. A
+// module validating a list somebody typed — a role's permissions — asks this
+// rather than each of its neighbours.
+func (a *API) Permissions() []tenancy.Grant {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.declared)
 }
 
 // EventsExtension is the OpenAPI extension an operation lists the events its

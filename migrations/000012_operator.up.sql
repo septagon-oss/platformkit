@@ -1,0 +1,32 @@
+-- The operator's own tenant.
+--
+-- The control plane is served on every tenant's host, because an installation
+-- has no host of its own — only its customers'. Until this column existed, what
+-- stood between a customer's administrator and the list of every other customer
+-- was one permission string in an ordinary roles table, and every tenant's
+-- admin role holds the wildcard by construction. It did not stand there at all:
+-- E3.1's review signed in as a second tenant's administrator and listed,
+-- created and suspended tenants.
+--
+-- So "may reach the control plane" is now two facts, and both have to be true.
+-- The permission is declared Operator in its module's manifest and on its route
+-- (httpx.OperatorPermission), which makes the kernel refuse it at any tenant
+-- whose row does not have this column set — before it asks the roles table
+-- anything — and makes the wildcard stop satisfying it even where it is
+-- allowed. This column is the other fact.
+--
+-- Exactly one row has it: the one `platformkit bootstrap` created, which is the
+-- one write in the application with no caller to authorize. The create route
+-- cannot ask for it, because NewTenant.Operator is json:"-" and is in no
+-- request body and no schema.
+--
+-- Default false, so every tenant that already exists is a customer. An
+-- installation upgrading into this column has no operator tenant until somebody
+-- sets one, which is the safe direction: nobody reaches the control plane
+-- rather than everybody.
+ALTER TABLE tenants ADD COLUMN operator boolean NOT NULL DEFAULT false;
+
+-- Partial and unique: two operator tenants is two answers to "whose
+-- installation is this", and the bootstrap that creates the one is already
+-- serialized by an advisory lock. This is the database saying the same thing.
+CREATE UNIQUE INDEX tenants_operator ON tenants ((true)) WHERE operator AND deleted_at IS NULL;

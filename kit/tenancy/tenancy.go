@@ -25,6 +25,26 @@ type Tenant struct {
 	ID   uuid.UUID
 	Slug string
 	Name string
+	// Operator says this tenant is the installation's own, the one whose
+	// administrators may reach the control plane. Every other tenant is a
+	// customer, and a customer's administrator holding "may do everything in
+	// my tenant" must not thereby be able to list, create or suspend the
+	// tenants beside it. The column is written by the bootstrap and by nothing
+	// else; see Grant and docs/adr/0006.
+	Operator bool
+}
+
+// Grant is a permission question: which token, and whether that token is one
+// only the operator's own tenant may exercise.
+//
+// It is a struct rather than a string because "may this caller do X" and "may
+// this caller do X, here, in a tenant entitled to X at all" are two questions
+// and the second one has to be asked first. It lives beside Tenant because both
+// halves of the answer are here: the flag on the permission and the flag on the
+// tenant.
+type Grant struct {
+	Permission string
+	Operator   bool
 }
 
 // contextKey is unexported so only this package can put a tenant on a context.

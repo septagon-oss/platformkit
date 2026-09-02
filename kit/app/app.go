@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // Role is which half of the application a process runs. One binary and one
@@ -227,6 +229,11 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		Log:          a.log,
 	})
 
+	// The catalogue before the routes: a module that validates a permission
+	// somebody typed asks the kernel for the list, and Routes is the one moment
+	// it is being wired and the whole composition is known.
+	api.Declare(declared(a.mods))
+
 	checks := []health.Check{health.DatabaseCheck(conn)}
 	for _, m := range a.mods {
 		if m.Routes != nil {
@@ -328,28 +335,62 @@ func (a *App) probes(conn *db.Conn) http.Handler {
 	return health.Mux(a.log, checks...)
 }
 
-// validatePermissions is the declaration gate's mirror: every permission a
-// route requires has to be one some module defines, or the route is guarded by
-// a token no role can ever be granted and everybody is denied for good. Every
-// missing one is reported at once, because a composition is fixed once.
+// declared is every permission the modules define, as the kernel's grants.
+func declared(mods []module.Module) []tenancy.Grant {
+	var out []tenancy.Grant
+	for _, m := range mods {
+		for _, p := range m.Permissions {
+			out = append(out, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+		}
+	}
+	return out
+}
+
+// validatePermissions is the declaration gate's mirror, and it checks two
+// things about the same list.
+//
+// Every permission a route requires has to be one some module defines, or the
+// route is guarded by a token no role can ever be granted and everybody is
+// denied for good. And the route and the manifest have to agree about whether
+// it is the operator's: a control-plane route declared with httpx.Permission is
+// reachable by every customer's administrator through the wildcard they hold in
+// their own tenant, and an ordinary route declared with
+// httpx.OperatorPermission is reachable by nobody outside the operator's. Both
+// are silent in production and loud here.
+//
+// Every violation is reported at once, because a composition is fixed once.
 func validatePermissions(api *httpx.API, mods []module.Module) error {
+	kind := map[string]bool{}
 	defined := map[string]bool{}
 	for _, m := range mods {
 		for _, p := range m.Permissions {
-			defined[p.Key] = true
+			defined[p.Key], kind[p.Key] = true, p.Operator
 		}
 	}
-	var missing []string
-	for _, p := range api.Permissions() {
-		if !defined[p] {
-			missing = append(missing, p)
+	var bad []string
+	for _, g := range api.Required() {
+		switch {
+		case !defined[g.Permission]:
+			bad = append(bad, fmt.Sprintf("%s guards a route and is defined by no module", g.Permission))
+		case kind[g.Permission] != g.Operator:
+			bad = append(bad, fmt.Sprintf(
+				"%s is declared %s by its route and %s by the module that defines it",
+				g.Permission, declaredAs(g.Operator), declaredAs(kind[g.Permission])))
 		}
 	}
-	if len(missing) == 0 {
+	if len(bad) == 0 {
 		return nil
 	}
-	return fmt.Errorf("app: %d permission(s) guard a route and are defined by no module: %s",
-		len(missing), strings.Join(missing, ", "))
+	sort.Strings(bad)
+	return fmt.Errorf("app: %d permission(s) do not check out:\n  %s", len(bad), strings.Join(bad, "\n  "))
+}
+
+// declaredAs names the two kinds the way the two sides spell them.
+func declaredAs(operator bool) string {
+	if operator {
+		return "httpx.OperatorPermission / module.Permission{Operator: true}"
+	}
+	return "httpx.Permission / module.Permission{Operator: false}"
 }
 
 // validateEvents is the same gate for the other direction: an operation that

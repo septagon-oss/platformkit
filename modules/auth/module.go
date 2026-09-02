@@ -33,6 +33,16 @@ type Deps struct {
 	// none, and then the two OIDC routes are not registered at all.
 	OIDC OIDC
 
+	// Operator are the permissions the operator's own administrator is granted
+	// by name when their tenant is created. A wildcard does not satisfy an
+	// operator grant, so they are listed rather than implied.
+	//
+	// The application supplies them because they belong to the modules that
+	// declare them — tenant:manage is modules/tenant's — and this module is
+	// composed before those exist. A name missing from the list is a permission
+	// nobody can exercise, which is the safe direction for a list to be wrong in.
+	Operator []string
+
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
 	// browser refuses a Secure cookie over http://localhost, so a development
@@ -44,7 +54,7 @@ type Deps struct {
 // value to kit/app as the authorizer and the identity hook, and hands its
 // SeedRoles to the tenant module as a create hook.
 func Module(deps Deps) (contracts.Auth, module.Module) {
-	svc := internal.NewService(deps.Users)
+	svc := internal.NewService(deps.Users, deps.Operator)
 	secure := !config.Local(deps.PublicHost)
 	cookies := internal.NewCookies(secure)
 	return svc, module.Module{
