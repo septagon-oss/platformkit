@@ -1,0 +1,251 @@
+// Command locbudget counts tracked source lines per bucket and fails when a
+// bucket exceeds its committed maximum. It only ever ratchets maxima down.
+//
+// Usage:
+//
+//	go run ./tools/locbudget --check                  # exit 1 if any bucket is over budget
+//	go run ./tools/locbudget --write                  # lower maxima to current counts
+//	go run ./tools/locbudget --write --bucket go_prod # lower one bucket only
+//	go run ./tools/locbudget                          # print counts
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// Bucket selects tracked files by path prefix, suffix and content.
+type Bucket struct {
+	Name            string   `json:"name"`
+	Paths           []string `json:"paths,omitempty"`            // path prefixes; empty means all
+	Suffixes        []string `json:"suffixes"`                   // any of these suffixes
+	ExcludeSuffixes []string `json:"exclude_suffixes,omitempty"` // none of these suffixes
+	ExcludePaths    []string `json:"exclude_paths,omitempty"`    // none of these prefixes
+	Contains        string   `json:"contains,omitempty"`         // file must contain this substring
+	Max             int      `json:"max"`
+}
+
+// Budget is the committed file.
+type Budget struct {
+	Buckets []Bucket `json:"buckets"`
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnySuffix(s string, suffixes []string) bool {
+	for _, p := range suffixes {
+		if strings.HasSuffix(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func (b Bucket) matches(rel string) bool {
+	if len(b.Paths) > 0 && !hasAnyPrefix(rel, b.Paths) {
+		return false
+	}
+	if hasAnyPrefix(rel, b.ExcludePaths) {
+		return false
+	}
+	if !hasAnySuffix(rel, b.Suffixes) {
+		return false
+	}
+	if hasAnySuffix(rel, b.ExcludeSuffixes) {
+		return false
+	}
+	return true
+}
+
+// Count returns the total newline count of matching files under root. It
+// counts newlines, so a file with no trailing newline counts one line short;
+// that is stable and monotone, which is all the ratchet needs.
+func (b Bucket) Count(root string, tracked []string) (int, error) {
+	total := 0
+	for _, rel := range tracked {
+		if !b.matches(rel) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // deleted in working tree but still in index
+			}
+			return 0, err
+		}
+		if b.Contains != "" && !bytes.Contains(data, []byte(b.Contains)) {
+			continue
+		}
+		total += bytes.Count(data, []byte{'\n'})
+	}
+	return total, nil
+}
+
+// Has reports whether the budget defines a bucket with this name.
+func (bu Budget) Has(name string) bool {
+	for _, b := range bu.Buckets {
+		if b.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// Validate rejects budgets that cannot measure what they claim to. A bucket
+// with no suffixes matches no file, so it would ratchet to 0 and stay green
+// forever; duplicate names make counts and ratchets ambiguous.
+func (bu Budget) Validate() error {
+	seen := make(map[string]bool, len(bu.Buckets))
+	for _, b := range bu.Buckets {
+		if b.Name == "" {
+			return fmt.Errorf("bucket with empty name")
+		}
+		if seen[b.Name] {
+			return fmt.Errorf("duplicate bucket %q", b.Name)
+		}
+		seen[b.Name] = true
+		if len(b.Suffixes) == 0 {
+			return fmt.Errorf("bucket %q has no suffixes, so it can never match a file", b.Name)
+		}
+	}
+	return nil
+}
+
+// Check returns one message per bucket over its maximum.
+func (bu Budget) Check(counts map[string]int) []string {
+	var errs []string
+	for _, b := range bu.Buckets {
+		if counts[b.Name] > b.Max {
+			errs = append(errs, fmt.Sprintf("%s: %d lines > budget %d (+%d)", b.Name, counts[b.Name], b.Max, counts[b.Name]-b.Max))
+		}
+	}
+	return errs
+}
+
+// Ratchet lowers maxima to current counts. It never raises one.
+func (bu *Budget) Ratchet(counts map[string]int) {
+	for i := range bu.Buckets {
+		if c, ok := counts[bu.Buckets[i].Name]; ok && c < bu.Buckets[i].Max {
+			bu.Buckets[i].Max = c
+		}
+	}
+}
+
+func trackedFiles(root string) ([]string, error) {
+	cmd := exec.Command("git", "-C", root, "ls-files", "-z")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files: %w", err)
+	}
+	parts := bytes.Split(out, []byte{0})
+	files := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if len(p) > 0 {
+			files = append(files, string(p))
+		}
+	}
+	return files, nil
+}
+
+func main() {
+	os.Exit(run())
+}
+
+// run re-exposes exit semantics (2 = operational, 1 = over budget, 0 = ok) as
+// a return of the testable flow. `go run` reports 1 for both failure codes, so
+// the distinction only survives when the compiled binary is invoked directly.
+func run() int {
+	var (
+		root   = flag.String("root", ".", "repository root containing loc-budget.json")
+		check  = flag.Bool("check", false, "exit 1 when any bucket exceeds its max")
+		write  = flag.Bool("write", false, "lower maxima to current counts")
+		bucket = flag.String("bucket", "", "with --write: only this bucket")
+	)
+	flag.Parse()
+
+	budgetPath := filepath.Join(*root, "loc-budget.json")
+	raw, err := os.ReadFile(budgetPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	var budget Budget
+	if err := json.Unmarshal(raw, &budget); err != nil {
+		fmt.Fprintln(os.Stderr, "parse loc-budget.json:", err)
+		return 2
+	}
+	if err := budget.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, "loc-budget.json:", err)
+		return 2
+	}
+	if *bucket != "" && !budget.Has(*bucket) {
+		fmt.Fprintf(os.Stderr, "unknown bucket %q\n", *bucket)
+		return 2
+	}
+	files, err := trackedFiles(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	counts := map[string]int{}
+	maxima := map[string]int{}
+	for _, b := range budget.Buckets {
+		n, err := b.Count(*root, files)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, b.Name+":", err)
+			return 2
+		}
+		counts[b.Name] = n
+		maxima[b.Name] = b.Max
+	}
+	names := make([]string, 0, len(counts))
+	for n := range counts {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		fmt.Printf("%-16s %9d / %9d\n", n, counts[n], maxima[n])
+	}
+
+	if *write {
+		if *bucket != "" {
+			budget.Ratchet(map[string]int{*bucket: counts[*bucket]})
+		} else {
+			budget.Ratchet(counts)
+		}
+		out, err := json.MarshalIndent(budget, "", "  ")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "encode loc-budget.json:", err)
+			return 2
+		}
+		if err := os.WriteFile(budgetPath, append(out, '\n'), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 2
+		}
+		fmt.Println("loc-budget.json updated")
+	}
+	if *check {
+		if errs := budget.Check(counts); len(errs) > 0 {
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, "OVER BUDGET:", e)
+			}
+			return 1
+		}
+		fmt.Println("loc budget OK")
+	}
+	return 0
+}

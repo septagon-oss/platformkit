@@ -1,0 +1,15 @@
+PlatformKit
+Copyright 2026 Septagon
+
+This product includes software developed at Septagon.
+
+Portions of this repository derive from the septagon-oss `pk-*` repositories,
+which are licensed under the Apache License, Version 2.0:
+
+  ui/           from pk-ui (contracts, web renderer, accessibility, icons)
+                and pk-styleengine
+  design/       from pk-design (tokens and theme resolution)
+  kit/problem   from pk-problem
+
+The module catalog under modules/ derives from PlatformKit's private module
+catalog and is contributed here by its owner.
