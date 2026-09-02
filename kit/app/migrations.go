@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"io/fs"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -33,7 +34,7 @@ func sources(mods []module.Module) (fs.FS, error) {
 		}
 		found := 0
 		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			if e.IsDir() || !migrationFile.MatchString(e.Name()) {
 				continue
 			}
 			found++
@@ -50,7 +51,7 @@ func sources(mods []module.Module) (fs.FS, error) {
 			// A module that embedded migrations/*.sql rather than the files
 			// themselves would otherwise contribute nothing, silently, and its
 			// tables would simply never exist.
-			return fmt.Errorf("app: migrations of %s: no .sql file at the root of the file system; wrap it in fs.Sub if the files live in a subdirectory", label)
+			return fmt.Errorf("app: migrations of %s: no <version>_<name>.(up|down).sql file at the root of the file system; wrap it in fs.Sub if the files live in a subdirectory", label)
 		}
 		return nil
 	}
@@ -69,6 +70,11 @@ func sources(mods []module.Module) (fs.FS, error) {
 	sort.Strings(u.names)
 	return u, nil
 }
+
+// migrationFile is what golang-migrate will actually read: a version, a name,
+// and a direction. Counting anything else as a contribution would let a module
+// that shipped a README and no SQL pass the "contributed nothing" check below.
+var migrationFile = regexp.MustCompile(`^\d+_.+\.(up|down)\.sql$`)
 
 // version is the numeric prefix golang-migrate orders by, with the leading
 // zeros removed because golang-migrate reads it as a number: 1_x and 000001_x

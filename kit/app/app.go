@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -22,14 +23,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
-	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // Options are the cross-cutting implementations main chooses. They are the
 // three questions the kernel cannot answer for itself — which host is which
 // tenant, who is calling, and what they may do — plus where to log.
 type Options struct {
-	Tenants      tenancy.Resolver
+	Tenants      httpx.TenantLoader
 	Authorize    httpx.Authorizer
 	Authenticate func(r *http.Request) (httpx.Principal, bool)
 	Log          *slog.Logger
@@ -97,6 +97,7 @@ func (a *App) Run(ctx context.Context) error {
 	// 3. The API and its middleware chain.
 	api, router := httpx.New(httpx.Options{
 		PublicHost:   a.cfg.Server.PublicHost,
+		Docs:         a.cfg.Server.Docs,
 		Tenants:      a.opts.Tenants,
 		Conn:         conn,
 		Authorize:    a.opts.Authorize,
@@ -114,24 +115,59 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	health.Register(api, checks...)
 
-	// 5. The gate. An operation that declares no authorization fails startup,
-	//    with no warn mode: this repository has no deployment to migrate and no
-	//    reason to run a build it knows is unprotected.
+	// 5. The gates. An operation that declares no authorization, or one guarded
+	//    by a permission no module defines, fails startup — with no warn mode:
+	//    this repository has no deployment to migrate and no reason to run a
+	//    build it knows is unprotected or unreachable.
 	if err := api.ValidateDeclarations(); err != nil {
 		return err
 	}
-	a.log.InfoContext(ctx, "app: operations declared", "count", len(api.Recorded()),
-		"public_mutations", api.PublicMutations())
+	if err := validatePermissions(api, a.mods); err != nil {
+		return err
+	}
+	a.log.InfoContext(ctx, "app: operations declared", "count", len(api.Recorded()))
 
 	// 6. Serve.
 	return a.serve(ctx, router)
 }
 
+// validatePermissions is the declaration gate's mirror: every permission a
+// route requires has to be one some module defines, or the route is guarded by
+// a token no role can ever be granted and everybody is denied for good. Every
+// missing one is reported at once, because a composition is fixed once.
+func validatePermissions(api *httpx.API, mods []module.Module) error {
+	defined := map[string]bool{}
+	for _, m := range mods {
+		for _, p := range m.Permissions {
+			defined[p.Key] = true
+		}
+	}
+	var missing []string
+	for _, p := range api.Permissions() {
+		if !defined[p] {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("app: %d permission(s) guard a route and are defined by no module: %s",
+		len(missing), strings.Join(missing, ", "))
+}
+
 func (a *App) serve(ctx context.Context, h http.Handler) error {
 	srv := &http.Server{
-		Addr:              a.cfg.Server.Addr,
-		Handler:           h,
+		Addr:    a.cfg.Server.Addr,
+		Handler: h,
+		// A request holds a database transaction, so a slow client holds one
+		// too: these bound how long one can. The read header timeout stops a
+		// connection that never finishes its request line; the write timeout
+		// stops a client that never reads its response; the idle timeout
+		// reclaims keep-alive connections. They are constants because no
+		// deployment has had a reason to differ.
 		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	stopped := make(chan error, 1)
 	go func() { stopped <- srv.ListenAndServe() }()

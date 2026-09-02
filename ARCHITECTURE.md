@@ -18,8 +18,12 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
    other coupling a compile error. (E2)
 4. **Tenant isolation belongs to the database, and to the type system.** Tenant
    tables carry `FORCE ROW LEVEL SECURITY` and the tenant is set per
-   transaction; `db.Tx[db.Tenant]` and `db.Tx[db.System]` are distinct types, so
-   using a repository outside a tenant transaction does not compile. (E1)
+   transaction, so a forgotten `WHERE tenant_id` returns nothing rather than
+   another tenant's rows. `db.Tx[db.Tenant]` and `db.Tx[db.System]` are distinct
+   types, so crossing the tenant by accident does not compile and crossing it on
+   purpose is one grep. The settings themselves are `USERSET` and no privilege
+   can withhold them, so a gate and a re-read before commit close that door
+   instead; see `docs/adr/0003`. (E1)
 5. **Authorization is declared, not remembered.** Every operation registers an
    `Auth` value alongside its route; the app validates the recorded operation set
    at boot and refuses to start when one is undeclared. (E1)
@@ -68,17 +72,18 @@ ratchet only ever lowers them; raising one is an owner commit with a reason.
 
 ## Gates
 
-`make check` runs the first five today. The list stops at ten.
+`make check` runs gates 1 to 5, 7 and 8 today; 6, 9 and 10 arrive with the stage
+that gives them something to check. The list stops at ten.
 
 | # | Gate | Proves | Stage |
 |---|---|---|---|
 | 1 | `make build` | the wiring graph type-checks | E0 |
-| 2 | `make vet` | no known-bad Go | E0 |
+| 2 | `make vet` + `make fmt-check` | no known-bad and no unformatted Go | E0 |
 | 3 | `make test` | the suite passes against a real Postgres | E0 |
 | 4 | `make check-loc` | no bucket exceeds its ceiling | E0 |
 | 5 | `make check-packages` | the app links ≤ 400 first-party packages | E2 |
 | 6 | `scripts/check_imports.sh` | a module imports only another module's `contracts/` | E2 |
-| 7 | boot validation test | no operation ships without an `Auth` declaration | E1 |
-| 8 | tenant isolation test | RLS blocks cross-tenant reads as the app role | E1 |
+| 7 | boot validation test | no operation ships without an `Auth` declaration, and no route requires a permission no module defines | E1 |
+| 8 | tenant isolation test + `make check-gucs` | RLS blocks cross-tenant reads as the app role, and only `kit/db` writes the tenancy settings | E1 |
 | 9 | empty-database boot test | the app migrates and serves from nothing | E2 |
 | 10 | one Playwright spec | the admin shell renders and a CRUD screen works | E2 |

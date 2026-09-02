@@ -6,10 +6,16 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"os"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 )
+
+// levels is the closed set log.level may name. slog has four; a fifth spelling
+// would be silently ignored at boot and noticed during an incident.
+var levels = []string{"debug", "info", "warn", "error"}
 
 // Config is the whole configuration of the reference app. See config.example.yaml.
 type Config struct {
@@ -19,10 +25,17 @@ type Config struct {
 	Log      Log      `yaml:"log"`
 }
 
-// Server is where the app listens and what host it believes it is reached at.
+// Server is where the app listens, what host it believes it is reached at, and
+// whether it publishes its own documentation.
 type Server struct {
 	Addr       string `yaml:"addr"`
 	PublicHost string `yaml:"public_host"`
+	// Docs serves /openapi.json, /openapi.yaml and /docs. They are public by
+	// construction and they publish every route and every permission the
+	// application has: a map worth having before an attack and worth
+	// withholding during one. It defaults to false, so a deployment that says
+	// nothing says no.
+	Docs bool `yaml:"docs"`
 }
 
 // Database holds the two roles: the app connects as one, migrations as the other.
@@ -83,6 +96,27 @@ func Load(path string) (Config, error) {
 	} {
 		if f.value == "" {
 			return Config{}, fmt.Errorf("config %s: %s is empty", path, f.key)
+		}
+	}
+
+	if !slices.Contains(levels, c.Log.Level) {
+		return Config{}, fmt.Errorf("config %s: log.level is %q, one of %v", path, c.Log.Level, levels)
+	}
+	// Both URLs are parsed here rather than by the driver, so a typo is a
+	// message naming the key instead of a dial error four steps later.
+	for _, u := range []struct {
+		key   string
+		value string
+	}{
+		{"database.url", c.Database.URL},
+		{"database.migrate_url", c.Database.MigrateURL},
+	} {
+		parsed, err := url.Parse(u.value)
+		if err != nil {
+			return Config{}, fmt.Errorf("config %s: %s is not a URL: %w", path, u.key, err)
+		}
+		if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
+			return Config{}, fmt.Errorf("config %s: %s has scheme %q; PlatformKit speaks postgres and nothing else", path, u.key, parsed.Scheme)
 		}
 	}
 	return c, nil

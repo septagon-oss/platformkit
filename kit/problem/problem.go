@@ -8,7 +8,10 @@
 // Derived from github.com/septagon-oss/pk-problem (Apache-2.0); see NOTICE.
 package problem
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
 
 // ContentType is the media type of a problem response.
 const ContentType = "application/problem+json"
@@ -26,15 +29,25 @@ type Problem struct {
 	Detail string `json:"detail,omitempty"`
 	// Errors carries per-field validation messages, when there are any.
 	Errors []string `json:"errors,omitempty"`
+	// Instance identifies this occurrence. kit/httpx sets it to
+	// "urn:request:<request id>", which is the same id the log line carries, so
+	// a report of "I got a 500" is one grep away from the reason.
+	Instance string `json:"instance,omitempty"`
 
 	// cause is the server-side error. It is never serialized; Unwrap exposes
 	// it to the logger, which is the only thing allowed to see it.
 	cause error
 }
 
-// New returns a problem with the standard title for status.
+// New returns a problem with the standard title for status. A status net/http
+// has no text for still gets a title, because a body with an empty one is not
+// an RFC 9457 problem.
 func New(status int, detail string) *Problem {
-	return &Problem{Type: "about:blank", Title: http.StatusText(status), Status: status, Detail: detail}
+	title := http.StatusText(status)
+	if title == "" {
+		title = fmt.Sprintf("HTTP %d", status)
+	}
+	return &Problem{Type: "about:blank", Title: title, Status: status, Detail: detail}
 }
 
 // BadRequest is 400: the request is malformed.
@@ -52,15 +65,16 @@ func NotFound(detail string) *Problem { return New(http.StatusNotFound, detail) 
 // Conflict is 409: the request contradicts the current state.
 func Conflict(detail string) *Problem { return New(http.StatusConflict, detail) }
 
-// Internal is 500. The detail is the status text: a server error's real message
-// belongs in the log, not in the response.
+// Internal is 500. It carries no detail at all: a server error's real message
+// belongs in the log, and repeating the title in the detail says nothing the
+// status has not already said.
 func Internal(cause error) *Problem { return serverError(http.StatusInternalServerError, cause) }
 
 // serverError is any 5xx: the status is kept, because 503 asks a caller to come
 // back and 500 asks them not to, and the message is not, for the same reason
 // Internal withholds it.
 func serverError(status int, cause error) *Problem {
-	p := New(status, http.StatusText(status))
+	p := New(status, "")
 	p.cause = cause
 	return p
 }

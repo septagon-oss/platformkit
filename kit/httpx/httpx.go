@@ -15,16 +15,21 @@
 // huma adds an operation to the OpenAPI document only when it is not hidden, so
 // walking the document would miss exactly the routes most likely to be
 // forgotten. Everything, hidden or not, passes through the adapter's Handle, so
-// this package records there instead. ValidateDeclarations reads that recording
-// and kit/app refuses to start when it reports anything.
+// this package records there instead — huma's own documentation routes
+// included, declared Public where they are mounted. ValidateDeclarations reads
+// that recording and kit/app refuses to start when it reports anything.
+//
+// The huma.API is an unexported field, so the only huma.API reachable from
+// outside this package is the recording one: an operation registered around
+// Register is still recorded, and still fails the boot gate.
 //
 // # The transaction
 //
 // This is the one place a request obtains a tenant transaction. The middleware
-// chain resolves the tenant from the request host, opens db.Run around the rest
-// of the request, and puts the resulting db.Tx[db.Tenant] where TxFrom finds it.
-// A handler or repository never opens its own; a response of 400 or worse rolls
-// the transaction back.
+// chain resolves the tenant from the request host and puts a pending
+// transaction on the context; TxFrom opens it on the first query, so a request
+// that never touches the database never opens one. A response of 400 or worse
+// rolls it back, and the response itself is held until the commit succeeds.
 package httpx
 
 import (
@@ -43,28 +48,55 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
+// TenantLoader maps an incoming host to a tenant. The tenant module implements
+// it in E2; it returns tenancy.ErrNoSuchHost when there is simply no site at
+// the host, and any other error when it could not tell.
+//
+// It takes a db.Tx[db.System] because the answer is a query and the row it
+// looks for belongs to no tenant yet — the request has not resolved one. This
+// package mints the capability, since no module can, and passes the transaction
+// in: an implementation cannot open a cross-tenant transaction of its own, and
+// the one it is handed lasts only for the call.
+//
+// It is declared here rather than in kit/tenancy because kit/db imports
+// kit/tenancy; this package already imports both.
+type TenantLoader interface {
+	ByHost(ctx context.Context, tx db.Tx[db.System], host string) (tenancy.Tenant, error)
+}
+
 // Authorizer decides whether the caller of a request may exercise a permission
 // in a tenant. The auth module implements it; a test implements it in three
-// lines. It is the only thing this package knows about roles.
+// lines. It is the only thing this package knows about roles. It runs inside
+// the request, so an implementation that needs the tenant's own rows reaches
+// them with TxFrom.
 type Authorizer interface {
 	Allowed(ctx context.Context, tenant tenancy.Tenant, permission string) (bool, error)
 }
 
 // Options are the collaborators main chooses for the HTTP layer. Every field
-// except Log and PublicHost is required: an API missing one of them could only
-// fail closed on every request, which is worse than failing at New.
+// except Log, PublicHost and Docs is required: an API missing one of them could
+// only fail closed on every request, which is worse than failing at New.
 type Options struct {
 	// PublicHost is the host the application believes it is reached at. It
 	// names the server in the OpenAPI document; the tenant of a request always
 	// comes from that request's own Host header, never from this.
 	PublicHost string
 
+	// Docs serves /openapi.json, /openapi.yaml and /docs. They are public and
+	// unauthenticated by construction, and they publish every route and every
+	// permission the application has, which is a map worth having before an
+	// attack and worth withholding during one. The reference app turns them on;
+	// a deployment that would rather not can turn them off. The JSON Schema
+	// route stays either way, because response bodies link to it.
+	Docs bool
+
 	// Tenants maps a request host to a tenant.
-	Tenants tenancy.Resolver
+	Tenants TenantLoader
 
 	// Conn is the application connection every request transaction opens on.
 	Conn *db.Conn
@@ -85,12 +117,16 @@ type Options struct {
 // API is the application's Huma API: the huma.API every registration goes
 // through, plus the recording that makes boot-time validation possible.
 type API struct {
-	huma.API
-
+	// api is the recording huma.API. It is unexported because an exported one
+	// is a door: huma.Register(api.API, ...) used to reach the bare adapter,
+	// which the recording — and therefore the boot gate — never saw.
+	api     huma.API
 	adapter huma.Adapter
 	router  *chi.Mux
 	opts    Options
 	log     *slog.Logger
+	hosts   *hostCache
+	token   tenancy.SystemToken
 
 	mu  sync.Mutex
 	ops []*huma.Operation
@@ -124,50 +160,58 @@ func New(cfg Options) (*API, *chi.Mux) {
 	if cfg.PublicHost != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.PublicHost}}
 	}
+	if !cfg.Docs {
+		config.OpenAPIPath = ""
+		config.DocsPath = ""
+	}
+	config.Transformers = append(config.Transformers, stampRequestID)
 
 	router := chi.NewMux()
-	a := &API{router: router, opts: cfg, log: cfg.Log}
+	a := &API{
+		router: router,
+		opts:   cfg,
+		log:    cfg.Log,
+		hosts:  &hostCache{hosts: map[string]hostEntry{}},
+		token:  syscap.NewSystemToken("tenant resolution"),
+	}
 	if a.log == nil {
 		a.log = slog.Default()
 	}
 
-	// Authentication is an ordinary net/http middleware because its hook reads
-	// an *http.Request, and because a principal is a property of the caller
-	// rather than of the route: it is established once, before routing, and the
-	// authorization middleware below decides what it is worth. chi refuses a
-	// middleware added after the first route, and humachi.New mounts routes, so
-	// this goes first.
-	router.Use(a.authenticate)
+	// The net/http half of the chain, in order, and before any route: chi
+	// refuses a middleware added after the first one is mounted, and the huma
+	// adapter below mounts huma's own.
+	//
+	// The request id goes first, because everything below logs it and every
+	// problem body carries it. respond is second, holding the response and
+	// catching a panic, outside the transaction on purpose. Authentication is
+	// last, because its hook reads an *http.Request and a principal is a
+	// property of the caller rather than of the route.
+	router.Use(a.requestID, a.respond, a.authenticate)
 
-	// humachi.New mounts huma's own /openapi.*, /docs and /schemas routes on the
-	// adapter it is handed. Wrapping the recorder around the adapter afterwards
-	// keeps those six out of the recording, which is deliberate: they are the
-	// API's documentation, they read no tenant data, and they are not
-	// operations any module declared. Everything registered from here on is
-	// recorded and must declare.
-	inner := humachi.New(router, config)
-	a.API = inner
-	a.adapter = recordingAdapter{Adapter: inner.Adapter(), api: a}
+	// huma.NewAPI mounts its own documentation routes through the adapter it is
+	// handed, so the recorder declares those Public as they arrive: they serve
+	// no tenant data and have no module to declare them, and Recorded is only
+	// worth reading if it is the whole list.
+	rec := &recordingAdapter{Adapter: humachi.NewAdapter(router), api: a, builtin: true}
+	a.api = huma.NewAPI(config, rec)
+	rec.builtin = false
+	a.adapter = rec
 
-	// The chain, in order. Tenant first, because everything after it is scoped
-	// to one. Transaction second, so that authorization can read the tenant's
-	// own rows: a permission check in E3 is a query, and it belongs inside the
-	// same transaction as the work it guards. Authorization last, so a denial
-	// rolls that transaction back untouched.
-	a.UseMiddleware(a.tenant, a.transaction, a.authorize)
+	// The huma half of the chain, in order. Tenant first, because everything
+	// after it is scoped to one. Transaction second, so that authorization can
+	// read the tenant's own rows: a permission check in E3 is a query, and it
+	// belongs inside the same transaction as the work it guards. Authorization
+	// last, so a denial rolls that transaction back untouched.
+	a.api.UseMiddleware(a.tenant, a.transaction, a.authorize)
 	return a, router
 }
 
-// Adapter returns the recording adapter, so every operation registered on this
-// API is seen by Recorded even when it is hidden from the OpenAPI document.
+// Adapter returns the recording adapter. It is the only huma-level handle this
+// package exposes, and it is safe to expose precisely because it records: an
+// operation mounted through it, by whatever route, is seen by Recorded and so
+// by the boot gate. What is not reachable is the bare adapter underneath.
 func (a *API) Adapter() huma.Adapter { return a.adapter }
-
-// Config keeps huma's unexported configProvider assertion working through the
-// wrapper: huma.Group and huma.Register read the configuration this way, and a
-// wrapper that could not answer would hand them a zero Config.
-func (a *API) Config() huma.Config {
-	return a.API.(interface{ Config() huma.Config }).Config()
-}
 
 // Static mounts a file tree on the router, outside the API. Static assets are
 // not operations: there is no handler to authorize, no tenant transaction to
@@ -179,16 +223,18 @@ func (a *API) Static(prefix string, fsys fs.FS) {
 
 // recordingAdapter is where every registration made through this API is seen:
 // huma.Register and any raw handler alike end at Adapter.Handle, hidden or not.
-// Reaching past the embedded huma.API — huma.Register(api.API, ...) — registers
-// on the bare adapter and is invisible to the recording and therefore to the
-// boot gate. That is a deliberate escape hatch of Go's embedding, not a hole the
-// gate can close; the request-time middleware still denies such an operation.
+// While builtin is set, huma is mounting its own documentation routes and the
+// recorder declares them Public.
 type recordingAdapter struct {
 	huma.Adapter
-	api *API
+	api     *API
+	builtin bool
 }
 
-func (r recordingAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
+func (r *recordingAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
+	if r.builtin && op != nil {
+		declare(op, Public())
+	}
 	r.api.record(op)
 	r.Adapter.Handle(op, handler)
 }
@@ -222,19 +268,9 @@ func (a *API) Recorded() []*huma.Operation {
 func (a *API) ValidateDeclarations() error {
 	var bad []string
 	for _, op := range a.Recorded() {
-		if _, ok := declarationOf(op); ok {
-			continue
+		if _, ok := declarationOf(op); !ok {
+			bad = append(bad, describe(op))
 		}
-		reason := "no declaration"
-		if op.Extensions != nil {
-			if v, present := op.Extensions[AuthExtension]; present {
-				reason = "the declaration is not an httpx.Auth"
-				if _, isAuth := v.(Auth); isAuth {
-					reason = "the declaration is the zero httpx.Auth, which no constructor returns"
-				}
-			}
-		}
-		bad = append(bad, describe(op)+": "+reason)
 	}
 	if len(bad) == 0 {
 		return nil
@@ -244,40 +280,22 @@ func (a *API) ValidateDeclarations() error {
 		len(bad), strings.Join(bad, "\n  "))
 }
 
-// PublicMutations returns "METHOD /path" for every recorded operation that
-// declares itself public and changes state. It is the surface an
-// unauthenticated caller can write through, so it is the list a reviewer reads
-// first. E2 pins it against the reference application's composition, and from
-// then on a newly public write is a failing diff rather than a discovery.
-func (a *API) PublicMutations() []string {
+// Permissions lists, once each, every permission a recorded operation requires.
+// kit/app checks it against what the modules declare, so a route guarded by a
+// permission nobody defines fails startup instead of denying everyone forever.
+func (a *API) Permissions() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, op := range a.Recorded() {
-		if !mutates(op.Method) {
-			continue
-		}
 		auth, ok := declarationOf(op)
-		if !ok || auth.kind != kindPublic {
+		if !ok || auth.kind != kindPermission || seen[auth.permission] {
 			continue
 		}
-		route := strings.ToUpper(op.Method) + " " + op.Path
-		if seen[route] {
-			continue
-		}
-		seen[route] = true
-		out = append(out, route)
+		seen[auth.permission] = true
+		out = append(out, auth.permission)
 	}
 	sort.Strings(out)
 	return out
-}
-
-func mutates(method string) bool {
-	switch strings.ToUpper(strings.TrimSpace(method)) {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
 }
 
 func describe(op *huma.Operation) string {

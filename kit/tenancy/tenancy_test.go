@@ -26,7 +26,7 @@ func TestContextRoundTrip(t *testing.T) {
 
 // TestSystemTokenIsMintedByTheKernel: kit/tenancy is inside kit/, so it may
 // import kit/internal/syscap. A business module may not, and that import
-// restriction is the whole barrier — see also the zero value below.
+// restriction is the whole barrier.
 func TestSystemTokenIsMintedByTheKernel(t *testing.T) {
 	const reason = "nightly billing rollup"
 	var token tenancy.SystemToken = syscap.NewSystemToken(reason)
@@ -34,11 +34,22 @@ func TestSystemTokenIsMintedByTheKernel(t *testing.T) {
 		t.Errorf("Reason = %q, want %q", token.Reason(), reason)
 	}
 
-	// Go lets any package write tenancy.SystemToken{}, so the type alone does
-	// not close the door; the minted token is the one with a reason, and
-	// db.RunSystem refuses the other.
+	// SystemToken is an interface with an unexported method, so no package can
+	// implement it and the zero value is nil — the one forgery Go still allows,
+	// and the one db.RunSystem refuses.
 	var forged tenancy.SystemToken
-	if forged.Reason() != "" {
-		t.Errorf("the zero token has a reason: %q", forged.Reason())
+	if forged != nil {
+		t.Error("the zero token is not nil, so something else can be one")
 	}
+}
+
+// TestAReasonlessTokenIsRefusedWhereItIsMinted, not where it is used: a
+// capability nobody can explain is a mistake at the minting site.
+func TestAReasonlessTokenIsRefusedWhereItIsMinted(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("syscap.NewSystemToken accepted an empty reason")
+		}
+	}()
+	syscap.NewSystemToken("")
 }

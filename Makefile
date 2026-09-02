@@ -1,8 +1,8 @@
-# Twelve targets, no more. `make check` is what CI runs and what a pull request
-# must pass; everything else is a convenience.
+# Fourteen targets, no more. `make check` is what CI runs and what a pull
+# request must pass; everything else is a convenience.
 
 .DEFAULT_GOAL := help
-.PHONY: help build test vet run check-loc check-packages check fmt image up down
+.PHONY: help build test vet run check-loc check-packages check-gucs fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -21,13 +21,10 @@ build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -o /dev/null ./...
 
 test: ## Run the tests against the compose Postgres
-	go test ./...
+	go test -count=1 ./...
 
 vet: ## Run go vet
 	go vet ./...
-
-run: ## Run the reference app (exists from stage E2)
-	cd apps/platformkit && go run .
 
 check-loc: ## Fail when a bucket exceeds its line ceiling
 	go run ./tools/locbudget --check
@@ -35,7 +32,15 @@ check-loc: ## Fail when a bucket exceeds its line ceiling
 check-packages: ## Fail when the app links too many first-party packages
 	./scripts/check_packages.sh
 
-check: build vet test check-loc check-packages ## Everything a pull request must pass
+check-gucs: ## Fail when anything outside kit/db writes a tenancy setting
+	./scripts/check_gucs.sh
+
+fmt-check: ## Fail when any file is not gofmt'd
+	@out="$$(gofmt -l .)"; \
+	if [ -n "$$out" ]; then echo "NOT FORMATTED:"; echo "$$out"; exit 1; fi; \
+	echo "gofmt clean"
+
+check: build vet fmt-check test check-loc check-packages check-gucs ## Everything a pull request must pass
 
 fmt: ## Format every package
 	go fmt ./...
@@ -43,8 +48,8 @@ fmt: ## Format every package
 image: ## Build the container image (needs apps/platformkit, stage E2)
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres and NATS
-	docker compose up -d
+up: ## Start Postgres and NATS, and wait for both to be healthy
+	docker compose up -d --wait
 
 down: ## Stop Postgres and NATS and drop their volumes
 	docker compose down -v

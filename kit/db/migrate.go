@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,30 +10,35 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx", for the DDL connection
 )
 
 // lockKey serializes migrations across processes and replicas: whoever holds
 // the advisory lock runs the ledger, everyone else waits and then finds nothing
 // to do.
+//
+// It stacks on golang-migrate's own lock rather than replacing it, on purpose.
+// golang-migrate takes an advisory lock derived from the search_path's schema,
+// so two deployments migrating different schemas of one database would not see
+// each other; this one is a fixed key and therefore per-database, which is what
+// "one ledger for the application" means when the schema is a deployment
+// choice. Two locks, taken in one order, always by this function.
 const lockKey = 7240101
 
 // Migrate applies every pending migration in fsys, in filename order, against
 // the single "schema_migrations" ledger. migrateURL connects as the owner role,
-// which holds the DDL rights the application role deliberately lacks.
+// which holds the DDL rights the application role deliberately lacks; the
+// ledger and every object land in that connection's search_path.
 func Migrate(ctx context.Context, migrateURL string, fsys fs.FS) error {
-	c, err := openOwner(migrateURL)
+	pool, err := sql.Open("pgx", migrateURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("db: migrate: open: %w", err)
 	}
-	defer c.Close()
+	defer pool.Close()
 
-	sqlDB, err := c.db.DB()
-	if err != nil {
-		return fmt.Errorf("db: migrate: %w", err)
-	}
 	// One pinned connection: the advisory lock is session-scoped, so locking
 	// and unlocking have to happen on the same connection.
-	conn, err := sqlDB.Conn(ctx)
+	conn, err := pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("db: migrate: connect: %w", err)
 	}

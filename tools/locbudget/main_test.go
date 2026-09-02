@@ -1,8 +1,11 @@
 package main
 
 import (
+	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -141,5 +144,40 @@ func TestValidateRejectsUnusableBuckets(t *testing.T) {
 				t.Fatalf("want an error containing %q, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+// TestSourceFilesCountsWhatIsNotCommittedYet. A budget that only saw the index
+// would pass on the commit that broke it and fail on the next one.
+func TestSourceFilesCountsWhatIsNotCommittedYet(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	writeFile(t, dir, ".gitignore", "ignored.go\n")
+	writeFile(t, dir, "committed.go", "package a\n")
+	git("add", ".gitignore", "committed.go")
+	git("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "seed")
+	writeFile(t, dir, "new.go", "package a\n")
+	writeFile(t, dir, "ignored.go", "package a\n")
+
+	got, err := sourceFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{".gitignore": true, "committed.go": true, "new.go": true}
+	if len(got) != len(want) {
+		t.Fatalf("sourceFiles = %v, want %v", got, slices.Sorted(maps.Keys(want)))
+	}
+	for _, f := range got {
+		if !want[f] {
+			t.Errorf("sourceFiles listed %q", f)
+		}
 	}
 }

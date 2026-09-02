@@ -11,14 +11,32 @@
 package syscap
 
 // SystemToken is proof that a kernel package asked for cross-tenant access and
-// said why. Its reason is the only state it carries, and the only way to set it
-// is NewSystemToken: a forged token (the zero value, which Go lets any package
-// write as tenancy.SystemToken{}) has an empty reason, which kit/db rejects.
-type SystemToken struct{ reason string }
+// said why.
+//
+// It is an interface with an unexported method and an unexported implementation,
+// so NewSystemToken is the only expression in the program that produces one: a
+// package outside kit/ can name tenancy.SystemToken but can neither construct
+// nor implement it. The zero value is nil, which kit/db refuses.
+type SystemToken interface {
+	// Reason is why the holder needs to cross tenants. It is logged when the
+	// transaction opens.
+	Reason() string
 
-// NewSystemToken mints a token. The reason must be non-empty; it is recorded on
-// the transaction and logged when the transaction opens.
-func NewSystemToken(reason string) SystemToken { return SystemToken{reason: reason} }
+	// isSystemToken is unexported, so this interface is closed to this package.
+	isSystemToken()
+}
 
-// Reason is why the holder needs to cross tenants.
-func (t SystemToken) Reason() string { return t.reason }
+type token struct{ reason string }
+
+func (t token) Reason() string { return t.reason }
+func (token) isSystemToken()   {}
+
+// NewSystemToken mints a token. An empty reason is a programming mistake at the
+// minting site — a capability nobody can explain — so it panics there rather
+// than producing a token that logs nothing.
+func NewSystemToken(reason string) SystemToken {
+	if reason == "" {
+		panic("syscap.NewSystemToken: a cross-tenant capability must say why it exists")
+	}
+	return token{reason: reason}
+}

@@ -74,3 +74,22 @@ func TestHumaErrorKeepsClientDetailAndHidesServerCause(t *testing.T) {
 		t.Errorf("a 503 leaked its message: %q", outage.Error())
 	}
 }
+
+// TestAServerErrorCarriesNoDetailAndAnUnknownStatusStillHasATitle. Repeating
+// the title in the detail says nothing the status has not said, and a body with
+// an empty title is not an RFC 9457 problem.
+func TestAServerErrorCarriesNoDetailAndAnUnknownStatusStillHasATitle(t *testing.T) {
+	body, err := json.Marshal(problem.Internal(errors.New("dial tcp: refused")))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	const want = `{"type":"about:blank","title":"Internal Server Error","status":500}`
+	if string(body) != want {
+		t.Errorf("body = %s, want %s", body, want)
+	}
+
+	odd := problem.New(599, "")
+	if odd.Title != "HTTP 599" {
+		t.Errorf("title = %q, want %q", odd.Title, "HTTP 599")
+	}
+}

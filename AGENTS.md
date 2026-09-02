@@ -7,8 +7,8 @@ and the gates. `docs/adr/` says why. Nothing else is required context.
 
 1. **Net lines go down.** `make check-loc` must pass. `go run ./tools/locbudget
    --write` only lowers a ceiling; raising one is an owner commit with a reason.
-2. **No new channel.** No new registry type, config key namespace, make target
-   or generated document. Twelve make targets, ten gates, one config surface.
+2. **No new channel.** No new registry type, config key namespace or generated
+   document. Fourteen make targets, ten gates, one config surface.
 3. **One task, one commit, green build.** `make check` passes before you commit.
 4. **Delete the old path in the same commit that lands the new one.** No shim
    outlives its task; if the deletion cannot fit, the task is wrong — split it.
@@ -24,6 +24,7 @@ and the gates. `docs/adr/` says why. Nothing else is required context.
 
 ## Commands
 
-    make up               # Postgres and NATS
-    make check            # build, vet, test, check-loc, check-packages
-    make run              # the reference app (stage E2)
+    make up               # Postgres and NATS, waiting for both
+    make check            # build, vet, fmt-check, test, check-loc,
+                          #   check-packages, check-gucs
+    make run              # the reference app (arrives in stage E2)

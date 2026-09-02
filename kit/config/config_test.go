@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -39,5 +40,33 @@ func TestEmptyValueIsRejected(t *testing.T) {
 	t.Setenv("PLATFORMKIT_NATS_URL", "")
 	if _, err := config.Load(example); err == nil {
 		t.Error("Load accepted an empty nats.url")
+	}
+}
+
+// TestLevelAndURLsAreValidated. Both are mistakes a deployment makes once and
+// discovers hours later: a level nothing matches silently logs at info, and a
+// URL with the wrong scheme fails four steps away from the key that holds it.
+func TestLevelAndURLsAreValidated(t *testing.T) {
+	for _, tt := range []struct{ env, value, want string }{
+		{"PLATFORMKIT_LOG_LEVEL", "verbose", "log.level"},
+		{"PLATFORMKIT_DATABASE_URL", "mysql://localhost/x", "database.url"},
+		{"PLATFORMKIT_DATABASE_MIGRATE_URL", "://nope", "database.migrate_url"},
+	} {
+		t.Run(tt.env, func(t *testing.T) {
+			t.Setenv(tt.env, tt.value)
+			_, err := config.Load(example)
+			if err == nil {
+				t.Fatalf("Load accepted %s=%q", tt.env, tt.value)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("the error does not name %s: %v", tt.want, err)
+			}
+		})
+	}
+
+	// postgresql:// is the same scheme spelled out, and is accepted.
+	t.Setenv("PLATFORMKIT_DATABASE_URL", "postgresql://u:p@localhost:5432/db?sslmode=disable")
+	if _, err := config.Load(example); err != nil {
+		t.Errorf("Load rejected postgresql://: %v", err)
 	}
 }
