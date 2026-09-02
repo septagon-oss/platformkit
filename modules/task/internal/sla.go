@@ -36,55 +36,44 @@ func SLASweep(tenants jobs.TenantLister, svc contracts.Service, every time.Durat
 	}
 }
 
-// overdue is one tenant's set of tasks past their deadline.
-type overdue struct {
-	tenant tenancy.Tenant
-	ids    []uuid.UUID
-}
-
-// sweep reads every tenant's overdue set and then breaches each task in a
-// transaction of its own. A row an older writer left in a shape Validate
-// refuses — a priority that is no longer a priority — then fails its own
-// CheckSLA and nothing else, where one transaction per tenant meant that row
-// rolled every breach beside it back, on every tick, forever. The failures come
-// back joined, each logged with its task id, because "the sweep failed" with no
-// row to look at is not something anybody can act on.
+// sweep breaches every overdue task, each in a transaction of its own.
 //
-// The two passes cannot be one: db.Run joins an enclosing tenant transaction
-// rather than opening a second, so a per-task transaction started inside the
-// listing transaction would silently be the listing transaction.
+// jobs.PerTenant hands over a context that already carries the tenant and no
+// open transaction, so every db.Run below is its own: the listing is one, and
+// each task is another. That is what makes a row an older writer left in a
+// shape Validate refuses — a priority that is no longer a priority — fail its
+// own CheckSLA and nothing else, where one transaction per tenant meant that
+// row rolled every breach beside it back, on every tick, forever. The failures
+// come back joined, each logged with its task id, because "the sweep failed"
+// with no row to look at is not something anybody can act on.
 func sweep(ctx context.Context, conn *db.Conn, tenants jobs.TenantLister, svc contracts.Service) error {
-	var work []overdue
-	failed := []error{jobs.ForEachTenant(ctx, conn, tenants, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		// A range comparison, which kit/crud's equality filters cannot express,
-		// so this is a query and not a crud.List; it reads only the ids,
-		// because each CheckSLA reads the row it is about to write.
+	return jobs.PerTenant(ctx, conn, tenants, func(ctx context.Context, conn *db.Conn, tenant tenancy.Tenant) error {
 		var ids []uuid.UUID
-		err := tx.DB().Model(&contracts.Task{}).
-			Where("sla_breached = false AND resolved_at IS NULL AND sla_deadline < now() AND deleted_at IS NULL").
-			Order("sla_deadline").Limit(sweepLimit).Pluck("id", &ids).Error
+		err := db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+			// A range comparison, which kit/crud's equality filters cannot
+			// express, so this is a query and not a crud.List; it reads only
+			// the ids, because each CheckSLA reads the row it is about to write.
+			return tx.DB().Model(&contracts.Task{}).
+				Where("sla_breached = false AND resolved_at IS NULL AND sla_deadline < now() AND deleted_at IS NULL").
+				Order("sla_deadline").Limit(sweepLimit).Pluck("id", &ids).Error
+		})
 		if err != nil {
 			return fmt.Errorf("task: list the overdue tasks: %w", err)
 		}
-		work = append(work, overdue{tenant: db.TenantOf(tx), ids: ids})
-		return nil
-	})}
-
-	for _, w := range work {
-		tenant := tenancy.WithTenant(ctx, w.tenant)
-		for _, id := range w.ids {
-			err := db.Run(tenant, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var failed []error
+		for _, id := range ids {
+			err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 				_, err := svc.CheckSLA(ctx, tx, id)
 				return err
 			})
 			if err != nil {
 				slog.ErrorContext(ctx, "task: could not record a breach; the sweep continues",
-					"tenant", w.tenant.Slug, "task", id, "error", err)
+					"tenant", tenant.Slug, "task", id, "error", err)
 				failed = append(failed, fmt.Errorf("task: check the SLA of %s: %w", id, err))
 			}
 		}
-	}
-	return errors.Join(failed...)
+		return errors.Join(failed...)
+	})
 }
 
 // BreachOnArrival is the create route's hook: a task whose deadline has already
