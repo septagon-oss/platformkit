@@ -93,9 +93,8 @@ never priced as if it were a feature of the module it stands in for.
 
 ## Gates
 
-`make check` runs gates 1 to 5, and 7 to 9, today; 6 and 10 arrive with the
-stage that gives them something to check — a second module, and a screen. The
-list stops at ten.
+`make check` runs gates 1 to 9 today; 10 arrives with the stage that gives it
+something to check, which is a screen. The list stops at ten.
 
 | # | Gate | Proves | Stage |
 |---|---|---|---|
@@ -104,7 +103,7 @@ list stops at ten.
 | 3 | `make test` | the suite passes against a real Postgres | E0 |
 | 4 | `make check-loc` | no bucket exceeds its ceiling | E0 |
 | 5 | `make check-packages` | the app links ≤ 400 first-party packages | E2 |
-| 6 | `scripts/check_imports.sh` | a module imports only another module's `contracts/` | E3 |
+| 6 | `scripts/check_imports.sh` | a module imports only another module's `contracts/`, and `apps/` reaches into no module's `internal/` | E3 |
 | 7 | boot validation test | no operation ships without an `Auth` declaration, and no route requires a permission no module defines | E1 |
 | 8 | tenant isolation test + `make check-gucs` | RLS blocks cross-tenant reads as the app role, and only `kit/db` writes the tenancy settings | E1 |
 | 9 | empty-database boot test | the app migrates and serves from nothing | E2 |

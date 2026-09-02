@@ -49,7 +49,12 @@ fmt-check: ## Fail when any file is not gofmt'd
 	if [ -n "$$out" ]; then echo "NOT FORMATTED:"; echo "$$out"; exit 1; fi; \
 	echo "gofmt clean"
 
+# Gate 6 is a line in this recipe rather than a fifteenth target, because there
+# are fourteen and the count is one of the rules. Make runs the prerequisites
+# first, so it goes last; it costs milliseconds and needs nothing built, so
+# where it goes does not matter.
 check: build vet fmt-check test check-loc check-packages check-gucs ## Everything a pull request must pass
+	./scripts/check_imports.sh
 
 fmt: ## Format every package
 	go fmt ./...
