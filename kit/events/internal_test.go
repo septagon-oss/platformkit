@@ -56,8 +56,8 @@ func TestAPoisonEventIsDeadLetteredAndStopsComingBack(t *testing.T) {
 		t.Fatalf("Consume: %v", err)
 	}
 
-	err = db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		return Publish(tx, "billing.invoice_issued", nil)
+	err = db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return Publish(ctx, tx, "billing.invoice_issued", nil)
 	})
 	if err != nil {
 		t.Fatalf("publish: %v", err)
@@ -134,8 +134,8 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 		t.Fatalf("Consume: %v", err)
 	}
 
-	err = db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		return Publish(tx, name, nil)
+	err = db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return Publish(ctx, tx, name, nil)
 	})
 	if err != nil {
 		t.Fatalf("publish: %v", err)

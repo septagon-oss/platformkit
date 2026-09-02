@@ -95,9 +95,12 @@ func hello() module.Module {
 		Permissions: []module.Permission{{Key: "note:write"}},
 		Events:      []string{"hello.note_written"},
 		Nav:         []module.NavEntry{{Label: "Notes", Path: "/hello", Permission: "note:write"}},
+		// Numbered far past migrations/, because a module's SQL joins the one
+		// ledger and a number the repository will reach is a collision waiting
+		// for the next stage. The gap is the point, not the value.
 		Migrations: fstest.MapFS{
-			"000009_notes.up.sql":   {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
-			"000009_notes.down.sql": {Data: []byte(`DROP TABLE notes`)},
+			"000900_notes.up.sql":   {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
+			"000900_notes.down.sql": {Data: []byte(`DROP TABLE notes`)},
 		},
 		Routes: func(api *httpx.API) {
 			httpx.Register(api, huma.Operation{
@@ -258,7 +261,7 @@ func TestMigrationVersionsAreGlobal(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	for _, want := range []string{"000001_tenancy.up.sql", "000009_notes.up.sql"} {
+	for _, want := range []string{"000001_tenancy.up.sql", "000900_notes.up.sql"} {
 		if !strings.Contains(strings.Join(names, " "), want) {
 			t.Errorf("the merged directory lacks %s: %v", want, names)
 		}
@@ -424,8 +427,8 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 		t.Errorf("a worker answered /openapi.json with %d; it serves two routes", code)
 	}
 
-	writeErr := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		return events.Publish(tx, "ledger.entry_written", map[string]any{"amount": 7})
+	writeErr := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return events.Publish(ctx, tx, "ledger.entry_written", map[string]any{"amount": 7})
 	})
 	if writeErr != nil {
 		t.Fatalf("publish: %v", writeErr)

@@ -74,6 +74,13 @@ type Event struct {
 	Payload json.RawMessage `json:"payload"`
 	// At is when the outbox row was written, which is when the state changed.
 	At time.Time `json:"at"`
+	// Actor is the user whose request caused this, and the nil UUID when
+	// nothing did: a periodic job, the relay, a handler reacting to another
+	// event. It is not a field a publisher fills in — kit/tenancy carries it on
+	// the request context and Publish reads it there — because "remember to
+	// pass the caller through" is the kind of instruction that is followed
+	// almost everywhere, and an audit trail with holes in it is worse than none.
+	Actor uuid.UUID `json:"actor"`
 }
 
 // eventName is the grammar of an event name: the module's name, a dot, and a
@@ -87,10 +94,14 @@ func ValidName(name string) bool { return eventName.MatchString(name) }
 // Publish writes an event into the outbox inside tx. It is not a network call
 // and it cannot fail because a broker is down: the row commits with the state
 // change and the relay carries it from there.
-func Publish(tx db.Tx[db.Tenant], name string, payload any) error {
+//
+// It takes a context only to read the actor off it. A db.Tx carries none — a
+// transaction is a handle, not a scope somebody can cancel through — so the
+// caller's own context is the one thing that knows whose request this is.
+func Publish(ctx context.Context, tx db.Tx[db.Tenant], name string, payload any) error {
 	// The tenant comes from the transaction, never from the caller: an event
 	// belongs to the tenant whose data changed, by construction.
-	return write(tx.DB(), db.TenantOf(tx).ID, name, payload)
+	return write(ctx, tx.DB(), db.TenantOf(tx).ID, name, payload)
 }
 
 // PublishFor writes an event from a cross-tenant transaction, naming the tenant
@@ -106,14 +117,18 @@ func Publish(tx db.Tx[db.Tenant], name string, payload any) error {
 //
 // A caller needs a db.Tx[db.System] to reach it, so the audience is the modules
 // that already hold the capability. See docs/adr/0006.
-func PublishFor(tx db.Tx[db.System], tenantID uuid.UUID, name string, payload any) error {
+func PublishFor(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, name string, payload any) error {
 	if tenantID == uuid.Nil {
 		return fmt.Errorf("events: %s: an event belongs to a tenant", name)
 	}
-	return write(tx.DB(), tenantID, name, payload)
+	return write(ctx, tx.DB(), tenantID, name, payload)
 }
 
-func write(gdb *gorm.DB, tenantID uuid.UUID, name string, payload any) error {
+// write is the one INSERT. The actor is whatever kit/tenancy has on the
+// context and NULL otherwise, passed as an untyped nil so the column is null
+// rather than the nil UUID: "nobody" and "the user 00000000-…" are different
+// answers and only one of them is true.
+func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, payload any) error {
 	if !ValidName(name) {
 		return fmt.Errorf("events: %q is not %q", name, "<module>.<event>")
 	}
@@ -121,9 +136,13 @@ func write(gdb *gorm.DB, tenantID uuid.UUID, name string, payload any) error {
 	if err != nil {
 		return fmt.Errorf("events: %s: marshal the payload: %w", name, err)
 	}
+	var actor any
+	if id, ok := tenancy.ActorFrom(ctx); ok {
+		actor = id
+	}
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload) VALUES (?, ?, ?, ?::jsonb)",
-		uuid.New(), tenantID, name, string(body),
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor) VALUES (?, ?, ?, ?::jsonb, ?)",
+		uuid.New(), tenantID, name, string(body), actor,
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}

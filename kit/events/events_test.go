@@ -59,8 +59,8 @@ func (r *recorder) names() []string {
 // publish writes one event in its own committed transaction.
 func publish(t *testing.T, conn *db.Conn, tenant tenancy.Tenant, name string, payload any) {
 	t.Helper()
-	err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		return events.Publish(tx, name, payload)
+	err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return events.Publish(ctx, tx, name, payload)
 	})
 	if err != nil {
 		t.Fatalf("publish %s: %v", name, err)
@@ -86,8 +86,8 @@ func TestPublishIsPartOfTheTransaction(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 
 	sentinel := errors.New("the handler failed after publishing")
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		if err := events.Publish(tx, "billing.invoice_issued", map[string]any{"amount": 1}); err != nil {
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if err := events.Publish(ctx, tx, "billing.invoice_issued", map[string]any{"amount": 1}); err != nil {
 			return err
 		}
 		return sentinel
@@ -110,8 +110,8 @@ func TestPublishIsPartOfTheTransaction(t *testing.T) {
 func TestPublishRefusesAnUnnamespacedEvent(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	for _, name := range []string{"", "invoice", "Billing.Issued", "billing.", "billing..x"} {
-		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-			return events.Publish(tx, name, nil)
+		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			return events.Publish(ctx, tx, name, nil)
 		})
 		if err == nil {
 			t.Errorf("Publish accepted %q", name)
@@ -223,9 +223,9 @@ func TestConsumeRunsInTheEventTenant(t *testing.T) {
 	transport := events.Memory()
 	subs := []events.Subscription{{
 		Module: "ledger", Name: "billing.invoice_issued",
-		Handler: func(_ context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
 			// The transaction is real: it can publish an event of its own.
-			if err := events.Publish(tx, "ledger.entry_written", ev.ID); err != nil {
+			if err := events.Publish(ctx, tx, "ledger.entry_written", ev.ID); err != nil {
 				return err
 			}
 			seen <- db.TenantOf(tx).ID
@@ -565,9 +565,9 @@ func TestOneRelayPassDrainsTheQueue(t *testing.T) {
 // through to a random uuid. clock_timestamp() is what makes the order real.
 func TestEventsFromOneTransactionRelayInTheOrderTheyWerePublished(t *testing.T) {
 	_, conn := dbtest.Schema(t)
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		for i := range 6 {
-			if err := events.Publish(tx, "billing.invoice_issued", map[string]any{"n": i}); err != nil {
+			if err := events.Publish(ctx, tx, "billing.invoice_issued", map[string]any{"n": i}); err != nil {
 				return err
 			}
 		}
@@ -611,5 +611,64 @@ func TestAPublishThatFailsPartWayLeavesTheWholeBatchUnstamped(t *testing.T) {
 	}
 	if unpublished, published := pending(t, conn); unpublished != 5 || published != 0 {
 		t.Errorf("after the failed relay: %d unpublished, %d published; want 5 and 0", unpublished, published)
+	}
+}
+
+// TestTheActorIsTheRequestsAndNotTheJobs.
+//
+// An event carries who caused it, and the honest answer for periodic work, for
+// the relay and for an event handler is nobody. The value travels on the
+// context — kit/httpx puts it there once, when it recognises the caller — so a
+// module never passes it along and never can forget to; the other side of that
+// is that work started by the clock has nothing on its context and writes NULL
+// rather than inheriting whoever signed in last. modules/audit reads the column
+// and an audit trail that credited a sweep to a person would be worse than one
+// that said "the system".
+func TestTheActorIsTheRequestsAndNotTheJobs(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	ada := uuid.New()
+
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if err := events.Publish(tenancy.WithActor(ctx, ada), tx, "billing.invoice_issued", nil); err != nil {
+			return err
+		}
+		return events.Publish(ctx, tx, "billing.invoice_paid", nil)
+	})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	r := &recorder{}
+	if err := events.Relay(t.Context(), conn, r); err != nil {
+		t.Fatalf("Relay: %v", err)
+	}
+	got := map[string]uuid.UUID{}
+	for _, ev := range r.got {
+		got[ev.Name] = ev.Actor
+	}
+	if got["billing.invoice_issued"] != ada {
+		t.Errorf("the request's event names %s, want %s", got["billing.invoice_issued"], ada)
+	}
+	if got["billing.invoice_paid"] != uuid.Nil {
+		t.Errorf("an event nobody asked for names %s, want nobody", got["billing.invoice_paid"])
+	}
+
+	// The nil UUID is not an actor: a zero principal must not read as somebody.
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return events.Publish(tenancy.WithActor(ctx, uuid.Nil), tx, "billing.invoice_voided", nil)
+	})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	var actor *uuid.UUID
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		return tx.DB().Raw(`SELECT actor FROM platformkit_outbox WHERE name = ?`, "billing.invoice_voided").
+			Row().Scan(&actor)
+	})
+	if err != nil {
+		t.Fatalf("read the actor: %v", err)
+	}
+	if actor != nil {
+		t.Errorf("the nil UUID was written as an actor: %s", actor)
 	}
 }

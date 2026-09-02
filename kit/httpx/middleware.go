@@ -392,7 +392,12 @@ func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
 		next(ctx)
 		return
 	}
-	next(huma.WithContext(ctx, WithPrincipal(ctx.Context(), p)))
+	// One recognition, two things put on the context: the principal, which a
+	// handler and the authorization middleware ask about, and the actor, which
+	// kit/events stamps on every event this request publishes. Deriving the
+	// second here rather than at each Publish is what keeps "who did this" out
+	// of every module's argument lists.
+	next(huma.WithContext(ctx, tenancy.WithActor(WithPrincipal(ctx.Context(), p), p.UserID)))
 }
 
 // credentialed reports whether the request presents something the application
