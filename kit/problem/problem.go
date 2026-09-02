@@ -54,8 +54,13 @@ func Conflict(detail string) *Problem { return New(http.StatusConflict, detail) 
 
 // Internal is 500. The detail is the status text: a server error's real message
 // belongs in the log, not in the response.
-func Internal(cause error) *Problem {
-	p := New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+func Internal(cause error) *Problem { return serverError(http.StatusInternalServerError, cause) }
+
+// serverError is any 5xx: the status is kept, because 503 asks a caller to come
+// back and 500 asks them not to, and the message is not, for the same reason
+// Internal withholds it.
+func serverError(status int, cause error) *Problem {
+	p := New(status, http.StatusText(status))
 	p.cause = cause
 	return p
 }

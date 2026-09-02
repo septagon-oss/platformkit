@@ -32,6 +32,5 @@ func HumaError(status int, message string, errs ...error) huma.StatusError {
 	if message != "" {
 		cause = errors.Join(errors.New(message), cause)
 	}
-	p := Internal(cause)
-	return p
+	return serverError(status, cause)
 }

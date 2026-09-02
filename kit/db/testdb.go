@@ -8,74 +8,95 @@ import (
 	"testing"
 )
 
-// TestSchema gives one test its own Postgres schema and the two connections the
-// architecture is built on: admin owns the schema and runs DDL, app connects as
-// the unprivileged role that row-level security binds. The schema is dropped
-// when the test ends.
+// TestSchemaURLs gives one test its own Postgres schema and the two connection
+// URLs that reach it: the first owns the schema and holds the DDL rights, the
+// second is the unprivileged role row-level security binds. The schema is
+// dropped when the test ends.
+//
+// The schema travels in the URL, as the search_path connection parameter, so
+// every connection a pool opens from it lands in the same place. Setting it
+// with a statement instead would bind one session, which is why code that opens
+// its own pool — kit/app, and kit/db.Migrate — needs the URL rather than a
+// *Conn.
 //
 // It fails rather than skips when the URLs are unset. A suite that quietly
-// skips the isolation tests proves nothing, which is exactly the state
-// docs/adr/0003 was written to end.
-func TestSchema(t *testing.T) (admin, app *Conn) {
+// skips the isolation tests proves nothing.
+func TestSchemaURLs(t *testing.T) (adminURL, appURL string) {
 	t.Helper()
 	ctx := t.Context()
-	adminURL := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
-	appURL := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
-	schema := quote(schemaName(t.Name()))
-	role := quote(roleOf(t, appURL))
+	baseAdmin := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
+	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
+	name := schemaName(t.Name())
+	schema := quote(name)
+	role := quote(roleOf(t, baseApp))
 
+	admin, err := openOwner(baseAdmin)
+	if err != nil {
+		t.Fatalf("db: test admin connection: %v", err)
+	}
+	defer admin.Close()
+	run := func(query string) {
+		t.Helper()
+		if err := admin.exec(ctx, query); err != nil {
+			t.Fatalf("db: TestSchemaURLs: %v", err)
+		}
+	}
+	run("DROP SCHEMA IF EXISTS " + schema + " CASCADE")
+	run("CREATE SCHEMA " + schema)
+	run("GRANT USAGE ON SCHEMA " + schema + " TO " + role)
+	// Default privileges hand each table and sequence created in the schema to
+	// the app role as it appears, the same way deploy/postgres/init.sql does for
+	// the public schema.
+	run("ALTER DEFAULT PRIVILEGES IN SCHEMA " + schema + " GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO " + role)
+	run("ALTER DEFAULT PRIVILEGES IN SCHEMA " + schema + " GRANT USAGE, SELECT ON SEQUENCES TO " + role)
+
+	t.Cleanup(func() {
+		done := context.WithoutCancel(ctx)
+		cleaner, err := openOwner(baseAdmin)
+		if err != nil {
+			return
+		}
+		defer cleaner.Close()
+		_ = cleaner.exec(done, "DROP SCHEMA "+schema+" CASCADE")
+	})
+	// public stays on the path: migrations/ installs the tenancy helper
+	// functions there once for the whole database.
+	return withSearchPath(t, baseAdmin, name), withSearchPath(t, baseApp, name)
+}
+
+// TestSchema is TestSchemaURLs with both connections already open.
+func TestSchema(t *testing.T) (admin, app *Conn) {
+	t.Helper()
+	adminURL, appURL := TestSchemaURLs(t)
 	admin, err := openOwner(adminURL)
 	if err != nil {
 		t.Fatalf("db: test admin connection: %v", err)
 	}
-	pin(t, admin)
-	run := func(c *Conn, query string) {
-		t.Helper()
-		if err := c.exec(ctx, query); err != nil {
-			t.Fatalf("db: TestSchema: %v", err)
-		}
-	}
-	run(admin, "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
-	run(admin, "CREATE SCHEMA "+schema)
-	run(admin, "GRANT USAGE ON SCHEMA "+schema+" TO "+role)
-	// Default privileges hand each table and sequence the test creates to the
-	// app role as it appears, the same way deploy/postgres/init.sql does for
-	// the public schema.
-	run(admin, "ALTER DEFAULT PRIVILEGES IN SCHEMA "+schema+" GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "+role)
-	run(admin, "ALTER DEFAULT PRIVILEGES IN SCHEMA "+schema+" GRANT USAGE, SELECT ON SEQUENCES TO "+role)
-	// public stays on the path: migrations/ installs the tenancy helper
-	// functions there once for the whole database.
-	run(admin, "SET search_path TO "+schema+", public")
-
-	app, err = Open(ctx, appURL)
+	app, err = Open(t.Context(), appURL)
 	if err != nil {
 		_ = admin.Close()
 		t.Fatalf("db: test app connection: %v", err)
 	}
-	pin(t, app)
-	run(app, "SET search_path TO "+schema+", public")
-
 	t.Cleanup(func() {
-		done := context.WithoutCancel(ctx)
 		_ = app.Close()
-		_ = admin.exec(done, "DROP SCHEMA "+schema+" CASCADE")
 		_ = admin.Close()
 	})
 	return admin, app
 }
 
-// pin holds a pool at one connection so that SET search_path, which is a
-// session setting, applies to every statement the test makes afterwards.
-func pin(t *testing.T, c *Conn) {
+// withSearchPath returns rawURL with search_path set to the test schema. pgx
+// forwards any query parameter it does not recognise as a connection setting,
+// so this arrives in the startup message of every connection in the pool.
+func withSearchPath(t *testing.T, rawURL, schema string) string {
 	t.Helper()
-	sqlDB, err := c.db.DB()
+	u, err := url.Parse(rawURL)
 	if err != nil {
-		t.Fatalf("db: pool: %v", err)
+		t.Fatalf("db: %q is not a URL: %v", rawURL, err)
 	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-	sqlDB.SetConnMaxLifetime(0)
-	sqlDB.SetConnMaxIdleTime(0)
+	q := u.Query()
+	q.Set("search_path", schema+",public")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func mustEnv(t *testing.T, name string) string {
