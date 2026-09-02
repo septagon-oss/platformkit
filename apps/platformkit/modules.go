@@ -19,6 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -121,6 +122,7 @@ func compose(cfg config.Config) composition {
 		task.Module(task.Deps{Tenants: active}),
 		billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()}),
 		content.Module(content.Deps{}),
+		site.Module(site.Deps{}),
 	}
 	mods = append(mods, audit.Module(audit.Deps{
 		Tenants:       active,

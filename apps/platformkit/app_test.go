@@ -47,6 +47,7 @@ const (
 	plansPath   = "/api/v1/billing/plans"
 	subPath     = "/api/v1/billing/subscription"
 	contentPath = "/api/v1/content/contents"
+	sitePath    = "/api/v1/site/settings"
 	adminEmail  = "root@acme.localhost"
 	adminPass   = "correct horse battery staple"
 )
@@ -236,6 +237,22 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	}
 	if strings.Contains(body, "<script") || strings.Contains(body, "alert(1)") {
 		t.Errorf("the published page carries the script somebody typed into it:\n%s", body)
+	}
+
+	// Site: what a theme reads, saved by an administrator and read by nobody
+	// in particular. The tagline and the home slug are not in the public
+	// answer, because a public response that carried the whole row would be an
+	// admin screen anybody could read.
+	if code, body = do(t, cfg, admin, http.MethodPut, acmeHost, sitePath,
+		`{"title":"Acme","tagline":"We make things","homeSlug":"about-us","theme":"dark","nav":[{"label":"About","path":"/about-us"}]}`); code != http.StatusOK {
+		t.Fatalf("PUT %s = %d %s, want 200", sitePath, code, body)
+	}
+	code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/site/public", "")
+	if code != http.StatusOK || !strings.Contains(body, `"theme":"dark"`) || !strings.Contains(body, `"path":"/about-us"`) {
+		t.Fatalf("the public site = %d %s", code, body)
+	}
+	if strings.Contains(body, "tagline") || strings.Contains(body, "homeSlug") {
+		t.Errorf("the public site carries what only an administrator asked for:\n%s", body)
 	}
 
 	// A second tenant, through the control-plane API, as the administrator of
