@@ -76,12 +76,15 @@ func call(t *testing.T, r http.Handler, method, path, body string) (int, string)
 //
 // A grant and a deactivation are the two changes to a user that an audit has to
 // be able to find, so each has one route and each publishes. The generic doors
-// are shut, and they are shut for three different reasons worth knowing apart:
-// the create is refused by the module's own AfterCreate hook, `status` by
-// Spec.Immutable, and `roles` by kit/crud's schema — which covers a closed set
-// of field types that a slice is not in, so the field does not exist as far as
-// a patch is concerned. The last of those is the right answer arrived at for
-// the wrong reason, and it is the one to revisit when the schema learns lists.
+// are shut, and they are shut for two different reasons worth knowing apart:
+// the create is refused by the module's own AfterCreate hook, because there is
+// no row yet to refuse a change to, and the two patches by Spec.Immutable,
+// which names the field so the caller is told which door to use.
+//
+// `roles` used to be refused by kit/crud's schema having no list type, which
+// meant it rendered nowhere either. The schema has one now, so the refusal is
+// deliberate and the field is real: the case below is the one that would have
+// let a bulk update of a profile grant somebody the admin role.
 func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 	router := mount(t)
 
@@ -100,8 +103,15 @@ func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 	id := field(t, body, "id")
 
 	code, body = call(t, router, http.MethodPatch, at+"/"+id, `{"roles":["admin"]}`)
-	if code != http.StatusUnprocessableEntity {
-		t.Errorf("patching roles = %d %s, want 422", code, body)
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "command of its own") {
+		t.Errorf("patching roles = %d %s, want 422 naming the door", code, body)
+	}
+
+	// And the patch route still works, which is what says the two refusals are
+	// about those two fields and not about PATCH.
+	code, body = call(t, router, http.MethodPatch, at+"/"+id, `{"displayName":"Ada Lovelace"}`)
+	if code != http.StatusOK || !strings.Contains(body, "Ada Lovelace") {
+		t.Errorf("patching displayName = %d %s, want 200", code, body)
 	}
 
 	// status is refused by name, because Deactivate owns it and publishes

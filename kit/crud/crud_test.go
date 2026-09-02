@@ -27,6 +27,14 @@ type Task struct {
 	Notes    string     `json:"notes,omitempty" gorm:"type:text"`
 	DueAt    *time.Time `json:"dueAt,omitempty"`
 	Secret   string     `json:"-" gorm:"-"`
+
+	// Three slices: two lists and a blob. They are gorm:"-" because what is
+	// under test here is the derivation and not the array codec — a list column
+	// that is actually written needs a driver.Valuer, which modules/user's
+	// Roles has and a bare []string does not.
+	Tags     []string    `json:"tags,omitempty" gorm:"-"`
+	Watchers []uuid.UUID `json:"watchers,omitempty" gorm:"-"`
+	Blob     []byte      `json:"blob,omitempty" gorm:"-"`
 }
 
 func (Task) TableName() string { return "crud_tasks" }
@@ -300,6 +308,8 @@ func TestListPagesSortsAndFilters(t *testing.T) {
 			{Sort: "tenantId"},                           // json:"-": not a field out here
 			{Sort: "-nonesuch"},                          //
 			{Filter: map[string]any{"title; DROP": "x"}}, // and nothing to interpolate
+			{Sort: "tags"},                               // a list holds many values, so
+			{Filter: map[string]any{"tags": "red"}},      // neither = nor ORDER BY is a question
 		} {
 			if _, _, err := crud.List[*Task](tx, q); !errors.Is(err, crud.ErrInvalid) {
 				t.Errorf("List(%+v) = %v, want ErrInvalid", q, err)
@@ -318,7 +328,9 @@ func TestSchemaIsDerivedFromTheStruct(t *testing.T) {
 		byName[f.Name] = f
 	}
 
-	for _, hidden := range []string{"-", "tenantId", "deletedAt", "Secret"} {
+	// A []byte is a single value stored as bytes, not a list of small numbers,
+	// so it is in no schema and no screen renders it.
+	for _, hidden := range []string{"-", "tenantId", "deletedAt", "Secret", "blob"} {
 		if _, ok := byName[hidden]; ok {
 			t.Errorf("the schema exposes %q", hidden)
 		}
@@ -333,13 +345,15 @@ func TestSchemaIsDerivedFromTheStruct(t *testing.T) {
 		{Name: "done", Type: crud.TypeBool, HideList: true},
 		{Name: "notes", Type: crud.TypeText},
 		{Name: "dueAt", Type: crud.TypeTime},
+		{Name: "tags", Type: crud.TypeList, Elem: crud.TypeString},
+		{Name: "watchers", Type: crud.TypeList, Elem: crud.TypeUUID},
 	} {
 		got, ok := byName[want.Name]
 		if !ok {
 			t.Errorf("the schema has no field %q", want.Name)
 			continue
 		}
-		if got.Type != want.Type || got.Widget != want.Widget || got.Required != want.Required ||
+		if got.Type != want.Type || got.Elem != want.Elem || got.Widget != want.Widget || got.Required != want.Required ||
 			got.ReadOnly != want.ReadOnly || got.HideList != want.HideList ||
 			strings.Join(got.Enum, ",") != strings.Join(want.Enum, ",") {
 			t.Errorf("field %s = %+v, want %+v", want.Name, got, want)

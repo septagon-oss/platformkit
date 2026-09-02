@@ -34,6 +34,12 @@ const (
 	TypeBool   FieldType = "bool"
 	TypeTime   FieldType = "time"
 	TypeUUID   FieldType = "uuid"
+	// TypeList is a slice of one of the above, which Field.Elem names. A user's
+	// roles is the case that made it necessary: without it the field was in no
+	// schema, so it rendered nowhere, no filter could refuse it and Immutable
+	// could not name it — a PATCH could not reach it either, but only because
+	// the field did not exist, which is the right answer for the wrong reason.
+	TypeList FieldType = "list"
 )
 
 // Field is one column, as the API and a screen see it.
@@ -44,6 +50,8 @@ type Field struct {
 	// interpolates into SQL. It comes from the struct, never from a request.
 	Column string    `json:"-"`
 	Type   FieldType `json:"type"`
+	// Elem is what a TypeList holds, and empty for everything else.
+	Elem FieldType `json:"elem,omitempty"`
 	// Widget overrides the control a screen would pick from Type: `ui:"widget:select"`.
 	Widget string `json:"widget,omitempty"`
 	// Enum is the closed set of values, from `enum:"open,done"`.
@@ -97,7 +105,7 @@ func derive(t reflect.Type) []Field {
 		if !ok {
 			continue
 		}
-		kind, ok := fieldType(sf)
+		kind, elem, ok := fieldType(sf)
 		if !ok {
 			continue
 		}
@@ -105,6 +113,7 @@ func derive(t reflect.Type) []Field {
 			Name:     name,
 			Column:   column(sf),
 			Type:     kind,
+			Elem:     elem,
 			Required: has(sf.Tag.Get("validate"), "required"),
 			ReadOnly: declaredBy(t, sf) == baseType,
 			Index:    sf.Index,
@@ -149,9 +158,30 @@ func jsonName(sf reflect.StructField) (string, bool) {
 }
 
 // fieldType maps a Go type to the closed set, reporting false for a type no
-// screen and no filter can handle.
-func fieldType(sf reflect.StructField) (FieldType, bool) {
+// screen and no filter can handle. A slice of one of the scalars is TypeList
+// and the second return is what it holds.
+func fieldType(sf reflect.StructField) (kind, elem FieldType, ok bool) {
 	t := sf.Type
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	// A slice is a list of whatever it holds, and []byte is not one of those: a
+	// blob is a single value, and rendering it as a list of small numbers is
+	// worse than leaving it out. uuid.UUID is an array and not a slice, so it
+	// never reaches here.
+	if t.Kind() == reflect.Slice && t.Elem().Kind() != reflect.Uint8 {
+		elem, ok = scalar(t.Elem(), sf.Tag)
+		return TypeList, elem, ok
+	}
+	kind, ok = scalar(t, sf.Tag)
+	return kind, "", ok
+}
+
+// scalar is the shape of a single value. The tag is a parameter because a text
+// column is a paragraph and a varchar is a line, which is the whole difference
+// a form cares about, so the storage decision that is already in the gorm tag
+// is the one that decides the widget.
+func scalar(t reflect.Type, tag reflect.StructTag) (FieldType, bool) {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -170,10 +200,7 @@ func fieldType(sf reflect.StructField) (FieldType, bool) {
 	case reflect.Float32, reflect.Float64:
 		return TypeFloat, true
 	case reflect.String:
-		// A text column is a paragraph and a varchar is a line, which is the
-		// whole difference a form cares about, so the storage decision that is
-		// already in the gorm tag is the one that decides the widget.
-		if has(sf.Tag.Get("gorm"), "type:text") {
+		if has(tag.Get("gorm"), "type:text") {
 			return TypeText, true
 		}
 		return TypeString, true

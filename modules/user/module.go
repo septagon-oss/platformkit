@@ -33,15 +33,17 @@ var spec = rest.Spec[*contracts.User]{
 	Read:       contracts.PermissionUserRead,
 	Write:      contracts.PermissionUserManage,
 	SoftDelete: true,
-	// status is moved by Deactivate, which publishes user.deactivated; a
-	// caller who could set it through the generic update would deactivate
-	// somebody and tell nobody.
+	// The two fields a command owns. status is moved by Deactivate, which
+	// publishes user.deactivated, and roles by SetRoles, which publishes
+	// user.roles_set; a caller who could set either through the generic update
+	// would deactivate somebody, or make them an administrator, and tell
+	// nobody.
 	//
-	// roles is not here and cannot be: kit/crud's schema covers a closed set of
-	// field types and a slice is not one of them, so `roles` is refused by the
-	// PATCH already — as a field that does not exist, which is the right answer
-	// arrived at for the wrong reason. Naming it here would panic at mount.
-	Immutable: []string{"status"},
+	// roles used to be refused by accident: kit/crud's schema had no list type,
+	// so the field did not exist as far as a patch was concerned. It exists
+	// now, it renders, and it is refused by name — which is also what tells the
+	// caller which door to use.
+	Immutable: []string{"status", "roles"},
 }
 
 // Module is the manifest, and the service it is built on: the auth module takes
@@ -78,9 +80,8 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 //
 // The hook runs inside the request's transaction, after the row and its event,
 // so returning an error rolls the whole create back and the caller gets a 422.
-// The PATCH route needs no such guard: kit/crud's schema covers a closed set of
-// field types, a slice is not one of them, and a body naming `roles` is already
-// refused as a field that does not exist.
+// The PATCH route is guarded by spec.Immutable instead; a create cannot be,
+// because there is no row yet to refuse a change to.
 func refuseRolesOnCreate(_ context.Context, _ db.Tx[db.Tenant], u *contracts.User) error {
 	if len(u.Roles) == 0 {
 		return nil

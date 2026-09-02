@@ -53,10 +53,10 @@ const MinPasswordLength = 12
 // Roles is the set of role names a user holds, one text[] column.
 //
 // It is a named type rather than []string so that the array codec is written
-// once, and it has a second effect worth knowing: kit/crud's schema covers a
-// closed set of field types and a slice is not in it, so `roles` is not a field
-// a PATCH can name. Granting a role is Service.SetRoles, which says so in an
-// event; it is not something that happens inside a bulk update of a profile.
+// once. kit/crud's schema reads it as a list of strings, so it renders and it
+// is a field a PATCH could name — which is why the Spec names it Immutable.
+// Granting a role is Service.SetRoles, which says so in an event; it is not
+// something that happens inside a bulk update of a profile.
 type Roles []string
 
 // Value writes the array. Scan reads it. Both delegate to lib/pq, which is
