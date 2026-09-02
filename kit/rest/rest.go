@@ -61,11 +61,12 @@ type Spec[T crud.Entity] struct {
 	NoEvents bool
 
 	// Immutable names, by json field name, the fields a PATCH refuses because
-	// a command of their own owns them: a task's assigneeId belongs to Assign,
+	// a route of their own owns them: a task's assigneeId belongs to Assign,
 	// which also moves the status and publishes task.assigned, so a caller who
 	// could set it through the generic update would move the field alone and
-	// tell nobody. The refusal is a 422 naming the field, so the caller is
-	// told which door to use rather than left wondering why nothing happened.
+	// tell nobody, and a content author belongs to the create that stamped it.
+	// The refusal is a 422 naming the field, so the caller is told which door
+	// to use rather than left wondering why nothing happened.
 	//
 	// This is not ReadOnly. ReadOnly is the four fields Base contributes — the
 	// server owns those at every door, and the create route discards whatever
@@ -524,7 +525,7 @@ func coerce(f crud.Field, raw string) (any, error) {
 // merge applies a PATCH body to an entity, field by field, through the schema,
 // and reports the database columns it changed so that Update writes those and
 // no others. A name the schema does not know, one it knows as read-only, or one
-// the Spec reserved to a command of its own is refused rather than ignored,
+// the Spec reserved to a route of its own is refused rather than ignored,
 // because a caller who spells a field wrong — or reaches for the wrong door —
 // has to be told.
 func merge(e any, fields []crud.Field, immutable []string, patch map[string]any) ([]string, error) {
@@ -538,7 +539,7 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		case f.ReadOnly:
 			return nil, fmt.Errorf("%w: %s is read-only", crud.ErrInvalid, name)
 		case slices.Contains(immutable, name):
-			return nil, fmt.Errorf("%w: %s is changed by a command of its own, not by a patch", crud.ErrInvalid, name)
+			return nil, fmt.Errorf("%w: %s belongs to a route of its own, not to a patch", crud.ErrInvalid, name)
 		}
 		// Round-tripping through JSON is what makes this the same decoder the
 		// request body went through: one set of rules for "3" as an int and for

@@ -40,14 +40,15 @@ const (
 	acmeHost   = "acme.localhost"
 	globexHost = "globex.localhost"
 
-	tasksPath  = "/api/v1/task/tasks"
-	tenantPath = "/api/v1/tenant/tenants"
-	auditPath  = "/api/v1/audit/events"
-	noticePath = "/api/v1/notification/notifications"
-	plansPath  = "/api/v1/billing/plans"
-	subPath    = "/api/v1/billing/subscription"
-	adminEmail = "root@acme.localhost"
-	adminPass  = "correct horse battery staple"
+	tasksPath   = "/api/v1/task/tasks"
+	tenantPath  = "/api/v1/tenant/tenants"
+	auditPath   = "/api/v1/audit/events"
+	noticePath  = "/api/v1/notification/notifications"
+	plansPath   = "/api/v1/billing/plans"
+	subPath     = "/api/v1/billing/subscription"
+	contentPath = "/api/v1/content/contents"
+	adminEmail  = "root@acme.localhost"
+	adminPass   = "correct horse battery staple"
 )
 
 // quiet keeps a passing test's output to the test's own lines.
@@ -211,6 +212,30 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if code, body = do(t, cfg, admin, http.MethodGet, acmeHost, subPath, ""); code != http.StatusOK ||
 		!strings.Contains(body, planID) {
 		t.Errorf("GET %s = %d %s, want the subscription", subPath, code, body)
+	}
+
+	// Content: written, published, and then read at the same host by a caller
+	// with no session at all — which is what publishing means. The script in
+	// the body is not in the page: the renderer leaves raw HTML out and the
+	// sanitizer refuses what is left.
+	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath,
+		`{"slug":"About Us","title":"About Acme","kind":"page","body":"# About\n\n<script>alert(1)</script>\n\nWe make **things**."}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s = %d %s, want 201", contentPath, code, body)
+	}
+	pageID := field(t, body, "id")
+	if code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/content/public/about-us", ""); code != http.StatusNotFound {
+		t.Errorf("an unpublished page = %d %s, want 404", code, body)
+	}
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusOK {
+		t.Fatalf("publish = %d %s, want 200", code, body)
+	}
+	code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/content/public/about-us", "")
+	if code != http.StatusOK || !strings.Contains(body, "<strong>things</strong>") {
+		t.Fatalf("the published page = %d %s", code, body)
+	}
+	if strings.Contains(body, "<script") || strings.Contains(body, "alert(1)") {
+		t.Errorf("the published page carries the script somebody typed into it:\n%s", body)
 	}
 
 	// A second tenant, through the control-plane API, as the administrator of
