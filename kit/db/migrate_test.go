@@ -13,8 +13,15 @@ import (
 // already-applied set has to be a no-op rather than an error.
 func TestMigrateIsIdempotent(t *testing.T) {
 	ctx := t.Context()
-	admin, _ := TestSchema(t)
-	migrateURL := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
+	// The ledger is what this test is about, so it migrates into the test's own
+	// schema rather than the shared one: pg_tables is database-wide, and a
+	// second ledger anywhere would otherwise be indistinguishable from two here.
+	migrateURL, _ := TestSchemaURLs(t)
+	admin, err := openOwner(migrateURL)
+	if err != nil {
+		t.Fatalf("db: test admin connection: %v", err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
 
 	for i := range 2 {
 		if err := Migrate(ctx, migrateURL, migrations.FS); err != nil {
@@ -23,7 +30,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 
 	var ledgers int
-	scan(t, admin, `SELECT count(*) FROM pg_tables WHERE tablename = 'schema_migrations'`, &ledgers)
+	scan(t, admin, `SELECT count(*) FROM pg_tables WHERE tablename = 'schema_migrations' AND schemaname = current_schema()`, &ledgers)
 	if ledgers != 1 {
 		t.Errorf("%d schema_migrations tables, want 1", ledgers)
 	}

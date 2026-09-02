@@ -60,4 +60,17 @@ func TestHumaErrorKeepsClientDetailAndHidesServerCause(t *testing.T) {
 	if !errors.Is(server, cause) {
 		t.Error("a 5xx dropped the cause the logger needs")
 	}
+	if server.GetStatus() != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", server.GetStatus())
+	}
+
+	// Hiding the message must not flatten the status: an outage that asks the
+	// caller to retry is a different fact from one that does not.
+	outage := problem.HumaError(http.StatusServiceUnavailable, "policy store unreachable")
+	if outage.GetStatus() != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", outage.GetStatus())
+	}
+	if strings.Contains(outage.Error(), "policy store") {
+		t.Errorf("a 503 leaked its message: %q", outage.Error())
+	}
 }
