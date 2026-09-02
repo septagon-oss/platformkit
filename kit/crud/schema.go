@@ -121,7 +121,12 @@ func derive(t reflect.Type) []Field {
 		if enum := sf.Tag.Get("enum"); enum != "" {
 			f.Enum = strings.Split(enum, ",")
 		}
-		for _, part := range strings.Split(sf.Tag.Get("ui"), ",") {
+		// Either separator: a struct tag reads as one string, and the entities
+		// in this repository were written with both. `ui:"widget:textarea;hide:list"`
+		// used to parse as one directive whose value was "textarea;hide:list",
+		// so the widget matched nothing and the field appeared on every list
+		// screen it had asked to be kept off. There is no third spelling.
+		for _, part := range strings.FieldsFunc(sf.Tag.Get("ui"), func(r rune) bool { return r == ',' || r == ';' }) {
 			switch key, value, _ := strings.Cut(part, ":"); key {
 			case "widget":
 				f.Widget = value

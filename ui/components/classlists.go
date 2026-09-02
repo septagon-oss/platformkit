@@ -24,8 +24,12 @@ var (
 	// would have no rules in the stylesheet, so the frame is a component too.
 	clShell = style.New().Display(style.DisplayFlex).MinHeightScreen().
 		Bg(style.SurfaceSecondary).TextColor(style.FgPrimary)
+	// min-w-0 and no overflow of its own: a flex child defaults to min-width
+	// auto, so a wide table would push the column instead of scrolling inside
+	// it, and clipping here would hide the columns rather than let the table's
+	// own overflow-auto reach them.
 	clShellColumn = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).
-			MinWidth(style.S0).Overflow(style.OverflowHidden)
+			MinWidth(style.S0)
 	clShellHeader = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
 			Justify(style.JustifyBetween).Gap(style.S4).PaddingX(style.S6).PaddingY(style.S3).
 			Bg(style.SurfacePrimary).BorderBottom(style.Border1).BorderColor(style.BorderPrimary)

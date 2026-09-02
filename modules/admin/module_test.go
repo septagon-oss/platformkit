@@ -163,7 +163,7 @@ func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 		}
 	}
 	if strings.Contains(body, ">Body<") {
-		t.Error(`the list shows a field tagged ui:"hide:list"`)
+		t.Error(`the list shows a field tagged ui:"...;hide:list"`)
 	}
 
 	code, form, _ := call(t, router, http.MethodGet, "/admin/notes/notes/new", "")
