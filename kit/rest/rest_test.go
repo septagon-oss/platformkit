@@ -134,7 +134,10 @@ func call(t *testing.T, r http.Handler, method, path, body string) (int, string)
 	// The kernel asks the identity hook only about a request that presents
 	// something to recognise, so a request that expects to be signed in carries
 	// one. See kit/httpx.credentialed.
-	req.Header.Set("Authorization", "Bearer test")
+	// The session cookie is the one credential shape the kernel recognises, so
+	// a test that wants its identity hook called presents one. The value is not
+	// read: this file's hook answers without looking. See kit/httpx.credentialed.
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

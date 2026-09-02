@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -21,12 +22,19 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
 	"github.com/septagon-oss/platformkit/modules/user"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 // host is where the tests are served. It is a local name, so the session cookie
 // is not marked Secure and the OIDC redirect is http — which is what a browser
 // on a laptop needs and what the test issuer speaks.
 const host = "acme.localhost"
+
+// mailbox is where every set-password link this file causes ends up. mount
+// replaces it, so it holds what the application under test sent and nothing
+// from the test before; these cases do not run in parallel, and a mailbox
+// shared across two applications would be a test reading somebody else's mail.
+var mailbox = &authtest.Notices{}
 
 // site is the tenant loader for this file: one host, one tenant.
 type site struct{}
@@ -42,14 +50,24 @@ func (site) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Ten
 func mount(t *testing.T, oidc auth.OIDC) (chi.Router, *db.Conn, contracts.Auth) {
 	t.Helper()
 	_, conn := dbtest.Schema(t)
+	mailbox = &authtest.Notices{}
 	users, userModule := user.Module(user.Deps{})
-	svc, authModule := auth.Module(auth.Deps{Users: users, OIDC: oidc, PublicHost: host})
+	svc, authModule := auth.Module(auth.Deps{Users: users, Notify: mailbox, OIDC: oidc, PublicHost: host})
 	seed(t, conn, svc, acme)
 
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: site{}, Conn: conn,
 		Authorize: svc, Authenticate: svc.Authenticate,
 		Log: slog.New(slog.DiscardHandler),
+	})
+	// The catalogue the kernel would have declared, so that the roles route can
+	// check a permission against it: kit/app reads it off the manifests before
+	// any module registers anything, and this is that line.
+	api.Declare([]tenancy.Grant{
+		{Permission: contracts.PermissionRoleManage},
+		{Permission: usercontracts.PermissionUserRead},
+		{Permission: usercontracts.PermissionUserManage},
+		{Permission: "tenant:manage", Operator: true},
 	})
 	authModule.Routes(api)
 	userModule.Routes(api)
@@ -103,13 +121,17 @@ func call(t *testing.T, r http.Handler, method, path, body string, edit ...func(
 // withSession attaches a session cookie, which is what makes a request both
 // recognisable and subject to the cross-site check.
 func withSession(value string) func(*http.Request) {
-	return func(r *http.Request) { r.AddCookie(&http.Cookie{Name: httpx.SessionCookie, Value: value}) }
+	return func(r *http.Request) {
+		// The plain name: these tests are served at a local host, so the cookie
+		// is not Secure and carries no __Host- prefix.
+		r.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: value})
+	}
 }
 
 // sessionCookie is the session id the response set, or "" if it set none.
 func sessionCookie(w *httptest.ResponseRecorder) string {
 	for _, c := range (&http.Response{Header: w.Header()}).Cookies() {
-		if c.Name == httpx.SessionCookie && c.Value != "" {
+		if c.Name == httpx.CookieName(httpx.SessionCookie, false) && c.Value != "" {
 			return c.Value
 		}
 	}
@@ -147,13 +169,23 @@ func TestSigningInAndOut(t *testing.T) {
 		t.Errorf("login answered %s, want the caller's identity", res.Body.String())
 	}
 
-	// The row is there, in this tenant.
+	// The row is there, in this tenant — under the hash of the cookie, and not
+	// under the cookie. What the table holds is not what the browser carries,
+	// so a copy of it is a list of hashes rather than a set of live sessions.
 	var rows int64
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		return tx.DB().Table("sessions").Where("id = ?", session).Count(&rows).Error
+		return tx.DB().Table("sessions").Where("id_hash = ?", contracts.Hash(session)).Count(&rows).Error
 	})
 	if err != nil || rows != 1 {
-		t.Fatalf("the sessions table holds %d rows for the cookie (%v)", rows, err)
+		t.Fatalf("the sessions table holds %d rows for the cookie's hash (%v)", rows, err)
+	}
+	// And nothing anywhere in it is the cookie itself.
+	var plaintext int64
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		return tx.DB().Table("sessions").Where("id_hash = ?", contracts.Digest(session)).Count(&plaintext).Error
+	})
+	if err != nil || plaintext != 0 {
+		t.Errorf("the sessions table stores the credential itself (%d rows, %v)", plaintext, err)
 	}
 
 	// The cookie answers for the caller.
@@ -362,4 +394,181 @@ func TestTheOIDCRoutesExistOnlyWhenAProviderDoes(t *testing.T) {
 	if res := call(t, router, http.MethodGet, "/api/v1/auth/oidc/start", ""); res.Code != http.StatusNotFound {
 		t.Errorf("oidc/start with no provider configured = %d, want 404", res.Code)
 	}
+}
+
+// TestTheRolesRoutesAreGuardedAndChecked.
+//
+// A role is what everybody else in the tenant may do, so the two routes are the
+// only ones in this module that name a permission. What they refuse is the
+// interesting part: a permission no module defines would be a grant that can
+// never be exercised and reads like one that can, and an operator permission
+// here would be a grant the kernel refuses at every route it guards.
+func TestTheRolesRoutesAreGuardedAndChecked(t *testing.T) {
+	router, conn, _ := mount(t, auth.OIDC{})
+	person(t, conn, "grace@acme.localhost", contracts.RoleMember)
+	person(t, conn, "ada@acme.localhost", contracts.RoleAdmin)
+
+	member := signIn(t, router, "grace@acme.localhost")
+	if res := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", withSession(member)); res.Code != http.StatusForbidden {
+		t.Errorf("a member listing the roles = %d %s, want 403", res.Code, res.Body.String())
+	}
+
+	admin := signIn(t, router, "ada@acme.localhost")
+	res := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", withSession(admin))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), contracts.RoleAdmin) {
+		t.Fatalf("GET roles = %d %s, want the two a tenant starts with", res.Code, res.Body.String())
+	}
+
+	put := func(name, body string) *httptest.ResponseRecorder {
+		return call(t, router, http.MethodPut, "/api/v1/auth/roles/"+name, body, withSession(admin),
+			func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-origin") })
+	}
+	if res := put("editor", `{"permissions":["user:read"]}`); res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "user:read") {
+		t.Fatalf("PUT a role = %d %s, want 200", res.Code, res.Body.String())
+	}
+	// The name is normalised the way the user module normalises the roles a
+	// person holds, so "Editor" and "editor" are one role rather than two rows
+	// nobody's user list matches.
+	if res := put("EDITOR", `{"permissions":["user:read","user:manage"]}`); res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), `"name":"editor"`) {
+		t.Errorf("PUT EDITOR = %d %s, want the same role", res.Code, res.Body.String())
+	}
+	for _, tt := range []struct{ name, body, want string }{
+		{"editor", `{"permissions":["ghost:read"]}`, "ghost:read"},
+		{"operator", `{"permissions":["tenant:manage"]}`, "tenant:manage"},
+		{"1editor", `{"permissions":[]}`, "lower-case"},
+	} {
+		res := put(tt.name, tt.body)
+		if res.Code != http.StatusUnprocessableEntity {
+			t.Errorf("PUT %s %s = %d %s, want 422", tt.name, tt.body, res.Code, res.Body.String())
+		}
+		if !strings.Contains(res.Body.String(), tt.want) {
+			t.Errorf("the refusal does not name %q: %s", tt.want, res.Body.String())
+		}
+	}
+	// And the refused writes changed nothing.
+	res = call(t, router, http.MethodGet, "/api/v1/auth/roles", "", withSession(admin))
+	if strings.Contains(res.Body.String(), "ghost:read") || strings.Contains(res.Body.String(), "tenant:manage") {
+		t.Errorf("a refused write reached the table: %s", res.Body.String())
+	}
+}
+
+// TestChangingAPasswordEndsTheOtherSessionsAndNotThisOne, over HTTP, because
+// "this one" is the cookie the request carried and nothing below the handler
+// knows which that is.
+func TestChangingAPasswordEndsTheOtherSessionsAndNotThisOne(t *testing.T) {
+	router, conn, _ := mount(t, auth.OIDC{})
+	person(t, conn, "ada@acme.localhost", contracts.RoleMember)
+	here, elsewhere := signIn(t, router, "ada@acme.localhost"), signIn(t, router, "ada@acme.localhost")
+
+	change := func(session, current string) *httptest.ResponseRecorder {
+		return call(t, router, http.MethodPost, "/api/v1/auth/password",
+			`{"current":"`+current+`","new":"a different passphrase"}`, withSession(session),
+			func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-origin") })
+	}
+	if res := change(here, authtest.Wrong); res.Code != http.StatusUnauthorized {
+		t.Fatalf("the wrong current password = %d %s, want 401", res.Code, res.Body.String())
+	}
+	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(elsewhere)); res.Code != http.StatusOK {
+		t.Errorf("a refused change ended the other session: %d", res.Code)
+	}
+
+	if res := change(here, authtest.Password); res.Code != http.StatusOK {
+		t.Fatalf("the change = %d %s, want 200", res.Code, res.Body.String())
+	}
+	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(here)); res.Code != http.StatusOK {
+		t.Errorf("the session that asked for the change was ended: %d", res.Code)
+	}
+	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(elsewhere)); res.Code != http.StatusForbidden {
+		t.Errorf("the other session survived the change: %d", res.Code)
+	}
+}
+
+// TestTheForgottenPasswordRouteSaysTheSameThingToEverybody, and the link it
+// mails works once and ends every session.
+func TestTheForgottenPasswordRouteSaysTheSameThingToEverybody(t *testing.T) {
+	router, conn, _ := mount(t, auth.OIDC{})
+	person(t, conn, "ada@acme.localhost", contracts.RoleMember)
+	live := signIn(t, router, "ada@acme.localhost")
+
+	forgot := func(email string) *httptest.ResponseRecorder {
+		return call(t, router, http.MethodPost, "/api/v1/auth/password/forgot", `{"email":"`+email+`"}`)
+	}
+	known, unknown := forgot("ada@acme.localhost"), forgot("nobody@acme.localhost")
+	if known.Code != http.StatusOK || unknown.Code != http.StatusOK {
+		t.Fatalf("known = %d, unknown = %d; both are 200", known.Code, unknown.Code)
+	}
+	if a, b := withoutInstance(known.Body.String()), withoutInstance(unknown.Body.String()); a != b {
+		t.Errorf("the two answers differ, which is an enumeration oracle:\n  %s\n  %s", a, b)
+	}
+	sent := mailbox.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("%d links were mailed, want one — for the address that is here", len(sent))
+	}
+
+	reset := call(t, router, http.MethodPost, "/api/v1/auth/password/reset",
+		`{"token":"`+authtest.TokenIn(sent[0].Link)+`","new":"a different passphrase"}`)
+	if reset.Code != http.StatusOK {
+		t.Fatalf("the reset = %d %s, want 200", reset.Code, reset.Body.String())
+	}
+	// Every session, including one opened before any of this.
+	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(live)); res.Code != http.StatusForbidden {
+		t.Errorf("a session survived a reset: %d", res.Code)
+	}
+	// And the token is spent.
+	again := call(t, router, http.MethodPost, "/api/v1/auth/password/reset",
+		`{"token":"`+authtest.TokenIn(sent[0].Link)+`","new":"another passphrase"}`)
+	if again.Code != http.StatusUnauthorized {
+		t.Errorf("the link worked twice: %d %s", again.Code, again.Body.String())
+	}
+	// The new password signs in.
+	res := call(t, router, http.MethodPost, "/api/v1/auth/login",
+		`{"email":"ada@acme.localhost","password":"a different passphrase"}`)
+	if res.Code != http.StatusOK {
+		t.Errorf("the reset password does not sign in: %d %s", res.Code, res.Body.String())
+	}
+}
+
+// TestTheCookieCarriesTheHostPrefixWhenItIsSecure.
+//
+// __Host- is a rule the browser enforces: a cookie named with it is only
+// accepted with Secure, with Path=/ and with no Domain, and a page on another
+// host cannot set one the browser will send here. Every tenant is reached at
+// its own host, often as siblings under one domain, so a customer's host being
+// unable to forge another's session cookie is not a hypothetical.
+func TestTheCookieCarriesTheHostPrefixWhenItIsSecure(t *testing.T) {
+	for _, tt := range []struct{ host, want string }{
+		{"acme.localhost", "platformkit_session"},
+		{"acme.example.com", "__Host-platformkit_session"},
+	} {
+		t.Run(tt.host, func(t *testing.T) {
+			if got := httpx.CookieName(httpx.SessionCookie, !config.Local(tt.host)); got != tt.want {
+				t.Errorf("at %s the cookie is %q, want %q", tt.host, got, tt.want)
+			}
+		})
+	}
+	// And the kernel recognises both, because a deployment is one or the other.
+	for _, name := range []string{"platformkit_session", "__Host-platformkit_session"} {
+		r := httptest.NewRequest(http.MethodGet, "https://acme.example.com/", nil)
+		r.AddCookie(&http.Cookie{Name: name, Value: "present"})
+		if _, ok := httpx.SessionCookieOf(r); !ok {
+			t.Errorf("the kernel does not recognise %s", name)
+		}
+	}
+}
+
+// signIn is a session cookie for somebody whose password is authtest.Password.
+func signIn(t *testing.T, router chi.Router, email string) string {
+	t.Helper()
+	res := call(t, router, http.MethodPost, "/api/v1/auth/login",
+		`{"email":"`+email+`","password":"`+authtest.Password+`"}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("login as %s = %d %s", email, res.Code, res.Body.String())
+	}
+	session := sessionCookie(res)
+	if session == "" {
+		t.Fatalf("login as %s set no cookie", email)
+	}
+	return session
 }

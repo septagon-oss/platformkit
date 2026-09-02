@@ -138,7 +138,10 @@ func request(t *testing.T, r http.Handler, method, path, h string) *httptest.Res
 	// liveness probe, an anonymous read — never opens a transaction to be told
 	// it is anonymous. Every request in this file that expects to be recognised
 	// therefore carries one.
-	req.Header.Set("Authorization", "Bearer test")
+	// The session cookie is the one credential shape the kernel recognises, so
+	// a test that wants its identity hook called presents one. The value is not
+	// read: this file's hook answers without looking. See kit/httpx.credentialed.
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w

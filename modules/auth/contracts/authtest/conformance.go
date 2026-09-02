@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
 // Fixture is one case's world. The tenant already has the two roles SeedRoles
@@ -30,6 +32,22 @@ type Fixture struct {
 	Role func(name string, permissions ...string)
 	// Published is the names of the events published so far, in order.
 	Published func() []string
+	// Sent is every notice the implementation asked to be delivered, in order.
+	// A case reads the link out of one to follow it.
+	Sent func() []notificationcontracts.Notice
+	// Sessions reports how many sessions this user has, which is how a case
+	// says "and the others ended" without knowing how they are stored.
+	Sessions func(user uuid.UUID) int
+}
+
+// Declared is the permission catalogue the cases hand to SetRole: two ordinary
+// permissions and one operator's. It stands in for what the kernel reads off
+// every manifest, and the names are deliberately not any real module's — what
+// is under test is the rule, not the catalogue.
+var Declared = []tenancy.Grant{
+	{Permission: "widget:read"},
+	{Permission: "widget:manage"},
+	{Permission: "fleet:manage", Operator: true},
 }
 
 // Harness builds one Fixture and calls run with it.
@@ -210,7 +228,174 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			published(t, f, contracts.EventLoggedIn)
 		},
+
+		"changing a password needs the one in force, and ends the other sessions": func(t *testing.T, f Fixture) {
+			id := f.User("ada@acme.example.com", Password)
+			var keep, other uuid.UUID
+			for _, into := range []*uuid.UUID{&keep, &other} {
+				session, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody)
+				if err != nil {
+					t.Fatalf("Login: %v", err)
+				}
+				*into = session.ID
+			}
+			// The wrong current password is refused, and nothing moves: a
+			// stolen cookie must not be a stolen account.
+			if err := f.Service.ChangePassword(f.Ctx, f.Tx, id, keep, Wrong, "a different passphrase"); !errors.Is(err, contracts.ErrCredentials) {
+				t.Fatalf("ChangePassword with the wrong current password = %v, want ErrCredentials", err)
+			}
+			if sessions(f, id) != 2 {
+				t.Errorf("a refused change ended %d of two sessions", 2-sessions(f, id))
+			}
+
+			if err := f.Service.ChangePassword(f.Ctx, f.Tx, id, keep, Password, "a different passphrase"); err != nil {
+				t.Fatalf("ChangePassword: %v", err)
+			}
+			if _, err := f.Service.Identify(f.Ctx, f.Tx, other, nobody); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("the other session survived a password change: %v", err)
+			}
+			if _, err := f.Service.Identify(f.Ctx, f.Tx, keep, nobody); err != nil {
+				t.Errorf("the session that asked for the change was ended too: %v", err)
+			}
+			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", "a different passphrase", nobody); err != nil {
+				t.Errorf("the new password does not work: %v", err)
+			}
+		},
+
+		"a forgotten password answers the same for everybody, and mails a link to somebody who is here": func(t *testing.T, f Fixture) {
+			f.User("ada@acme.example.com", Password)
+			for _, address := range []string{"ada@acme.example.com", "nobody@acme.example.com"} {
+				if err := f.Service.Forget(f.Ctx, f.Tx, address); err != nil {
+					t.Errorf("Forget(%q) = %v, want nil however unknown the address", address, err)
+				}
+			}
+			sent := notices(f)
+			if len(sent) != 1 {
+				t.Fatalf("Forget sent %d notices, want one — for the address that is here", len(sent))
+			}
+			if !sent[0].Email || TokenIn(sent[0].Link) == "" {
+				t.Errorf("the notice is %+v, want an email carrying a token", sent[0])
+			}
+			// And nothing about it reaches the outbox: this module publishes
+			// when a password is reset, not when somebody asks to reset one,
+			// because the second is a thing any stranger can cause.
+			published(t, f)
+		},
+
+		"the link sets a password once, and ends every session": func(t *testing.T, f Fixture) {
+			id := f.User("ada@acme.example.com", Password)
+			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody); err != nil {
+				t.Fatalf("Login: %v", err)
+			}
+			if err := f.Service.Forget(f.Ctx, f.Tx, "ada@acme.example.com"); err != nil {
+				t.Fatalf("Forget: %v", err)
+			}
+			sent := notices(f)
+			if len(sent) != 1 {
+				t.Fatalf("Forget sent %d notices, want one", len(sent))
+			}
+			token := TokenIn(sent[0].Link)
+
+			if err := f.Service.Reset(f.Ctx, f.Tx, token, "a different passphrase"); err != nil {
+				t.Fatalf("Reset: %v", err)
+			}
+			if got := sessions(f, id); got != 0 {
+				t.Errorf("%d sessions survived a reset; a reset ends every one", got)
+			}
+			// Once. The row is deleted rather than flagged, so the second
+			// attempt is refused by the same answer an invented token gets.
+			for _, second := range []string{token, "not a token at all", ""} {
+				if err := f.Service.Reset(f.Ctx, f.Tx, second, "another passphrase"); !errors.Is(err, contracts.ErrCredentials) {
+					t.Errorf("Reset(%q) = %v, want ErrCredentials", second, err)
+				}
+			}
+			published(t, f, contracts.EventLoggedIn, contracts.EventPasswordReset)
+			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", "a different passphrase", nobody); err != nil {
+				t.Errorf("the reset password does not work: %v", err)
+			}
+		},
+
+		"an invitation is offered a link, and somebody who can already sign in is not": func(t *testing.T, f Fixture) {
+			invited := f.User("invited@acme.example.com", "")
+			active := f.User("ada@acme.example.com", Password)
+			for _, id := range []uuid.UUID{invited, active, uuid.New()} {
+				if err := f.Service.Offer(f.Ctx, f.Tx, id); err != nil {
+					t.Errorf("Offer(%s) = %v, want nil", id, err)
+				}
+			}
+			if got := notices(f); len(got) != 1 {
+				t.Fatalf("Offer sent %d notices, want one — for the person who cannot sign in", len(got))
+			}
+			// And the link works: an invitation and a reset are one mechanism.
+			token := TokenIn(notices(f)[0].Link)
+			if err := f.Service.Reset(f.Ctx, f.Tx, token, "a chosen passphrase"); err != nil {
+				t.Fatalf("Reset with an invitation's token: %v", err)
+			}
+			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "invited@acme.example.com", "a chosen passphrase", nobody); err != nil {
+				t.Errorf("the invited person cannot sign in: %v", err)
+			}
+		},
+
+		"a role grants only permissions the application defines": func(t *testing.T, f Fixture) {
+			role, err := f.Service.SetRole(f.Ctx, f.Tx, "editor", []string{"widget:read", "widget:manage"}, Declared)
+			if err != nil {
+				t.Fatalf("SetRole: %v", err)
+			}
+			if !slices.Equal([]string(role.Grants), []string{"widget:manage", "widget:read"}) {
+				t.Errorf("editor grants %v, want the two it was given, sorted", role.Grants)
+			}
+			held, err := f.Service.Permissions(f.Ctx, f.Tx, []string{"editor"})
+			if err != nil || !contracts.Grants(held, tenancy.Grant{Permission: "widget:read"}) {
+				t.Errorf("editor holds %v (%v), want what SetRole wrote", held, err)
+			}
+			// A permission nothing defines is refused rather than written: a
+			// role naming one is a grant that can never be exercised and reads,
+			// to whoever wrote it, exactly like one that can.
+			if _, err := f.Service.SetRole(f.Ctx, f.Tx, "editor", []string{"widget:read", "ghost:read"}, Declared); !errors.Is(err, crud.ErrInvalid) {
+				t.Errorf("SetRole with an undefined permission = %v, want ErrInvalid", err)
+			}
+			// And the refusal changed nothing.
+			if roles, err := f.Service.Roles(f.Ctx, f.Tx); err != nil {
+				t.Fatalf("Roles: %v", err)
+			} else if i := slices.IndexFunc(roles, func(r *contracts.Role) bool { return r.Name == "editor" }); i < 0 ||
+				!slices.Equal([]string(roles[i].Grants), []string{"widget:manage", "widget:read"}) {
+				t.Errorf("the roles are %v after a refused write", roles)
+			}
+			published(t, f, contracts.EventRoleSet)
+		},
+
+		"an operator permission cannot be granted in a customer's tenant": func(t *testing.T, f Fixture) {
+			// This tenant is a customer's — every fixture's is — so naming the
+			// installation's own permission in one of its roles is refused. It
+			// would be a grant that looks like authority and is not: the kernel
+			// refuses an operator route here before it reads any role at all.
+			_, err := f.Service.SetRole(f.Ctx, f.Tx, "operator", []string{"fleet:manage"}, Declared)
+			if !errors.Is(err, crud.ErrInvalid) {
+				t.Fatalf("SetRole with an operator permission = %v, want ErrInvalid", err)
+			}
+			if !strings.Contains(err.Error(), "fleet:manage") {
+				t.Errorf("the refusal does not name the permission: %v", err)
+			}
+			published(t, f)
+		},
 	}
+}
+
+// notices is what the implementation asked to have delivered, or nothing when
+// the harness wired no recorder.
+func notices(f Fixture) []notificationcontracts.Notice {
+	if f.Sent == nil {
+		return nil
+	}
+	return f.Sent()
+}
+
+// sessions is how many the user has, or -1 when the harness cannot say.
+func sessions(f Fixture, user uuid.UUID) int {
+	if f.Sessions == nil {
+		return -1
+	}
+	return f.Sessions(user)
 }
 
 func published(t *testing.T, f Fixture, want ...string) {

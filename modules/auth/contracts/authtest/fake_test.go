@@ -19,13 +19,15 @@ func TestFakeConforms(t *testing.T) {
 	authtest.RunService(t, func(t *testing.T, run func(authtest.Fixture)) {
 		users := usertest.NewFake()
 		fake := authtest.NewFake(users)
+		notices := &authtest.Notices{}
+		fake.Notify = notices
 		ctx, tx := t.Context(), db.Tx[db.Tenant]{}
 		if err := fake.SeedRoles(ctx, db.Tx[db.System]{}, uuid.New(), false); err != nil {
 			t.Fatalf("SeedRoles: %v", err)
 		}
 		run(authtest.Fixture{
 			Ctx: ctx, Tx: tx, Service: fake, Published: fake.Published,
-			Role: fake.Grant,
+			Role: fake.Grant, Sent: notices.Sent, Sessions: fake.SessionsOf,
 			User: func(email, password string, roles ...string) uuid.UUID {
 				u, err := users.Invite(ctx, tx, email, "")
 				if err != nil {

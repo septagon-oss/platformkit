@@ -15,16 +15,21 @@ package contracts
 
 import (
 	"context"
+	"crypto/sha256"
+	"database/sql/driver"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -47,9 +52,22 @@ const (
 // and a laptop left in a drawer is.
 const (
 	SessionLifetime = 30 * 24 * time.Hour
+	// SessionMaxLifetime is the cap the slide cannot pass: ninety days from
+	// created_at, whatever the last use was.
+	//
+	// A sliding expiry on its own is not an expiry. A browser somebody uses
+	// every day keeps one session for as long as the machine lasts, and a
+	// cookie stolen from it works for as long as the thief keeps using it —
+	// there is no moment at which anything has to be proved again. Ninety days
+	// is that moment: past it the session is refused and the row deleted,
+	// whichever of the two limits it crossed.
+	SessionMaxLifetime = 90 * 24 * time.Hour
 	// SessionTouch is the throttle. Without it every request is a write, and a
 	// read-only page load would take a row lock on the session it read.
 	SessionTouch = 5 * time.Minute
+	// TokenLifetime is how long a set-password or reset link works. Long enough
+	// to find the mail, short enough that one left in an inbox is not an account.
+	TokenLifetime = 60 * time.Minute
 )
 
 // The two failures a caller can act on. Everything else from Login is an outage.
@@ -67,21 +85,91 @@ var (
 	ErrTooManyAttempts = errors.New("auth: too many failed attempts; wait and try again")
 )
 
-// Session is a signed-in browser. The id is the credential: it is what the
-// platformkit_session cookie carries.
+// Session is a signed-in browser.
+//
+// The id is the credential and it is not stored: the row is keyed by IDHash,
+// and ID is set only on the value Login and Open hand back, for the one caller
+// that needs it — the handler writing the cookie. Anybody who can read this
+// table holds a list of hashes rather than a set of live sessions, which is the
+// difference between a leaked backup being an incident and being a breach.
 type Session struct {
-	ID         uuid.UUID `json:"id"`
+	// ID is the random value the cookie carries. gorm:"-", so it is in no
+	// INSERT and no SELECT: there is no column for it.
+	ID uuid.UUID `json:"id" gorm:"-"`
+	// IDHash is sha256(ID), and the primary key.
+	IDHash     Digest    `json:"-" gorm:"column:id_hash;primaryKey"`
 	TenantID   uuid.UUID `json:"-" gorm:"column:tenant_id"`
 	UserID     uuid.UUID `json:"userId"`
 	CreatedAt  time.Time `json:"createdAt"`
 	ExpiresAt  time.Time `json:"expiresAt"`
 	LastSeenAt time.Time `json:"lastSeenAt"`
-	UserAgent  string    `json:"-"`
-	IP         string    `json:"-"`
+	// UserAgent and IP are recorded once, when the session is opened, and never
+	// touched again. They are not a credential and nothing is checked against
+	// them: they are what a person needs to recognise a session in a list and
+	// say "that was not me". Rewriting them on every use would erase exactly
+	// that — the address a session was opened from is the interesting one, and
+	// the address it was last used from is whatever proxy answered last.
+	UserAgent string `json:"-"`
+	IP        string `json:"-"`
 }
 
-// TableName pins the table, so the entity and migrations/000008 agree.
+// TableName pins the table, so the entity and migrations/000013 agree.
 func (Session) TableName() string { return "sessions" }
+
+// Hash is how a credential this module issues becomes a row key: sha256, no
+// work factor, no salt.
+//
+// That is right here and would be wrong for a password. The input is not
+// something a person chose — a session id is 128 bits of crypto/rand and a
+// token is 256 — so there is no dictionary to run against it and nothing a slow
+// hash would buy; what is wanted is a one-way function fast enough to run on
+// every request. No salt, because the lookup is by the hash itself: a salted
+// hash cannot be an index probe, and per-row salting protects against a
+// dictionary that does not exist here.
+func Hash(credential string) Digest {
+	sum := sha256.Sum256([]byte(credential))
+	return sum[:]
+}
+
+// Digest is a hash as a database value: a bytea column, and one bind parameter.
+//
+// It is a named type with a Valuer rather than a plain []byte because GORM
+// expands a slice argument into a comma-separated list — which is right for
+// `IN (?)` and wrong for every hash here, where it turns one parameter into
+// thirty-two. Saying so in the type means no query has to remember.
+type Digest []byte
+
+func (d Digest) Value() (driver.Value, error) { return []byte(d), nil }
+
+func (d *Digest) Scan(src any) error {
+	b, ok := src.([]byte)
+	if !ok {
+		return fmt.Errorf("auth: a digest is bytea, not %T", src)
+	}
+	*d = slices.Clone(b)
+	return nil
+}
+
+// Role is a name and what it grants, in one tenant. It is the row Permissions
+// reads and the roles routes write.
+type Role struct {
+	TenantID  uuid.UUID   `json:"-" gorm:"column:tenant_id;primaryKey"`
+	Name      string      `json:"name" gorm:"primaryKey" doc:"The role's name, a lower-case identifier" example:"editor"`
+	Grants    Permissions `json:"permissions" gorm:"column:permissions;type:text[]" doc:"The permissions this role grants"`
+	CreatedAt time.Time   `json:"createdAt"`
+	UpdatedAt time.Time   `json:"updatedAt"`
+}
+
+// TableName pins the table, so the struct and migrations/000008 agree.
+func (Role) TableName() string { return "roles" }
+
+// Permissions is one role's permission list, one text[] column. It is a named
+// type rather than []string so that the array codec is written once, the way
+// user/contracts.Roles is; both delegate to lib/pq, which is already linked in.
+type Permissions []string
+
+func (p Permissions) Value() (driver.Value, error) { return pq.StringArray(p).Value() }
+func (p *Permissions) Scan(src any) error          { return (*pq.StringArray)(p).Scan(src) }
 
 // Identity is who the caller is, as a response body says it. It is what login
 // returns and what GET /api/v1/auth/me answers with, so a browser that has just
@@ -106,14 +194,28 @@ type Client struct {
 }
 
 // Users is what this module needs of the user module: to find the person an
-// address belongs to, and to read back the person a session belongs to.
+// address belongs to, to read back the person a session belongs to, and to
+// store a password once somebody has proved they may choose one.
 //
 // It is declared here, narrower than the user module's own Service, because a
 // consumer depends on the capability it uses rather than on everything the
 // provider offers — which is also what makes a test's stand-in three lines.
+// SetPassword is the user module's, hash and event and all: this module decides
+// who may change a password and the user module owns what a password is.
 type Users interface {
 	ByEmail(ctx context.Context, tx db.Tx[db.Tenant], email string) (*usercontracts.User, error)
 	Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*usercontracts.User, error)
+	SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, password string) error
+}
+
+// Notifier is what this module needs of the notification module: one call that
+// tells somebody something and, when asked, sends the mail.
+//
+// A reset link is an email and nothing else, so this is the whole capability. A
+// composition that wires none writes no rows and sends nothing, and Forget
+// still answers as though it had — see Service.Forget.
+type Notifier interface {
+	Notify(ctx context.Context, tx db.Tx[db.Tenant], n notificationcontracts.Notice) (*notificationcontracts.Notification, error)
 }
 
 // Service is signing in, signing out, recognising a session, and resolving what
@@ -167,6 +269,70 @@ type Service interface {
 	// nobody defined grants nothing rather than failing: a user carrying a role
 	// that was deleted is a user with less authority, not a broken request.
 	Permissions(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]string, error)
+
+	// RevokeSessions ends every session this user has, except the one named.
+	// The nil UUID keeps none, which is "sign me out everywhere".
+	//
+	// It takes the caller's transaction because it never happens on its own:
+	// every caller is changing the credential those sessions were opened with,
+	// and a revocation that committed apart from the change it belongs to is a
+	// window in which the old password is gone and the sessions it opened are
+	// not.
+	RevokeSessions(ctx context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error
+
+	// ChangePassword sets a new password for somebody who is signed in, having
+	// checked the one they have. It ends their other sessions and keeps the one
+	// they are asking from, so the person who did it stays where they are and a
+	// thief who had the old password does not.
+	//
+	// A wrong current password is ErrCredentials. Requiring it is what stops a
+	// stolen cookie from becoming a stolen account.
+	ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userID, keep uuid.UUID, current, next string) error
+
+	// Forget issues a reset token for an address and mails the link.
+	//
+	// It answers nil for an address nobody has, for a deactivated user, and for
+	// a composition that wired no notifier. That is the whole design of it: the
+	// route answers 200 either way, because an endpoint that said "no such
+	// address" would be an account enumeration oracle open to everybody, and
+	// one that said it only sometimes would be the same oracle with a stopwatch.
+	Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error
+
+	// Offer issues a set-password token for somebody who has just been invited
+	// and mails the link. It is what the user.invited subscription does, and it
+	// is the same token Forget issues: an invitation and a reset differ in the
+	// message, not in the mechanism.
+	Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) error
+
+	// Reset consumes a token, sets the password and ends every session that
+	// user has — including the one asking, because whoever is resetting a
+	// password is not relying on a session and whoever else held one may be the
+	// reason it is being reset. It publishes auth.password_reset.
+	//
+	// A token that is unknown, spent or expired is ErrCredentials, and the
+	// three are one answer for the reason Login's three are.
+	Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error
+
+	// Roles is every role in this tenant, by name.
+	Roles(ctx context.Context, tx db.Tx[db.Tenant]) ([]*Role, error)
+
+	// SetRole writes what a role grants, creating it if it is new.
+	//
+	// declared is every permission the application defines, which the caller
+	// gets from the kernel: a role naming one nothing defines is a grant that
+	// can never be exercised and reads, to whoever wrote it, as one that can.
+	// It is a parameter rather than something this module knows, because the
+	// list belongs to every other module's manifest and a module that knew the
+	// catalogue would know its neighbours.
+	//
+	// An operator permission outside the operator's own tenant is refused: the
+	// kernel would refuse the request anyway, so a role that named one would be
+	// a grant that looks like authority and is not.
+	SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*Role, error)
+
+	// Purge deletes this tenant's expired sessions and spent tokens, in batches,
+	// and reports how many rows went. The hourly job calls it once per tenant.
+	Purge(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error)
 }
 
 // Grants reports whether a set of permissions satisfies a grant. It is a

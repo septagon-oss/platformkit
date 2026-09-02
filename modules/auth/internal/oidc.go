@@ -39,6 +39,11 @@ type OIDC struct {
 // and belongs to one browser. It is short-lived, HttpOnly and Secure like the
 // session cookie, and SameSite is Lax because the browser arrives back at the
 // callback from the provider — a cross-site navigation, which Strict would eat.
+// It carries the same __Host- prefix as the session cookie when it is Secure,
+// for the same reason and at the same price: __Host- requires Path=/, so this
+// is sent on every request for ten minutes rather than only under this module's
+// prefix. A sibling tenant's host being unable to forge it is worth more than
+// the narrower path.
 const (
 	stateCookie = "platformkit_oidc"
 	stateTTL    = 10 * time.Minute
@@ -148,7 +153,7 @@ func RegisterOIDCRoutes(api *httpx.API, svc contracts.Service, users contracts.U
 			return nil, err
 		}
 		r, _ := httpx.RequestFrom(ctx)
-		nonce, verifier, err := unstash(in.State, in.Cookie)
+		nonce, verifier, err := unstash(in.State, p.stashed(r))
 		if err != nil {
 			return nil, problem.New(http.StatusForbidden, "this sign-in did not start here, or it took too long")
 		}
@@ -181,7 +186,7 @@ func RegisterOIDCRoutes(api *httpx.API, svc contracts.Service, users contracts.U
 			// now and leaving it is a verifier somebody could replay.
 			SetCookie: []http.Cookie{
 				p.cookies.Session(session.ID, session.ExpiresAt),
-				expire(stateCookie, p.secure),
+				p.cookies.Forget(stateCookie),
 			},
 		}, nil
 	})
@@ -219,14 +224,25 @@ func (p *Provider) claim(ctx context.Context, provider *oidc.Provider, host, cod
 	return claims.Email, nil
 }
 
-// stash writes the state cookie; unstash reads it back and checks the state the
-// provider echoed against the one that went out.
+// stash writes the state cookie; stashed reads it back under whichever name
+// this deployment sets it under, and unstash checks the state the provider
+// echoed against the one that went out.
+//
+// The name is not a struct tag on the input, because it depends on whether the
+// cookie is Secure and a tag is one string decided at compile time.
 func (p *Provider) stash(state, nonce, verifier string) http.Cookie {
-	return http.Cookie{
-		Name: stateCookie, Value: strings.Join([]string{state, nonce, verifier}, "."),
-		Path: Path + "/oidc", MaxAge: int(stateTTL.Seconds()),
-		HttpOnly: true, Secure: p.secure, SameSite: http.SameSiteLaxMode,
+	return p.cookies.State(strings.Join([]string{state, nonce, verifier}, "."), int(stateTTL.Seconds()))
+}
+
+func (p *Provider) stashed(r *http.Request) string {
+	if r == nil {
+		return ""
 	}
+	c, err := r.Cookie(p.cookies.Name(stateCookie))
+	if err != nil {
+		return ""
+	}
+	return c.Value
 }
 
 func unstash(echoed, cookie string) (nonce, verifier string, err error) {
@@ -238,10 +254,6 @@ func unstash(echoed, cookie string) (nonce, verifier string, err error) {
 		return "", "", errors.New("auth: that is not the state we sent")
 	}
 	return parts[1], parts[2], nil
-}
-
-func expire(name string, secure bool) http.Cookie {
-	return http.Cookie{Name: name, Path: Path + "/oidc", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode}
 }
 
 // random is 32 bytes of crypto/rand, base64url. It is the state and the nonce:
@@ -257,9 +269,8 @@ func random() string {
 }
 
 type callbackInput struct {
-	Code   string `query:"code" doc:"The authorization code"`
-	State  string `query:"state" doc:"The state that went out with the redirect"`
-	Cookie string `cookie:"platformkit_oidc" doc:"The state cookie this application set"`
+	Code  string `query:"code" doc:"The authorization code"`
+	State string `query:"state" doc:"The state that went out with the redirect"`
 }
 
 // redirectOutput is a browser redirect with the cookies that go with it.

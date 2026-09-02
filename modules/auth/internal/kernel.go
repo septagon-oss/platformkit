@@ -30,8 +30,8 @@ import (
 // make signing out of a deleted account look like a broken deployment. A
 // database that cannot be read is an error, and kit/httpx answers 500.
 func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (httpx.Principal, bool, error) {
-	cookie, err := r.Cookie(httpx.SessionCookie)
-	if err != nil {
+	cookie, ok := httpx.SessionCookieOf(r)
+	if !ok {
 		return httpx.Principal{}, false, nil
 	}
 	id, err := uuid.Parse(cookie.Value)
@@ -56,6 +56,7 @@ func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http
 // of rows — so the cost of being exactly right is one round trip on the
 // requests that need one, and requests by an anonymous caller or by a caller
 // with no roles do not even make that.
+//
 // The tenant is unused, and deliberately: the kernel has already refused an
 // operator grant on a tenant that is not the operator's, and every row this
 // reads is inside that tenant's own transaction. A second comparison here would
@@ -94,33 +95,53 @@ func ClientOf(r *http.Request) contracts.Client {
 	return contracts.Client{UserAgent: r.UserAgent(), IP: ip}
 }
 
-// Cookies mints and clears the session cookie.
+// Cookies mints and clears this module's two cookies.
 //
 // Secure is on unless the application is reached at a local name, because a
 // browser refuses a Secure cookie over http://localhost and a development
-// machine that cannot sign in is a development machine nobody uses. SameSite is
-// Lax rather than Strict so that following a link into the application from
-// somewhere else does not land on a signed-out page; the cross-site writes Lax
-// still allows are what kit/httpx's CSRF middleware refuses.
+// machine that cannot sign in is a development machine nobody uses. The name
+// follows from it: httpx.CookieName adds the __Host- prefix when the cookie
+// will be Secure, which is what stops a page served at one customer's host
+// setting a session cookie the browser then attaches at another's. Every tenant
+// is reached at its own host, often as siblings under one domain, so that is
+// not a hypothetical here.
+//
+// SameSite is Lax rather than Strict so that following a link into the
+// application from somewhere else does not land on a signed-out page; the
+// cross-site writes Lax still allows are what kit/httpx's CSRF middleware
+// refuses. Path is "/" on both, because __Host- requires it — the state cookie
+// used to be scoped to this module's own prefix, and the prefix is worth less
+// than a cookie a sibling host cannot forge.
 type Cookies struct{ secure bool }
 
 // NewCookies returns the cookie policy for an application reached at publicHost.
 func NewCookies(secure bool) Cookies { return Cookies{secure: secure} }
 
-// Session is the cookie that carries a session id.
+// Session is the cookie that carries a session id. The value is the credential
+// and nothing stores it; what the row holds is its hash.
 func (c Cookies) Session(id uuid.UUID, expires time.Time) http.Cookie {
-	return http.Cookie{
-		Name: httpx.SessionCookie, Value: id.String(), Path: "/",
-		Expires: expires, MaxAge: int(time.Until(expires).Seconds()),
-		HttpOnly: true, Secure: c.secure, SameSite: http.SameSiteLaxMode,
-	}
+	return c.set(httpx.SessionCookie, id.String(), int(time.Until(expires).Seconds()))
 }
 
-// Clear is the cookie that removes it: same name, same path, no value, expired.
-// The attributes have to match or the browser keeps the one it has.
-func (c Cookies) Clear() http.Cookie {
+// Clear is the cookie that removes the session: same name, same path, no value,
+// expired. The attributes have to match or the browser keeps the one it has.
+func (c Cookies) Clear() http.Cookie { return c.set(httpx.SessionCookie, "", -1) }
+
+// State is the OIDC state cookie, and Forget removes it.
+func (c Cookies) State(value string, seconds int) http.Cookie {
+	return c.set(stateCookie, value, seconds)
+}
+
+// Forget expires a cookie this policy set.
+func (c Cookies) Forget(base string) http.Cookie { return c.set(base, "", -1) }
+
+// Name is what a cookie this policy sets is called, so a handler reading one
+// back spells it the way it was written.
+func (c Cookies) Name(base string) string { return httpx.CookieName(base, c.secure) }
+
+func (c Cookies) set(base, value string, maxAge int) http.Cookie {
 	return http.Cookie{
-		Name: httpx.SessionCookie, Value: "", Path: "/", MaxAge: -1,
+		Name: httpx.CookieName(base, c.secure), Value: value, Path: "/", MaxAge: maxAge,
 		HttpOnly: true, Secure: c.secure, SameSite: http.SameSiteLaxMode,
 	}
 }

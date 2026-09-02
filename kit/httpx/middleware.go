@@ -269,11 +269,49 @@ func (a *API) rlog(ctx context.Context) *slog.Logger {
 	return a.log
 }
 
-// SessionCookie is the cookie a browser session travels in. The name is here,
-// and not in the auth module that mints it, because the kernel has to recognise
-// it twice without knowing anything else about sessions: to refuse a cross-site
-// write (csrf) and to decide that a request is worth authenticating at all.
+// SessionCookie is the base name of the cookie a browser session travels in.
+// It is here, and not in the auth module that mints it, because the kernel has
+// to recognise it twice without knowing anything else about sessions: to refuse
+// a cross-site write (csrf) and to decide that a request is worth
+// authenticating at all.
 const SessionCookie = "platformkit_session"
+
+// CookieName is the name a first-party cookie is set under, which depends on
+// whether it will carry Secure.
+//
+// The __Host- prefix is a rule the browser enforces rather than one we ask it
+// to: a cookie whose name starts with it is only accepted with Secure, with
+// Path=/ and with no Domain, and a page on another host cannot set one that the
+// browser will send here. That last part is the reason it matters in this
+// application in particular. Every tenant is reached at its own host, often as
+// siblings under one registrable domain, so without the prefix a page served at
+// one customer's host can set platformkit_session for the parent domain and the
+// browser will attach it at every other customer's. The prefix makes that
+// cookie unsettable rather than merely unhelpful.
+//
+// It is dropped when the cookie is not Secure, because a browser refuses a
+// Secure cookie over http://localhost and a development machine nobody can sign
+// in to is a development machine nobody uses. Both names are recognised on the
+// way in — a deployment is one or the other, so only one is ever presented.
+func CookieName(base string, secure bool) string {
+	if secure {
+		return "__Host-" + base
+	}
+	return base
+}
+
+// SessionCookieOf is the session cookie the request presents, under either
+// name. It is exported because the auth module reads the same cookie the kernel
+// recognised, and two spellings of "which cookie is the session" is a session
+// one half of the program can see and the other cannot.
+func SessionCookieOf(r *http.Request) (*http.Cookie, bool) {
+	for _, secure := range []bool{true, false} {
+		if c, err := r.Cookie(CookieName(SessionCookie, secure)); err == nil && c.Value != "" {
+			return c, true
+		}
+	}
+	return nil, false
+}
 
 // carry puts the request itself on the context, because the authentication hook
 // runs inside the tenant transaction — below huma's routing — and still has to
@@ -307,7 +345,7 @@ func unsafeMethod(m string) bool {
 // presented deliberately and a cross-site page cannot read one to present.
 func (a *API) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := r.Cookie(SessionCookie); err != nil || !unsafeMethod(r.Method) {
+		if _, ok := SessionCookieOf(r); !ok || !unsafeMethod(r.Method) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -401,13 +439,17 @@ func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
 }
 
 // credentialed reports whether the request presents something the application
-// could recognise: the session cookie, or an Authorization header for a caller
-// that is not a browser. A request with neither is anonymous without a query.
+// could recognise, which today is the session cookie and nothing else.
+//
+// It used to accept an Authorization header too, which was a query for every
+// request carrying one and a recognition for none: nothing in this application
+// issues a bearer token, so the hook could only ever answer "not signed in" and
+// the only effect was to open a transaction the request did not need. When
+// something issues bearers, this is where they are let in, and the CSRF
+// middleware's own comment says why they are exempt from that check.
 func credentialed(r *http.Request) bool {
-	if _, err := r.Cookie(SessionCookie); err == nil {
-		return true
-	}
-	return r.Header.Get("Authorization") != ""
+	_, ok := SessionCookieOf(r)
+	return ok
 }
 
 // ConnFrom is the application connection this request is served on.
