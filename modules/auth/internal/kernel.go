@@ -56,7 +56,11 @@ func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http
 // of rows — so the cost of being exactly right is one round trip on the
 // requests that need one, and requests by an anonymous caller or by a caller
 // with no roles do not even make that.
-func (s *Service) Allowed(ctx context.Context, _ tenancy.Tenant, permission string) (bool, error) {
+// The tenant is unused, and deliberately: the kernel has already refused an
+// operator grant on a tenant that is not the operator's, and every row this
+// reads is inside that tenant's own transaction. A second comparison here would
+// be a check that cannot fail.
+func (s *Service) Allowed(ctx context.Context, _ tenancy.Tenant, grant tenancy.Grant) (bool, error) {
 	principal, ok := httpx.PrincipalFrom(ctx)
 	if !ok || len(principal.Roles) == 0 {
 		return false, nil
@@ -69,7 +73,7 @@ func (s *Service) Allowed(ctx context.Context, _ tenancy.Tenant, permission stri
 	if err != nil {
 		return false, err
 	}
-	return contracts.Grants(held, permission), nil
+	return contracts.Grants(held, grant), nil
 }
 
 var _ httpx.Authorizer = (*Service)(nil)

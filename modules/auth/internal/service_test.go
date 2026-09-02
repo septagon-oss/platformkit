@@ -36,6 +36,11 @@ var (
 	globex      = tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
 	errRollback = errors.New("rolled back on purpose")
 	nobody      = contracts.Client{UserAgent: "go-test", IP: "203.0.113.1"}
+
+	// operatorPermissions is what apps/platformkit hands the real module: the
+	// permissions the operator's own administrator holds by name, because a
+	// wildcard does not satisfy an operator grant.
+	operatorPermissions = []string{"tenant:manage"}
 )
 
 // TestServiceConforms runs the same suite the fake runs, against the real
@@ -50,7 +55,7 @@ func TestServiceConforms(t *testing.T) {
 	authtest.RunService(t, func(t *testing.T, run func(authtest.Fixture)) {
 		_, conn := dbtest.Schema(t)
 		users := realUsers()
-		svc := internal.NewService(users)
+		svc := internal.NewService(users, operatorPermissions)
 		seed(t, conn, svc, acme)
 
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
@@ -92,11 +97,12 @@ func TestServiceConforms(t *testing.T) {
 }
 
 // seed installs the two roles a tenant is created with, in a cross-tenant
-// transaction, exactly as the tenant module's create hook does.
+// transaction, exactly as the tenant module's create hook does. The tenant's
+// own Operator flag decides which admin role it gets, as it does in production.
 func seed(t *testing.T, conn *db.Conn, svc contracts.Service, tenant tenancy.Tenant) {
 	t.Helper()
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		return svc.SeedRoles(ctx, tx, tenant.ID)
+		return svc.SeedRoles(ctx, tx, tenant.ID, tenant.Operator)
 	})
 	if err != nil {
 		t.Fatalf("seed the roles of %s: %v", tenant.Slug, err)
@@ -130,7 +136,7 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users)
+	svc := internal.NewService(users, operatorPermissions)
 	seed(t, conn, svc, acme)
 	seed(t, conn, svc, globex)
 
@@ -173,7 +179,7 @@ func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users)
+	svc := internal.NewService(users, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -246,7 +252,7 @@ func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users)
+	svc := internal.NewService(users, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -285,7 +291,7 @@ func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 func TestAFailedLoginIsRecordedThoughItsRequestIsRolledBack(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users)
+	svc := internal.NewService(users, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 

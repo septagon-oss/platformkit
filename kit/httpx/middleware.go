@@ -701,18 +701,32 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 
-	allowed, err := a.opts.Authorize.Allowed(ctx.Context(), t, auth.permission)
+	grant, _ := auth.grant()
+	// The operator check comes before the Authorizer, and that order is the
+	// whole point of the declaration. The control plane is served on every
+	// tenant's host, so an operator route is reachable at a customer's host by
+	// a customer's administrator; asking the roles table first would mean the
+	// wildcard that administrator legitimately holds in their own tenant
+	// answering a question about everybody's. A tenant that is not the
+	// operator's cannot exercise this permission however its roles are
+	// written, and there is nothing to ask.
+	if grant.Operator && !t.Operator {
+		a.deny(ctx, "AUTH_NOT_OPERATOR", grant.Permission+" is the operator's, and this is not the operator's tenant")
+		return
+	}
+
+	allowed, err := a.opts.Authorize.Allowed(ctx.Context(), t, grant)
 	if err != nil {
 		// An authorization decision that could not be made is not a denial, and
 		// saying so would send a person away from work they are entitled to do.
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: authorization decision unavailable",
-			"permission", auth.permission, "tenant", t.Slug, "error", err)
+			"permission", grant.Permission, "operator", grant.Operator, "tenant", t.Slug, "error", err)
 		ctx.SetHeader("Retry-After", "3")
 		_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "authorization is temporarily unavailable")
 		return
 	}
 	if !allowed {
-		a.deny(ctx, "AUTH_DENIED", "this operation requires "+auth.permission)
+		a.deny(ctx, "AUTH_DENIED", "this operation requires "+grant.Permission)
 		return
 	}
 	next(ctx)

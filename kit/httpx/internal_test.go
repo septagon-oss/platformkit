@@ -19,7 +19,9 @@ type nothing struct{}
 func (nothing) ByHost(context.Context, db.Tx[db.System], string) (tenancy.Tenant, error) {
 	return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 }
-func (nothing) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return false, nil }
+func (nothing) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
+	return false, nil
+}
 
 // TestReachingAroundRegisterIsStillRecorded is the negative control, and it has
 // to be written from inside the package because from outside there is no longer

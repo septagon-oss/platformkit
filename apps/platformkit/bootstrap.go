@@ -66,7 +66,7 @@ func bootstrap(args []string) error {
 
 	ctx := context.Background()
 	c := compose(cfg)
-	err = app.Bootstrap(ctx, cfg, func(ctx context.Context, tx db.Tx[db.System]) error {
+	err = app.Bootstrap(ctx, cfg, c.modules, func(ctx context.Context, tx db.Tx[db.System]) error {
 		t, err := tenant.Bootstrap(ctx, tx, c.tenants, tenantcontracts.NewTenant{
 			Slug: *slug, Name: *name, Host: *host,
 		})

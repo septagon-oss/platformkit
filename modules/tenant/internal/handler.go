@@ -19,10 +19,17 @@ import (
 
 // path is the collection. The control plane is served on every tenant's host,
 // because there is nowhere else to serve it from: an installation has no host
-// of its own, only its customers'. What keeps it safe is the permission —
-// tenant:manage is granted in one tenant and reaches every tenant, which is a
-// grant an operator makes deliberately and an ordinary administrator does not
-// hold.
+// of its own, only its customers'.
+//
+// So the permission alone does not keep it safe, and the earlier version of
+// this comment claiming it did was wrong. tenant:manage is an ordinary string
+// in an ordinary roles table, and every tenant's admin role holds the wildcard
+// by construction — which used to mean any customer's administrator could list,
+// create and suspend the tenants beside them, at their own host, with the
+// credentials they were legitimately given. What keeps it safe is that these
+// five routes declare httpx.OperatorPermission: the kernel refuses the request
+// at any tenant but the operator's own before it asks the roles table anything,
+// and no wildcard satisfies the grant even there.
 const path = "/api/v1/tenant/tenants"
 
 // RegisterRoutes mounts the five control-plane routes.
@@ -48,7 +55,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 
 	httpx.Register(api, op("list", http.MethodGet, path, 0, "List the tenants",
 		"Every tenant of this installation, suspended ones included.", nil),
-		httpx.Permission(contracts.PermissionTenantManage),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, _ *struct{}) (*listOutput, error) {
 			out := &listOutput{}
 			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -62,7 +69,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 	httpx.Register(api, op("create", http.MethodPost, path, http.StatusCreated, "Create a tenant",
 		"Writes the tenant, its first host and the roles a tenant starts with, in one transaction.",
 		[]string{contracts.EventCreated}),
-		httpx.Permission(contracts.PermissionTenantManage),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *createInput) (*itemOutput, error) {
 			out := &itemOutput{}
 			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -74,7 +81,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 		})
 
 	httpx.Register(api, op("read", http.MethodGet, path+"/{id}", 0, "Read a tenant", "", nil),
-		httpx.Permission(contracts.PermissionTenantManage),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *idInput) (*itemOutput, error) {
 			out := &itemOutput{}
 			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -88,7 +95,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 	httpx.Register(api, op("suspend", http.MethodPost, path+"/{id}/suspend", 0, "Suspend a tenant",
 		"Stops the tenant being served: its hosts answer as though no site were there. Suspending it again changes nothing.",
 		[]string{contracts.EventSuspended}),
-		httpx.Permission(contracts.PermissionTenantManage),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *idInput) (*itemOutput, error) {
 			out := &itemOutput{}
 			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -110,7 +117,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 	httpx.Register(api, op("add-host", http.MethodPost, path+"/{id}/hosts", http.StatusCreated, "Give a tenant another host",
 		"Adding a host the tenant already answers at changes nothing.",
 		[]string{contracts.EventHostAdded}),
-		httpx.Permission(contracts.PermissionTenantManage),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *hostInput) (*itemOutput, error) {
 			out := &itemOutput{}
 			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -173,7 +180,14 @@ type listOutput struct {
 //
 // It refuses when any tenant already exists, and that refusal is the whole
 // point: this is the one write that runs with no caller to authorize, so the
-// condition that makes it safe is that it can only ever happen once.
+// condition that makes it safe is that it can only ever happen once. Two of
+// these racing is one of them: kit/app.Bootstrap takes an advisory lock for the
+// transaction before this reads the list.
+//
+// The tenant it creates is the operator's — the installation's own, whose
+// administrators may reach the control plane at all. This line is the only
+// writer of that flag in the application: NewTenant.Operator is json:"-", so no
+// request body carries one.
 func Bootstrap(ctx context.Context, tx db.Tx[db.System], svc contracts.Service, in contracts.NewTenant) (*contracts.Tenant, error) {
 	existing, err := svc.List(ctx, tx)
 	if err != nil {
@@ -183,6 +197,7 @@ func Bootstrap(ctx context.Context, tx db.Tx[db.System], svc contracts.Service, 
 		return nil, fmt.Errorf("%w: this installation already has %d tenant(s); create the next one through %s",
 			crud.ErrConflict, len(existing), path)
 	}
+	in.Operator = true
 	return svc.Create(ctx, tx, in)
 }
 

@@ -36,7 +36,7 @@ func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.T
 	}
 	return acme, nil
 }
-func (caller) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return true, nil }
+func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
 
 // mounted is the module as main mounts it: the manifest's own Routes, on the
 // real API, against a real Postgres. The tests below are about the Spec literal

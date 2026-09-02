@@ -6,12 +6,13 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"net"
 	"net/url"
 	"os"
 	"slices"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // levels is the closed set log.level may name. slog has four; a fifth spelling
@@ -228,10 +229,20 @@ func (m *Mail) validate(path string) error {
 	return nil
 }
 
-// defaultRedirectPath is where the provider sends a browser back to, and it is
-// the path the auth module registers. A deployment only sets it when a provider
-// was registered against a different one.
-const defaultRedirectPath = "/api/v1/auth/oidc/callback"
+// authPath is where the auth module's routes live, and defaultRedirectPath is
+// where the provider sends a browser back to. A deployment only sets the second
+// when a provider was registered against a different one.
+//
+// The prefix is spelled here rather than imported because a configuration
+// package that named a module would be the configuration surface depending on
+// the catalogue. It is checked, though: the callback is mounted by trimming
+// this prefix off, so a path outside it is a route on a prefix the module does
+// not own — or, for a path shorter than the prefix, a slice out of range at
+// boot. Saying so here names the key.
+const (
+	authPath            = "/api/v1/auth"
+	defaultRedirectPath = authPath + "/oidc/callback"
+)
 
 // validate refuses a half-written provider. All of it or none of it: a block
 // with an issuer and no client id is a login route that exists and cannot work,
@@ -256,8 +267,9 @@ func (o *OIDC) validate(path string) error {
 	if o.RedirectPath == "" {
 		o.RedirectPath = defaultRedirectPath
 	}
-	if !strings.HasPrefix(o.RedirectPath, "/") {
-		return fmt.Errorf("config %s: auth.oidc.redirect_path is %q, which is not a path", path, o.RedirectPath)
+	if !strings.HasPrefix(o.RedirectPath, authPath+"/") {
+		return fmt.Errorf("config %s: auth.oidc.redirect_path is %q; it is mounted under %s, so it starts with %q",
+			path, o.RedirectPath, authPath, authPath+"/")
 	}
 	return nil
 }

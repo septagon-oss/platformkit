@@ -24,11 +24,16 @@ import (
 type Service struct {
 	users   contracts.Users
 	limiter *contracts.Limiter
+	// operator are the permissions the operator's own administrator holds by
+	// name. They are named and not implied because a wildcard does not satisfy
+	// an operator grant; the application supplies them, because they belong to
+	// the modules that declare them and this one is composed before those are.
+	operator []string
 }
 
 // NewService returns the auth service. module.go constructs it.
-func NewService(users contracts.Users) *Service {
-	return &Service{users: users, limiter: contracts.NewLimiter()}
+func NewService(users contracts.Users, operator []string) *Service {
+	return &Service{users: users, limiter: contracts.NewLimiter(), operator: operator}
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -170,9 +175,19 @@ func (s *Service) Logout(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 // that created it. ON CONFLICT DO NOTHING, because a tenant that already has an
 // admin role has one that somebody may have edited, and seeding is not the
 // place to put it back.
-func (s *Service) SeedRoles(_ context.Context, tx db.Tx[db.System], tenantID uuid.UUID) error {
+//
+// The operator's own tenant gets one permission more, named rather than
+// implied: the wildcard does not satisfy an operator grant, so tenant:manage
+// has to appear in the list for anybody to reach the control plane. That row is
+// the whole of the installation's own authority, and it exists in exactly one
+// tenant — the one the bootstrap created.
+func (s *Service) SeedRoles(_ context.Context, tx db.Tx[db.System], tenantID uuid.UUID, operator bool) error {
+	admin := []string{contracts.Wildcard}
+	if operator {
+		admin = append(admin, s.operator...)
+	}
 	for name, permissions := range map[string][]string{
-		contracts.RoleAdmin:  {contracts.Wildcard},
+		contracts.RoleAdmin:  admin,
 		contracts.RoleMember: {},
 	} {
 		err := tx.DB().Exec(

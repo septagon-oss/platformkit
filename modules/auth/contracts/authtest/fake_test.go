@@ -20,7 +20,7 @@ func TestFakeConforms(t *testing.T) {
 		users := usertest.NewFake()
 		fake := authtest.NewFake(users)
 		ctx, tx := t.Context(), db.Tx[db.Tenant]{}
-		if err := fake.SeedRoles(ctx, db.Tx[db.System]{}, uuid.New()); err != nil {
+		if err := fake.SeedRoles(ctx, db.Tx[db.System]{}, uuid.New(), false); err != nil {
 			t.Fatalf("SeedRoles: %v", err)
 		}
 		run(authtest.Fixture{

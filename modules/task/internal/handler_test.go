@@ -43,7 +43,7 @@ func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.T
 	}
 	return acme, nil
 }
-func (caller) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return true, nil }
+func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
 
 // mounted is the module's routes behind the real API: the tenant resolved from
 // the host, the transaction opened on the first query, the permission checked,

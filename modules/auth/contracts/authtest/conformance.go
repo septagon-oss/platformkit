@@ -12,6 +12,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
@@ -71,9 +72,16 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if identity.Email != "ada@acme.example.com" || !slices.Contains(identity.Roles, contracts.RoleAdmin) {
 				t.Errorf("the identity is %+v", identity)
 			}
-			// admin holds the wildcard, seeded with the tenant.
-			if !contracts.Grants(identity.Permissions, "anything:atall") {
+			// admin holds the wildcard, seeded with the tenant: it grants every
+			// ordinary permission there is.
+			if !contracts.Grants(identity.Permissions, tenancy.Grant{Permission: "anything:atall"}) {
 				t.Errorf("admin's permissions are %v, want the wildcard", identity.Permissions)
+			}
+			// And it grants no operator permission, which is the whole reason
+			// that kind exists: this tenant is a customer's, admin is its
+			// wildcard, and the control plane is not theirs to reach.
+			if contracts.Grants(identity.Permissions, tenancy.Grant{Permission: "anything:atall", Operator: true}) {
+				t.Errorf("admin's wildcard %v satisfied an operator grant", identity.Permissions)
 			}
 			published(t, f, contracts.EventLoggedIn)
 		},
@@ -171,7 +179,8 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if err != nil {
 				t.Fatalf("Permissions: %v", err)
 			}
-			if !contracts.Grants(held, "task:read") || contracts.Grants(held, "tenant:manage") {
+			if !contracts.Grants(held, tenancy.Grant{Permission: "task:read"}) ||
+				contracts.Grants(held, tenancy.Grant{Permission: "tenant:manage"}) {
 				t.Errorf("editor holds %v; it grants what it names and nothing else", held)
 			}
 			// And a role nobody defined grants nothing rather than failing: a

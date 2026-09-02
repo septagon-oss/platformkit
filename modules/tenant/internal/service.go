@@ -45,6 +45,9 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	at := db.Now()
 	t := &contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
+		// Never from a request body: NewTenant.Operator is json:"-", so the
+		// only caller that can set it is Bootstrap.
+		Operator:  in.Operator,
 		CreatedAt: at, UpdatedAt: at,
 	}
 	if err := tx.DB().Omit("Hosts").Create(t).Error; err != nil {
@@ -157,7 +160,7 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.System]) ([]*contracts.Ten
 // are the same fact, and saying which is telling a stranger about a customer.
 func (s *Service) ByHost(_ context.Context, tx db.Tx[db.System], host string) (tenancy.Tenant, error) {
 	var t contracts.Tenant
-	err := tx.DB().Table("tenants").
+	err := tx.DB().Table("tenants").Select("tenants.*").
 		Joins("JOIN tenant_hosts ON tenant_hosts.tenant_id = tenants.id").
 		Where("tenant_hosts.host = ? AND tenants.status = ? AND tenants.deleted_at IS NULL",
 			httpx.HostOnly(host), contracts.StatusActive).

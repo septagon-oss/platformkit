@@ -41,7 +41,9 @@ func (f fixture) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenanc
 	return f.tenant, nil
 }
 
-func (fixture) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return true, nil }
+func (fixture) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
+	return true, nil
+}
 
 // anonymous is the identity hook for a file about booting: no route here needs
 // a principal, and no request in it carries a credential, so the kernel never
@@ -207,6 +209,108 @@ func TestBootRefusesARouteNoModuleCanReach(t *testing.T) {
 	if c, dialErr := net.DialTimeout("tcp", cfg.Server.Addr, time.Second); dialErr == nil {
 		_ = c.Close()
 		t.Error("the application listened before validating its composition")
+	}
+}
+
+// TestBootRefusesARouteAndAManifestThatDisagreeAboutTheOperator is the other
+// half of the same gate, and it is the one that matters: a control-plane route
+// declared with httpx.Permission is a route every customer's administrator
+// reaches through the wildcard they hold in their own tenant, and it looks
+// exactly like a working route until somebody tries it. Both directions fail,
+// naming the permission and both sides.
+func TestBootRefusesARouteAndAManifestThatDisagreeAboutTheOperator(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		declared bool
+		route    func(string) httpx.Auth
+	}{
+		{"a route that forgot the operator", true, httpx.Permission},
+		{"a route that invented one", false, httpx.OperatorPermission},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, opts := compose(t)
+			m := module.Module{
+				Name:        "control",
+				Permissions: []module.Permission{{Key: "fleet:manage", Operator: tt.declared}},
+				Routes: func(api *httpx.API) {
+					httpx.Register(api, huma.Operation{
+						OperationID: "fleet", Method: http.MethodGet, Path: "/fleet",
+					}, tt.route("fleet:manage"), func(context.Context, *struct{}) (*helloOut, error) {
+						return &helloOut{}, nil
+					})
+				},
+			}
+			a, err := New(t.Context(), cfg, []module.Module{m}, opts)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			err = a.Run(t.Context())
+			if err == nil {
+				t.Fatal("Run served a route whose kind its manifest contradicts")
+			}
+			for _, want := range []string{"fleet:manage", "httpx.OperatorPermission", "httpx.Permission"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the error does not name %q: %v", want, err)
+				}
+			}
+		})
+	}
+}
+
+// TestTwoBootstrapsOfOneEmptyInstallationAreOne. The refusal that makes
+// `platformkit bootstrap` safe to leave in the binary is "there is already a
+// tenant" — and without a lock that refusal is only true of two runs in
+// sequence. Two concurrent ones each read an empty table inside their own
+// snapshot, each find nothing, and each create a first tenant, after which the
+// installation has two of them and two administrators who each believe they are
+// the only one. Three here, so the winner is not a coin toss between two.
+func TestTwoBootstrapsOfOneEmptyInstallationAreOne(t *testing.T) {
+	migrateURL, appURL := dbtest.URLs(t)
+	cfg := config.Config{Database: config.Database{URL: appURL, MigrateURL: migrateURL}}
+
+	// The table is the one migrations/000006 creates; this test is about the
+	// lock rather than about any module, so the write is one INSERT and the
+	// check is the same "is there one already" the tenant module makes.
+	create := func(ctx context.Context, tx db.Tx[db.System]) error {
+		var existing int64
+		if err := tx.DB().Raw("SELECT count(*) FROM tenants").Row().Scan(&existing); err != nil {
+			return err
+		}
+		if existing > 0 {
+			return errors.New("this installation already has a tenant")
+		}
+		// Slow enough that three racing bootstraps overlap for certain, which
+		// is what makes the pass meaningful rather than lucky.
+		if err := tx.DB().Exec("SELECT pg_sleep(0.2)").Error; err != nil {
+			return err
+		}
+		return tx.DB().Exec("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme')").Error
+	}
+
+	const racers = 3
+	done := make(chan error, racers)
+	for range racers {
+		go func() { done <- Bootstrap(t.Context(), cfg, nil, create) }()
+	}
+	won := 0
+	for range racers {
+		if err := <-done; err == nil {
+			won++
+		} else if !strings.Contains(err.Error(), "already has a tenant") {
+			t.Errorf("a losing bootstrap failed for the wrong reason: %v", err)
+		}
+	}
+	if won != 1 {
+		t.Errorf("%d of %d bootstraps succeeded, want exactly one", won, racers)
+	}
+
+	admin := dbtest.Open(t, migrateURL)
+	var tenants int
+	if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM tenants").Scan(&tenants); err != nil {
+		t.Fatalf("count the tenants: %v", err)
+	}
+	if tenants != 1 {
+		t.Errorf("the installation has %d tenants, want one", tenants)
 	}
 }
 

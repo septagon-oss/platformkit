@@ -93,7 +93,7 @@ func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.T
 	}
 	return acme, nil
 }
-func (caller) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return true, nil }
+func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
 
 var spec = rest.Spec[*Task]{
 	Module: "tasks", Entity: "task", Path: "/api/tasks",

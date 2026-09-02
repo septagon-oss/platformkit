@@ -18,6 +18,13 @@ import (
 	"github.com/septagon-oss/platformkit/modules/tenant/internal"
 )
 
+// permissions is what the manifest declares. Operator, because the control
+// plane is every tenant rather than one: it is served on a customer's host,
+// where a customer's administrator holds the wildcard, and a wildcard does not
+// satisfy an operator grant. kit/app checks this against what the routes
+// declare, so the two cannot drift.
+var permissions = []module.Permission{{Key: contracts.PermissionTenantManage, Operator: true}}
+
 // Deps is what this module cannot make for itself.
 type Deps struct {
 	// OnCreate runs inside the transaction that creates a tenant, in order.
@@ -40,7 +47,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService(deps.OnCreate)
 	return svc, module.Module{
 		Name:        "tenant",
-		Permissions: []module.Permission{{Key: contracts.PermissionTenantManage}},
+		Permissions: permissions,
 		Events:      []string{contracts.EventCreated, contracts.EventSuspended, contracts.EventHostAdded},
 		Nav: []module.NavEntry{
 			{Label: "Tenants", Path: "/admin/tenant/tenants", Permission: contracts.PermissionTenantManage},

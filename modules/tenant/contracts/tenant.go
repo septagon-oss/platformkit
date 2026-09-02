@@ -43,6 +43,11 @@ type Tenant struct {
 	Slug   string    `json:"slug"`
 	Name   string    `json:"name"`
 	Status string    `json:"status"`
+	// Operator says this is the installation's own tenant: the one whose
+	// administrators may reach the control plane at all. Exactly one row has it,
+	// the one `platformkit bootstrap` created, and no route writes it — see
+	// NewTenant.
+	Operator bool `json:"operator"`
 	// Hosts are the names this tenant is served at. They live in their own
 	// table and are loaded with the tenant, because a tenant without its hosts
 	// is a row nobody can reach and an admin screen that cannot say so.
@@ -59,7 +64,7 @@ func (Tenant) TableName() string { return "tenants" }
 // carries on a context. The conversion is here so that no other package decides
 // which of these fields the kernel gets.
 func (t *Tenant) Tenancy() tenancy.Tenant {
-	return tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name}
+	return tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator}
 }
 
 // NewTenant is what creating one takes: a slug, a name, and the first host it
@@ -70,6 +75,13 @@ type NewTenant struct {
 	Slug string `json:"slug" minLength:"2" maxLength:"63" doc:"URL-safe short name, unique across the installation" example:"acme"`
 	Name string `json:"name" minLength:"1" maxLength:"200" doc:"Display name" example:"Acme Corporation"`
 	Host string `json:"host" minLength:"1" maxLength:"253" doc:"The first host this tenant is served at" example:"acme.example.com"`
+
+	// Operator marks the installation's own tenant, and it is json:"-": it is
+	// in no request body, in no OpenAPI schema and in no generated form, so the
+	// create route cannot be asked for one however the body is written. The one
+	// writer is Bootstrap, which is the one write in the application with no
+	// caller to authorize and can only ever happen once.
+	Operator bool `json:"-"`
 }
 
 // slugPattern is a DNS label: what a slug has to be if it is ever going to be a

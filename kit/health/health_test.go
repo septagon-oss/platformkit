@@ -30,7 +30,7 @@ func (s sites) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.
 	return s.tenant, nil
 }
 
-func (sites) Allowed(context.Context, tenancy.Tenant, string) (bool, error) { return false, nil }
+func (sites) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return false, nil }
 
 // anonymous is the identity hook for a file about probes: the two probes are
 // Public and carry no credential, so the kernel never asks it anything. It is

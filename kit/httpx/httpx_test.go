@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -59,7 +60,7 @@ func (f *fixture) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenan
 	return f.tenant, nil
 }
 
-func (f *fixture) Allowed(context.Context, tenancy.Tenant, string) (bool, error) {
+func (f *fixture) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
 	return f.allow, f.authErr
 }
 
@@ -505,9 +506,9 @@ func TestHumaOwnRoutesAreRecordedAndDeclared(t *testing.T) {
 	}
 }
 
-// TestPermissionsListsWhatTheRoutesRequire, which is what kit/app checks
-// against the modules' manifests.
-func TestPermissionsListsWhatTheRoutesRequire(t *testing.T) {
+// TestRequiredListsWhatTheRoutesAsk, which is what kit/app checks against the
+// modules' manifests — the name and the kind, because the two have to agree.
+func TestRequiredListsWhatTheRoutesAsk(t *testing.T) {
 	api, _, _ := setup(t)
 	httpx.Register(api, huma.Operation{
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets",
@@ -516,12 +517,26 @@ func TestPermissionsListsWhatTheRoutesRequire(t *testing.T) {
 		OperationID: "create-widget", Method: http.MethodPost, Path: "/widgets",
 	}, httpx.Permission("widget:read"), ok)
 	httpx.Register(api, huma.Operation{
+		OperationID: "operate-widget", Method: http.MethodPost, Path: "/widgets/all",
+	}, httpx.OperatorPermission("widget:operate"), ok)
+	httpx.Register(api, huma.Operation{
 		OperationID: "public-thing", Method: http.MethodGet, Path: "/public",
 	}, httpx.Public(), ok)
 
-	got := api.Permissions()
-	if len(got) != 1 || got[0] != "widget:read" {
-		t.Errorf("Permissions = %v, want [widget:read] once", got)
+	want := []tenancy.Grant{{Permission: "widget:operate", Operator: true}, {Permission: "widget:read"}}
+	if got := api.Required(); !slices.Equal(got, want) {
+		t.Errorf("Required = %v, want %v", got, want)
+	}
+
+	// Permissions is the other list: what the modules define, which the kernel
+	// hands over before any route is registered. It is empty until it is set,
+	// and it is not derived from the routes.
+	if got := api.Permissions(); len(got) != 0 {
+		t.Errorf("Permissions before Declare = %v, want nothing", got)
+	}
+	api.Declare([]tenancy.Grant{{Permission: "widget:read"}, {Permission: "widget:operate", Operator: true}})
+	if got := api.Permissions(); !slices.Equal(got, want) {
+		t.Errorf("Permissions = %v, want %v", got, want)
 	}
 }
 
