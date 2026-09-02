@@ -50,8 +50,10 @@ instance in the cluster runs a job per tick.
   which with `Parallel`. A periodic job that hangs holds its lock, which is what
   "exactly one instance runs it" costs — so the relay, the one job that can
   block on a network, is the one job that does not hold one.
-- One tenant's failure inside `ForEachTenant` does not stop the others: the
-  errors are joined and the job still reports as failed.
+- One tenant's failure inside `jobs.PerTenant` does not stop the others, and
+  neither does one row's: the helper hands over the tenant on a context and the
+  connection, so the job opens a transaction per row, and the errors are joined
+  so it still reports as failed. Partial progress is the intended outcome.
 
 ## Evidence
 

@@ -213,20 +213,33 @@ type TenantLister interface {
 
 var listToken = syscap.NewSystemToken("list the tenants for periodic work")
 
-// ForEachTenant runs fn once per tenant, each in that tenant's own transaction.
+// PerTenant runs fn once per tenant, with the tenant already on the context it
+// is given, so fn opens as many transactions as it needs by calling db.Run and
+// never touches kit/tenancy itself.
 //
-// The list is read and its transaction closed before the first tenant
-// transaction opens: a tenant transaction cannot nest inside a system one, and
-// holding a cross-tenant transaction open for the length of the whole job would
-// be the widest lock in the system.
+// That is the whole of it, and it is the shape periodic work actually has. A
+// job that visits every row of every tenant wants a transaction per row — one
+// bad row must not roll back the good ones beside it — and db.Run joins an
+// enclosing tenant transaction rather than opening a second, so a helper that
+// handed fn a transaction forced the module into two passes and a
+// tenancy.WithTenant of its own. Handing over the context and the connection
+// instead makes the per-row transaction the obvious thing to write.
 //
-// One tenant's failure does not stop the others. Returning at the first one
-// meant that a single tenant with bad data stopped every tenant after it in the
-// list, on every tick, forever — and the tenants are in whatever order the
-// lister returns, so which ones those were was arbitrary. Every failure is
-// logged where it happened and they come back joined, so the job still reports
-// as failed.
-func ForEachTenant(ctx context.Context, conn *db.Conn, lister TenantLister, fn func(context.Context, db.Tx[db.Tenant]) error) error {
+// The list is read and its transaction closed before the first tenant's work
+// begins: a tenant transaction cannot nest inside a system one, and holding a
+// cross-tenant transaction open for the length of the whole job would be the
+// widest lock in the system.
+//
+// Partial progress is the intended outcome. One tenant's failure does not stop
+// the others: returning at the first meant a single tenant with bad data
+// stopped every tenant after it in the list, on every tick, forever, and the
+// order is whatever the lister returns, so which tenants those were was
+// arbitrary. Every failure is logged where it happened and they come back
+// joined, so the job still reports as failed and the work that could be done
+// was done.
+func PerTenant(ctx context.Context, conn *db.Conn, lister TenantLister,
+	fn func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error,
+) error {
 	if lister == nil {
 		return errors.New("jobs: this job walks every tenant and the application was given no TenantLister")
 	}
@@ -241,7 +254,7 @@ func ForEachTenant(ctx context.Context, conn *db.Conn, lister TenantLister, fn f
 	}
 	var failed []error
 	for _, t := range tenants {
-		if err := db.Run(tenancy.WithTenant(ctx, t), conn, fn); err != nil {
+		if err := fn(tenancy.WithTenant(ctx, t), conn, t); err != nil {
 			slog.ErrorContext(ctx, "jobs: a tenant failed; continuing with the rest",
 				"tenant", t.Slug, "error", err)
 			failed = append(failed, fmt.Errorf("tenant %s: %w", t.Slug, err))

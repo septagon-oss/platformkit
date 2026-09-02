@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -165,10 +166,11 @@ func (l lister) List(context.Context, db.Tx[db.System]) ([]tenancy.Tenant, error
 	return l, nil
 }
 
-// TestForEachTenantRunsInEachTenantsOwnTransaction: a job that walks tenants
-// gets the same Tx[Tenant] a request handler gets, one tenant at a time, so
-// row-level security applies to it exactly as it does to a request.
-func TestForEachTenantRunsInEachTenantsOwnTransaction(t *testing.T) {
+// TestPerTenantHandsOverTheTenantAndNotATransaction: a job that walks tenants
+// is given a context that already carries one, so its own db.Run opens the same
+// Tx[Tenant] a request handler gets and row-level security applies to it
+// exactly as it does to a request.
+func TestPerTenantHandsOverTheTenantAndNotATransaction(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	tenants := lister{
 		{ID: uuid.New(), Slug: "acme"},
@@ -176,21 +178,23 @@ func TestForEachTenantRunsInEachTenantsOwnTransaction(t *testing.T) {
 	}
 
 	var seen []string
-	err := ForEachTenant(t.Context(), conn, tenants, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		var setting string
-		// The tenant is on the transaction as far as Postgres is concerned,
-		// which is the only place it counts.
-		if err := tx.DB().Raw("SELECT platformkit_current_tenant_id()::text").Scan(&setting).Error; err != nil {
-			return err
-		}
-		if setting != db.TenantOf(tx).ID.String() {
-			t.Errorf("the transaction says %s and the handle says %s", setting, db.TenantOf(tx).ID)
-		}
-		seen = append(seen, db.TenantOf(tx).Slug)
-		return nil
+	err := PerTenant(t.Context(), conn, tenants, func(ctx context.Context, conn *db.Conn, tenant tenancy.Tenant) error {
+		return db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+			var setting string
+			// The tenant is on the transaction as far as Postgres is concerned,
+			// which is the only place it counts.
+			if err := tx.DB().Raw("SELECT platformkit_current_tenant_id()::text").Scan(&setting).Error; err != nil {
+				return err
+			}
+			if setting != tenant.ID.String() {
+				t.Errorf("the transaction says %s and the helper said %s", setting, tenant.ID)
+			}
+			seen = append(seen, db.TenantOf(tx).Slug)
+			return nil
+		})
 	})
 	if err != nil {
-		t.Fatalf("ForEachTenant: %v", err)
+		t.Fatalf("PerTenant: %v", err)
 	}
 	if got := strings.Join(seen, " "); got != "acme globex" {
 		t.Errorf("visited %q, want every tenant in order", got)
@@ -198,9 +202,9 @@ func TestForEachTenantRunsInEachTenantsOwnTransaction(t *testing.T) {
 
 	// A job that needs the tenants and was given none says so, rather than
 	// doing nothing and reporting success.
-	err = ForEachTenant(t.Context(), conn, nil, func(context.Context, db.Tx[db.Tenant]) error { return nil })
+	err = PerTenant(t.Context(), conn, nil, func(context.Context, *db.Conn, tenancy.Tenant) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "TenantLister") {
-		t.Errorf("ForEachTenant with no lister = %v", err)
+		t.Errorf("PerTenant with no lister = %v", err)
 	}
 }
 
@@ -231,20 +235,10 @@ func TestValidRefusesAJobThatCouldNotRun(t *testing.T) {
 	}
 }
 
-// poison is a lister with one tenant whose work always fails.
-type failing struct{ bad string }
-
-func (f failing) run(_ context.Context, tx db.Tx[db.Tenant]) error {
-	if db.TenantOf(tx).Slug == f.bad {
-		return errors.New("this tenant's data is broken")
-	}
-	return nil
-}
-
 // TestOneTenantsFailureDoesNotStopTheRest. Returning at the first failure meant
 // a single tenant with bad data stopped every tenant after it in the list, on
 // every tick, forever — and the order is whatever the lister returns, so which
-// tenants those were was arbitrary.
+// tenants those were was arbitrary. Partial progress is the intended outcome.
 func TestOneTenantsFailureDoesNotStopTheRest(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	tenants := lister{
@@ -254,16 +248,65 @@ func TestOneTenantsFailureDoesNotStopTheRest(t *testing.T) {
 	}
 
 	var seen []string
-	f := failing{bad: "poison"}
-	err := ForEachTenant(t.Context(), conn, tenants, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		seen = append(seen, db.TenantOf(tx).Slug)
-		return f.run(ctx, tx)
+	err := PerTenant(t.Context(), conn, tenants, func(ctx context.Context, conn *db.Conn, tenant tenancy.Tenant) error {
+		return db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+			seen = append(seen, db.TenantOf(tx).Slug)
+			if db.TenantOf(tx).Slug == "poison" {
+				return errors.New("this tenant's data is broken")
+			}
+			return nil
+		})
 	})
 	if err == nil || !strings.Contains(err.Error(), "poison") {
-		t.Errorf("ForEachTenant = %v, want the failing tenant named", err)
+		t.Errorf("PerTenant = %v, want the failing tenant named", err)
 	}
 	if got := strings.Join(seen, " "); got != "a poison c" {
 		t.Errorf("visited %q; the tenant after the failure has to run too", got)
+	}
+}
+
+// TestPerTenantOpensOneTransactionPerRow is why the helper hands over a
+// connection rather than a transaction. db.Run joins an enclosing tenant
+// transaction rather than opening a second, so a helper that opened one forced
+// every per-row job into two passes and a tenancy.WithTenant of its own — and a
+// job that skipped that trouble got one transaction for the whole tenant, where
+// a single bad row rolls back every good row beside it.
+//
+// The claim is checked at the database: three rows, three different
+// txid_current(), and the middle one failing leaves the other two alone.
+func TestPerTenantOpensOneTransactionPerRow(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	tenants := lister{{ID: uuid.New(), Slug: "acme"}}
+
+	var txids []int64
+	err := PerTenant(t.Context(), conn, tenants, func(ctx context.Context, conn *db.Conn, _ tenancy.Tenant) error {
+		var failed []error
+		for _, row := range []string{"first", "poison", "third"} {
+			err := db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+				var txid int64
+				if err := tx.DB().Raw("SELECT txid_current()").Scan(&txid).Error; err != nil {
+					return err
+				}
+				txids = append(txids, txid)
+				if row == "poison" {
+					return errors.New("this row is broken")
+				}
+				return nil
+			})
+			if err != nil {
+				failed = append(failed, fmt.Errorf("row %s: %w", row, err))
+			}
+		}
+		return errors.Join(failed...)
+	})
+	if err == nil || !strings.Contains(err.Error(), "poison") {
+		t.Errorf("PerTenant = %v, want the failing row named", err)
+	}
+	if len(txids) != 3 {
+		t.Fatalf("%d rows ran, want three: a poison row must not stop the ones after it", len(txids))
+	}
+	if txids[0] == txids[1] || txids[1] == txids[2] || txids[0] == txids[2] {
+		t.Errorf("the three rows ran in transactions %v; each row needs its own", txids)
 	}
 }
 
