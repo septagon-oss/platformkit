@@ -36,7 +36,14 @@ first and nothing to wait for.
 - Backwards-compatible migrations are not optional. Old and new code run at once
   during a rolling deploy, both against the newest schema.
 - The worker's probes are a plain mux, not the API: a worker has no tenant, no
-  session and no operation to declare, so it has no business building one.
+  session and no operation to declare, so it has no business building one. The
+  shape they answer in is `kit/health`'s, the same one the API's probes use,
+  because one orchestrator manifest describes both roles and an operator should
+  not have to learn the readiness body twice.
+- Every role runs the boot gates, and the roles that do not serve discard the
+  router. A worker that skipped them would start on a composition the web role
+  refuses — the same image, the same modules, two answers — and the rollout
+  would look half healthy.
 
 ## Evidence
 

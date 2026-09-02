@@ -36,16 +36,37 @@ type row struct {
 	CreatedAt time.Time
 }
 
-// Relay moves one batch of unpublished rows to the transport. kit/jobs calls it
-// every second in the worker role; it is one pass so that the scheduler, and
-// not this function, owns the tick and the leader election.
+// Relay moves every unpublished row to the transport, a batch at a time, and
+// returns when the queue is empty or ctx is done. kit/jobs calls it every second
+// in the worker role.
 //
-// FOR UPDATE SKIP LOCKED is what lets several workers run it at once without
-// any of them waiting: each takes rows nobody else holds. The publish happens
-// before the stamp, so a crash in between redelivers rather than loses — see
-// the package comment on idempotency.
+// It takes no lock, and that is deliberate: FOR UPDATE SKIP LOCKED is the
+// concurrency control, so several workers relaying at once each take rows
+// nobody else holds and none of them waits. An advisory lock around it would
+// add nothing and would take something away — a transport that blocks inside
+// one relay pass would hold that lock, and every other periodic job on every
+// replica would stop behind it.
+//
+// One transaction per batch rather than one for the whole drain, so the row
+// locks are held for a batch and not for a backlog. The caller bounds the whole
+// thing with a deadline; a pass that runs out of time leaves its rows unstamped
+// and the next tick takes them.
 func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
-	return db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
+	for {
+		n, err := relayBatch(ctx, conn, t)
+		if err != nil || n < batch {
+			return err
+		}
+	}
+}
+
+// relayBatch moves at most batch rows and reports how many it moved.
+//
+// The publish happens before the stamp, so a crash in between redelivers rather
+// than loses — see the package comment on idempotency.
+func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
+	var moved int
+	err := db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var rows []row
 		const q = `SELECT id, tenant_id, name, payload, created_at FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
@@ -65,11 +86,13 @@ func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
 			}
 			ids = append(ids, r.ID)
 		}
-		if err := tx.DB().Exec("UPDATE "+table+" SET published_at = now() WHERE id IN ?", ids).Error; err != nil {
+		if err := tx.DB().Exec("UPDATE "+table+" SET published_at = clock_timestamp() WHERE id IN ?", ids).Error; err != nil {
 			return fmt.Errorf("events: relay: stamp %d row(s): %w", len(ids), err)
 		}
+		moved = len(ids)
 		return nil
 	})
+	return moved, err
 }
 
 // Purge deletes published rows older than a week, and the handled marks of the
@@ -83,13 +106,18 @@ func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
 // exact residue is an event a transport still holds unacknowledged a week after
 // the outbox forgot it, which JetStream's own limits make a deployment choice
 // rather than a possibility this code can rule out.
+//
+// The cutoff is computed by the database and not by Go: a worker whose clock
+// has drifted would otherwise delete a different week's rows than its neighbour.
+// Dead letters are never purged; a row there is an alert somebody has to read.
 func Purge(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, purgeToken, func(ctx context.Context, tx db.Tx[db.System]) error {
-		before := time.Now().Add(-keep)
-		if err := tx.DB().Exec("DELETE FROM "+table+" WHERE published_at IS NOT NULL AND published_at < ?", before).Error; err != nil {
+		age := fmt.Sprintf("%d seconds", int(keep.Seconds()))
+		if err := tx.DB().Exec("DELETE FROM "+table+
+			" WHERE published_at IS NOT NULL AND published_at < now() - ?::interval", age).Error; err != nil {
 			return fmt.Errorf("events: purge: %w", err)
 		}
-		if err := tx.DB().Exec("DELETE FROM "+handled+" WHERE handled_at < ?", before).Error; err != nil {
+		if err := tx.DB().Exec("DELETE FROM "+handled+" WHERE handled_at < now() - ?::interval", age).Error; err != nil {
 			return fmt.Errorf("events: purge the handled marks: %w", err)
 		}
 		return nil

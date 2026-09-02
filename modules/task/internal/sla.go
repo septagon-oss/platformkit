@@ -55,3 +55,25 @@ func sweep(ctx context.Context, tx db.Tx[db.Tenant], svc contracts.Service) erro
 	}
 	return nil
 }
+
+// BreachOnArrival is the create route's hook: a task whose deadline has already
+// passed — an integration replaying yesterday's alarms, a form filled in late —
+// is breached now rather than within a minute of the next sweep.
+//
+// It runs inside the request's transaction, after the row and its created
+// event, so an error here rolls the create back. That is the property that
+// makes a hook worth having over a subscriber, which could only ever run after
+// the create had already committed.
+func BreachOnArrival(svc contracts.Service) func(context.Context, db.Tx[db.Tenant], *contracts.Task) error {
+	return func(ctx context.Context, tx db.Tx[db.Tenant], task *contracts.Task) error {
+		if !task.IsOverdue(time.Now()) {
+			return nil
+		}
+		breached, err := svc.CheckSLA(ctx, tx, task.ID)
+		if err != nil {
+			return err
+		}
+		*task = *breached // so the 201 shows the state the row is actually in
+		return nil
+	}
+}

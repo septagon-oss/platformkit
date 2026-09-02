@@ -156,12 +156,24 @@ func List[T Entity](tx db.Tx[db.Tenant], q Query) ([]T, int64, error) {
 }
 
 // Create writes a new row, stamped with the transaction's tenant.
+//
+// An entity that already carries a different tenant is refused rather than
+// restamped. Update refuses the same thing, and the two have to agree: code
+// that reads a row in one tenant and creates it in another has a bug either
+// way, and silently rewriting the field means the bug ships as a copy.
 func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
+	if isNil(e) {
+		return fmt.Errorf("%w: there is nothing to create", ErrInvalid)
+	}
 	b := e.base()
 	if b.ID == uuid.Nil {
 		b.ID = uuid.New()
 	}
-	b.TenantID = db.TenantOf(tx).ID
+	tenant := db.TenantOf(tx).ID
+	if b.TenantID != uuid.Nil && b.TenantID != tenant {
+		return fmt.Errorf("%w: this entity belongs to another tenant", ErrInvalid)
+	}
+	b.TenantID = tenant
 	b.DeletedAt = nil
 	if err := validate(ctx, e); err != nil {
 		return err
@@ -176,10 +188,21 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 // tenant, which row-level security would refuse too; reporting it as not found
 // is the same answer the read would have given.
 //
+// columns names the database columns to write, and no columns means all of
+// them. The distinction is what makes two concurrent PATCHes of different
+// fields both survive: writing every column means the second request writes the
+// first one's fields back to what they were when it read them, so a change to a
+// field nobody touched is lost. Spec.Mount passes exactly the columns the patch
+// body named. crud.Schema is the only thing that produces these names; a caller
+// that invents one gets whatever GORM makes of it.
+//
 // A failed write aborts the whole transaction, in Postgres as everywhere: a
 // caller that means to try something else after a conflict needs a new
 // transaction, which for an HTTP handler means a new request.
-func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
+func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T, columns ...string) error {
+	if isNil(e) {
+		return fmt.Errorf("%w: there is nothing to update", ErrInvalid)
+	}
 	b := e.base()
 	if b.ID == uuid.Nil {
 		return ErrNotFound
@@ -194,11 +217,16 @@ func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 	}
 	// Updates and not Save: GORM's Save falls back to an INSERT when the
 	// UPDATE matches no row, which for a row another tenant owns — invisible,
-	// so zero rows — would be a resurrection rather than a refusal. Select("*")
-	// writes every field, Omit protects the four the server owns, and Model
+	// so zero rows — would be a resurrection rather than a refusal. Model
 	// carries the primary key into the WHERE clause.
-	res := tx.DB().Model(e).Where("deleted_at IS NULL").
-		Select("*").Omit("id", "tenant_id", "created_at", "deleted_at").Updates(e)
+	q := tx.DB().Model(e).Where("deleted_at IS NULL")
+	if len(columns) == 0 {
+		// Select("*") writes every field; Omit protects the four the server owns.
+		q = q.Select("*").Omit("id", "tenant_id", "created_at", "deleted_at")
+	} else {
+		q = q.Select(columns)
+	}
+	res := q.Updates(e)
 	if res.Error != nil {
 		return classify(res.Error)
 	}
@@ -233,6 +261,15 @@ func Delete[T Entity](tx db.Tx[db.Tenant], id uuid.UUID, soft bool) error {
 func blank[T Entity]() T {
 	var zero T
 	return reflect.New(reflect.TypeOf(zero).Elem()).Interface().(T)
+}
+
+// isNil reports whether e is a nil entity. T is a pointer type, so this is
+// reachable: a request with no body at all decodes to one, and every method
+// below dereferences. e == nil does not compile for a type parameter and
+// any(e) == nil is false for a typed nil, so it is reflection or nothing.
+func isNil[T Entity](e T) bool {
+	v := reflect.ValueOf(e)
+	return !v.IsValid() || v.IsNil()
 }
 
 func validate(ctx context.Context, e any) error {

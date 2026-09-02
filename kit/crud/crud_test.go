@@ -103,13 +103,13 @@ func attempt(t *testing.T, conn *db.Conn, tenant tenancy.Tenant, fn func(ctx con
 }
 
 // TestCreateStampsTheTenantFromTheTransaction: a module never assigns a tenant,
-// and a module that tries is overruled.
+// and one it left unset comes from the transaction. A module that assigns the
+// wrong one is refused rather than corrected; see the test below.
 func TestCreateStampsTheTenantFromTheTransaction(t *testing.T) {
 	conn := setup(t)
 	var id uuid.UUID
 	as(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
 		task := &Task{Title: "write the kernel"}
-		task.TenantID = globex.ID // a module's mistake, or worse
 		if err := crud.Create(ctx, tx, task); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -368,4 +368,82 @@ func TestSpecRefusesToMountNonsense(t *testing.T) {
 			spec.Mount(&httpx.API{})
 		})
 	}
+}
+
+// TestCreateRefusesAnEntityFromAnotherTenant. Create used to restamp the tenant
+// silently while Update refused it, so code that read a row in one tenant and
+// created it in another shipped as a working copy instead of a compile-time
+// smell somebody would have looked at.
+func TestCreateRefusesAnEntityFromAnotherTenant(t *testing.T) {
+	conn := setup(t)
+	attempt(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
+		foreign := &Task{Title: "somebody else's"}
+		foreign.TenantID = globex.ID
+		if err := crud.Create(ctx, tx, foreign); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("Create of another tenant's entity = %v, want ErrInvalid", err)
+		}
+	})
+	// A nil entity is the shape a request with no body decodes to. It is a
+	// refusal here as well as a 400 at the route, because this package is
+	// called from a module's own handlers too.
+	attempt(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
+		var none *Task
+		if err := crud.Create(ctx, tx, none); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("Create(nil) = %v, want ErrInvalid", err)
+		}
+		if err := crud.Update(ctx, tx, none); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("Update(nil) = %v, want ErrInvalid", err)
+		}
+	})
+}
+
+// TestUpdateWritesOnlyTheColumnsItWasGiven is what makes two concurrent PATCHes
+// of different fields both survive. Writing the whole row means the second
+// writer puts every field back to what it read, so the first one's change to a
+// field it never mentioned is lost.
+func TestUpdateWritesOnlyTheColumnsItWasGiven(t *testing.T) {
+	conn := setup(t)
+	var id uuid.UUID
+	as(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
+		task := &Task{Title: "shared", Status: "open", Priority: 1}
+		if err := crud.Create(ctx, tx, task); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		id = task.ID
+	})
+
+	// Two readers, each with the row as it was, each changing one field.
+	var first, second *Task
+	as(t, conn, acme, func(_ context.Context, tx db.Tx[db.Tenant]) {
+		var err error
+		if first, err = crud.Get[*Task](tx, id); err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if second, err = crud.Get[*Task](tx, id); err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+	})
+	as(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
+		first.Priority = 99
+		if err := crud.Update(ctx, tx, first, "priority"); err != nil {
+			t.Fatalf("the first Update: %v", err)
+		}
+	})
+	as(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
+		second.Status = "done"
+		if err := crud.Update(ctx, tx, second, "status"); err != nil {
+			t.Fatalf("the second Update: %v", err)
+		}
+	})
+
+	as(t, conn, acme, func(_ context.Context, tx db.Tx[db.Tenant]) {
+		got, err := crud.Get[*Task](tx, id)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got.Priority != 99 || got.Status != "done" {
+			t.Errorf("the row is priority %d status %q; both patches touched different fields and both should be there",
+				got.Priority, got.Status)
+		}
+	})
 }

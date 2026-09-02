@@ -39,12 +39,24 @@ instance in the cluster runs a job per tick.
 - Enqueueing cannot fail separately from the write it belongs to: both are one
   `INSERT` in one transaction. Ordering is per stream, not per aggregate.
 - Retries are the transport's: an error nacks and the event comes back, slower
-  each time. A periodic job that hangs holds its lock, which is what "exactly
-  one instance runs it" costs.
+  each time, and both transports stop after `maxDeliveries` — the message is
+  terminated and one row goes to `platformkit_dead_letters` with the last error.
+  Nothing redelivers from that table; a row in it is an alert. Without the cap a
+  poison event is a redelivery storm, and dropping it silently is an integration
+  that failed with nobody to tell.
+- The relay takes no advisory lock, because `FOR UPDATE SKIP LOCKED` is already
+  the concurrency control and a lock would only make one blocked relay stop
+  every replica's relay. Every other periodic job does take one; `jobs.Job` says
+  which with `Parallel`. A periodic job that hangs holds its lock, which is what
+  "exactly one instance runs it" costs — so the relay, the one job that can
+  block on a network, is the one job that does not hold one.
+- One tenant's failure inside `ForEachTenant` does not stop the others: the
+  errors are joined and the job still reports as failed.
 
 ## Evidence
 
 ```sh
-go test ./kit/events ./kit/jobs   # publish, relay, consume, redelivery,
+go test ./kit/events ./kit/jobs   # publish, relay, consume, exactly-once,
+                                 # redelivery, dead letters, concurrent relays,
                                  # JetStream, purge, schedules, one runner
 ```

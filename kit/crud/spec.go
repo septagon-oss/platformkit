@@ -151,10 +151,14 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, Fault(err)
 			}
-			if err := merge(e, schema.Fields, in.Body); err != nil {
+			columns, err := merge(e, schema.Fields, in.Body)
+			if err != nil {
 				return nil, Fault(err)
 			}
-			if err := Update(ctx, tx, e); err != nil {
+			// Only the columns the body named, plus the stamp. Writing the
+			// whole row would put every field back to what this request read,
+			// which loses a concurrent patch of a field it never mentioned.
+			if err := Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
 				return nil, Fault(err)
 			}
 			if err := s.emit(ctx, tx, Updated, e, s.AfterUpdate); err != nil {
@@ -283,8 +287,14 @@ type idInput struct {
 
 // bodyInput is the create route's body: the entity itself, minus whatever it
 // says about the fields the server owns.
+//
+// required, because T is a pointer type and huma reads a pointer body as
+// optional: a POST with no body at all used to arrive here as a nil entity and
+// panic on the first field the handler stamped. The tag makes it a 400 that
+// says what is missing; crud.Create's own nil check is the second half, because
+// this package is also called from a module's own handlers.
 type bodyInput[T any] struct {
-	Body T
+	Body T `required:"true"`
 }
 
 // patchInput is the update route's body: the fields to change, and no others.
@@ -369,31 +379,35 @@ func coerce(f Field, raw string) (any, error) {
 	return v, nil
 }
 
-// merge applies a PATCH body to an entity, field by field, through the schema:
-// a name the schema does not know, or one it knows as read-only, is refused
-// rather than ignored, because a caller who spells a field wrong has to be told.
-func merge(e any, fields []Field, patch map[string]any) error {
+// merge applies a PATCH body to an entity, field by field, through the schema,
+// and reports the database columns it changed so that Update writes those and
+// no others. A name the schema does not know, or one it knows as read-only, is
+// refused rather than ignored, because a caller who spells a field wrong has to
+// be told.
+func merge(e any, fields []Field, patch map[string]any) ([]string, error) {
 	target := reflect.ValueOf(e).Elem()
+	columns := make([]string, 0, len(patch))
 	for name, value := range patch {
 		f, ok := fieldNamed(fields, name)
 		switch {
 		case !ok:
-			return fmt.Errorf("%w: there is no field %q", ErrInvalid, name)
+			return nil, fmt.Errorf("%w: there is no field %q", ErrInvalid, name)
 		case f.ReadOnly:
-			return fmt.Errorf("%w: %s is read-only", ErrInvalid, name)
+			return nil, fmt.Errorf("%w: %s is read-only", ErrInvalid, name)
 		}
 		// Round-tripping through JSON is what makes this the same decoder the
 		// request body went through: one set of rules for "3" as an int and for
 		// null as an empty pointer.
 		encoded, err := json.Marshal(value)
 		if err != nil {
-			return fmt.Errorf("%w: %s: %s", ErrInvalid, name, err)
+			return nil, fmt.Errorf("%w: %s: %s", ErrInvalid, name, err)
 		}
 		if err := json.Unmarshal(encoded, target.FieldByIndex(f.index).Addr().Interface()); err != nil {
-			return fmt.Errorf("%w: %s: %s", ErrInvalid, name, err)
+			return nil, fmt.Errorf("%w: %s: %s", ErrInvalid, name, err)
 		}
+		columns = append(columns, f.Column)
 	}
-	return nil
+	return columns, nil
 }
 
 func names(fields []Field) []string {

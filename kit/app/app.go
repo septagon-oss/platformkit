@@ -18,6 +18,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -81,7 +82,22 @@ const shutdownGrace = 10 * time.Second
 const (
 	relayEvery = time.Second
 	purgeCron  = "0 * * * *"
+	// relayTimeout bounds one relay pass. A pass is milliseconds of work; five
+	// seconds means the transport is not taking events, and the honest response
+	// to that is to stop and let the other jobs run.
+	relayTimeout = 5 * time.Second
 )
+
+// level is config's log.level as a slog.Level. config.Load has already refused
+// anything outside the four names, so the fallback is unreachable and is the
+// least surprising of the four.
+func level(name string) slog.Level {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(name)); err != nil {
+		return slog.LevelInfo
+	}
+	return l
+}
 
 // New checks the composition and returns the application it describes. Every
 // error it can return is a wiring mistake, so they all surface before anything
@@ -108,13 +124,25 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	}
 	log := opts.Log
 	if log == nil {
-		log = slog.Default()
+		// config's log.level was validated and then read by nobody, which is
+		// exactly the state a configuration key must not be in. A caller that
+		// brings its own logger has already decided; one that does not gets the
+		// level it asked for.
+		log = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level(cfg.Log.Level)}))
 	}
 	names := make([]string, 0, len(mods))
 	for _, m := range mods {
 		names = append(names, m.Name)
 	}
 	log.InfoContext(ctx, "app: composed", "modules", names, "role", opts.Role)
+	if opts.Role == All && opts.Transport == nil {
+		// Said out loud because the failure it warns about is silent: two
+		// replicas of role All each relay their own outbox rows into their own
+		// process, so half the events reach half the subscribers and nothing
+		// errors. One replica of All is a laptop and a small deployment; more
+		// than one is web and worker on JetStream.
+		log.WarnContext(ctx, "app: role all uses the in-process event transport, so events reach only this replica; run role web and role worker to scale out")
+	}
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
 }
 
@@ -129,11 +157,16 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer conn.Close()
 
+	// The gates run in every role, and the router they produce is discarded by
+	// the roles that do not serve. A worker that skipped them would deploy a
+	// composition the web role refuses — the same image, the same modules, two
+	// answers to "will this start?" — and the rollout would look half healthy.
+	// The cost is building an API nobody mounts, which is a few milliseconds.
+	router, err := a.buildAPI(ctx, conn)
+	if err != nil {
+		return err
+	}
 	if a.opts.Role == Web {
-		_, router, err := a.buildAPI(ctx, conn)
-		if err != nil {
-			return err
-		}
 		return a.serve(ctx, router)
 	}
 
@@ -146,11 +179,6 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.opts.Role == Worker {
 		return a.work(ctx, conn, transport, a.probes(conn))
-	}
-
-	_, router, err := a.buildAPI(ctx, conn)
-	if err != nil {
-		return err
 	}
 	// One process, both halves. The web half owns the listener, so the worker
 	// half is given no handler of its own.
@@ -188,7 +216,7 @@ func (a *App) transport() (events.Transport, error) {
 // buildAPI builds the API, lets every module register its routes and checks,
 // and runs the boot gates. It returns before anything listens, so a composition
 // that fails a gate never takes the port.
-func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (*httpx.API, http.Handler, error) {
+func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error) {
 	api, router := httpx.New(httpx.Options{
 		PublicHost:   a.cfg.Server.PublicHost,
 		Docs:         a.cfg.Server.Docs,
@@ -214,16 +242,16 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (*httpx.API, http.Han
 	// no deployment to migrate and no reason to run a build it knows is
 	// unprotected, unreachable or unannounced.
 	if err := api.ValidateDeclarations(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := validatePermissions(api, a.mods); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := validateEvents(api, a.mods); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	a.log.InfoContext(ctx, "app: operations declared", "count", len(api.Recorded()), "events", len(api.Events()))
-	return api, router, nil
+	return router, nil
 }
 
 // work is the worker role: the outbox relay, the outbox purge, every module's
@@ -231,7 +259,14 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (*httpx.API, http.Han
 // nil when the web half of the same process is already serving them.
 func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
 	scheduled := []jobs.Job{
-		{Name: "outbox-relay", Every: relayEvery, Run: func(ctx context.Context, conn *db.Conn) error {
+		// Parallel, because SKIP LOCKED is already the concurrency control, and
+		// bounded, because a transport that blocks would otherwise hold the
+		// scheduler — and with it the purge and every module's job — for as
+		// long as it blocked. A pass that runs out of time leaves its rows
+		// unstamped and the next tick takes them.
+		{Name: "outbox-relay", Every: relayEvery, Parallel: true, Run: func(ctx context.Context, conn *db.Conn) error {
+			ctx, cancel := context.WithTimeout(ctx, relayTimeout)
+			defer cancel()
 			return events.Relay(ctx, conn, transport)
 		}},
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
@@ -284,35 +319,13 @@ func (a *App) race(ctx context.Context, halves ...func(context.Context) error) e
 
 // probes is the worker's whole HTTP surface: liveness and readiness, on the
 // same address the web role listens on, so one orchestrator manifest describes
-// both roles. It is a plain mux rather than an API because a worker has no
-// tenant, no session and no operation to declare.
+// both roles. kit/health owns the shape, so the two roles answer alike.
 func (a *App) probes(conn *db.Conn) http.Handler {
 	checks := []health.Check{health.DatabaseCheck(conn)}
 	for _, m := range a.mods {
 		checks = append(checks, m.Health...)
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
-		var failed []string
-		for _, c := range checks {
-			if err := c.Check(r.Context()); err != nil {
-				a.log.ErrorContext(r.Context(), "app: check failed", "check", c.Name(), "error", err)
-				failed = append(failed, c.Name())
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if len(failed) > 0 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = fmt.Fprintf(w, `{"status":"not ready: %s"}`, strings.Join(failed, ", "))
-			return
-		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-	return mux
+	return health.Mux(a.log, checks...)
 }
 
 // validatePermissions is the declaration gate's mirror: every permission a

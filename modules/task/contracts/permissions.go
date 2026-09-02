@@ -15,6 +15,6 @@ const (
 // declaration against this list at boot, so a route guarded by a permission
 // that is not here fails startup instead of denying everyone forever.
 var Permissions = []module.Permission{
-	{Key: PermissionTaskRead, Description: "Read tasks and their SLA state"},
-	{Key: PermissionTaskUpdate, Description: "Create, change, assign and resolve tasks"},
+	{Key: PermissionTaskRead},
+	{Key: PermissionTaskUpdate},
 }
