@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// The six events this module emits. The first three are kit/crud's, published
+// The six events this module emits. The first three are kit/rest's, published
 // by the Spec module.go mounts; the last three are the lifecycle's, published by
 // the commands. Both sets are listed in the manifest, and kit/app refuses to
 // start if a route would publish one that is not.

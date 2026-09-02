@@ -56,8 +56,10 @@ type Field struct {
 	// HideList keeps a field off the list screen, from `ui:"hide:list"`.
 	HideList bool `json:"hideList,omitempty"`
 
-	// index locates the field in the struct, for the PATCH merge.
-	index []int
+	// Index locates the field in the struct. It is exported for one caller,
+	// kit/rest's PATCH merge, which decodes a body into the field this names;
+	// json:"-" because a screen has no use for it and a caller none at all.
+	Index []int `json:"-"`
 }
 
 // schemas caches one derivation per entity type. Reflection over a struct is
@@ -65,8 +67,9 @@ type Field struct {
 // twice.
 var schemas sync.Map // reflect.Type -> []Field
 
-// fieldsOf derives the fields of T once and remembers them.
-func fieldsOf[T Entity]() []Field {
+// Fields derives the schema of T once and remembers it. A Spec's Schema is
+// these fields plus the names the Spec gives the resource.
+func Fields[T Entity]() []Field {
 	t := reflect.TypeOf(blank[T]()).Elem()
 	if cached, ok := schemas.Load(t); ok {
 		return cached.([]Field)
@@ -104,7 +107,7 @@ func derive(t reflect.Type) []Field {
 			Type:     kind,
 			Required: has(sf.Tag.Get("validate"), "required"),
 			ReadOnly: declaredBy(t, sf) == baseType,
-			index:    sf.Index,
+			Index:    sf.Index,
 		}
 		if enum := sf.Tag.Get("enum"); enum != "" {
 			f.Enum = strings.Split(enum, ",")

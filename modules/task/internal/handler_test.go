@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
@@ -27,7 +28,7 @@ const path = "/api/v1/task/tasks"
 
 // spec is what module.go mounts, as far as the command routes can tell: the
 // resource they hang off, and the permission they ask for.
-var spec = crud.Spec[*contracts.Task]{
+var spec = rest.Spec[*contracts.Task]{
 	Module: "task", Entity: "task", Path: path,
 	Read: contracts.PermissionTaskRead, Write: contracts.PermissionTaskUpdate,
 }

@@ -1,4 +1,18 @@
-package crud
+// Package rest is an entity's projection onto HTTP: five routes, the commands
+// beside them, and the one mapping from kit/crud's errors to statuses.
+//
+// A module declares one Spec per entity and gets list, create, read, update and
+// delete as declared routes, each with its permission, each emitting the events
+// the manifest promises. What a module writes is the struct, in its contracts/
+// package, and the Spec, in its manifest; what it does not write is a
+// repository, a service, a handler, a DTO or a mapper.
+//
+// It is a package of its own, and not the other half of kit/crud, because a
+// contracts/ package imports the entity half and every consumer of a module
+// compiles against its contracts/. Keeping the routes here is what keeps huma,
+// chi and NATS out of the build graph of a module that only wanted to name a
+// Task. See ARCHITECTURE.md, idea 3.
+package rest
 
 import (
 	"context"
@@ -15,6 +29,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -25,7 +40,7 @@ import (
 // permissions, three events and a schema. A module writes one of these and
 // mounts it; everything below is the same for every entity, which is why it is
 // written once.
-type Spec[T Entity] struct {
+type Spec[T crud.Entity] struct {
 	// Module is the manifest's name. It prefixes the events, so the events a
 	// Spec publishes are namespaced by the module that mounts it.
 	Module string
@@ -104,8 +119,8 @@ func (s Spec[T]) Events() []string {
 
 // Schema describes the entity to anything that did not compile against it: the
 // generated screens of stage E4, and the list operation's own documentation.
-func (s Spec[T]) Schema() Schema {
-	return Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: fieldsOf[T]()}
+func (s Spec[T]) Schema() crud.Schema {
+	return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: crud.Fields[T]()}
 }
 
 // Mount registers the five routes. Each one declares its permission, obtains
@@ -128,7 +143,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, Fault(err)
 			}
-			items, total, err := List[T](tx, q)
+			items, total, err := crud.List[T](tx, q)
 			if err != nil {
 				return nil, Fault(err)
 			}
@@ -145,8 +160,8 @@ func (s Spec[T]) Mount(api *httpx.API) {
 				return nil, err
 			}
 			e := in.Body
-			*e.base() = Base{} // whatever the caller sent for the read-only fields
-			if err := Create(ctx, tx, e); err != nil {
+			crud.Reset(e) // whatever the caller sent for the read-only fields
+			if err := crud.Create(ctx, tx, e); err != nil {
 				return nil, Fault(err)
 			}
 			if err := s.emit(ctx, tx, Created, e, s.AfterCreate); err != nil {
@@ -162,7 +177,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, err
 			}
-			e, err := Get[T](tx, in.ID)
+			e, err := crud.Get[T](tx, in.ID)
 			if err != nil {
 				return nil, Fault(err)
 			}
@@ -176,7 +191,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, err
 			}
-			e, err := Get[T](tx, in.ID)
+			e, err := crud.Get[T](tx, in.ID)
 			if err != nil {
 				return nil, Fault(err)
 			}
@@ -187,7 +202,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			// Only the columns the body named, plus the stamp. Writing the
 			// whole row would put every field back to what this request read,
 			// which loses a concurrent patch of a field it never mentioned.
-			if err := Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
+			if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
 				return nil, Fault(err)
 			}
 			if err := s.emit(ctx, tx, Updated, e, s.AfterUpdate); err != nil {
@@ -206,11 +221,11 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			// The row is read first so that a delete of something this tenant
 			// does not have is a 404, and so that the hook and the event carry
 			// what was deleted rather than only its id.
-			e, err := Get[T](tx, in.ID)
+			e, err := crud.Get[T](tx, in.ID)
 			if err != nil {
 				return nil, Fault(err)
 			}
-			if err := Delete[T](tx, in.ID, s.SoftDelete); err != nil {
+			if err := crud.Delete[T](tx, in.ID, s.SoftDelete); err != nil {
 				return nil, Fault(err)
 			}
 			if err := s.emit(ctx, tx, Deleted, e, s.AfterDelete); err != nil {
@@ -237,7 +252,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 // case. A command whose argument is missing is refused by run, with
 // ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
 // and "an assignee that is not a user" the same 422.
-func Command[I any, T Entity](api *httpx.API, spec Spec[T], verb, summary, description string, events []string,
+func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error),
 ) {
 	op := huma.Operation{
@@ -356,12 +371,12 @@ func (s Spec[T]) check() {
 		if bad != "" {
 			break
 		}
-		if _, ok := fieldNamed(fieldsOf[T](), name); !ok {
+		if _, ok := crud.FieldNamed(crud.Fields[T](), name); !ok {
 			bad = fmt.Sprintf("Immutable names %q, which is not a field of the entity", name)
 		}
 	}
 	if bad != "" {
-		panic("crud: Spec for " + s.Path + ": " + bad)
+		panic("rest: Spec for " + s.Path + ": " + bad)
 	}
 }
 
@@ -386,11 +401,11 @@ func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 // wrote its own would be a second opinion about what a 404 means.
 func Fault(err error) error {
 	switch {
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, crud.ErrNotFound):
 		return problem.NotFound("no such row, or none this tenant may see")
-	case errors.Is(err, ErrInvalid):
+	case errors.Is(err, crud.ErrInvalid):
 		return problem.New(http.StatusUnprocessableEntity, err.Error())
-	case errors.Is(err, ErrConflict):
+	case errors.Is(err, crud.ErrConflict):
 		return problem.Conflict(err.Error())
 	default:
 		return err
@@ -444,8 +459,8 @@ type listInput struct {
 	Filter []string `query:"filter" doc:"field:value, repeated"`
 }
 
-func (in *listInput) query(fields []Field) (Query, error) {
-	q := Query{Limit: in.Limit, Offset: in.Offset, Sort: in.Sort}
+func (in *listInput) query(fields []crud.Field) (crud.Query, error) {
+	q := crud.Query{Limit: in.Limit, Offset: in.Offset, Sort: in.Sort}
 	if len(in.Filter) == 0 {
 		return q, nil
 	}
@@ -453,15 +468,15 @@ func (in *listInput) query(fields []Field) (Query, error) {
 	for _, raw := range in.Filter {
 		name, value, ok := strings.Cut(raw, ":")
 		if !ok {
-			return Query{}, fmt.Errorf("%w: filter %q is not \"field:value\"", ErrInvalid, raw)
+			return crud.Query{}, fmt.Errorf("%w: filter %q is not \"field:value\"", crud.ErrInvalid, raw)
 		}
-		f, known := fieldNamed(fields, name)
+		f, known := crud.FieldNamed(fields, name)
 		if !known {
-			return Query{}, fmt.Errorf("%w: there is no field %q to filter on", ErrInvalid, name)
+			return crud.Query{}, fmt.Errorf("%w: there is no field %q to filter on", crud.ErrInvalid, name)
 		}
 		typed, err := coerce(f, value)
 		if err != nil {
-			return Query{}, err
+			return crud.Query{}, err
 		}
 		q.Filter[name] = typed
 	}
@@ -471,27 +486,27 @@ func (in *listInput) query(fields []Field) (Query, error) {
 // coerce reads a query parameter as the field's own type, so a filter on an
 // integer column compares integers. Postgres would raise on the mismatch, which
 // is a 500 for what is really a malformed request.
-func coerce(f Field, raw string) (any, error) {
+func coerce(f crud.Field, raw string) (any, error) {
 	var (
 		v   any
 		err error
 	)
 	switch f.Type {
-	case TypeInt:
+	case crud.TypeInt:
 		v, err = strconv.ParseInt(raw, 10, 64)
-	case TypeFloat:
+	case crud.TypeFloat:
 		v, err = strconv.ParseFloat(raw, 64)
-	case TypeBool:
+	case crud.TypeBool:
 		v, err = strconv.ParseBool(raw)
-	case TypeUUID:
+	case crud.TypeUUID:
 		v, err = uuid.Parse(raw)
-	case TypeTime:
+	case crud.TypeTime:
 		v, err = time.Parse(time.RFC3339, raw)
 	default:
 		v = raw
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s is a %s and %q is not one", ErrInvalid, f.Name, f.Type, raw)
+		return nil, fmt.Errorf("%w: %s is a %s and %q is not one", crud.ErrInvalid, f.Name, f.Type, raw)
 	}
 	return v, nil
 }
@@ -502,35 +517,35 @@ func coerce(f Field, raw string) (any, error) {
 // the Spec reserved to a command of its own is refused rather than ignored,
 // because a caller who spells a field wrong — or reaches for the wrong door —
 // has to be told.
-func merge(e any, fields []Field, immutable []string, patch map[string]any) ([]string, error) {
+func merge(e any, fields []crud.Field, immutable []string, patch map[string]any) ([]string, error) {
 	target := reflect.ValueOf(e).Elem()
 	columns := make([]string, 0, len(patch))
 	for name, value := range patch {
-		f, ok := fieldNamed(fields, name)
+		f, ok := crud.FieldNamed(fields, name)
 		switch {
 		case !ok:
-			return nil, fmt.Errorf("%w: there is no field %q", ErrInvalid, name)
+			return nil, fmt.Errorf("%w: there is no field %q", crud.ErrInvalid, name)
 		case f.ReadOnly:
-			return nil, fmt.Errorf("%w: %s is read-only", ErrInvalid, name)
+			return nil, fmt.Errorf("%w: %s is read-only", crud.ErrInvalid, name)
 		case slices.Contains(immutable, name):
-			return nil, fmt.Errorf("%w: %s is changed by a command of its own, not by a patch", ErrInvalid, name)
+			return nil, fmt.Errorf("%w: %s is changed by a command of its own, not by a patch", crud.ErrInvalid, name)
 		}
 		// Round-tripping through JSON is what makes this the same decoder the
 		// request body went through: one set of rules for "3" as an int and for
 		// null as an empty pointer.
 		encoded, err := json.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %s", ErrInvalid, name, err)
+			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
-		if err := json.Unmarshal(encoded, target.FieldByIndex(f.index).Addr().Interface()); err != nil {
-			return nil, fmt.Errorf("%w: %s: %s", ErrInvalid, name, err)
+		if err := json.Unmarshal(encoded, target.FieldByIndex(f.Index).Addr().Interface()); err != nil {
+			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
 		columns = append(columns, f.Column)
 	}
 	return columns, nil
 }
 
-func names(fields []Field) []string {
+func names(fields []crud.Field) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
 		out = append(out, f.Name)

@@ -149,7 +149,7 @@ func (t *Task) Validate(context.Context) error {
 
 // Service is the task lifecycle: the three transitions generic CRUD cannot
 // safely infer, because each is a rule about the state it came from and each
-// publishes an event. Everything else about a task is the five routes kit/crud
+// publishes an event. Everything else about a task is the five routes kit/rest
 // mounts.
 //
 // Every command takes the caller's transaction rather than opening one. An HTTP

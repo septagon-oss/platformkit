@@ -17,7 +17,9 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
    exemplar every later module copies. (E2)
 3. **Cross-module dependencies are Go interfaces.** A consumer takes an
    interface declared in the provider's `contracts/`; `internal/` makes any
-   other coupling a compile error. (E2)
+   other coupling a compile error. A `contracts/` package is the entity, the
+   events and the interfaces, so it imports `kit/crud` and never `kit/rest`:
+   naming another module's Task links no web server. Gate 6 is that rule. (E2)
 4. **Tenant isolation belongs to the database, and to the type system.** Tenant
    tables carry `FORCE ROW LEVEL SECURITY` and the tenant is set per
    transaction, so a forgotten `WHERE tenant_id` returns nothing rather than
@@ -51,7 +53,7 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
 
 | Directory | Holds | Stage |
 |---|---|---|
-| `kit/` | the kernel: db, tenancy, config, problem, httpx, module, crud, events, jobs, health | E1 |
+| `kit/` | the kernel: db, tenancy, config, problem, httpx, module, crud, rest, events, jobs, health | E1 |
 | `modules/` | business modules, each `contracts/` + `internal/` + `module.go` | E2, E3, E5 |
 | `ui/` | typed components, style engine, generated CRUD screens, htmx assets | E4 |
 | `design/` | design tokens and theme resolution | E4 |
