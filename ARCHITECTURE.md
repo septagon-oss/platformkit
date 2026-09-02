@@ -41,8 +41,13 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
    are append-only from v1.0.0; before it they are the schema this repository
    would create today, and correcting one in place is cheaper than shipping a
    history nobody ran. (E1)
-8. **Screens derive from schemas.** List, detail and form come from an entity's
-   schema; a hand-written screen is an exception that has to earn itself. (E4)
+8. **Screens derive from schemas.** `rest.Spec.Mount` registers the entity
+   beside its routes, and `modules/admin` generates seven pages from each one:
+   list, detail, two forms, two writes and delete. A `select` exists because the
+   struct says `enum`. Five screens in the application are written by hand and
+   each says why. The components are typed Go functions and the stylesheet is a
+   Go value, so there is no CSS build and no framework. See `docs/adr/0007`.
+   (E4)
 9. **A client is configuration.** One image, one binary, `--role web|worker|all`;
    clients differ by configuration and assets, never by build. (E6)
 10. **Invariants are gates.** Everything above is checked by a command that runs
@@ -55,8 +60,8 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
 |---|---|---|
 | `kit/` | the kernel: db, tenancy, config, problem, httpx, module, crud, rest, events, jobs, health | E1 |
 | `modules/` | business modules, each `contracts/` + `internal/` + `module.go` | E2, E3, E5 |
-| `ui/` | typed components, style engine, generated CRUD screens, htmx assets | E4 |
-| `design/` | design tokens and theme resolution | E4 |
+| `ui/` | typed components, the class builder and the CSS emitter, the browser controllers | E4 |
+| `design/` | design tokens and the two themes | E4 |
 | `apps/` | `platformkit`, the reference binary | E2 |
 | `tools/` | `locbudget`, the line-budget ratchet | E0 |
 | `migrations/` | the one migration directory | E1 |
@@ -91,10 +96,30 @@ never priced as if it were a feature of the module it stands in for.
 | markdown | 20,000 |
 | first-party packages linked into the app | 400 |
 
+## The browser half
+
+There is no CSS build, no node in the build, and no framework.
+
+`ui/components` is the component library: `Button(ButtonProps)` and forty
+others, each a Go function taking a props struct and returning HTML. Every one
+of them declares the classes it can emit as a `ui/style.ClassList`, and
+`ui/style` resolves exactly those classes to CSS rules against the custom
+properties `design` renders. `ui.Stylesheet` composes the three once, at the
+first request, and serves the result from memory — so a component that is
+deleted takes its CSS with it, and a class no component declares has no rule.
+Both directions are tested: `ui/components` proves its declarations resolve,
+`modules/admin` proves the shell declares nothing else.
+
+The only third-party byte the browser runs is htmx, vendored and minified.
+Beside it are four controllers of a few dozen lines each, and they are the four
+interactions a server-rendered application cannot express: a theme that must
+survive a reload, a validation error that must not cost a page, a destructive
+action that must be confirmed, and a sign-in form that posts to a JSON route.
+
 ## Gates
 
-`make check` runs gates 1 to 9 today; 10 arrives with the stage that gives it
-something to check, which is a screen. The list stops at ten.
+`make check` runs gates 1 to 9; `make e2e` is gate 10, which needs a browser and
+a minute and so is a target of its own. CI runs both. The list stops at ten.
 
 | # | Gate | Proves | Stage |
 |---|---|---|---|
@@ -107,4 +132,4 @@ something to check, which is a screen. The list stops at ten.
 | 7 | boot validation test | no operation ships without an `Auth` declaration, and no route requires a permission no module defines | E1 |
 | 8 | tenant isolation test + `make check-gucs` | RLS blocks cross-tenant reads as the app role, and only `kit/db` writes the tenancy settings | E1 |
 | 9 | empty-database boot test | the app migrates and serves from nothing | E2 |
-| 10 | one Playwright spec | the admin shell renders and a CRUD screen works | E4 |
+| 10 | `make e2e` | the admin shell renders and a generated CRUD screen works | E4 |

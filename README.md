@@ -15,13 +15,19 @@ go run ./apps/platformkit bootstrap --config config.yaml \
 make run
 ```
 
+Then open **<http://acme.localhost:8080/admin>** and sign in with the address
+and the password `bootstrap` printed. That is the whole application: the
+dashboard, a screen for every entity, and `/admin/_gallery` for every component
+it is drawn with. The screens are generated from each entity's schema, so there
+is one of them for `tasks` and `users` without a line of code for either.
+
 The database starts empty. `bootstrap` migrates it, creates the first tenant,
 the two roles a tenant starts with, and the administrator who signs in to it,
 all in one transaction — and refuses to run again once any tenant exists, which
 is what makes it safe to leave in the binary. The password is printed once, to
 stderr, or taken from `PLATFORMKIT_BOOTSTRAP_PASSWORD`.
 
-Then sign in and do something, in a fifth command:
+The same thing over the API, if a screen is not what you came for:
 
 ```sh
 curl -sc jar -H 'Host: acme.localhost' -H 'Content-Type: application/json' \
@@ -39,11 +45,10 @@ whose data a request sees. Ports can be overridden with `PLATFORMKIT_PG_PORT` /
 ## Gates
 
 `make check` runs seven commands: `build`, `vet`, `fmt-check`, `test`,
-`check-loc`, `check-packages` and `check-gucs`. Against
-[ARCHITECTURE.md](ARCHITECTURE.md)'s ten gates that is eight of them real today
-— `check-packages` counts an app now, and the empty-database boot test is in
-`apps/platformkit` — and two waiting for the stage that gives them something to
-check.
+`check-loc`, `check-packages` and `check-gucs`. `make e2e` is the tenth gate:
+it boots the application on a database of its own and drives the admin shell
+with a browser. Against [ARCHITECTURE.md](ARCHITECTURE.md)'s ten gates, all ten
+are real today. CI runs both targets.
 
 ## Status
 
