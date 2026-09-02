@@ -6,10 +6,21 @@ This product includes software developed at Septagon.
 Portions of this repository derive from the septagon-oss `pk-*` repositories,
 which are licensed under the Apache License, Version 2.0:
 
-  ui/           from pk-ui (contracts, web renderer, accessibility, icons)
-                and pk-styleengine
+  ui/components from pk-ui (the component contracts and the web renderer)
+  ui/a11y       from pk-ui (accessibility)
+  ui/icon       from pk-ui (the icon provider)
+  ui/style      from tw (the typed class builder and the CSS emitter)
+  ui/css        from pk-styleengine (the stylesheet IR)
   design/       from pk-design (tokens and theme resolution)
   kit/problem   from pk-problem
 
 The module catalog under modules/ derives from PlatformKit's private module
 catalog and is contributed here by its owner.
+
+Third-party assets shipped to the browser:
+
+  ui/assets/js/htmx.min.js   htmx 2.0.8, Copyright (c) 2020, Big Sky Software,
+                             under the BSD 2-Clause licence.
+  ui/icon/icon.go            vector path data from phosphor-icons/core,
+                             Copyright (c) 2023 Phosphor Icons, under the MIT
+                             licence.

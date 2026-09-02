@@ -8,9 +8,12 @@
 config.yaml
 .env
 
-# Dependencies and generated assets
+# Dependencies. There is no generated stylesheet to ignore: the CSS is a Go
+# value, built by ui.Stylesheet and served from memory. See ui/ui.go.
 node_modules/
-ui/assets/css/main.min.css
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
 
 # Scratch space
 .tmp/
