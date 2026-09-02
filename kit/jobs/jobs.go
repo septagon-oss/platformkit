@@ -38,8 +38,15 @@ type Job struct {
 	// expression can say. The relay uses it: once a second.
 	Every time.Duration
 	// Run is the work. It is given the worker's context, so a shutdown
-	// cancels it.
-	Run func(ctx context.Context) error
+	// cancels it, and the application connection, because periodic work that
+	// touches nothing is periodic work with nothing to do.
+	//
+	// The connection is a parameter rather than something a module closes
+	// over: the pool is opened by kit/app after the composition is built, so
+	// at the moment a module writes this literal there is nothing to close
+	// over. Passing the scheduler's own connection is also what keeps the
+	// count at one — a module that opened its own would double the pool.
+	Run func(ctx context.Context, conn *db.Conn) error
 }
 
 // parser is the five-field standard: minute, hour, day of month, month, day of
@@ -174,7 +181,7 @@ func (s *Scheduler) run(ctx context.Context, j Job) {
 		return
 	}
 	defer unlock()
-	if err := j.Run(ctx); err != nil {
+	if err := j.Run(ctx, s.conn); err != nil {
 		s.log.ErrorContext(ctx, "jobs: job failed", "job", j.Name, "error", err)
 	}
 }

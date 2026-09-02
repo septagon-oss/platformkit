@@ -357,3 +357,153 @@ func TestJetStreamCarriesAnEventBetweenProcesses(t *testing.T) {
 		t.Errorf("after the relay: %d unpublished, %d published", unpublished, published)
 	}
 }
+
+// TestAHandlerRunsOnceHoweverOftenTheEventIsDelivered is the exactly-once
+// claim. Delivery is at-least-once by construction (docs/adr/0004), so Consume
+// claims each event for each subscription in platformkit_handled inside the
+// handler's own transaction: the second delivery finds the claim taken and the
+// handler is never entered.
+func TestAHandlerRunsOnceHoweverOftenTheEventIsDelivered(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+
+	runs := make(chan uuid.UUID, 8)
+	transport := events.Memory()
+	// Two subscriptions to one event, because the claim is per subscription:
+	// two modules interested in one thing are two pieces of work, and each has
+	// to do its own.
+	var subs []events.Subscription
+	for _, name := range []string{"ledger", "mailer"} {
+		subs = append(subs, events.Subscription{
+			Module: name, Name: "billing.invoice_issued",
+			Handler: func(_ context.Context, _ db.Tx[db.Tenant], ev events.Event) error {
+				runs <- ev.ID
+				return nil
+			},
+		})
+	}
+	if err := events.Consume(ctx, conn, transport, subs); err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+
+	publish(t, conn, acme, "billing.invoice_issued", map[string]any{"amount": 1})
+	if err := events.Relay(t.Context(), conn, transport); err != nil {
+		t.Fatalf("Relay: %v", err)
+	}
+	// Two handlers, one event: two runs and then silence.
+	var first []uuid.UUID
+	for range 2 {
+		select {
+		case id := <-runs:
+			first = append(first, id)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("the handlers ran %d times, want 2", len(first))
+		}
+	}
+	if first[0] != first[1] {
+		t.Fatalf("the two subscriptions saw %s and %s", first[0], first[1])
+	}
+
+	// The same event again, exactly as a redelivery arrives: the relay has
+	// stamped the row, so this is the transport doing what at-least-once means.
+	replay := events.Event{ID: first[0], Name: "billing.invoice_issued", TenantID: acme.ID, Payload: []byte(`{"amount":1}`)}
+	for range 3 {
+		if err := transport.Publish(t.Context(), replay); err != nil {
+			t.Fatalf("redeliver: %v", err)
+		}
+	}
+	select {
+	case id := <-runs:
+		t.Fatalf("a handler ran again for %s", id)
+	case <-time.After(2 * time.Second):
+	}
+
+	// And the ledger says why: one mark per subscription, both for this event.
+	var marks []string
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		return tx.DB().Raw("SELECT durable FROM platformkit_handled WHERE event_id = ? ORDER BY durable", first[0]).
+			Scan(&marks).Error
+	})
+	if err != nil {
+		t.Fatalf("read the handled ledger: %v", err)
+	}
+	if got := strings.Join(marks, " "); got != "ledger-billing-invoice_issued mailer-billing-invoice_issued" {
+		t.Errorf("the ledger holds %q, want one mark per subscription", got)
+	}
+}
+
+// TestAFailedHandlerDoesNotKeepItsClaim: the claim and the handler's writes are
+// one transaction, so a handler that fails rolls its mark back with its work
+// and the redelivery runs it for real. Without that the first failure would
+// swallow the event.
+func TestAFailedHandlerDoesNotKeepItsClaim(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+
+	var mu sync.Mutex
+	attempts := 0
+	done := make(chan struct{}, 4)
+	transport := events.Memory()
+	err := events.Consume(ctx, conn, transport, []events.Subscription{{
+		Module: "ledger", Name: "billing.invoice_issued",
+		Handler: func(_ context.Context, _ db.Tx[db.Tenant], _ events.Event) error {
+			mu.Lock()
+			attempts++
+			first := attempts == 1
+			mu.Unlock()
+			if first {
+				return errors.New("the ledger was busy")
+			}
+			done <- struct{}{}
+			return nil
+		},
+	}})
+	if err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+
+	publish(t, conn, acme, "billing.invoice_issued", nil)
+	if err := events.Relay(t.Context(), conn, transport); err != nil {
+		t.Fatalf("Relay: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the event was never handled successfully")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != 2 {
+		t.Errorf("the handler ran %d times, want a failure and then a success", attempts)
+	}
+}
+
+// TestPurgeForgetsTheMarksItNoLongerNeeds: a mark exists to recognise a
+// redelivery of its own event, so it outlives the outbox row by nothing.
+func TestPurgeForgetsTheMarksItNoLongerNeeds(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	insert := func(age time.Duration) {
+		t.Helper()
+		_, err := admin.ExecContext(t.Context(),
+			`INSERT INTO platformkit_handled (event_id, durable, tenant_id, handled_at) VALUES ($1, 'ledger-x', $2, $3)`,
+			uuid.New(), acme.ID, time.Now().Add(-age))
+		if err != nil {
+			t.Fatalf("insert a mark: %v", err)
+		}
+	}
+	insert(8 * 24 * time.Hour)
+	insert(time.Hour)
+
+	if err := events.Purge(t.Context(), conn); err != nil {
+		t.Fatalf("Purge: %v", err)
+	}
+	var left int
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM platformkit_handled`).Scan(&left); err != nil {
+		t.Fatalf("count the marks: %v", err)
+	}
+	if left != 1 {
+		t.Errorf("%d marks survived the purge, want the recent one", left)
+	}
+}

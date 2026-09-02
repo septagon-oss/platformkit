@@ -97,11 +97,11 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			}
 			q, err := in.query(schema.Fields)
 			if err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			items, total, err := List[T](tx, q)
 			if err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			out := &listOutput[T]{}
 			out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
@@ -118,10 +118,10 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			e := in.Body
 			*e.base() = Base{} // whatever the caller sent for the read-only fields
 			if err := Create(ctx, tx, e); err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			if err := s.emit(ctx, tx, Created, e, s.AfterCreate); err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			return &itemOutput[T]{Body: e}, nil
 		})
@@ -135,7 +135,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			}
 			e, err := Get[T](tx, in.ID)
 			if err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			return &itemOutput[T]{Body: e}, nil
 		})
@@ -149,16 +149,16 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			}
 			e, err := Get[T](tx, in.ID)
 			if err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			if err := merge(e, schema.Fields, in.Body); err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			if err := Update(ctx, tx, e); err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			if err := s.emit(ctx, tx, Updated, e, s.AfterUpdate); err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			return &itemOutput[T]{Body: e}, nil
 		})
@@ -175,13 +175,13 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			// what was deleted rather than only its id.
 			e, err := Get[T](tx, in.ID)
 			if err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			if err := Delete[T](tx, in.ID, s.SoftDelete); err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			if err := s.emit(ctx, tx, Deleted, e, s.AfterDelete); err != nil {
-				return nil, fault(err)
+				return nil, Fault(err)
 			}
 			return nil, nil
 		})
@@ -255,10 +255,15 @@ func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 	return tx, nil
 }
 
-// fault turns the three errors a caller can act on into the response that says
-// so. Anything else is an outage and reaches huma as a 500 with its cause in
-// the log and nothing in the body.
-func fault(err error) error {
+// Fault turns the three errors a caller can act on into the response that says
+// so: 404 for a row this tenant does not have, 422 for something the caller
+// sent, 409 for a state the write contradicts. Anything else is an outage and
+// reaches huma as a 500 with its cause in the log and nothing in the body.
+//
+// It is exported because a module's own handlers answer with the same three
+// errors as the five routes here, and one mapping is the point: a module that
+// wrote its own would be a second opinion about what a 404 means.
+func Fault(err error) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return problem.NotFound("no such row, or none this tenant may see")

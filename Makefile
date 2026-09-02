@@ -32,8 +32,8 @@ test: ## Run the tests against the compose Postgres
 vet: ## Run go vet
 	go vet ./...
 
-run: ## Run the reference app (the binary arrives in stage E2)
-	@echo "make run arrives with E2, when apps/platformkit exists"
+run: ## Run the reference app (needs config.yaml; see config.example.yaml)
+	cd apps/platformkit && go run . --config ../../config.yaml
 
 check-loc: ## Fail when a bucket exceeds its line ceiling
 	go run ./tools/locbudget --check
@@ -54,7 +54,7 @@ check: build vet fmt-check test check-loc check-packages check-gucs ## Everythin
 fmt: ## Format every package
 	go fmt ./...
 
-image: ## Build the container image (needs apps/platformkit, stage E2)
+image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
 up: ## Start Postgres and NATS, and wait for both to be healthy

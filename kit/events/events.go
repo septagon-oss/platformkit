@@ -6,7 +6,11 @@
 // lost. The relay in the worker role reads those rows and hands them to a
 // transport — in-process for a single-process run, JetStream for a fleet.
 //
-// Delivery is at-least-once, so every handler must be idempotent on Event.ID.
+// Delivery is at-least-once, and Consume is what turns that into exactly-once
+// handling: it claims each (event, subscription) pair in platformkit_handled
+// inside the handler's own transaction, so a redelivery of work already done
+// finds the claim taken and skips the handler.
+//
 // This is also the job queue: durable, retried, transactional background work
 // is what an outbox is, and asking for it twice buys nothing. Periodic work is
 // kit/jobs. Both arguments are docs/adr/0004.
@@ -26,8 +30,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// table is the outbox. It is named once here and once in migrations/000002.
-const table = "platformkit_outbox"
+// The two tables, each named once here and once in migrations/.
+const (
+	table   = "platformkit_outbox"  // 000002
+	handled = "platformkit_handled" // 000003
+)
 
 // Event is one thing that happened in one tenant.
 type Event struct {
@@ -111,23 +118,49 @@ func (s Subscription) durable() string {
 // transaction in the event's own tenant, so a handler reaches the tenant's rows
 // the same way a request handler does and can publish events of its own into
 // the same transaction.
+//
+// Each delivery is claimed before the handler runs, so a handler sees each
+// event once however many times the transport delivers it. See claim.
 func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscription) error {
 	for _, s := range subs {
 		if s.Handler == nil {
 			return fmt.Errorf("events: subscription %s to %s has no handler", s.Module, s.Name)
 		}
-		h := s.Handler
+		h, durable := s.Handler, s.durable()
 		deliver := func(ctx context.Context, ev Event) error {
 			// Only the id is known here. It is all kit/db needs to scope the
 			// transaction, and it is what row-level security reads.
 			ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
 			return db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				first, err := claim(tx, ev.ID, durable)
+				if err != nil || !first {
+					return err
+				}
 				return h(ctx, tx, ev)
 			})
 		}
-		if err := t.Subscribe(ctx, s.durable(), s.Name, deliver); err != nil {
+		if err := t.Subscribe(ctx, durable, s.Name, deliver); err != nil {
 			return fmt.Errorf("events: subscribe %s to %s: %w", s.Module, s.Name, err)
 		}
 	}
 	return nil
+}
+
+// claim writes this subscription's mark against the event and reports whether
+// it was the one that wrote it. A second delivery conflicts on the primary key,
+// inserts nothing, and is told to skip the handler.
+//
+// It runs inside the handler's own transaction, which is the whole design: the
+// mark and everything the handler writes commit together, so a handler that
+// fails rolls its claim back with its work and sees the event again, and a
+// handler that succeeded can never run twice. A separate transaction would
+// leave a window between the two in which a crash loses one or repeats the
+// other, which is the problem this exists to remove.
+func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable string) (bool, error) {
+	res := tx.DB().Exec("INSERT INTO "+handled+" (event_id, durable, tenant_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+		id, durable, db.TenantOf(tx).ID)
+	if res.Error != nil {
+		return false, fmt.Errorf("events: claim %s for %s: %w", id, durable, res.Error)
+	}
+	return res.RowsAffected == 1, nil
 }

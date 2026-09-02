@@ -30,7 +30,7 @@ type Task struct {
 	Secret   string     `json:"-" gorm:"-"`
 }
 
-func (Task) TableName() string { return "tasks" }
+func (Task) TableName() string { return "crud_tasks" }
 
 // Validate is the optional check. An empty title is 422, not 500.
 func (t *Task) Validate(context.Context) error {
@@ -41,7 +41,7 @@ func (t *Task) Validate(context.Context) error {
 }
 
 const ddl = `
-CREATE TABLE tasks (
+CREATE TABLE crud_tasks (
 	id uuid PRIMARY KEY,
 	tenant_id uuid NOT NULL,
 	created_at timestamptz NOT NULL DEFAULT now(),
@@ -55,9 +55,9 @@ CREATE TABLE tasks (
 	due_at timestamptz,
 	UNIQUE (tenant_id, title)
 );
-ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tasks FORCE ROW LEVEL SECURITY;
-CREATE POLICY tasks_tenant ON tasks
+ALTER TABLE crud_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crud_tasks FORCE ROW LEVEL SECURITY;
+CREATE POLICY crud_tasks_tenant ON crud_tasks
 	USING (platformkit_tenant_match(tenant_id))
 	WITH CHECK (platformkit_tenant_match(tenant_id));`
 
@@ -256,7 +256,7 @@ func TestSoftDeleteHidesTheRowFromGetAndList(t *testing.T) {
 
 	var rows int
 	as(t, conn, acme, func(_ context.Context, tx db.Tx[db.Tenant]) {
-		if err := tx.DB().Raw("SELECT count(*) FROM tasks WHERE deleted_at IS NOT NULL").Scan(&rows).Error; err != nil {
+		if err := tx.DB().Raw("SELECT count(*) FROM crud_tasks WHERE deleted_at IS NOT NULL").Scan(&rows).Error; err != nil {
 			t.Fatalf("count: %v", err)
 		}
 	})
