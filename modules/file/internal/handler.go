@@ -33,6 +33,21 @@ var faults = []int{
 	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
 }
 
+// The three headers a download carries besides its type, and the reason each
+// one is there.
+//
+// The policy allows nothing at all and sandboxes the document, so an uploaded
+// page that reaches a browser anyway — through a proxy that rewrote the
+// disposition, through a caller that saved and opened it — has no origin, no
+// scripts and no forms. sandbox with no value is the strictest form there is.
+//
+// same-site is what stops another origin embedding this tenant's private file
+// as an image and reading whether it loaded.
+const (
+	downloadPolicy = "default-src 'none'; sandbox"
+	downloadCORP   = "same-site"
+)
+
 // RegisterRoutes mounts the six routes a file has.
 //
 // There is no rest.Spec, and the reason is one sentence: a Spec's create route
@@ -122,37 +137,45 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 			return &rest.Item[*contracts.File]{Body: f}, nil
 		})
 
-	httpx.Register(api, huma.Operation{
-		OperationID: "file-file-content",
-		Method:      http.MethodGet,
-		Path:        path + "/{id}/content",
-		Summary:     "Download a file",
-		Description: "The bytes, whatever the file's visibility. The public door is at " + publicPath + ".",
-		Tags:        []string{"file"},
-		Errors:      faults,
-	}, httpx.Permission(contracts.PermissionFileRead),
-		func(ctx context.Context, in *idInput) (*huma.StreamResponse, error) {
-			return download(ctx, svc, in.ID, false)
-		})
+	// GET and HEAD, twice, because a browser and a downloader both ask for the
+	// size before they ask for the bytes and chi mounts no method a route did
+	// not declare. The handler is the same one: http.ServeContent writes the
+	// headers and no body for a HEAD, which is the whole difference.
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		httpx.Register(api, huma.Operation{
+			OperationID: "file-file-content" + suffix[method],
+			Method:      method,
+			Path:        path + "/{id}/content",
+			Summary:     "Download a file",
+			Description: "The bytes, whatever the file's visibility. Ranges are served. The public door is at " + publicPath + ".",
+			Tags:        []string{"file"},
+			Errors:      faults,
+		}, httpx.Permission(contracts.PermissionFileRead),
+			func(ctx context.Context, in *idInput) (*huma.StreamResponse, error) {
+				return download(ctx, svc, in.ID, false)
+			})
+	}
 
 	// The public door. It is Public because that is what a public file is, and
 	// it is safe to be because the tenant still comes from the request's own
 	// host, the query still runs under that tenant's policy, and a file that is
 	// not public is not found rather than forbidden.
-	httpx.Register(api, huma.Operation{
-		OperationID: "file-file-public",
-		Method:      http.MethodGet,
-		Path:        publicPath,
-		Summary:     "Download a public file",
-		Description: "The bytes of a file whose visibility is public. Anything else is a 404, so an anonymous caller learns nothing about what this tenant has.",
-		Tags:        []string{"file"},
-		Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
-	}, httpx.Public(), func(ctx context.Context, in *idInput) (*huma.StreamResponse, error) {
-		if _, ok := tenancy.FromContext(ctx); !ok {
-			return nil, problem.NotFound("no site is served at this host")
-		}
-		return download(ctx, svc, in.ID, true)
-	})
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		httpx.Register(api, huma.Operation{
+			OperationID: "file-file-public" + suffix[method],
+			Method:      method,
+			Path:        publicPath,
+			Summary:     "Download a public file",
+			Description: "The bytes of a file whose visibility is public. Anything else is a 404, so an anonymous caller learns nothing about what this tenant has.",
+			Tags:        []string{"file"},
+			Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
+		}, httpx.Public(), func(ctx context.Context, in *idInput) (*huma.StreamResponse, error) {
+			if _, ok := tenancy.FromContext(ctx); !ok {
+				return nil, problem.NotFound("no site is served at this host")
+			}
+			return download(ctx, svc, in.ID, true)
+		})
+	}
 
 	httpx.Register(api, huma.Operation{
 		OperationID:   "file-file-delete",
@@ -223,12 +246,25 @@ func arriving(ctx context.Context) (contracts.Upload, error) {
 	}
 }
 
+// suffix names the HEAD operations apart from the GET ones. An operation id has
+// to be unique and it is what a generated client calls the method.
+var suffix = map[string]string{http.MethodGet: "", http.MethodHead: "-head"}
+
 // download answers with the bytes. The response is a stream rather than a body
 // huma marshals, so a large file is not copied through a buffer on its way out;
 // kit/httpx holds a response until the transaction commits and gives up on that
 // past two megabytes, which is where a download stops being something worth
 // holding.
-func download(ctx context.Context, svc contracts.Service, id uuid.UUID, anonymous bool) (*huma.StreamResponse, error) {
+//
+// The disposition is the security decision, and it is a closed allow-list: a
+// stored type this application will render is served inline, and everything
+// else is an attachment. The set is contracts.Renderable, and the reason it is
+// written as what is safe rather than as what is not is that the unsafe set is
+// open — text/html, image/svg+xml, application/xhtml+xml, every XML dialect a
+// browser will run a script inside, and whatever the next browser adds. An
+// uploaded page served inline is stored cross-site scripting on the tenant's
+// own origin, with the tenant's own cookies, which is what the review found.
+func download(ctx context.Context, svc contracts.Opener, id uuid.UUID, anonymous bool) (*huma.StreamResponse, error) {
 	tx, err := transaction(ctx)
 	if err != nil {
 		return nil, err
@@ -237,19 +273,81 @@ func download(ctx context.Context, svc contracts.Service, id uuid.UUID, anonymou
 	if err != nil {
 		return nil, fault(err)
 	}
+	r, _ := httpx.RequestFrom(ctx)
 	return &huma.StreamResponse{Body: func(hctx huma.Context) {
 		defer body.Close()
 		hctx.SetHeader("Content-Type", f.ContentType)
-		hctx.SetHeader("Content-Length", strconv.FormatInt(f.Size, 10))
 		// The stored type is what the upload declared, so a browser must not be
 		// allowed to decide it is something more interesting.
 		hctx.SetHeader("X-Content-Type-Options", "nosniff")
-		if disposition := mime.FormatMediaType("inline", map[string]string{"filename": f.Name}); disposition != "" {
-			hctx.SetHeader("Content-Disposition", disposition)
+		hctx.SetHeader("Content-Security-Policy", downloadPolicy)
+		hctx.SetHeader("Cross-Origin-Resource-Policy", downloadCORP)
+		hctx.SetHeader("Content-Disposition", disposition(f))
+
+		// A seekable body is a range request, a HEAD and a conditional get, all
+		// of which net/http already implements correctly and none of which are
+		// worth a second implementation here. The local storage returns an
+		// *os.File; an implementation that streams from somewhere else does not,
+		// and gets the whole file as before.
+		seeker, seekable := body.(io.ReadSeeker)
+		w, writable := hctx.BodyWriter().(http.ResponseWriter)
+		if seekable && writable && r != nil {
+			// The status has to reach huma as well as the wire: kit/httpx
+			// decides whether the request's transaction commits from what the
+			// handler said the status was, and a handler that wrote its own
+			// response and told huma nothing is one that rolls back. So the
+			// status ServeContent chose — 200, 206 for a range, 304 for a
+			// conditional get — is captured and handed over afterwards, when
+			// the header it would write is already on the buffer and the second
+			// WriteHeader is ignored.
+			rec := &recorder{ResponseWriter: w}
+			http.ServeContent(rec, r, f.Name, f.UpdatedAt, seeker)
+			hctx.SetStatus(rec.status)
+			return
 		}
+		hctx.SetHeader("Content-Length", strconv.FormatInt(f.Size, 10))
 		hctx.SetStatus(http.StatusOK)
 		_, _ = io.Copy(hctx.BodyWriter(), body)
 	}}, nil
+}
+
+// recorder is the status http.ServeContent decided. See its one caller.
+type recorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rec *recorder) WriteHeader(status int) {
+	if rec.status == 0 {
+		rec.status = status
+	}
+	rec.ResponseWriter.WriteHeader(status)
+}
+
+func (rec *recorder) Write(p []byte) (int, error) {
+	if rec.status == 0 {
+		rec.status = http.StatusOK
+	}
+	return rec.ResponseWriter.Write(p)
+}
+
+func (rec *recorder) Unwrap() http.ResponseWriter { return rec.ResponseWriter }
+
+// disposition is attachment unless the stored type is one this application will
+// render. The name is always carried, because a browser that saves a file with
+// a uuid for a name is a browser nobody can use.
+func disposition(f *contracts.File) string {
+	kind := "attachment"
+	if contracts.Renderable(f.ContentType) {
+		kind = "inline"
+	}
+	// FormatMediaType returns "" for a name it cannot encode, which is a name
+	// with a control character or an unpaired surrogate in it. The type on its
+	// own is still the decision that matters.
+	if out := mime.FormatMediaType(kind, map[string]string{"filename": f.Name}); out != "" {
+		return out
+	}
+	return kind
 }
 
 // transaction is the request's, or a 503 saying why there is none.
@@ -265,7 +363,7 @@ func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 // else does: an upload past the limit is 413, which is the only answer a caller
 // can act on by sending something smaller.
 func fault(err error) error {
-	if errors.Is(err, contracts.ErrTooLarge) {
+	if errors.Is(err, contracts.ErrTooLarge) || errors.Is(err, contracts.ErrQuota) {
 		return problem.New(http.StatusRequestEntityTooLarge, err.Error())
 	}
 	return rest.Fault(err)

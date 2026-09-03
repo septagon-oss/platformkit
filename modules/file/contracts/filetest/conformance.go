@@ -104,6 +104,12 @@ func read(t *testing.T, f Fixture, id uuid.UUID, anonymous bool) (*contracts.Fil
 // hello is the body most cases upload.
 const hello = "hello, files\n"
 
+// png is eight bytes of a real PNG: the signature http.DetectContentType reads.
+// A conformance suite that uploaded "not really a png" as image/png used to
+// pass, and the upload now refuses it — a file this application would show
+// inline has to be what it says it is. See internal.agrees.
+const png = "\x89PNG\r\n\x1a\n"
+
 func cases() map[string]func(*testing.T, Fixture) {
 	return map[string]func(*testing.T, Fixture){
 		"an upload is counted and hashed as it goes past": func(t *testing.T, f Fixture) {
@@ -165,13 +171,33 @@ func cases() map[string]func(*testing.T, Fixture) {
 		},
 
 		"a public file is served to anybody": func(t *testing.T, f Fixture) {
-			row, err := f.Service.Upload(f.Ctx, f.Tx, upload("logo.png", "image/png", contracts.VisibilityPublic, hello))
+			row, err := f.Service.Upload(f.Ctx, f.Tx, upload("logo.png", "image/png", contracts.VisibilityPublic, png))
 			if err != nil {
 				t.Fatalf("Upload: %v", err)
 			}
 			got, back := read(t, f, row.ID, true)
-			if back != hello || got.ContentType != "image/png" {
+			if back != png || got.ContentType != "image/png" {
 				t.Errorf("the public file read back as %q/%q", got.ContentType, back)
+			}
+		},
+
+		// The bytes have to be what the upload said they were, for the types
+		// this application will show in a browser. An HTML document uploaded as
+		// an image is the second half of the stored-XSS story the download's
+		// Content-Disposition is the first half of: served inline as image/png
+		// a browser would not run it, but a proxy that rewrites a type, a
+		// caller that saves and opens it, and the next media type somebody adds
+		// to the inline set are three ways for it to matter.
+		"an upload whose bytes disagree with its type is refused": func(t *testing.T, f Fixture) {
+			_, err := f.Service.Upload(f.Ctx, f.Tx, upload("logo.png", "image/png", contracts.VisibilityPublic, "<html><script>alert(1)</script>"))
+			if !errors.Is(err, crud.ErrInvalid) {
+				t.Errorf("a page uploaded as an image = %v, want ErrInvalid", err)
+			}
+			// The types that are never rendered are not sniffed at all: what a
+			// .docx really is, is not this module's business, and a sniffer
+			// that had an opinion about every format would refuse half of them.
+			if _, err := f.Service.Upload(f.Ctx, f.Tx, upload("x.bin", "application/octet-stream", contracts.VisibilityPrivate, "<html>")); err != nil {
+				t.Errorf("an attachment that is not what it claims = %v, want it stored", err)
 			}
 		},
 

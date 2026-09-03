@@ -102,7 +102,7 @@ func (s *Shell) login(ctx context.Context) g.Node {
 			next = to
 		}
 	}
-	return s.bare("Sign in",
+	return s.bare(ctx, "Sign in",
 		components.Card(components.CardProps{Title: "Sign in", Description: "Use the address this tenant knows you by."}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
@@ -327,8 +327,8 @@ func (s *Shell) tenants(ctx context.Context) (*page, error) {
 
 // bare is a page with no navigation: the sign-in screen, shown to somebody who
 // has none yet.
-func (s *Shell) bare(title string, body ...g.Node) g.Node {
-	return h.HTML(h.Lang("en"), s.head(title),
+func (s *Shell) bare(ctx context.Context, title string, body ...g.Node) g.Node {
+	return h.HTML(h.Lang("en"), s.head(ctx, title),
 		h.Body(components.Container(components.ContainerProps{MaxWidth: "sm"},
 			components.Stack(components.StackProps{Gap: "6"}, body...))))
 }

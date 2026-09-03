@@ -31,6 +31,11 @@ const (
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 
+// png is the eight-byte signature of a real PNG, which is what
+// http.DetectContentType reads and what the upload now checks a declared image
+// against.
+const png = "\x89PNG\r\n\x1a\n"
+
 type caller struct{}
 
 func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
@@ -53,7 +58,8 @@ func mounted(t *testing.T) chi.Router {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	file.Module(file.Deps{Storage: file.Local(t.TempDir()), MaxBytes: filetest.Limit}).Routes(api)
+	_, m := file.Module(file.Deps{Storage: file.Local(t.TempDir()), MaxBytes: filetest.Limit})
+	m.Routes(api)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -182,13 +188,13 @@ func TestThePublicDoorServesOnlyPublicFiles(t *testing.T) {
 	}
 	private := field(t, out, "id")
 
-	code, out = upload(t, router, files+"?visibility=public", "logo.png", "image/png", "not really a png")
+	code, out = upload(t, router, files+"?visibility=public", "logo.png", "image/png", png)
 	if code != http.StatusCreated || !strings.Contains(out, `"visibility":"public"`) {
 		t.Fatalf("POST a public file = %d %s", code, out)
 	}
 	open := field(t, out, "id")
 
-	if code, out, _ = send(t, router, http.MethodGet, public+open, false); code != http.StatusOK || out != "not really a png" {
+	if code, out, _ = send(t, router, http.MethodGet, public+open, false); code != http.StatusOK || out != png {
 		t.Errorf("the public file at the public door = %d %q", code, out)
 	}
 	if code, _, _ = send(t, router, http.MethodGet, public+private, false); code != http.StatusNotFound {
@@ -214,14 +220,14 @@ func TestAModuleWithNoStorageDoesNotCompose(t *testing.T) {
 			t.Errorf("Module with no storage panicked with %v; it names the one to wire", r)
 		}
 	}()
-	file.Module(file.Deps{})
+	_, _ = file.Module(file.Deps{})
 }
 
 // TestTheManifestSubscribesToItsOwnDelete is what makes the bytes go: the
 // module declares file.deleted and handles it, which is the only way work can
 // be scheduled for after a commit.
 func TestTheManifestSubscribesToItsOwnDelete(t *testing.T) {
-	m := file.Module(file.Deps{Storage: filetest.NewMemory()})
+	_, m := file.Module(file.Deps{Storage: filetest.NewMemory()})
 	if len(m.Subscriptions) != 1 || m.Subscriptions[0].Name != contracts.EventDeleted {
 		t.Fatalf("the manifest subscribes to %v", m.Subscriptions)
 	}
@@ -238,4 +244,115 @@ func field(t *testing.T, body, name string) string {
 	}
 	out, _, _ := strings.Cut(rest, `"`)
 	return out
+}
+
+// TestAnUploadedPageIsNeverServedInline is the fix for the review's finding
+// that stored cross-site scripting was live: an uploaded text/html was served
+// inline, anonymously, on the tenant's own origin, with no policy anywhere.
+//
+// Three things stop it now and each is checked here, because any one of them
+// alone is one browser quirk away from failing: the disposition is attachment
+// for anything outside the render-safe set, the policy allows nothing at all,
+// and the resource policy stops another origin embedding it.
+func TestAnUploadedPageIsNeverServedInline(t *testing.T) {
+	router := mounted(t)
+	const page = `<html><body><script>alert(document.cookie)</script></body></html>`
+
+	code, out := upload(t, router, files+"?visibility=public", "evil.html", "text/html", page)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	evil := field(t, out, "id")
+
+	// The public door is the one an attacker sends a victim to.
+	code, body, header := send(t, router, http.MethodGet, public+evil, false)
+	switch {
+	case code != http.StatusOK || body != page:
+		t.Fatalf("the download = %d %q", code, body)
+	case !strings.HasPrefix(header.Get("Content-Disposition"), "attachment"):
+		t.Errorf("an uploaded page is served %q", header.Get("Content-Disposition"))
+	case header.Get("Content-Security-Policy") != "default-src 'none'; sandbox":
+		t.Errorf("the policy on a download is %q", header.Get("Content-Security-Policy"))
+	case header.Get("Cross-Origin-Resource-Policy") != "same-site":
+		t.Errorf("another origin may embed this: %q", header.Get("Cross-Origin-Resource-Policy"))
+	case header.Get("X-Content-Type-Options") != "nosniff":
+		t.Error("the download lets a browser guess what it is")
+	}
+
+	// SVG and XHTML are the two everybody forgets, and both execute script.
+	for _, kind := range []string{"image/svg+xml", "application/xhtml+xml", "text/xml", "application/xml"} {
+		code, out := upload(t, router, files, "x", kind, "<svg xmlns='http://www.w3.org/2000/svg'/>")
+		if code != http.StatusCreated {
+			t.Fatalf("POST %s = %d %s", kind, code, out)
+		}
+		_, _, h := send(t, router, http.MethodGet, files+"/"+field(t, out, "id")+"/content", true)
+		if !strings.HasPrefix(h.Get("Content-Disposition"), "attachment") {
+			t.Errorf("%s is served %q", kind, h.Get("Content-Disposition"))
+		}
+	}
+
+	// And an image is still an image: a rule that made everything an
+	// attachment would be a rule nobody could use a logo with.
+	code, out = upload(t, router, files+"?visibility=public", "logo.png", "image/png", png)
+	if code != http.StatusCreated {
+		t.Fatalf("POST a png = %d %s", code, out)
+	}
+	_, _, header = send(t, router, http.MethodGet, public+field(t, out, "id"), false)
+	if !strings.HasPrefix(header.Get("Content-Disposition"), "inline") {
+		t.Errorf("a png is served %q", header.Get("Content-Disposition"))
+	}
+}
+
+// TestADownloadServesRangesAndAnswersHead. A media player asks for a range and
+// a downloader asks for the size, and neither is something to implement twice:
+// http.ServeContent is what answers both.
+func TestADownloadServesRangesAndAnswersHead(t *testing.T) {
+	router := mounted(t)
+	const body = "0123456789"
+	code, out := upload(t, router, files, "digits.txt", "text/plain", body)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	at := files + "/" + field(t, out, "id") + "/content"
+
+	req := httptest.NewRequest(http.MethodGet, "http://"+host+at, nil)
+	req.Header.Set("Range", "bytes=2-5")
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	switch {
+	case rec.Code != http.StatusPartialContent:
+		t.Errorf("a range request = %d, want 206", rec.Code)
+	case rec.Body.String() != "2345":
+		t.Errorf("the range is %q, want the four bytes asked for", rec.Body.String())
+	case rec.Header().Get("Content-Range") != "bytes 2-5/10":
+		t.Errorf("Content-Range is %q", rec.Header().Get("Content-Range"))
+	}
+
+	code, head, header := send(t, router, http.MethodHead, at, true)
+	switch {
+	case code != http.StatusOK:
+		t.Errorf("HEAD = %d, want 200", code)
+	case head != "":
+		t.Errorf("HEAD carried a body: %q", head)
+	case header.Get("Content-Length") != "10":
+		t.Errorf("HEAD says the file is %q bytes", header.Get("Content-Length"))
+	case header.Get("Accept-Ranges") != "bytes":
+		t.Error("the download does not say it serves ranges")
+	}
+}
+
+// TestAnOverlongContentTypeIsTheCallersMistake. The column is varchar(120), so
+// a header padded past it used to be a constraint violation the database raised
+// and the caller read as a 500.
+func TestAnOverlongContentTypeIsTheCallersMistake(t *testing.T) {
+	router := mounted(t)
+	code, out := upload(t, router, files, "x.bin", "application/"+strings.Repeat("x", 200), "bytes")
+	if code != http.StatusUnprocessableEntity {
+		t.Errorf("an overlong media type = %d %s, want 422", code, out)
+	}
+	// And one that is not a media type at all.
+	if code, out = upload(t, router, files, "x.bin", "not a media type at all", "bytes"); code != http.StatusUnprocessableEntity {
+		t.Errorf("a media type that is not one = %d %s, want 422", code, out)
+	}
 }

@@ -25,6 +25,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/migrations"
 )
 
@@ -186,6 +187,12 @@ func quote(id string) string { return `"` + strings.ReplaceAll(id, `"`, `""`) + 
 // deliberately withholds — the owner connection, the DDL rights — so it is the
 // place for this too.
 var systemToken = syscap.NewSystemToken("a test writing across tenants")
+
+// SystemToken is that capability, for a test of something the application hands
+// one to: a module's control-plane routes take api.SystemToken(), and a job
+// that has to cross tenants takes it in Module.Routes, so a test of either has
+// to be able to stand where the kernel stands.
+func SystemToken() tenancy.SystemToken { return systemToken }
 
 // System runs fn in a cross-tenant transaction, for a test that has to reach
 // the tables no tenant owns: the tenant registry, and the outbox as the relay

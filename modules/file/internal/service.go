@@ -18,18 +18,20 @@ import (
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 )
 
-// Service is the file lifecycle. It has two fields, unlike the services in the
-// other modules: the bytes have to go somewhere, and how large an upload may be
-// is a deployment's decision rather than this module's.
+// Service is the file lifecycle. It has three fields, unlike the services in
+// the other modules: the bytes have to go somewhere, and how large one upload
+// may be and how much disk one tenant may hold are a deployment's decisions
+// rather than this module's.
 type Service struct {
 	storage contracts.Storage
 	max     int64
+	quota   int64
 }
 
-// NewService takes the storage the bytes go to and the largest upload this
-// deployment accepts. module.go constructs it.
-func NewService(storage contracts.Storage, max int64) *Service {
-	return &Service{storage: storage, max: max}
+// NewService takes the storage the bytes go to, the largest upload this
+// deployment accepts, and the disk one tenant may fill. module.go constructs it.
+func NewService(storage contracts.Storage, max, quota int64) *Service {
+	return &Service{storage: storage, max: max, quota: quota}
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -37,23 +39,42 @@ var _ contracts.Service = (*Service)(nil)
 // Upload streams the bytes into storage while hashing and counting them, then
 // writes the row. See contracts.Service.
 func (s *Service) Upload(ctx context.Context, tx db.Tx[db.Tenant], up contracts.Upload) (*contracts.File, error) {
+	// The room left comes first, because it is a query and a query is cheaper
+	// than a disk write this is about to refuse. The limit that is actually
+	// enforced is the smaller of the two, which is what makes a tenant with
+	// 3 MB of quota left unable to spend 25 MB of upload allowance.
+	limit, err := s.room(tx)
+	if err != nil {
+		return nil, err
+	}
+
 	// A UUID and nothing else, which is the whole of the path-traversal
 	// argument: there is no caller-supplied component in a key to escape with.
 	key := uuid.NewString()
 	digest := sha256.New()
 	// One byte past the limit, so "exactly the limit" and "more than it" are
-	// distinguishable; the tee hashes exactly what the copy reads.
-	counted := &counter{r: io.LimitReader(io.TeeReader(up.Body, digest), s.max+1)}
+	// distinguishable; the tee hashes exactly what the copy reads. head keeps
+	// the first bytes so that what the caller declared can be checked against
+	// what actually arrived, without a second pass over the file.
+	counted := &counter{r: io.LimitReader(io.TeeReader(up.Body, digest), limit+1)}
 
 	if err := s.storage.Put(ctx, key, counted, up.Declared); err != nil {
 		return nil, fmt.Errorf("file: store %s: %w", key, err)
 	}
-	if counted.n > s.max {
+	if counted.n > limit {
 		// Refused, so not charged for. The removal is best effort: what is left
 		// behind is disk nobody references, and the answer to the caller is the
-		// one that matters.
+		// one that matters. Which of the two limits was hit is the difference
+		// between "send something smaller" and "delete something first".
 		_ = s.storage.Delete(ctx, key)
+		if limit < s.max {
+			return nil, fmt.Errorf("%w: %d bytes is past the %d this tenant has left", contracts.ErrQuota, counted.n, limit)
+		}
 		return nil, fmt.Errorf("%w: %d bytes is past the %d this deployment accepts", contracts.ErrTooLarge, counted.n, s.max)
+	}
+	if err := contracts.Agrees(up.ContentType, counted.head[:min(counted.n, int64(len(counted.head)))]); err != nil {
+		_ = s.storage.Delete(ctx, key)
+		return nil, err
 	}
 
 	f := &contracts.File{
@@ -108,16 +129,47 @@ func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 }
 
 // counter counts what is read through it, which is how the size on the row is
-// what actually arrived rather than what the request claimed.
+// what actually arrived rather than what the request claimed, and keeps the
+// first 512 bytes, which is what http.DetectContentType reads.
 type counter struct {
-	r io.Reader
-	n int64
+	r    io.Reader
+	n    int64
+	head [512]byte
 }
 
 func (c *counter) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
+	if c.n < int64(len(c.head)) {
+		copy(c.head[c.n:], p[:n])
+	}
 	c.n += int64(n)
 	return n, err
+}
+
+// room is the number of bytes this upload may write: the deployment's per-upload
+// limit, or what is left of the tenant's quota, whichever is smaller.
+//
+// The usage is a sum over the tenant's own rows rather than a running total in
+// a column, and the choice is deliberate. A column has to be kept correct by
+// every write — an upload, a delete, the reconciliation below — and a total
+// that drifts is a tenant that either cannot upload or is never stopped, with
+// nothing to compare against. The sum reads one partial index on a table whose
+// rows are counted in thousands, once per upload, and it cannot be wrong.
+func (s *Service) room(tx db.Tx[db.Tenant]) (int64, error) {
+	if s.quota <= 0 {
+		return s.max, nil
+	}
+	var used int64
+	err := tx.DB().Model(&contracts.File{}).Where("deleted_at IS NULL").
+		Select("COALESCE(SUM(size), 0)").Scan(&used).Error
+	if err != nil {
+		return 0, fmt.Errorf("file: what this tenant is holding: %w", err)
+	}
+	left := s.quota - used
+	if left <= 0 {
+		return 0, fmt.Errorf("%w: %d bytes of %d are in use", contracts.ErrQuota, used, s.quota)
+	}
+	return min(left, s.max), nil
 }
 
 // RemoveBlob is this module's subscription to its own file.deleted, and the

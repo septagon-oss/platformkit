@@ -60,6 +60,10 @@ func (f *Fake) Upload(ctx context.Context, _ db.Tx[db.Tenant], up contracts.Uplo
 		_ = f.storage.Delete(ctx, key)
 		return nil, fmt.Errorf("%w: %d bytes is past the %d this deployment accepts", contracts.ErrTooLarge, counted.n, f.max)
 	}
+	if err := contracts.Agrees(up.ContentType, counted.head[:min(counted.n, int64(len(counted.head)))]); err != nil {
+		_ = f.storage.Delete(ctx, key)
+		return nil, err
+	}
 	row := contracts.File{
 		Base: crud.Base{ID: uuid.New(), CreatedAt: db.Now(), UpdatedAt: db.Now()},
 		Name: up.Name, ContentType: up.ContentType, Visibility: up.Visibility,
@@ -107,12 +111,16 @@ func (f *Fake) Delete(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*con
 
 // counter counts what is read through it, the way internal.counter does.
 type counter struct {
-	r io.Reader
-	n int64
+	r    io.Reader
+	n    int64
+	head [512]byte
 }
 
 func (c *counter) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
+	if c.n < int64(len(c.head)) {
+		copy(c.head[c.n:], p[:n])
+	}
 	c.n += int64(n)
 	return n, err
 }

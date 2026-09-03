@@ -144,6 +144,38 @@ description list and in a select's options alike. `httpx.Resource` carries its
 own authorization: the five closures ask the same Authorizer the routes do, so a
 hand-written page cannot read past a permission by forgetting to.
 
+### What a browser is told it may do
+
+Every response the application makes carries `X-Frame-Options: DENY`,
+`Referrer-Policy: strict-origin-when-cross-origin` and
+`X-Content-Type-Options: nosniff`, and every HTML one carries a content security
+policy: `default-src 'self'`, scripts from this origin and the request's own
+nonce, images from this origin and `data:`, and `frame-ancestors 'none'`. They
+are set by `kit/httpx` on the router that carries the static tree as well as the
+API, so a stylesheet, a 404 from the router and a panic that never reached a
+handler are covered by the same three lines — a reverse proxy that added them
+would be a deployment topology this repository does not get to assume, and a
+header a proxy adds is a header a request that reaches the pod directly does not
+have.
+
+The nonce is why there is a nonce. One inline script exists — the four lines in
+`modules/admin` that apply the saved theme before the first paint, which cannot
+be deferred without the page flashing white — and it carries
+`httpx.NonceFrom(ctx)`. `style-src` is the one concession: `ui/components` emits
+`style` attributes for a column's width and for an element that is hidden, a CSP
+nonce cannot cover a style *attribute*, so that directive keeps
+`'unsafe-inline'`. The exposure is CSS and not script, and it is written down
+here rather than left to be discovered.
+
+Uploaded bytes are the other half. `modules/file` serves a download as
+`Content-Disposition: attachment` unless its stored media type is in a closed
+render-safe set — PNG, JPEG, GIF, WebP, AVIF, PDF and plain text — and never for
+HTML, SVG, XHTML or any XML dialect, because an uploaded page served inline is
+stored cross-site scripting on the tenant's own origin. Both download routes
+also send `Content-Security-Policy: default-src 'none'; sandbox` and
+`Cross-Origin-Resource-Policy: same-site`, and a declared type in the renderable
+set is checked at upload against `http.DetectContentType`.
+
 ## Gates
 
 `make check` runs gates 1 to 9; `make e2e` is gate 10, which needs a browser and
