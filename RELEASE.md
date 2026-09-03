@@ -92,8 +92,11 @@ would be visible.
 `.github/workflows/release.yml` runs on any `v*` tag and does four things,
 in one workflow, with `contents: read` at the top and rights granted per job:
 
-1. **`make check` against the tagged tree**, with Postgres and NATS, the same
-   way `ci.yml` does. Everything below is `needs: check`.
+1. **`make check` and `make e2e` against the tagged tree**, with Postgres,
+   NATS and a browser, the same way `ci.yml` does — and only after the job has
+   proved the tag is an ancestor of `main`, because a tag is the one trigger
+   here and anything anybody could tag was otherwise a release. Everything below
+   is `needs: check`.
 2. **Builds `deploy/Dockerfile` and pushes to GHCR** as
    `ghcr.io/septagon-oss/platformkit:<tag>`. `latest` moves only when the tag
    has no pre-release part, so `v1.1.0-rc.1` publishes under its own name and
@@ -104,8 +107,15 @@ in one workflow, with `contents: read` at the top and rights granted per job:
 4. **Creates the GitHub release** with `--generate-notes`, the SBOM attached,
    and the image digest as the first line of the body.
 
-Actions are pinned by commit SHA with the version in a trailing comment. A
-version bump is a commit that changes both.
+Every action in both workflows is pinned by commit SHA with the version in a
+trailing comment; Dependabot rewrites the two together, weekly, which is the
+only way a pin stays current. `ci.yml` was not pinned when this paragraph first
+claimed it was, which the release review found: a claim about a supply chain is
+worth checking before it is worth writing.
+
+The base images in `deploy/Dockerfile` are pinned by digest for the same reason,
+and `.dockerignore` keeps the git history, any local `config.yaml` and anything
+uploaded out of the build context.
 
 Nothing in the workflow needs a secret beyond `GITHUB_TOKEN`: GHCR accepts it
 for the repository's own package.
@@ -119,14 +129,21 @@ or `gh`, and none of them is in this repository.
       `gh repo edit septagon-oss/platformkit --visibility public --accept-visibility-change-consequences`
 - [ ] **Settings → Branches → Add rule for `main`:** require a pull request,
       require status checks to pass, and require branches to be up to date.
+- [ ] **Settings → Rules → Rulesets → New tag ruleset**, targeting `v*`:
+      restrict creation and deletion to the owner, and block force pushes. The
+      release workflow already refuses a tag that is not an ancestor of `main`,
+      so this is the second half — the workflow says which commits may be
+      released, and the ruleset says who may say so. A tag is not a branch and
+      branch protection does not cover one.
 - [ ] **Required status checks: `check`** — the job in `ci.yml`, by that name.
       It is the only one; ten gates behind one name is the point.
 - [ ] **Settings → Code security → Secret scanning: on**, and **push protection:
       on**. A public repository gets both for free and there is no reason to
       decline.
-- [ ] **Settings → Code security → Dependabot:** alerts on, security updates on,
-      and a weekly `gomod` + `github-actions` schedule if the owner wants
-      version bumps as well as security ones.
+- [ ] **Settings → Code security → Dependabot:** alerts on and security updates
+      on. The weekly version bumps are already declared in
+      `.github/dependabot.yml` (gomod, npm in `e2e/`, github-actions), so this
+      switch is only about the security half.
 - [ ] **Settings → Actions → General → Workflow permissions: read-only**, with
       "Allow GitHub Actions to create and approve pull requests" off. Both
       workflows ask for what they need per job.
@@ -137,44 +154,11 @@ or `gh`, and none of them is in this repository.
       public clone URL. `scripts/start.sh` is the one-liner; it is what the
       README promises and the flip is where that promise becomes checkable.
 
-## 5. The two private repositories
+## 5. Consumers
 
-`platformkit-catalog` and `septagon-clients` resolve the public module from a
-sibling checkout today. The tag is what lets them stop. Run these after the tag
-is pushed and the module is fetchable — `GOPRIVATE` is not needed once the
-repository is public, and `go get` needs the proxy to have seen the tag, which
-can take a minute.
-
-`platformkit-catalog` first, because `septagon-clients` depends on it:
-
-```sh
-cd ~/gitrepos/platformkit-catalog
-sed -i '/^replace github.com\/septagon-oss\/platformkit /d' go.mod
-# and the three comment lines above it, by hand: a directive that is gone
-# should not leave a paragraph explaining itself.
-go get github.com/septagon-oss/platformkit@v1.0.0
-go mod tidy
-make check
-git commit -am "chore: depend on platformkit v1.0.0"
-```
-
-Then `septagon-clients`, which drops two directives — the public one, and the
-catalog one once the catalog itself is tagged:
-
-```sh
-cd ~/gitrepos/septagon-clients
-sed -i '/^replace github.com\/septagon-oss\/platformkit /d' go.mod
-go get github.com/septagon-oss/platformkit@v1.0.0
-# The catalog is private and untagged until its owner tags it. Until then its
-# replace directive stays and this is the only line that differs from above.
-go mod tidy
-make check
-git commit -am "chore: depend on platformkit v1.0.0"
-```
-
-Both repositories are private, so their CI resolves the public module the
-ordinary way and needs no `GOPRIVATE` entry for it. The catalog and the client
-repository stay private and therefore keep needing one for each other.
+Consumers pin the tag: each of them replaces whatever it resolved the public
+module from with `go get github.com/septagon-oss/platformkit@v1.0.0`, and how
+that is done is written down in the consumer, not here.
 
 ## Checklist
 
@@ -183,11 +167,14 @@ Ten lines, in order.
 1. `git status --short` is empty.
 2. `make check` is green.
 3. `make e2e` is green.
-4. `govulncheck ./...` is clean, or every finding is in the notes with a reason.
+4. `govulncheck ./...` is clean, or every finding is in the notes with a
+   reason. CI runs it on every pull request, so this is a confirmation.
 5. No `.go` file carries a copyright or licence header; `NOTICE` accounts for
    everything pulled.
-6. `go run ./tools/locbudget --write` and commit the ratchet on its own.
+6. `go run ./tools/locbudget --write --round 100` and `scripts/check_packages.sh
+   --write`, committed on their own. A ceiling is the count rounded up to the
+   next hundred: at exactly the count, the next one-line pull request fails.
 7. `git tag -a v1.0.0 -m "PlatformKit 1.0.0"` — or `-s`, the owner's choice.
 8. `git push origin main --follow-tags`, and watch `release.yml` go green.
 9. The flip checklist in section 4, once.
-10. The two private repositories drop their `replace` lines and pin the tag.
+10. Consumers pin the tag.

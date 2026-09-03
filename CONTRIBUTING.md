@@ -37,6 +37,28 @@ import gate. `make e2e` is gate 10. Both are green before you push, and
 only lowers a ceiling. Raising one is an owner commit with a reason, and CI
 fails a pull request that raises one by hand.
 
+### When your pull request crosses a ceiling
+
+`check-loc` prints the bucket, the count and by how much. There are three
+answers and the order matters.
+
+1. **Delete something first.** A ceiling is a claim that this repository is
+   small enough to hold in one head, so the first question is what the change
+   made redundant: the old path it replaces, the helper it duplicates, the
+   comment that now says what the code says. Rule 4 asks for the deletion in the
+   same commit anyway.
+2. **Split the change.** A pull request that has to cross a ceiling is usually
+   two changes, and one of them is a refactor that pays for the other. Land the
+   refactor, which lowers the count, and then the feature.
+3. **Ask the owner to raise it.** That is a commit of its own, on main, with the
+   reason in the body — not a line in your pull request, because a ceiling that
+   any change may raise on its way past is not a ceiling. Every bucket has room
+   for a hundred lines by construction (`--write --round 100`), so a change that
+   is over is over by more than a comment.
+
+Do not raise a ceiling in the same commit as the change that crossed it. CI
+compares `loc-budget.json` against `main` and fails exactly that.
+
 ## Commits
 
 - **One task, one commit, green build.** `make check` passes before you commit.

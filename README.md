@@ -23,10 +23,10 @@ is safe to run twice.
 
 Then open **<http://platformkit.localhost:8080/admin/login>** and sign in with
 that address and the password `bootstrap` printed. Behind it is the whole
-application: the dashboard, a screen for every entity, and `/admin/_gallery` for
-every component it is drawn with. The screens are generated from each entity's
-schema, so there is one of them for `tasks` and `users` without a line of code
-for either.
+application: the dashboard, a screen for every entity mounted through
+`rest.Spec`, and `/admin/_gallery` for every component it is drawn with. The
+screens are generated from each entity's schema, so there is one of them for
+`tasks` and `users` without a line of code for either.
 
 The database starts empty. `bootstrap` migrates it, creates the first tenant,
 the two roles a tenant starts with, and the administrator who signs in to it,

@@ -30,8 +30,15 @@ migration-number range.**
 | Repository | Visibility | Holds |
 |---|---|---|
 | `github.com/septagon-oss/platformkit` | **public** | `kit/` (the kernel), `ui/` + `design/` (the browser half), `apps/platformkit` (the reference binary), `tools/`, `migrations/`, and eleven reference modules: task, tenant, user, auth, admin, audit, notification, billing, content, site, file |
-| `github.com/septagon-dev/platformkit-catalog` | private | the competitive catalog — cart, payment, and the modules after them — importing the public module by tag |
-| `github.com/septagon-dev/septagon-clients` | private | `clients/<name>/` overlays (configuration and assets, no Go), `modules/<client>/` client modules, `apps/flagship` composing public + catalog + client into the one image, and the cluster state |
+| a private catalog repository | private | the commercial modules, importing the public module by tag |
+| a private clients repository | private | per-client overlays (configuration and assets, no Go), client modules, the application that composes public + catalog + client into one image, and the cluster state |
+
+The two private repositories are described and not named, here and everywhere
+else in this repository, and that is the decision rather than an omission. What
+they are called, what modules they hold and which organisation owns them are all
+things a reader of a public repository has no need for and a competitor has a
+use for. The seam is the interesting part, and the seam is the same whatever the
+consumers are called.
 
 The eleven public modules are the set a reference architecture needs to be
 credible rather than the set that is easiest to give away. Each is the exemplar
@@ -45,14 +52,18 @@ generated screens, `audit` and `notification` are what a subscription is for,
 
 - **Client data.** Rows, backups, exports, screenshots with real names in them.
 - **Catalog modules.** The commercial modules and their tests, fakes and
-  migrations. A public repository that named them in a comment would be telling
-  a competitor the shape of the roadmap.
-- **Client names and overlays.** `clients/<name>/` is the private repository's,
-  and the public one uses `platformkit` as its own example tenant precisely so
-  that no client has to be one.
+  migrations — including their names. A public repository that listed them in a
+  comment would be telling a competitor the shape of the roadmap, and a comment
+  is exactly where that leaks: this ADR named two of them until the release
+  review counted the lines between the rule and the breach.
+- **Client names and overlays.** Per-client directories are the private
+  repository's, and this one uses `platformkit` as its own example tenant
+  precisely so that no client has to be one.
 - **Cluster state.** Manifests, hosts, LAN addresses, the GitOps repository.
-- **Secrets.** Anything in `platformkit-secrets`, any `config.yaml` (it is
-  git-ignored, and `config.example.yaml` is what is committed), any key.
+- **Secrets.** Any secrets repository or store, by name or by contents; any
+  `config.yaml` (it is git-ignored, and `config.example.yaml` is what is
+  committed); any key.
+- **The organisation the private repositories live in.** A URL is a name.
 
 The public repository is therefore not a subset of the private ones with the
 private parts removed. It was written to be public, and the two private
@@ -69,8 +80,10 @@ repositories resolve it from a sibling checkout:
 
 That directive is scaffolding with a defined end. `v1.0.0` is the end: the tag
 is pushed, each private repository deletes its `replace` line, runs `go get
-github.com/septagon-oss/platformkit@v1.0.0`, and keeps only the `require`.
-`RELEASE.md` §5 has the exact commands.
+github.com/septagon-oss/platformkit@v1.0.0`, and keeps only the `require`. The
+runbook for that lives in each private repository's own `RELEASE.md`, because it
+is a thing done to a private repository and a public one has no business
+describing somebody else's tree.
 
 Afterwards the rule is: **a `replace` directive pointing at a sibling checkout
 is a development convenience and never a committed state.** A private repository
@@ -91,10 +104,10 @@ files, and the ranges are what keep them apart:
 | Repository | Versions |
 |---|---|
 | `septagon-oss/platformkit` | **1 – 999** |
-| `septagon-dev/platformkit-catalog` | 1001 – 1999 |
-| `septagon-dev/septagon-clients` | 2001 upward |
+| the private catalog | 1001 – 1999 |
+| the private clients repository | 2001 upward |
 
-This repository owns 1–999 and allocates from the bottom; it is at `000020`. The
+This repository owns 1–999 and allocates from the bottom; it is at `000022`. The
 gaps between the ranges are deliberate: a range that ended where the next began
 would make the first over-allocation collide instead of failing to reserve.
 
@@ -112,21 +125,33 @@ request, and CI additionally fails a pull request that *raises* a ceiling. That
 was an internal discipline while the repository was private. Publishing turns it
 into something a reader can hold the project to:
 
-| Bucket | Ceiling (production lines) |
-|---|---|
-| `kit/` | 15,000 |
-| `modules/` | 150,000 |
-| `ui/` + `design/` | 40,000 |
-| `apps/` | 6,000 |
-| `tools/` | 2,000 |
-| total production Go | 250,000 |
-| first-party packages linked into the app | 400 |
+The numbers live in `loc-budget.json` and `packages-budget.json`, and they are
+ratcheted at every tag, so a table here would be a second copy that goes stale
+the first time somebody deletes something — which is what happened: this ADR
+published 15,000 / 150,000 / 40,000 while the file shipped a fifth of that. Read
+the files, or run `make check-loc`. At v1.0.0 they were:
+
+| Bucket | Ceiling | Count at v1.0.0 |
+|---|---|---|
+| `kit/` (kernel) | 8,200 | 8,106 |
+| `modules/` | 11,700 | 11,626 |
+| `ui/` + `design/` | 9,600 | 9,514 |
+| `apps/` | 500 | 492 |
+| `tools/` | 400 | 303 |
+| total production Go | 29,900 | 29,850 |
+| test support Go (`*test` packages) | 5,600 | 5,530 |
+| test Go | 18,200 | 18,167 |
+| browser JavaScript | 300 | 218 |
+| markdown | 1,600 | 1,525 |
+| first-party packages linked into the app | 54 | 54 |
 
 The claim being made is narrow and checkable: *this* is what the architecture
 costs, and a release that costs more will have said so in a commit that raised a
 number, signed by the owner, with a reason. `RELEASE.md` makes the ratchet a
 release precondition, so every tag republishes the commitment at the tightest
-number the tree can honestly carry.
+number the tree can honestly carry — the count rounded up to the next hundred,
+which is small enough to be a ceiling and round enough that nobody negotiates
+it.
 
 ## Consequences
 
@@ -138,9 +163,8 @@ number the tree can honestly carry.
   as a surprise.
 - **The public repository cannot be tested against the catalog.** Nothing public
   imports anything private, so the compatibility of the eleven public modules
-  with the catalog's is proved in the catalog's CI and not here. That is the
-  cost of the seam, it is paid by the private side, and `apps/catalog-check` in
-  the catalog repository exists for exactly that reason.
+  with a consumer's is proved in that consumer's CI and not here. That is the
+  cost of the seam and it is paid by the private side.
 - **Extraction is one-way.** A module that starts public stays public: the
   history is public, so making it private later removes it from the tree and
   from nowhere else. Deciding a module is catalog is a decision made before it
@@ -154,7 +178,7 @@ number the tree can honestly carry.
 
 ```sh
 # The public module requires nothing private, and replaces nothing.
-grep -E 'septagon-dev|^replace' go.mod          # no output
+grep -E '^replace|^\trequire' go.mod | grep -v septagon-oss   # no private module
 
 # One ledger, one directory, versions 1-999 and no duplicates.
 ls migrations/*.up.sql | sed 's#.*/\([0-9]*\)_.*#\1#' | sort | uniq -d   # no output
