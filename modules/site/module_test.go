@@ -189,3 +189,22 @@ func TestALabelIsCountedInCharacters(t *testing.T) {
 		t.Error("a title one character past the limit was accepted")
 	}
 }
+
+// TestAHomeSlugIsBoundedByTheColumnThatHoldsIt. MaxHomeSlug was declared beside
+// the other four bounds and never read, so a slug longer than the varchar(200)
+// that stores it reached the database and came back as a 500 rather than as a
+// 422 saying what was wrong.
+func TestAHomeSlugIsBoundedByTheColumnThatHoldsIt(t *testing.T) {
+	fits := contracts.SiteSettings{Title: "Acme", HomeSlug: strings.Repeat("a", contracts.MaxHomeSlug)}
+	if err := fits.Validate(t.Context()); err != nil {
+		t.Errorf("a slug of exactly %d characters = %v, want it accepted", contracts.MaxHomeSlug, err)
+	}
+	over := contracts.SiteSettings{Title: "Acme", HomeSlug: strings.Repeat("a", contracts.MaxHomeSlug+1)}
+	err := over.Validate(t.Context())
+	if err == nil {
+		t.Fatalf("a slug of %d characters was accepted into a varchar(%d)", contracts.MaxHomeSlug+1, contracts.MaxHomeSlug)
+	}
+	if !strings.Contains(err.Error(), "home slug") {
+		t.Errorf("the refusal is %q, which does not say which field is too long", err)
+	}
+}

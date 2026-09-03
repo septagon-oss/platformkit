@@ -647,3 +647,72 @@ func signIn(t *testing.T, router chi.Router, email string) string {
 	}
 	return session
 }
+
+// TestACrossSiteSignInIsRefused is the half of the cross-site check the kernel
+// cannot make. Its middleware guards a request that carries a session cookie,
+// because a cookie is a credential the browser attached on the caller's behalf;
+// a sign-in carries none, so it goes straight through.
+//
+// That is wrong for this one route, because a sign-in mints a credential rather
+// than spending one. Another site posts here with its own account's password,
+// the visitor is left signed in as somebody else, and whatever they do next —
+// a document they upload, an address they type — happens in the attacker's
+// account. So the route asks the same question the middleware asks.
+func TestACrossSiteSignInIsRefused(t *testing.T) {
+	router, conn, _ := mount(t, auth.OIDC{})
+	person(t, conn, "ada@acme.localhost", contracts.RoleAdmin)
+	credentials := `{"email":"ada@acme.localhost","password":"` + authtest.Password + `"}`
+
+	for _, tt := range []struct {
+		name    string
+		headers map[string]string
+		want    int
+	}{
+		{"a form on another site", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
+		{"a form on another origin", map[string]string{"Origin": "https://evil.example"}, http.StatusForbidden},
+		{"the sign-in page itself", map[string]string{"Sec-Fetch-Site": "same-origin"}, http.StatusOK},
+		{"an address bar", map[string]string{"Sec-Fetch-Site": "none"}, http.StatusOK},
+		{"our own origin, on an older browser", map[string]string{"Origin": "http://" + host}, http.StatusOK},
+		// A client that is not a browser presents what it presents on purpose,
+		// and this is how every API client and the e2e suite sign in.
+		{"a client that is not a browser", nil, http.StatusOK},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			res := call(t, router, http.MethodPost, "/api/v1/auth/login", credentials,
+				func(r *http.Request) {
+					for k, v := range tt.headers {
+						r.Header.Set(k, v)
+					}
+				})
+			if res.Code != tt.want {
+				t.Errorf("signing in from %s = %d %s, want %d", tt.name, res.Code, res.Body.String(), tt.want)
+			}
+			if tt.want == http.StatusForbidden && sessionCookie(res) != "" {
+				t.Error("the refused sign-in set a session cookie anyway")
+			}
+		})
+	}
+}
+
+// TestSpendingAResetTokenIsRatedTooAsWellAsAskingForOne. Asking for a link was
+// capped and spending one was not, so the token could be presented in a loop at
+// the speed of the network. It is 256 bits from crypto/rand, so guessing it is
+// not a real attack — but "the number is large" was the only thing stopping the
+// traffic, and a cap costs nothing.
+func TestSpendingAResetTokenIsRatedTooAsWellAsAskingForOne(t *testing.T) {
+	router, conn, _ := mount(t, auth.OIDC{})
+	person(t, conn, "ada@acme.localhost")
+
+	body := `{"token":"a-token-that-is-not-one","new":"correct horse battery staple 2"}`
+	for i := range contracts.ResetRedemptions {
+		// Every one of them is refused for the token, which is the answer a
+		// wrong token gets and the answer this route gives about every token.
+		if res := call(t, router, http.MethodPost, "/api/v1/auth/password/reset", body); res.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d = %d %s, want 401", i+1, res.Code, res.Body.String())
+		}
+	}
+	res := call(t, router, http.MethodPost, "/api/v1/auth/password/reset", body)
+	if res.Code != http.StatusTooManyRequests {
+		t.Errorf("attempt %d = %d %s, want 429", contracts.ResetRedemptions+1, res.Code, res.Body.String())
+	}
+}

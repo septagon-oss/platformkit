@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -427,4 +428,48 @@ func pool(t *testing.T, appURL string) *db.Conn {
 func service(t *testing.T) contracts.Service {
 	t.Helper()
 	return internal.NewService(realUsers(), &authtest.Notices{}, delivery(&authtest.Mailbox{}), operatorPermissions)
+}
+
+// TestTheLimiterCountsAnAddressWithoutStoringIt. platformkit_limits is an
+// ordinary table with an ordinary backup, and a key of
+// "auth/account/ada@acme.localhost" made it a list of every address that has
+// ever failed a sign-in here: readable by the owner role, by whoever restores a
+// dump, and by anybody who gets a look at either. The counter needs the address
+// to be the same string twice and nothing else, which is what a hash is.
+func TestTheLimiterCountsAnAddressWithoutStoringIt(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	router, _, _ := mountOn(t, conn, auth.OIDC{})
+	const email = "ada@acme.localhost"
+	person(t, conn, email)
+
+	for range 3 {
+		res := call(t, router, http.MethodPost, "/api/v1/auth/login",
+			`{"email":"`+email+`","password":"the wrong passphrase"}`, from("203.0.113.7"))
+		if res.Code != http.StatusUnauthorized {
+			t.Fatalf("a wrong password = %d %s, want 401", res.Code, res.Body.String())
+		}
+	}
+
+	rows, err := admin.QueryContext(t.Context(), `SELECT key FROM platformkit_limits`)
+	if err != nil {
+		t.Fatalf("read the counters: %v", err)
+	}
+	defer rows.Close()
+	counted := 0
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			t.Fatalf("scan a key: %v", err)
+		}
+		counted++
+		if strings.Contains(key, email) || strings.Contains(key, "ada") || strings.Contains(key, "@") {
+			t.Errorf("the counter key %q spells the address it counts", key)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read the counters: %v", err)
+	}
+	if counted == 0 {
+		t.Fatal("nothing was counted, so nothing was proved about how it was counted")
+	}
 }

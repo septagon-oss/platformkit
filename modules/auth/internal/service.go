@@ -91,6 +91,12 @@ func (s *Service) Precheck(ctx context.Context, email, ip string) contracts.Verd
 // contracts.Service.
 func (s *Service) MayAsk(ctx context.Context, ip string) bool { return s.limiter.Requested(ctx, ip) }
 
+// MayRedeem counts one reset-token redemption from an address. See
+// contracts.Service.
+func (s *Service) MayRedeem(ctx context.Context, ip string) bool {
+	return s.limiter.Redeemed(ctx, ip)
+}
+
 var _ contracts.Service = (*Service)(nil)
 
 // Login verifies a password and opens a session.

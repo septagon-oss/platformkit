@@ -2,6 +2,8 @@ package contracts
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"strings"
 	"time"
@@ -65,6 +67,20 @@ const (
 	// Ten, because a person who has lost a password asks two or three times and
 	// an office behind one NAT is several people doing that at once.
 	ResetRequests = 10
+
+	// ResetRedemptions is how many reset tokens one address may present inside
+	// a window.
+	//
+	// Asking for a link was capped and spending one was not, so the token
+	// itself could be guessed at the speed of the network. It is 256 bits from
+	// crypto/rand, so guessing it is not a real attack — but "the number is
+	// large" is the only thing that was stopping it, and a cap costs nothing
+	// and stops the traffic as well as the guess.
+	//
+	// Twenty, because a person follows a link once, occasionally twice when the
+	// first attempt fails validation, and an office behind one NAT is several
+	// of them at once.
+	ResetRedemptions = 20
 )
 
 // Limiter counts failed logins, per account and per source address, in the one
@@ -120,12 +136,32 @@ func NewLimiter(store limit.Limiter) *Limiter { return &Limiter{store: store} }
 // The keys, each namespaced by what it counts. kit/limit puts the tenant in
 // front of them, so these say nothing about which customer is being attacked.
 // The separator inside a compound key is a space, which no address contains.
-func accountKey(email string) string   { return "auth/account/" + EmailKey(email) }
-func sourcesKey(email string) string   { return "auth/sources/" + EmailKey(email) }
+//
+// The address is hashed and not spelled. platformkit_limits is an ordinary
+// table with an ordinary backup, and a key of "auth/account/ada@acme.example"
+// made it a list of every address that has ever failed a sign-in here —
+// readable by the owner role, by whoever restores a dump, and by anybody who
+// gets a look at either. The counter needs the address to be the same string
+// twice and nothing else, which is exactly what a hash is.
+func accountKey(email string) string   { return "auth/account/" + emailHash(email) }
+func sourcesKey(email string) string   { return "auth/sources/" + emailHash(email) }
 func sourceKey(ip string) string       { return "auth/source/" + ip }
-func pairKey(email, ip string) string  { return "auth/pair/" + EmailKey(email) + " " + ip }
+func pairKey(email, ip string) string  { return "auth/pair/" + emailHash(email) + " " + ip }
 func forgotKey(ip string) string       { return "auth/forgot/" + ip }
-func notedKey(email, ip string) string { return "auth/noted/" + EmailKey(email) + " " + ip }
+func redeemKey(ip string) string       { return "auth/redeem/" + ip }
+func notedKey(email, ip string) string { return "auth/noted/" + emailHash(email) + " " + ip }
+
+// emailHash is the address as a key: SHA-256 of EmailKey, in hex.
+//
+// It is not a secret and it is not pretending to be one — an attacker with the
+// table and a list of addresses can hash the list — so there is no salt and no
+// work factor, and adding either would be claiming a property this does not
+// have. What it buys is that the table is no longer a list of addresses to
+// read, which is the whole of the finding.
+func emailHash(email string) string {
+	sum := sha256.Sum256([]byte(EmailKey(email)))
+	return hex.EncodeToString(sum[:])
+}
 
 // Verdict is what the limiter says about one attempt before it is made.
 type Verdict int
@@ -200,6 +236,15 @@ func (l *Limiter) Succeeded(ctx context.Context, email string) {
 // depended on it would answer the question the route exists not to answer.
 func (l *Limiter) Requested(ctx context.Context, ip string) bool {
 	return l.within(ctx, forgotKey(ip), ResetRequests)
+}
+
+// Redeemed counts one reset-token redemption from an address and reports
+// whether it is within ResetRedemptions for this window. It counts the address
+// presenting the token and never the token, for the reason Requested counts the
+// address asking: a cap that depended on what was presented would answer a
+// question about it.
+func (l *Limiter) Redeemed(ctx context.Context, ip string) bool {
+	return l.within(ctx, redeemKey(ip), ResetRedemptions)
 }
 
 // Noted reports whether a refusal for this account from this address is worth

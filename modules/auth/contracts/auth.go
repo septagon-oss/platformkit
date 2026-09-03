@@ -271,6 +271,13 @@ type Service interface {
 	// address asked about.
 	MayAsk(ctx context.Context, ip string) bool
 
+	// MayRedeem counts one reset-token redemption from an address and reports
+	// whether it is within ResetRedemptions for the window. Asking for a link
+	// was capped and spending one was not, so the token was guessable at the
+	// speed of the network — which 256 bits makes hopeless and a cap makes
+	// pointless.
+	MayRedeem(ctx context.Context, ip string) bool
+
 	// Login verifies a password and opens a session. It answers ErrCredentials
 	// for a wrong password, an unknown address, a user who is not active and a
 	// user who has no password, and ErrTooManyAttempts once an address has
