@@ -51,6 +51,10 @@ var faults = []int{
 const (
 	downloadPolicy = "default-src 'none'; sandbox"
 	downloadCORP   = "same-site"
+	// What a private file's response says about caching. no-store rather than
+	// private, because "private" still lets the browser keep it on disk for
+	// whoever uses the machine next.
+	downloadPrivate = "no-store"
 )
 
 // RegisterRoutes mounts the six routes a file has.
@@ -294,6 +298,13 @@ func download(ctx context.Context, svc contracts.Opener, id uuid.UUID, anonymous
 		hctx.SetHeader("Content-Security-Policy", downloadPolicy)
 		hctx.SetHeader("Cross-Origin-Resource-Policy", downloadCORP)
 		hctx.SetHeader("Content-Disposition", disposition(f))
+		if !f.Public() {
+			// A private file is one tenant's own, and a browser or a proxy
+			// caches what nothing told it not to: the next person to ask that
+			// cache for this URL must not be handed the bytes. A public file is
+			// deliberately cacheable and says nothing here.
+			hctx.SetHeader("Cache-Control", downloadPrivate)
+		}
 
 		// A seekable body is a range request, a HEAD and a conditional get, all
 		// of which net/http already implements correctly and none of which are

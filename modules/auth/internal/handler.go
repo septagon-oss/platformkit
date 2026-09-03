@@ -37,7 +37,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		Summary:     "Sign in with a password",
 		Description: "Opens a session and sets the platformkit_session cookie. A wrong password and an address nobody has answer identically, and cost the same.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedIn, contracts.EventLoginFailed}},
 	}, httpx.Public(), func(ctx context.Context, in *loginInput) (*sessionOutput, error) {
 		// The verdict first, the sleep second, the transaction third, and that
@@ -52,6 +52,26 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		// limiter is memory, so nothing has to be open to ask it, and a request
 		// that is asleep holds a goroutine and nothing else.
 		r, _ := httpx.RequestFrom(ctx)
+		// The kernel's cross-site check does not cover this route, and that is
+		// correct in general and wrong here. It guards a request that carries a
+		// session cookie, because a cookie is a credential the browser attached
+		// on the caller's behalf; a sign-in carries none, so nothing was
+		// attached. But a sign-in mints a credential rather than spending one:
+		// another site can post a form here with its own account's password and
+		// leave the visitor signed in as somebody else, and then read whatever
+		// the visitor does next — a document they upload, an address they
+		// enter. So this route asks the same question the middleware asks.
+		//
+		// The session cookie's SameSite=Lax is the layer underneath: a cookie
+		// this response sets is stored, and the browser will not send it back on
+		// a cross-site subrequest, so a page that forced a sign-in cannot then
+		// act as that session from its own origin. What Lax does not stop is the
+		// visitor's own next top-level navigation to this site, which is exactly
+		// the attack — hence the check here rather than the cookie alone.
+		if !httpx.SameSite(r) {
+			return nil, problem.New(http.StatusForbidden,
+				"this sign-in came from another site; sign in from the page itself")
+		}
 		from := ClientOf(r)
 		if svc.Precheck(ctx, in.Body.Email, from.IP) == contracts.Delay {
 			pause(ctx, contracts.SoftDelay)
@@ -189,11 +209,21 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		Summary:     "Set a password with a link",
 		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds. A token that is unknown, spent or expired is one answer.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
+		Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity,
+			http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
 		}},
 	}, httpx.Public(), func(ctx context.Context, in *resetInput) (*clearOutput, error) {
+		// Asking for a link is capped and so is spending one, before the
+		// transaction and for the same reason: a public route that a stranger
+		// can call in a loop needs a limit whether or not the thing it checks is
+		// hard to guess.
+		r, _ := httpx.RequestFrom(ctx)
+		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
+			return nil, problem.New(http.StatusTooManyRequests,
+				"too many reset attempts from this address; wait and try again")
+		}
 		tx, err := transaction(ctx)
 		if err != nil {
 			return nil, err

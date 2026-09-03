@@ -153,6 +153,11 @@ func (s *SiteSettings) Validate(context.Context) error {
 		return fmt.Errorf("a title is at most %d characters", MaxTitle)
 	case utf8.RuneCountInString(s.Tagline) > MaxTagline:
 		return fmt.Errorf("a tagline is at most %d characters", MaxTagline)
+	// The length first, because the column is varchar(200) and a slug longer
+	// than it is the difference between a 422 that says so and a 500 from the
+	// database. MaxHomeSlug was declared and never read until the review said so.
+	case utf8.RuneCountInString(s.HomeSlug) > MaxHomeSlug:
+		return fmt.Errorf("a home slug is at most %d characters, and that one is %d", MaxHomeSlug, utf8.RuneCountInString(s.HomeSlug))
 	case s.HomeSlug != "" && !slug.MatchString(s.HomeSlug):
 		return fmt.Errorf("%q is not a slug, so nothing can be served at it", s.HomeSlug)
 	case !slices.Contains(themes, s.Theme):

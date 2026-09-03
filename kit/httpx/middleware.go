@@ -414,29 +414,42 @@ func unsafeMethod(m string) bool {
 // exists, this is the line that changes, and it is one line.
 func (a *API) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := SessionCookieOf(r); !ok || !unsafeMethod(r.Method) {
+		if _, ok := SessionCookieOf(r); !ok || !unsafeMethod(r.Method) || SameSite(r) {
 			next.ServeHTTP(w, r)
 			return
-		}
-		switch site := r.Header.Get("Sec-Fetch-Site"); site {
-		case "same-origin", "none":
-			next.ServeHTTP(w, r)
-			return
-		case "":
-			// No Sec-Fetch-Site at all: an older client, or a non-browser. The
-			// Origin header is the fallback, and its absence is accepted for the
-			// same reason — a caller that is not a browser attaches no cookie
-			// unless somebody wrote the code that does.
-			if origin := r.Header.Get("Origin"); origin == "" || sameHost(origin, r.Host) {
-				next.ServeHTTP(w, r)
-				return
-			}
 		}
 		a.rlog(r.Context()).InfoContext(r.Context(), "httpx: cross-site write refused",
 			"method", r.Method, "path", r.URL.Path, "site", r.Header.Get("Sec-Fetch-Site"), "origin", r.Header.Get("Origin"))
 		writeProblem(w, http.StatusForbidden, RequestIDFrom(r.Context()),
 			"csrf: this request carries a session cookie and came from another site")
 	})
+}
+
+// SameSite is the browser's own account of where a request came from:
+// Sec-Fetch-Site, which a page cannot forge, and an Origin whose host is this
+// one for the older clients that do not send it. A request that says neither is
+// not a browser, and reads as same-site — see the middleware above for why that
+// is the deliberate answer and not a hole.
+//
+// It is exported for the one route the middleware cannot cover: a sign-in
+// carries no session cookie, so nothing was attached on the caller's behalf and
+// the middleware lets it through. That is right for the general rule and wrong
+// for that route, because a cross-site sign-in mints a credential rather than
+// spending one — the attacker signs the visitor into the attacker's own account
+// and then reads what the visitor does in it. modules/auth asks this directly.
+func SameSite(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return true
+	case "":
+		// No Sec-Fetch-Site at all: an older client, or a non-browser. The
+		// Origin header is the fallback, and its absence is accepted for the
+		// same reason — a caller that is not a browser presents what it presents
+		// deliberately.
+		origin := r.Header.Get("Origin")
+		return origin == "" || sameHost(origin, r.Host)
+	}
+	return false
 }
 
 // sameHost reports whether origin names this request's own host.

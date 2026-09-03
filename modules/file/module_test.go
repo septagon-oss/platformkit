@@ -137,6 +137,11 @@ func TestAFileGoesUpAndComesBackDown(t *testing.T) {
 		t.Error("the download lets a browser guess what it is")
 	case !strings.Contains(header.Get("Content-Disposition"), "notes.txt"):
 		t.Errorf("the download is named %q", header.Get("Content-Disposition"))
+	// A private file is one tenant's own, and a browser or a proxy keeps what
+	// nothing told it not to: the next person to ask that cache for this URL
+	// must not be handed the bytes.
+	case header.Get("Cache-Control") != "no-store":
+		t.Errorf("a private download says %q about caching, want no-store", header.Get("Cache-Control"))
 	}
 
 	// The list, and then the delete: the record goes now, the bytes go when
@@ -300,6 +305,12 @@ func TestAnUploadedPageIsNeverServedInline(t *testing.T) {
 	_, _, header = send(t, router, http.MethodGet, public+field(t, out, "id"), false)
 	if !strings.HasPrefix(header.Get("Content-Disposition"), "inline") {
 		t.Errorf("a png is served %q", header.Get("Content-Disposition"))
+	}
+	// And a public file is deliberately cacheable: no-store belongs on the
+	// responses that carry somebody's own data, and a public logo that could
+	// not be cached is a logo served from this process forever.
+	if got := header.Get("Cache-Control"); got != "" {
+		t.Errorf("a public download says %q about caching, want nothing", got)
 	}
 }
 

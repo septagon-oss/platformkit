@@ -127,6 +127,9 @@ func (f *Fake) Precheck(ctx context.Context, email, ip string) contracts.Verdict
 // MayAsk mirrors internal.Service.MayAsk.
 func (f *Fake) MayAsk(ctx context.Context, ip string) bool { return f.limiter.Requested(ctx, ip) }
 
+// MayRedeem mirrors internal.Service.MayRedeem.
+func (f *Fake) MayRedeem(ctx context.Context, ip string) bool { return f.limiter.Redeemed(ctx, ip) }
+
 // Forget mirrors internal.Service.Forget: it publishes and does nothing else,
 // which is what makes the public route cost the same for an address somebody
 // has and one nobody has.

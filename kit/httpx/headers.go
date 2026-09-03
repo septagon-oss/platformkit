@@ -17,6 +17,8 @@ import (
 	"encoding/base64"
 	"net/http"
 	"strings"
+
+	"github.com/septagon-oss/platformkit/kit/config"
 )
 
 // The three headers every response carries. Framing and referrers are decided
@@ -46,7 +48,34 @@ const (
 // hidden (ui/components/molecules.go), and a nonce cannot cover a style
 // attribute — CSP nonces apply to elements, and 'unsafe-hashes' would mean
 // listing every width anybody ever writes. The exposure is CSS, not script.
-const htmlPolicy = "default-src 'self'; script-src 'self' 'nonce-%'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+//
+// base-uri and form-action are the two the review found missing, and they are
+// the two that make the rest hold. Without base-uri an injected <base> retargets
+// every relative URL on the page, so 'self' stops meaning this origin; without
+// form-action an injected form posts what a person typed to somebody else, and
+// no source list covers where a form goes.
+const htmlPolicy = "default-src 'self'; script-src 'self' 'nonce-%'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+
+// hsts is a year, subdomains included. It is set on every response of a
+// deployment that is not reached at a local name, and on none of a deployment
+// that is: a browser told to use https for localhost is a laptop that cannot
+// reach its own application until somebody clears the header, and there is no
+// way to say "except this one" once it is cached.
+//
+// No preload directive. Preloading is a submission to a list browsers ship, and
+// it is not this application's to make on a deployment's behalf — a deployment
+// that wants it adds the directive at its edge and means it.
+const hsts = "max-age=31536000; includeSubDomains"
+
+// noStore is what an authenticated page and a private download carry.
+//
+// A browser caches a document nobody told it not to, and so does every proxy
+// between here and it: a tenant's admin page or a private file left in a shared
+// cache is that tenant's data served to whoever asks next. It is set on the
+// responses that carry somebody's own data and not on the anonymous ones,
+// because a public page that could not be cached is a public page served from
+// this process forever.
+const noStore = "no-store"
 
 type nonceKey struct{}
 
@@ -68,8 +97,14 @@ func (a *API) headers(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", frameOptions)
 		h.Set("Referrer-Policy", referrerPolicy)
 		h.Set("X-Content-Type-Options", noSniff)
+		if !config.Local(a.opts.PublicHost) {
+			h.Set("Strict-Transport-Security", hsts)
+		}
 		n := nonce()
-		next.ServeHTTP(&secured{ResponseWriter: w, nonce: n},
+		// Whether the caller presented a credential is what decides no-store,
+		// and it is known here and nowhere later: the writer below sees a
+		// content type and no request.
+		next.ServeHTTP(&secured{ResponseWriter: w, nonce: n, private: credentialed(r)},
 			r.WithContext(context.WithValue(r.Context(), nonceKey{}, n)))
 	})
 }
@@ -79,7 +114,10 @@ func (a *API) headers(next http.Handler) http.Handler {
 type secured struct {
 	http.ResponseWriter
 	nonce string
-	done  bool
+	// private is a request that presented a credential, so its HTML is
+	// somebody's own and not a page a cache may keep.
+	private bool
+	done    bool
 }
 
 func (s *secured) WriteHeader(status int) {
@@ -105,6 +143,11 @@ func (s *secured) policy() {
 	}
 	if strings.Contains(h.Get("Content-Type"), "html") {
 		h.Set("Content-Security-Policy", strings.Replace(htmlPolicy, "%", s.nonce, 1))
+		// An authenticated document is one tenant's own. A handler that has
+		// already said something about caching keeps it.
+		if s.private && h.Get("Cache-Control") == "" {
+			h.Set("Cache-Control", noStore)
+		}
 	}
 }
 
