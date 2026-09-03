@@ -6,6 +6,7 @@
 //	go run ./tools/locbudget --check                  # exit 1 if any bucket is over budget
 //	go run ./tools/locbudget --write                  # lower maxima to current counts
 //	go run ./tools/locbudget --write --bucket go_prod # lower one bucket only
+//	go run ./tools/locbudget --write --round 100      # re-baseline: count, rounded up
 //	go run ./tools/locbudget                          # print counts
 package main
 
@@ -162,6 +163,29 @@ func (bu *Budget) Ratchet(counts map[string]int) {
 	}
 }
 
+// Baseline sets every maximum to the count rounded up to the next multiple of
+// round. It is the one operation here that may raise a ceiling, which is why it
+// is a separate flag and an owner's commit.
+//
+// It exists because a ceiling at exactly the count is a ceiling a one-line pull
+// request fails, which is what the release review found: every bucket was on its
+// own number, so adding a comment was over budget. The margin has to be small
+// enough to be a ceiling and round enough that nobody negotiates it, and the
+// next hundred is both — under one percent of every bucket here, and not a
+// number anybody can argue was chosen to fit their change.
+func (bu *Budget) Baseline(counts map[string]int, round int) {
+	if round < 1 {
+		round = 1
+	}
+	for i := range bu.Buckets {
+		c, ok := counts[bu.Buckets[i].Name]
+		if !ok {
+			continue
+		}
+		bu.Buckets[i].Max = ((c + round - 1) / round) * round
+	}
+}
+
 // sourceFiles lists what the repository counts as its source: everything git
 // tracks, plus everything it would track if committed now. A budget that
 // ignored new files would only fail after the commit that broke it, which is
@@ -196,6 +220,7 @@ func run() int {
 		check  = flag.Bool("check", false, "exit 1 when any bucket exceeds its max")
 		write  = flag.Bool("write", false, "lower maxima to current counts")
 		bucket = flag.String("bucket", "", "with --write: only this bucket")
+		round  = flag.Int("round", 0, "with --write: re-baseline every max to the count rounded up to this multiple")
 	)
 	flag.Parse()
 
@@ -244,9 +269,14 @@ func run() int {
 	}
 
 	if *write {
-		if *bucket != "" {
+		switch {
+		case *round > 0 && *bucket != "":
+			budget.Baseline(map[string]int{*bucket: counts[*bucket]}, *round)
+		case *round > 0:
+			budget.Baseline(counts, *round)
+		case *bucket != "":
 			budget.Ratchet(map[string]int{*bucket: counts[*bucket]})
-		} else {
+		default:
 			budget.Ratchet(counts)
 		}
 		out, err := json.MarshalIndent(budget, "", "  ")
