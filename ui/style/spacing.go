@@ -7,12 +7,6 @@ package style
 // gap) to produce the final Tailwind class.
 type Spacing string
 
-// IsZero reports whether the Spacing is the zero value.
-func (s Spacing) IsZero() bool { return s == "" }
-
-// String returns the spacing key.
-func (s Spacing) String() string { return string(s) }
-
 // Spacing steps — names align with tokens.SpacingScale and the Tailwind
 // default spacing scale. Fractional values use underscore for the
 // decimal point in the Go const name (S0_5 → "0.5").

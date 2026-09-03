@@ -366,17 +366,6 @@ func (cl ClassList) TranslateYStep(s Spacing) ClassList { return cl.append(class
 func (cl ClassList) SpaceX(s Spacing) ClassList { return cl.append(classSpaceX(s)) }
 func (cl ClassList) SpaceY(s Spacing) ClassList { return cl.append(classSpaceY(s)) }
 
-// MaxW sets max-width using Tailwind's named scale. Use MaxWScale
-// for spacing-based max-widths (max-w-<step>).
-func (cl ClassList) MaxW(name string) ClassList { return cl.append(classMaxW(name)) }
-
-// MinH sets min-height. Accepts Spacing const names plus special
-// values like "screen" / "full".
-func (cl ClassList) MinH(v string) ClassList { return cl.append(classMinH(v)) }
-
-// MaxH sets max-height. Same value space as MinH.
-func (cl ClassList) MaxH(v string) ClassList { return cl.append(classMaxH(v)) }
-
 // NegMargin sets a negative margin on the requested side.
 // side is one of "" (all sides), "t", "b", "l", "r", "x", "y".
 func (cl ClassList) NegMargin(side string, s Spacing) ClassList {
@@ -387,20 +376,9 @@ func (cl ClassList) NegMargin(side string, s Spacing) ClassList {
 // like "45", "90", "180" matching the Tailwind rotate scale.
 func (cl ClassList) Rotate(deg string) ClassList { return cl.append(classRotate(deg)) }
 
-// BackdropBlur applies a backdrop-blur utility.
-func (cl ClassList) BackdropBlur(size string) ClassList {
-	return cl.append(classBackdropBlur(size))
-}
-
-// Origin sets transform-origin (top-right, bottom-left, etc.).
-func (cl ClassList) Origin(side string) ClassList { return cl.append(classOrigin(side)) }
-
 // OverflowX / OverflowY apply axis-specific overflow.
 func (cl ClassList) OverflowX(o Overflow) ClassList { return cl.append(classOverflowX(o)) }
 func (cl ClassList) OverflowY(o Overflow) ClassList { return cl.append(classOverflowY(o)) }
-
-// ObjectFit sets object-fit (cover/contain/fill/none/scale-down).
-func (cl ClassList) ObjectFit(fit string) ClassList { return cl.append(classObjectFit(fit)) }
 
 // ObjectCover is a shorthand for ObjectFit("cover").
 func (cl ClassList) ObjectCover() ClassList { return cl.append(classObjectCover) }
@@ -419,47 +397,13 @@ func (cl ClassList) BgOpacity(c Color, opacity string) ClassList {
 	return cl.append(classBgWithOpacity(c, opacity))
 }
 
-// TextColorOpacity sets a text color with an alpha modifier, e.g.
-// TextColorOpacity(ColorWhite, "80") → "text-white/80".
-func (cl ClassList) TextColorOpacity(c Color, opacity string) ClassList {
-	return cl.append(classTextWithOpacity(c, opacity))
-}
-
-// BorderColorOpacity sets a border color with an alpha modifier, e.g.
-// BorderColorOpacity(ColorWhite, "30") → "border-white/30".
-func (cl ClassList) BorderColorOpacity(c Color, opacity string) ClassList {
-	return cl.append(classBorderWithOpacity(c, opacity))
-}
-
 // ObjectContain applies Tailwind's "object-contain" utility — scales
 // the content to fit without cropping.
 func (cl ClassList) ObjectContain() ClassList { return cl.append(classObjectContain) }
 
-// AspectRaw applies an arbitrary-value aspect ratio, e.g. "4/3" →
-// "aspect-[4/3]". Prefer AspectVideo()/AspectSquare() when they match.
-func (cl ClassList) AspectRaw(raw string) ClassList { return cl.append(classAspectRaw(raw)) }
-
 // MaxWScaled applies Tailwind's named max-width scale via a typed
 // handle. Distinct from MaxW which takes an untyped string.
 func (cl ClassList) MaxWScaled(name MaxWidth) ClassList { return cl.append(classMaxW(string(name))) }
-
-// TranslateXRaw / TranslateYRaw emit a raw-suffixed translate value
-// for non-Spacing offsets like "1/2" (center-offset idiom).
-func (cl ClassList) TranslateXRaw(raw string) ClassList {
-	return cl.append(classTranslateXRaw(raw))
-}
-
-func (cl ClassList) TranslateYRaw(raw string) ClassList {
-	return cl.append(classTranslateYRaw(raw))
-}
-
-func (cl ClassList) NegTranslateX(raw string) ClassList {
-	return cl.append(classNegTranslateX(raw))
-}
-
-func (cl ClassList) NegTranslateY(raw string) ClassList {
-	return cl.append(classNegTranslateY(raw))
-}
 
 // Italic / NotItalic set font-style.
 func (cl ClassList) Italic() ClassList    { return cl.append(classItalic) }
@@ -498,11 +442,6 @@ func (cl ClassList) BreakAll() ClassList { return cl.append(classBreakAll) }
 // ("grid-cols-N"). Use together with Display(DisplayGrid).
 func (cl ClassList) GridCols(n int) ClassList { return cl.append(classGridCols(n)) }
 
-// GridColsRaw applies an arbitrary-value grid template, e.g.
-// "[auto_1fr]" → "grid-cols-[auto_1fr]". Reserved for non-integer
-// column templates not expressible via GridCols.
-func (cl ClassList) GridColsRaw(raw string) ClassList { return cl.append(classGridColsRaw(raw)) }
-
 // GapX / GapY set axis-specific flex/grid gaps (gap-x-*, gap-y-*).
 func (cl ClassList) GapX(s Spacing) ClassList { return cl.append(classGapX(s)) }
 func (cl ClassList) GapY(s Spacing) ClassList { return cl.append(classGapY(s)) }
@@ -530,15 +469,6 @@ func (cl ClassList) TabularNums() ClassList { return cl.append(classTabularNums)
 // chrome with a design-system color.
 func (cl ClassList) Accent(c Color) ClassList { return cl.append(classAccent(c)) }
 
-// LeftRaw / TopRaw / BottomRaw / RightRaw apply fractional or
-// arbitrary-value positional offsets that aren't on the Spacing scale,
-// like "left-1/2" or "top-full". The only raw Tailwind literal lives in
-// tw/compile.go — callers pass a typed RawOffset string.
-func (cl ClassList) LeftRaw(v string) ClassList   { return cl.append(classLeftRaw(v)) }
-func (cl ClassList) RightRaw(v string) ClassList  { return cl.append(classRightRaw(v)) }
-func (cl ClassList) TopRaw(v string) ClassList    { return cl.append(classTopRaw(v)) }
-func (cl ClassList) BottomRaw(v string) ClassList { return cl.append(classBottomRaw(v)) }
-
 // LeftOffset / RightOffset / TopOffset / BottomOffset apply one governed
 // fractional overlay position. Unlike the Raw forms, every accepted value is
 // part of emission's closed utility universe.
@@ -563,44 +493,6 @@ func (cl ClassList) NegTop(s Spacing) ClassList    { return cl.append(classNegTo
 func (cl ClassList) NegRight(s Spacing) ClassList  { return cl.append(classNegRight(s)) }
 func (cl ClassList) NegBottom(s Spacing) ClassList { return cl.append(classNegBottom(s)) }
 func (cl ClassList) NegLeft(s Spacing) ClassList   { return cl.append(classNegLeft(s)) }
-
-// MinWidthRaw applies a raw min-width value such as "[3ch]" or "0".
-// Reserved for arbitrary-value utilities outside the Spacing scale.
-func (cl ClassList) MinWidthRaw(v string) ClassList { return cl.append(classMinWidthRaw(v)) }
-
-// MaxWidthRaw applies a raw max-width value such as "[30rem]" or "[80px]"
-// — for arbitrary pixel/rem widths outside the named MaxWidth scale.
-func (cl ClassList) MaxWidthRaw(v string) ClassList { return cl.append(classMaxWidthRaw(v)) }
-
-// MinHeightRaw applies a raw min-height value such as "[6rem]".
-// Reserved for arbitrary-value utilities outside the Spacing scale.
-func (cl ClassList) MinHeightRaw(v string) ClassList { return cl.append(classMinHeightRaw(v)) }
-
-// MaxHeightRaw applies a raw max-height value such as "[72]" or "[6rem]"
-// — for arbitrary pixel/rem heights outside the named MaxH scale.
-func (cl ClassList) MaxHeightRaw(v string) ClassList { return cl.append(classMaxHeightRaw(v)) }
-
-// WidthRaw applies a raw width value such as "[80px]" — an arbitrary
-// pixel/rem width outside the Spacing scale.
-func (cl ClassList) WidthRaw(v string) ClassList { return cl.append(classWidthRaw(v)) }
-
-// Container applies Tailwind's responsive "container" utility — an
-// element whose max-width steps through the configured breakpoints.
-// Typically paired with MarginX(SAuto) for horizontal centering.
-func (cl ClassList) Container() ClassList { return cl.append(classContainer) }
-
-// HeightRaw applies a raw height value such as "[60vh]" — an arbitrary
-// viewport/px/rem height outside the Spacing scale.
-func (cl ClassList) HeightRaw(v string) ClassList { return cl.append(classHeightRaw(v)) }
-
-// PaddingTopRaw applies a raw padding-top value such as "[20vh]" — an
-// arbitrary-value padding outside the Spacing scale. Used for viewport-
-// relative vertical padding (command palette top offset, hero layouts).
-func (cl ClassList) PaddingTopRaw(v string) ClassList { return cl.append(classPaddingTopRaw(v)) }
-
-// RoundedRaw applies a raw border-radius value such as "[20px]" — an
-// arbitrary-value radius outside the Radius scale.
-func (cl ClassList) RoundedRaw(v string) ClassList { return cl.append(classRoundedRaw(v)) }
 
 // ColSpan applies a CSS grid column span ("col-span-N"). N must be
 // positive; 0 or negative → empty.
@@ -639,11 +531,6 @@ func (cl ClassList) UserSelect(s Select) ClassList { return cl.append(classSelec
 
 // ZLayer applies a typed z-index layer.
 func (cl ClassList) ZLayer(z ZLayer) ClassList { return cl.append(z.Class()) }
-
-// ZIndexRaw applies a Tailwind z-index class using a raw suffix ("40",
-// "50", "auto"). Reserved for components preserving legacy z-index
-// values that do not map to the typed ZLayer enum.
-func (cl ClassList) ZIndexRaw(raw string) ClassList { return cl.append(classZIndexRaw(raw)) }
 
 // ZIndex is an alias for ZLayer.
 func (cl ClassList) ZIndex(z ZLayer) ClassList { return cl.ZLayer(z) }
@@ -708,10 +595,6 @@ func (cl ClassList) Raw(classes string) ClassList {
 	}
 	return out
 }
-
-// Len returns the number of segments currently in the builder.
-// Exposed for tests — do not rely on it for runtime logic.
-func (cl ClassList) Len() int { return len(cl.segments) }
 
 // IsEmpty reports whether the builder has no segments.
 func (cl ClassList) IsEmpty() bool { return len(cl.segments) == 0 }

@@ -9,10 +9,6 @@ import "fmt"
 // — every layer's number comes from the typed tokens.
 type ZLayer int16
 
-// IsZero reports whether the ZLayer is the zero value (ZBase).
-// ZBase semantically means "default flow layer", but treat as zero.
-func (z ZLayer) IsZero() bool { return z == 0 }
-
 // Class returns the Tailwind arbitrary-value z-index class.
 // For negative layers, emits "-z-[N]"; for positive, "z-[N]".
 func (z ZLayer) Class() string {

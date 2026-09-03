@@ -37,7 +37,7 @@ func TestRoleMapCoversEveryColor(t *testing.T) {
 // half the application.
 func TestRoleVarsReferenceRealThemeTokens(t *testing.T) {
 	t.Parallel()
-	themed := design.CSS().CSS()
+	themed := design.CSS(design.Light(), design.Dark()).CSS()
 	for role, value := range roleValues() {
 		for rest := value; ; {
 			i := strings.Index(rest, "var(--pk-color-")

@@ -29,6 +29,9 @@ import (
 	"embed"
 	"encoding/hex"
 	"io/fs"
+	"slices"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/septagon-oss/platformkit/design"
@@ -57,47 +60,133 @@ var Controllers = []string{
 	"session.js",
 }
 
-// stylesheet renders once. The composition is deterministic, so the second
-// caller gets the same bytes as the first and the fingerprint is stable for the
-// life of the process.
-var stylesheet = sync.OnceValues(func() ([]byte, string) {
+// There are two stylesheets, and the split is about what a page downloads
+// rather than about how the CSS is written. app.css is the tokens, the role
+// variables, the base layer and one rule per class an application's own pages
+// can emit. gallery.css is the rest: the components only /admin/_gallery
+// renders — a divider, an empty state, the skeletons, the modal and the tabs —
+// which was a third of the bytes on every page of an application that renders
+// none of them.
+//
+// Both render once. The composition is deterministic, so the second caller gets
+// the same bytes as the first and the fingerprints are stable for the life of
+// the process.
+// sheets memoises one app.css per palette. A Pair is comparable and there is
+// one of them in an ordinary application, so this is a map with a single entry;
+// it is a map rather than a package-level value because whose colours these are
+// is the caller's business, and a client with its own is not a second build.
+var sheets sync.Map // design.Pair -> composed
+
+type composed struct {
+	body        []byte
+	fingerprint string
+}
+
+func stylesheet(theme design.Pair) composed {
+	if hit, ok := sheets.Load(theme); ok {
+		return hit.(composed)
+	}
 	sheet := css.NewSheet()
-	sheet.Merge(design.CSS())
+	sheet.Merge(design.CSS(theme.Light, theme.Dark))
 	sheet.Merge(style.RoleVars())
 	sheet.Merge(base())
-	rules, err := style.For(components.ClassLists()...)
+	sheet.Merge(rules(components.ShellClassLists()))
+	body, fingerprint := fingerprinted(sheet)
+	out := composed{body: body, fingerprint: fingerprint}
+	sheets.Store(theme, out)
+	return out
+}
+
+// galleryStylesheet is the second sheet: the rules for the classes only the
+// gallery's own components emit and app.css therefore does not carry. It is the
+// difference and not the whole set — the two share most of the utility
+// alphabet, and a second copy of `.flex` would make the pair bigger than the
+// one sheet it replaced.
+//
+// It carries no tokens, no roles and no base layer: it is loaded beside the
+// first, never instead of it, and it is the same bytes whatever the palette,
+// because a utility rule is written in terms of a role and a role is written in
+// terms of a token. That is why it needs no Pair.
+var galleryStylesheet = sync.OnceValues(func() ([]byte, string) {
+	shell := emitted(components.ShellClassLists())
+	var only []string
+	for _, name := range emitted(components.GalleryClassLists()) {
+		if !slices.Contains(shell, name) {
+			only = append(only, name)
+		}
+	}
+	rules, err := style.Rules(only...)
 	if err != nil {
-		// A class a component declares that ui/style cannot resolve is a
-		// stylesheet with a hole in it, and it is a fact about this build
-		// rather than about this request: the class lists are package-level
-		// values. ui/components' own test asserts the same thing, so reaching
-		// this means the test was deleted.
+		panic("ui: the gallery declares a class the style engine cannot render: " + err.Error())
+	}
+	return fingerprinted(css.NewSheet().Merge(rules))
+})
+
+// emitted is the sorted set of class names a set of lists compiles to.
+func emitted(lists []style.ClassList) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, list := range lists {
+		for _, name := range strings.Fields(list.Compile()) {
+			if !seen[name] {
+				seen[name] = true
+				out = append(out, name)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// rules resolves a set of class lists, or panics. A class a component declares
+// that ui/style cannot resolve is a stylesheet with a hole in it, and it is a
+// fact about this build rather than about this request: the class lists are
+// package-level values. ui/components' own test asserts the same thing, so
+// reaching this means the test was deleted.
+func rules(lists []style.ClassList) *css.Sheet {
+	out, err := style.For(lists...)
+	if err != nil {
 		panic("ui: the components declare a class the style engine cannot render: " + err.Error())
 	}
-	sheet.Merge(rules)
+	return out
+}
+
+func fingerprinted(sheet *css.Sheet) ([]byte, string) {
 	out := []byte(sheet.CSS())
 	sum := sha256.Sum256(out)
 	return out, hex.EncodeToString(sum[:8])
-})
+}
 
-// Stylesheet is the whole stylesheet: tokens, role variables, the small base
-// layer, and one rule per class the components declare.
-func Stylesheet() []byte { b, _ := stylesheet(); return b }
+// Stylesheet is every page's stylesheet, in one palette: that palette's tokens,
+// the role variables, the small base layer, and one rule per class an
+// application's own pages declare. Only the first of those four depends on the
+// argument.
+func Stylesheet(theme design.Pair) []byte { return stylesheet(theme).body }
+
+// GalleryStylesheet is the second sheet, linked by the gallery page alone.
+func GalleryStylesheet() []byte { b, _ := galleryStylesheet(); return b }
 
 // Fingerprint is the first eight bytes of the stylesheet's SHA-256, as hex. The
 // shell puts it in the asset's query string, so a deploy that changes a
-// component changes the URL and a browser that cached the old one asks again.
-func Fingerprint() string { _, f := stylesheet(); return f }
+// component — or a client that changes a colour — changes the URL and a browser
+// that cached the old one asks again.
+func Fingerprint(theme design.Pair) string { return stylesheet(theme).fingerprint }
 
-// Assets is the tree served under the shell's asset prefix: the stylesheet at
-// app.css and the controllers at js/. It is built per call because it is called
-// once, at mount.
-func Assets() fs.FS {
+// GalleryFingerprint is the same, for the second sheet.
+func GalleryFingerprint() string { _, f := galleryStylesheet(); return f }
+
+// Assets is the tree served under the shell's asset prefix: the two stylesheets
+// and the controllers at js/. It is built per call because it is called once,
+// at mount.
+func Assets(theme design.Pair) fs.FS {
 	js, err := fs.Sub(scripts, "assets")
 	if err != nil {
 		panic("ui: the embedded scripts are not where they were embedded: " + err.Error())
 	}
-	return overlay{under: js, name: "app.css", body: Stylesheet()}
+	return overlay{under: js, files: map[string][]byte{
+		"app.css":     Stylesheet(theme),
+		"gallery.css": GalleryStylesheet(),
+	}}
 }
 
 // base is the small layer no utility can express: the document's own box model,
@@ -130,6 +219,13 @@ func base() *css.Sheet {
 	s.Select("button, input, select, textarea",
 		css.Decl("font", css.Literal("inherit")),
 		css.Decl("color", css.Literal("inherit")))
+	// A button with no background of its own gets the browser's, and the
+	// browser's under `color-scheme: dark` is a mid grey nothing here was
+	// designed against: the tabs' labels failed contrast in the dark theme
+	// against #6b6b6b and passed in the light one against a near-white, which
+	// is how a defect hides. Every button this application renders declares its
+	// own surface, so the default is no surface at all.
+	s.Select("button", css.Decl("background-color", css.Literal("transparent")))
 	s.Select("table", css.Decl("border-collapse", css.Literal("collapse")))
 	// A navigation list is not a bulleted list. The marker inherits the
 	// document's text colour rather than the link's, so on the inverted sidebar
@@ -152,18 +248,18 @@ func base() *css.Sheet {
 	return s
 }
 
-// overlay is the embedded tree with one file added: the stylesheet, which has
-// no source to embed because it is computed. It is fifteen lines rather than a
-// build step that writes a file the repository would then have to ignore.
+// overlay is the embedded tree with the computed files added: the stylesheets,
+// which have no source to embed because they are composed. It is fifteen lines
+// rather than a build step that writes files the repository would then have to
+// ignore.
 type overlay struct {
 	under fs.FS
-	name  string
-	body  []byte
+	files map[string][]byte
 }
 
 func (o overlay) Open(name string) (fs.File, error) {
-	if name == o.name {
-		return &memFile{name: name, body: o.body}, nil
+	if body, ok := o.files[name]; ok {
+		return &memFile{name: name, body: body}, nil
 	}
 	return o.under.Open(name)
 }

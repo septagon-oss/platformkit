@@ -55,7 +55,11 @@ func composedLists(t *testing.T) map[string]style.ClassList {
 	out["table/th-sort"] = clTableThSort
 	out["table/td-primary"] = clTableTd.Merge(clTableTdStrong)
 	out["table/row-stripe"] = clTableRow.Merge(clTableRowAlt)
-	out["card/clickable"] = clCard.Merge(clCardClickable)
+	// The default card, as cardRootClasses composes it, plus the clickable
+	// affordance: the one composition worth checking for a collision, spelled
+	// here rather than kept as a package var no renderer reads.
+	out["card/clickable"] = clCardFrame.Merge(clCardBorder).Merge(clCardPadDefault).
+		Merge(clCardShadowSmall).Merge(clCardClickable)
 	return out
 }
 

@@ -5,9 +5,6 @@ package style
 // such as "hover:" or "focus-visible:".
 type State string
 
-// IsZero reports whether the State is the zero value (no prefix).
-func (s State) IsZero() bool { return s == "" }
-
 // Prefix returns the Tailwind prefix including the trailing colon
 // (e.g., "hover:"). Returns empty string for the zero value.
 func (s State) Prefix() string {
@@ -16,9 +13,6 @@ func (s State) Prefix() string {
 	}
 	return string(s) + ":"
 }
-
-// String returns the canonical state key.
-func (s State) String() string { return string(s) }
 
 // Canonical state modifiers.
 const (
@@ -39,14 +33,3 @@ const (
 	StatePlaceholder  State = "placeholder"
 	StateDark         State = "dark"
 )
-
-// AllStates returns every State const in stable order.
-func AllStates() []State {
-	return []State{
-		StateHover, StateFocus, StateFocusVisible, StateFocusWithin,
-		StateActive, StateDisabled, StateChecked,
-		StateFirst, StateLast, StateOdd, StateEven,
-		StateGroupHover, StateGroupFocus, StatePeer,
-		StatePlaceholder, StateDark,
-	}
-}

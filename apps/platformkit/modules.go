@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/jobs"
@@ -152,7 +153,11 @@ func compose(cfg config.Config) composition {
 	// composing it earlier would generate screens for a prefix of the
 	// application, silently. It draws navigation from the list it is handed and
 	// asks the same authorizer the kernel enforces with.
-	mods = append(mods, admin.Module(admin.Deps{Modules: mods, Authorize: auths, Tenants: tenants}))
+	// design.Default() is where a client's own colours go, and the only line
+	// that changes when they do: everything above the tokens is written in
+	// terms of a role. See design.Pair.
+	mods = append(mods, admin.Module(admin.Deps{
+		Modules: mods, Authorize: auths, Tenants: tenants, Theme: design.Default()}))
 
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths, notify: notify, mail: mail}
 }

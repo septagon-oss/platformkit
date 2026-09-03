@@ -920,9 +920,13 @@ func Checkbox(p CheckboxProps) g.Node {
 	if p.Disabled {
 		box = append(box, h.Disabled())
 	}
-	if p.Indeterminate {
-		box = append(box, g.Attr("aria-checked", "mixed"))
-	}
+	// No aria-checked here. This is a real checkbox, and ARIA's mixed state is
+	// for an element that says role="checkbox" and owns its own state: on a
+	// native input the property is `indeterminate`, which is a DOM property and
+	// not an attribute, so it cannot be server-rendered at all. The attribute
+	// below is what a controller sets it from, and the bar is what a person
+	// sees; announcing "mixed" while the input reports unchecked was the two
+	// disagreeing, which is what axe's aria-conditional-attr is about.
 	if p.Label == "" && p.Name != "" {
 		box = append(box, g.Attr("aria-label", p.Name))
 	}

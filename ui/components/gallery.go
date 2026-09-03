@@ -174,8 +174,14 @@ func Gallery() []Example {
 		e("Navigation", "Breadcrumb", Breadcrumb(BreadcrumbProps{Items: []BreadcrumbItem{
 			{Label: "Home", Href: "/"}, {Label: "Tenants", Href: "/tenants"}, {Label: "Acme"},
 		}})),
-		e("Navigation", "Pagination", Pagination(PaginationProps{CurrentPage: 5, TotalPages: 12, BaseURL: "/rows"})),
-		e("Navigation", "Pagination / two pages", Pagination(PaginationProps{CurrentPage: 1, TotalPages: 2, BaseURL: "/few"})),
+		// Each landmark on this page needs a name of its own: two navigations
+		// both called "Pagination" is a screen reader offering the same
+		// destination twice. It is the gallery's problem and not the
+		// component's, so it is solved with the prop the component already has.
+		e("Navigation", "Pagination", Pagination(PaginationProps{
+			CurrentPage: 5, TotalPages: 12, BaseURL: "/rows", NavigationLabel: "Pagination, twelve pages"})),
+		e("Navigation", "Pagination / two pages", Pagination(PaginationProps{
+			CurrentPage: 1, TotalPages: 2, BaseURL: "/few", NavigationLabel: "Pagination, two pages"})),
 		e("Navigation", "Tabs", Tabs(TabsProps{ActiveTab: "b", Items: []TabItem{
 			{Key: "a", Label: "First", URL: "/tab/a"}, {Key: "b", Label: "Second"},
 		}})),
@@ -185,7 +191,8 @@ func Gallery() []Example {
 			TabSlot{ID: "security", Label: "Security", Disabled: true, Content: []g.Node{g.Text("Security panel")}},
 			TabSlot{ID: "activity", Label: "Activity", HxGet: "/activity"})),
 		e("Navigation", "Sidebar", SidebarWithSlots(SidebarProps{
-			Current: "/admin/customers/accounts",
+			NavigationLabel: "Sidebar example, sections",
+			Current:         "/admin/customers/accounts",
 			Sections: []SidebarSection{{
 				ID: "operate", Label: "Operate", Glyph: "O", Tone: "brand",
 				Items: []SidebarItem{
@@ -208,8 +215,9 @@ func Gallery() []Example {
 			}},
 		}, SidebarSlots{Brand: []g.Node{h.Strong(g.Text("Documentation"))}, Footer: []g.Node{g.Text("Version 1")}})),
 		e("Navigation", "Sidebar / collapsed", Sidebar(SidebarProps{
-			ComponentProps: ComponentProps{Disabled: true},
-			Collapsible:    true, Collapsed: true,
+			ComponentProps:  ComponentProps{Disabled: true},
+			NavigationLabel: "Sidebar example, collapsed",
+			Collapsible:     true, Collapsed: true,
 			Items: []SidebarItem{
 				{Label: "Home", Href: "/admin", Icon: "gear"},
 				{Label: "Reports", Href: "/admin/reports", Icon: "file-text", Disabled: true},
@@ -240,11 +248,12 @@ func Gallery() []Example {
 			FormActions(FormActionsProps{},
 				Button(ButtonProps{Label: "Cancel", Variant: "secondary", Href: "/admin/task/tasks"}),
 				Button(ButtonProps{Label: "Create", Type: "submit"})))),
-		e("Frame", "Shell", Shell(ShellProps{SkipTarget: "gallery-main"}, ShellSlots{
-			Sidebar: []g.Node{Sidebar(SidebarProps{Items: []SidebarItem{{Label: "Tasks", Href: "/admin/task/tasks"}}})},
-			Header:  []g.Node{Text(TextProps{Content: "Acme", Weight: "semibold"})},
-			Main:    []g.Node{Text(TextProps{Content: "Page content"})},
-			Footer:  []g.Node{Text(TextProps{Content: "PlatformKit", Size: "xs", Color: "muted"})},
-		})),
+		// Shell is not in this list, and cannot be: it renders <main>, and the
+		// page this gallery is on is itself a Shell, so an example would be a
+		// second main landmark inside the first — two documents in one, which
+		// is exactly what the landmark rules exist to catch. The page is the
+		// example. Its classes are covered by modules/admin's own closure test,
+		// which renders every real screen and checks each class against the
+		// stylesheet.
 	}
 }

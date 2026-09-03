@@ -975,7 +975,8 @@ func TestAccessibilityStructure(t *testing.T) {
 		`role="status"`,                          // polite alert does not
 		`aria-current="page"`,                    // breadcrumb + pagination current
 		`aria-label="Breadcrumb"`,                // named navigation landmarks
-		`aria-label="Pagination"`,
+		`aria-label="Pagination, twelve pages"`,  // one name per landmark, so no two are alike
+		`aria-label="Sidebar example, collapsed"`,
 		`aria-selected="true"`,      // active tab
 		`aria-hidden="true"`,        // decorative icons hidden
 		`rel="noopener noreferrer"`, // external link safety
@@ -1140,7 +1141,6 @@ func TestCheckboxOwnsIndeterminateControllerProjection(t *testing.T) {
 		`data-state="indeterminate"`,
 		`id="select-some"`,
 		`name="selection"`,
-		`aria-checked="mixed"`,
 		`data-checkbox-input="true"`,
 		`data-checkbox-box="true"`,
 		`data-checkbox-checkmark="true"`,
@@ -1151,6 +1151,12 @@ func TestCheckboxOwnsIndeterminateControllerProjection(t *testing.T) {
 		if !strings.Contains(html, fragment) {
 			t.Errorf("canonical Checkbox missing %s: %s", fragment, html)
 		}
+	}
+	// And no aria-checked: a native checkbox's indeterminate state is a DOM
+	// property, so announcing "mixed" on an input that reports unchecked was
+	// the two disagreeing. See the comment beside the attribute list.
+	if strings.Contains(html, "aria-checked") {
+		t.Errorf("a real checkbox carries aria-checked: %s", html)
 	}
 }
 
@@ -1270,5 +1276,37 @@ func TestNeutralToneRendersAcrossFeedbackAtoms(t *testing.T) {
 		if !strings.Contains(alert, fragment) {
 			t.Errorf("neutral Alert missing %s: %s", fragment, alert)
 		}
+	}
+}
+
+// TestTheAdminSidebarFooterIsLegibleOnTheInvertedSurface. The admin sidebar is
+// inverted in both themes, so anything inside it that does not name a colour
+// inherits the document's — ink, on a near-black panel. The brand label was
+// fixed for this once; the footer was the same defect one element away, and it
+// was invisible because nothing in this repository rendered a sidebar footer
+// outside the gallery.
+func TestTheAdminSidebarFooterIsLegibleOnTheInvertedSurface(t *testing.T) {
+	t.Parallel()
+	var out strings.Builder
+	node := SidebarWithSlots(
+		SidebarProps{Items: []SidebarItem{{Label: "Tasks", Href: "/admin/task/tasks"}}},
+		SidebarSlots{Footer: []g.Node{Text(TextProps{Content: "Signed in as Ada"})}})
+	if err := node.Render(&out); err != nil {
+		t.Fatal(err)
+	}
+	footer := out.String()[strings.Index(out.String(), "<footer"):]
+	if !strings.Contains(footer, "text-fg-on-inverse") {
+		t.Errorf("the admin sidebar footer names no colour, so it inherits the document's: %s", footer)
+	}
+	// The content flavor is not inverted, and must not claim to be.
+	out.Reset()
+	content := SidebarWithSlots(
+		SidebarProps{Flavor: "content", Items: []SidebarItem{{Label: "Overview", Href: "#one"}}},
+		SidebarSlots{Footer: []g.Node{Text(TextProps{Content: "Version 1"})}})
+	if err := content.Render(&out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String()[strings.Index(out.String(), "<footer"):], "text-fg-on-inverse") {
+		t.Error("the content sidebar's footer took the inverted colour")
 	}
 }

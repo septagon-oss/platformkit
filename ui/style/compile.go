@@ -280,15 +280,6 @@ func classGapY(s Spacing) string {
 	return "gap-y-" + string(s)
 }
 
-// classGridColsRaw emits "grid-cols-<raw>" for arbitrary-value grid
-// templates like "[auto_1fr]".
-func classGridColsRaw(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	return "grid-cols-" + raw
-}
-
 // classWidth maps Spacing → "w-*".
 func classWidth(s Spacing) string {
 	if s == "" {
@@ -709,8 +700,6 @@ func classSpaceY(s Spacing) string {
 
 func classMaxW(v string) string { return prefixOrEmpty(v, "max-w-") }
 
-func classMinH(v string) string { return prefixOrEmpty(v, classPrefixMinH) }
-
 func classMaxH(v string) string { return prefixOrEmpty(v, "max-h-") }
 
 // classNegMargin emits "-m{side}-{step}" — negative margin on one side.
@@ -733,22 +722,6 @@ func classRotate(deg string) string {
 	return "rotate-" + deg
 }
 
-// classBackdropBlur emits "backdrop-blur-<size>".
-func classBackdropBlur(size string) string {
-	if size == "" {
-		return ""
-	}
-	return "backdrop-blur-" + size
-}
-
-// classOrigin emits "origin-<side>" for transform-origin.
-func classOrigin(side string) string {
-	if side == "" {
-		return ""
-	}
-	return "origin-" + side
-}
-
 // classOverflowX / classOverflowY emit axis-specific overflow.
 func classOverflowX(o Overflow) string {
 	if o == "" {
@@ -762,14 +735,6 @@ func classOverflowY(o Overflow) string {
 		return ""
 	}
 	return "overflow-y-" + string(o)
-}
-
-// classObjectFit emits "object-<fit>".
-func classObjectFit(fit string) string {
-	if fit == "" {
-		return ""
-	}
-	return "object-" + fit
 }
 
 // classDivideX / classDivideY emit "divide-x-<step>" / "divide-y-<step>"
@@ -803,63 +768,6 @@ func classBgWithOpacity(c Color, opacity string) string {
 		return ""
 	}
 	return "bg-" + string(c) + "/" + opacity
-}
-
-// classTextWithOpacity emits "text-<color>/<opacity>" for alpha-blended
-// text colors (e.g., "text-white/80").
-func classTextWithOpacity(c Color, opacity string) string {
-	if c == "" || opacity == "" {
-		return ""
-	}
-	return "text-" + string(c) + "/" + opacity
-}
-
-// classBorderWithOpacity emits "border-<color>/<opacity>" for
-// alpha-blended border colors (e.g., "border-white/30").
-func classBorderWithOpacity(c Color, opacity string) string {
-	if c == "" || opacity == "" {
-		return ""
-	}
-	return classPrefixBorder + string(c) + "/" + opacity
-}
-
-// classAspectRaw emits "aspect-[<raw>]" for arbitrary-value aspect
-// ratios like "4/3".
-func classAspectRaw(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	return "aspect-[" + raw + "]"
-}
-
-// classTranslateXRaw / classTranslateYRaw emit translate-* / -translate-*
-// with a raw suffix like "1/2" for fractional offsets.
-func classTranslateXRaw(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	return classPrefixTranslateX + raw
-}
-
-func classTranslateYRaw(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	return classPrefixTranslateY + raw
-}
-
-func classNegTranslateX(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	return "-translate-x-" + raw
-}
-
-func classNegTranslateY(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	return "-translate-y-" + raw
 }
 
 // Static additional atoms used 3+ times across components.
@@ -953,46 +861,6 @@ func classBottomRaw(v string) string {
 	return "bottom-" + v
 }
 
-func classMinWidthRaw(v string) string { return prefixOrEmpty(v, "min-w-") }
-
-func classMaxWidthRaw(v string) string { return prefixOrEmpty(v, "max-w-") }
-
-func classMinHeightRaw(v string) string { return prefixOrEmpty(v, classPrefixMinH) }
-
-func classMaxHeightRaw(v string) string { return prefixOrEmpty(v, "max-h-") }
-
-// classWidthRaw emits "w-<v>" for an arbitrary-value width.
-func classWidthRaw(v string) string {
-	if v == "" {
-		return ""
-	}
-	return "w-" + v
-}
-
-// classHeightRaw emits "h-<v>" for an arbitrary-value height.
-func classHeightRaw(v string) string {
-	if v == "" {
-		return ""
-	}
-	return "h-" + v
-}
-
-// classPaddingTopRaw emits "pt-<v>" for an arbitrary-value top padding.
-func classPaddingTopRaw(v string) string {
-	if v == "" {
-		return ""
-	}
-	return "pt-" + v
-}
-
-// classRoundedRaw emits "rounded-<v>" for an arbitrary-value radius.
-func classRoundedRaw(v string) string {
-	if v == "" {
-		return ""
-	}
-	return classPrefixRounded + v
-}
-
 // classColSpan emits "col-span-N" for a grid column span.
 func classColSpan(n int) string {
 	if n <= 0 {
@@ -1051,15 +919,6 @@ const (
 	// for horizontal centering.
 	classContainer = "container"
 )
-
-// classZIndexRaw emits "z-<raw>" for legacy z-index values ("40",
-// "50", "auto") that don't map onto the typed ZLayer semantic scale.
-func classZIndexRaw(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	return "z-" + raw
-}
 
 // classFlexNone is Tailwind's "flex-none" atom — prevents a flex
 // child from growing or shrinking.

@@ -397,11 +397,15 @@ var (
 	}
 
 	// Structure.
-	clDividerH         = style.New().Border(style.Border0).BorderTop(style.Border1).BorderColor(style.BorderPrimary).MarginY(style.S4)
-	clDividerV         = style.New().Border(style.Border0).BorderLeft(style.Border1).BorderColor(style.BorderPrimary).MarginX(style.S4)
-	clDividerText      = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S4)
-	clDividerTextLine  = style.New().Flex1().BorderTop(style.Border1).BorderColor(style.BorderPrimary)
-	clDividerTextLabel = style.New().FontSize(style.TextSM).TextColor(style.FgTertiary)
+	clDividerH        = style.New().Border(style.Border0).BorderTop(style.Border1).BorderColor(style.BorderPrimary).MarginY(style.S4)
+	clDividerV        = style.New().Border(style.Border0).BorderLeft(style.Border1).BorderColor(style.BorderPrimary).MarginX(style.S4)
+	clDividerText     = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S4)
+	clDividerTextLine = style.New().Flex1().BorderTop(style.Border1).BorderColor(style.BorderPrimary)
+	// FgMuted and not FgTertiary: a divider's label is the one place the
+	// tertiary role was used for text a person reads, and at 4.1:1 on the
+	// canvas it failed contrast in both themes. Tertiary is for a separator
+	// glyph, which is aria-hidden and decorative.
+	clDividerTextLabel = style.New().FontSize(style.TextSM).TextColor(style.FgMuted)
 
 	clSpinner = style.New().
 			Display(style.DisplayInlineBlock).Rounded(style.RadiusFull).
@@ -548,7 +552,6 @@ var (
 	clCardShadowSmall  = style.New().Shadow(style.ShadowSM)
 	clCardShadowMedium = style.New().Shadow(style.ShadowBase)
 	clCardShadowLarge  = style.New().Shadow(style.ShadowLG)
-	clCard             = clCardFrame.Merge(clCardBorder).Merge(clCardPadDefault).Merge(clCardShadowSmall)
 	clCardClickable    = style.New().Cursor(style.CursorPointer).Transition(style.TransitionShadow).
 				On(style.StateHover, func(c style.ClassList) style.ClassList { return c.Shadow(style.ShadowMD) }).
 				Merge(clFocusRing)
@@ -632,12 +635,18 @@ var (
 					FontWeight(style.FontSemibold).TextColor(style.FgOnInverse)
 	clSidebarPrefixContent = style.New().MinWidth(style.S10).FontSize(style.TextXS).
 				FontWeight(style.FontSemibold).TextColor(style.FgSecondary)
-	clSidebarLabelVisible  = style.New().MinWidth(style.S0).Flex1()
-	clSidebarLabelHidden   = style.New().MinWidth(style.S0).Flex1().Display(style.DisplayHidden)
-	clSidebarLabelContent  = style.New().MinWidth(style.S0).Flex1().BreakWords()
-	clSidebarNestedGroup   = style.New().SpaceY(style.S1)
-	clSidebarNestedIndent  = style.New().MarginLeft(style.S4).SpaceY(style.S1)
-	clSidebarFooterAdmin   = style.New().MarginTop(style.SAuto).PaddingX(style.S4).PaddingTop(style.S4)
+	clSidebarLabelVisible = style.New().MinWidth(style.S0).Flex1()
+	clSidebarLabelHidden  = style.New().MinWidth(style.S0).Flex1().Display(style.DisplayHidden)
+	clSidebarLabelContent = style.New().MinWidth(style.S0).Flex1().BreakWords()
+	clSidebarNestedGroup  = style.New().SpaceY(style.S1)
+	clSidebarNestedIndent = style.New().MarginLeft(style.S4).SpaceY(style.S1)
+	// The admin sidebar is inverted, so its footer names the text colour that
+	// is legible on it. Without this the footer inherited the document's, which
+	// is ink on the light theme and therefore ink on ink — the same defect the
+	// brand label had, in the same place, found the same way: it looked right in
+	// the theme it was built in.
+	clSidebarFooterAdmin = style.New().MarginTop(style.SAuto).PaddingX(style.S4).
+				PaddingTop(style.S4).TextColor(style.FgOnInverse)
 	clSidebarFooterContent = style.New().MarginTop(style.S4)
 
 	// Pagination.
@@ -689,11 +698,52 @@ var (
 	clTabsLazyLabel = style.New().TextColor(style.FgSecondary)
 )
 
-// ClassLists returns every ClassList the renderers compose, base and variant
-// alike. Applications derive their stylesheet from it:
-//
-//	sheet, err := emission.For(web.ClassLists()...)
+// ClassLists is every ClassList the renderers compose, base and variant alike:
+// the shell's and the gallery's together. It is what a completeness check reads
+// — every class any renderer can emit — while an application's stylesheet is
+// composed from the two halves separately. See ShellClassLists.
 func ClassLists() []style.ClassList {
+	return append(ShellClassLists(), GalleryClassLists()...)
+}
+
+// GalleryClassLists are the classes of the components only the gallery page
+// renders: the divider, the empty state, the skeletons, the modal and the tabs.
+// A third of the stylesheet was these, downloaded by every person on every
+// page of an application that renders none of them.
+//
+// The line is drawn at the component and not at the prop. A component the shell
+// renders keeps every class its props can reach, however unlikely — a class
+// with no rule is unstyled HTML and nothing notices — so what moves here is
+// only what no shell page can produce at all.
+func GalleryClassLists() []style.ClassList {
+	out := []style.ClassList{
+		clDividerH, clDividerV, clDividerText, clDividerTextLine, clDividerTextLabel,
+		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
+		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
+		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay,
+		clModalPanel, clModalHeader, clModalTitleBlock, clModalTitle,
+		clModalDescription, clModalBody, clModalFooter, clModalSeparator, clModalClose, clModalCancel,
+		clTabsRoot, clTabsRootHorizontal, clTabsRootVertical,
+		clTabsListBase, clTabsListHorizontal, clTabsListVertical,
+		clTabsListUnderlineHorizontal, clTabsListUnderlineVertical,
+		clTabsButtonBase, clTabsButtonPills, clTabsButtonUnderlineHorizontal,
+		clTabsButtonUnderlineVertical, clTabsPillsActive, clTabsPillsIdle,
+		clTabsUnderlineActive, clTabsUnderlineIdle, clTabsDisabled, clTabsIcon,
+		clTabsBadge, clTabsPanels, clTabsPanel, clTabsLazy, clTabsLazyLabel,
+	}
+	for _, m := range []map[string]style.ClassList{
+		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize, clModalPanelSize,
+	} {
+		for _, cl := range m {
+			out = append(out, cl)
+		}
+	}
+	return out
+}
+
+// ShellClassLists are the classes every other component can emit — the ones an
+// application's own pages render. ui.Stylesheet is composed from these.
+func ShellClassLists() []style.ClassList {
 	out := []style.ClassList{
 		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clSkipLink,
 		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions,
@@ -705,24 +755,18 @@ func ClassLists() []style.ClassList {
 		clFieldWrap, clFieldWrapFull, clLabel, clHelp, clFieldErr, clRequired,
 		clInput, clInputNormal, clInputError, clInputReadOnly, clInputDisabled,
 		clInputIconWrap, clInputIconStart, clInputIconEnd, clInputPadStart, clInputPadEnd,
-		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay,
-		clModalPanel, clModalHeader, clModalTitleBlock, clModalTitle,
-		clModalDescription, clModalBody, clModalFooter, clModalSeparator, clModalClose, clModalCancel,
 		clTextareaManual, clTextareaAuto, clTextareaFull, clTextareaMeta,
 		clTextareaSupporting, clTextareaCounter,
 		clCheckbox, clCheckboxRoot, clCheckboxRootDisabled,
 		clCheckboxInput, clCheckboxIndicator, clCheckboxIndicatorIdle,
 		clCheckboxIndicatorActive, clCheckboxCheckmark, clCheckboxBar, clCheckboxLabel,
-		clTruncate, clHeadingBase,
-		clDividerH, clDividerV, clDividerText, clDividerTextLine, clDividerTextLabel,
-		clSpinner, clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
-		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
+		clHeadingBase, clSpinner,
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clStack, clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clDetailList, clDetailHeader, clDetailTitle, clDetailDescription,
 		clDetailItems, clDetailRow, clDetailRowSeparated, clDetailTerm,
 		clDetailTermDescription, clDetailValue,
-		clCard, clCardFrame, clCardSectioned, clCardBorder,
+		clCardFrame, clCardSectioned, clCardBorder,
 		clCardPadNone, clCardPadSmall, clCardPadDefault, clCardPadMedium, clCardPadLarge,
 		clCardShadowSmall, clCardShadowMedium, clCardShadowLarge,
 		clCardClickable, clCardHoverable, clCardTitle, clCardDesc,
@@ -745,19 +789,13 @@ func ClassLists() []style.ClassList {
 		clSidebarLabelVisible, clSidebarLabelHidden, clSidebarLabelContent,
 		clSidebarNestedGroup, clSidebarNestedIndent,
 		clSidebarFooterAdmin, clSidebarFooterContent,
-		clPagination, clPageBtn, clPageIdle, clPageCur, clTabsRoot, clTabsRootHorizontal, clTabsRootVertical,
-		clTabsListBase, clTabsListHorizontal, clTabsListVertical,
-		clTabsListUnderlineHorizontal, clTabsListUnderlineVertical,
-		clTabsButtonBase, clTabsButtonPills, clTabsButtonUnderlineHorizontal,
-		clTabsButtonUnderlineVertical, clTabsPillsActive, clTabsPillsIdle,
-		clTabsUnderlineActive, clTabsUnderlineIdle, clTabsDisabled, clTabsIcon,
-		clTabsBadge, clTabsPanels, clTabsPanel, clTabsLazy, clTabsLazyLabel,
+		clPagination, clPageBtn, clPageIdle, clPageCur,
 	}
 	for _, m := range []map[string]style.ClassList{
 		clButtonVariant, clButtonTone, clButtonSize, clButtonLoadingVariant, clButtonLoadingTone,
-		clBadgeVariant, clBadgeTone, clBadgeSize, clBadgeDotTone, clAlertVariant, clIconSize, clIconTone, clInputSize, clInputTone, clSpinnerSize, clSpinnerTone, clDetailValueTone,
-		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize,
-		clTextTransform, clModalPanelSize,
+		clBadgeVariant, clBadgeTone, clBadgeSize, clBadgeDotTone, clAlertVariant,
+		clIconSize, clIconTone, clInputSize, clInputTone, clSpinnerSize, clSpinnerTone,
+		clDetailValueTone, clTextTransform,
 	} {
 		for _, cl := range m {
 			out = append(out, cl)
