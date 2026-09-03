@@ -30,6 +30,12 @@ const assetPrefix = adminRoot + "/assets"
 // beforePaint sets the theme from what the person last chose, before the
 // stylesheet applies. It has to be inline and it has to be here: a theme
 // applied by a deferred script is a page that flashes white on the way to dark.
+//
+// Inline is also the one thing the content security policy forbids, so the tag
+// carries the request's nonce (kit/httpx/headers.go). A nonce rather than a
+// file because a file cannot be it: this has to run before the first paint, so
+// it cannot be deferred, and a blocking <script src> in the head is a round
+// trip on every page load to save four lines.
 const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}`
 
 // page renders a whole document around a screen: the head, the frame, the
@@ -52,7 +58,7 @@ func (s *Shell) page(ctx context.Context, title string, body ...g.Node) g.Node {
 func (s *Shell) frame(ctx context.Context, title string, extraHead []g.Node, body ...g.Node) g.Node {
 	tenant, _ := tenancy.FromContext(ctx)
 	return h.HTML(h.Lang("en"),
-		s.head(title+" · "+fallback(tenant.Name, "PlatformKit"), extraHead...),
+		s.head(ctx, title+" · "+fallback(tenant.Name, "PlatformKit"), extraHead...),
 		h.Body(
 			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
 				Sidebar: []g.Node{s.sidebar(ctx)},
@@ -68,7 +74,7 @@ func (s *Shell) frame(ctx context.Context, title string, extraHead []g.Node, bod
 // head is every page's head: the stylesheet with its fingerprint, the inline
 // theme snippet, and ui.Controllers as deferred scripts in order — deferred, so
 // the document parses before any of them runs and the order is still theirs.
-func (s *Shell) head(title string, extra ...g.Node) g.Node {
+func (s *Shell) head(ctx context.Context, title string, extra ...g.Node) g.Node {
 	scripts := make([]g.Node, 0, len(ui.Controllers))
 	for _, name := range ui.Controllers {
 		scripts = append(scripts, h.Script(h.Src(assetPrefix+"/js/"+name), g.Attr("defer")))
@@ -79,7 +85,7 @@ func (s *Shell) head(title string, extra ...g.Node) g.Node {
 		h.Meta(h.Name("color-scheme"), h.Content("light dark")),
 		h.TitleEl(g.Text(title)),
 		h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/app.css?v="+ui.Fingerprint(s.Theme))),
-		h.Script(g.Raw(beforePaint)),
+		h.Script(g.Attr("nonce", httpx.NonceFrom(ctx)), g.Raw(beforePaint)),
 		g.Group(scripts),
 		g.Group(extra),
 	)

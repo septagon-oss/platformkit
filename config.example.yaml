@@ -75,12 +75,17 @@ mail:
 audit:
   retention_days: 365
 
-# Where uploaded bytes go, and how large one upload may be. They are the two
-# things modules/file cannot decide for itself: a directory is a deployment's
-# disk and a limit is how much of it a deployment is willing to lose to one
-# mistake. The path is relative, so a laptop needs no absolute one and a
-# container mounts a volume at it; an empty dir means data/files and a zero
-# limit means 25 MB.
+# Where uploaded bytes go, how large one upload may be, and how much disk one
+# tenant may fill. They are the three things modules/file cannot decide for
+# itself: a directory is a deployment's disk, and both limits are how much of it
+# a deployment is willing to lose — to one mistake, and to one customer. The
+# path is relative, so a laptop needs no absolute one and a container mounts a
+# volume at it; an empty dir means data/files and a zero limit means 25 MB.
 files:
   dir: "data/files"
   max_bytes: 26214400
+  # The disk one tenant may hold, checked at upload against the sum of what
+  # that tenant already has. Zero means a gigabyte; a negative number means no
+  # quota at all, which is what a single-tenant installation wants and what a
+  # deployment that lets anybody sign up must not have.
+  quota_bytes: 1073741824

@@ -124,6 +124,14 @@ func compose(cfg config.Config) composition {
 		Invite: firstAdmin{users: users},
 	})
 
+	// The file service is returned beside its manifest, as user's and
+	// notification's are: a module that has to open a stored file takes
+	// filecontracts.Opener, and this is where it would be handed one.
+	_, fileModule := file.Module(file.Deps{
+		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
+		QuotaBytes: cfg.Files.QuotaBytes,
+	})
+
 	// Active rather than the service itself: the periodic jobs walk the tenants
 	// that are being served, and a suspended one is not.
 	active.lister = tenantcontracts.Active{Service: tenants}
@@ -142,7 +150,7 @@ func compose(cfg config.Config) composition {
 		billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()}),
 		content.Module(content.Deps{}),
 		site.Module(site.Deps{}),
-		file.Module(file.Deps{Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes}),
+		fileModule,
 	}
 	mods = append(mods, audit.Module(audit.Deps{
 		Tenants:       active,

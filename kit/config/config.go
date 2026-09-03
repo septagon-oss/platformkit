@@ -123,6 +123,11 @@ const DefaultRetentionDays = 365
 type Files struct {
 	Dir      string `yaml:"dir"`
 	MaxBytes int64  `yaml:"max_bytes"`
+	// QuotaBytes is the disk one tenant may hold, enforced at upload against
+	// what that tenant already has. Zero means the module's default of a
+	// gigabyte; a negative number means no quota, which is what a
+	// single-tenant installation wants and a public sign-up must not have.
+	QuotaBytes int64 `yaml:"quota_bytes"`
 }
 
 // The defaults. Twenty-five megabytes is what a mail attachment limit taught

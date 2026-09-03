@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -35,7 +36,7 @@ func TestServiceConforms(t *testing.T) {
 		_, conn := dbtest.Schema(t)
 		dir := t.TempDir()
 		store := internal.NewLocal(dir)
-		svc := internal.NewService(store, filetest.Limit)
+		svc := internal.NewService(store, filetest.Limit, 0)
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(filetest.Fixture{Ctx: ctx, Tx: tx, Service: svc, Storage: store,
 				Keys:      func() []string { return keysUnder(t, dir) },
@@ -85,7 +86,7 @@ func published(t *testing.T, tx db.Tx[db.Tenant]) []string {
 func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	dir := t.TempDir()
-	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit)
+	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
 
 	// An upload in a transaction that then fails.
 	var orphan string
@@ -155,7 +156,7 @@ func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit)
+	svc := internal.NewService(store, filetest.Limit, 0)
 	sub := internal.RemoveBlob(store)
 
 	if sub.Module != "file" || sub.Name != contracts.EventDeleted {
@@ -253,7 +254,7 @@ func TestAStorageKeyIsAUUIDAndNothingElse(t *testing.T) {
 // which is where kit/events reads the actor of an event from too.
 func TestTheUploaderIsTheCaller(t *testing.T) {
 	_, conn := dbtest.Schema(t)
-	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit)
+	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit, 0)
 	me := uuid.New()
 
 	err := db.Run(tenancy.WithActor(tenancy.WithTenant(t.Context(), acme), me), conn,
@@ -283,7 +284,7 @@ func TestARowThatPointsAtNothingIsAnOutage(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit)
+	svc := internal.NewService(store, filetest.Limit, 0)
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		f, err := svc.Upload(ctx, tx, contracts.Upload{
@@ -309,5 +310,120 @@ func TestARowThatPointsAtNothingIsAnOutage(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("upload: %v", err)
+	}
+}
+
+// TestATenantCannotFillTheDisk. The per-upload limit bounds one mistake; the
+// quota bounds a campaign of them, which is what an anonymous sign-up is.
+//
+// The usage is a sum over the tenant's own rows, so a delete gives the room
+// back with no bookkeeping to get wrong, and the check is under row-level
+// security, so one tenant's uploads are not counted against another's.
+func TestATenantCannotFillTheDisk(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	// Room for ten bytes, and a per-upload limit far past it, so the refusal
+	// below can only be the quota.
+	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit, 10)
+	other := tenancy.Tenant{ID: uuid.New(), Slug: "other", Name: "Other"}
+
+	put := func(t *testing.T, who tenancy.Tenant, body string) error {
+		t.Helper()
+		return db.Run(tenancy.WithTenant(t.Context(), who), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			_, err := svc.Upload(ctx, tx, contracts.Upload{
+				Name: "x.bin", ContentType: "application/octet-stream",
+				Declared: -1, Body: strings.NewReader(body),
+			})
+			return err
+		})
+	}
+
+	if err := put(t, acme, "12345678"); err != nil {
+		t.Fatalf("eight bytes of ten: %v", err)
+	}
+	// Two bytes left, so five is past it. The answer names the quota rather
+	// than the deployment's limit, because "delete something" and "send
+	// something smaller" are different remedies.
+	if err := put(t, acme, "12345"); !errors.Is(err, contracts.ErrQuota) {
+		t.Errorf("an upload past the quota = %v, want ErrQuota", err)
+	}
+	// Exactly the room left still fits, which is what makes it a boundary.
+	if err := put(t, acme, "12"); err != nil {
+		t.Errorf("the last two bytes of the quota: %v", err)
+	}
+	if err := put(t, acme, "1"); !errors.Is(err, contracts.ErrQuota) {
+		t.Errorf("an upload with no room at all = %v, want ErrQuota", err)
+	}
+	// Another tenant is not charged for this one's disk.
+	if err := put(t, other, "12345678"); err != nil {
+		t.Errorf("another tenant's first upload: %v", err)
+	}
+}
+
+// TestTheOrphansAreSweptUp is the other half of "the bytes go before the row":
+// an upload whose transaction fails leaves a blob nobody references, and
+// nothing in the database records that it exists. So the sweep starts at the
+// store and asks the database which keys it knows, under system access, because
+// the question crosses every tenant by construction.
+func TestTheOrphansAreSweptUp(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	dir := t.TempDir()
+	store := internal.NewLocal(dir)
+	svc := internal.NewService(store, filetest.Limit, 0)
+
+	// One file that committed, and one whose transaction did not.
+	var kept string
+	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		f, err := svc.Upload(ctx, tx, contracts.Upload{Name: "keep.txt", ContentType: "text/plain", Declared: -1, Body: strings.NewReader("keep")})
+		kept = f.StorageKey
+		return err
+	}); err != nil {
+		t.Fatalf("the upload that commits: %v", err)
+	}
+	_ = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if _, err := svc.Upload(ctx, tx, contracts.Upload{Name: "lost.txt", ContentType: "text/plain", Declared: -1, Body: strings.NewReader("lost")}); err != nil {
+			return err
+		}
+		return context.Canceled
+	})
+	if got := keysUnder(t, dir); len(got) != 2 {
+		t.Fatalf("the store holds %d blobs, want the kept one and the orphan", len(got))
+	}
+
+	sweep := internal.NewReconcile(store, time.Second)
+	jobs := sweep.Jobs()
+	if len(jobs) != 1 || jobs[0].Name != "file-reconcile" {
+		t.Fatalf("the module schedules %v", jobs)
+	}
+	// Without the capability it deletes nothing and says why: a job that swept
+	// under a tenant transaction would see one tenant's rows and delete every
+	// other tenant's blobs.
+	if err := jobs[0].Run(t.Context(), conn); err == nil {
+		t.Error("the sweep ran with no system capability")
+	}
+	sweep.Use(dbtest.SystemToken())
+
+	// Nothing is old enough yet, and that is the safety property: an upload in
+	// flight has bytes and no row.
+	if err := jobs[0].Run(t.Context(), conn); err != nil {
+		t.Fatalf("the sweep: %v", err)
+	}
+	if got := keysUnder(t, dir); len(got) != 2 {
+		t.Fatalf("the sweep removed a blob written a moment ago: %d left", len(got))
+	}
+
+	// Age both past the hour and run it again.
+	old := time.Now().Add(-2 * time.Hour)
+	for _, key := range keysUnder(t, dir) {
+		at := filepath.Join(dir, key[:2], key)
+		if err := os.Chtimes(at, old, old); err != nil {
+			t.Fatalf("age %s: %v", at, err)
+		}
+	}
+	if err := jobs[0].Run(t.Context(), conn); err != nil {
+		t.Fatalf("the sweep: %v", err)
+	}
+	left := keysUnder(t, dir)
+	if len(left) != 1 || left[0] != kept {
+		t.Errorf("the sweep left %v, want only the blob a row names", left)
 	}
 }

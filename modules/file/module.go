@@ -23,6 +23,9 @@
 package file
 
 import (
+	"time"
+
+	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -35,10 +38,17 @@ import (
 // application — the same way the mailer and the payment provider are.
 var Local = internal.NewLocal
 
-// DefaultMaxBytes is the largest upload a deployment that says nothing accepts.
-// Twenty-five megabytes is what a mail attachment limit taught everybody to
-// expect, and config.Files is where a deployment says otherwise.
-const DefaultMaxBytes = 25 << 20
+// DefaultQuotaBytes is the disk one tenant may fill when a deployment says
+// nothing. A gigabyte is a number a person can reason about — a thousand
+// documents, or a hundred photographs — and config.Files is where a deployment
+// says otherwise. Zero means no quota, which is what a single-tenant
+// installation wants and what a public sign-up must not have.
+//
+// The largest one upload may be is config.DefaultFilesMaxBytes, in kit/config,
+// which is the only place it is written: this module used to declare the same
+// 25 << 20 beside it, and two constants for one number is one of them going
+// stale.
+const DefaultQuotaBytes = 1 << 30
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
@@ -46,10 +56,20 @@ type Deps struct {
 	// the ones that speak to an object store live outside this repository.
 	Storage contracts.Storage
 
-	// MaxBytes is the largest upload accepted; zero means DefaultMaxBytes. It
-	// is a dependency rather than a constant because how much disk a deployment
-	// is willing to take from an anonymous mistake is a deployment's decision.
+	// MaxBytes is the largest upload accepted; zero means the kernel's
+	// config.DefaultFilesMaxBytes. It is a dependency rather than a constant
+	// because how much disk a deployment is willing to take from an anonymous
+	// mistake is a deployment's decision.
 	MaxBytes int64
+
+	// QuotaBytes is the disk one tenant may hold; zero means
+	// DefaultQuotaBytes and a negative number means no quota at all. It is
+	// enforced at upload, against the sum of what the tenant already holds.
+	QuotaBytes int64
+
+	// ReconcileEvery replaces the daily orphan sweep with an interval, for a
+	// test that cannot wait until four in the morning. Zero means the schedule.
+	ReconcileEvery time.Duration
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
@@ -60,9 +80,16 @@ var permissions = []module.Permission{
 	{Key: contracts.PermissionFileManage},
 }
 
-// Module is the manifest. The implementation is constructed here, in one line,
-// and handed to the two places that use it.
-func Module(deps Deps) module.Module {
+// Module is the manifest, and the service beside it.
+//
+// It returns both, as user, notification, task and the catalogue's own modules
+// do, because a consuming module needs the service and cannot reach into
+// internal/ for it. Before this it returned only the manifest, and a client
+// module that wanted to open a stored file had to call this module's own HTTP
+// route — which meant holding file:manage to do something the interface says it
+// may do with a transaction. contracts.Opener is the narrow half most consumers
+// should take.
+func Module(deps Deps) (contracts.Service, module.Module) {
 	if deps.Storage == nil {
 		// A wiring mistake fails where it is written rather than as a nil
 		// dereference on the first upload.
@@ -70,22 +97,38 @@ func Module(deps Deps) module.Module {
 	}
 	max := deps.MaxBytes
 	if max <= 0 {
-		max = DefaultMaxBytes
+		max = config.DefaultFilesMaxBytes
 	}
-	svc := internal.NewService(deps.Storage, max)
-	return module.Module{
+	quota := deps.QuotaBytes
+	switch {
+	case quota == 0:
+		quota = DefaultQuotaBytes
+	case quota < 0:
+		quota = 0 // said out loud: this deployment has no quota
+	}
+	svc := internal.NewService(deps.Storage, max, quota)
+	// The sweep is constructed here and given its capability in Routes, which
+	// is the one moment the kernel offers one: a job is built before the API
+	// exists. See internal/reconcile.go for why it is not jobs.PerTenant.
+	sweep := internal.NewReconcile(deps.Storage, deps.ReconcileEvery)
+	return svc, module.Module{
 		Name:        "file",
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Files", Path: "/admin/file/files", Permission: contracts.PermissionFileRead},
 		},
-		// No periodic work: nothing about a file happens because time passed.
-		Jobs: nil,
+		// The one piece of periodic work, and it is the cost of writing the
+		// bytes before the row: a transaction that failed after the blob was
+		// written left bytes nobody references, and this removes them.
+		Jobs: sweep.Jobs(),
 		// The one subscription, and it is to this module's own event: the bytes
 		// are removed after the transaction that removed the row commits, and
 		// an event is the only thing delivered exactly then.
 		Subscriptions: []events.Subscription{internal.RemoveBlob(deps.Storage)},
-		Routes:        func(api *httpx.API) { internal.RegisterRoutes(api, svc) },
+		Routes: func(api *httpx.API) {
+			sweep.Use(api.SystemToken())
+			internal.RegisterRoutes(api, svc)
+		},
 	}
 }

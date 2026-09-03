@@ -213,6 +213,13 @@ func New(cfg Options) (*API, *chi.Mux) {
 		a.log = slog.Default()
 	}
 
+	// The security headers, outermost and on the router that carries the static
+	// tree as well as the API: a stylesheet, a 404 from chi and a panic that
+	// never reached a handler are all responses a browser acts on. chi refuses
+	// a middleware added after the first route, so this is here rather than
+	// beside Static. See headers.go.
+	root.Use(a.headers)
+
 	// The net/http half of the chain, in order, and before any route: chi
 	// refuses a middleware added after the first one is mounted, and the huma
 	// adapter below mounts huma's own.
