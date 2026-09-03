@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -54,6 +56,24 @@ func serve(t *testing.T, checks ...health.Check) (http.Handler, *db.Conn) {
 		t.Fatalf("the probes are not declared: %v", err)
 	}
 	return router, app
+}
+
+// counting is a loader that records every question it is asked and takes its
+// time answering, which is what a loader whose database is unreachable does:
+// the query runs to the kernel's two second budget and only then fails.
+type counting struct {
+	sites
+	delay time.Duration
+	calls atomic.Int64
+}
+
+func (c *counting) ByHost(ctx context.Context, tx db.Tx[db.System], h string) (tenancy.Tenant, error) {
+	c.calls.Add(1)
+	select {
+	case <-time.After(c.delay):
+	case <-ctx.Done():
+	}
+	return c.sites.ByHost(ctx, tx, h)
 }
 
 func probe(t *testing.T, h http.Handler, host, path string) *httptest.ResponseRecorder {
@@ -172,5 +192,78 @@ func TestDatabaseCheckRunsOutsideAnyTenantTransaction(t *testing.T) {
 	})
 	if !errors.Is(err, db.ErrScopeMismatch) {
 		t.Fatalf("a check run inside an open tenant transaction = %v, want ErrScopeMismatch", err)
+	}
+}
+
+// TestTheProbesNeverResolveTheHost is the property the deployment rests on.
+//
+// Liveness used to go through the kernel's host resolution: a real query, with
+// a two second budget of its own, and never a cache hit at a pod address —
+// only a successful resolution is cached. So a probe with a two second timeout
+// failed while the database was unreachable, and three periods later the
+// kubelet restarted a pod whose only problem was that its database was down.
+//
+// The loader here answers, eventually. What is under test is that nobody asks
+// it: both probes answer immediately, and the counter is zero.
+func TestTheProbesNeverResolveTheHost(t *testing.T) {
+	_, app := dbtest.Schema(t)
+	slow := &counting{
+		sites: sites{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}},
+		delay: 3 * time.Second,
+	}
+	api, router := httpx.New(httpx.Options{
+		Tenants: slow, Conn: app, Authorize: sites{}, Authenticate: anonymous,
+	})
+	health.Register(api, health.Func{N: "queue", F: func(context.Context) error { return nil }})
+
+	// Both hosts: the pod address an orchestrator uses, and a tenant's own
+	// name, which is what a probe through an ingress arrives as.
+	for _, host := range []string{"10.0.0.7:8080", tenantHost, "nobody.example"} {
+		for _, path := range []string{"/health", "/ready"} {
+			started := time.Now()
+			res := probe(t, router, host, path)
+			if res.Code != http.StatusOK {
+				t.Errorf("%s at %s = %d, want 200", path, host, res.Code)
+			}
+			if took := time.Since(started); took > time.Second {
+				t.Errorf("%s at %s took %v; a probe that waits on the host lookup is a probe that fails during an outage", path, host, took)
+			}
+		}
+	}
+	if n := slow.calls.Load(); n != 0 {
+		t.Errorf("the probes asked the loader %d times; they resolve no tenant", n)
+	}
+}
+
+// TestReadinessAnswersWithinTheProbeTimeout, with the database down. Two
+// seconds is what the deployment gives a probe; a readiness check that took
+// longer would read as a timeout rather than as 503, and the difference is
+// whether the orchestrator holds traffic off this instance or restarts it.
+func TestReadinessAnswersWithinTheProbeTimeout(t *testing.T) {
+	_, app := dbtest.Schema(t)
+	api, router := httpx.New(httpx.Options{
+		Tenants:      sites{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}},
+		Conn:         app,
+		Authorize:    sites{},
+		Authenticate: anonymous,
+	})
+	health.Register(api, health.DatabaseCheck(app))
+	if err := app.Close(); err != nil {
+		t.Fatalf("close the pool: %v", err)
+	}
+
+	started := time.Now()
+	if got := probe(t, router, "10.0.0.7:8080", "/health").Code; got != http.StatusOK {
+		t.Errorf("/health with the database down = %d, want 200", got)
+	}
+	res := probe(t, router, "10.0.0.7:8080", "/ready")
+	if res.Code != http.StatusServiceUnavailable {
+		t.Errorf("/ready with the database down = %d, want 503", res.Code)
+	}
+	if took := time.Since(started); took > 2*time.Second {
+		t.Errorf("the two probes took %v; the deployment's timeout is 2s", took)
+	}
+	if !strings.Contains(res.Body.String(), "database") {
+		t.Errorf("/ready does not name the check: %s", res.Body.String())
 	}
 }

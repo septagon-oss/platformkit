@@ -8,12 +8,14 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -162,5 +164,154 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	defer mu.Unlock()
 	if attempts != maxDeliveries {
 		t.Errorf("the handler ran %d times, want %d; the cap is nats.MaxDeliver", attempts, maxDeliveries)
+	}
+}
+
+// TestADriftedConsumerIsReconciled, against the NATS `make up` starts.
+//
+// A durable consumer outlives the process that created it, so its stored
+// settings are a second copy of three constants in this package. nats.go
+// refuses a subscription whose stored configuration is not the one it asks for,
+// so a consumer left by an older build — or by this one, before AckWait and the
+// ladder's first rung became one value — is a worker that cannot boot at all:
+// the web role stays up and every worker crashloops, which is the rollout
+// looking half healthy in exactly the way ADR 0005 wanted to avoid.
+func TestADriftedConsumerIsReconciled(t *testing.T) {
+	transport, js := jetstreamForTest(t)
+	durable, name := uniqueDurable(t)
+
+	// A consumer as an older build left it: a longer acknowledgement deadline,
+	// a lower delivery cap, and no backoff ladder at all.
+	stale := &nats.ConsumerConfig{
+		Durable: durable, DeliverSubject: nats.NewInbox(), FilterSubject: subject + name,
+		AckPolicy: nats.AckExplicitPolicy, DeliverPolicy: nats.DeliverAllPolicy,
+		AckWait: 90 * time.Second, MaxDeliver: 3,
+	}
+	if _, err := js.AddConsumer(stream, stale); err != nil {
+		t.Fatalf("create the drifted consumer: %v", err)
+	}
+
+	seen := make(chan Event, 1)
+	if err := transport.Subscribe(t.Context(), durable, name, Sink{
+		Handle: func(_ context.Context, ev Event) error { seen <- ev; return nil },
+		Dead:   func(context.Context, Event, error) {},
+	}); err != nil {
+		t.Fatalf("subscribe to a drifted consumer: %v", err)
+	}
+
+	info, err := js.ConsumerInfo(stream, durable)
+	if err != nil {
+		t.Fatalf("read the consumer back: %v", err)
+	}
+	if info.Config.AckWait != ackWait() {
+		t.Errorf("ack_wait is %v, want %v", info.Config.AckWait, ackWait())
+	}
+	if info.Config.MaxDeliver != maxDeliveries {
+		t.Errorf("max_deliver is %d, want %d", info.Config.MaxDeliver, maxDeliveries)
+	}
+	if !slices.Equal(info.Config.BackOff, backoff) {
+		t.Errorf("backoff is %v, want %v", info.Config.BackOff, backoff)
+	}
+
+	// And the subscription is a subscription: the handler receives.
+	deliver(t, transport, seen, name)
+}
+
+// TestAConsumerNATSCannotUpdateIsRecreated. Some settings are not an update:
+// what a consumer filters, how it acknowledges, where it starts, and whether it
+// is pushed at all. A pull consumer under this durable name is the shape a
+// subscription cannot bind to however patiently it asks, so it is deleted and
+// made again — safe because this transport asks for DeliverAll and every
+// delivery is claimed in platformkit_handled before a handler runs.
+func TestAConsumerNATSCannotUpdateIsRecreated(t *testing.T) {
+	transport, js := jetstreamForTest(t)
+	durable, name := uniqueDurable(t)
+
+	// No DeliverSubject: a pull consumer, which a push subscription cannot bind
+	// to at all.
+	if _, err := js.AddConsumer(stream, &nats.ConsumerConfig{
+		Durable: durable, FilterSubject: subject + name,
+		AckPolicy: nats.AckExplicitPolicy, DeliverPolicy: nats.DeliverAllPolicy,
+	}); err != nil {
+		t.Fatalf("create the pull consumer: %v", err)
+	}
+
+	seen := make(chan Event, 1)
+	if err := transport.Subscribe(t.Context(), durable, name, Sink{
+		Handle: func(_ context.Context, ev Event) error { seen <- ev; return nil },
+		Dead:   func(context.Context, Event, error) {},
+	}); err != nil {
+		t.Fatalf("subscribe over a pull consumer: %v", err)
+	}
+	info, err := js.ConsumerInfo(stream, durable)
+	if err != nil {
+		t.Fatalf("read the consumer back: %v", err)
+	}
+	if info.Config.DeliverSubject == "" {
+		t.Error("the consumer is still a pull consumer")
+	}
+	deliver(t, transport, seen, name)
+}
+
+// jetstreamForTest is the transport under test and a second connection to look
+// at what it did to the server.
+func jetstreamForTest(t *testing.T) (Transport, nats.JetStreamContext) {
+	t.Helper()
+	url := os.Getenv("PLATFORMKIT_TEST_NATS_URL")
+	if url == "" {
+		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
+	}
+	transport, err := JetStream(url)
+	if err != nil {
+		t.Fatalf("JetStream(%s): %v", url, err)
+	}
+	t.Cleanup(func() { _ = transport.(interface{ Close() error }).Close() })
+
+	nc, err := nats.Connect(url)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(nc.Close)
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("jetstream: %v", err)
+	}
+	return transport, js
+}
+
+// uniqueDurable names a consumer and an event nothing else in the shared stream
+// uses. The name is short: NATS refuses a durable with a dot in it.
+func uniqueDurable(t *testing.T) (durable, name string) {
+	t.Helper()
+	id := strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	durable, name = "drift_"+id, "drift_"+id+".happened"
+	t.Cleanup(func() {
+		nc, err := nats.Connect(os.Getenv("PLATFORMKIT_TEST_NATS_URL"))
+		if err != nil {
+			return
+		}
+		defer nc.Close()
+		if js, err := nc.JetStream(); err == nil {
+			_ = js.DeleteConsumer(stream, durable)
+		}
+	})
+	return durable, name
+}
+
+// deliver publishes one event and waits for the sink to see it, which is the
+// half of "reconciled" that a consumer's settings do not prove.
+func deliver(t *testing.T, transport Transport, seen <-chan Event, name string) {
+	t.Helper()
+	ev := Event{ID: uuid.New(), Name: name, TenantID: uuid.New(), Payload: []byte(`{"amount":42}`)}
+	if err := transport.Publish(t.Context(), ev); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	select {
+	case got := <-seen:
+		if got.ID != ev.ID {
+			t.Errorf("the handler saw %s, want %s", got.ID, ev.ID)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the reconciled subscription delivered nothing")
 	}
 }

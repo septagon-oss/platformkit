@@ -209,11 +209,13 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 		h, durable := s.Handler, s.durable()
 		sink := Sink{
 			Handle: func(ctx context.Context, ev Event) error {
-				// A handler holds a transaction, so it is bounded: a handler
-				// still running when the transport's acknowledgement deadline
-				// passes is a handler whose event is redelivered while its
-				// first attempt is still writing. handlerTimeout is shorter
-				// than the JetStream AckWait for exactly that reason.
+				// A handler holds a transaction, so it is bounded. The
+				// acknowledgement deadline is the ladder's first rung, which
+				// is shorter than this, so a handler slower than that rung is
+				// redelivered while its first attempt is still writing: the
+				// claim's row lock serializes the two, and the redelivery acks
+				// as soon as the first attempt commits. handlerTimeout is what
+				// bounds that wait. See claim, and jetstream.go's ackWait.
 				ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 				defer cancel()
 				// Only the id is known here. It is all kit/db needs to scope

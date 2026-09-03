@@ -282,6 +282,31 @@ func (a *API) Static(prefix string, fsys fs.FS) {
 	a.root.Handle(at+"/*", http.StripPrefix(at, http.FileServerFS(fsys)))
 }
 
+// Probes mounts handlers beside the API, on the router that carries neither the
+// request middleware nor a transaction. kit/health is the only caller, and the
+// two paths it names are /health and /ready.
+//
+// A probe is not an operation. It has no tenant — an orchestrator reaches an
+// instance at a pod address that names no site — no session, and nothing to
+// declare. Going through the chain would make liveness depend on the one query
+// every request makes before it is a request: the host lookup, which has a two
+// second budget of its own and never hits the cache for a pod address, because
+// only a successful resolution is cached. A liveness probe with a two second
+// timeout therefore fired during a database outage and the kubelet restarted
+// pods whose only problem was that their database was unreachable, which is the
+// exact failure the probes exist to avoid.
+//
+// This is a narrow door and not a general "mount a handler" one, for the reason
+// the package comment gives: a handler mounted below this package's middleware
+// resolves no tenant, opens no transaction and is never authorized, so the only
+// handlers that may take it are the ones that must answer without any of the
+// three. Static is the other. Both are named for what they carry.
+func (a *API) Probes(h http.Handler, paths ...string) {
+	for _, p := range paths {
+		a.root.Handle(p, h)
+	}
+}
+
 // recordingAdapter is where every registration made through this API is seen:
 // huma.Register and any raw handler alike end at Adapter.Handle, hidden or not.
 // While builtin is set, huma is mounting its own documentation routes and the

@@ -35,11 +35,13 @@ first and nothing to wait for.
   the rollout rather than hidden in a job that finished an hour ago.
 - Backwards-compatible migrations are not optional. Old and new code run at once
   during a rolling deploy, both against the newest schema.
-- The worker's probes are a plain mux, not the API: a worker has no tenant, no
-  session and no operation to declare, so it has no business building one. The
-  shape they answer in is `kit/health`'s, the same one the API's probes use,
-  because one orchestrator manifest describes both roles and an operator should
-  not have to learn the readiness body twice.
+- The probes are a plain mux in both roles, not the API: a probe has no tenant,
+  no session and no operation to declare, so it has no business building one.
+  The web role mounts the same mux beside the API, outside the middleware chain,
+  because the chain resolves a tenant from the request host before anything else
+  runs — a query with a two second budget — and liveness that waits on it fails
+  during the outage it exists to survive. One handler, one readiness body, and
+  an operator does not have to learn it twice.
 - Every role runs the boot gates, and the roles that do not serve discard the
   router. A worker that skipped them would start on a composition the web role
   refuses — the same image, the same modules, two answers — and the rollout
