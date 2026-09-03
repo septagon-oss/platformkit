@@ -12,8 +12,11 @@
 package site
 
 import (
-	"github.com/septagon-oss/platformkit/kit/httpx"
+	"context"
+
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/site/internal"
 )
@@ -30,8 +33,41 @@ type Deps struct{}
 var permissions = []module.Permission{{Key: contracts.PermissionSiteManage}}
 
 // Module is the manifest, and the service it is built on.
+//
+// The three routes this module used to write by hand are rest.Singleton now:
+// one row per tenant, a read, a PUT, and a public face. They were the same
+// three routes modules/billing wrote for its subscription, with the same
+// transaction ritual and the same error mapping and no resource registered, so
+// neither module had a generated screen. The kernel has the shape now, and this
+// is the module that shows what it takes: a Load that answers with the defaults
+// rather than a 404, a Save, and a Face saying what a visitor may see.
 func Module(_ Deps) module.Module {
 	svc := internal.NewService()
+	settings := rest.Singleton[*contracts.SiteSettings]{
+		Module: "site", Entity: "settings", Path: "/api/v1/site/settings",
+		Read:   contracts.PermissionSiteManage,
+		Write:  contracts.PermissionSiteManage,
+		Event:  contracts.EventSettingsUpdated,
+		Public: true,
+		Load: func(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.SiteSettings, error) {
+			return svc.Settings(ctx, tx)
+		},
+		Save: func(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.SiteSettings) (*contracts.SiteSettings, error) {
+			return svc.Save(ctx, tx, in)
+		},
+		// The name, the navigation and the colour scheme. The rest — the home
+		// slug, the logo, the timestamps — is either an internal reference or
+		// nobody's business.
+		Face: func(s *contracts.SiteSettings) any {
+			nav := s.Nav
+			if nav == nil {
+				// A navigation is a list, and a JSON null where a list belongs
+				// is a theme's null dereference. An empty site has an empty one.
+				nav = contracts.Nav{}
+			}
+			return &contracts.Public{Title: s.Title, Nav: nav, Theme: s.Theme}
+		},
+	}
 	return module.Module{
 		Name:        "site",
 		Permissions: permissions,
@@ -41,6 +77,6 @@ func Module(_ Deps) module.Module {
 		},
 		Jobs:          nil,
 		Subscriptions: nil,
-		Routes:        func(api *httpx.API) { internal.RegisterRoutes(api, svc) },
+		Routes:        settings.Mount,
 	}
 }

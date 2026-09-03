@@ -266,7 +266,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		`{"title":"Acme","tagline":"We make things","homeSlug":"about-us","theme":"dark","nav":[{"label":"About","path":"/about-us"}]}`); code != http.StatusOK {
 		t.Fatalf("PUT %s = %d %s, want 200", sitePath, code, body)
 	}
-	code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/site/public", "")
+	code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/site/settings/public", "")
 	if code != http.StatusOK || !strings.Contains(body, `"theme":"dark"`) || !strings.Contains(body, `"path":"/about-us"`) {
 		t.Fatalf("the public site = %d %s", code, body)
 	}

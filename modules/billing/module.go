@@ -15,7 +15,10 @@
 package billing
 
 import (
+	"context"
 	"time"
+
+	"github.com/septagon-oss/platformkit/kit/db"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
@@ -120,6 +123,17 @@ func Module(deps Deps) module.Module {
 		// opinion about anybody else's events.
 		Subscriptions: nil,
 		Routes: func(api *httpx.API) {
+			// The tenant's one subscription: a read, and no PUT — it is moved
+			// by the two commands beside it, and a PUT would be a customer
+			// writing its own period and its own stamped price.
+			rest.Singleton[*contracts.Subscription]{
+				Module: "billing", Entity: "subscription",
+				Path: "/api/v1/billing/subscription",
+				Read: contracts.PermissionBillingRead,
+				Load: func(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.Subscription, error) {
+					return svc.Current(ctx, tx)
+				},
+			}.Mount(api)
 			// The one thing about a plan that generic CRUD cannot know: a plan
 			// somebody is still being billed for is not one the operator may
 			// remove. The hook takes the system capability because the question

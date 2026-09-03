@@ -337,7 +337,7 @@ func TestMigrationVersionsAreGlobal(t *testing.T) {
 	clash := module.Module{Name: "clash", Migrations: fstest.MapFS{
 		"000001_other.up.sql": {Data: []byte("SELECT 1")},
 	}}
-	_, err := sources([]module.Module{clash})
+	_, err := MigrationSources([]module.Module{clash})
 	if err == nil {
 		t.Fatal("sources accepted a module that reuses version 000001")
 	}
@@ -349,7 +349,7 @@ func TestMigrationVersionsAreGlobal(t *testing.T) {
 
 	// A module that embedded its migrations directory rather than the files in
 	// it contributes nothing, which has to be an error and not a quiet boot.
-	_, err = sources([]module.Module{{Name: "nested", Migrations: fstest.MapFS{
+	_, err = MigrationSources([]module.Module{{Name: "nested", Migrations: fstest.MapFS{
 		"migrations/000009_x.up.sql": {Data: []byte("SELECT 1")},
 	}}})
 	if err == nil || !strings.Contains(err.Error(), "fs.Sub") {
@@ -357,7 +357,7 @@ func TestMigrationVersionsAreGlobal(t *testing.T) {
 	}
 
 	// A module numbered past the root's migrations joins the same directory.
-	merged, err := sources([]module.Module{hello()})
+	merged, err := MigrationSources([]module.Module{hello()})
 	if err != nil {
 		t.Fatalf("sources: %v", err)
 	}

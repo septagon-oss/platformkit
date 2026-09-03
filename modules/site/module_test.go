@@ -22,7 +22,10 @@ import (
 const (
 	host     = "acme.test"
 	settings = "/api/v1/site/settings"
-	public   = "/api/v1/site/public"
+	// The public face moved with the port onto rest.Singleton: a singleton
+	// declares one path and its public door is under it. Nothing has been
+	// released, so this is a rename and not a break.
+	public = "/api/v1/site/settings/public"
 )
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
