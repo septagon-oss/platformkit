@@ -3,9 +3,11 @@ package admin_test
 import (
 	"context"
 	"errors"
+	"html"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -566,6 +568,52 @@ func TestAnAnonymousBrowserIsSentToTheSignInForm(t *testing.T) {
 	if code, location := visit(t, router, "/admin", "application/json"); code != http.StatusForbidden || location != "" {
 		t.Errorf("an anonymous JSON call to a page = %d to %q, want 403", code, location)
 	}
+}
+
+// TestTheSignInFormOnlyEverSendsSomebodyBackIntoTheSite is the open redirect.
+//
+// The form carries the page the visitor was going to, and it used to check that
+// itself: a leading slash whose second character was not one. `/\evil.example`
+// satisfies that, and every browser normalises the backslash before it decides
+// what the authority is, so the visitor signed in and left the site. The check
+// is httpx.LocalPath now, and anything it refuses becomes the admin root.
+func TestTheSignInFormOnlyEverSendsSomebodyBackIntoTheSite(t *testing.T) {
+	router := mount(t)
+	for _, tt := range []struct{ next, want string }{
+		{"/admin/notes/notes", "/admin/notes/notes"},
+		{`/\evil.example`, "/admin"},
+		{"//evil.example", "/admin"},
+		{"https://evil.example", "/admin"},
+		{"", "/admin"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/admin/login?next="+url.QueryEscape(tt.next), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("the sign-in form with next=%q = %d", tt.next, w.Code)
+		}
+		// data-next is what ui/assets/js/session.js sends the browser to once
+		// the login route has answered, so it is the whole of the redirect.
+		got := attribute(w.Body.String(), "data-next")
+		if got != tt.want {
+			t.Errorf("next=%q became data-next=%q, want %q", tt.next, got, tt.want)
+		}
+	}
+}
+
+// attribute is the value of the first name="value" in s, which is enough to
+// read one attribute out of a rendered page without a parser.
+func attribute(s, name string) string {
+	i := strings.Index(s, name+`="`)
+	if i < 0 {
+		return ""
+	}
+	rest := s[i+len(name)+2:]
+	j := strings.Index(rest, `"`)
+	if j < 0 {
+		return ""
+	}
+	return html.UnescapeString(rest[:j])
 }
 
 // TestANavEntryNoRouteServesIsABootWarning is the E4 review's minor finding

@@ -28,6 +28,11 @@ const (
 	publicPath = "/api/v1/file/public/{id}"
 )
 
+// streams is the kernel's mark for a route that reads the request itself, and
+// streaming is its value. They are named here because a map literal cannot hold
+// a two-value call.
+var streams, streaming = httpx.StreamedBody()
+
 var faults = []int{
 	http.StatusNotFound, http.StatusRequestEntityTooLarge,
 	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
@@ -110,7 +115,14 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		Tags:          []string{"file"},
 		DefaultStatus: http.StatusCreated,
 		Errors:        faults,
-		Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventUploaded}},
+		// The second extension is what tells the kernel this route reads its
+		// own request: no schema means no ceiling of huma's, so the kernel
+		// gives it files.max_bytes and a multipart envelope instead of the
+		// megabyte every other route gets. See httpx.StreamedBody.
+		Extensions: map[string]any{
+			httpx.EventsExtension: []string{contracts.EventUploaded},
+			streams:               streaming,
+		},
 		// Declared by hand, with no schema, which is what keeps huma from
 		// reading the body: a schema here would make it decode the whole form
 		// into memory before this handler ran, and the point of the handler is
@@ -121,16 +133,15 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		},
 	}, httpx.Permission(contracts.PermissionFileManage),
 		func(ctx context.Context, in *uploadInput) (*rest.Item[*contracts.File], error) {
-			tx, err := transaction(ctx)
-			if err != nil {
-				return nil, err
-			}
 			up, err := arriving(ctx)
 			if err != nil {
 				return nil, err
 			}
 			up.Visibility = in.Visibility
-			f, err := svc.Upload(ctx, tx, up)
+			// transaction and not transaction(ctx): the per-request transaction
+			// is lazy, and this route is the one that must not open it before
+			// the body has arrived. See contracts.Tx.
+			f, err := svc.Upload(ctx, transaction, up)
 			if err != nil {
 				return nil, fault(err)
 			}

@@ -37,42 +37,44 @@ func NewService(storage contracts.Storage, max, quota int64) *Service {
 var _ contracts.Service = (*Service)(nil)
 
 // Upload streams the bytes into storage while hashing and counting them, then
-// writes the row. See contracts.Service.
-func (s *Service) Upload(ctx context.Context, tx db.Tx[db.Tenant], up contracts.Upload) (*contracts.File, error) {
-	// The room left comes first, because it is a query and a query is cheaper
-	// than a disk write this is about to refuse. The limit that is actually
-	// enforced is the smaller of the two, which is what makes a tenant with
-	// 3 MB of quota left unable to spend 25 MB of upload allowance.
-	limit, err := s.room(tx)
-	if err != nil {
-		return nil, err
-	}
-
+// opens the caller's transaction and writes the row. See contracts.Service.
+func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Upload) (*contracts.File, error) {
 	// A UUID and nothing else, which is the whole of the path-traversal
 	// argument: there is no caller-supplied component in a key to escape with.
 	key := uuid.NewString()
 	digest := sha256.New()
-	// One byte past the limit, so "exactly the limit" and "more than it" are
-	// distinguishable; the tee hashes exactly what the copy reads. head keeps
-	// the first bytes so that what the caller declared can be checked against
-	// what actually arrived, without a second pass over the file.
-	counted := &counter{r: io.LimitReader(io.TeeReader(up.Body, digest), limit+1)}
+	// One byte past the deployment's limit, so "exactly the limit" and "more
+	// than it" are distinguishable; the tee hashes exactly what the copy reads.
+	// head keeps the first bytes so that what the caller declared can be checked
+	// against what actually arrived, without a second pass over the file.
+	//
+	// Nothing is open while this runs, which is the point of taking an opener:
+	// the client sets the pace of a body, and a transaction that waited for one
+	// is a connection a byte a second can pin.
+	counted := &counter{r: io.LimitReader(io.TeeReader(up.Body, digest), s.max+1)}
 
 	if err := s.storage.Put(ctx, key, counted, up.Declared); err != nil {
 		return nil, fmt.Errorf("file: store %s: %w", key, err)
 	}
-	if counted.n > limit {
+	if counted.n > s.max {
 		// Refused, so not charged for. The removal is best effort: what is left
 		// behind is disk nobody references, and the answer to the caller is the
-		// one that matters. Which of the two limits was hit is the difference
-		// between "send something smaller" and "delete something first".
+		// one that matters.
 		_ = s.storage.Delete(ctx, key)
-		if limit < s.max {
-			return nil, fmt.Errorf("%w: %d bytes is past the %d this tenant has left", contracts.ErrQuota, counted.n, limit)
-		}
 		return nil, fmt.Errorf("%w: %d bytes is past the %d this deployment accepts", contracts.ErrTooLarge, counted.n, s.max)
 	}
 	if err := contracts.Agrees(up.ContentType, counted.head[:min(counted.n, int64(len(counted.head)))]); err != nil {
+		_ = s.storage.Delete(ctx, key)
+		return nil, err
+	}
+	// Every byte is on disk, so there is finally something to open a
+	// transaction for — and the quota is measured inside it, under the lock.
+	tx, err := open(ctx)
+	if err != nil {
+		_ = s.storage.Delete(ctx, key)
+		return nil, err
+	}
+	if err := s.charge(ctx, tx, counted.n); err != nil {
 		_ = s.storage.Delete(ctx, key)
 		return nil, err
 	}
@@ -146,8 +148,7 @@ func (c *counter) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// room is the number of bytes this upload may write: the deployment's per-upload
-// limit, or what is left of the tenant's quota, whichever is smaller.
+// charge refuses n bytes that would take this tenant past its quota.
 //
 // The usage is a sum over the tenant's own rows rather than a running total in
 // a column, and the choice is deliberate. A column has to be kept correct by
@@ -155,21 +156,34 @@ func (c *counter) Read(p []byte) (int, error) {
 // that drifts is a tenant that either cannot upload or is never stopped, with
 // nothing to compare against. The sum reads one partial index on a table whose
 // rows are counted in thousands, once per upload, and it cannot be wrong.
-func (s *Service) room(tx db.Tx[db.Tenant]) (int64, error) {
+//
+// The lock is what makes the sum mean anything, and it is the fix for what the
+// review measured: twenty uploads that started together all read the same total
+// before any of them had inserted a row, all decided there was room, and stored
+// 2.9 times the quota. pg_advisory_xact_lock is held by this transaction until
+// it commits or rolls back, so the read and the insert are one step; it is keyed
+// on the tenant, so one customer's uploads never queue behind another's; and it
+// needs no table, no row and no migration. It is taken before the sum and never
+// after, which is the only ordering rule there is here.
+func (s *Service) charge(ctx context.Context, tx db.Tx[db.Tenant], n int64) error {
 	if s.quota <= 0 {
-		return s.max, nil
+		return nil
+	}
+	lock := "file/quota/" + db.TenantOf(tx).ID.String()
+	if err := tx.DB().WithContext(ctx).
+		Exec(`SELECT pg_advisory_xact_lock(hashtext(?)::bigint)`, lock).Error; err != nil {
+		return fmt.Errorf("file: lock this tenant's quota: %w", err)
 	}
 	var used int64
 	err := tx.DB().Model(&contracts.File{}).Where("deleted_at IS NULL").
 		Select("COALESCE(SUM(size), 0)").Scan(&used).Error
 	if err != nil {
-		return 0, fmt.Errorf("file: what this tenant is holding: %w", err)
+		return fmt.Errorf("file: what this tenant is holding: %w", err)
 	}
-	left := s.quota - used
-	if left <= 0 {
-		return 0, fmt.Errorf("%w: %d bytes of %d are in use", contracts.ErrQuota, used, s.quota)
+	if left := s.quota - used; n > left {
+		return fmt.Errorf("%w: %d bytes is past the %d this tenant has left of %d", contracts.ErrQuota, n, max(left, 0), s.quota)
 	}
-	return min(left, s.max), nil
+	return nil
 }
 
 // RemoveBlob is this module's subscription to its own file.deleted, and the

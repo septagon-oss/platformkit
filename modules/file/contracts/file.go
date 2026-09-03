@@ -299,6 +299,18 @@ type Opener interface {
 	Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, anonymous bool) (*File, io.ReadCloser, error)
 }
 
+// Tx opens the caller's transaction. Upload takes one of these rather than an
+// open transaction, and it is the only command here that does.
+//
+// A body arrives at whatever speed the client chooses to send it, so a
+// transaction opened before the first byte is a database connection one slow
+// client pins for the whole of the server's read timeout — a review trickled an
+// upload at a byte a second and watched it hold one. The bytes are therefore
+// streamed with nothing open, and this is called once they are all in storage.
+// kit/httpx's per-request transaction is already lazy, so the route hands over
+// its accessor and nothing is opened until this module asks for it.
+type Tx func(ctx context.Context) (db.Tx[db.Tenant], error)
+
 // Service is what a caller does with files. Every command takes the caller's
 // transaction rather than opening one, so the row and its event commit
 // together; the errors are kit/crud's, plus ErrTooLarge.
@@ -306,16 +318,22 @@ type Service interface {
 	Opener
 
 	// Upload streams the bytes into Storage while hashing and counting them,
-	// writes the row and publishes file.uploaded.
+	// then opens the caller's transaction, writes the row and publishes
+	// file.uploaded.
 	//
 	// The bytes are written before the row, and the consequence is stated
 	// rather than hidden: a transaction that fails after this leaves bytes
 	// nobody references, which costs disk. The other order costs a row that
 	// references nothing, which is a download that fails forever. Past the
-	// deployment's limit it answers ErrTooLarge and removes what it had
-	// written, because a caller that was refused should not be charged for
-	// storage.
-	Upload(ctx context.Context, tx db.Tx[db.Tenant], up Upload) (*File, error)
+	// deployment's limit it answers ErrTooLarge, and past what the tenant's
+	// quota has room for ErrQuota; either way it removes what it had written,
+	// because a caller that was refused should not be charged for storage.
+	//
+	// The quota is measured inside the transaction and under a lock on the
+	// tenant, so twenty uploads that start together cannot all read the same
+	// total and all decide there is room — which is what the review measured at
+	// 2.9 times the quota.
+	Upload(ctx context.Context, tx Tx, up Upload) (*File, error)
 
 	// Delete removes the row and publishes file.deleted, carrying the storage
 	// key. The bytes are removed by whoever handles that event, after this

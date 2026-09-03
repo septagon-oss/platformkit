@@ -231,6 +231,10 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		Authorize:    a.opts.Authorize,
 		Authenticate: a.opts.Authenticate,
 		Log:          a.log,
+		// The ceiling on the one route that reads its own request. Every other
+		// body is bounded at httpx.MaxBodyBytes, and a schema'd one is bounded
+		// by huma as well.
+		MaxUpload: a.cfg.Files.MaxBytes,
 	})
 
 	// The catalogue before the routes: a module that validates a permission
@@ -416,13 +420,20 @@ func (a *App) serve(ctx context.Context, h http.Handler) error {
 	srv := &http.Server{
 		Addr:    a.cfg.Server.Addr,
 		Handler: h,
-		// A request holds a database transaction, so a slow client holds one
-		// too: these bound how long one can. The read header timeout stops a
-		// connection that never finishes its request line; the write timeout
-		// stops a client that never reads its response; the idle timeout
-		// reclaims keep-alive connections. They are constants because no
-		// deployment has had a reason to differ.
+		// A request holds a connection, and until this release the file
+		// upload held a database transaction with it: these bound how long one
+		// can. The read header timeout stops a connection that never finishes
+		// its request line; the read timeout stops one that never finishes its
+		// body, which is what a review exploited at a byte a second and what
+		// there was no bound on at all; the write timeout stops a client that
+		// never reads its response; the idle timeout reclaims keep-alive
+		// connections.
+		//
+		// Three are constants because no deployment has had a reason to differ.
+		// The read timeout is not, because the one thing it has to accommodate
+		// is a deployment's own files.max_bytes over somebody's connection.
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       a.cfg.Server.ReadTimeout,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}

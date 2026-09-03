@@ -13,6 +13,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -44,6 +45,17 @@ type Server struct {
 	// withholding during one. It defaults to false, so a deployment that says
 	// nothing says no.
 	Docs bool `yaml:"docs"`
+
+	// ReadTimeout is how long a client has to send a whole request. It is a
+	// key rather than a constant because the one number it has to accommodate
+	// is a deployment's: an upload of files.max_bytes over a slow connection
+	// takes as long as it takes, and thirty seconds is right for a laptop and
+	// wrong for a deployment that accepts a gigabyte.
+	//
+	// There was no read timeout at all, and a review sent a body at a byte a
+	// second and held the request — and, before the file module was made to
+	// stream outside one, a database transaction — for as long as it liked.
+	ReadTimeout time.Duration `yaml:"read_timeout"`
 }
 
 // Database holds the two roles: the app connects as one, migrations as the other.
@@ -139,6 +151,12 @@ const (
 	DefaultFilesDir      = "data/files"
 	DefaultFilesMaxBytes = 25 << 20
 )
+
+// DefaultReadTimeout is how long a client has to send a whole request when a
+// deployment says nothing. Thirty seconds is generous for every route this
+// application has except an upload on a bad connection, which is the one a
+// deployment overrides it for.
+const DefaultReadTimeout = 30 * time.Second
 
 // keys is every string-valued key a deployment or a composition may set from
 // outside the file: its name, the environment variable that overrides it, where
@@ -279,6 +297,12 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if c.Audit.RetentionDays < 1 {
 		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; a retention period is a number of days", path, c.Audit.RetentionDays)
+	}
+	if c.Server.ReadTimeout == 0 {
+		c.Server.ReadTimeout = DefaultReadTimeout
+	}
+	if c.Server.ReadTimeout < 0 {
+		return Config{}, fmt.Errorf("config %s: server.read_timeout is %s; a client either has a deadline or the server has none", path, c.Server.ReadTimeout)
 	}
 	if c.Files.Dir == "" {
 		c.Files.Dir = DefaultFilesDir

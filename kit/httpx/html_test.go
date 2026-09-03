@@ -140,3 +140,33 @@ func between(s, open, shut string) string {
 	}
 	return rest[:j]
 }
+
+// TestOnlyALocalPathIsSomewhereToSendABrowser is the open redirect, as a table.
+//
+// There were two copies of this rule and one of them was wrong: the admin
+// sign-in form accepted a leading slash whose second character was not one, and
+// `/\evil.example` satisfies that and leaves the site in every browser, because
+// they all normalise a backslash to a slash before deciding what the authority
+// is. There is one copy now, and this is it.
+func TestOnlyALocalPathIsSomewhereToSendABrowser(t *testing.T) {
+	for _, tt := range []struct {
+		path string
+		want bool
+	}{
+		{"/ok", true},
+		{`/\evil.example`, false},       // the one the sign-in form let through
+		{"//evil.example", false},       // a network-path reference
+		{"////evil.example", false},     // more slashes are still an authority
+		{"https://evil.example", false}, // the one every check catches
+		{"javascript:alert(1)", false},  // not a path at all
+		{"ok", false},                   // relative to whatever page it is on
+		{"", false},                     // nowhere
+		{"/", true},                     // the home page is a path
+		{"/search?q=a#top", true},       // a query and a fragment are part of one
+		{`/a\b`, false},                 // a backslash has no meaning in a path
+	} {
+		if got := httpx.LocalPath(tt.path); got != tt.want {
+			t.Errorf("LocalPath(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}

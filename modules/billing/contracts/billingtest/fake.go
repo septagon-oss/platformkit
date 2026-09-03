@@ -28,7 +28,11 @@ type Fake struct {
 	plans map[uuid.UUID]contracts.Plan
 	// sub is the tenant's one subscription, nil until there is one: the fake
 	// stands in for one tenant, which is the scope a tenant transaction has.
-	sub       *contracts.Subscription
+	sub *contracts.Subscription
+	// trial is when this tenant was issued its one trial, and it is never
+	// cleared: it is the fake's stand-in for the real service reading
+	// trial_used_at across every row the tenant has, deleted ones included.
+	trial     *time.Time
 	published []string
 }
 
@@ -104,33 +108,52 @@ func (f *Fake) Subscribe(_ context.Context, _ db.Tx[db.Tenant], planID uuid.UUID
 	if f.sub == nil {
 		f.sub = &contracts.Subscription{
 			Base:   crud.Base{ID: uuid.New()},
-			PlanID: planID, Status: contracts.StatusTrial, TrialUsedAt: &now,
-			CurrentPeriodStart: now, CurrentPeriodEnd: contracts.Advance(now, plan.Interval),
+			PlanID: planID, TrialUsedAt: f.trial, AnchorDay: contracts.AnchorOf(now),
 			PriceCents: plan.PriceCents, Currency: plan.Currency,
+		}
+		if f.trial == nil {
+			f.trial = &now
+			f.sub.Status, f.sub.TrialUsedAt = contracts.StatusTrial, &now
+			f.sub.CurrentPeriodStart = now
+			f.sub.CurrentPeriodEnd = contracts.Advance(now, plan.Interval, f.sub.AnchorDay)
+		} else {
+			f.sub.Status = contracts.StatusActive
+			f.sub.CurrentPeriodStart, f.sub.CurrentPeriodEnd = f.back(now, plan.Interval), now
 		}
 		return f.commit(contracts.EventSubscribed), nil
 	}
 	if f.sub.PlanID == planID && f.sub.Status != contracts.StatusCancelled && !f.sub.CancelAtPeriodEnd {
 		return f.copy(), nil
 	}
-	if f.sub.Status == contracts.StatusPastDue && f.sub.PlanID != planID {
-		return nil, fmt.Errorf("%w: this subscription is past due; the outstanding period is settled before the plan changes", crud.ErrConflict)
+	if end, owes := f.sub.Outstanding(); owes && f.sub.PlanID != planID {
+		return nil, fmt.Errorf("%w: this subscription owes for the period ending %s; it is settled before the plan changes",
+			crud.ErrConflict, end.UTC().Format(time.RFC3339))
 	}
 	f.sub.PlanID, f.sub.CancelAtPeriodEnd = planID, false
 	if f.sub.Status == contracts.StatusCancelled {
-		// The trial is once per tenant: a resubscriber is given a period that
-		// has already ended, so the next renewal charges rather than serving a
-		// second free one.
-		f.sub.Status = contracts.StatusActive
-		f.sub.CurrentPeriodStart = now.AddDate(0, -1, 0)
-		if plan.Interval == contracts.IntervalYear {
-			f.sub.CurrentPeriodStart = now.AddDate(-1, 0, 0)
+		// It comes back where it left off: an outstanding period, the attempt
+		// count and the grace clock are untouched, so cancel-and-resubscribe is
+		// not a reset. Only a subscription that owes nothing is given a period,
+		// and that period has already ended — the trial is once per tenant, so
+		// the next renewal charges rather than serving a second free one.
+		f.sub.Status = contracts.StatusPastDue
+		if _, owes := f.sub.Outstanding(); !owes {
+			f.sub.Status = contracts.StatusActive
+			f.sub.CurrentPeriodStart, f.sub.CurrentPeriodEnd = f.back(now, plan.Interval), now
+			f.sub.PriceCents, f.sub.Currency = plan.PriceCents, plan.Currency
+			f.sub.AnchorDay = contracts.AnchorOf(now)
 		}
-		f.sub.CurrentPeriodEnd = now
-		f.sub.PriceCents, f.sub.Currency = plan.PriceCents, plan.Currency
-		f.sub.AttemptCount, f.sub.PastDueSince = 0, nil
 	}
 	return f.commit(contracts.EventSubscribed), nil
+}
+
+// back is internal.back: one interval before now, for the period a resubscriber
+// is given.
+func (f *Fake) back(now time.Time, interval string) time.Time {
+	if interval == contracts.IntervalYear {
+		return now.AddDate(-1, 0, 0)
+	}
+	return now.AddDate(0, -1, 0)
 }
 
 // Cancel mirrors internal.Service.Cancel.
@@ -152,6 +175,10 @@ func (f *Fake) Cancel(_ context.Context, _ db.Tx[db.Tenant], atPeriodEnd bool) (
 	}
 	if f.sub.Status == contracts.StatusCancelled {
 		return f.copy(), nil
+	}
+	if end, owes := f.sub.Outstanding(); owes {
+		return nil, fmt.Errorf("%w: this subscription owes for the period ending %s; it is settled, or the grace period runs out, before it ends now — cancel at period end instead",
+			crud.ErrConflict, end.UTC().Format(time.RFC3339))
 	}
 	f.sub.Status, f.sub.CancelAtPeriodEnd = contracts.StatusCancelled, false
 	return f.commit(contracts.EventCancelled), nil
@@ -248,7 +275,7 @@ func (f *Fake) Age(days int) {
 // advance is internal.advance: the next period, chained to the last.
 func (f *Fake) advance(plan contracts.Plan) *contracts.Subscription {
 	f.sub.CurrentPeriodStart = f.sub.CurrentPeriodEnd
-	f.sub.CurrentPeriodEnd = contracts.Advance(f.sub.CurrentPeriodStart, plan.Interval)
+	f.sub.CurrentPeriodEnd = contracts.Advance(f.sub.CurrentPeriodStart, plan.Interval, f.sub.AnchorDay)
 	f.sub.Status = contracts.StatusActive
 	f.sub.PriceCents, f.sub.Currency = plan.PriceCents, plan.Currency
 	f.sub.AttemptCount, f.sub.PastDueSince = 0, nil

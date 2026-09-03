@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -74,6 +75,32 @@ func Redirect(ctx context.Context, to string) *Page {
 		return &Page{Status: http.StatusNoContent, HXRedirect: to}
 	}
 	return &Page{Status: http.StatusSeeOther, Location: to}
+}
+
+// LocalPath reports whether p is a path on this site and nothing else: no
+// scheme, no authority, a leading slash, no backslash.
+//
+// It is the answer to "may I send a browser here", and there is one of it
+// because there were two and one of them was wrong. The admin sign-in form
+// checked a leading slash and a second character that was not a slash, so
+// `next=/\evil.example` passed — and every browser resolves a slash followed by
+// a backslash as an authority, so the review's login redirect left the site.
+// modules/site had the correct rule for its navigation; this is that rule, in
+// the kernel, and both callers read it.
+//
+// url.Parse is what tells the rest apart: a path on this site parses to no
+// scheme, no authority and a path that begins with a slash. The two prefix
+// checks come first because the parse alone is not enough — url.Parse reports
+// "//evil.example" as an empty host and a path, and a browser collapsing the
+// slashes goes to evil.example — and the backslash is refused outright, because
+// it has no meaning in a path and its only use here is to look like something
+// else.
+func LocalPath(p string) bool {
+	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.ContainsRune(p, '\\') {
+		return false
+	}
+	u, err := url.Parse(p)
+	return err == nil && u.Scheme == "" && u.Host == "" && strings.HasPrefix(u.Path, "/")
 }
 
 // SeeOther is a handler saying the answer is somewhere else: the row a write

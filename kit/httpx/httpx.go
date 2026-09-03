@@ -130,7 +130,49 @@ type Options struct {
 	// Log receives the reason behind every denial and every rolled-back
 	// transaction. Defaults to slog.Default().
 	Log *slog.Logger
+
+	// MaxUpload is the largest file this deployment accepts, and it bounds the
+	// body of the one kind of route that reads its own request rather than
+	// declaring a schema for it — see StreamedBody. The envelope a multipart
+	// form wraps the file in is allowed for on top of it.
+	//
+	// Zero means MaxBodyBytes, which is what every other route gets: a
+	// deployment that mounts no streaming route needs no larger number, and a
+	// test that mounts one is not testing the ceiling.
+	MaxUpload int64
 }
+
+// The two body ceilings, and the reason there are two.
+//
+// A request body with a schema is huma's business: it decodes one and it bounds
+// one, at op.MaxBodyBytes, which is a megabyte unless a route says otherwise.
+// A route that reads the request itself has no such bound, and there is exactly
+// one of those — the file upload. A review trickled a body into it at a byte a
+// second and nothing anywhere said stop.
+//
+// So every request gets an http.MaxBytesReader before it reaches a handler: a
+// megabyte, or MaxUpload plus an envelope for the route that streams. The
+// envelope is a megabyte because a multipart form's part headers and boundaries
+// are measured in hundreds of bytes and a round number nobody has to compute is
+// worth more here than a tight one.
+const (
+	MaxBodyBytes      = 1 << 20
+	multipartEnvelope = 1 << 20
+)
+
+// StreamedBodyExtension marks an operation that reads the request body itself
+// instead of declaring a schema for it. Such a route gets Options.MaxUpload
+// plus an envelope rather than MaxBodyBytes; nothing else about it changes.
+//
+// It is an extension on the operation and not a field on Options because the
+// kernel must not know which module happens to own the route. See StreamedBody.
+const StreamedBodyExtension = "x-platformkit-streams-body"
+
+// StreamedBody is what a route that reads its own request puts in its
+// Extensions, beside EventsExtension. There is one caller, and there should
+// stay one: a second route that reads its own body is a second route with no
+// schema, no generated client and no bound but this one.
+func StreamedBody() (string, any) { return StreamedBodyExtension, true }
 
 // API is the application's Huma API: the huma.API every registration goes
 // through, plus the recording that makes boot-time validation possible.
@@ -247,8 +289,11 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// authorization can read the tenant's own rows: both are queries, and they
 	// belong inside the same transaction as the work they guard. Authentication
 	// third, because a session is a row of the tenant that has just resolved.
-	// Authorization last, so a denial rolls that transaction back untouched.
-	a.api.UseMiddleware(a.tenant, a.transaction, a.authenticate, a.authorize)
+	// Authorization fourth, so a denial rolls that transaction back untouched.
+	// Bodies last, after every guard and before the handler, which is where the
+	// two things it does both belong: nothing above it reads a body, and the
+	// transaction it ends for a streaming route is the one the guards opened.
+	a.api.UseMiddleware(a.tenant, a.transaction, a.authenticate, a.authorize, a.bodies)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.

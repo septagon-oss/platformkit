@@ -142,6 +142,10 @@ func TestThePublicRouteCarriesWhatAThemeNeedsAndNothingElse(t *testing.T) {
 // said a navigation refuses absolute URLs and the check was a leading slash, so
 // "//evil.example" — which every browser resolves as another origin — was
 // accepted and rendered as a link in the tenant's own menu.
+//
+// The rule itself is now httpx.LocalPath's, because the admin sign-in form had
+// a second copy of it and that copy was the wrong one. This is the half that
+// matters here: the entity refuses what the kernel refuses.
 func TestANavigationCannotLeaveTheSite(t *testing.T) {
 	for _, tt := range []struct {
 		path string
@@ -158,8 +162,8 @@ func TestANavigationCannotLeaveTheSite(t *testing.T) {
 		{"javascript:alert(1)", false},  // not a path at all
 		{"////evil.example", false},     // more slashes are still an authority
 	} {
-		if got := contracts.InSite(tt.path); got != tt.want {
-			t.Errorf("InSite(%q) = %v, want %v", tt.path, got, tt.want)
+		if got := httpx.LocalPath(tt.path); got != tt.want {
+			t.Errorf("httpx.LocalPath(%q) = %v, want %v", tt.path, got, tt.want)
 		}
 		// And through the entity's own Validate, which is the door a request
 		// actually comes through.
