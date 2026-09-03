@@ -253,8 +253,9 @@ type (
 // deliberate exception, described on Login.
 type Service interface {
 	// Precheck is what the limiter says about an attempt on this address from
-	// this one, before anything has been opened. It reads memory and touches no
-	// database.
+	// this one, before the request's transaction has been opened. It reads the
+	// shared counters (kit/limit) in a short transaction of their own and
+	// leaves nothing open.
 	//
 	// It is a method of its own because one of the three answers is "wait two
 	// seconds", and two seconds is a long time to be holding a database
@@ -262,13 +263,13 @@ type Service interface {
 	// transaction afterwards; Login applies the refusal itself, so a caller
 	// that never asks is refused rather than let in — what it loses is the
 	// delay, which is a slowdown and not a gate.
-	Precheck(email, ip string) Verdict
+	Precheck(ctx context.Context, email, ip string) Verdict
 
 	// MayAsk counts one forgotten-password request from an address and reports
 	// whether it is within ResetRequests for the window. It is the public
 	// route's own limit, and it counts the address asking rather than the
 	// address asked about.
-	MayAsk(ip string) bool
+	MayAsk(ctx context.Context, ip string) bool
 
 	// Login verifies a password and opens a session. It answers ErrCredentials
 	// for a wrong password, an unknown address, a user who is not active and a

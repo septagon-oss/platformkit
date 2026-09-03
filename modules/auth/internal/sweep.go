@@ -7,6 +7,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -18,8 +19,9 @@ import (
 // stops being a history of who signed in from where.
 const sweepCron = "0 * * * *"
 
-// Sweep is this module's periodic work: expired sessions and spent tokens go,
-// and a role naming a permission no module defines is said out loud.
+// Sweep is this module's periodic work: the rate limit counters whose window
+// closed go, expired sessions and spent tokens go, and a role naming a
+// permission no module defines is said out loud.
 //
 // It is a job and not a subscription because nothing happens when a session
 // expires — the clock passes, which is the distinction docs/adr/0004 draws.
@@ -36,6 +38,14 @@ func Sweep(svc *Service, tenants jobs.TenantLister) jobs.Job {
 		Name: "auth-sweep",
 		Cron: sweepCron,
 		Run: func(ctx context.Context, conn *db.Conn) error {
+			// The counters belong to no tenant — kit/limit puts the tenant in
+			// the key — so they are emptied once, outside the walk. The table
+			// is the kernel's and this module is the only thing that writes
+			// it; when a second one adopts kit/limit the purge belongs beside
+			// the outbox's, in kit/app.
+			if err := limit.Purge(ctx, conn); err != nil {
+				return fmt.Errorf("auth: sweep the rate limits: %w", err)
+			}
 			return jobs.PerTenant(ctx, conn, tenants, func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
 				if err := svc.purge(ctx, conn, t); err != nil {
 					return err

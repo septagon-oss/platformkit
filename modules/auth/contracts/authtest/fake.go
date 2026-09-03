@@ -13,6 +13,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
@@ -64,7 +65,7 @@ type Fake struct {
 func NewFake(users contracts.Users) *Fake {
 	return &Fake{
 		Users:    users,
-		limiter:  contracts.NewLimiter(),
+		limiter:  contracts.NewLimiter(limit.Memory()),
 		sessions: map[uuid.UUID]contracts.Session{},
 		roles:    map[string]contracts.Permissions{},
 		offered:  map[uuid.UUID]time.Time{},
@@ -118,11 +119,13 @@ func (f *Fake) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userID, 
 }
 
 // Precheck mirrors internal.Service.Precheck: the limiter's verdict, from the
-// same limiter the real one keeps.
-func (f *Fake) Precheck(email, ip string) contracts.Verdict { return f.limiter.Check(email, ip) }
+// same limiter the real one keeps, over kit/limit's memory store.
+func (f *Fake) Precheck(ctx context.Context, email, ip string) contracts.Verdict {
+	return f.limiter.Check(ctx, email, ip)
+}
 
 // MayAsk mirrors internal.Service.MayAsk.
-func (f *Fake) MayAsk(ip string) bool { return f.limiter.Requested(ip) }
+func (f *Fake) MayAsk(ctx context.Context, ip string) bool { return f.limiter.Requested(ctx, ip) }
 
 // Forget mirrors internal.Service.Forget: it publishes and does nothing else,
 // which is what makes the public route cost the same for an address somebody
@@ -275,7 +278,7 @@ func (f *Fake) Purge(_ context.Context, _ db.Tx[db.Tenant]) (int64, error) {
 // Login mirrors internal.Service.Login, including the dummy hash on the path
 // where no user was found.
 func (f *Fake) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password string, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
-	if f.limiter.Check(email, from.IP) == contracts.Refuse {
+	if f.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
 		f.record(contracts.EventLoginFailed)
 		return nil, nil, contracts.ErrTooManyAttempts
 	}
@@ -288,11 +291,11 @@ func (f *Fake) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password s
 		return nil, nil, err
 	case err != nil, !user.CanSignIn():
 		usercontracts.EqualWork(password)
-		return nil, nil, f.fail(email, from.IP)
+		return nil, nil, f.fail(ctx, email, from.IP)
 	case !user.CheckPassword(password):
-		return nil, nil, f.fail(email, from.IP)
+		return nil, nil, f.fail(ctx, email, from.IP)
 	}
-	f.limiter.Succeeded(email)
+	f.limiter.Succeeded(ctx, email)
 	return f.open(ctx, tx, user, from)
 }
 
@@ -418,8 +421,8 @@ func (f *Fake) identify(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	}, nil
 }
 
-func (f *Fake) fail(email, ip string) error {
-	f.limiter.Failed(email, ip)
+func (f *Fake) fail(ctx context.Context, email, ip string) error {
+	f.limiter.Failed(ctx, email, ip)
 	f.record(contracts.EventLoginFailed)
 	return contracts.ErrCredentials
 }
