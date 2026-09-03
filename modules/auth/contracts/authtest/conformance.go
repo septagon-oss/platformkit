@@ -33,8 +33,12 @@ type Fixture struct {
 	// Published is the names of the events published so far, in order.
 	Published func() []string
 	// Sent is every notice the implementation asked to be delivered, in order.
-	// A case reads the link out of one to follow it.
+	// A case reads one to check what it does not carry.
 	Sent func() []notificationcontracts.Notice
+	// Mailed is every message the implementation handed a mail server, in
+	// order. A case reads the link out of one to follow it, and it is the only
+	// place it can be read — which is the property, not an inconvenience.
+	Mailed func() []notificationcontracts.Message
 	// Sessions reports how many sessions this user has, which is how a case
 	// says "and the others ended" without knowing how they are stored.
 	Sessions func(user uuid.UUID) int
@@ -262,24 +266,69 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
-		"a forgotten password answers the same for everybody, and mails a link to somebody who is here": func(t *testing.T, f Fixture) {
+		"asking to reset a password does the same work whoever asks": func(t *testing.T, f Fixture) {
 			f.User("ada@acme.example.com", Password)
 			for _, address := range []string{"ada@acme.example.com", "nobody@acme.example.com"} {
 				if err := f.Service.Forget(f.Ctx, f.Tx, address); err != nil {
 					t.Errorf("Forget(%q) = %v, want nil however unknown the address", address, err)
 				}
 			}
-			sent := notices(f)
+			// One event each, and nothing else: no lookup, no token, no mail.
+			// An address somebody has and an address nobody has cost the same,
+			// which is what stops the public route being an enumeration oracle
+			// with a stopwatch — 2.1 ms against 0.9 ms was the measurement that
+			// moved the lookup into the worker.
+			published(t, f, contracts.EventResetRequested, contracts.EventResetRequested)
+			if got := mailed(f); len(got) != 0 {
+				t.Errorf("Forget sent %d messages; the request path sends none", len(got))
+			}
+			if got := notices(f); len(got) != 0 {
+				t.Errorf("Forget raised %d notices; the request path raises none", len(got))
+			}
+		},
+
+		"the worker looks the address up, and mails only somebody who is here": func(t *testing.T, f Fixture) {
+			f.User("ada@acme.example.com", Password)
+			for _, address := range []string{"ada@acme.example.com", "nobody@acme.example.com"} {
+				if err := f.Service.Reissue(f.Ctx, f.Tx, address); err != nil {
+					t.Errorf("Reissue(%q) = %v, want nil however unknown the address", address, err)
+				}
+			}
+			sent := mailed(f)
 			if len(sent) != 1 {
-				t.Fatalf("Forget sent %d notices, want one — for the address that is here", len(sent))
+				t.Fatalf("Reissue sent %d messages, want one — for the address that is here", len(sent))
 			}
-			if !sent[0].Email || TokenIn(sent[0].Link) == "" {
-				t.Errorf("the notice is %+v, want an email carrying a token", sent[0])
+			if sent[0].To != "ada@acme.example.com" || TokenIn(sent[0].Body) == "" {
+				t.Errorf("the message is %+v, want one to Ada carrying a token", sent[0])
 			}
-			// And nothing about it reaches the outbox: this module publishes
-			// when a password is reset, not when somebody asks to reset one,
-			// because the second is a thing any stranger can cause.
+			// And the notice raised beside it carries no token. A notification
+			// is an ordinary row — listed by a route, readable by anybody who
+			// can read the table — so a link with a secret in it is a live
+			// credential sitting in one. It used to be exactly that.
+			for _, n := range notices(f) {
+				if TokenIn(n.Link) != "" || strings.Contains(n.Body, TokenIn(sent[0].Body)) {
+					t.Errorf("the notice carries the token: %+v", n)
+				}
+			}
+			// Nothing about it reaches the outbox from here either: this module
+			// publishes when a password is reset, not when somebody asks.
 			published(t, f)
+		},
+
+		"one link per person per interval, however often somebody asks": func(t *testing.T, f Fixture) {
+			f.User("ada@acme.example.com", Password)
+			for range 5 {
+				if err := f.Service.Reissue(f.Ctx, f.Tx, "ada@acme.example.com"); err != nil {
+					t.Fatalf("Reissue: %v", err)
+				}
+			}
+			// A public route that costs a mail is somebody else's inbox filled
+			// by a stranger unless the recipient is capped too. The cap is on
+			// the person being written to; the route's own cap is on the
+			// address doing the asking.
+			if got := mailed(f); len(got) != 1 {
+				t.Errorf("five requests sent %d messages, want one", len(got))
+			}
 		},
 
 		"the link sets a password once, and ends every session": func(t *testing.T, f Fixture) {
@@ -287,14 +336,14 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody); err != nil {
 				t.Fatalf("Login: %v", err)
 			}
-			if err := f.Service.Forget(f.Ctx, f.Tx, "ada@acme.example.com"); err != nil {
-				t.Fatalf("Forget: %v", err)
+			if err := f.Service.Reissue(f.Ctx, f.Tx, "ada@acme.example.com"); err != nil {
+				t.Fatalf("Reissue: %v", err)
 			}
-			sent := notices(f)
+			sent := mailed(f)
 			if len(sent) != 1 {
-				t.Fatalf("Forget sent %d notices, want one", len(sent))
+				t.Fatalf("Reissue sent %d messages, want one", len(sent))
 			}
-			token := TokenIn(sent[0].Link)
+			token := TokenIn(sent[0].Body)
 
 			if err := f.Service.Reset(f.Ctx, f.Tx, token, "a different passphrase"); err != nil {
 				t.Fatalf("Reset: %v", err)
@@ -323,11 +372,11 @@ func cases() map[string]func(*testing.T, Fixture) {
 					t.Errorf("Offer(%s) = %v, want nil", id, err)
 				}
 			}
-			if got := notices(f); len(got) != 1 {
-				t.Fatalf("Offer sent %d notices, want one — for the person who cannot sign in", len(got))
+			if got := mailed(f); len(got) != 1 {
+				t.Fatalf("Offer sent %d messages, want one — for the person who cannot sign in", len(got))
 			}
 			// And the link works: an invitation and a reset are one mechanism.
-			token := TokenIn(notices(f)[0].Link)
+			token := TokenIn(mailed(f)[0].Body)
 			if err := f.Service.Reset(f.Ctx, f.Tx, token, "a chosen passphrase"); err != nil {
 				t.Fatalf("Reset with an invitation's token: %v", err)
 			}
@@ -388,6 +437,15 @@ func notices(f Fixture) []notificationcontracts.Notice {
 		return nil
 	}
 	return f.Sent()
+}
+
+// mailed is what the implementation handed a mail server, or nothing when the
+// harness wired no mailbox.
+func mailed(f Fixture) []notificationcontracts.Message {
+	if f.Mailed == nil {
+		return nil
+	}
+	return f.Mailed()
 }
 
 // sessions is how many the user has, or -1 when the harness cannot say.

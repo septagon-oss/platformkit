@@ -41,15 +41,32 @@ func (s *Service) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userI
 	return s.RevokeSessions(ctx, tx, userID, keep)
 }
 
-// Forget issues a reset token for an address and mails the link.
+// Forget publishes auth.reset_requested, and that is the whole of the request.
 //
-// Every path through it returns nil. An address nobody has, a deactivated user,
-// a composition with no notifier: all of them are the same answer, because the
-// route this sits behind is public and one that said "no such address" would be
-// an account enumeration oracle anybody could run. The cost of that honesty is
-// that a person who mistypes their own address is told nothing; the mail that
-// does not arrive is the message.
+// No lookup, no token, no mail: those are Reissue's, in the worker. The route
+// this sits behind is public and has to cost the same whether or not anybody
+// has the address, and doing the lookup here did not — a known address answered
+// in 2.1 ms and an unknown one in 0.9 ms, two distributions that did not
+// overlap, which is an account enumeration oracle with a stopwatch. One INSERT
+// into the outbox is the same INSERT either way.
+//
+// The cost of that honesty is unchanged and worth restating: a person who
+// mistypes their own address is told nothing, and the mail that does not arrive
+// is the message.
 func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
+	return events.Publish(ctx, tx, contracts.EventResetRequested, contracts.ResetRequested{
+		Email: contracts.EmailKey(email), At: db.Now(),
+	})
+}
+
+// Reissue is the worker's half of the forgotten-password flow: the lookup the
+// request refused to do, done where no stopwatch can reach it.
+//
+// Every path returns nil. An address nobody has, a deactivated account, a
+// composition with no mailer, a person who was sent a link a moment ago: none
+// of those is a failure the outbox should retry four times and dead-letter, and
+// none of them is anything a stranger gets to measure.
+func (s *Service) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
 	user, err := s.users.ByEmail(ctx, tx, email)
 	switch {
 	case errors.Is(err, crud.ErrNotFound):
@@ -58,7 +75,7 @@ func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string)
 		return err
 	case user.Status == usercontracts.StatusInactive:
 		// A deactivated account is not one somebody may talk their way back
-		// into, and saying so would be the oracle again.
+		// into.
 		return nil
 	}
 	return s.offer(ctx, tx, user, resetSubject, resetBody)
@@ -85,23 +102,50 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 	return s.offer(ctx, tx, user, inviteSubject, inviteBody)
 }
 
-// offer writes the token and asks for the mail.
+// offer mints the token, raises the notice, and sends the mail.
 //
-// The row holds sha256 of the token and the token goes only into the message,
-// so a copy of this table is a list of hashes. ON CONFLICT on (tenant_id,
-// user_id) is the single-pending rule: asking again replaces the last link
-// rather than adding a second, so a mailbox with four of these mails still has
-// one that works.
+// # Where the secret is, and where it is not
+//
+// The token exists in exactly two places: the message this hands the mail
+// server, and sha256 of it in password_tokens. It is in no other row, which is
+// a stronger claim than it sounds and the reason this function sends the mail
+// itself rather than asking the notification module to.
+//
+// Everything else this application mails goes out of the notification worker,
+// which reads the notification row back and renders it — so whatever is in the
+// message is, by construction, in a row. A notification is an ordinary
+// tenant-owned row: listed by a route, kept until somebody deletes it,
+// readable by anybody who can read the table. Putting the link in
+// notifications.link, which is what this used to do, made every reset link a
+// live credential sitting in a table nobody treats as a credential store, and
+// contradicted the property migrations/000014 states. The event cannot carry it
+// either: an outbox row is kept for a week and modules/audit copies every
+// payload into the audit trail.
+//
+// So the notice raised here carries ResetPath and nothing else — the person has
+// something to see in the application, and it tells them to check their mail —
+// and the secret goes straight from this transaction to the mail server. The
+// composition wires notification's own Mailer, so there is still one sender.
+//
+// ON CONFLICT on (tenant_id, user_id) is the single-pending rule: asking again
+// replaces the last link rather than adding a second, so a mailbox with four of
+// these mails still has one that works. recent() is the other half of that —
+// one link per person per ResetInterval, so an address somebody types
+// repeatedly is one mail and not twenty.
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
-	if s.notify == nil {
-		// A composition with no notifier writes no token either: a link nobody
-		// is sent is a live credential in a table for an hour, for nothing.
-		slog.WarnContext(ctx, "auth: no notifier is wired, so no set-password link was sent", "user", user.ID)
+	if s.mail.Mailer == nil {
+		// A composition with no mailer writes no token either: a link nobody is
+		// sent is a live credential in a table for an hour, for nothing.
+		slog.WarnContext(ctx, "auth: no mailer is wired, so no set-password link was sent", "user", user.ID)
 		return nil
+	}
+	recent, err := s.recent(tx, user.ID)
+	if err != nil || recent {
+		return err
 	}
 	token := secret()
 	at := db.Now()
-	err := tx.DB().Exec(
+	err = tx.DB().Exec(
 		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"+
 			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash,"+
 			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
@@ -109,16 +153,81 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	if err != nil {
 		return fmt.Errorf("auth: issue a password token: %w", err)
 	}
-	_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
-		Recipient: user.ID, Title: title,
-		Body: body + "\n\nThe link works once and stops working in an hour.",
-		// A path and not a URL: the notification module refuses an absolute one,
-		// and the tenant's own host is what the mail turns it into.
-		Link:  ResetPath + "?token=" + token,
-		Email: true,
-	})
-	return err
+	if s.notify != nil {
+		// A path, and one with no query on it: the notification module refuses
+		// an absolute link, and this one is not a credential at all.
+		_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
+			Recipient: user.ID, Title: title,
+			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
+			Link: ResetPath,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return s.send(ctx, tx, user, title, body, token)
 }
+
+// send renders the one message this module writes and hands it to the mail
+// server. The link is absolute and on the recipient's own tenant's host,
+// because a mail client has no base to resolve a path against and one
+// customer's people must not be sent to another's front door.
+func (s *Service) send(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body, token string) error {
+	base, err := s.baseURL(ctx, tx)
+	if err != nil {
+		return err
+	}
+	return s.mail.Mailer.Send(ctx, notificationcontracts.Message{
+		To: user.Email, Subject: title,
+		Body: body + "\n\n" + base + ResetPath + "?token=" + token +
+			"\n\nThe link works once and stops working in an hour.",
+	})
+}
+
+// baseURL is the scheme and host this tenant's people reach the application at.
+// A composition that wired no lookup mails a path, which is a link that works
+// for nobody — so it is an error rather than a silent half-message.
+func (s *Service) baseURL(ctx context.Context, tx db.Tx[db.Tenant]) (string, error) {
+	if s.mail.Hosts == nil {
+		return "", fmt.Errorf("auth: no host lookup is wired, so a mailed link would point nowhere")
+	}
+	host, err := s.mail.Hosts.PublicHost(ctx, tx)
+	if err != nil {
+		return "", fmt.Errorf("auth: find the host of %s: %w", db.TenantOf(tx).Slug, err)
+	}
+	if host == "" {
+		return "", fmt.Errorf("auth: %s is served at no host, so a mailed link would point nowhere", db.TenantOf(tx).Slug)
+	}
+	scheme := "http"
+	if s.mail.Secure {
+		scheme = "https"
+	}
+	return scheme + "://" + host, nil
+}
+
+// recent reports whether this person was sent a link inside ResetInterval.
+//
+// It is the cap on outstanding notices per recipient, and it is read off the
+// token row rather than counted anywhere else because the token table is
+// already one row per person: asking again replaces the link, so the only thing
+// left to bound is how many mails and how many notices that produces. Without
+// it, a public route plus a known address is somebody else's inbox filled by a
+// stranger, one mail per request.
+func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
+	var n int64
+	err := tx.DB().Table("password_tokens").
+		Where("user_id = ? AND created_at > now() - ?::interval", userID, resetInterval).
+		Count(&n).Error
+	if err != nil {
+		return false, fmt.Errorf("auth: read the pending password token of %s: %w", userID, err)
+	}
+	return n > 0, nil
+}
+
+// resetInterval is contracts.ResetInterval as Postgres spells an interval, so
+// the cutoff is one constant and the database applies it — the arrangement the
+// purge's maxAge already uses.
+var resetInterval = fmt.Sprintf("%d seconds", int(contracts.ResetInterval.Seconds()))
 
 // Reset consumes a token, sets the password and ends every session.
 //

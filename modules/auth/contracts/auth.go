@@ -67,6 +67,16 @@ const (
 	// TokenLifetime is how long a set-password or reset link works. Long enough
 	// to find the mail, short enough that one left in an inbox is not an account.
 	TokenLifetime = 60 * time.Minute
+	// ResetInterval is how long a person waits between links, and it is the cap
+	// on outstanding notices per recipient.
+	//
+	// The single-pending rule already means asking twice leaves one live link;
+	// this is what stops asking twice being two mails. Without it a public
+	// route and a known address are somebody else's inbox filled by a stranger.
+	// Five minutes is longer than somebody clicks twice and much shorter than
+	// TokenLifetime, so a person who really did lose the first mail asks again
+	// and gets one.
+	ResetInterval = 5 * time.Minute
 )
 
 // The two failures a caller can act on. Everything else from Login is an outage.
@@ -207,15 +217,33 @@ type Users interface {
 	SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, password string) error
 }
 
-// Notifier is what this module needs of the notification module: one call that
-// tells somebody something and, when asked, sends the mail.
+// Notifier is what this module needs of the notification module to tell
+// somebody something inside the application: a row with a title, a body and a
+// path, which a bell shows and a page renders.
 //
-// A reset link is an email and nothing else, so this is the whole capability. A
-// composition that wires none writes no rows and sends nothing, and Forget
-// still answers as though it had — see Service.Forget.
+// It never carries the secret. The notice raised beside a reset link points at
+// ResetPath and nothing more, because a notification row is an ordinary row —
+// listed by a route, copied into no audit trail but readable by anybody who can
+// read the table — and a token in it is a live credential sitting in one.
 type Notifier interface {
 	Notify(ctx context.Context, tx db.Tx[db.Tenant], n notificationcontracts.Notice) (*notificationcontracts.Notification, error)
 }
+
+// Mailer and Hosts are the notification module's own two interfaces, named here
+// so that this module's Deps reads as one list of capabilities rather than as a
+// mixture of two packages'.
+//
+// This module sends one kind of mail itself rather than asking the notification
+// module to, and that is the whole of why it holds a Mailer. Everything else
+// this application mails goes out of the notification worker, which reads the
+// row back and renders it — so whatever is in the message is in a row. A
+// set-password link must not be in a row, in an outbox payload or in the audit
+// trail, and the only way to have it in none of them is for the process that
+// mints the token to hand it straight to the mail server. See Service.Reissue.
+type (
+	Mailer = notificationcontracts.Mailer
+	Hosts  = notificationcontracts.HostLookup
+)
 
 // Service is signing in, signing out, recognising a session, and resolving what
 // a set of roles may do.
@@ -224,10 +252,31 @@ type Notifier interface {
 // session row and the event that describes it commit together — with one
 // deliberate exception, described on Login.
 type Service interface {
+	// Precheck is what the limiter says about an attempt on this address from
+	// this one, before anything has been opened. It reads memory and touches no
+	// database.
+	//
+	// It is a method of its own because one of the three answers is "wait two
+	// seconds", and two seconds is a long time to be holding a database
+	// connection. The caller asks, sleeps if it is told to, and opens its
+	// transaction afterwards; Login applies the refusal itself, so a caller
+	// that never asks is refused rather than let in — what it loses is the
+	// delay, which is a slowdown and not a gate.
+	Precheck(email, ip string) Verdict
+
+	// MayAsk counts one forgotten-password request from an address and reports
+	// whether it is within ResetRequests for the window. It is the public
+	// route's own limit, and it counts the address asking rather than the
+	// address asked about.
+	MayAsk(ip string) bool
+
 	// Login verifies a password and opens a session. It answers ErrCredentials
 	// for a wrong password, an unknown address, a user who is not active and a
 	// user who has no password, and ErrTooManyAttempts once an address has
 	// failed too often.
+	//
+	// It does not sleep. The soft delay a distributed attack earns belongs to
+	// Precheck and to whoever calls it, for the reason given there.
 	//
 	// A failure publishes auth.login_failed from a transaction of its own,
 	// because the request's transaction is about to be rolled back: a 401 is a
@@ -288,18 +337,28 @@ type Service interface {
 	// stolen cookie from becoming a stolen account.
 	ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userID, keep uuid.UUID, current, next string) error
 
-	// Forget issues a reset token for an address and mails the link.
+	// Forget publishes auth.reset_requested and does nothing else.
 	//
-	// It answers nil for an address nobody has, for a deactivated user, and for
-	// a composition that wired no notifier. That is the whole design of it: the
-	// route answers 200 either way, because an endpoint that said "no such
-	// address" would be an account enumeration oracle open to everybody, and
-	// one that said it only sometimes would be the same oracle with a stopwatch.
+	// Not the lookup, not the token, not the mail: all three are Reissue's, in
+	// the worker. The route this sits behind is public and has to cost the same
+	// whether or not anybody has the address — an endpoint that said "no such
+	// address" would be an account enumeration oracle, and one that merely took
+	// half as long to say nothing is the same oracle with a stopwatch. So the
+	// request path is one INSERT into the outbox and is identical either way.
 	Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error
+
+	// Reissue is the other half, and it runs in the worker: look the address
+	// up, and if somebody active has it, mint a token and mail them the link.
+	//
+	// It answers nil for an address nobody has, for a deactivated user, for a
+	// composition that wired no mailer, and for a person who was sent one
+	// recently — every one of those is "no mail" and none of them is a failure
+	// the outbox should retry.
+	Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string) error
 
 	// Offer issues a set-password token for somebody who has just been invited
 	// and mails the link. It is what the user.invited subscription does, and it
-	// is the same token Forget issues: an invitation and a reset differ in the
+	// is the same token Reissue issues: an invitation and a reset differ in the
 	// message, not in the mechanism.
 	Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) error
 

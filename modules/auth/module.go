@@ -38,11 +38,28 @@ type Deps struct {
 	// uses.
 	Users contracts.Users
 
-	// Notify is how a set-password or reset link reaches somebody. A
-	// composition that wires none issues no token either — a link nobody is
-	// sent is a live credential in a table for an hour, for nothing — and the
-	// forgotten-password route still answers 200, because it always does.
+	// Notify is how somebody is told, inside the application, that a link was
+	// sent. It never carries the link: the notice points at /auth/reset and the
+	// secret is in the mail and nowhere else. A composition that wires none
+	// still sends the mail.
 	Notify contracts.Notifier
+
+	// Mailer is where the link itself goes, and it is the only place it goes.
+	// A composition that wires none issues no token either — a link nobody is
+	// sent is a live credential in a table for an hour, for nothing — and the
+	// forgotten-password route still answers as though it had.
+	//
+	// It is the notification module's own Mailer, wired by the application to
+	// the same sender everything else uses, because this module needs to hand a
+	// message over without it becoming a row first. See contracts.Mailer.
+	Mailer contracts.Mailer
+
+	// Hosts turns the tenant a link belongs to into the host its people reach
+	// the application at, which a mailed link has to be built on: a link on the
+	// installation's public host would send one customer's people to another
+	// customer's front door. It is the notification module's own lookup, wired
+	// by the application over the tenant module.
+	Hosts contracts.Hosts
 
 	// Tenants is how the hourly sweep reaches every tenant, to delete the
 	// sessions and tokens that have expired.
@@ -73,8 +90,10 @@ type Deps struct {
 // value to kit/app as the authorizer and the identity hook, and hands its
 // SeedRoles to the tenant module as a create hook.
 func Module(deps Deps) (contracts.Auth, module.Module) {
-	svc := internal.NewService(deps.Users, deps.Notify, deps.Operator)
 	secure := !config.Local(deps.PublicHost)
+	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
+		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure,
+	}, deps.Operator)
 	cookies := internal.NewCookies(secure)
 	return svc, module.Module{
 		Name:        "auth",
@@ -84,12 +103,16 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			{Label: "Roles", Path: "/admin/auth/roles", Permission: contracts.PermissionRoleManage},
 		},
 		Jobs: []jobs.Job{internal.Sweep(svc, deps.Tenants)},
-		// One subscription, and it is the invitation flow: the user module
-		// creates somebody with no password and says so, and this module is
-		// what turns that into a link they can use. It is a subscription rather
-		// than a call inside Invite because sending mail is somebody else's
-		// machine, and a request that waited on one would hold a transaction
-		// open across it.
+		// Two subscriptions, and they are the same fact from two directions:
+		// somebody who cannot sign in has to be sent a link they can use.
+		//
+		// Both are subscriptions rather than calls inside the request, and for
+		// two different reasons. The invitation one, because sending mail is
+		// somebody else's machine and a request that waited on one would hold a
+		// transaction open across it. The reset one, because the request may
+		// not look the address up at all: a public route that took longer for
+		// an address somebody has is an account enumeration oracle with a
+		// stopwatch, so the lookup happens here, where nobody is timing it.
 		Subscriptions: []events.Subscription{{
 			Module: "auth", Name: usercontracts.EventInvited,
 			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
@@ -98,6 +121,15 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 					return fmt.Errorf("auth: read the invitation: %w", err)
 				}
 				return svc.Offer(ctx, tx, invited.UserID)
+			},
+		}, {
+			Module: "auth", Name: contracts.EventResetRequested,
+			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+				var asked contracts.ResetRequested
+				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
+					return fmt.Errorf("auth: read the reset request: %w", err)
+				}
+				return svc.Reissue(ctx, tx, asked.Email)
 			},
 		}},
 		Routes: func(api *httpx.API) {

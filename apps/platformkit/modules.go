@@ -92,8 +92,15 @@ func compose(cfg config.Config) composition {
 	// an error the job reports rather than a panic.
 	active := &deferred{}
 	auths, authModule := auth.Module(auth.Deps{
-		Users:   users,
-		Notify:  notify,
+		Users:  users,
+		Notify: notify,
+		// The same sender and the same host lookup the notification module
+		// takes, handed to the one module that has to put a secret in a message
+		// without it becoming a row first: a set-password link belongs in the
+		// mail and in nothing else. Everything else this application mails goes
+		// out of the notification worker, which renders a row.
+		Mailer:  mail,
+		Hosts:   hosts,
 		Tenants: active,
 		// The permissions the operator's own administrator is granted by name.
 		// The auth module cannot name tenant:manage — it is composed before the

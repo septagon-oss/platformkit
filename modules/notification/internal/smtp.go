@@ -8,6 +8,7 @@ import (
 	"net/smtp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
@@ -28,6 +29,49 @@ type Mail struct {
 // provider abstraction, because SMTP is what every service worth naming speaks.
 type SMTP struct{ cfg Mail }
 
+// mailStep bounds the dial, and then every command and every reply of the
+// conversation after it.
+//
+// net/smtp has no context and no clock of its own: it is a synchronous
+// conversation over whatever net.Conn it is handed, and it waits as long as
+// that conn will. So a mail server that accepts the connection and then says
+// nothing — a relay that has wedged, a firewall that black-holes the reply —
+// used to cost the worker a goroutine and a socket per attempt, forever, with
+// nothing logged: the send never returned, so the outbox never learned it had
+// failed, so it never retried and never gave up. A deadline is what turns that
+// silence into an error the retry ladder and the dead letter can see.
+//
+// It is per step and refreshed on each read and write rather than per message,
+// so a large body over a slow link is not cut off half way through while a
+// server that has stopped answering still is. Thirty seconds is generous for
+// one SMTP command and short enough that a wedged relay is a dead letter within
+// the hour rather than a leak.
+//
+// A variable rather than a constant only so that smtp_test.go can hold a server
+// hung for milliseconds; nothing outside this package can see it.
+var mailStep = 30 * time.Second
+
+// paced is a net.Conn that pushes its deadline out on every read and write,
+// which is how mailStep reaches a library that takes no context. STARTTLS wraps
+// this conn rather than replacing it, so the deadline survives the upgrade.
+type paced struct {
+	net.Conn
+}
+
+func (p paced) Read(b []byte) (int, error) {
+	if err := p.Conn.SetDeadline(time.Now().Add(mailStep)); err != nil {
+		return 0, err
+	}
+	return p.Conn.Read(b)
+}
+
+func (p paced) Write(b []byte) (int, error) {
+	if err := p.Conn.SetDeadline(time.Now().Add(mailStep)); err != nil {
+		return 0, err
+	}
+	return p.Conn.Write(b)
+}
+
 // NewSMTP returns the sender for cfg. main wires notification.Mailbox
 // instead when no host is configured, and says so at boot.
 func NewSMTP(cfg Mail) *SMTP { return &SMTP{cfg: cfg} }
@@ -37,15 +81,18 @@ var _ contracts.Mailer = (*SMTP)(nil)
 // Send delivers one message. The connection is opened, used and closed per
 // message: this runs in the worker, one event at a time, so a pool would buy
 // nothing. A send that fails is retried by the outbox rather than here, because
-// the kernel owns the retry ladder and two of them would be two policies.
+// the kernel owns the retry ladder and two of them would be two policies — and
+// mailStep is what guarantees a send fails at all rather than waiting forever.
 func (s *SMTP) Send(ctx context.Context, m contracts.Message) error {
 	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
-	var d net.Dialer
+	d := net.Dialer{Timeout: mailStep}
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("notification: dial %s: %w", addr, err)
 	}
-	c, err := smtp.NewClient(conn, s.cfg.Host)
+	// The greeting is a read, so it is already on the clock: a server that
+	// accepts and never speaks fails here rather than never.
+	c, err := smtp.NewClient(paced{conn}, s.cfg.Host)
 	if err != nil {
 		_ = conn.Close()
 		return fmt.Errorf("notification: greet %s: %w", addr, err)

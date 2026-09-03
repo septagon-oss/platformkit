@@ -16,11 +16,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
+	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -30,11 +32,23 @@ import (
 // on a laptop needs and what the test issuer speaks.
 const host = "acme.localhost"
 
-// mailbox is where every set-password link this file causes ends up. mount
-// replaces it, so it holds what the application under test sent and nothing
-// from the test before; these cases do not run in parallel, and a mailbox
-// shared across two applications would be a test reading somebody else's mail.
-var mailbox = &authtest.Notices{}
+// mailbox is where every set-password link this file causes ends up, and
+// notices is what the application told people inside itself. mount replaces
+// both, so each holds what the application under test produced and nothing from
+// the test before; these cases do not run in parallel, and a mailbox shared
+// across two applications would be a test reading somebody else's mail.
+//
+// They are two because the link is in one of them and not the other, which is
+// the property: a notification is an ordinary row and a token in one is a live
+// credential sitting in a table.
+var (
+	mailbox = &authtest.Mailbox{}
+	notices = &authtest.Notices{}
+	// subs is the auth module's subscriptions, as mount registered them. There
+	// is no worker in these tests, so a case that needs one drives them itself.
+	// See worker.
+	subs []events.Subscription
+)
 
 // site is the tenant loader for this file: one host, one tenant.
 type site struct{}
@@ -50,9 +64,21 @@ func (site) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Ten
 func mount(t *testing.T, oidc auth.OIDC) (chi.Router, *db.Conn, contracts.Auth) {
 	t.Helper()
 	_, conn := dbtest.Schema(t)
-	mailbox = &authtest.Notices{}
+	return mountOn(t, conn, oidc)
+}
+
+// mountOn is mount over a connection the caller opened, which is what the
+// soft-delay case needs: it watches the pool from the outside, and a pool it
+// cannot name is a pool it cannot watch.
+func mountOn(t *testing.T, conn *db.Conn, oidc auth.OIDC) (chi.Router, *db.Conn, contracts.Auth) {
+	t.Helper()
+	mailbox, notices = &authtest.Mailbox{}, &authtest.Notices{}
 	users, userModule := user.Module(user.Deps{})
-	svc, authModule := auth.Module(auth.Deps{Users: users, Notify: mailbox, OIDC: oidc, PublicHost: host})
+	svc, authModule := auth.Module(auth.Deps{
+		Users: users, Notify: notices, Mailer: mailbox, Hosts: authtest.Host(host),
+		OIDC: oidc, PublicHost: host,
+	})
+	subs = authModule.Subscriptions
 	seed(t, conn, svc, acme)
 
 	api, router := httpx.New(httpx.Options{
@@ -102,6 +128,44 @@ func person(t *testing.T, conn *db.Conn, email string, roles ...string) uuid.UUI
 		t.Fatalf("create %s: %v", email, err)
 	}
 	return id
+}
+
+// worker runs the module's subscriptions over everything in the outbox, once,
+// which is between them what kit/events' relay and Consume do in a deployment.
+//
+// The forgotten-password flow needs it, and that is the point of the flow: the
+// public route publishes and nothing else, and the lookup, the token and the
+// mail all happen here — where no stranger with a stopwatch can time them. A
+// case that stopped at the response would be testing half of it.
+func worker(t *testing.T, conn *db.Conn) {
+	t.Helper()
+	type pending struct {
+		Name    string
+		Payload []byte
+	}
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var rows []pending
+		if err := tx.DB().Table("platformkit_outbox").Order("created_at, id").Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, r := range rows {
+			for _, s := range subs {
+				if s.Name != r.Name {
+					continue
+				}
+				err := s.Handler(ctx, tx, events.Event{
+					ID: uuid.New(), Name: r.Name, TenantID: acme.ID, Payload: r.Payload,
+				})
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return tx.DB().Exec("DELETE FROM platformkit_outbox").Error
+	})
+	if err != nil {
+		t.Fatalf("run the subscriptions: %v", err)
+	}
 }
 
 // call sends one request. Whatever a test wants to say about where the request
@@ -502,13 +566,24 @@ func TestTheForgottenPasswordRouteSaysTheSameThingToEverybody(t *testing.T) {
 	if a, b := withoutInstance(known.Body.String()), withoutInstance(unknown.Body.String()); a != b {
 		t.Errorf("the two answers differ, which is an enumeration oracle:\n  %s\n  %s", a, b)
 	}
+	// Nothing has been mailed yet: the route published, and the worker is what
+	// decides whether anybody is there.
+	if got := mailbox.Sent(); len(got) != 0 {
+		t.Fatalf("the request path sent %d messages; it sends none", len(got))
+	}
+	worker(t, conn)
 	sent := mailbox.Sent()
 	if len(sent) != 1 {
 		t.Fatalf("%d links were mailed, want one — for the address that is here", len(sent))
 	}
+	// The link is absolute, on this tenant's own host, and it is in the message
+	// and in no row.
+	if !strings.Contains(sent[0].Body, "http://"+host+internal.ResetPath+"?token=") {
+		t.Errorf("the mailed link is not this tenant's own absolute URL: %q", sent[0].Body)
+	}
 
 	reset := call(t, router, http.MethodPost, "/api/v1/auth/password/reset",
-		`{"token":"`+authtest.TokenIn(sent[0].Link)+`","new":"a different passphrase"}`)
+		`{"token":"`+authtest.TokenIn(sent[0].Body)+`","new":"a different passphrase"}`)
 	if reset.Code != http.StatusOK {
 		t.Fatalf("the reset = %d %s, want 200", reset.Code, reset.Body.String())
 	}
@@ -518,7 +593,7 @@ func TestTheForgottenPasswordRouteSaysTheSameThingToEverybody(t *testing.T) {
 	}
 	// And the token is spent.
 	again := call(t, router, http.MethodPost, "/api/v1/auth/password/reset",
-		`{"token":"`+authtest.TokenIn(sent[0].Link)+`","new":"another passphrase"}`)
+		`{"token":"`+authtest.TokenIn(sent[0].Body)+`","new":"another passphrase"}`)
 	if again.Code != http.StatusUnauthorized {
 		t.Errorf("the link worked twice: %d %s", again.Code, again.Body.String())
 	}

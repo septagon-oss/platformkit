@@ -47,6 +47,21 @@ const (
 	// a mobile carrier's NAT — and the number is what an attacker gets rather
 	// than what anybody needs.
 	SourceAttempts = 50
+
+	// ResetRequests is how many forgotten-password links one address may ask
+	// for inside a window.
+	//
+	// The route it guards is public, answers the same either way, and costs a
+	// mail: without a cap, twenty-three requests were twenty-three mails to
+	// somebody who asked for none, which is a mail relay's reputation spent by
+	// a stranger with a browser. It counts the address asking and never the
+	// address asked about, so the cap cannot be used to tell an account that
+	// exists from one that does not — that is the whole property the route is
+	// built around.
+	//
+	// Ten, because a person who has lost a password asks two or three times and
+	// an office behind one NAT is several people doing that at once.
+	ResetRequests = 10
 )
 
 // Limiter counts failed logins, per account and per source address, in this
@@ -67,6 +82,22 @@ const (
 // from many addresses are somebody attacking the lockout, and that account gets
 // a delay rather than a refusal; failures from one address against many
 // accounts are somebody working through a list, and that address gets the same.
+//
+// # The residual, stated
+//
+// Only the distributed lockout is defused. Ten wrong passwords for
+// ada@acme.example.com from one address still lock Ada out for fifteen minutes,
+// and an attacker who wants exactly that needs nothing but her address and one
+// machine. MaxSources does not help: one source is not many. That is accepted,
+// not overlooked, and it is accepted because the alternative is worse — an
+// account with no lockout is an account a botnet guesses at the speed of the
+// network, and the common attack is guessing rather than griefing. What is
+// bought back is the scale of it: the attacker has to spend fifteen minutes per
+// account per window, they are recorded in auth.login_failed with Locked set
+// while they do it, and the person they are locking out is told why by
+// ErrTooManyAttempts rather than left thinking their password stopped working.
+// Closing it properly means proving the caller is not the account's owner —
+// a second factor, or a challenge — and neither exists here yet.
 //
 // It lives in contracts rather than in internal/ because the lockout is part of
 // what Login promises, so the fake keeps it too and the conformance suite can
@@ -180,6 +211,46 @@ func (l *Limiter) Succeeded(email string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.windows, EmailKey(email))
+}
+
+// count records one event of a kind in a window and reports whether it is still
+// within max.
+//
+// The two callers below are what it is for, and both are counts of a string per
+// window, which is what sources already holds. space keeps their keys apart
+// from an address's — a plain IP never contains a NUL — so this is one map and
+// one prune rather than three of each.
+func (l *Limiter) count(space, key string, max int) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.prune()
+	now := time.Now()
+	k := space + "\x00" + key
+	w, ok := l.sources[k]
+	if !ok || now.After(w.until) {
+		w = window{until: now.Add(AttemptWindow)}
+	}
+	w.failures++
+	l.sources[k] = w
+	return w.failures <= max
+}
+
+// Requested counts one forgotten-password request from an address and reports
+// whether it is within ResetRequests for this window. The address is the one
+// asking; the address being asked about is never counted, because a cap that
+// depended on it would answer the question the route exists not to answer.
+func (l *Limiter) Requested(ip string) bool { return l.count("forgot", ip, ResetRequests) }
+
+// Noted reports whether a refusal for this account from this address is worth
+// writing down, which is the first one in the window and no more.
+//
+// A locked-out account under a script is refused before anything is checked,
+// and recording each refusal was two audit rows per attempt for a fact that
+// does not change: the first one says the account is under attack and the
+// nine hundredth says it still is. The failures themselves are still recorded
+// one for one — those are attempts that were actually made.
+func (l *Limiter) Noted(email, ip string) bool {
+	return l.count("noted", EmailKey(email)+"\x00"+ip, 1)
 }
 
 // prune drops what has expired, and empties the maps if that was not enough.
