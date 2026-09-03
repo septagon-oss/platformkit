@@ -78,7 +78,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 				return nil, err
 			}
 			return svc.Get(ctx, tx, id)
-		})
+		}, rest.CommandOptions{})
 
 	rest.Command(api, spec, "roles",
 		"Set a user's roles",
@@ -86,7 +86,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 		[]string{contracts.EventRolesSet},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in rolesBody) (*contracts.User, error) {
 			return svc.SetRoles(ctx, tx, id, in.Roles)
-		})
+		}, rest.CommandOptions{})
 
 	rest.Command(api, spec, "deactivate",
 		"Deactivate a user",
@@ -94,7 +94,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 		[]string{contracts.EventDeactivated},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.User, error) {
 			return svc.Deactivate(ctx, tx, id)
-		})
+		}, rest.CommandOptions{})
 }
 
 // passwordBody and rolesBody are the arguments of the two commands that take
@@ -113,10 +113,18 @@ type rolesBody struct {
 // it creates.
 const invitations = "/api/v1/user/invitations"
 
+// Invitation is what a caller sends to invite somebody. It is a named type and
+// not the anonymous struct it was, because huma names a schema after the Go
+// type behind it and an anonymous one came out of the generator as
+// "InviteInputBody1" — a name with this package's plumbing and a deduplication
+// counter in it, published in the OpenAPI document and compiled into every
+// generated client.
+type Invitation struct {
+	Email       string   `json:"email" format:"email" maxLength:"320" doc:"The address to invite" example:"ada@acme.example.com"`
+	DisplayName string   `json:"displayName,omitempty" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
+	Roles       []string `json:"roles,omitempty" doc:"Roles to grant in the same transaction" example:"admin"`
+}
+
 type inviteInput struct {
-	Body struct {
-		Email       string   `json:"email" format:"email" maxLength:"320" doc:"The address to invite" example:"ada@acme.example.com"`
-		DisplayName string   `json:"displayName,omitempty" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
-		Roles       []string `json:"roles,omitempty" doc:"Roles to grant in the same transaction" example:"admin"`
-	} `required:"true"`
+	Body Invitation `required:"true"`
 }

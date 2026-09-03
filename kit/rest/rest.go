@@ -66,11 +66,6 @@ type Spec[T crud.Entity] struct {
 	OperatorWrite bool
 	// SoftDelete keeps deleted rows, hidden, instead of removing them.
 	SoftDelete bool
-	// NoEvents mounts the routes without publishing anything. It is spelled in
-	// the negative so that the zero Spec is the one that emits events: a
-	// silence nobody asked for is how an integration goes missing.
-	NoEvents bool
-
 	// Immutable names, by json field name, the fields a PATCH refuses because
 	// a route of their own owns them: a task's assigneeId belongs to Assign,
 	// which also moves the status and publishes task.assigned, so a caller who
@@ -103,12 +98,16 @@ type Spec[T crud.Entity] struct {
 	// The hooks run inside the request's transaction, after the write and
 	// after the event, so a hook can publish more events or write more rows and
 	// all of it commits together.
+	//
+	// There is no AfterUpdate, and the absence is a decision rather than an
+	// omission: nothing in three repositories ever set one, and a hook nobody
+	// writes is a parameter every reader of this struct has to rule out. A
+	// module that needs one adds it back in the commit that uses it.
 	AfterCreate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
-	AfterUpdate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 	AfterDelete func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 }
 
-// The three events every Spec publishes, unless NoEvents.
+// The three events every Spec publishes.
 const (
 	Created = "created"
 	Updated = "updated"
@@ -121,11 +120,8 @@ const (
 func (s Spec[T]) Event(verb string) string { return s.Module + "." + s.Entity + "." + verb }
 
 // Events are the three names this Spec publishes, so a manifest can name them
-// without spelling them, and none.
+// without spelling them.
 func (s Spec[T]) Events() []string {
-	if s.NoEvents {
-		return nil
-	}
 	return []string{s.Event(Created), s.Event(Updated), s.Event(Deleted)}
 }
 
@@ -226,7 +222,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
 				return nil, Fault(err)
 			}
-			if err := s.emit(ctx, tx, Updated, e, s.AfterUpdate); err != nil {
+			if err := s.emit(ctx, tx, Updated, e, nil); err != nil {
 				return nil, Fault(err)
 			}
 			return &Item[T]{Body: e}, nil
@@ -256,10 +252,35 @@ func (s Spec[T]) Mount(api *httpx.API) {
 		})
 }
 
-// Command registers one lifecycle route on a Spec's resource: POST
-// {Path}/{id}/{verb}, guarded by the Spec's Write permission, taking the
-// request's transaction, declaring the events it publishes, and answering
-// failures with the same mapping the five routes above use.
+// CommandOptions is what a command may differ from its Spec in. It is a struct
+// and not two more parameters because a command that differs in nothing has to
+// be able to say so in one word: rest.CommandOptions{}.
+type CommandOptions struct {
+	// Auth is who may run this command. The zero value is the Spec's own write
+	// permission, which is right for a command that moves a row an
+	// administrator owns and wrong for one somebody runs on their own thing:
+	// adding an item to a basket is httpx.SignedIn(), and the alternative was a
+	// second permission every tenant would have to grant to every shopper.
+	Auth httpx.Auth
+
+	// Collection mounts the command on the collection rather than on a row —
+	// POST {Path}/{verb} — and run is handed uuid.Nil.
+	//
+	// The id is the whole difference, and it was a second exported function
+	// until the review counted the lines: twenty-eight of its thirty-two were
+	// this one's. A command about a row somebody names — resolve this task —
+	// carries the id; a command about the collection, where the row is what the
+	// command finds or produces, cannot. Redeeming a code is the example: the
+	// caller knows the code and not the row it belongs to, so {id} in the path
+	// would be asking them for the answer.
+	Collection bool
+}
+
+// Command registers one lifecycle route on a Spec: POST {Path}/{id}/{verb}, or
+// POST {Path}/{verb} when opts says Collection. It is guarded by the Spec's
+// Write permission unless opts says otherwise, takes the request's transaction,
+// declares the events it publishes, and answers failures with the same mapping
+// the five routes above use.
 //
 // It is here rather than in each module because a command is the one thing a
 // Spec cannot express — each is a rule about the state the entity is in, and
@@ -274,12 +295,20 @@ func (s Spec[T]) Mount(api *httpx.API) {
 // ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
 // and "an assignee that is not a user" the same 422.
 func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, description string, events []string,
-	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error),
+	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
+	path := spec.item() + "/" + verb
+	if opts.Collection {
+		path = strings.TrimSuffix(spec.Path, "/") + "/" + verb
+	}
+	auth := spec.writeAuth()
+	if opts.Auth.Declared() {
+		auth = opts.Auth
+	}
 	op := huma.Operation{
 		OperationID: spec.Module + "-" + spec.Entity + "-" + verb,
 		Method:      http.MethodPost,
-		Path:        spec.item() + "/" + verb,
+		Path:        path,
 		Summary:     summary,
 		Description: description,
 		Tags:        []string{spec.Module},
@@ -288,22 +317,34 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 	if len(events) > 0 {
 		op.Extensions = map[string]any{httpx.EventsExtension: events}
 	}
-	httpx.Register(api, op, spec.writeAuth(),
-		func(ctx context.Context, in *commandInput[I]) (*Item[T], error) {
-			tx, err := transaction(ctx)
-			if err != nil {
-				return nil, err
-			}
-			var body I
-			if in.Body != nil {
-				body = *in.Body
-			}
-			e, err := run(ctx, tx, in.ID, body)
-			if err != nil {
-				return nil, Fault(err)
-			}
-			return &Item[T]{Body: e}, nil
+	// The two mounts differ in their input type and in nothing else, and the
+	// type is what tells huma whether there is a path parameter to bind. That
+	// is the irreducible half of the difference; everything above it and the
+	// answer below are shared.
+	answer := func(ctx context.Context, id uuid.UUID, body *I) (*Item[T], error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var in I
+		if body != nil {
+			in = *body
+		}
+		e, err := run(ctx, tx, id, in)
+		if err != nil {
+			return nil, Fault(err)
+		}
+		return &Item[T]{Body: e}, nil
+	}
+	if opts.Collection {
+		httpx.Register(api, op, auth, func(ctx context.Context, in *collectionInput[I]) (*Item[T], error) {
+			return answer(ctx, uuid.Nil, in.Body)
 		})
+		return
+	}
+	httpx.Register(api, op, auth, func(ctx context.Context, in *commandInput[I]) (*Item[T], error) {
+		return answer(ctx, in.ID, in.Body)
+	})
 }
 
 // commandInput is a command's path id and its body. The body is a pointer
@@ -314,14 +355,18 @@ type commandInput[I any] struct {
 	Body *I
 }
 
+// collectionInput is the same without the id, for a command whose path has no
+// {id} to bind.
+type collectionInput[I any] struct {
+	Body *I
+}
+
 // emit publishes the event for a write and then runs the module's hook, both
 // inside the request's transaction: an event that describes a change that
 // rolled back is never seen, because it rolled back too.
 func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T, hook func(context.Context, db.Tx[db.Tenant], T) error) error {
-	if !s.NoEvents {
-		if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
-			return err
-		}
+	if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
+		return err
 	}
 	if hook == nil {
 		return nil
@@ -358,11 +403,7 @@ func (s Spec[T]) op(verb, method, path string, status int, summary, description 
 	if !ok {
 		return op
 	}
-	var names []string
-	if !s.NoEvents {
-		names = append(names, s.Event(published))
-	}
-	names = append(names, s.HookEvents...)
+	names := append([]string{s.Event(published)}, s.HookEvents...)
 	if len(names) > 0 {
 		op.Extensions = map[string]any{httpx.EventsExtension: names}
 	}

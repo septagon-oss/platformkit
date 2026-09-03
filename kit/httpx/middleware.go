@@ -38,10 +38,11 @@ type (
 	txKey        struct{}
 )
 
-// RequestIDFrom returns the id of the request ctx belongs to, or "" outside a
+// requestIDFrom returns the id of the request ctx belongs to, or "" outside a
 // request. It is the string the caller saw in the response header and in the
-// problem body's instance.
-func RequestIDFrom(ctx context.Context) string {
+// problem body's instance; every caller of it is in this package, which is why
+// it is not exported.
+func requestIDFrom(ctx context.Context) string {
 	id, _ := ctx.Value(requestIDKey{}).(string)
 	return id
 }
@@ -125,7 +126,7 @@ func (a *API) respond(next http.Handler) http.Handler {
 				a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: handler panicked",
 					"method", r.Method, "path", r.URL.Path, "panic", v, "stack", string(debug.Stack()))
 				if b.reset() {
-					writeProblem(b, http.StatusInternalServerError, RequestIDFrom(r.Context()), "")
+					writeProblem(b, http.StatusInternalServerError, requestIDFrom(r.Context()), "")
 				}
 			}
 			b.send()
@@ -255,7 +256,7 @@ func writeProblem(w http.ResponseWriter, status int, id, detail string) {
 // one package's business, the identifier is another's.
 func stampRequestID(ctx huma.Context, _ string, v any) (any, error) {
 	if p, ok := v.(*problem.Problem); ok && p.Instance == "" {
-		if id := RequestIDFrom(ctx.Context()); id != "" {
+		if id := requestIDFrom(ctx.Context()); id != "" {
 			p.Instance = "urn:request:" + id
 		}
 	}
@@ -265,7 +266,7 @@ func stampRequestID(ctx huma.Context, _ string, v any) (any, error) {
 // rlog is the logger carrying this request's id, so the log line and the
 // problem body the caller quotes name the same request.
 func (a *API) rlog(ctx context.Context) *slog.Logger {
-	if id := RequestIDFrom(ctx); id != "" {
+	if id := requestIDFrom(ctx); id != "" {
 		return a.log.With("request_id", id)
 	}
 	return a.log
@@ -420,7 +421,7 @@ func (a *API) csrf(next http.Handler) http.Handler {
 		}
 		a.rlog(r.Context()).InfoContext(r.Context(), "httpx: cross-site write refused",
 			"method", r.Method, "path", r.URL.Path, "site", r.Header.Get("Sec-Fetch-Site"), "origin", r.Header.Get("Origin"))
-		writeProblem(w, http.StatusForbidden, RequestIDFrom(r.Context()),
+		writeProblem(w, http.StatusForbidden, requestIDFrom(r.Context()),
 			"csrf: this request carries a session cookie and came from another site")
 	})
 }

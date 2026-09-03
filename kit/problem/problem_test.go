@@ -79,7 +79,10 @@ func TestHumaErrorKeepsClientDetailAndHidesServerCause(t *testing.T) {
 // the title in the detail says nothing the status has not said, and a body with
 // an empty title is not an RFC 9457 problem.
 func TestAServerErrorCarriesNoDetailAndAnUnknownStatusStillHasATitle(t *testing.T) {
-	body, err := json.Marshal(problem.Internal(errors.New("dial tcp: refused")))
+	// Through the one door a 5xx comes out of: an error a handler returned that
+	// was not a Problem. There is no exported constructor, because a handler
+	// that could build a 500 is a handler that could put something in it.
+	body, err := json.Marshal(problem.HumaError(http.StatusInternalServerError, "", errors.New("dial tcp: refused")))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

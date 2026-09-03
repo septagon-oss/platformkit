@@ -60,14 +60,15 @@ func NotFound(detail string) *Problem { return New(http.StatusNotFound, detail) 
 // Conflict is 409: the request contradicts the current state.
 func Conflict(detail string) *Problem { return New(http.StatusConflict, detail) }
 
-// Internal is 500. It carries no detail at all: a server error's real message
-// belongs in the log, and repeating the title in the detail says nothing the
-// status has not already said.
-func Internal(cause error) *Problem { return serverError(http.StatusInternalServerError, cause) }
-
 // serverError is any 5xx: the status is kept, because 503 asks a caller to come
-// back and 500 asks them not to, and the message is not, for the same reason
-// Internal withholds it.
+// back and 500 asks them not to, and the message is not — a server error's real
+// message belongs in the log, and repeating the title in the detail says
+// nothing the status has not already said.
+//
+// It is unexported because a handler does not build one. Every 5xx this
+// application answers comes from huma.go below, out of an error a handler
+// returned that was not a Problem, which is the whole point: a handler that
+// could construct a 500 is a handler that could put something in it.
 func serverError(status int, cause error) *Problem {
 	p := New(status, "")
 	p.cause = cause

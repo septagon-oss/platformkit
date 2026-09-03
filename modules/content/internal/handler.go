@@ -36,21 +36,21 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.Content], svc cont
 		[]string{contracts.EventPublished},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
 			return svc.Publish(ctx, tx, id)
-		})
+		}, rest.CommandOptions{})
 
 	rest.Command(api, spec, "unpublish",
 		"Unpublish content", "Takes it back to a draft, from published or from archived, and clears the publication time.",
 		[]string{contracts.EventUnpublished},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
 			return svc.Unpublish(ctx, tx, id)
-		})
+		}, rest.CommandOptions{})
 
 	rest.Command(api, spec, "archive",
 		"Archive content", "Keeps it and serves it to nobody. Archiving twice changes nothing.",
 		[]string{contracts.EventArchived},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
 			return svc.Archive(ctx, tx, id)
-		})
+		}, rest.CommandOptions{})
 
 	// The public site's one route. It is Public because the whole point of
 	// publishing is that a reader does not sign in, and it is safe to be

@@ -274,7 +274,12 @@ func control(f crud.Field, value, fieldErr string, immutable bool) g.Node {
 			Required: f.Required, Options: options, Placeholder: placeholder,
 			HelpText: base.HelpText,
 		})
-	case f.Widget == "textarea" || f.Type == crud.TypeText:
+	// The widget and not the column type. A text column is how a database
+	// stores a string of no fixed length, which is what an email address, a
+	// display name and a link all are: rendering every one of them as a
+	// five-row textarea is a form that reads as if somebody were expected to
+	// write a paragraph into their own address. A field that wants one says so.
+	case f.Widget == "textarea":
 		return components.Textarea(components.TextareaProps{
 			ComponentProps: components.ComponentProps{Disabled: immutable},
 			Name:           name, Label: label, Value: value, ErrorMessage: fieldErr,

@@ -177,15 +177,7 @@ func (s Singleton[T]) op(verb, method, path, summary, description string, events
 // belongs.
 func (s Singleton[T]) resource() httpx.Resource {
 	one := func(ctx context.Context, run func(db.Tx[db.Tenant]) (T, error)) (map[string]any, error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		e, err := run(tx)
-		if err != nil {
-			return nil, Fault(err)
-		}
-		return row(e)
+		return answered(ctx, run)
 	}
 	refuse := func() error {
 		return problem.Conflict("a tenant has one " + s.Entity + ", and it is neither created nor removed")

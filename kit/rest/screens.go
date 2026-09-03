@@ -28,21 +28,30 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
+// answered is the shape every screen closure has: take the request's
+// transaction, do one thing, and answer with the one error mapping and the one
+// projection.
+//
+// Spec and Singleton both put themselves onto httpx.Resource and both had a
+// copy of this, byte for byte, under two different names. Two copies of an
+// error mapping is how two doors come to disagree about what a 409 means.
+func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T, error)) (map[string]any, error) {
+	tx, err := transaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+	e, err := run(tx)
+	if err != nil {
+		return nil, Fault(err)
+	}
+	return row(e)
+}
+
 // resource is this Spec as httpx.Resource, for Mount to register.
 func (s Spec[T]) resource() httpx.Resource {
 	schema := s.Schema()
-	// each is the shape every closure below has: take the request's
-	// transaction, do one thing, and answer with the one error mapping.
 	each := func(ctx context.Context, run func(db.Tx[db.Tenant]) (T, error)) (map[string]any, error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		e, err := run(tx)
-		if err != nil {
-			return nil, Fault(err)
-		}
-		return row(e)
+		return answered(ctx, run)
 	}
 	return httpx.Resource{
 		Module: s.Module, Entity: s.Entity, Path: s.Path,
@@ -107,7 +116,7 @@ func (s Spec[T]) resource() httpx.Resource {
 				if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
 					return e, err
 				}
-				return e, s.emit(ctx, tx, Updated, e, s.AfterUpdate)
+				return e, s.emit(ctx, tx, Updated, e, nil)
 			})
 		},
 		Delete: func(ctx context.Context, id uuid.UUID) error {
@@ -189,7 +198,7 @@ func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, 
 		raw, sent := form[f.Name]
 		if slices.Contains(refuse, f.Name) {
 			if sent {
-				return nil, Invalid(f.Name, "belongs to a route of its own, not to this form")
+				return nil, invalid(f.Name, "belongs to a route of its own, not to this form")
 			}
 			continue
 		}
@@ -210,13 +219,13 @@ func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, 
 		case crud.TypeInt:
 			n, err := strconv.ParseInt(text, 10, 64)
 			if err != nil {
-				return nil, Invalid(f.Name, "is not a whole number")
+				return nil, invalid(f.Name, "is not a whole number")
 			}
 			out[f.Name] = n
 		case crud.TypeFloat:
 			n, err := strconv.ParseFloat(text, 64)
 			if err != nil {
-				return nil, Invalid(f.Name, "is not a number")
+				return nil, invalid(f.Name, "is not a number")
 			}
 			out[f.Name] = n
 		case crud.TypeTime:
@@ -259,8 +268,8 @@ func Writable(values map[string]any, immutable []string) map[string]any {
 	return out
 }
 
-// Invalid is a 422 about one field, in the shape FieldErrors reads back.
-func Invalid(field, why string) error {
+// invalid is a 422 about one field, in the shape FieldErrors reads back.
+func invalid(field, why string) error {
 	p := problem.New(http.StatusUnprocessableEntity, field+" "+why)
 	p.Errors = []string{field + ": " + why}
 	return p
@@ -352,7 +361,7 @@ func Display(f crud.Field, v any) string {
 		}
 		return "No"
 	case f.Type == crud.TypeTime:
-		if out := Moment(v); out != "" {
+		if out := moment(v); out != "" {
 			return out
 		}
 	case len(f.Enum) > 0:
@@ -367,9 +376,9 @@ func Display(f crud.Field, v any) string {
 	return "—"
 }
 
-// Moment is how a screen writes an instant. The wire form is RFC 3339 with
+// moment is how a screen writes an instant. The wire form is RFC 3339 with
 // microseconds, which is right for a machine and unreadable in a table cell.
-func Moment(v any) string {
+func moment(v any) string {
 	raw := Text(v)
 	at, err := time.Parse(time.RFC3339, raw)
 	if err != nil {

@@ -46,6 +46,25 @@ var spec = rest.Spec[*contracts.User]{
 	Immutable: []string{"status", "roles"},
 }
 
+// Why the generated create screen does not offer roles, since the review asked.
+//
+// It could: the form is derived from the schema, and roles is a list field like
+// any other. What stops it is the rule two lines above — a grant is an event
+// somebody can audit, published by POST {id}/roles, and refuseRolesOnCreate
+// below refuses roles at the create route for exactly that reason. A screen
+// that offered the field and then silently made a second request would be a
+// screen whose audit trail did not match what the person did, and one that
+// offered it and let the create refuse it would be a form that cannot be
+// submitted.
+//
+// The door that does take roles and an address together is the invitation:
+// POST /api/v1/user/invitations grants them in the same transaction as the
+// invitation, so somebody invited as an administrator was never, for a moment,
+// a person with no roles who had already been mailed a link. That is the route
+// an administrator should be using, and a screen for it is a page a module
+// writes rather than one the generator derives — the generator mounts a Spec's
+// five routes, and an invitation is not one of them.
+
 // permissions is what the manifest declares. kit/app checks every route's
 // declaration against it at boot, so a route guarded by a permission that is
 // not here fails startup instead of denying everyone forever. It lives beside

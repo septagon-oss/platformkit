@@ -40,6 +40,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // The two paths, spelled once: the mux registers them and the web role mounts
@@ -57,18 +58,10 @@ type Check interface {
 	Check(ctx context.Context) error
 }
 
-// Func adapts a function to Check, so a check that is one query does not need a
-// type of its own.
-type Func struct {
-	N string
-	F func(context.Context) error
-}
-
-// Name is the name reported when the check fails.
-func (f Func) Name() string { return f.N }
-
-// Check runs the function.
-func (f Func) Check(ctx context.Context) error { return f.F(ctx) }
+// There is no Func adapter. One existed to turn a closure into a Check and
+// nothing outside this package's own tests ever used it: there is one Check in
+// the application, DatabaseCheck below, and a second one arrives with the type
+// that needs it.
 
 // Register mounts the two probes beside the API, on the router that carries
 // neither the request middleware nor a transaction. Both roles therefore answer
@@ -132,11 +125,20 @@ func failures(ctx context.Context, log *slog.Logger, checks []Check) []string {
 // readiness belongs to no tenant; the probe request has opened none of its own,
 // so there is no tenant transaction for this one to be nested in.
 func DatabaseCheck(conn *db.Conn) Check {
-	token := syscap.NewSystemToken("readiness")
-	return Func{N: "database", F: func(ctx context.Context) error {
-		return db.RunSystem(ctx, conn, token, func(_ context.Context, tx db.Tx[db.System]) error {
-			var one int
-			return tx.DB().Raw("SELECT 1").Scan(&one).Error
-		})
-	}}
+	return database{conn: conn, token: syscap.NewSystemToken("readiness")}
+}
+
+// database is the one Check this application has.
+type database struct {
+	conn  *db.Conn
+	token tenancy.SystemToken
+}
+
+func (database) Name() string { return "database" }
+
+func (d database) Check(ctx context.Context) error {
+	return db.RunSystem(ctx, d.conn, d.token, func(_ context.Context, tx db.Tx[db.System]) error {
+		var one int
+		return tx.DB().Raw("SELECT 1").Scan(&one).Error
+	})
 }

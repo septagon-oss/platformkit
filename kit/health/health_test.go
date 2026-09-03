@@ -83,12 +83,21 @@ func probe(t *testing.T, h http.Handler, host, path string) *httptest.ResponseRe
 	return w
 }
 
+// check is a Check a test can make fail. The package used to export a Func
+// adapter for this and nothing outside these tests ever used it: there is one
+// Check in the application, and a test that needs a second one declares it.
+type check struct {
+	name string
+	err  error
+}
+
+func (c check) Name() string                { return c.name }
+func (c check) Check(context.Context) error { return c.err }
+
 // TestLivenessIgnoresTheChecks: a probe that fails while the database blinks
 // gets the process killed instead of getting the database fixed.
 func TestLivenessIgnoresTheChecks(t *testing.T) {
-	h, _ := serve(t, health.Func{N: "always-broken", F: func(context.Context) error {
-		return errors.New("down")
-	}})
+	h, _ := serve(t, check{name: "always-broken", err: errors.New("down")})
 	res := probe(t, h, "10.0.0.7:8080", "/health")
 	if res.Code != http.StatusOK {
 		t.Fatalf("/health = %d, want 200", res.Code)
@@ -101,10 +110,8 @@ func TestLivenessIgnoresTheChecks(t *testing.T) {
 // TestReadinessNamesTheFailingChecks and nothing else about them.
 func TestReadinessNamesTheFailingChecks(t *testing.T) {
 	h, _ := serve(t,
-		health.Func{N: "queue", F: func(context.Context) error { return nil }},
-		health.Func{N: "search-index", F: func(context.Context) error {
-			return errors.New("dial tcp 10.0.0.1:9200: connection refused")
-		}},
+		check{name: "queue"},
+		check{name: "search-index", err: errors.New("dial tcp 10.0.0.1:9200: connection refused")},
 	)
 	res := probe(t, h, "10.0.0.7:8080", "/ready")
 	if res.Code != http.StatusServiceUnavailable {
@@ -214,7 +221,7 @@ func TestTheProbesNeverResolveTheHost(t *testing.T) {
 	api, router := httpx.New(httpx.Options{
 		Tenants: slow, Conn: app, Authorize: sites{}, Authenticate: anonymous,
 	})
-	health.Register(api, health.Func{N: "queue", F: func(context.Context) error { return nil }})
+	health.Register(api, check{name: "queue"})
 
 	// Both hosts: the pod address an orchestrator uses, and a tenant's own
 	// name, which is what a probe through an ingress arrives as.
