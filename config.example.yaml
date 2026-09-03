@@ -19,6 +19,12 @@ server:
   #
   # The JSON Schema route stays either way, because response bodies link to it.
   docs: false
+  # How long a client has to send a whole request. It is a key rather than a
+  # constant because the one thing it has to accommodate is a deployment's own
+  # files.max_bytes over somebody's connection: thirty seconds is right for a
+  # laptop and wrong for a deployment that accepts a gigabyte. The header, write
+  # and idle timeouts are constants; see kit/app.
+  read_timeout: 30s
 
 database:
   # The app connects as platformkit_app: no superuser, no BYPASSRLS, so tenant

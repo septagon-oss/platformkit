@@ -290,34 +290,49 @@ func TestTheGeneratedScreenIsGuardedTheSameWay(t *testing.T) {
 
 // TestAnAnniversaryDoesNotDriftPastAMonthEnd. AddDate normalises, so a monthly
 // plan bought on the 31st of January used to advance to the 3rd of March and
-// stay on the 3rd forever. The five dates are the review's.
+// stay on the 3rd forever. Clamping fixed February and broke every month after
+// it, because the next period was then computed from the clamped day; the
+// anchor is what makes the 31st come back. The dates are the review's.
 func TestAnAnniversaryDoesNotDriftPastAMonthEnd(t *testing.T) {
 	const day = "2006-01-02"
-	for _, tt := range []struct{ from, interval, want string }{
-		{"2026-01-31", contracts.IntervalMonth, "2026-02-28"},
-		{"2024-01-31", contracts.IntervalMonth, "2024-02-29"}, // a leap year
-		{"2026-03-31", contracts.IntervalMonth, "2026-04-30"},
-		{"2026-08-31", contracts.IntervalMonth, "2026-09-30"},
-		{"2024-02-29", contracts.IntervalYear, "2025-02-28"},
+	for _, tt := range []struct {
+		from, interval string
+		anchor         int
+		want           string
+	}{
+		{"2026-01-31", contracts.IntervalMonth, 31, "2026-02-28"},
+		{"2024-01-31", contracts.IntervalMonth, 31, "2024-02-29"}, // a leap year
+		{"2026-03-31", contracts.IntervalMonth, 31, "2026-04-30"},
+		{"2026-08-31", contracts.IntervalMonth, 31, "2026-09-30"},
+		{"2024-02-29", contracts.IntervalYear, 29, "2025-02-28"},
+		// The mutation this whole column exists for: the month after a clamp
+		// returns to the anchor. Without an anchor the 28th of February
+		// advanced to the 28th of March and the 31st was gone forever.
+		{"2026-02-28", contracts.IntervalMonth, 31, "2026-03-31"},
+		{"2026-02-28", contracts.IntervalMonth, 30, "2026-03-30"},
+		{"2024-02-29", contracts.IntervalMonth, 31, "2024-03-31"},
+		// An anchor of zero is the day of the date it is given, which is what
+		// every row written before the column existed means.
+		{"2026-01-31", contracts.IntervalMonth, 0, "2026-02-28"},
 		// And the ordinary cases, which have to keep working: a date that fits
 		// in the target month is that date, and a month end that is a month end
 		// in both is unchanged.
-		{"2026-01-15", contracts.IntervalMonth, "2026-02-15"},
-		{"2026-12-31", contracts.IntervalMonth, "2027-01-31"},
-		{"2026-01-31", contracts.IntervalYear, "2027-01-31"},
+		{"2026-01-15", contracts.IntervalMonth, 15, "2026-02-15"},
+		{"2026-12-31", contracts.IntervalMonth, 31, "2027-01-31"},
+		{"2026-01-31", contracts.IntervalYear, 31, "2027-01-31"},
 	} {
 		from, err := time.Parse(day, tt.from)
 		if err != nil {
 			t.Fatalf("parse %s: %v", tt.from, err)
 		}
-		if got := contracts.Advance(from, tt.interval).Format(day); got != tt.want {
-			t.Errorf("Advance(%s, %s) = %s, want %s", tt.from, tt.interval, got, tt.want)
+		if got := contracts.Advance(from, tt.interval, tt.anchor).Format(day); got != tt.want {
+			t.Errorf("Advance(%s, %s, %d) = %s, want %s", tt.from, tt.interval, tt.anchor, got, tt.want)
 		}
 	}
 	// The time of day survives the clamp: a period that ended at nine in the
 	// morning ends at nine in the morning.
 	from := time.Date(2026, 1, 31, 9, 30, 0, 0, time.UTC)
-	if got := contracts.Advance(from, contracts.IntervalMonth); got.Hour() != 9 || got.Minute() != 30 {
+	if got := contracts.Advance(from, contracts.IntervalMonth, 31); got.Hour() != 9 || got.Minute() != 30 {
 		t.Errorf("the clamp moved the time of day to %s", got)
 	}
 }

@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -848,5 +851,69 @@ func TestAClientHangingUpIsNotAnError(t *testing.T) {
 	// And nothing was kept: the transaction the client abandoned rolled back.
 	if n := notes(t, f); n != 0 {
 		t.Errorf("the abandoned transaction left %d row(s)", n)
+	}
+}
+
+// TestABodyHasACeilingAndTheStreamingRouteHasAHigherOne. A route that reads its
+// own request has no schema, and a route with no schema had no bound at all
+// until this: the file upload could be handed as many bytes as a client cared
+// to send. Every other route is a megabyte, which is what huma bounds a schema'd
+// body at, restated where a body that huma never decodes can also be caught.
+func TestABodyHasACeilingAndTheStreamingRouteHasAHigherOne(t *testing.T) {
+	api, router, f := setup(t)
+	f.signedIn()
+	f.allow = true
+
+	// Two routes that read the request themselves and report how far they got:
+	// one ordinary, one declaring that it streams.
+	streams, streaming := httpx.StreamedBody()
+	for _, tt := range []struct {
+		id, path string
+		ext      map[string]any
+	}{
+		{"read", "/read", nil},
+		{"stream", "/stream", map[string]any{streams: streaming}},
+	} {
+		httpx.Register(api, huma.Operation{
+			OperationID: tt.id, Method: http.MethodPost, Path: tt.path,
+			Extensions: tt.ext,
+			RequestBody: &huma.RequestBody{Required: true,
+				Content: map[string]*huma.MediaType{"application/octet-stream": {}}},
+		}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*body, error) {
+			r, ok := httpx.RequestFrom(ctx)
+			if !ok {
+				return nil, fmt.Errorf("no request")
+			}
+			n, err := io.Copy(io.Discard, r.Body)
+			if err != nil {
+				return nil, huma.Error413RequestEntityTooLarge(fmt.Sprintf("%d bytes and then %v", n, err))
+			}
+			out := &body{}
+			out.Body.Tenant = strconv.FormatInt(n, 10)
+			return out, nil
+		})
+	}
+
+	// MaxUpload is zero here, so the streaming route's ceiling is MaxBodyBytes
+	// plus the multipart envelope: twice the megabyte the other route gets.
+	// That relation is the claim — one route may take more than the rest — and
+	// the exact numbers are kit/app's to configure.
+	send := func(t *testing.T, path string, n int) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "http://"+host+path, strings.NewReader(strings.Repeat("x", n)))
+		req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w.Code
+	}
+	const over = httpx.MaxBodyBytes + 1
+	if code := send(t, "/read", over); code != http.StatusRequestEntityTooLarge {
+		t.Errorf("a body of %d on an ordinary route = %d, want it cut off", over, code)
+	}
+	if code := send(t, "/read", httpx.MaxBodyBytes); code != http.StatusOK {
+		t.Errorf("a body of exactly the ceiling = %d, want 200", code)
+	}
+	if code := send(t, "/stream", over); code != http.StatusOK {
+		t.Errorf("a body of %d on the streaming route = %d, want it read", over, code)
 	}
 }

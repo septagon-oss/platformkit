@@ -169,35 +169,41 @@ func ValidCurrency(code string) bool {
 	return err == nil
 }
 
-// Advance is the end of the period following one that ended at from.
+// Advance is the end of the period following one that ended at from, on anchor,
+// the day of the month the subscription bills on.
 //
-// Calendar arithmetic and not a number of days, and then the correction the old
-// comment claimed and the code did not make: time.AddDate normalises, so a
-// monthly plan bought on the 31st of January advances to the 3rd of March, and
-// every anniversary after it is the 3rd. A subscription bought on the 31st is
-// billed on the 28th in February and on the 31st again in March, which is what
-// every payment processor does and what the customer expects, so a day past the
-// end of the target month is clamped to the last day of it.
-func Advance(from time.Time, interval string) time.Time {
+// Calendar arithmetic and not a number of days, and then the correction two
+// earlier comments claimed and neither implementation made. time.AddDate
+// normalises, so a monthly plan bought on the 31st of January advances to the
+// 3rd of March; clamping that back to the 28th of February fixes one month and
+// breaks every month after it, because the next period is then computed from
+// the 28th and the 31st never comes back.
+//
+// The anchor is what fixes it: it is carried on the subscription rather than
+// read off the period that just ended, so February clamps to the 28th and March
+// returns to the 31st. That is what every payment processor does and what the
+// customer expects. An anchor of zero means from's own day, which is what a
+// subscription written before the column existed has.
+func Advance(from time.Time, interval string, anchor int) time.Time {
 	years, months := 0, 1
 	if interval == IntervalYear {
 		years, months = 1, 0
 	}
-	out := from.AddDate(years, months, 0)
-	// AddDate normalised iff it landed in a later month than the one asked for.
-	if want := month(from, years, months); out.Month() != want.Month() || out.Year() != want.Year() {
-		// The last instant of the month that was asked for, keeping the time of
-		// day: the first of the month after it, less a day.
-		out = out.AddDate(0, 0, -out.Day())
+	if anchor <= 0 {
+		anchor = from.Day()
 	}
-	return out
+	// The first of the month landed in, keeping the time of day: AddDate on the
+	// first of a month never normalises, so this is the month that was asked
+	// for and not the one an overflow spilled into.
+	first := time.Date(from.Year(), from.Month(), 1, from.Hour(), from.Minute(),
+		from.Second(), from.Nanosecond(), from.Location()).AddDate(years, months, 0)
+	// How many days that month has: the first of the next, less a day.
+	return first.AddDate(0, 0, min(anchor, first.AddDate(0, 1, -1).Day())-1)
 }
 
-// month is the year and month Advance meant to land in, as a date whose day is
-// the first: AddDate on the first of a month never normalises.
-func month(from time.Time, years, months int) time.Time {
-	return time.Date(from.Year(), from.Month(), 1, 0, 0, 0, 0, from.Location()).AddDate(years, months, 0)
-}
+// AnchorOf is the day of the month a subscription starting at t bills on. It is
+// the one place the anchor is derived, so the column and Advance agree.
+func AnchorOf(t time.Time) int { return t.Day() }
 
 // Subscription is the tenant's enrollment in a plan. There is at most one, and
 // migrations/000016 says so with a unique index on the tenant.
@@ -245,6 +251,11 @@ type Subscription struct {
 	// was retried every night forever.
 	AttemptCount int        `json:"attemptCount" gorm:"not null;default:0" ui:"hide:list" doc:"Consecutive charges that did not settle" required:"false" readOnly:"true"`
 	PastDueSince *time.Time `json:"pastDueSince,omitempty" gorm:"type:timestamptz" ui:"hide:list" doc:"When this subscription first failed to pay" readOnly:"true"`
+
+	// AnchorDay is the day of the month this subscription bills on, and it is
+	// stored rather than derived from the period being served because a period
+	// that had to be clamped must not become the anniversary. See Advance.
+	AnchorDay int `json:"anchorDay,omitempty" gorm:"not null;default:0" ui:"hide:list" doc:"Day of the month this subscription bills on" required:"false" readOnly:"true"`
 }
 
 // GraceDays is how long a past-due subscription is still served. Seven days is
@@ -286,6 +297,8 @@ func (s *Subscription) Validate(context.Context) error {
 		return fmt.Errorf("currency %q is not an ISO 4217 code", s.Currency)
 	case s.AttemptCount < 0:
 		return fmt.Errorf("a number of failed attempts is not negative")
+	case s.AnchorDay < 0 || s.AnchorDay > 31:
+		return fmt.Errorf("%d is not a day of the month to bill on", s.AnchorDay)
 	}
 	return nil
 }
@@ -294,6 +307,20 @@ func (s *Subscription) Validate(context.Context) error {
 // than the grace period allows.
 func (s *Subscription) GraceExpired(now time.Time) bool {
 	return s.PastDueSince != nil && now.Sub(*s.PastDueSince) >= GraceDays*24*time.Hour
+}
+
+// Outstanding is the end of the period this subscription still owes for, and
+// false when it owes for none.
+//
+// It is PastDueSince that answers and not Status, and that is the whole of the
+// dunning fix: a subscription cancelled while it owed money still owes, so
+// cancelling and resubscribing is not a way of resetting the attempt count and
+// the grace clock. A period that is paid for clears both, in advance.
+func (s *Subscription) Outstanding() (time.Time, bool) {
+	if s.PastDueSince == nil {
+		return time.Time{}, false
+	}
+	return s.CurrentPeriodEnd, true
 }
 
 // Charge is one attempt to take money for one period. It carries the plan's
@@ -397,15 +424,27 @@ type Service interface {
 	// price. What is owed is owed for a period already served, and it is
 	// settled or the grace period runs out; it is not renegotiated.
 	//
-	// The trial is issued once per tenant, ever. A first subscription is served
-	// before any money is asked for; a resubscribe after cancelling is not,
-	// because four cancellations used to be four free periods.
+	// The trial is issued once per tenant, ever, and TrialUsedAt is what says
+	// so: it is read across every row this tenant has, deleted ones included,
+	// rather than inferred from there being no live subscription. A first
+	// subscription is served before any money is asked for; a resubscribe is
+	// not, because four cancellations used to be four free periods.
+	//
+	// A resubscribe carries the outstanding period, the attempt count and the
+	// grace clock forward untouched. A tenant that owed money when it left owes
+	// it when it comes back, and comes back past due.
 	Subscribe(ctx context.Context, tx db.Tx[db.Tenant], planID uuid.UUID) (*Subscription, error)
 
 	// Cancel ends the subscription: at the end of the period it is serving, or
 	// now. Cancelling twice the same way changes nothing; ending it now after
 	// asking to end later is a second decision and says so; asking to end later
 	// after it has ended is a conflict.
+	//
+	// Ending it now is refused with ErrConflict while a period is outstanding,
+	// naming that period. That is the dunning ceiling's other escape route
+	// closed: cancelling now and resubscribing took the subscription out of
+	// past_due, and a review did it live for as many free periods as it liked.
+	// A customer who owes money may still leave at the end of the period.
 	Cancel(ctx context.Context, tx db.Tx[db.Tenant], atPeriodEnd bool) (*Subscription, error)
 
 	// Renew advances a subscription whose period has run out, and it is the

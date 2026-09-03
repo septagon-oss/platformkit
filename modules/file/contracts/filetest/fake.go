@@ -48,8 +48,10 @@ func (f *Fake) Published() []string {
 	return slices.Clone(f.published)
 }
 
-// Upload mirrors internal.Service.Upload.
-func (f *Fake) Upload(ctx context.Context, _ db.Tx[db.Tenant], up contracts.Upload) (*contracts.File, error) {
+// Upload mirrors internal.Service.Upload, including the order: the bytes are
+// stored before the transaction is asked for, because a body arrives at the
+// client's pace and nothing may be open while it does.
+func (f *Fake) Upload(ctx context.Context, open contracts.Tx, up contracts.Upload) (*contracts.File, error) {
 	key := uuid.NewString()
 	digest := sha256.New()
 	counted := &counter{r: io.LimitReader(io.TeeReader(up.Body, digest), f.max+1)}
@@ -61,6 +63,10 @@ func (f *Fake) Upload(ctx context.Context, _ db.Tx[db.Tenant], up contracts.Uplo
 		return nil, fmt.Errorf("%w: %d bytes is past the %d this deployment accepts", contracts.ErrTooLarge, counted.n, f.max)
 	}
 	if err := contracts.Agrees(up.ContentType, counted.head[:min(counted.n, int64(len(counted.head)))]); err != nil {
+		_ = f.storage.Delete(ctx, key)
+		return nil, err
+	}
+	if _, err := open(ctx); err != nil {
 		_ = f.storage.Delete(ctx, key)
 		return nil, err
 	}

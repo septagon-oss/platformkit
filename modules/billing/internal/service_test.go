@@ -125,8 +125,11 @@ func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
 				return err
 			}
 		}
+		// At the end of the period, because ending it now is refused while a
+		// period is outstanding — which is the dunning ceiling, and which the
+		// conformance suite proves. The event is the same one either way.
 		for range 2 {
-			if _, err := svc.Cancel(ctx, tx, false); err != nil {
+			if _, err := svc.Cancel(ctx, tx, true); err != nil {
 				return err
 			}
 		}
@@ -174,7 +177,7 @@ func TestOneSubscriptionPerTenant(t *testing.T) {
 		now := db.Now()
 		second := &contracts.Subscription{
 			PlanID: plan.ID, Status: contracts.StatusActive,
-			CurrentPeriodStart: now, CurrentPeriodEnd: contracts.Advance(now, contracts.IntervalMonth),
+			CurrentPeriodStart: now, CurrentPeriodEnd: contracts.Advance(now, contracts.IntervalMonth, contracts.AnchorOf(now)),
 		}
 		return crud.Create(ctx, tx, second)
 	})

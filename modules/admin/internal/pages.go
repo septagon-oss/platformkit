@@ -109,7 +109,10 @@ func (s *Shell) pages(api *httpx.API, resources []httpx.Resource) {
 func (s *Shell) login(ctx context.Context) g.Node {
 	next := adminRoot
 	if r, ok := httpx.RequestFrom(ctx); ok {
-		if to := r.URL.Query().Get("next"); len(to) > 1 && to[0] == '/' && to[1] != '/' {
+		// The kernel's rule, because this one used to be its own and was
+		// wrong: "/\\evil.example" has a leading slash and a second character
+		// that is not one, and every browser resolves it off-site.
+		if to := r.URL.Query().Get("next"); httpx.LocalPath(to) {
 			next = to
 		}
 	}

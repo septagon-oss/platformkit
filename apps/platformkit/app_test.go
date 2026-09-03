@@ -961,3 +961,127 @@ func blobs(t *testing.T, cfg config.Config) int {
 	}
 	return count
 }
+
+// TestASlowUploadIsCutOffAndHoldsNoTransaction is the review's byte-a-second
+// upload, as a test, and it proves both halves of the fix.
+//
+// There was no http.Server.ReadTimeout at all, so a client that never finished
+// its body was never cut off; and the file module opened the request's
+// transaction before it read a byte, so the connection that client pinned was a
+// database connection. Sixteen of those is a replica that serves nobody.
+//
+// The transaction half is measured from outside, through pg_stat_activity,
+// because the claim is about a server-side connection and not about a Go value.
+// dbtest names this installation's pool after the test's schema, so the count is
+// this application's backends and nobody else's. The question it asks is the age
+// of the oldest open transaction rather than how many there are: the application
+// is running its periodic jobs too, and a job's transaction is milliseconds old,
+// while a pinned one keeps getting older for as long as the body trickles.
+func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
+	const timeout = 3 * time.Second
+	path, cfg := configure(t)
+	install(t, path)
+	// The only thing this test changes about the reference configuration, and
+	// the key exists so that a deployment whose uploads are slower can.
+	cfg.Server.ReadTimeout = timeout
+
+	c := compose(cfg)
+	start(t, cfg, c.modules, app.Options{
+		Tenants: c.tenants, Authorize: c.auth, Authenticate: c.auth.Authenticate,
+		Role: app.All, Transport: events.Memory(), Log: quiet(),
+	})
+	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
+
+	// The owner connection this installation was migrated with. It is taken
+	// from the configuration rather than from dbtest a second time, because
+	// asking dbtest for the URLs again would give this test a fresh schema and
+	// take the tables out from under the application that is serving.
+	owner := dbtest.Open(t, cfg.Database.MigrateURL)
+	longest := func() float64 {
+		var age float64
+		const q = `SELECT COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start)), 0) FROM pg_stat_activity
+			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`
+		if err := owner.QueryRowContext(t.Context(), q).Scan(&age); err != nil {
+			t.Errorf("read pg_stat_activity: %v", err)
+		}
+		return age
+	}
+
+	// A multipart form whose file part never ends: one byte, then a pause,
+	// forever. Nothing declares a length, so this goes out chunked and the
+	// server has nothing to read ahead to.
+	body, out := io.Pipe()
+	form := multipart.NewWriter(out)
+	go func() {
+		header := textproto.MIMEHeader{}
+		header.Set("Content-Disposition", `form-data; name="file"; filename="slow.bin"`)
+		header.Set("Content-Type", "application/octet-stream")
+		part, err := form.CreatePart(header)
+		if err != nil {
+			_ = out.CloseWithError(err)
+			return
+		}
+		for {
+			if _, err := part.Write([]byte("x")); err != nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		"http://"+cfg.Server.Addr+filesPath, body)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Host = acmeHost
+	req.Header.Set("Content-Type", form.FormDataContentType())
+
+	type answer struct {
+		code int
+		err  error
+	}
+	done := make(chan answer, 1)
+	start := time.Now()
+	go func() {
+		res, err := admin.Do(req)
+		if err != nil {
+			done <- answer{err: err}
+			return
+		}
+		defer res.Body.Close()
+		_, _ = io.Copy(io.Discard, res.Body)
+		done <- answer{code: res.StatusCode}
+	}()
+
+	// While the body trickles, nothing of this installation is holding a
+	// transaction. Sampled over the first three quarters of the timeout, so the
+	// loop is finished before the server gives up and the handler's own failure
+	// path runs.
+	samples, oldest := 0, 0.0
+	for time.Since(start) < timeout*3/4 {
+		oldest = max(oldest, longest())
+		samples++
+		time.Sleep(20 * time.Millisecond)
+	}
+	if samples < 10 {
+		t.Fatalf("only %d samples were taken while the body trickled", samples)
+	}
+	if oldest > 0.5 {
+		t.Errorf("a transaction of this installation was %.2fs old while the body trickled; the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
+			oldest)
+	}
+
+	got := <-done
+	took := time.Since(start)
+	// Cut off. The server closed the connection on its deadline, which reaches
+	// the client as a 500 the handler produced when its body stopped arriving,
+	// or as a failed request; what matters is that it ended, and that it ended
+	// when the deadline said rather than whenever the client felt like stopping.
+	if got.err == nil && got.code < 400 {
+		t.Errorf("a body that never ends was answered %d after %s", got.code, took)
+	}
+	if took > timeout*2 {
+		t.Errorf("the trickled upload ran for %s; server.read_timeout is %s", took, timeout)
+	}
+	_ = out.Close()
+}

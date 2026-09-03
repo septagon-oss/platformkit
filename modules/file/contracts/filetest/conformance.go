@@ -40,6 +40,11 @@ type Fixture struct {
 	Published func() []string
 }
 
+// open is the Fixture's transaction as an opener, which is what Upload takes:
+// the bytes are stored before anything is opened, so the suite has to be able
+// to hand over the opening rather than the opened.
+func (f Fixture) open(context.Context) (db.Tx[db.Tenant], error) { return f.Tx, nil }
+
 func (f Fixture) one(t *testing.T, what, want string, step func()) {
 	t.Helper()
 	before := len(f.Published())
@@ -79,7 +84,7 @@ func upload(name, contentType, visibility, body string) contracts.Upload {
 // stored uploads one private text file and returns its row.
 func stored(t *testing.T, f Fixture, body string) *contracts.File {
 	t.Helper()
-	out, err := f.Service.Upload(f.Ctx, f.Tx, upload("notes.txt", "text/plain", contracts.VisibilityPrivate, body))
+	out, err := f.Service.Upload(f.Ctx, f.open, upload("notes.txt", "text/plain", contracts.VisibilityPrivate, body))
 	if err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
@@ -144,7 +149,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"an upload past the limit keeps nothing": func(t *testing.T, f Fixture) {
 			before := len(f.Keys())
-			_, err := f.Service.Upload(f.Ctx, f.Tx, upload("big.bin", "application/octet-stream",
+			_, err := f.Service.Upload(f.Ctx, f.open, upload("big.bin", "application/octet-stream",
 				contracts.VisibilityPrivate, strings.Repeat("x", Limit+1)))
 			if !errors.Is(err, contracts.ErrTooLarge) {
 				t.Fatalf("an upload of %d bytes = %v, want ErrTooLarge", Limit+1, err)
@@ -171,7 +176,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 		},
 
 		"a public file is served to anybody": func(t *testing.T, f Fixture) {
-			row, err := f.Service.Upload(f.Ctx, f.Tx, upload("logo.png", "image/png", contracts.VisibilityPublic, png))
+			row, err := f.Service.Upload(f.Ctx, f.open, upload("logo.png", "image/png", contracts.VisibilityPublic, png))
 			if err != nil {
 				t.Fatalf("Upload: %v", err)
 			}
@@ -189,14 +194,14 @@ func cases() map[string]func(*testing.T, Fixture) {
 		// caller that saves and opens it, and the next media type somebody adds
 		// to the inline set are three ways for it to matter.
 		"an upload whose bytes disagree with its type is refused": func(t *testing.T, f Fixture) {
-			_, err := f.Service.Upload(f.Ctx, f.Tx, upload("logo.png", "image/png", contracts.VisibilityPublic, "<html><script>alert(1)</script>"))
+			_, err := f.Service.Upload(f.Ctx, f.open, upload("logo.png", "image/png", contracts.VisibilityPublic, "<html><script>alert(1)</script>"))
 			if !errors.Is(err, crud.ErrInvalid) {
 				t.Errorf("a page uploaded as an image = %v, want ErrInvalid", err)
 			}
 			// The types that are never rendered are not sniffed at all: what a
 			// .docx really is, is not this module's business, and a sniffer
 			// that had an opinion about every format would refuse half of them.
-			if _, err := f.Service.Upload(f.Ctx, f.Tx, upload("x.bin", "application/octet-stream", contracts.VisibilityPrivate, "<html>")); err != nil {
+			if _, err := f.Service.Upload(f.Ctx, f.open, upload("x.bin", "application/octet-stream", contracts.VisibilityPrivate, "<html>")); err != nil {
 				t.Errorf("an attachment that is not what it claims = %v, want it stored", err)
 			}
 		},
@@ -242,7 +247,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 				upload("  ", "text/plain", contracts.VisibilityPrivate, hello),
 				upload("notes.txt", "text/plain", "everybody", hello),
 			} {
-				if _, err := f.Service.Upload(f.Ctx, f.Tx, up); !errors.Is(err, crud.ErrInvalid) {
+				if _, err := f.Service.Upload(f.Ctx, f.open, up); !errors.Is(err, crud.ErrInvalid) {
 					t.Errorf("Upload(%q/%q) = %v, want ErrInvalid", up.Name, up.Visibility, err)
 				}
 			}

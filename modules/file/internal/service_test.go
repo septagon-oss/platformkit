@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +48,14 @@ func TestServiceConforms(t *testing.T) {
 			t.Fatalf("the case's transaction: %v", err)
 		}
 	})
+}
+
+// held is a transaction this test already has, as the opener Upload takes. The
+// production route hands over a lazy one on purpose; a test that has opened the
+// transaction to seed the world with is not testing that, so it hands over what
+// it has. TestNothingIsOpenWhileABodyArrives is the case that does test it.
+func held(tx db.Tx[db.Tenant]) contracts.Tx {
+	return func(context.Context) (db.Tx[db.Tenant], error) { return tx, nil }
 }
 
 // keysUnder is every blob on disk, which is what the suite's Keys is for.
@@ -91,7 +100,7 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 	// An upload in a transaction that then fails.
 	var orphan string
 	_ = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		f, err := svc.Upload(ctx, tx, contracts.Upload{
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
 			Name: "notes.txt", ContentType: "text/plain", Declared: -1,
 			Body: strings.NewReader("hello"),
 		})
@@ -115,7 +124,7 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 	// A delete in a transaction that then fails.
 	var kept string
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		f, err := svc.Upload(ctx, tx, contracts.Upload{
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
 			Name: "keep.txt", ContentType: "text/plain", Declared: -1,
 			Body: strings.NewReader("keep me"),
 		})
@@ -165,7 +174,7 @@ func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
 
 	var payload []byte
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		f, err := svc.Upload(ctx, tx, contracts.Upload{
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
 			Name: "notes.txt", ContentType: "text/plain", Declared: -1,
 			Body: strings.NewReader("hello"),
 		})
@@ -259,7 +268,7 @@ func TestTheUploaderIsTheCaller(t *testing.T) {
 
 	err := db.Run(tenancy.WithActor(tenancy.WithTenant(t.Context(), acme), me), conn,
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			f, err := svc.Upload(ctx, tx, contracts.Upload{
+			f, err := svc.Upload(ctx, held(tx), contracts.Upload{
 				Name: "notes.txt", ContentType: "text/plain", Declared: -1,
 				Body: strings.NewReader("hello"),
 			})
@@ -287,7 +296,7 @@ func TestARowThatPointsAtNothingIsAnOutage(t *testing.T) {
 	svc := internal.NewService(store, filetest.Limit, 0)
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		f, err := svc.Upload(ctx, tx, contracts.Upload{
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
 			Name: "notes.txt", ContentType: "text/plain", Declared: -1,
 			Body: strings.NewReader("hello"),
 		})
@@ -329,7 +338,7 @@ func TestATenantCannotFillTheDisk(t *testing.T) {
 	put := func(t *testing.T, who tenancy.Tenant, body string) error {
 		t.Helper()
 		return db.Run(tenancy.WithTenant(t.Context(), who), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := svc.Upload(ctx, tx, contracts.Upload{
+			_, err := svc.Upload(ctx, held(tx), contracts.Upload{
 				Name: "x.bin", ContentType: "application/octet-stream",
 				Declared: -1, Body: strings.NewReader(body),
 			})
@@ -359,6 +368,77 @@ func TestATenantCannotFillTheDisk(t *testing.T) {
 	}
 }
 
+// TestTheQuotaHoldsUnderTwentyUploadsAtOnce is the race the review measured:
+// twenty uploads started together, each reading the tenant's total before any
+// of them had inserted a row, each deciding there was room, and 2.9 times the
+// quota on disk. The numbers are the review's — twenty uploads of four thousand
+// bytes against a quota of eight thousand one hundred and ninety-two, so at
+// most two may be stored and eighteen must be refused.
+//
+// It is the mutation test for the one line in internal.charge that takes
+// pg_advisory_xact_lock: without it this fails, and it fails by exactly the
+// amount the review reported.
+func TestTheQuotaHoldsUnderTwentyUploadsAtOnce(t *testing.T) {
+	const (
+		uploads = 20
+		each    = 4000
+		quota   = 8192
+	)
+	_, conn := dbtest.Schema(t)
+	dir := t.TempDir()
+	svc := internal.NewService(internal.NewLocal(dir), each*2, quota)
+
+	var wg sync.WaitGroup
+	errs := make([]error, uploads)
+	start := make(chan struct{})
+	for i := range uploads {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start // all twenty in flight before any of them counts
+			errs[i] = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				_, err := svc.Upload(ctx, held(tx), contracts.Upload{
+					Name: "x.bin", ContentType: "application/octet-stream",
+					Declared: -1, Body: strings.NewReader(strings.Repeat("x", each)),
+				})
+				return err
+			})
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var stored int
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			stored++
+		case !errors.Is(err, contracts.ErrQuota):
+			t.Errorf("upload %d failed with %v, want it stored or refused for the quota", i, err)
+		}
+	}
+	// What the rows say, which is what the next upload will be charged.
+	var held int64
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		return tx.DB().Model(&contracts.File{}).Where("deleted_at IS NULL").
+			Select("COALESCE(SUM(size), 0)").Scan(&held).Error
+	})
+	if err != nil {
+		t.Fatalf("what the tenant is holding: %v", err)
+	}
+	if held > quota {
+		t.Errorf("%d uploads of %d stored %d bytes against a quota of %d; the room was read by every one of them before any of them took it",
+			stored, each, held, quota)
+	}
+	if stored != quota/each {
+		t.Errorf("%d uploads were stored, want the %d that fit", stored, quota/each)
+	}
+	// And the disk agrees with the rows: a refused upload is not charged for.
+	if got := keysUnder(t, dir); len(got) != stored {
+		t.Errorf("the store holds %d blobs and the database %d rows", len(got), stored)
+	}
+}
+
 // TestTheOrphansAreSweptUp is the other half of "the bytes go before the row":
 // an upload whose transaction fails leaves a blob nobody references, and
 // nothing in the database records that it exists. So the sweep starts at the
@@ -373,14 +453,14 @@ func TestTheOrphansAreSweptUp(t *testing.T) {
 	// One file that committed, and one whose transaction did not.
 	var kept string
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		f, err := svc.Upload(ctx, tx, contracts.Upload{Name: "keep.txt", ContentType: "text/plain", Declared: -1, Body: strings.NewReader("keep")})
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{Name: "keep.txt", ContentType: "text/plain", Declared: -1, Body: strings.NewReader("keep")})
 		kept = f.StorageKey
 		return err
 	}); err != nil {
 		t.Fatalf("the upload that commits: %v", err)
 	}
 	_ = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		if _, err := svc.Upload(ctx, tx, contracts.Upload{Name: "lost.txt", ContentType: "text/plain", Declared: -1, Body: strings.NewReader("lost")}); err != nil {
+		if _, err := svc.Upload(ctx, held(tx), contracts.Upload{Name: "lost.txt", ContentType: "text/plain", Declared: -1, Body: strings.NewReader("lost")}); err != nil {
 			return err
 		}
 		return context.Canceled

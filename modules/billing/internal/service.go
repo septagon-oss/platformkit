@@ -61,13 +61,26 @@ func (s *Service) Subscribe(ctx context.Context, tx db.Tx[db.Tenant], planID uui
 	case err != nil && !errors.Is(err, crud.ErrNotFound):
 		return nil, err
 	case err != nil:
-		// The first one, and the only trial this tenant will ever get: this
-		// module serves the first period before it asks for anything, and the
-		// first renewal is the charge.
+		// The first live one. Whether it is a trial is TrialUsedAt's answer and
+		// not this row's absence: a subscription that was deleted is still a
+		// trial this tenant was served, and the trial is once per tenant, ever.
+		used, err := trialUsedAt(tx)
+		if err != nil {
+			return nil, err
+		}
 		sub = &contracts.Subscription{
-			PlanID: planID, Status: contracts.StatusTrial, TrialUsedAt: &now,
-			CurrentPeriodStart: now, CurrentPeriodEnd: contracts.Advance(now, plan.Interval),
+			PlanID: planID, TrialUsedAt: used, AnchorDay: contracts.AnchorOf(now),
 			PriceCents: plan.PriceCents, Currency: plan.Currency,
+		}
+		if used == nil {
+			// The trial: this module serves the first period before it asks for
+			// anything, and the first renewal is the charge.
+			sub.Status, sub.TrialUsedAt = contracts.StatusTrial, &now
+			sub.CurrentPeriodStart = now
+			sub.CurrentPeriodEnd = contracts.Advance(now, plan.Interval, sub.AnchorDay)
+		} else {
+			sub.Status = contracts.StatusActive
+			sub.CurrentPeriodStart, sub.CurrentPeriodEnd = back(now, plan.Interval), now
 		}
 		if err := crud.Create(ctx, tx, sub); err != nil {
 			return nil, err
@@ -76,31 +89,60 @@ func (s *Service) Subscribe(ctx context.Context, tx db.Tx[db.Tenant], planID uui
 	// Already on this plan with nothing pending: the same intention twice.
 	case sub.PlanID == planID && sub.Status != contracts.StatusCancelled && !sub.CancelAtPeriodEnd:
 		return sub, nil
+	}
 	// A tenant that owes money does not get to choose a cheaper plan. The debt
 	// is for a period already served; it is settled, or the grace period runs
-	// out and the subscription ends. This is the review's escape route.
-	case sub.Status == contracts.StatusPastDue && sub.PlanID != planID:
-		return nil, fmt.Errorf("%w: this subscription is past due; the outstanding period is settled before the plan changes", crud.ErrConflict)
+	// out and the subscription ends. This is the review's escape route, and it
+	// asks Outstanding rather than the status because a subscription cancelled
+	// while it owed is cancelled and still owes.
+	if end, owes := sub.Outstanding(); owes && sub.PlanID != planID {
+		return nil, fmt.Errorf("%w: this subscription owes for the period ending %s; it is settled before the plan changes",
+			crud.ErrConflict, end.UTC().Format(time.RFC3339))
 	}
 	sub.PlanID, sub.CancelAtPeriodEnd = planID, false
 	columns := []string{"plan_id", "cancel_at_period_end", "updated_at"}
 	if sub.Status == contracts.StatusCancelled {
-		// It ended, so there is no period to keep: this is a new one. It is not
-		// a second trial — the trial is once per tenant, and cancelling four
-		// times used to be four free periods — so the period it is given is one
-		// that has already ended, and the next renewal charges for the period
-		// it is about to serve rather than serving it free.
-		sub.Status = contracts.StatusActive
-		sub.CurrentPeriodStart, sub.CurrentPeriodEnd = back(now, plan.Interval), now
-		sub.PriceCents, sub.Currency = plan.PriceCents, plan.Currency
-		sub.AttemptCount, sub.PastDueSince = 0, nil
-		columns = append(columns, "status", "current_period_start", "current_period_end",
-			"price_cents", "currency", "attempt_count", "past_due_since")
+		// It ended, so it comes back — and it comes back exactly where it left
+		// off. The attempt count, the grace clock and an outstanding period are
+		// not written here at all, so cancelling and resubscribing is not a way
+		// of clearing them: a review did that live, for as many free periods as
+		// it liked. Only a subscription that owes nothing is given a period.
+		sub.Status = contracts.StatusPastDue
+		columns = append(columns, "status")
+		if _, owes := sub.Outstanding(); !owes {
+			// Not a second trial — the trial is once per tenant — so the period
+			// it is given is one that has already ended, and the next renewal
+			// charges for the period it is about to serve rather than serving
+			// it free.
+			sub.Status = contracts.StatusActive
+			sub.CurrentPeriodStart, sub.CurrentPeriodEnd = back(now, plan.Interval), now
+			sub.PriceCents, sub.Currency = plan.PriceCents, plan.Currency
+			sub.AnchorDay = contracts.AnchorOf(now)
+			columns = append(columns, "current_period_start", "current_period_end",
+				"price_cents", "currency", "anchor_day")
+		}
 	}
 	if err := crud.Update(ctx, tx, sub, columns...); err != nil {
 		return nil, err
 	}
 	return sub, publishSubscribed(ctx, tx, sub, plan, now)
+}
+
+// trialUsedAt is when this tenant was issued its one trial, or nil when it
+// never was. It reads every row and not the live one, soft-deleted included,
+// because "once per tenant, ever" is a fact about the tenant and a subscription
+// that was removed is still a trial that was served.
+func trialUsedAt(tx db.Tx[db.Tenant]) (*time.Time, error) {
+	var at []time.Time
+	err := tx.DB().Model(&contracts.Subscription{}).Where("trial_used_at IS NOT NULL").
+		Order("trial_used_at").Limit(1).Pluck("trial_used_at", &at).Error
+	if err != nil {
+		return nil, crud.Classify(err)
+	}
+	if len(at) == 0 {
+		return nil, nil
+	}
+	return &at[0], nil
 }
 
 // back is one interval before now, for the period a resubscriber is given: it
@@ -137,6 +179,15 @@ func (s *Service) Cancel(ctx context.Context, tx db.Tx[db.Tenant], atPeriodEnd b
 	}
 	if sub.Status == contracts.StatusCancelled {
 		return sub, nil
+	}
+	// The dunning ceiling's other escape route. Ending it now used to take the
+	// subscription out of past_due, and resubscribing gave it a fresh period; a
+	// review ran that loop live. A customer who owes for a period already served
+	// may leave at the end of the one they are in, and may not walk away from
+	// the debt by leaving in the middle.
+	if end, owes := sub.Outstanding(); owes {
+		return nil, fmt.Errorf("%w: this subscription owes for the period ending %s; it is settled, or the grace period runs out, before it ends now — cancel at period end instead",
+			crud.ErrConflict, end.UTC().Format(time.RFC3339))
 	}
 	// The period is left where it is: what was paid for is a fact, and the
 	// status is what says service has stopped.
@@ -267,7 +318,7 @@ func advance(ctx context.Context, tx db.Tx[db.Tenant], sub *contracts.Subscripti
 	plan *contracts.Plan, receipt string, now time.Time,
 ) (*contracts.Subscription, *contracts.Charge, error) {
 	sub.CurrentPeriodStart = sub.CurrentPeriodEnd
-	sub.CurrentPeriodEnd = contracts.Advance(sub.CurrentPeriodStart, plan.Interval)
+	sub.CurrentPeriodEnd = contracts.Advance(sub.CurrentPeriodStart, plan.Interval, sub.AnchorDay)
 	sub.Status = contracts.StatusActive
 	sub.PriceCents, sub.Currency = plan.PriceCents, plan.Currency
 	sub.AttemptCount, sub.PastDueSince = 0, nil

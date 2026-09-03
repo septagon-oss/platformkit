@@ -15,7 +15,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
 // The three themes. system is the absence of a choice, which is why an empty
@@ -72,31 +72,6 @@ type NavItem struct {
 	// carry an absolute one is a navigation somebody can use to send a tenant's
 	// visitors somewhere else.
 	Path string `json:"path" doc:"Path within this site" example:"/about-us"`
-}
-
-// InSite reports whether p is a path within this site.
-//
-// The check used to be strings.HasPrefix(p, "/"), which the documentation above
-// described as refusing absolute URLs and did not: "//evil.example" starts with
-// a slash and is a network-path reference, which every browser resolves against
-// the current scheme and sends the visitor to another origin. So does
-// "/\evil.example", because the URL parser of every browser normalises a
-// backslash to a slash before it decides what the authority is.
-//
-// url.Parse is what tells the rest apart: a path within this site parses to no
-// scheme, no authority and a path that begins with a slash.
-func InSite(p string) bool {
-	// A second slash, however many follow it, is an authority: a browser
-	// resolving "////evil.example" against this site collapses the slashes and
-	// goes to evil.example, and url.Parse does not — it reports an empty host
-	// and a path of "//evil.example", which is why the parse alone is not the
-	// check. The backslash is refused outright, because it has no meaning in a
-	// path and its only use here is to look like something else.
-	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.ContainsRune(p, '\\') {
-		return false
-	}
-	u, err := url.Parse(p)
-	return err == nil && u.Scheme == "" && u.Host == "" && strings.HasPrefix(u.Path, "/")
 }
 
 // Nav is the navigation, one jsonb column. It is a named type so the codec is
@@ -193,7 +168,7 @@ func (s *SiteSettings) Validate(context.Context) error {
 		switch {
 		case item.Label == "" || utf8.RuneCountInString(item.Label) > MaxLabel:
 			return fmt.Errorf("a link needs a label of at most %d characters, and %q is not one", MaxLabel, item.Label)
-		case !InSite(item.Path) || utf8.RuneCountInString(item.Path) > MaxPath:
+		case !httpx.LocalPath(item.Path) || utf8.RuneCountInString(item.Path) > MaxPath:
 			return fmt.Errorf("a link points at a path within this site, and %q is not one", item.Path)
 		}
 	}
