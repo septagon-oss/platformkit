@@ -102,8 +102,10 @@ type InputProps struct {
 	ComponentProps
 	HTMXProps
 
-	Name         string `json:"name"`
-	Type         string `json:"type,omitempty"` // text, email, password, number, tel, url, search, date, time
+	Name string `json:"name"`
+	Type string `json:"type,omitempty"` // text, email, password, number, tel, url, search, date, time, file
+	// Value is what the control starts with. A file input never carries one:
+	// no browser lets a page choose a file for somebody.
 	Value        string `json:"value,omitempty"`
 	Placeholder  string `json:"placeholder,omitempty"`
 	Label        string `json:"label,omitempty"`
@@ -123,6 +125,14 @@ type InputProps struct {
 	Size         string `json:"size,omitempty"` // sm, md, lg
 	Tone         string `json:"tone,omitempty"` // neutral, success, warning, danger
 	FullWidth    bool   `json:"fullWidth,omitempty"`
+
+	// Accept and Multiple belong to Type "file" and are ignored elsewhere.
+	// Accept is the browser's filter — "image/*", or a comma-separated list of
+	// extensions and media types — and it is a courtesy to the person choosing,
+	// never a check: what a form actually accepts is decided by whatever reads
+	// the upload. Multiple lets them choose more than one.
+	Accept   string `json:"accept,omitempty"`
+	Multiple bool   `json:"multiple,omitempty"`
 }
 
 // ---- contracts/atoms/select.go

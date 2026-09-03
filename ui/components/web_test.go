@@ -895,6 +895,43 @@ func TestInputOwnsValidationToneConstraintsAndSupportingText(t *testing.T) {
 	}
 }
 
+// TestAFileInputCarriesItsFilterAndNoValue.
+//
+// It is the one input type a schema-driven form could not render: an album's
+// cover image was a 500 until the type existed (the E6 review), because
+// canonicalInputType panicked on anything it did not know.
+func TestAFileInputCarriesItsFilterAndNoValue(t *testing.T) {
+	html := renderNodeToString(t, Input(InputProps{
+		Name: "cover", Type: "FILE", Label: "Cover image",
+		Accept: "image/png,image/jpeg", Multiple: true,
+		// A value a caller passed by accident, which no browser would honour
+		// and which would make the control submit nothing at all.
+		Value: "/uploads/old.png",
+	}))
+	for _, fragment := range []string{
+		`type="file"`,
+		`accept="image/png,image/jpeg"`,
+		`multiple="multiple"`,
+		`name="cover"`,
+		`Cover image`,
+	} {
+		if !strings.Contains(html, fragment) {
+			t.Fatalf("the file input is missing %q: %s", fragment, html)
+		}
+	}
+	if strings.Contains(html, "old.png") {
+		t.Errorf("the file input carries a value attribute: %s", html)
+	}
+
+	// The two attributes belong to this type and are not sprayed over the rest.
+	text := renderNodeToString(t, Input(InputProps{
+		Name: "title", Accept: "image/*", Multiple: true,
+	}))
+	if strings.Contains(text, "accept=") || strings.Contains(text, "multiple") {
+		t.Errorf("a text input carries a file input's attributes: %s", text)
+	}
+}
+
 func renderAll(t *testing.T) string {
 	t.Helper()
 	var b strings.Builder
