@@ -757,6 +757,13 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 
 	p, hasPrincipal := tenancy.PrincipalFrom(ctx.Context())
 	if !hasPrincipal || p.UserID == uuid.Nil {
+		// A page has somewhere to send somebody who has nobody to be; an API
+		// route has not. See SignInExtension.
+		if to, page := signInFor(ctx); page {
+			ctx.SetHeader("Location", to)
+			ctx.SetStatus(http.StatusSeeOther)
+			return
+		}
 		a.deny(ctx, "AUTH_ANONYMOUS", "this operation requires a signed-in caller")
 		return
 	}

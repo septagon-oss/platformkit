@@ -21,7 +21,7 @@ import (
 type Task struct {
 	crud.Base
 	Title    string     `json:"title" validate:"required" ui:"widget:text"`
-	Status   string     `json:"status,omitempty" enum:"open,done" ui:"widget:select"`
+	Status   string     `json:"status,omitempty" enum:"open,done" ui:"widget:select" default:"open" doc:"Lifecycle state"`
 	Priority int        `json:"priority,omitempty"`
 	Done     bool       `json:"done,omitempty" ui:"hide:list"`
 	Notes    string     `json:"notes,omitempty" gorm:"type:text"`
@@ -340,7 +340,8 @@ func TestSchemaIsDerivedFromTheStruct(t *testing.T) {
 		{Name: "createdAt", Type: crud.TypeTime, ReadOnly: true},
 		{Name: "updatedAt", Type: crud.TypeTime, ReadOnly: true},
 		{Name: "title", Type: crud.TypeString, Required: true, Widget: "text"},
-		{Name: "status", Type: crud.TypeString, Widget: "select", Enum: []string{"open", "done"}},
+		{Name: "status", Type: crud.TypeString, Widget: "select", Enum: []string{"open", "done"},
+			Default: "open", Doc: "Lifecycle state"},
 		{Name: "priority", Type: crud.TypeInt},
 		{Name: "done", Type: crud.TypeBool, HideList: true},
 		{Name: "notes", Type: crud.TypeText},
@@ -355,6 +356,7 @@ func TestSchemaIsDerivedFromTheStruct(t *testing.T) {
 		}
 		if got.Type != want.Type || got.Elem != want.Elem || got.Widget != want.Widget || got.Required != want.Required ||
 			got.ReadOnly != want.ReadOnly || got.HideList != want.HideList ||
+			got.Default != want.Default || got.Doc != want.Doc ||
 			strings.Join(got.Enum, ",") != strings.Join(want.Enum, ",") {
 			t.Errorf("field %s = %+v, want %+v", want.Name, got, want)
 		}

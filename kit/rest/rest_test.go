@@ -108,13 +108,19 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *sql.DB) { return mount(t, s
 // mount is mounted for a Spec that is not the plain one, so a case can vary a
 // field and still get the whole chain.
 func mount(t *testing.T, s rest.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
+	return mountAs(t, s, caller{})
+}
+
+// mountAs is mount for a caller who does not hold everything, which is what the
+// resource closures' own authorization is tested with.
+func mountAs(t *testing.T, s rest.Spec[*Task], authorize httpx.Authorizer) (*httpx.API, chi.Router, *sql.DB) {
 	t.Helper()
 	admin, app := dbtest.Schema(t)
 	if _, err := admin.ExecContext(t.Context(), ddl); err != nil {
 		t.Fatalf("create tasks: %v", err)
 	}
 	api, router := httpx.New(httpx.Options{
-		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
+		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: authorize,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: principal}, true, nil
 		},
@@ -295,17 +301,41 @@ func TestEveryRouteCarriesItsDeclaration(t *testing.T) {
 	}
 }
 
-// TestThePatchRefusesTheFieldsACommandOwns. An immutable field is not
-// read-only: the server does not own it, one route does, and a PATCH that could
+// TestBothWriteDoorsRefuseTheFieldsACommandOwns. An immutable field is not
+// read-only: the server does not own it, one route does, and a write that could
 // set it would make the change without the rule and without the event that
-// route publishes. So the refusal names the field, which is how a caller finds
-// the door.
-func TestThePatchRefusesTheFieldsACommandOwns(t *testing.T) {
+// route publishes. So both doors refuse it and the refusal names the field,
+// which is how a caller finds the door.
+//
+// The create used to be the way past this. Immutable was consulted in merge()
+// and merge() is the patch's, so POST with the field in the body stored
+// whatever the caller said — content's author, a user's roles — silently, with
+// the entity's own documentation saying an actor stamps it. See
+// refuseImmutable.
+func TestBothWriteDoorsRefuseTheFieldsACommandOwns(t *testing.T) {
 	owned := spec
 	owned.Immutable = []string{"status", "done"}
 	_, router, _ := mount(t, owned)
 
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"owned","status":"open"}`)
+	for _, tt := range []struct{ field, create string }{
+		{"status", `{"title":"forged","status":"done"}`},
+		{"done", `{"title":"forged","done":true}`},
+		// null is a value a caller sent, not an absence.
+		{"status", `{"title":"forged","status":null}`},
+	} {
+		code, body := call(t, router, http.MethodPost, "/api/tasks", tt.create)
+		if code != http.StatusUnprocessableEntity {
+			t.Errorf("POST %s = %d %s, want 422", tt.create, code, body)
+		}
+		if !strings.Contains(body, tt.field+" belongs to a route of its own") {
+			t.Errorf("POST %s answered %s, which does not say which field it refused", tt.create, body)
+		}
+	}
+	if code, body := call(t, router, http.MethodGet, "/api/tasks", ""); !strings.Contains(body, `"total":0`) {
+		t.Errorf("a refused create stored a row anyway: %d %s", code, body)
+	}
+
+	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"owned"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}

@@ -161,6 +161,14 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, err
 			}
+			// Immutable is refused at this door as well as at the patch. A
+			// create used to be the way past it: content's author is stamped by
+			// Validate from the actor, and a body naming it stored whatever the
+			// caller said instead, silently, with the entity's own
+			// documentation saying otherwise. See named.
+			if err := refuseImmutable(in.RawBody, s.Immutable); err != nil {
+				return nil, Fault(err)
+			}
 			e := in.Body
 			crud.Reset(e) // whatever the caller sent for the read-only fields
 			if err := crud.Create(ctx, tx, e); err != nil {
@@ -429,6 +437,10 @@ type idInput struct {
 // this package is also called from a module's own handlers.
 type bodyInput[T any] struct {
 	Body T `required:"true"`
+	// RawBody is the same bytes, which huma fills from the same read. It is
+	// here for one question the decoded entity cannot answer: did the caller
+	// name this field at all. See refuseImmutable.
+	RawBody []byte
 }
 
 // patchInput is the update route's body: the fields to change, and no others.
@@ -539,7 +551,7 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		case f.ReadOnly:
 			return nil, fmt.Errorf("%w: %s is read-only", crud.ErrInvalid, name)
 		case slices.Contains(immutable, name):
-			return nil, fmt.Errorf("%w: %s belongs to a route of its own, not to a patch", crud.ErrInvalid, name)
+			return nil, immutableRefusal(name)
 		}
 		// Round-tripping through JSON is what makes this the same decoder the
 		// request body went through: one set of rules for "3" as an int and for
@@ -554,6 +566,45 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		columns = append(columns, f.Column)
 	}
 	return columns, nil
+}
+
+// refuseImmutable answers 422 when a create body names a field a route of its
+// own owns.
+//
+// It reads the raw body rather than the decoded entity, because the two are not
+// the same question: a decoded entity cannot say whether the caller sent
+// "author": null, "author": "0000…" or nothing at all, and only the last is
+// allowed. So the create route asks for the bytes as well as the struct — huma
+// fills both from one read — and this is the whole of what it does with them.
+//
+// The refusal is the patch's, word for word, because it is the same rule: a
+// field a command owns is written by that command at every door. Read-only
+// fields are not this; those the server owns outright and crud.Reset discards
+// whatever arrived for them, which is right, because a caller sending an id is
+// not reaching for a door of its own.
+func refuseImmutable(body []byte, immutable []string) error {
+	if len(immutable) == 0 || len(body) == 0 {
+		return nil
+	}
+	var sent map[string]json.RawMessage
+	if err := json.Unmarshal(body, &sent); err != nil {
+		// A body that is not an object is huma's refusal to give, not this
+		// one's: it has already failed to decode into the entity.
+		return nil
+	}
+	for _, name := range immutable {
+		if _, named := sent[name]; named {
+			return immutableRefusal(name)
+		}
+	}
+	return nil
+}
+
+// immutableRefusal is the one message both write doors give, so a caller who
+// reaches for a field a command owns is told the same thing whether they
+// created or patched.
+func immutableRefusal(name string) error {
+	return fmt.Errorf("%w: %s belongs to a route of its own, not to this one", crud.ErrInvalid, name)
 }
 
 // names are the fields the list route can be sorted and filtered by, which is
