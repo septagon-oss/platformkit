@@ -315,3 +315,100 @@ func deliver(t *testing.T, transport Transport, seen <-chan Event, name string) 
 		t.Fatal("the reconciled subscription delivered nothing")
 	}
 }
+
+// TestTwoWorkersShareOneDurable is the review's finding about scaling out: the
+// boot log recommends running more than one worker, and a second one could not
+// start. A push consumer with no deliver group belongs to one subscriber, and
+// the second subscription is refused —
+//
+//	nats: consumer is already bound to a subscription
+//
+// — so the second replica crashlooped on the first subscription it made. The
+// deliver group is what a durable's subscribers join, and this is the claim it
+// makes: two of them bind without error, and one event is handled once between
+// them rather than once each.
+func TestTwoWorkersShareOneDurable(t *testing.T) {
+	transport, _ := jetstreamForTest(t)
+	durable, name := uniqueDurable(t)
+
+	// Two subscriptions on one durable, which is two worker replicas: they run
+	// in one process here because what is under test is what NATS does with the
+	// second bind, and that is the same question either way.
+	const workers = 2
+	seen := make(chan int, 16)
+	for worker := range workers {
+		err := transport.Subscribe(t.Context(), durable, name, Sink{
+			Handle: func(_ context.Context, _ Event) error { seen <- worker; return nil },
+			Dead:   func(context.Context, Event, error) {},
+		})
+		if err != nil {
+			t.Fatalf("worker %d subscribing to durable %s: %v", worker, durable, err)
+		}
+	}
+
+	// Three events, so "each is handled once" is a claim about a stream of them
+	// and not about one that happened to land on the first subscriber.
+	const events = 3
+	for range events {
+		ev := Event{ID: uuid.New(), Name: name, TenantID: uuid.New(), Payload: []byte(`{"amount":42}`)}
+		if err := transport.Publish(t.Context(), ev); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+	}
+	handled := 0
+	deadline := time.After(30 * time.Second)
+	for handled < events {
+		select {
+		case <-seen:
+			handled++
+		case <-deadline:
+			t.Fatalf("%d of %d events were handled", handled, events)
+		}
+	}
+	// And no more: a deliver group is one delivery shared, not one per member.
+	select {
+	case <-seen:
+		t.Error("an event was handled twice; the two subscribers are a deliver group and not two consumers")
+	case <-time.After(2 * time.Second):
+	}
+}
+
+// TestADriftedStreamIsReconciled. The stream is created on first use and then
+// outlives every process that connects, so its settings are a second copy of
+// wantedStream that nothing kept in step — subjects and retention were never
+// looked at again after the first boot. They are now, on every subscribe.
+func TestADriftedStreamIsReconciled(t *testing.T) {
+	transport, js := jetstreamForTest(t)
+	durable, name := uniqueDurable(t)
+
+	// The stream as an older build left it: a narrower subject space and a
+	// different age. Both are settings NATS can change on a live stream.
+	drifted := wantedStream()
+	drifted.Subjects = []string{subject + "narrower.>"}
+	drifted.MaxAge = keep / 2
+	if _, err := js.UpdateStream(drifted); err != nil {
+		t.Fatalf("drift the stream: %v", err)
+	}
+
+	seen := make(chan Event, 1)
+	err := transport.Subscribe(t.Context(), durable, name, Sink{
+		Handle: func(_ context.Context, ev Event) error { seen <- ev; return nil },
+		Dead:   func(context.Context, Event, error) {},
+	})
+	if err != nil {
+		t.Fatalf("subscribe against a drifted stream: %v", err)
+	}
+	info, err := js.StreamInfo(stream)
+	if err != nil {
+		t.Fatalf("read the stream back: %v", err)
+	}
+	want := wantedStream()
+	if !slices.Equal(info.Config.Subjects, want.Subjects) {
+		t.Errorf("the subjects are %v, want %v", info.Config.Subjects, want.Subjects)
+	}
+	if info.Config.MaxAge != want.MaxAge {
+		t.Errorf("max_age is %s, want %s", info.Config.MaxAge, want.MaxAge)
+	}
+	// And the subject space it was narrowed away from carries an event again.
+	deliver(t, transport, seen, name)
+}

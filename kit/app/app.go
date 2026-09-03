@@ -146,8 +146,9 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 		// replicas of role All each relay their own outbox rows into their own
 		// process, so half the events reach half the subscribers and nothing
 		// errors. One replica of All is a laptop and a small deployment; more
-		// than one is web and worker on JetStream.
-		log.WarnContext(ctx, "app: role all uses the in-process event transport, so events reach only this replica; run role web and role worker to scale out")
+		// than one is web and worker on JetStream — where the workers share one
+		// durable consumer through a deliver group, so there is no limit of one.
+		log.WarnContext(ctx, "app: role all uses the in-process event transport, so events reach only this replica; run role web and role worker on JetStream to scale out, and any number of each")
 	}
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
 }
