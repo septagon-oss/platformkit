@@ -24,10 +24,25 @@ import (
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
+// Delivery is how a link with a secret in it leaves this module: the mailer
+// that carries it, the lookup that turns a path into the recipient's own host,
+// and whether that host is reached over https.
+//
+// The three are one decision and travel together. A composition that wires no
+// mailer issues no token either — a link nobody is sent is a live credential in
+// a table for an hour, for nothing — and every route still answers as though it
+// had.
+type Delivery struct {
+	Mailer contracts.Mailer
+	Hosts  contracts.Hosts
+	Secure bool
+}
+
 // Service is signing in and what a role may do.
 type Service struct {
 	users   contracts.Users
 	notify  contracts.Notifier
+	mail    Delivery
 	limiter *contracts.Limiter
 	// operator are the permissions the operator's own administrator holds by
 	// name. They are named and not implied because a wildcard does not satisfy
@@ -57,9 +72,16 @@ func (s *Service) declared() []tenancy.Grant {
 }
 
 // NewService returns the auth service. module.go constructs it.
-func NewService(users contracts.Users, notify contracts.Notifier, operator []string) *Service {
-	return &Service{users: users, notify: notify, limiter: contracts.NewLimiter(), operator: operator}
+func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery, operator []string) *Service {
+	return &Service{users: users, notify: notify, mail: mail, limiter: contracts.NewLimiter(), operator: operator}
 }
+
+// Precheck is the limiter's verdict, read from memory. See contracts.Service.
+func (s *Service) Precheck(email, ip string) contracts.Verdict { return s.limiter.Check(email, ip) }
+
+// MayAsk counts one forgotten-password request from an address. See
+// contracts.Service.
+func (s *Service) MayAsk(ip string) bool { return s.limiter.Requested(ip) }
 
 var _ contracts.Service = (*Service)(nil)
 
@@ -70,18 +92,20 @@ var _ contracts.Service = (*Service)(nil)
 // pays for one argon2id hash (usercontracts.EqualWork), because the difference
 // between "no such account" and "wrong password" is otherwise a stopwatch.
 func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password string, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
-	switch s.limiter.Check(email, from.IP) {
-	case contracts.Refuse:
-		s.recordFailure(ctx, email, from, true)
+	// Refuse only. The other verdict a caller can get is Delay, and the pause
+	// it earns is taken before the transaction was opened, by whoever asked
+	// Precheck — a two-second sleep here holds one of sixteen pool connections,
+	// and twenty-four of them at once took a replica to twenty-nine seconds of
+	// latency for every other request. See contracts.Service.Precheck.
+	if s.limiter.Check(email, from.IP) == contracts.Refuse {
+		// Once per account per address per window. The refusal happens before
+		// anything is checked, so a script against a locked account produces
+		// one of these a millisecond; the first says the account is under
+		// attack and the nine hundredth says it still is.
+		if s.limiter.Noted(email, from.IP) {
+			s.recordFailure(ctx, email, from, true)
+		}
 		return nil, nil, contracts.ErrTooManyAttempts
-	case contracts.Delay:
-		// The account is under attack from many places, or this address is
-		// working through a list of accounts. Refusing either would be doing
-		// the attacker's work: the first is how somebody locks a person out of
-		// their own account, and the second is how an office behind one NAT
-		// loses its morning. A pause costs the person two seconds and costs the
-		// attack its rate. See contracts.Limiter.
-		s.sleep(ctx, contracts.SoftDelay)
 	}
 	user, err := s.users.ByEmail(ctx, tx, email)
 	switch {
@@ -145,17 +169,6 @@ func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], user *usercontr
 	})
 }
 
-// sleep is the soft delay, interruptible: a shutdown must not wait two seconds
-// per request in flight.
-func (s *Service) sleep(ctx context.Context, d time.Duration) {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-	case <-ctx.Done():
-	}
-}
-
 // Identify is the lookup every request with a session cookie makes: one row, by
 // primary key, in this tenant's transaction, joined to the user so that the
 // caller's roles arrive with them and the authorizer needs no second query.
@@ -175,9 +188,7 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// with a copy of the table can still study.
 	at := db.Now()
 	if !session.ExpiresAt.After(at) || !session.CreatedAt.Add(contracts.SessionMaxLifetime).After(at) {
-		if err := tx.DB().Where("id_hash = ?", hash).Delete(&contracts.Session{}).Error; err != nil {
-			return nil, fmt.Errorf("auth: end an expired session: %w", err)
-		}
+		s.forget(ctx, hash)
 		return nil, crud.ErrNotFound
 	}
 	user, err := s.users.Get(ctx, tx, session.UserID)
@@ -194,6 +205,31 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return nil, err
 	}
 	return s.identify(ctx, tx, user)
+}
+
+// forget deletes one expired session, in a transaction of its own.
+//
+// Its own, and that is the correction rather than a flourish. This runs inside
+// the request's transaction, and a request whose caller was not recognised
+// answers 401 or 403 — a status kit/httpx rolls back — so the DELETE went back
+// with it and the row survived every visit it refused. Detached, the row goes
+// on the first refusal instead of waiting up to an hour for the sweep, which is
+// what the comment here used to claim and did not do.
+//
+// A failure is logged and changes nothing: the session is expired either way
+// and the hourly purge is still behind this. Nothing outside a request has a
+// connection to detach onto, and a caller with none simply leaves the row.
+func (s *Service) forget(ctx context.Context, hash contracts.Digest) {
+	conn, ok := httpx.ConnFrom(ctx)
+	if !ok {
+		return
+	}
+	err := db.Run(db.Detached(context.WithoutCancel(ctx)), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		return tx.DB().Where("id_hash = ?", hash).Delete(&contracts.Session{}).Error
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: could not end an expired session", "error", err)
+	}
 }
 
 // slide pushes the expiry out, at most once every SessionTouch. Without the

@@ -56,7 +56,8 @@ func TestServiceConforms(t *testing.T) {
 		_, conn := dbtest.Schema(t)
 		users := realUsers()
 		notices := &authtest.Notices{}
-		svc := internal.NewService(users, notices, operatorPermissions)
+		box := &authtest.Mailbox{}
+		svc := internal.NewService(users, notices, delivery(box), operatorPermissions)
 		seed(t, conn, svc, acme)
 
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
@@ -65,6 +66,7 @@ func TestServiceConforms(t *testing.T) {
 				Ctx: ctx, Tx: tx, Service: svc,
 				Published: func() []string { return outbox(t, tx) },
 				Sent:      notices.Sent,
+				Mailed:    box.Sent,
 				Sessions: func(user uuid.UUID) int {
 					var n int64
 					if err := tx.DB().Table("sessions").Where("user_id = ?", user).Count(&n).Error; err != nil {
@@ -103,6 +105,14 @@ func TestServiceConforms(t *testing.T) {
 			t.Fatalf("the case's transaction: %v", err)
 		}
 	})
+}
+
+// delivery is where a mailed link goes in these tests: a recorder, one host and
+// https, which is the same three things the application wires. A test that
+// wants no mail at all passes internal.Delivery{}, and then no token is issued
+// either — see internal.Service.offer.
+func delivery(box *authtest.Mailbox) internal.Delivery {
+	return internal.Delivery{Mailer: box, Hosts: authtest.Host("acme.example.com"), Secure: true}
 }
 
 // seed installs the two roles a tenant is created with, in a cross-tenant
@@ -145,7 +155,7 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, operatorPermissions)
+	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
 	seed(t, conn, svc, acme)
 	seed(t, conn, svc, globex)
 
@@ -188,7 +198,7 @@ func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, operatorPermissions)
+	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -261,7 +271,7 @@ func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, operatorPermissions)
+	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -300,7 +310,7 @@ func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 func TestAFailedLoginIsRecordedThoughItsRequestIsRolledBack(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, operatorPermissions)
+	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -347,7 +357,7 @@ func row(t *testing.T, admin *sql.DB, query string, args ...any) *sql.Row {
 func TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, operatorPermissions)
+	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -396,7 +406,7 @@ func TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes(t *testing.T) {
 func TestTheSlideNeverPassesTheCap(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, operatorPermissions)
+	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -440,8 +450,8 @@ func TestTheSlideNeverPassesTheCap(t *testing.T) {
 func TestThePurgeTakesExpiredCredentials(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	notices := &authtest.Notices{}
-	svc := internal.NewService(users, notices, operatorPermissions)
+	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
+	svc := internal.NewService(users, notices, delivery(box), operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -460,7 +470,7 @@ func TestThePurgeTakesExpiredCredentials(t *testing.T) {
 				return err
 			}
 		}
-		return svc.Forget(ctx, tx, "ada@acme.example.com")
+		return svc.Reissue(ctx, tx, "ada@acme.example.com")
 	})
 	if err != nil {
 		t.Fatalf("seed the credentials: %v", err)
@@ -497,8 +507,8 @@ func TestThePurgeTakesExpiredCredentials(t *testing.T) {
 func TestOnePendingLinkPerPerson(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	notices := &authtest.Notices{}
-	svc := internal.NewService(users, notices, operatorPermissions)
+	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
+	svc := internal.NewService(users, notices, delivery(box), operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -510,22 +520,35 @@ func TestOnePendingLinkPerPerson(t *testing.T) {
 		if err := users.SetPassword(ctx, tx, u.ID, authtest.Password); err != nil {
 			return err
 		}
-		for range 3 {
-			if err := svc.Forget(ctx, tx, "ada@acme.example.com"); err != nil {
-				return err
-			}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+	// Three asks, each in its own transaction and each far enough apart that
+	// the per-recipient interval is not what stops the second one. What is
+	// under test is the unique index: one row per person, replaced.
+	for range 3 {
+		err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			return svc.Reissue(ctx, tx, "ada@acme.example.com")
+		})
+		if err != nil {
+			t.Fatalf("Reissue: %v", err)
 		}
-		sent := notices.Sent()
-		if len(sent) != 3 {
-			t.Fatalf("three requests sent %d mails, want three", len(sent))
-		}
+		exec(t, admin, `UPDATE password_tokens SET created_at = created_at - interval '10 minutes'`)
+	}
+	sent := box.Sent()
+	if len(sent) != 3 {
+		t.Fatalf("three requests sent %d mails, want three", len(sent))
+	}
+	err = db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		// The first two links are dead and the last one works.
 		for _, stale := range sent[:2] {
-			if err := svc.Reset(ctx, tx, authtest.TokenIn(stale.Link), "a different passphrase"); !errors.Is(err, contracts.ErrCredentials) {
+			if err := svc.Reset(ctx, tx, authtest.TokenIn(stale.Body), "a different passphrase"); !errors.Is(err, contracts.ErrCredentials) {
 				t.Errorf("a superseded link = %v, want ErrCredentials", err)
 			}
 		}
-		return svc.Reset(ctx, tx, authtest.TokenIn(sent[2].Link), "a different passphrase")
+		return svc.Reset(ctx, tx, authtest.TokenIn(sent[2].Body), "a different passphrase")
 	})
 	if err != nil {
 		t.Fatalf("the transaction: %v", err)
@@ -543,8 +566,8 @@ func TestOnePendingLinkPerPerson(t *testing.T) {
 func TestTheTokenTableHoldsNoToken(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	notices := &authtest.Notices{}
-	svc := internal.NewService(users, notices, operatorPermissions)
+	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
+	svc := internal.NewService(users, notices, delivery(box), operatorPermissions)
 	seed(t, conn, svc, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
@@ -556,14 +579,19 @@ func TestTheTokenTableHoldsNoToken(t *testing.T) {
 		if err := users.SetPassword(ctx, tx, u.ID, authtest.Password); err != nil {
 			return err
 		}
-		return svc.Forget(ctx, tx, "ada@acme.example.com")
+		return svc.Reissue(ctx, tx, "ada@acme.example.com")
 	})
 	if err != nil {
 		t.Fatalf("the transaction: %v", err)
 	}
-	token := authtest.TokenIn(notices.Sent()[0].Link)
+	token := authtest.TokenIn(box.Sent()[0].Body)
 	if token == "" {
 		t.Fatal("no token reached the mailbox")
+	}
+	// And the notice raised beside it carries none: a notification is an
+	// ordinary row, and notifications.link used to hold this very string.
+	if got := notices.Sent(); len(got) != 1 || authtest.TokenIn(got[0].Link) != "" || got[0].Link != internal.ResetPath {
+		t.Errorf("the notice is %+v, want one pointing at %s and carrying nothing", got, internal.ResetPath)
 	}
 	var byHash, byToken int
 	row(t, admin, `SELECT count(*) FROM password_tokens WHERE token_hash = $1`, contracts.Hash(token)).Scan(&byHash)

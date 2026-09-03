@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -14,7 +15,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
-	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -40,12 +40,27 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		Errors:      []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedIn, contracts.EventLoginFailed}},
 	}, httpx.Public(), func(ctx context.Context, in *loginInput) (*sessionOutput, error) {
+		// The verdict first, the sleep second, the transaction third, and that
+		// order is the whole point of this being three statements.
+		//
+		// An account under a distributed attack earns a two-second pause
+		// (contracts.SoftDelay). Taken inside the request's transaction — which
+		// is where it used to be — those two seconds are two seconds holding
+		// one of sixteen pool connections: twenty-four delayed logins from one
+		// address held sixteen of a replica's seventeen, a legitimate request
+		// waited twenty-nine seconds, and the background jobs starved. The
+		// limiter is memory, so nothing has to be open to ask it, and a request
+		// that is asleep holds a goroutine and nothing else.
+		r, _ := httpx.RequestFrom(ctx)
+		from := ClientOf(r)
+		if svc.Precheck(in.Body.Email, from.IP) == contracts.Delay {
+			pause(ctx, contracts.SoftDelay)
+		}
 		tx, err := transaction(ctx)
 		if err != nil {
 			return nil, err
 		}
-		r, _ := httpx.RequestFrom(ctx)
-		session, identity, err := svc.Login(ctx, tx, in.Body.Email, in.Body.Password, ClientOf(r))
+		session, identity, err := svc.Login(ctx, tx, in.Body.Email, in.Body.Password, from)
 		if err != nil {
 			return nil, refusal(err)
 		}
@@ -139,13 +154,24 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		Method:      http.MethodPost,
 		Path:        Path + "/password/forgot",
 		Summary:     "Send me a reset link",
-		Description: "Always answers 200. An address nobody has and an address somebody has are the same answer, because a public route that told them apart would be an account enumeration oracle; the mail that does not arrive is the message.",
+		Description: "An address nobody has and an address somebody has are the same answer and the same work: this route publishes one event and the worker decides whether anybody is there, so neither the body nor a stopwatch tells them apart. The mail that does not arrive is the message. The 429 is about the address asking, never the address asked about.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusServiceUnavailable},
+		Errors:      []int{http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
-			notificationcontracts.EventCreated, notificationcontracts.EventEmailRequested,
+			contracts.EventResetRequested,
 		}},
 	}, httpx.Public(), func(ctx context.Context, in *forgotInput) (*doneOutput, error) {
+		// The cap is on the address making the request and is checked before
+		// the transaction, for the reason the login delay is: a public route
+		// that costs a mail needs a limit, and twenty-three requests were
+		// twenty-three mails to somebody who asked for none. It cannot be a
+		// limit on the address asked about — that would be the oracle this
+		// route exists not to be.
+		r, _ := httpx.RequestFrom(ctx)
+		if !svc.MayAsk(ClientOf(r).IP) {
+			return nil, problem.New(http.StatusTooManyRequests,
+				"too many reset requests from this address; wait and try again")
+		}
 		tx, err := transaction(ctx)
 		if err != nil {
 			return nil, err
@@ -243,6 +269,19 @@ func sessionOf(ctx context.Context) (uuid.UUID, bool) {
 	}
 	id, err := uuid.Parse(cookie.Value)
 	return id, err == nil
+}
+
+// pause is the soft delay, interruptible: a shutdown must not wait two seconds
+// per request in flight. It is here rather than in the service because it is
+// the handler that has to take it — before the transaction, see the login
+// route.
+func pause(ctx context.Context, d time.Duration) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-ctx.Done():
+	}
 }
 
 // done is the answer to a command with nothing to report: a body that says it

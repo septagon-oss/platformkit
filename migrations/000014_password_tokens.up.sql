@@ -9,6 +9,19 @@
 -- is not stored. SHA-256 without a work factor, because the input is 256 bits
 -- of crypto/rand rather than something a person chose.
 --
+-- That sentence was not true when this file first said it, and the correction
+-- is worth keeping here rather than in a commit message. The token was hashed
+-- into this table and then written in cleartext into notifications.link, which
+-- is an ordinary tenant-owned row that a route lists and anybody who can read
+-- the table can read: the credential was stored after all, in the one place
+-- nobody was guarding. It could not go in the event either, because an outbox
+-- row is kept for a week and modules/audit copies every payload into the audit
+-- trail. So the module that mints the token is now the module that hands it to
+-- the mail server, and the notice raised beside it carries /auth/reset and
+-- nothing else. The token is in the message and in no row anywhere, and
+-- modules/auth's TestTheResetTokenIsInTheMailAndInNoRow searches every table in
+-- this directory to say so.
+--
 -- Sixty minutes, which is long enough for somebody to find the mail and short
 -- enough that a link left in an inbox is not an account. Consuming it is a
 -- DELETE ... RETURNING, so "used once" is the row being gone rather than a flag

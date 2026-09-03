@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -40,14 +39,24 @@ type Fake struct {
 
 	limiter *contracts.Limiter
 
-	// Notify is where a set-password or reset link goes. A fake with none
-	// writes no token and sends nothing, exactly as the real service does.
+	// Notify is where the in-application notice goes. It never carries the
+	// link, for the reason the real service's does not: a notification is an
+	// ordinary row and a token in one is a live credential in a table.
 	Notify contracts.Notifier
 
-	mu        sync.Mutex
-	sessions  map[uuid.UUID]contracts.Session
-	roles     map[string]contracts.Permissions
-	tokens    map[string]uuid.UUID
+	// Mailer is where the link itself goes, and the only place it goes. A fake
+	// with none writes no token and sends nothing, exactly as the real service
+	// does.
+	Mailer contracts.Mailer
+
+	mu       sync.Mutex
+	sessions map[uuid.UUID]contracts.Session
+	roles    map[string]contracts.Permissions
+	tokens   map[string]uuid.UUID
+	// offered is when each person was last sent a link, which is what bounds
+	// how many a stranger can cause. The real one reads the same fact off
+	// password_tokens.created_at.
+	offered   map[uuid.UUID]time.Time
 	published []string
 }
 
@@ -58,6 +67,7 @@ func NewFake(users contracts.Users) *Fake {
 		limiter:  contracts.NewLimiter(),
 		sessions: map[uuid.UUID]contracts.Session{},
 		roles:    map[string]contracts.Permissions{},
+		offered:  map[uuid.UUID]time.Time{},
 		tokens:   map[string]uuid.UUID{},
 	}
 }
@@ -107,9 +117,23 @@ func (f *Fake) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userID, 
 	return f.RevokeSessions(ctx, tx, userID, keep)
 }
 
-// Forget mirrors internal.Service.Forget: nil on every path, including the ones
-// where nothing was sent.
-func (f *Fake) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
+// Precheck mirrors internal.Service.Precheck: the limiter's verdict, from the
+// same limiter the real one keeps.
+func (f *Fake) Precheck(email, ip string) contracts.Verdict { return f.limiter.Check(email, ip) }
+
+// MayAsk mirrors internal.Service.MayAsk.
+func (f *Fake) MayAsk(ip string) bool { return f.limiter.Requested(ip) }
+
+// Forget mirrors internal.Service.Forget: it publishes and does nothing else,
+// which is what makes the public route cost the same for an address somebody
+// has and one nobody has.
+func (f *Fake) Forget(_ context.Context, _ db.Tx[db.Tenant], _ string) error {
+	f.record(contracts.EventResetRequested)
+	return nil
+}
+
+// Reissue mirrors internal.Service.Reissue: the lookup, in the worker.
+func (f *Fake) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
 	user, err := f.Users.ByEmail(ctx, tx, email)
 	switch {
 	case isNotFound(err):
@@ -119,7 +143,7 @@ func (f *Fake) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) er
 	case user.Status == usercontracts.StatusInactive:
 		return nil
 	}
-	return f.offer(ctx, tx, user.ID)
+	return f.offer(ctx, tx, user)
 }
 
 // Offer mirrors internal.Service.Offer.
@@ -131,36 +155,43 @@ func (f *Fake) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID)
 	if err != nil || user.Status != usercontracts.StatusInvited {
 		return err
 	}
-	return f.offer(ctx, tx, userID)
+	return f.offer(ctx, tx, user)
 }
 
 // offer keeps one pending token per person, which is the rule the unique index
-// enforces in the real one.
-func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) error {
-	if f.Notify == nil {
+// enforces in the real one, and puts the token in the mail and nowhere else.
+func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User) error {
+	if f.Mailer == nil {
 		return nil
 	}
 	token := uuid.NewString()
 	f.mu.Lock()
+	if last, ok := f.offered[user.ID]; ok && time.Since(last) < contracts.ResetInterval {
+		f.mu.Unlock()
+		return nil
+	}
 	for t, u := range f.tokens {
-		if u == userID {
+		if u == user.ID {
 			delete(f.tokens, t)
 		}
 	}
-	f.tokens[token] = userID
+	f.tokens[token] = user.ID
+	f.offered[user.ID] = time.Now()
 	f.mu.Unlock()
-	_, err := f.Notify.Notify(ctx, tx, notificationcontracts.Notice{
-		Recipient: userID, Title: "Set your password", Link: "/auth/reset?token=" + token, Email: true,
+	if f.Notify != nil {
+		// The path and no query: the notice is what a person sees in the
+		// application and it is not a credential.
+		_, err := f.Notify.Notify(ctx, tx, notificationcontracts.Notice{
+			Recipient: user.ID, Title: "Set your password", Link: "/auth/reset",
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return f.Mailer.Send(ctx, notificationcontracts.Message{
+		To: user.Email, Subject: "Set your password",
+		Body: "Follow the link\n\nhttps://acme.example.com/auth/reset?token=" + token,
 	})
-	return err
-}
-
-// Tokens is the pending tokens, for a consumer that wants to follow the link a
-// fake would have mailed.
-func (f *Fake) Tokens() map[string]uuid.UUID {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return maps.Clone(f.tokens)
 }
 
 // Reset mirrors internal.Service.Reset: one use, every session ended, one event.
@@ -428,12 +459,46 @@ func (n *Notices) Sent() []notificationcontracts.Notice {
 	return slices.Clone(n.sent)
 }
 
-// TokenIn is the token a set-password link carries. Both implementations spell
-// the link the same way, which is what makes it a property of the contract
-// rather than of either one.
-func TokenIn(link string) string {
-	_, token, _ := strings.Cut(link, "token=")
-	return token
+// Mailbox is a contracts.Mailer that records instead of sending, which is where
+// a conformance case reads the link an implementation mailed.
+//
+// It is the only place a case can read it, and that is the property under test:
+// the token is in the message and in no row anywhere. See
+// internal.Service.offer.
+type Mailbox struct {
+	mu   sync.Mutex
+	sent []notificationcontracts.Message
+}
+
+// Send records the message.
+func (m *Mailbox) Send(_ context.Context, msg notificationcontracts.Message) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sent = append(m.sent, msg)
+	return nil
+}
+
+// Sent is every message so far, in order.
+func (m *Mailbox) Sent() []notificationcontracts.Message {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.sent)
+}
+
+// Host is a contracts.Hosts that answers one name, which is what a mailed link
+// is built on.
+type Host string
+
+// PublicHost is the host, whatever tenant is asking.
+func (h Host) PublicHost(context.Context, db.Tx[db.Tenant]) (string, error) { return string(h), nil }
+
+// TokenIn is the token a set-password link carries, read out of whatever
+// carried it. Both implementations spell the link the same way, which is what
+// makes it a property of the contract rather than of either one.
+func TokenIn(carrier string) string {
+	_, token, _ := strings.Cut(carrier, "token=")
+	token, _, _ = strings.Cut(token, "\n")
+	return strings.TrimSpace(token)
 }
 
 // SessionsOf is how many sessions this user has, which is what the conformance
