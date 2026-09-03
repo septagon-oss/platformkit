@@ -16,7 +16,8 @@ func TestFakeConforms(t *testing.T) {
 		fake := billingtest.NewFake()
 		run(billingtest.Fixture{
 			Ctx: t.Context(), Service: fake,
-			Plan: fake.Put, Expire: fake.Expire, Published: fake.Published,
+			Plan: fake.Put, Expire: fake.Expire, Reprice: fake.Reprice,
+			Age: fake.Age, Published: fake.Published,
 		})
 	})
 }

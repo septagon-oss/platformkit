@@ -46,7 +46,8 @@ func (s Spec[T]) resource() httpx.Resource {
 	}
 	return httpx.Resource{
 		Module: s.Module, Entity: s.Entity, Path: s.Path,
-		Read: s.Read, Write: s.Write, Immutable: s.Immutable, Schema: schema,
+		Read: s.Read, Write: s.Write, OperatorWrite: s.OperatorWrite,
+		Immutable: s.Immutable, Schema: schema,
 
 		List: func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error) {
 			tx, err := transaction(ctx)

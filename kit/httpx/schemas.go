@@ -44,6 +44,13 @@ type Resource struct {
 	// Read and Write are the permissions the Spec declared. A screen carries
 	// the same ones, so a person who cannot use the API cannot use the screen.
 	Read, Write string
+	// OperatorWrite says Write is an operator permission: the rows are the
+	// installation's, every tenant reads them, and only the operator's own
+	// tenant writes them. It has to be carried here as well as on the routes,
+	// because the closures below are a door of their own — a screen guarded by
+	// the bare permission would let a customer's wildcard write through the
+	// form what the API had just refused. See docs/adr/0008.
+	OperatorWrite bool
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
 	Schema    crud.Schema
@@ -58,7 +65,7 @@ type Resource struct {
 	// RegisterResource. It is unexported because only this package may fill it
 	// in: a Resource built anywhere else is unguarded until it is registered,
 	// and registering is the only way anything can obtain one.
-	may func(ctx context.Context, permission string) error
+	may func(ctx context.Context, g tenancy.Grant) error
 }
 
 // Readable reports whether the caller in ctx holds this resource's Read
@@ -66,14 +73,30 @@ type Resource struct {
 // renders a card, so a person is not shown a count of something they may not
 // look at. It is the same question the closures ask; this is only the form that
 // answers without producing an error to swallow.
-func (r Resource) Readable(ctx context.Context) bool { return r.allowed(ctx, r.Read) }
+func (r Resource) Readable(ctx context.Context) bool {
+	return r.allowed(ctx, tenancy.Grant{Permission: r.Read})
+}
 
 // Writable reports whether the caller in ctx holds this resource's Write
-// permission.
-func (r Resource) Writable(ctx context.Context) bool { return r.allowed(ctx, r.Write) }
+// permission, in a tenant that may exercise it.
+func (r Resource) Writable(ctx context.Context) bool { return r.allowed(ctx, r.write()) }
 
-func (r Resource) allowed(ctx context.Context, permission string) bool {
-	return r.may != nil && r.may(ctx, permission) == nil
+// WriteAuth is the declaration a page that mounts a write route carries, so a
+// screen and the API it stands in front of cannot disagree about which kind of
+// permission this is.
+func (r Resource) WriteAuth() Auth {
+	if r.OperatorWrite {
+		return OperatorPermission(r.Write)
+	}
+	return Permission(r.Write)
+}
+
+func (r Resource) write() tenancy.Grant {
+	return tenancy.Grant{Permission: r.Write, Operator: r.OperatorWrite}
+}
+
+func (r Resource) allowed(ctx context.Context, g tenancy.Grant) bool {
+	return r.may != nil && r.may(ctx, g) == nil
 }
 
 // RegisterResource records a resource, with this API's authorization wrapped
@@ -102,7 +125,7 @@ func (a *API) guard(r Resource) Resource {
 	r.may = a.may
 	if list != nil {
 		r.List = func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error) {
-			if err := a.may(ctx, r.Read); err != nil {
+			if err := a.may(ctx, tenancy.Grant{Permission: r.Read}); err != nil {
 				return nil, 0, err
 			}
 			return list(ctx, q)
@@ -110,7 +133,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if get != nil {
 		r.Get = func(ctx context.Context, id uuid.UUID) (map[string]any, error) {
-			if err := a.may(ctx, r.Read); err != nil {
+			if err := a.may(ctx, tenancy.Grant{Permission: r.Read}); err != nil {
 				return nil, err
 			}
 			return get(ctx, id)
@@ -118,7 +141,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if create != nil {
 		r.Create = func(ctx context.Context, values map[string]any) (map[string]any, error) {
-			if err := a.may(ctx, r.Write); err != nil {
+			if err := a.may(ctx, r.write()); err != nil {
 				return nil, err
 			}
 			return create(ctx, values)
@@ -126,7 +149,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if update != nil {
 		r.Update = func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error) {
-			if err := a.may(ctx, r.Write); err != nil {
+			if err := a.may(ctx, r.write()); err != nil {
 				return nil, err
 			}
 			return update(ctx, id, values)
@@ -134,7 +157,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if remove != nil {
 		r.Delete = func(ctx context.Context, id uuid.UUID) error {
-			if err := a.may(ctx, r.Write); err != nil {
+			if err := a.may(ctx, r.write()); err != nil {
 				return err
 			}
 			return remove(ctx, id)
@@ -148,7 +171,7 @@ func (a *API) guard(r Resource) Resource {
 // the middleware's: 403 for a caller who may not, 503 for a decision that could
 // not be made, because sending somebody away from work they are entitled to do
 // is worse than telling them to try again.
-func (a *API) may(ctx context.Context, permission string) error {
+func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 	t, hasTenant := tenancy.FromContext(ctx)
 	if !hasTenant {
 		return problem.New(http.StatusForbidden, "AUTH_NO_TENANT: this is tenant work and the host resolved to none")
@@ -157,14 +180,21 @@ func (a *API) may(ctx context.Context, permission string) error {
 	if !hasPrincipal || p.UserID == uuid.Nil {
 		return problem.New(http.StatusForbidden, "AUTH_ANONYMOUS: this requires a signed-in caller")
 	}
-	allowed, err := a.opts.Authorize.Allowed(ctx, t, tenancy.Grant{Permission: permission})
+	// The operator check comes before the Authorizer, exactly as it does in the
+	// request middleware: a customer's administrator holds the wildcard in
+	// their own tenant, so asking the roles table first would be asking a
+	// question whose answer is always yes.
+	if g.Operator && !t.Operator {
+		return problem.New(http.StatusForbidden, "AUTH_NOT_OPERATOR: "+g.Permission+" is the operator's, and this is not the operator's tenant")
+	}
+	allowed, err := a.opts.Authorize.Allowed(ctx, t, g)
 	if err != nil {
 		a.rlog(ctx).ErrorContext(ctx, "httpx: authorization decision unavailable",
-			"permission", permission, "tenant", t.Slug, "error", err)
+			"permission", g.Permission, "tenant", t.Slug, "error", err)
 		return problem.New(http.StatusServiceUnavailable, "authorization is temporarily unavailable")
 	}
 	if !allowed {
-		return problem.New(http.StatusForbidden, "AUTH_DENIED: this requires "+permission)
+		return problem.New(http.StatusForbidden, "AUTH_DENIED: this requires "+g.Permission)
 	}
 	return nil
 }

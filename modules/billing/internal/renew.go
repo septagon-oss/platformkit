@@ -96,15 +96,14 @@ func NewManual() *Manual { return &Manual{} }
 
 var _ contracts.PaymentProvider = (*Manual)(nil)
 
-// Charge records what is due and takes nothing. The reference is derived rather
-// than generated, so asking twice for one period is one reference: a renewal
-// that runs again after a crash must not look like a second debt.
+// Charge records what is due and takes nothing. The reference is the charge's
+// own idempotency key, so asking twice for one period is one reference: a
+// renewal that runs again after a crash must not look like a second debt. That
+// is what the interface asks of every implementation, and the one in this
+// repository is where it is demonstrated.
 func (Manual) Charge(ctx context.Context, c contracts.Charge) (contracts.Receipt, error) {
 	slog.InfoContext(ctx, "billing: a charge is due and this installation takes no payments",
-		"subscription", c.Subscription, "plan", c.PlanCode,
-		"amount_cents", c.AmountCents, "currency", c.Currency, "period_end", c.PeriodEnd)
-	return contracts.Receipt{
-		Reference: "manual:" + c.Subscription.String() + ":" + c.PeriodEnd.UTC().Format(time.RFC3339),
-		At:        db.Now(),
-	}, nil
+		"subject", c.Subject, "plan", c.PlanCode, "amount_cents", c.AmountCents,
+		"currency", c.Currency, "period_end", c.PeriodEnd, "idempotency_key", c.IdempotencyKey)
+	return contracts.Receipt{Reference: "manual:" + c.IdempotencyKey, At: db.Now()}, nil
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/billing"
+	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/notification"
@@ -110,7 +111,13 @@ func compose(cfg config.Config) composition {
 		// which permissions belong to the installation rather than to a
 		// customer. kit/app refuses to start if a route and a manifest disagree
 		// about that, so a name that drifts is a boot failure and not a hole.
-		Operator:   []string{tenantcontracts.PermissionTenantManage},
+		Operator: []string{
+			tenantcontracts.PermissionTenantManage,
+			// The price list is the installation's and not a customer's: a
+			// tenant that could write a plan could price itself, and a review
+			// did exactly that from past_due. See docs/adr/0008.
+			billingcontracts.PermissionBillingCatalog,
+		},
 		OIDC:       auth.OIDC(cfg.Auth.OIDC),
 		PublicHost: cfg.Server.PublicHost,
 	})

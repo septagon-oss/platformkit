@@ -13,12 +13,15 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"golang.org/x/text/currency"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -48,6 +51,26 @@ var (
 	intervals = []string{IntervalMonth, IntervalYear}
 	statuses  = []string{StatusTrial, StatusActive, StatusPastDue, StatusCancelled}
 )
+
+// The bounds a plan is written inside.
+//
+// MaxPriceCents is a hundred million of the minor unit — a million euros for one
+// period — and it is here because an int64 that nothing bounds is a plan
+// somebody fat-fingers into an invoice for the national debt, and because the
+// column is a bigint that would take it.
+const (
+	MaxPriceCents = 100_000_000
+	MaxCode       = 40
+	MaxName       = 120
+)
+
+// planCode is what a plan may be called: lower case, digits and single dashes,
+// starting with a letter or a digit, two to forty characters. It is the same
+// grammar a slug has, and for the same reason — a code appears in a URL, in an
+// invoice and in somebody else's integration — and it was unvalidated, so
+// "  Pro Monthly!!  " normalised to itself and became a code no integration
+// could quote.
+var planCode = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,39}$`)
 
 // Features is the feature names a plan includes, one text[] column. It is a
 // named type so the array codec is written once, the way modules/user spells
@@ -111,12 +134,18 @@ func (p *Plan) Validate(context.Context) error {
 	switch {
 	case p.Code == "":
 		return fmt.Errorf("a plan needs a code")
+	case !planCode.MatchString(p.Code):
+		return fmt.Errorf("%q is not a plan code; a code is 2 to %d characters of a-z, 0-9 and dashes, and it appears in a URL and on an invoice", p.Code, MaxCode)
 	case p.Name == "":
 		return fmt.Errorf("a plan needs a name")
-	case len(p.Currency) != 3:
+	case utf8.RuneCountInString(p.Name) > MaxName:
+		return fmt.Errorf("a plan's name is at most %d characters", MaxName)
+	case !ValidCurrency(p.Currency):
 		return fmt.Errorf("currency %q is not an ISO 4217 code", p.Currency)
 	case p.PriceCents < 0:
 		return fmt.Errorf("a price is not negative")
+	case p.PriceCents > MaxPriceCents:
+		return fmt.Errorf("a price of %d is past the %d this module will bill; a number that large is a typo, and the one time it is not, it is a contract and not a price list", p.PriceCents, MaxPriceCents)
 	case !slices.Contains(intervals, p.Interval):
 		return fmt.Errorf("interval %q is not %s or %s", p.Interval, IntervalMonth, IntervalYear)
 	}
@@ -128,14 +157,46 @@ func (p *Plan) Validate(context.Context) error {
 	return nil
 }
 
-// Advance is the end of the period following one that ended at from. Calendar
-// arithmetic and not a number of days: a monthly plan bought on the 31st is
-// billed on the 28th in February, and nobody means "every 30 days".
+// ValidCurrency reports whether code is an ISO 4217 alphabetic code. The check
+// was len(code) == 3, so "AAA", "ZZZ" and "EUR" were one answer, and a
+// subscription could be stamped with a currency no payment processor has.
+//
+// The table is golang.org/x/text/currency, which this program already links
+// through the modules that format numbers: a hand-written list of 180 codes is
+// a list that goes stale the next time a country redenominates.
+func ValidCurrency(code string) bool {
+	_, err := currency.ParseISO(code)
+	return err == nil
+}
+
+// Advance is the end of the period following one that ended at from.
+//
+// Calendar arithmetic and not a number of days, and then the correction the old
+// comment claimed and the code did not make: time.AddDate normalises, so a
+// monthly plan bought on the 31st of January advances to the 3rd of March, and
+// every anniversary after it is the 3rd. A subscription bought on the 31st is
+// billed on the 28th in February and on the 31st again in March, which is what
+// every payment processor does and what the customer expects, so a day past the
+// end of the target month is clamped to the last day of it.
 func Advance(from time.Time, interval string) time.Time {
+	years, months := 0, 1
 	if interval == IntervalYear {
-		return from.AddDate(1, 0, 0)
+		years, months = 1, 0
 	}
-	return from.AddDate(0, 1, 0)
+	out := from.AddDate(years, months, 0)
+	// AddDate normalised iff it landed in a later month than the one asked for.
+	if want := month(from, years, months); out.Month() != want.Month() || out.Year() != want.Year() {
+		// The last instant of the month that was asked for, keeping the time of
+		// day: the first of the month after it, less a day.
+		out = out.AddDate(0, 0, -out.Day())
+	}
+	return out
+}
+
+// month is the year and month Advance meant to land in, as a date whose day is
+// the first: AddDate on the first of a month never normalises.
+func month(from time.Time, years, months int) time.Time {
+	return time.Date(from.Year(), from.Month(), 1, 0, 0, 0, 0, from.Location()).AddDate(years, months, 0)
 }
 
 // Subscription is the tenant's enrollment in a plan. There is at most one, and
@@ -157,7 +218,46 @@ type Subscription struct {
 	// CancelAtPeriodEnd is a customer who has left and is still owed what they
 	// paid for. Nothing shortens the period: cancelling is not a refund.
 	CancelAtPeriodEnd bool `json:"cancelAtPeriodEnd" gorm:"not null;default:false" ui:"widget:checkbox" doc:"Whether this subscription ends when the current period does" default:"false" required:"false"`
+
+	// PriceCents and Currency are the plan's price as it was when this
+	// subscription last started a period, stamped here rather than read from
+	// the plan at renewal.
+	//
+	// Without them a price list edit was retroactive: raising a plan's price
+	// changed what every live subscriber was charged that night, and changing
+	// its currency charged them in another one. Stamping is what makes
+	// re-pricing apply from the next period — the renewal charges what is here,
+	// and then copies the plan's current price forward for the period after.
+	PriceCents int64  `json:"priceCents" gorm:"not null;default:0" ui:"hide:list" doc:"What this subscription is billed per period, in the minor unit of Currency" required:"false" readOnly:"true"`
+	Currency   string `json:"currency,omitempty" gorm:"type:varchar(3);not null;default:''" ui:"hide:list" doc:"ISO 4217 code this subscription is billed in" required:"false" readOnly:"true"`
+
+	// TrialUsedAt is when this tenant's trial was issued, and it is never
+	// cleared. A subscription that cancelled and resubscribed used to get a
+	// fresh trial, so four cancellations were four free periods; now the first
+	// one is the only one, and a resubscribe starts active with a charge due at
+	// the end of the period it has just been given.
+	TrialUsedAt *time.Time `json:"trialUsedAt,omitempty" gorm:"type:timestamptz" ui:"hide:list" doc:"When this tenant's one trial was issued" readOnly:"true"`
+
+	// AttemptCount and PastDueSince are the dunning state. A charge that does
+	// not settle increments the count and starts the clock; a charge that does
+	// clears both. Past GraceDays the subscription is cancelled, which is the
+	// ceiling the old module had and this one had lost: without it a dead card
+	// was retried every night forever.
+	AttemptCount int        `json:"attemptCount" gorm:"not null;default:0" ui:"hide:list" doc:"Consecutive charges that did not settle" required:"false" readOnly:"true"`
+	PastDueSince *time.Time `json:"pastDueSince,omitempty" gorm:"type:timestamptz" ui:"hide:list" doc:"When this subscription first failed to pay" readOnly:"true"`
 }
+
+// GraceDays is how long a past-due subscription is still served. Seven days is
+// what the module this replaces used, and it is the number a card that expired
+// on the first of the month needs: the customer is written to, they update it,
+// and the next night's renewal settles.
+const GraceDays = 7
+
+// CancelledByDunning is the reason on the billing.cancelled a grace period
+// running out publishes. It is a constant because a subscriber that treats a
+// customer who left differently from one who did not pay reads this field, and
+// a string spelled twice is a subscriber that silently stops matching.
+const CancelledByDunning = "dunning"
 
 // TableName pins the table, so the entity and migrations/000016 agree.
 func (Subscription) TableName() string { return "billing_subscriptions" }
@@ -170,6 +270,7 @@ func (s *Subscription) Validate(context.Context) error {
 	if s.Status == "" {
 		s.Status = StatusTrial
 	}
+	s.Currency = strings.ToUpper(strings.TrimSpace(s.Currency))
 	switch {
 	case s.PlanID == uuid.Nil:
 		return fmt.Errorf("a subscription is to a plan")
@@ -177,29 +278,78 @@ func (s *Subscription) Validate(context.Context) error {
 		return fmt.Errorf("status %q is not a lifecycle state", s.Status)
 	case !s.CurrentPeriodEnd.After(s.CurrentPeriodStart):
 		return fmt.Errorf("a period ends after it starts")
+	case s.PriceCents < 0 || s.PriceCents > MaxPriceCents:
+		return fmt.Errorf("a stamped price of %d is not one this module will bill", s.PriceCents)
+	// A free subscription carries no currency, because there is nothing to
+	// denominate; anything with a price carries a real one.
+	case s.PriceCents > 0 && !ValidCurrency(s.Currency):
+		return fmt.Errorf("currency %q is not an ISO 4217 code", s.Currency)
+	case s.AttemptCount < 0:
+		return fmt.Errorf("a number of failed attempts is not negative")
 	}
 	return nil
+}
+
+// GraceExpired reports whether a past-due subscription has been past due longer
+// than the grace period allows.
+func (s *Subscription) GraceExpired(now time.Time) bool {
+	return s.PastDueSince != nil && now.Sub(*s.PastDueSince) >= GraceDays*24*time.Hour
 }
 
 // Charge is one attempt to take money for one period. It carries the plan's
 // code and the period as well as the amount, so a provider's own record can be
 // reconciled against this one.
 type Charge struct {
-	Subscription uuid.UUID `json:"subscriptionId"`
-	PlanCode     string    `json:"planCode"`
-	AmountCents  int64     `json:"amountCents"`
-	Currency     string    `json:"currency"`
-	PeriodEnd    time.Time `json:"periodEnd"`
+	// Subject is what is being paid for. Here it is the subscription's id; the
+	// field is named for the role rather than for this module's entity because
+	// the private catalogue's payment module fills it with the payment's own
+	// id, and a field called Subscription holding a payment id is a field that
+	// lies in every log line it appears in. It was Subscription until E5.fix.
+	Subject     uuid.UUID `json:"subjectId"`
+	PlanCode    string    `json:"planCode"`
+	AmountCents int64     `json:"amountCents"`
+	Currency    string    `json:"currency"`
+	PeriodEnd   time.Time `json:"periodEnd"`
+
+	// IdempotencyKey is what the provider must key its own record on, so that
+	// this charge attempted twice — a job that ran again after a crash, a
+	// retry after a timeout whose answer was lost — takes the money once.
+	//
+	// It is derived and not generated: the subject and the period being paid
+	// for are the whole identity of a charge, so the same period asked for
+	// twice is the same key. A provider that ignores it will double-charge a
+	// customer the first time a worker is killed between the call and the
+	// commit, which is why this is stated as a requirement of the interface
+	// below rather than as a hint.
+	IdempotencyKey string `json:"idempotencyKey"`
 }
 
-// Receipt is what a provider says about a charge. Settled is the whole of the
-// decision — a subscription is either being served or it is past due — and a
-// provider that is still thinking says false and is asked again tomorrow.
+// Key is the idempotency key of a charge for subject's period ending at end. It
+// is a function so that a provider reconciling its own records builds the same
+// string this module does.
+func Key(subject uuid.UUID, end time.Time) string {
+	return subject.String() + ":" + end.UTC().Format(time.RFC3339)
+}
+
+// Receipt is what a provider says about a charge.
+//
+// There are three answers and not two. Settled is money taken. Pending is a
+// provider that has accepted the charge and cannot yet say whether it worked —
+// a card payment awaiting a bank, a transfer, a processor that settles
+// overnight — and it is neither paid nor unpaid: the subscription is left
+// exactly as it was and asked about again tomorrow. Neither flag is the third
+// answer, a refusal, and that is what makes a subscription past due.
+//
+// Pending exists because without it a provider that settles later had to lie in
+// one direction or the other, and both lies are expensive: false was a customer
+// marked past due for a payment that went through, and true was a period served
+// for a payment that never did.
 type Receipt struct {
 	// Reference is the provider's own identifier, kept so a payment can be
 	// found in somebody else's system.
 	Reference string    `json:"reference"`
 	Settled   bool      `json:"settled"`
+	Pending   bool      `json:"pending,omitempty"`
 	At        time.Time `json:"at"`
 }
 
@@ -210,6 +360,11 @@ type Receipt struct {
 //
 // It takes no transaction, and that is the shape of the whole renewal below: a
 // charge is a call to somebody else's machine.
+//
+// An implementation must honour Charge.IdempotencyKey: the same key twice is
+// one payment. Every processor worth using has a header for it, and this
+// module will present the same key for the same period for as long as that
+// period goes unpaid.
 type PaymentProvider interface {
 	Charge(ctx context.Context, c Charge) (Receipt, error)
 }
@@ -235,6 +390,16 @@ type Service interface {
 	// double-charged for days already served — this module does not prorate.
 	// An inactive plan is refused, and a subscription that has ended is
 	// resubscribed rather than duplicated, because a tenant has one.
+	//
+	// A plan change is refused while the subscription is past due, with
+	// ErrConflict. That is the review's escape route closed: a tenant that owed
+	// money moved itself to a cheaper plan and the debt went with the old
+	// price. What is owed is owed for a period already served, and it is
+	// settled or the grace period runs out; it is not renegotiated.
+	//
+	// The trial is issued once per tenant, ever. A first subscription is served
+	// before any money is asked for; a resubscribe after cancelling is not,
+	// because four cancellations used to be four free periods.
 	Subscribe(ctx context.Context, tx db.Tx[db.Tenant], planID uuid.UUID) (*Subscription, error)
 
 	// Cancel ends the subscription: at the end of the period it is serving, or
@@ -246,17 +411,26 @@ type Service interface {
 	// Renew advances a subscription whose period has run out, and it is the
 	// half of a renewal where no money moves: a period still running is left
 	// alone, a subscription whose customer cancelled is ended — silently,
-	// because Cancel already said when it would — and a free plan starts its
-	// next period and publishes billing.renewed. Otherwise it returns the
-	// charge and changes nothing; the caller takes that money outside every
-	// transaction and brings the answer to Settle.
+	// because Cancel already said when it would — and a free subscription
+	// starts its next period and publishes billing.renewed. A past-due one
+	// whose grace period has run out is cancelled, with
+	// billing.cancelled{reason: dunning}, which is the ceiling on retrying a
+	// dead card. Otherwise it returns the charge and changes nothing; the
+	// caller takes that money outside every transaction and brings the answer
+	// to Settle.
+	//
+	// The charge is for the price stamped on the subscription and not the
+	// plan's current one, so a price list edit applies from the next period.
 	Renew(ctx context.Context, tx db.Tx[db.Tenant]) (*Subscription, *Charge, error)
 
 	// Settle records what a provider said. A settled receipt starts the next
-	// period and publishes billing.renewed; an unsettled one leaves the period
+	// period and publishes billing.renewed; a refused one leaves the period
 	// alone, marks the subscription past due and publishes billing.past_due —
 	// once, because the job runs every night and a customer whose card is dead
-	// must not be an event a night forever. A charge for a period the
-	// subscription has moved past is ignored and says nothing.
+	// must not be an event a night forever. A pending receipt is neither: the
+	// subscription is left exactly as it was, nothing is published, and the
+	// same charge is presented again tomorrow under the same idempotency key.
+	// A charge for a period the subscription has moved past is ignored and says
+	// nothing.
 	Settle(ctx context.Context, tx db.Tx[db.Tenant], c Charge, r Receipt) (*Subscription, error)
 }

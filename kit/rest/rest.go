@@ -53,6 +53,17 @@ type Spec[T crud.Entity] struct {
 	// delete. Both are permissions some module has to define, or the app
 	// refuses to start.
 	Read, Write string
+	// OperatorWrite declares Write with httpx.OperatorPermission rather than
+	// httpx.Permission: the rows are the installation's and every tenant reads
+	// them, but only the operator's own tenant writes them.
+	//
+	// It exists because the alternative is a module hand-writing five routes to
+	// change one declaration, and one of them did. A price list is the case: it
+	// is read by every tenant, so it is not a control-plane resource in the way
+	// the tenant registry is, and it is written by the operator alone, because
+	// a customer that could add a plan could price itself. The manifest has to
+	// declare the same permission Operator: true, or kit/app refuses to start.
+	OperatorWrite bool
 	// SoftDelete keeps deleted rows, hidden, instead of removing them.
 	SoftDelete bool
 	// NoEvents mounts the routes without publishing anything. It is spelled in
@@ -156,7 +167,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 
 	httpx.Register(api, s.op("create", http.MethodPost, s.Path, http.StatusCreated,
 		"Create a "+s.Entity, "The tenant, the id and the timestamps are set by the server."),
-		httpx.Permission(s.Write), func(ctx context.Context, in *bodyInput[T]) (*Item[T], error) {
+		s.writeAuth(), func(ctx context.Context, in *bodyInput[T]) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -196,7 +207,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 
 	httpx.Register(api, s.op("update", http.MethodPatch, s.item(), 0,
 		"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
-		httpx.Permission(s.Write), func(ctx context.Context, in *patchInput) (*Item[T], error) {
+		s.writeAuth(), func(ctx context.Context, in *patchInput) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -223,7 +234,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 
 	httpx.Register(api, s.op("delete", http.MethodDelete, s.item(), http.StatusNoContent,
 		"Delete a "+s.Entity, ""),
-		httpx.Permission(s.Write), func(ctx context.Context, in *idInput) (*struct{}, error) {
+		s.writeAuth(), func(ctx context.Context, in *idInput) (*struct{}, error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -277,7 +288,7 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 	if len(events) > 0 {
 		op.Extensions = map[string]any{httpx.EventsExtension: events}
 	}
-	httpx.Register(api, op, httpx.Permission(spec.Write),
+	httpx.Register(api, op, spec.writeAuth(),
 		func(ctx context.Context, in *commandInput[I]) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
@@ -359,6 +370,14 @@ func (s Spec[T]) op(verb, method, path string, status int, summary, description 
 }
 
 func (s Spec[T]) item() string { return strings.TrimSuffix(s.Path, "/") + "/{id}" }
+
+// writeAuth is the declaration the three write routes and every Command carry.
+func (s Spec[T]) writeAuth() httpx.Auth {
+	if s.OperatorWrite {
+		return httpx.OperatorPermission(s.Write)
+	}
+	return httpx.Permission(s.Write)
+}
 
 // check refuses a Spec that could only produce broken routes or unroutable
 // events. It panics, at the mount site, for the same reason httpx.Permission
