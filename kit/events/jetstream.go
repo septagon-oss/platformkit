@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -38,17 +39,9 @@ func JetStream(url string) (Transport, error) {
 		return nil, fmt.Errorf("events: jetstream: %w", err)
 	}
 	// Created on first use rather than by a deployment step, so a fresh
-	// environment needs a NATS and nothing else. Retention is by age: the
-	// outbox is the durable copy, the stream is the delivery path.
+	// environment needs a NATS and nothing else.
 	if _, err := js.StreamInfo(stream); errors.Is(err, nats.ErrStreamNotFound) {
-		_, err = js.AddStream(&nats.StreamConfig{
-			Name:      stream,
-			Subjects:  []string{subject + ">"},
-			Retention: nats.LimitsPolicy,
-			Storage:   nats.FileStorage,
-			MaxAge:    keep,
-		})
-		if err != nil {
+		if _, err := js.AddStream(wantedStream()); err != nil {
 			nc.Close()
 			return nil, fmt.Errorf("events: create the %s stream: %w", stream, err)
 		}
@@ -57,6 +50,23 @@ func JetStream(url string) (Transport, error) {
 		return nil, fmt.Errorf("events: read the %s stream: %w", stream, err)
 	}
 	return &jetstream{nc: nc, js: js}, nil
+}
+
+// wantedStream is the stream this code asks for, in one place, because the
+// creation above and the reconciliation below have to ask for the same thing.
+//
+// Retention is by age: the outbox is the durable copy and the stream is the
+// delivery path, so a message that has been delivered is not something this
+// stream has to keep. Storage is on disk, because a restart that lost the
+// undelivered ones would be a restart that lost events.
+func wantedStream() *nats.StreamConfig {
+	return &nats.StreamConfig{
+		Name:      stream,
+		Subjects:  []string{subject + ">"},
+		Retention: nats.LimitsPolicy,
+		Storage:   nats.FileStorage,
+		MaxAge:    keep,
+	}
 }
 
 type jetstream struct {
@@ -104,6 +114,78 @@ func wanted(durable, name string) []nats.SubOpt {
 		nats.AckWait(ackWait()), nats.MaxDeliver(maxDeliveries), nats.BackOff(backoff),
 		nats.BindStream(stream),
 	}
+}
+
+// group is the deliver group a durable's subscribers join, and it is the
+// durable's own name.
+//
+// It is what makes a second worker possible. A push consumer with no deliver
+// group belongs to one subscriber and refuses the next — "consumer is already
+// bound to a subscription" — so the boot log recommended scaling the worker out
+// and the second replica crashlooped on the first subscription it tried to
+// make. With a group, JetStream delivers each message to one member of it: N
+// workers share one durable, each event is handled once, and the
+// acknowledgement ladder is still the consumer's.
+//
+// A queue group and not a durable per replica, because a durable per replica is
+// a replica that has to be told which one it is, and a replica that is removed
+// leaves a durable behind that nothing drains and the stream keeps feeding.
+// It is also the smaller change: one call, and one field in reconcile.
+func group(durable string) string { return durable }
+
+// stream brings the stored stream into line with what this code asks for, the
+// way reconcile does for a consumer, and for the same reason: the stream is
+// created on first use and then outlives every process that ever connected, so
+// its settings are a second copy of wantedStream that nothing kept in step. A
+// deployment whose subjects or retention a build changed two releases ago ran
+// on the old ones until somebody noticed.
+//
+// Where it differs from a consumer is what it does about a setting NATS cannot
+// change. A consumer is deleted and made again, which is safe because this
+// transport asks for DeliverAll and every delivery is claimed in
+// platformkit_handled before a handler runs. A stream is not: deleting one
+// throws away the messages in it, and the ones the outbox has already marked as
+// relayed would be events nobody ever gets. So retention and storage are
+// reported and the process refuses to start, which is a deploy that fails where
+// somebody is looking rather than a fleet quietly running on the wrong stream.
+func (j *jetstream) stream(ctx context.Context) error {
+	info, err := j.js.StreamInfo(stream, nats.Context(ctx))
+	switch {
+	case errors.Is(err, nats.ErrStreamNotFound):
+		if _, err := j.js.AddStream(wantedStream(), nats.Context(ctx)); err != nil {
+			return fmt.Errorf("create the %s stream: %w", stream, err)
+		}
+		return nil
+	case err != nil:
+		return fmt.Errorf("read the %s stream: %w", stream, err)
+	}
+
+	want := wantedStream()
+	var changed, immutable []string
+	if !slices.Equal(info.Config.Subjects, want.Subjects) {
+		changed = append(changed, fmt.Sprintf("subjects %v to %v", info.Config.Subjects, want.Subjects))
+	}
+	if info.Config.MaxAge != want.MaxAge {
+		changed = append(changed, fmt.Sprintf("max_age %s to %s", info.Config.MaxAge, want.MaxAge))
+	}
+	if info.Config.Retention != want.Retention {
+		immutable = append(immutable, fmt.Sprintf("retention %s to %s", info.Config.Retention, want.Retention))
+	}
+	if info.Config.Storage != want.Storage {
+		immutable = append(immutable, fmt.Sprintf("storage %s to %s", info.Config.Storage, want.Storage))
+	}
+	if len(immutable) > 0 {
+		return fmt.Errorf("the %s stream differs in a setting NATS cannot change (%s); recreating a stream throws away the messages in it, so this is an operator's decision and not this process's",
+			stream, strings.Join(immutable, ", "))
+	}
+	if len(changed) > 0 {
+		slog.InfoContext(ctx, "events: reconciling the stored stream with this build",
+			"stream", stream, "fields", changed)
+		if _, err := j.js.UpdateStream(want, nats.Context(ctx)); err != nil {
+			return fmt.Errorf("update the drifted stream: %w", err)
+		}
+	}
+	return nil
 }
 
 // reconcile brings a stored consumer into line with what this code asks for,
@@ -160,6 +242,14 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	if info.Config.DeliverSubject == "" {
 		immutable = append(immutable, "pull to push")
 	}
+	// And the one this release added. A consumer stored by a build before it
+	// has no deliver group, so it takes one subscriber and refuses the second;
+	// NATS will not put a group on a live push consumer, so the consumer is
+	// remade and every worker that boots after this deploy finds one it can
+	// share.
+	if info.Config.DeliverGroup != group(durable) {
+		immutable = append(immutable, fmt.Sprintf("deliver_group %q to %q", info.Config.DeliverGroup, group(durable)))
+	}
 
 	switch {
 	case len(immutable) > 0:
@@ -179,10 +269,13 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 }
 
 func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Sink) error {
+	if err := j.stream(ctx); err != nil {
+		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
+	}
 	if err := j.reconcile(ctx, durable, name); err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}
-	sub, err := j.js.Subscribe(subject+name, func(msg *nats.Msg) {
+	sub, err := j.js.QueueSubscribe(subject+name, group(durable), func(msg *nats.Msg) {
 		var ev Event
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
 			// A message that will never parse would be redelivered forever.

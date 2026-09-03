@@ -38,6 +38,20 @@ instance in the cluster runs a job per tick.
   outlives its event guards nothing.
 - Enqueueing cannot fail separately from the write it belongs to: both are one
   `INSERT` in one transaction. Ordering is per stream, not per aggregate.
+- A durable consumer is shared by every worker replica, through a JetStream
+  deliver group named after the durable. A push consumer with no group belongs
+  to one subscriber and refuses the next, so the second worker crashlooped on
+  its first subscription while the boot log recommended running one — the
+  release review found it. A group is one delivery shared between the members
+  rather than one per member, so each event is still handled once, and it is a
+  smaller change than pull consumers: a queue name at the subscribe and a field
+  in the reconciliation.
+- The stream is reconciled on every subscribe, the way consumers are, because it
+  outlives every process that connects and its settings are otherwise a copy of
+  the code that nothing keeps in step. Subjects and max age are updated;
+  retention and storage cannot be changed on a live stream, and a stream — unlike
+  a consumer — cannot be recreated without throwing away the messages in it, so
+  those two refuse the boot instead.
 - Retries are the transport's: an error nacks and the event comes back, slower
   each time, and both transports stop after `maxDeliveries` — the message is
   terminated and one row goes to `platformkit_dead_letters` with the last error.
