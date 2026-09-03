@@ -104,17 +104,45 @@ There is no CSS build, no node in the build, and no framework.
 others, each a Go function taking a props struct and returning HTML. Every one
 of them declares the classes it can emit as a `ui/style.ClassList`, and
 `ui/style` resolves exactly those classes to CSS rules against the custom
-properties `design` renders. `ui.Stylesheet` composes the three once, at the
-first request, and serves the result from memory — so a component that is
-deleted takes its CSS with it, and a class no component declares has no rule.
-Both directions are tested: `ui/components` proves its declarations resolve,
-`modules/admin` proves the shell declares nothing else.
+properties `design` renders. `ui.Stylesheet` composes the three once per
+palette, at the first request, and serves the result from memory — so a
+component that is deleted takes its CSS with it, and a class no component
+declares has no rule. Both directions are tested: `ui/components` proves its
+declarations resolve, `modules/admin` proves the shell declares nothing else.
+
+There are two sheets, and the split is about what a page downloads rather than
+about how the CSS is written. `ui.Stylesheet` is the tokens, the roles, the base
+layer and the classes an application's own pages can emit;
+`ui.GalleryStylesheet` is the difference — the rules for the components only
+`/admin/_gallery` renders, which is the one page that links it.
+
+A client's colours are one value. `design.Pair` is the two themes an
+installation ships, `admin.Deps.Theme` carries it, and `design.Default()` is
+what an application that says nothing gets. Nothing above the tokens changes
+with it: a component names a role, a role is a custom property, and a palette
+sets the property. There is no override layer, no second stylesheet and no
+build step — which is what the role indirection was for.
 
 The only third-party byte the browser runs is htmx, vendored and minified.
 Beside it are four controllers of a few dozen lines each, and they are the four
 interactions a server-rendered application cannot express: a theme that must
 survive a reload, a validation error that must not cost a page, a destructive
 action that must be confirmed, and a sign-in form that posts to a JSON route.
+
+The theme is the only state the browser keeps, and a default is not state. A
+page carries no `data-theme` attribute until somebody uses the toggle: the dark
+rules are behind `prefers-color-scheme`, qualified by `:root:not([data-theme])`,
+so an untouched installation follows the operating system and the palette it
+ships. `theme.js` writes to storage on a click and at no other time.
+
+Screens come from schemas, and so does everything a screen says about a value.
+`kit/rest` carries the helpers a second HTML consumer would otherwise write
+again: `Values` reads a submitted form through the schema, `FieldErrors` puts a
+refusal on the control it is about, and `Display`, `Text` and `Humanize` are the
+one answer to what a boolean, an instant and an enum look like — in a cell, in a
+description list and in a select's options alike. `httpx.Resource` carries its
+own authorization: the five closures ask the same Authorizer the routes do, so a
+hand-written page cannot read past a permission by forgetting to.
 
 ## Gates
 

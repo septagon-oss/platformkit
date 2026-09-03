@@ -16,6 +16,7 @@
 package admin
 
 import (
+	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -40,6 +41,12 @@ type Deps struct {
 	// Tenants is the control plane, for the switcher. It is the one cross-tenant
 	// read in this module, and it needs the token Routes is handed.
 	Tenants tenantcontracts.Service
+
+	// Theme is the installation's two palettes. The zero value is the palette
+	// this repository ships; a client with its own colours sets this and
+	// changes nothing else, because every rule above the tokens is written in
+	// terms of a role. See design.Pair.
+	Theme design.Pair
 }
 
 // Module is the manifest.
@@ -63,6 +70,7 @@ func Module(deps Deps) module.Module {
 				Checks:    checks(deps.Modules),
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
+				Theme:     theme(deps.Theme),
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.
@@ -70,6 +78,17 @@ func Module(deps Deps) module.Module {
 			})
 		},
 	}
+}
+
+// theme is the palette this shell serves: the caller's, or the one this
+// repository ships when they said nothing. A zero Pair is "no opinion" rather
+// than "no colours", so an application that never mentions design still has a
+// stylesheet.
+func theme(chosen design.Pair) design.Pair {
+	if chosen == (design.Pair{}) {
+		return design.Default()
+	}
+	return chosen
 }
 
 // navigation is every module's nav entries, in composition order, which is the

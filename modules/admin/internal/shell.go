@@ -34,10 +34,25 @@ const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)do
 
 // page renders a whole document around a screen: the head, the frame, the
 // navigation the caller is allowed to see, and the one confirm dialog.
+//
+// There is no data-theme attribute on the document, and that is the point: the
+// stylesheet's dark rules are behind prefers-color-scheme, so a person whose
+// system is dark gets dark, and beforePaint sets the attribute only when they
+// have chosen one for themselves. Writing data-theme="light" here — which is
+// what this did — pinned every page to light and made the toggle the only way
+// to be asked. bare() never had one, which is why the sign-in page was the one
+// screen that obeyed the operating system.
 func (s *Shell) page(ctx context.Context, title string, body ...g.Node) g.Node {
+	return s.frame(ctx, title, nil, body...)
+}
+
+// frame is page with something extra in the head. There is one caller: the
+// gallery, which is the only screen that renders components no other page does
+// and so the only one that links the second stylesheet. See ui.GalleryStylesheet.
+func (s *Shell) frame(ctx context.Context, title string, extraHead []g.Node, body ...g.Node) g.Node {
 	tenant, _ := tenancy.FromContext(ctx)
-	return h.HTML(h.Lang("en"), g.Attr("data-theme", "light"),
-		head(title+" · "+fallback(tenant.Name, "PlatformKit")),
+	return h.HTML(h.Lang("en"),
+		s.head(title+" · "+fallback(tenant.Name, "PlatformKit"), extraHead...),
 		h.Body(
 			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
 				Sidebar: []g.Node{s.sidebar(ctx)},
@@ -53,7 +68,7 @@ func (s *Shell) page(ctx context.Context, title string, body ...g.Node) g.Node {
 // head is every page's head: the stylesheet with its fingerprint, the inline
 // theme snippet, and ui.Controllers as deferred scripts in order — deferred, so
 // the document parses before any of them runs and the order is still theirs.
-func head(title string) g.Node {
+func (s *Shell) head(title string, extra ...g.Node) g.Node {
 	scripts := make([]g.Node, 0, len(ui.Controllers))
 	for _, name := range ui.Controllers {
 		scripts = append(scripts, h.Script(h.Src(assetPrefix+"/js/"+name), g.Attr("defer")))
@@ -63,9 +78,10 @@ func head(title string) g.Node {
 		h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
 		h.Meta(h.Name("color-scheme"), h.Content("light dark")),
 		h.TitleEl(g.Text(title)),
-		h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/app.css?v="+ui.Fingerprint())),
+		h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/app.css?v="+ui.Fingerprint(s.Theme))),
 		h.Script(g.Raw(beforePaint)),
 		g.Group(scripts),
+		g.Group(extra),
 	)
 }
 
@@ -100,9 +116,11 @@ func (s *Shell) header(ctx context.Context, tenant tenancy.Tenant) []g.Node {
 // sidebar is every module's navigation, filtered to what the caller may reach.
 //
 // The filter asks the same authorizer the kernel enforces with, so a link that
-// is shown is a link that works — and a link whose screen this shell did not
-// generate is shown disabled rather than hidden, because a module that declares
-// a nav entry and mounts no rest.Spec is a gap somebody has to see.
+// is shown is a link that works — and an entry no route answers is not shown at
+// all. It used to be rendered disabled, which put a module's wiring mistake in
+// front of every person who uses the application, every day, in a place they
+// can do nothing about. It is a fact about the composition, so it is reported
+// once where the composition happens: see Mount.
 func (s *Shell) sidebar(ctx context.Context) g.Node {
 	tenant, hasTenant := tenancy.FromContext(ctx)
 	current := ""
@@ -124,9 +142,11 @@ func (s *Shell) sidebar(ctx context.Context) g.Node {
 				continue
 			}
 		}
+		if !s.served[entry.Path] {
+			continue
+		}
 		items = append(items, components.SidebarItem{
 			Label: entry.Label, Href: entry.Path, Icon: "file-text",
-			Disabled: !s.generated[entry.Path],
 		})
 	}
 	items = append(items,
