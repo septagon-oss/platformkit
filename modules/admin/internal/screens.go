@@ -29,7 +29,12 @@ const perPage = crud.DefaultLimit
 func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 	at := screenPath(r)
 	id := "admin-" + r.Module + "-" + r.Entity + "-"
-	read, write := httpx.Permission(r.Read), httpx.Permission(r.Write)
+	// The write declaration comes off the resource rather than being rebuilt
+	// here: a resource whose rows are the operator's — the price list — is
+	// written at the operator's host and nowhere else, and a screen that
+	// declared the bare permission would be a form a customer's wildcard could
+	// use after the API refused it. See docs/adr/0008.
+	read, write := httpx.Permission(r.Read), r.WriteAuth()
 	title := strings.ToUpper(r.Entity[:1]) + r.Entity[1:]
 
 	html(api, s, id+"list", http.MethodGet, at, "The "+r.Entity+" list", read,

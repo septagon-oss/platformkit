@@ -1,16 +1,25 @@
 package contracts
 
-// The two permissions billing has. They are named after the resource and not
+// The three permissions billing has. They are named after the resource and not
 // after the module, because a permission outlives the module that first defined
-// it, and there are two of them because reading a price list and changing what a
-// customer is charged are the only distinction anybody has wanted to grant
-// separately.
+// it.
 //
-// The list the manifest declares is in ../module.go, with the manifest. Two
-// strings are what a consumer needs to guard a route of its own; the
-// module.Permission values around them are the kernel's shape, and keeping them
-// out of here keeps kit/module out of this package's build graph.
+// The third is the seam the review found missing, and it is worth spelling out
+// what it separates. Reading the price list, enrolling in a plan and *writing
+// the price list* were one permission, billing:manage, held by every tenant's
+// own administrator — so a customer created a plan of its own, at a price of
+// its own, and switched to it. The review's probe did exactly that from
+// past_due and its debt vanished.
+//
+// So the catalogue is the operator's. billing:catalog is declared
+// Operator: true in the manifest and its routes with httpx.OperatorPermission,
+// which the kernel refuses at any tenant but the operator's own before it asks
+// the roles table anything: no wildcard satisfies it. billing:manage keeps
+// what a customer legitimately does to its own subscription — subscribe, and
+// cancel — and billing:read stays what it was, because every tenant has to be
+// able to read the price list it is choosing from.
 const (
-	PermissionBillingRead   = "billing:read"
-	PermissionBillingManage = "billing:manage"
+	PermissionBillingRead    = "billing:read"
+	PermissionBillingManage  = "billing:manage"
+	PermissionBillingCatalog = "billing:catalog"
 )

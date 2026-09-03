@@ -44,30 +44,58 @@ type Deps struct {
 	RenewEvery time.Duration
 }
 
-// spec is the plan catalogue's presence in the application: five routes, two
+// spec is the plan catalogue's presence in the application: five routes, three
 // permissions, three events and the schema a generated screen reads.
 //
-// It names no Immutable, and the absence is a decision: a plan is data an
-// administrator maintains, and changing a field changes what the next renewal
-// charges and nothing else, because a subscription's period is its own. The
-// fields a command owns are all on the subscription, which is not a Spec. The
-// one hook it does have, on delete, declares no HookEvents because all it ever
-// does is refuse.
+// The catalogue is the operator's, and that is the one thing about this module
+// worth reading before the rest.
+//
+// Plans used to be an ordinary tenant-scoped table, written under the same
+// billing:manage that enrolls, which every tenant's own administrator holds by
+// way of the wildcard their admin role carries. So a customer created a plan,
+// at a price it chose, and subscribed to it: a review did exactly that from
+// past_due and watched the debt disappear. A price list is not a thing a
+// customer owns.
+//
+// The fix is one shared catalogue rather than a copy per tenant, and the choice
+// between those two is worth writing down. Per-tenant copies seeded by the
+// operator would keep the table tenant-scoped and cost a fan-out on every plan
+// change, a reconciliation when one fails, and an answer to "what happens to
+// the copy a tenant edited". One table, read by all and written by the
+// operator, has none of those: migrations/000016 gives it USING (true) so every
+// tenant sees the catalogue, and WITH CHECK on the tenant match so a row can
+// only be written by a transaction scoped to the tenant it names. The routes
+// carry the other half — OperatorWrite declares create, update and delete with
+// httpx.OperatorPermission, which the kernel refuses at any tenant but the
+// operator's own before it asks the roles table anything, and no wildcard
+// satisfies it. See docs/adr/0008.
+//
+// It names no Immutable, and the absence is a decision: a plan is data the
+// operator maintains, and changing a field changes what the *next* period
+// costs, because the price a subscription is billed at is stamped on the
+// subscription. The fields a command owns are all on the subscription, which is
+// not a Spec. The one hook it does have, on delete, declares no HookEvents
+// because all it ever does is refuse.
 var spec = rest.Spec[*contracts.Plan]{
-	Module:     "billing",
-	Entity:     "plan",
-	Path:       "/api/v1/billing/plans",
-	Read:       contracts.PermissionBillingRead,
-	Write:      contracts.PermissionBillingManage,
-	SoftDelete: true,
+	Module:        "billing",
+	Entity:        "plan",
+	Path:          "/api/v1/billing/plans",
+	Read:          contracts.PermissionBillingRead,
+	Write:         contracts.PermissionBillingCatalog,
+	OperatorWrite: true,
+	SoftDelete:    true,
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
 // declaration against it at boot, so a route guarded by a permission that is
-// not here fails startup instead of denying everyone forever.
+// not here fails startup instead of denying everyone forever — and, for the
+// third one, so that a route declaring httpx.Permission where the manifest says
+// Operator would fail startup rather than quietly letting a customer's wildcard
+// into the price list.
 var permissions = []module.Permission{
 	{Key: contracts.PermissionBillingRead},
 	{Key: contracts.PermissionBillingManage},
+	{Key: contracts.PermissionBillingCatalog, Operator: true},
 }
 
 // Module is the manifest. The implementation is constructed here, in one line,
@@ -79,10 +107,6 @@ func Module(deps Deps) module.Module {
 		panic("billing.Module: Deps.Payments is required; wire billing.Manual() when there is no payment processor")
 	}
 	svc := internal.NewService()
-	// The one thing about a plan that generic CRUD cannot know: a plan somebody
-	// is still being billed for is not one an administrator may remove.
-	mounted := spec
-	mounted.AfterDelete = internal.RefuseWhileSubscribed
 	return module.Module{
 		Name:        "billing",
 		Permissions: permissions,
@@ -96,6 +120,13 @@ func Module(deps Deps) module.Module {
 		// opinion about anybody else's events.
 		Subscriptions: nil,
 		Routes: func(api *httpx.API) {
+			// The one thing about a plan that generic CRUD cannot know: a plan
+			// somebody is still being billed for is not one the operator may
+			// remove. The hook takes the system capability because the question
+			// crosses every tenant — the catalogue is shared, and the operator's
+			// own transaction can see only the operator's subscriptions.
+			mounted := spec
+			mounted.AfterDelete = internal.RefuseWhileSubscribed(api.SystemToken())
 			mounted.Mount(api)
 			internal.RegisterRoutes(api, svc)
 		},

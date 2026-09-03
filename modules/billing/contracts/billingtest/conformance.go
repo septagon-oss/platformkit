@@ -36,6 +36,16 @@ type Fixture struct {
 	// cannot wait a month for one.
 	Expire func()
 
+	// Reprice changes a stored plan's price. It is here for the same reason
+	// Plan is: writing a plan is kit/rest's five routes and not part of the
+	// lifecycle, and the lifecycle's promise is about what happens next.
+	Reprice func(plan uuid.UUID, cents int64, currency string)
+
+	// Age moves the dunning clock back, so a grace period that lasts a week can
+	// be run out in a test. It is the same kind of thing Expire is: time is the
+	// one input the interface has no command for.
+	Age func(days int)
+
 	// Published is the events the implementation has published so far, in
 	// order. The fake returns what it recorded; the real service's harness
 	// reads the outbox rows its transaction has written.
@@ -121,6 +131,163 @@ func due(t *testing.T, f Fixture) contracts.Charge {
 
 func cases() map[string]func(*testing.T, Fixture) {
 	return map[string]func(*testing.T, Fixture){
+		// The review's escape probe, as a case. A tenant that owed money moved
+		// itself to a plan it had created at a price of nought, and the debt
+		// went with the old price. The half of the fix that lives in this
+		// interface is here; the other half — that a customer cannot create a
+		// plan at all — is a permission, and modules/billing's own test proves
+		// it over HTTP.
+		"a past-due subscription cannot be moved to another plan": func(t *testing.T, f Fixture) {
+			sub := subscribed(t, f, pro())
+			charge := due(t, f)
+			if _, err := f.Service.Settle(f.Ctx, f.Tx, charge, contracts.Receipt{Reference: "r"}); err != nil {
+				t.Fatalf("Settle: %v", err)
+			}
+			cheap := f.Plan(&contracts.Plan{Code: "cheap", Name: "Cheap", PriceCents: 0,
+				Currency: "EUR", Interval: contracts.IntervalMonth, Active: true})
+			f.silent(t, "escaping a debt", func() {
+				if _, err := f.Service.Subscribe(f.Ctx, f.Tx, cheap); !errors.Is(err, crud.ErrConflict) {
+					t.Errorf("changing plan while past due = %v, want ErrConflict", err)
+				}
+			})
+			back, err := f.Service.Current(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Current: %v", err)
+			}
+			if back.PlanID != sub.PlanID || back.Status != contracts.StatusPastDue {
+				t.Errorf("the debt did not persist: plan %v status %q", back.PlanID, back.Status)
+			}
+			// Subscribing to the plan it is already on is not a change and is
+			// still allowed: a customer re-submitting a form is not an escape.
+			if _, err := f.Service.Subscribe(f.Ctx, f.Tx, sub.PlanID); err != nil {
+				t.Errorf("the same plan again while past due = %v, want it to say nothing", err)
+			}
+		},
+
+		// A charge carries a key derived from what is being paid for and the
+		// period, so a renewal that runs again after a crash presents the same
+		// key and a provider that honours it takes the money once.
+		"a charge is idempotent in what it asks for": func(t *testing.T, f Fixture) {
+			sub := subscribed(t, f, pro())
+			first := due(t, f)
+			want := contracts.Key(sub.ID, first.PeriodEnd)
+			if first.IdempotencyKey != want {
+				t.Errorf("the key is %q, want %q", first.IdempotencyKey, want)
+			}
+			if first.Subject != sub.ID {
+				t.Errorf("the charge is for %v, want the subscription %v", first.Subject, sub.ID)
+			}
+			// Asked again for the same unpaid period: the same key, because
+			// nothing about the charge has changed.
+			var again *contracts.Charge
+			f.silent(t, "asking a second time", func() {
+				var err error
+				if _, again, err = f.Service.Renew(f.Ctx, f.Tx); err != nil {
+					t.Fatalf("Renew: %v", err)
+				}
+			})
+			if again == nil || again.IdempotencyKey != first.IdempotencyKey {
+				t.Errorf("the second ask carries %v, want the same key", again)
+			}
+		},
+
+		// A provider that cannot yet say is neither paid nor unpaid.
+		"a pending receipt leaves the subscription where it is": func(t *testing.T, f Fixture) {
+			subscribed(t, f, pro())
+			charge := due(t, f)
+			f.silent(t, "a pending charge", func() {
+				if _, err := f.Service.Settle(f.Ctx, f.Tx, charge, contracts.Receipt{Reference: "p", Pending: true}); err != nil {
+					t.Fatalf("Settle: %v", err)
+				}
+			})
+			waiting, err := f.Service.Current(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Current: %v", err)
+			}
+			if waiting.Status == contracts.StatusPastDue {
+				t.Error("a customer whose payment is in flight was marked past due")
+			}
+			if !waiting.CurrentPeriodEnd.Equal(charge.PeriodEnd) {
+				t.Error("a pending payment started the next period")
+			}
+			// And the same charge, settled the next night, is the renewal.
+			f.one(t, "settling what was pending", contracts.EventRenewed, func() {
+				if _, err := f.Service.Settle(f.Ctx, f.Tx, charge, contracts.Receipt{Reference: "p", Settled: true}); err != nil {
+					t.Fatalf("Settle: %v", err)
+				}
+			})
+		},
+
+		// Dunning has a ceiling. Without one a dead card was retried every
+		// night for as long as the installation ran, and the customer was
+		// served for as long as it was retried.
+		"a grace period that runs out cancels the subscription": func(t *testing.T, f Fixture) {
+			subscribed(t, f, pro())
+			charge := due(t, f)
+			f.one(t, "the first refusal", contracts.EventPastDue, func() {
+				if _, err := f.Service.Settle(f.Ctx, f.Tx, charge, contracts.Receipt{Reference: "no"}); err != nil {
+					t.Fatalf("Settle: %v", err)
+				}
+			})
+			// The nights in between say nothing and count.
+			f.silent(t, "the second refusal", func() {
+				if _, err := f.Service.Settle(f.Ctx, f.Tx, charge, contracts.Receipt{Reference: "no"}); err != nil {
+					t.Fatalf("Settle: %v", err)
+				}
+			})
+			counted, err := f.Service.Current(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Current: %v", err)
+			}
+			if counted.AttemptCount != 2 || counted.PastDueSince == nil {
+				t.Errorf("after two refusals the dunning state is %d attempts since %v", counted.AttemptCount, counted.PastDueSince)
+			}
+			// Inside the grace period the renewal still asks for the money.
+			if _, still, err := f.Service.Renew(f.Ctx, f.Tx); err != nil || still == nil {
+				t.Errorf("inside the grace period the renewal owes %v (%v)", still, err)
+			}
+			f.Age(contracts.GraceDays + 1)
+			f.one(t, "the grace period running out", contracts.EventCancelled, func() {
+				_, owed, err := f.Service.Renew(f.Ctx, f.Tx)
+				if err != nil {
+					t.Fatalf("Renew: %v", err)
+				}
+				if owed != nil {
+					t.Error("a subscription past its grace period is still being charged")
+				}
+			})
+			ended, err := f.Service.Current(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Current: %v", err)
+			}
+			if ended.Status != contracts.StatusCancelled {
+				t.Errorf("after the grace period the status is %q, want %q", ended.Status, contracts.StatusCancelled)
+			}
+		},
+
+		// The price is stamped on the subscription at subscribe and at every
+		// renewal, and the charge is made from the stamp. Re-pricing a plan
+		// used to change what every live subscriber was billed that night, and
+		// changing its currency billed them in another one.
+		"re-pricing a plan applies from the next period": func(t *testing.T, f Fixture) {
+			sub := subscribed(t, f, pro())
+			if sub.PriceCents != 2900 || sub.Currency != "EUR" {
+				t.Fatalf("the subscription was stamped %d %s", sub.PriceCents, sub.Currency)
+			}
+			f.Reprice(sub.PlanID, 9900, "USD")
+			charge := due(t, f)
+			if charge.AmountCents != 2900 || charge.Currency != "EUR" {
+				t.Errorf("the period already served was charged %d %s at the new price", charge.AmountCents, charge.Currency)
+			}
+			after, err := f.Service.Settle(f.Ctx, f.Tx, charge, contracts.Receipt{Reference: "r", Settled: true})
+			if err != nil {
+				t.Fatalf("Settle: %v", err)
+			}
+			if after.PriceCents != 9900 || after.Currency != "USD" {
+				t.Errorf("the next period is stamped %d %s, want the plan's new price", after.PriceCents, after.Currency)
+			}
+		},
+
 		"a tenant that has never subscribed has no subscription": func(t *testing.T, f Fixture) {
 			for what, call := range map[string]func() error{
 				"Current": func() error { _, err := f.Service.Current(f.Ctx, f.Tx); return err },
@@ -416,7 +583,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			})
 		},
 
-		"resubscribing after it ended starts a fresh period": func(t *testing.T, f Fixture) {
+		"resubscribing after it ended does not reissue the trial": func(t *testing.T, f Fixture) {
 			plan := f.Plan(pro())
 			old, err := f.Service.Subscribe(f.Ctx, f.Tx, plan)
 			if err != nil {
@@ -437,10 +604,21 @@ func cases() map[string]func(*testing.T, Fixture) {
 			switch {
 			case back.ID != old.ID:
 				t.Error("resubscribing made a second subscription; a tenant has one")
-			case back.Status != contracts.StatusTrial:
-				t.Errorf("status is %q, want %q", back.Status, contracts.StatusTrial)
-			case !back.CurrentPeriodEnd.After(db.Now()):
-				t.Error("the old period was kept; it had already ended")
+			// Not a trial. The trial is once per tenant, ever: cancelling and
+			// resubscribing four times used to be four free periods, and the
+			// review counted them.
+			case back.Status != contracts.StatusActive:
+				t.Errorf("status is %q, want %q", back.Status, contracts.StatusActive)
+			case back.TrialUsedAt == nil:
+				t.Error("the trial this tenant already had is not recorded")
+			// The period it is given has already ended, which is what "a charge
+			// is due" means in a module whose only way to take money is the
+			// nightly renewal: the next run charges for the period it is about
+			// to serve rather than serving one free.
+			case back.CurrentPeriodEnd.After(db.Now()):
+				t.Error("resubscribing served another free period")
+			case !back.CurrentPeriodEnd.After(back.CurrentPeriodStart):
+				t.Error("the new period does not end after it starts")
 			}
 		},
 	}

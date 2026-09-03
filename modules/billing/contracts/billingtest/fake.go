@@ -104,18 +104,31 @@ func (f *Fake) Subscribe(_ context.Context, _ db.Tx[db.Tenant], planID uuid.UUID
 	if f.sub == nil {
 		f.sub = &contracts.Subscription{
 			Base:   crud.Base{ID: uuid.New()},
-			PlanID: planID, Status: contracts.StatusTrial,
+			PlanID: planID, Status: contracts.StatusTrial, TrialUsedAt: &now,
 			CurrentPeriodStart: now, CurrentPeriodEnd: contracts.Advance(now, plan.Interval),
+			PriceCents: plan.PriceCents, Currency: plan.Currency,
 		}
 		return f.commit(contracts.EventSubscribed), nil
 	}
 	if f.sub.PlanID == planID && f.sub.Status != contracts.StatusCancelled && !f.sub.CancelAtPeriodEnd {
 		return f.copy(), nil
 	}
+	if f.sub.Status == contracts.StatusPastDue && f.sub.PlanID != planID {
+		return nil, fmt.Errorf("%w: this subscription is past due; the outstanding period is settled before the plan changes", crud.ErrConflict)
+	}
 	f.sub.PlanID, f.sub.CancelAtPeriodEnd = planID, false
 	if f.sub.Status == contracts.StatusCancelled {
-		f.sub.Status = contracts.StatusTrial
-		f.sub.CurrentPeriodStart, f.sub.CurrentPeriodEnd = now, contracts.Advance(now, plan.Interval)
+		// The trial is once per tenant: a resubscriber is given a period that
+		// has already ended, so the next renewal charges rather than serving a
+		// second free one.
+		f.sub.Status = contracts.StatusActive
+		f.sub.CurrentPeriodStart = now.AddDate(0, -1, 0)
+		if plan.Interval == contracts.IntervalYear {
+			f.sub.CurrentPeriodStart = now.AddDate(-1, 0, 0)
+		}
+		f.sub.CurrentPeriodEnd = now
+		f.sub.PriceCents, f.sub.Currency = plan.PriceCents, plan.Currency
+		f.sub.AttemptCount, f.sub.PastDueSince = 0, nil
 	}
 	return f.commit(contracts.EventSubscribed), nil
 }
@@ -159,16 +172,21 @@ func (f *Fake) Renew(_ context.Context, _ db.Tx[db.Tenant]) (*contracts.Subscrip
 		f.sub.Status = contracts.StatusCancelled
 		return f.copy(), nil, nil
 	}
+	if f.sub.GraceExpired(now) {
+		f.sub.Status = contracts.StatusCancelled
+		return f.commit(contracts.EventCancelled), nil, nil
+	}
 	plan, ok := f.plans[f.sub.PlanID]
 	if !ok {
 		return nil, nil, crud.ErrNotFound
 	}
-	if plan.PriceCents == 0 {
+	if f.sub.PriceCents == 0 {
 		return f.advance(plan), nil, nil
 	}
 	return f.copy(), &contracts.Charge{
-		Subscription: f.sub.ID, PlanCode: plan.Code, AmountCents: plan.PriceCents,
-		Currency: plan.Currency, PeriodEnd: f.sub.CurrentPeriodEnd,
+		Subject: f.sub.ID, PlanCode: plan.Code, AmountCents: f.sub.PriceCents,
+		Currency: f.sub.Currency, PeriodEnd: f.sub.CurrentPeriodEnd,
+		IdempotencyKey: contracts.Key(f.sub.ID, f.sub.CurrentPeriodEnd),
 	}, nil
 }
 
@@ -179,7 +197,7 @@ func (f *Fake) Settle(_ context.Context, _ db.Tx[db.Tenant], c contracts.Charge,
 	if _, err := f.current(); err != nil {
 		return nil, err
 	}
-	if f.sub.ID != c.Subscription || !f.sub.CurrentPeriodEnd.Equal(c.PeriodEnd) ||
+	if f.sub.ID != c.Subject || !f.sub.CurrentPeriodEnd.Equal(c.PeriodEnd) ||
 		f.sub.Status == contracts.StatusCancelled {
 		return f.copy(), nil
 	}
@@ -190,6 +208,14 @@ func (f *Fake) Settle(_ context.Context, _ db.Tx[db.Tenant], c contracts.Charge,
 		}
 		return f.advance(plan), nil
 	}
+	if r.Pending {
+		return f.copy(), nil
+	}
+	now := db.Now()
+	f.sub.AttemptCount++
+	if f.sub.PastDueSince == nil {
+		f.sub.PastDueSince = &now
+	}
 	if f.sub.Status == contracts.StatusPastDue {
 		return f.copy(), nil
 	}
@@ -197,11 +223,35 @@ func (f *Fake) Settle(_ context.Context, _ db.Tx[db.Tenant], c contracts.Charge,
 	return f.commit(contracts.EventPastDue), nil
 }
 
+// Reprice changes a stored plan's price, which is what the suite needs to prove
+// that re-pricing applies from the next period and not to the one being served.
+func (f *Fake) Reprice(plan uuid.UUID, cents int64, currency string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := f.plans[plan]
+	p.PriceCents, p.Currency = cents, currency
+	f.plans[plan] = p
+}
+
+// Age moves the dunning clock back, so a grace period of a week can be run out
+// in a test.
+func (f *Fake) Age(days int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sub == nil || f.sub.PastDueSince == nil {
+		return
+	}
+	back := f.sub.PastDueSince.AddDate(0, 0, -days)
+	f.sub.PastDueSince = &back
+}
+
 // advance is internal.advance: the next period, chained to the last.
 func (f *Fake) advance(plan contracts.Plan) *contracts.Subscription {
 	f.sub.CurrentPeriodStart = f.sub.CurrentPeriodEnd
 	f.sub.CurrentPeriodEnd = contracts.Advance(f.sub.CurrentPeriodStart, plan.Interval)
 	f.sub.Status = contracts.StatusActive
+	f.sub.PriceCents, f.sub.Currency = plan.PriceCents, plan.Currency
+	f.sub.AttemptCount, f.sub.PastDueSince = 0, nil
 	return f.commit(contracts.EventRenewed)
 }
 

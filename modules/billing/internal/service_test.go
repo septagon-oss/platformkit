@@ -52,6 +52,24 @@ func TestServiceConforms(t *testing.T) {
 						t.Fatalf("expire the period: %v", err)
 					}
 				},
+				Reprice: func(plan uuid.UUID, cents int64, currency string) {
+					err := tx.DB().Model(&contracts.Plan{}).Where("id = ?", plan).
+						Updates(map[string]any{"price_cents": cents, "currency": currency}).Error
+					if err != nil {
+						t.Fatalf("reprice the plan: %v", err)
+					}
+				},
+				Age: func(days int) {
+					// The dunning clock, moved back the way Expire moves the
+					// period: straight at the column, because nothing in this
+					// module runs time backwards.
+					err := tx.DB().Exec(
+						`UPDATE billing_subscriptions SET past_due_since = past_due_since - make_interval(days => ?)`,
+						days).Error
+					if err != nil {
+						t.Fatalf("age the dunning clock: %v", err)
+					}
+				},
 				Published: func() []string {
 					var names []string
 					err := tx.DB().Raw(`SELECT name FROM `+outbox+` WHERE tenant_id = ? ORDER BY created_at, id`, acme.ID).
@@ -215,12 +233,17 @@ func TestTheNightlyRenewalChargesOutsideEveryTransaction(t *testing.T) {
 	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
 	svc := internal.NewService()
 
+	// One plan for both tenants, because there is one catalogue: it is written
+	// once, in the operator's own transaction, and every tenant reads it.
+	var plan contracts.Plan
+	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		plan = contracts.Plan{Code: "pro", Name: "Pro", PriceCents: 2900, Currency: "EUR", Active: true}
+		return crud.Create(ctx, tx, &plan)
+	}); err != nil {
+		t.Fatalf("seed the catalogue: %v", err)
+	}
 	for _, tenant := range []tenancy.Tenant{acme, globex} {
 		err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			plan := &contracts.Plan{Code: "pro", Name: "Pro", PriceCents: 2900, Currency: "EUR", Active: true}
-			if err := crud.Create(ctx, tx, plan); err != nil {
-				return err
-			}
 			if _, err := svc.Subscribe(ctx, tx, plan.ID); err != nil {
 				return err
 			}
@@ -293,7 +316,7 @@ func (s *spy) Charge(ctx context.Context, c contracts.Charge) (contracts.Receipt
 	if err == nil {
 		s.inTransaction += open
 	}
-	return contracts.Receipt{Reference: "spy:" + c.Subscription.String(), At: db.Now()}, nil
+	return contracts.Receipt{Reference: "spy:" + c.Subject.String(), At: db.Now()}, nil
 }
 
 // lister is what the tenant module implements.

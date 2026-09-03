@@ -41,13 +41,19 @@ type Subscribed struct {
 	At             time.Time `json:"at"`
 }
 
-// Cancelled is the payload of EventCancelled: the customer has left. EndsAt is
-// when service stops — now, or the end of the paid period — so a subscriber
+// Cancelled is the payload of EventCancelled: the subscription has ended. EndsAt
+// is when service stops — now, or the end of the paid period — so a subscriber
 // knows when to stop serving without knowing which of the two it was.
+//
+// Reason is empty when the customer asked, and CancelledByDunning when the
+// grace period ran out. The two are the same fact to anything that stops
+// serving and a different fact to anything that writes to the customer, so the
+// event carries which it was rather than making a subscriber query for it.
 type Cancelled struct {
 	SubscriptionID uuid.UUID `json:"subscriptionId"`
 	EndsAt         time.Time `json:"endsAt"`
 	Immediate      bool      `json:"immediate"`
+	Reason         string    `json:"reason,omitempty"`
 	At             time.Time `json:"at"`
 }
 
@@ -70,5 +76,10 @@ type PastDue struct {
 	AmountCents    int64     `json:"amountCents"`
 	Currency       string    `json:"currency"`
 	Since          time.Time `json:"since"`
-	At             time.Time `json:"at"`
+	// Attempt is how many consecutive charges have failed, so a subscriber
+	// writing to the customer can say "we tried again" without keeping a count
+	// of its own, and EndsAt is when the grace period runs out.
+	Attempt int       `json:"attempt"`
+	EndsAt  time.Time `json:"endsAt"`
+	At      time.Time `json:"at"`
 }
