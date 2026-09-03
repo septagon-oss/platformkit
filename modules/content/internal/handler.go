@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -63,7 +65,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.Content], svc cont
 		Description: "The rendered, sanitized HTML of one published page or post. A draft, an archived page and a slug nobody has used are the same 404.",
 		Tags:        []string{"content"},
 		Errors:      []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
-	}, httpx.Public(), func(ctx context.Context, in *slugInput) (*rest.Item[*Page], error) {
+	}, httpx.Public(), func(ctx context.Context, in *slugInput) (*published, error) {
 		if _, ok := tenancy.FromContext(ctx); !ok {
 			// A public route is reached at hosts that resolve to no tenant —
 			// a probe addressing the pod — and there is no site there to read.
@@ -77,14 +79,52 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.Content], svc cont
 		if err != nil {
 			return nil, rest.Fault(err)
 		}
+		// The row is read before the body is rendered, and the tag is the row's
+		// own updated_at: rendering is the expensive half — the review measured
+		// 2.25 seconds for one large page, on every anonymous request — and a
+		// reader who already has the page must not pay for it again. A weak tag
+		// because two responses with one updated_at are equivalent and not
+		// necessarily byte-identical: the renderer's output may change with the
+		// renderer.
+		tag := `W/"` + strconv.FormatInt(c.UpdatedAt.UnixNano(), 36) + `"`
+		if matches(in.IfNoneMatch, tag) {
+			// 304, and nothing else: net/http does not send a body with one.
+			return &published{Status: http.StatusNotModified, ETag: tag}, nil
+		}
 		html, err := Render(c.Body)
 		if err != nil {
 			return nil, rest.Fault(err)
 		}
-		return &rest.Item[*Page]{Body: &Page{
+		return &published{Status: http.StatusOK, ETag: tag, Body: &Page{
 			Slug: c.Slug, Title: c.Title, Kind: c.Kind, HTML: html, PublishedAt: *c.PublishedAt,
 		}}, nil
 	})
+}
+
+// published is the public route's response: the page, the tag a reader quotes
+// back, and the status, which is the one thing a handler here decides for
+// itself.
+type published struct {
+	Status int
+	ETag   string `header:"ETag" doc:"Changes when the content does; quote it back in If-None-Match"`
+	Body   *Page
+}
+
+// matches reports whether an If-None-Match header names tag. The header is a
+// list, and a caller that has been through a proxy may send the weak form of a
+// strong tag, so the comparison is the weak one RFC 9110 defines for it.
+func matches(header, tag string) bool {
+	if header == "" {
+		return false
+	}
+	want := strings.TrimPrefix(tag, "W/")
+	for candidate := range strings.SplitSeq(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || strings.TrimPrefix(candidate, "W/") == want {
+			return true
+		}
+	}
+	return false
 }
 
 // Page is what the public route answers with: the content as a reader needs it,
@@ -104,5 +144,6 @@ type Page struct {
 // contracts.Slugify produces, so a name that could never be stored is a 422 at
 // the door rather than a query that finds nothing.
 type slugInput struct {
-	Slug string `path:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" maxLength:"200" doc:"The content's slug"`
+	Slug        string `path:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" maxLength:"200" doc:"The content's slug"`
+	IfNoneMatch string `header:"If-None-Match" required:"false" doc:"A tag from a previous response; a match is answered with 304 and no body"`
 }

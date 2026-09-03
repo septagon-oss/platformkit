@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/site"
+	"github.com/septagon-oss/platformkit/modules/site/contracts"
 )
 
 const (
@@ -131,5 +132,53 @@ func TestThePublicRouteCarriesWhatAThemeNeedsAndNothingElse(t *testing.T) {
 	// And the settings themselves are not public.
 	if code, _ = send(t, router, http.MethodGet, settings, "", false); code != http.StatusForbidden {
 		t.Errorf("an anonymous read of the settings = %d, want 403", code)
+	}
+}
+
+// TestANavigationCannotLeaveTheSite is the review's finding: the documentation
+// said a navigation refuses absolute URLs and the check was a leading slash, so
+// "//evil.example" — which every browser resolves as another origin — was
+// accepted and rendered as a link in the tenant's own menu.
+func TestANavigationCannotLeaveTheSite(t *testing.T) {
+	for _, tt := range []struct {
+		path string
+		want bool
+	}{
+		{"/about-us", true},
+		{"//evil.example", false},       // a network-path reference
+		{`/\evil.example`, false},       // the same, spelled with the character a browser normalises
+		{"https://evil.example", false}, // the one the old check did catch
+		{"about-us", false},             // relative to whatever page it is on
+		{"/", true},                     // the home page is a path
+		{"/search?q=a#top", true},       // a query and a fragment are part of a path
+		{`/a\b`, false},                 // a backslash has no meaning in a path
+		{"javascript:alert(1)", false},  // not a path at all
+		{"////evil.example", false},     // more slashes are still an authority
+	} {
+		if got := contracts.InSite(tt.path); got != tt.want {
+			t.Errorf("InSite(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+		// And through the entity's own Validate, which is the door a request
+		// actually comes through.
+		s := contracts.SiteSettings{Nav: contracts.Nav{{Label: "Link", Path: tt.path}}}
+		if err := s.Validate(t.Context()); (err == nil) != tt.want {
+			t.Errorf("Validate with nav %q = %v, want accepted=%v", tt.path, err, tt.want)
+		}
+	}
+}
+
+// TestALabelIsCountedInCharacters: len() counts bytes, so a menu in any
+// language but English was refused three times too early.
+func TestALabelIsCountedInCharacters(t *testing.T) {
+	s := contracts.SiteSettings{
+		Title: strings.Repeat("日", contracts.MaxTitle),
+		Nav:   contracts.Nav{{Label: strings.Repeat("é", contracts.MaxLabel), Path: "/x"}},
+	}
+	if err := s.Validate(t.Context()); err != nil {
+		t.Errorf("a title and a label of exactly their limits in characters: %v", err)
+	}
+	s.Title += "日"
+	if err := s.Validate(t.Context()); err == nil {
+		t.Error("a title one character past the limit was accepted")
 	}
 }

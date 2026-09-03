@@ -15,7 +15,10 @@ CREATE TABLE contents (
 	-- The name this content is reached by, normalised on every write.
 	slug         varchar(200) NOT NULL,
 	title        varchar(200) NOT NULL,
-	-- Markdown, as it was written.
+	-- Markdown, as it was written, bounded at a quarter of a megabyte. The
+	-- bound is here as well as in the entity because the public route renders
+	-- this column on every anonymous request: an unbounded body is a page that
+	-- costs seconds to serve and a way to take the site down with one write.
 	body         text NOT NULL DEFAULT '',
 	-- page or post.
 	kind         varchar(10) NOT NULL DEFAULT 'post',
@@ -28,7 +31,8 @@ CREATE TABLE contents (
 	-- what "cross-module dependencies are Go interfaces" costs at the database.
 	author_id    uuid,
 
-	CONSTRAINT contents_published CHECK ((status = 'published') = (published_at IS NOT NULL))
+	CONSTRAINT contents_published CHECK ((status = 'published') = (published_at IS NOT NULL)),
+	CONSTRAINT contents_body CHECK (octet_length(body) <= 262144)
 );
 
 -- Unique per tenant, and partial so deleted content releases its slug.
