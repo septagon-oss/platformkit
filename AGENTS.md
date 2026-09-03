@@ -7,6 +7,11 @@ and the gates. `docs/adr/` says why. Nothing else is required context.
 
 1. **Net lines go down.** `make check-loc` must pass. `go run ./tools/locbudget
    --write` only lowers a ceiling; raising one is an owner commit with a reason.
+   A ceiling is the tree plus the smallest round margin — the count rounded up
+   to the next hundred, which `--write --round 100` writes — and a tag
+   re-ratchets. A ceiling at exactly the count is a ceiling the next one-line
+   pull request fails, and a margin nobody can argue about is worth more than a
+   tight one.
 2. **No new channel.** No new registry type, config key namespace or generated
    document. Fourteen make targets, ten gates, one config surface.
 3. **One task, one commit, green build.** `make check` passes before you commit.

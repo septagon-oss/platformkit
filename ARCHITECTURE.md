@@ -1,25 +1,25 @@
 # Architecture
 
 PlatformKit is a reference architecture: a working multi-tenant SaaS whose value
-is insight per line, so every idea below is implemented exactly once. It is
-being extracted from a larger private codebase one stage at a time; anything
-marked `(E1)`, `(E2)`, ... does not exist yet.
+is insight per line, so every idea below is implemented exactly once. All ten
+ideas, all ten gates and all eleven modules are here; `git log` is where the
+order they arrived in is recorded, which is the only place it belongs.
 
 ## The ten ideas
 
 1. **Composition is a list.** An application is a slice of modules constructed in
    `apps/platformkit/modules.go` with typed dependency structs in dependency
    order, so the compiler checks the wiring graph and there is no container to
-   learn. A module is `Module(Deps{...})`: one function, one struct. (E2)
+   learn. A module is `Module(Deps{...})`: one function, one struct.
 2. **A module is three things.** `contracts/` (interfaces, DTOs, events,
    permission tokens, and a conformance suite), `internal/` (every
    implementation), and `module.go` (the manifest). `modules/task` is the
-   exemplar every later module copies. (E2)
+   exemplar every later module copies.
 3. **Cross-module dependencies are Go interfaces.** A consumer takes an
    interface declared in the provider's `contracts/`; `internal/` makes any
    other coupling a compile error. A `contracts/` package is the entity, the
    events and the interfaces, so it imports `kit/crud` and never `kit/rest`:
-   naming another module's Task links no web server. Gate 6 is that rule. (E2)
+   naming another module's Task links no web server. Gate 6 is that rule.
 4. **Tenant isolation belongs to the database, and to the type system.** Tenant
    tables carry `FORCE ROW LEVEL SECURITY` and the tenant is set per
    transaction, so a forgotten `WHERE tenant_id` returns nothing rather than
@@ -28,50 +28,59 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
    purpose is one grep. The settings themselves are `USERSET` and no privilege
    can withhold them, so the grep gate is what closes that door; the re-read
    before commit is a backstop that catches the careless escape and not the
-   deliberate one. See `docs/adr/0003`. (E1)
+   deliberate one. See `docs/adr/0003`.
 5. **Authorization is declared, not remembered.** Every operation registers an
    `Auth` value alongside its route; the app validates the recorded operation set
-   at boot and refuses to start when one is undeclared. (E1)
+   at boot and refuses to start when one is undeclared.
 6. **Events leave through one door.** A module writes an event in the same
    transaction as its state change; one outbox relay publishes to JetStream.
    Delivery is at-least-once and handling is exactly-once: `Consume` claims each
-   event for each subscription in the handler's own transaction. (E1)
+   event for each subscription in the handler's own transaction.
 7. **One migration directory, one ledger.** All SQL lives in `migrations/`,
    numbered once, applied by the owner role at every process's startup. Files
    are append-only from v1.0.0; before it they are the schema this repository
    would create today, and correcting one in place is cheaper than shipping a
-   history nobody ran. (E1)
+   history nobody ran.
 8. **Screens derive from schemas.** `rest.Spec.Mount` registers the entity
    beside its routes, and `modules/admin` generates seven pages from each one:
    list, detail, two forms, two writes and delete. A `select` exists because the
    struct says `enum`. Five screens in the application are written by hand and
    each says why. The components are typed Go functions and the stylesheet is a
    Go value, so there is no CSS build and no framework. See `docs/adr/0007`.
-   (E4)
+  
 9. **A client is configuration.** One image, one binary, `--role web|worker|all`;
-   clients differ by configuration and assets, never by build. (E6)
+   clients differ by configuration and assets, never by build.
 10. **Invariants are gates.** Everything above is checked by a command that runs
     on every pull request in under five minutes; a rule that does not run is not
-    a rule. (E0)
+    a rule.
 
 ## Layout
 
-| Directory | Holds | Stage |
-|---|---|---|
-| `kit/` | the kernel: db, tenancy, config, problem, httpx, module, crud, rest, events, jobs, health, limit | E1 |
-| `modules/` | business modules, each `contracts/` + `internal/` + `module.go` | E2, E3, E5 |
-| `ui/` | typed components, the class builder and the CSS emitter, the browser controllers | E4 |
-| `design/` | design tokens and the two themes | E4 |
-| `apps/` | `platformkit`, the reference binary | E2 |
-| `tools/` | `locbudget`, the line-budget ratchet | E0 |
-| `migrations/` | the one migration directory | E1 |
-| `deploy/` | Dockerfile, Postgres bootstrap | E0 |
-| `docs/adr/` | the decisions, ten files at most | E0 |
+| Directory | Holds |
+|---|---|
+| `kit/` | the kernel: db, tenancy, config, problem, httpx, module, crud, rest, events, jobs, health, limit |
+| `modules/` | business modules, each `contracts/` + `internal/` + `module.go` |
+| `ui/` | typed components, the class builder and the CSS emitter, the browser controllers |
+| `design/` | design tokens and the two themes |
+| `apps/` | `platformkit`, the reference binary |
+| `tools/` | `locbudget`, the line-budget ratchet |
+| `migrations/` | the one migration directory |
+| `deploy/` | Dockerfile, Postgres bootstrap |
+| `docs/adr/` | the decisions, ten files at most |
 
 ## Limits
 
-Ceilings, not baselines. `loc-budget.json` ships with these numbers and the
-ratchet only ever lowers them; raising one is an owner commit with a reason.
+Ceilings, not baselines. The numbers live in `loc-budget.json` and
+`packages-budget.json`, they are ratcheted at every tag, and the table below is
+therefore a snapshot and not the source — a second copy goes stale the first
+time somebody deletes something, which is what happened: this file published
+15,000 / 150,000 / 40,000 while `loc-budget.json` shipped a fifth of that. Run
+`make check-loc` for today's.
+
+A ceiling is the count rounded up to the next hundred (`go run ./tools/locbudget
+--write --round 100`). At exactly the count, the next one-line pull request is
+over budget, which the release review found by writing one. Raising a ceiling is
+an owner commit with a reason; a tag re-ratchets.
 
 Two of the rows say something the file could not say by path alone. The
 reference binary and the gates that guard it are budgeted apart, because a
@@ -82,19 +91,21 @@ code: no `_test.go` suffix, importable by any consumer. It is counted by the
 package's own name (`dir_suffixes`) rather than by where it sits, so a fake is
 never priced as if it were a feature of the module it stands in for.
 
-| Bucket | Ceiling (production lines) |
-|---|---|
-| `kit/` (kernel) | 15,000 |
-| `modules/` | 150,000 |
-| `ui/` + `design/` | 40,000 |
-| `apps/` | 6,000 |
-| `tools/` | 2,000 |
-| total production Go | 250,000 |
-| test support Go (`*test` packages) | 10,000 |
-| test Go | 250,000 |
-| browser JavaScript | 6,000 |
-| markdown | 20,000 |
-| first-party packages linked into the app | 400 |
+At v1.0.0 they were:
+
+| Bucket | Ceiling | Count at v1.0.0 |
+|---|---|---|
+| `kit/` (kernel) | 8,200 | 8,106 |
+| `modules/` | 11,700 | 11,626 |
+| `ui/` + `design/` | 9,600 | 9,514 |
+| `apps/` | 500 | 492 |
+| `tools/` | 400 | 303 |
+| total production Go | 29,900 | 29,850 |
+| test support Go (`*test` packages) | 5,600 | 5,530 |
+| test Go | 18,200 | 18,167 |
+| browser JavaScript | 300 | 218 |
+| markdown | 1,600 | 1,525 |
+| first-party packages linked into the app | 54 | 54 |
 
 ## The browser half
 
@@ -181,15 +192,15 @@ set is checked at upload against `http.DetectContentType`.
 `make check` runs gates 1 to 9; `make e2e` is gate 10, which needs a browser and
 a minute and so is a target of its own. CI runs both. The list stops at ten.
 
-| # | Gate | Proves | Stage |
-|---|---|---|---|
-| 1 | `make build` | the wiring graph type-checks | E0 |
-| 2 | `make vet` + `make fmt-check` | no known-bad and no unformatted Go | E0 |
-| 3 | `make test` | the suite passes against a real Postgres | E0 |
-| 4 | `make check-loc` | no bucket exceeds its ceiling | E0 |
-| 5 | `make check-packages` | the app links ≤ 400 first-party packages | E2 |
-| 6 | `scripts/check_imports.sh` | a module imports only another module's `contracts/`, and `apps/` reaches into no module's `internal/` | E3 |
-| 7 | boot validation test | no operation ships without an `Auth` declaration, and no route requires a permission no module defines | E1 |
-| 8 | tenant isolation test + `make check-gucs` | RLS blocks cross-tenant reads as the app role, and only `kit/db` writes the tenancy settings | E1 |
-| 9 | empty-database boot test | the app migrates and serves from nothing | E2 |
-| 10 | `make e2e` | the admin shell renders and a generated CRUD screen works | E4 |
+| # | Gate | Proves |
+|---|---|---|
+| 1 | `make build` | the wiring graph type-checks |
+| 2 | `make vet` + `make fmt-check` | no known-bad and no unformatted Go |
+| 3 | `make test` | the suite passes against a real Postgres |
+| 4 | `make check-loc` | no bucket exceeds its ceiling |
+| 5 | `make check-packages` | the app links no more first-party packages than `packages-budget.json` allows |
+| 6 | `scripts/check_imports.sh` | a module imports only another module's `contracts/`, and `apps/` reaches into no module's `internal/` |
+| 7 | boot validation test | no operation ships without an `Auth` declaration, and no route requires a permission no module defines |
+| 8 | tenant isolation test + `make check-gucs` | RLS blocks cross-tenant reads as the app role, and only `kit/db` writes the tenancy settings |
+| 9 | empty-database boot test | the app migrates and serves from nothing |
+| 10 | `make e2e` | the admin shell renders and a generated CRUD screen works |
