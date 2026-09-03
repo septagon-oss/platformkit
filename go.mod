@@ -15,7 +15,7 @@ require (
 	github.com/nats-io/nats.go v1.53.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/yuin/goldmark v1.8.5
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/text v0.41.0
