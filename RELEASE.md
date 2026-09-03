@@ -3,7 +3,7 @@
 `v1.0.0` is the first tag, and the procedure below is the same one every tag
 after it follows. It has four parts: what has to be true before the tag, the
 tag, what the tag does on its own, and what the two private repositories do
-afterwards. The visibility flip happens once, and only the owner can do it.
+afterwards. The first push onto the public repository happens once, and only the owner can do it.
 
 Everything here is a command somebody runs, in the order they run it. Nothing
 in it is automatic except the part that says so.
@@ -120,13 +120,27 @@ uploaded out of the build context.
 Nothing in the workflow needs a secret beyond `GITHUB_TOKEN`: GHCR accepts it
 for the repository's own package.
 
-## 4. The visibility flip `[OWNER ONLY]`
+## 4. The first push onto the existing public repository `[OWNER ONLY]`
 
-Once, before or immediately after `v1.0.0`. Every step is in the GitHub web UI
-or `gh`, and none of them is in this repository.
+`github.com/septagon-oss/platformkit` already exists and is public: it holds the
+0.x CLI scaffolder (releases to v0.15.1), with its own stars and forks. The
+extracted repository has an unrelated history, so the first push is the publish,
+and it is done without a force push so that every 0.x commit and tag stays
+reachable and every fork diverges cleanly:
 
-- [ ] **Settings → General → Danger Zone → Change visibility → Public.**
-      `gh repo edit septagon-oss/platformkit --visibility public --accept-visibility-change-consequences`
+```sh
+git remote add origin git@github.com:septagon-oss/platformkit.git && git fetch origin
+git branch legacy-0.x origin/main && git push origin legacy-0.x
+git merge --allow-unrelated-histories -s ours origin/main \
+  -m "v1: the extracted reference architecture replaces the 0.x scaffolder; its history stays under legacy-0.x"
+make check && git push origin main
+```
+
+`-s ours` keeps this tree byte for byte and makes the 0.x line an ancestor of
+`main`, which is what the release workflow's ancestry check wants. Then the tag
+(section 2) and, once, the settings below. Every step is in the GitHub web UI or
+`gh`, and none of them is in this repository.
+
 - [ ] **Settings → Branches → Add rule for `main`:** require a pull request,
       require status checks to pass, and require branches to be up to date.
 - [ ] **Settings → Rules → Rulesets → New tag ruleset**, targeting `v*`:
@@ -152,7 +166,7 @@ or `gh`, and none of them is in this repository.
       repository; this is a separate switch and it is easy to miss.
 - [ ] **Run the five commands from a machine with no credentials** against the
       public clone URL. `scripts/start.sh` is the one-liner; it is what the
-      README promises and the flip is where that promise becomes checkable.
+      README promises and the first push is where that promise becomes checkable.
 
 ## 5. Consumers
 
@@ -176,5 +190,5 @@ Ten lines, in order.
    next hundred: at exactly the count, the next one-line pull request fails.
 7. `git tag -a v1.0.0 -m "PlatformKit 1.0.0"` — or `-s`, the owner's choice.
 8. `git push origin main --follow-tags`, and watch `release.yml` go green.
-9. The flip checklist in section 4, once.
+9. The settings checklist in section 4, once.
 10. Consumers pin the tag.
