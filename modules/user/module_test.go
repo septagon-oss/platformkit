@@ -82,9 +82,11 @@ func call(t *testing.T, r http.Handler, method, path, body string) (int, string)
 // A grant and a deactivation are the two changes to a user that an audit has to
 // be able to find, so each has one route and each publishes. The generic doors
 // are shut, and they are shut for two different reasons worth knowing apart:
-// the create is refused by the module's own AfterCreate hook, because there is
-// no row yet to refuse a change to, and the two patches by Spec.Immutable,
-// which names the field so the caller is told which door to use.
+// the create and the two patches are all refused by Spec.Immutable, which names
+// the field so the caller is told which door to use. The create used to be the
+// module's own AfterCreate hook, which is now a second line of defence behind
+// the kernel's: kit/rest refuses an Immutable field at both write doors, for
+// every module at once. See rest.refuseImmutable.
 //
 // `roles` used to be refused by kit/crud's schema having no list type, which
 // meant it rendered nowhere either. The schema has one now, so the refusal is
@@ -97,7 +99,7 @@ func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 	if code != http.StatusUnprocessableEntity {
 		t.Errorf("creating a user with roles = %d %s, want 422", code, body)
 	}
-	if !strings.Contains(body, "/roles") {
+	if !strings.Contains(body, "roles belongs to a route of its own") {
 		t.Errorf("the refusal does not say where roles are granted: %s", body)
 	}
 

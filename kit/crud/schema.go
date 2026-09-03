@@ -63,6 +63,17 @@ type Field struct {
 	ReadOnly bool `json:"readOnly,omitempty"`
 	// HideList keeps a field off the list screen, from `ui:"hide:list"`.
 	HideList bool `json:"hideList,omitempty"`
+	// Default is the value the entity declares for a field a caller may leave
+	// out, from `default:"open"` — the same tag huma reads, so the form and the
+	// API document agree about what happens when nothing is sent. A form
+	// preselects it, and a select that has one needs no "Choose a …" placeholder
+	// because there is no unchosen state to name.
+	Default string `json:"default,omitempty"`
+	// Doc is what the field is for, from `doc:"Lifecycle state"` — again huma's
+	// own tag, so the sentence in the OpenAPI document is the sentence under the
+	// control. It is a description and not a label: the entities here write
+	// "Short summary of the task", which reads under an input and not on it.
+	Doc string `json:"doc,omitempty"`
 
 	// Index locates the field in the struct. It is exported for one caller,
 	// kit/rest's PATCH merge, which decodes a body into the field this names;
@@ -116,6 +127,8 @@ func derive(t reflect.Type) []Field {
 			Elem:     elem,
 			Required: has(sf.Tag.Get("validate"), "required"),
 			ReadOnly: declaredBy(t, sf) == baseType,
+			Default:  sf.Tag.Get("default"),
+			Doc:      sf.Tag.Get("doc"),
 			Index:    sf.Index,
 		}
 		if enum := sf.Tag.Get("enum"); enum != "" {
