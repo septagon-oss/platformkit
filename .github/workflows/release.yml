@@ -1,0 +1,158 @@
+name: release
+
+# A tag is the only trigger. Nothing here runs on a branch: a release is
+# something somebody decided, and `git tag` is where they decided it.
+on:
+  push:
+    tags: ["v*"]
+
+# Least privilege, and it is not the workflow's default. `contents: write`
+# exists for `gh release create` and nothing else; `packages: write` for the
+# push to GHCR. The check job below drops back to read, because a build that
+# only proves something needs no rights at all.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # The image the tag produces. It is the public organisation's, because the
+  # repository this workflow lives in is the public one.
+  IMAGE: ghcr.io/septagon-oss/platformkit
+
+jobs:
+  # The same gates a pull request passes, against the tagged tree. A tag that
+  # cannot pass them is a tag nobody should be able to pull an image for, so
+  # this job is the release job's prerequisite rather than a parallel one.
+  #
+  # It is not a second implementation of the gates: there is one, `make check`
+  # in the Makefile, and both workflows call it. What is written twice is the
+  # twenty lines of service setup — the app role and JetStream — because a
+  # workflow cannot `needs:` a job in another workflow. Extracting them into a
+  # `workflow_call` job that ci.yml and this file both use is one commit that
+  # touches both, and it renames the required status check, which is why it is
+  # not this one.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: platformkit
+          POSTGRES_DB: platformkit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platformkit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      # Service containers ignore /docker-entrypoint-initdb.d and cannot take a
+      # command, so the app role and JetStream are set up by hand — the same two
+      # steps ci.yml runs, for the same two reasons.
+      - name: Start NATS with JetStream
+        run: |
+          docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:2-alpine --jetstream --http_port 8222
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8222/healthz >/dev/null; then echo "nats is up"; exit 0; fi
+            sleep 1
+          done
+          echo "NATS did not become healthy" >&2; docker logs nats; exit 1
+
+      - name: Create the platformkit_app role
+        env:
+          PGPASSWORD: platformkit
+        run: psql -h localhost -U postgres -d platformkit -v ON_ERROR_STOP=1 -f deploy/postgres/init.sql
+
+      - name: make check
+        run: make check
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # gh release create
+      packages: write # push to ghcr.io
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # `gh release create --generate-notes` compares against the previous
+          # tag, so the whole history has to be here.
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `latest` moves only for a release with no pre-release part. A tag like
+      # v1.1.0-rc.1 is published under its own name and moves nothing, so
+      # `docker pull platformkit` never returns a candidate to somebody who
+      # asked for the product.
+      - id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The bill of materials is of the image, not of the checkout: what a
+      # reader wants to know is what they are about to run. syft is the tool
+      # ADR 0009 names; the action is the tool.
+      - name: SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.IMAGE }}:${{ github.ref_name }}
+          format: spdx-json
+          output-file: platformkit-${{ github.ref_name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      # One release, notes generated from the commits since the previous tag,
+      # the SBOM attached, and the digest written down — because a tag can be
+      # moved and a digest cannot.
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          printf 'Image: `%s@%s`\n' "$IMAGE:$TAG" "$DIGEST" > /tmp/notes.md
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            --notes-file /tmp/notes.md \
+            $prerelease \
+            "platformkit-$TAG.spdx.json"
