@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -75,11 +76,112 @@ func (j *jetstream) Publish(ctx context.Context, ev Event) error {
 }
 
 // ackWait is how long JetStream waits for an acknowledgement before it decides
-// the delivery was lost. It is longer than events.handlerTimeout, so a handler
-// that runs to its own deadline is never redelivered while it is still running.
-const ackWait = 30 * time.Second
+// a delivery was lost, and it is the first rung of the redelivery ladder rather
+// than a number beside it.
+//
+// That is not tidiness, it is the drift that had every worker crashlooping. The
+// server pins a consumer's AckWait to BackOff[0] whenever a backoff is set, so
+// a subscription that asked for thirty seconds under a ladder starting at one
+// second was stored with one — and nats.go refuses a later subscription whose
+// stored configuration is not the one it asks for:
+//
+//	nats: configuration requests ack wait to be 30s, but consumer's value is 1s
+//
+// The first process therefore created a consumer no later process could bind
+// to. The web role stayed up, every worker crashlooped, and nothing in the
+// chart could see it. One value used twice cannot drift from itself; reconcile
+// handles the drift that is still possible, which is a deploy that changes the
+// ladder itself.
+func ackWait() time.Duration { return backoff[0] }
+
+// wanted is the consumer this code asks for. It is one value because the
+// subscription below and reconcile have to ask for the same thing: two lists of
+// the same settings is how a consumer comes to differ from the code that
+// created it.
+func wanted(durable, name string) []nats.SubOpt {
+	return []nats.SubOpt{
+		nats.Durable(durable), nats.ManualAck(), nats.AckExplicit(), nats.DeliverAll(),
+		nats.AckWait(ackWait()), nats.MaxDeliver(maxDeliveries), nats.BackOff(backoff),
+		nats.BindStream(stream),
+	}
+}
+
+// reconcile brings a stored consumer into line with what this code asks for,
+// before the subscription that would otherwise be refused for the difference.
+//
+// A durable consumer outlives the process that created it, so its settings are
+// a second copy of three constants — and a deploy that changes one of them used
+// to mean a worker that could not boot until somebody deleted the consumer by
+// hand. NATS can change some of them on a live consumer and not others, so this
+// updates what it can and deletes what it cannot, naming the field either way.
+//
+// Deleting is safe and worth saying why: this code asks for DeliverAll, so a
+// recreated consumer replays the stream from the beginning, and every replay is
+// claimed in platformkit_handled before the handler runs. A handler that has
+// already run does not run again; one that never ran gets its event. That is
+// the same guarantee an ordinary redelivery has (docs/adr/0004), which is why
+// recreating a consumer is a log line rather than an operator's afternoon.
+func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
+	info, err := j.js.ConsumerInfo(stream, durable, nats.Context(ctx))
+	switch {
+	case errors.Is(err, nats.ErrConsumerNotFound):
+		return nil // The subscription below creates it, with the settings above.
+	case err != nil:
+		return fmt.Errorf("read the consumer: %w", err)
+	}
+
+	want := info.Config
+	var changed, immutable []string
+	if info.Config.AckWait != ackWait() {
+		changed = append(changed, fmt.Sprintf("ack_wait %s to %s", info.Config.AckWait, ackWait()))
+		want.AckWait = ackWait()
+	}
+	if info.Config.MaxDeliver != maxDeliveries {
+		changed = append(changed, fmt.Sprintf("max_deliver %d to %d", info.Config.MaxDeliver, maxDeliveries))
+		want.MaxDeliver = maxDeliveries
+	}
+	if !slices.Equal(info.Config.BackOff, backoff) {
+		changed = append(changed, fmt.Sprintf("backoff %v to %v", info.Config.BackOff, backoff))
+		want.BackOff = backoff
+	}
+	// The ones an update cannot carry: what a consumer filters, how it
+	// acknowledges, where it starts, and whether it is pushed at all. A
+	// consumer that differs in any of them is not this subscription's consumer
+	// wearing the wrong settings, it is somebody else's under the same name.
+	if info.Config.FilterSubject != subject+name {
+		immutable = append(immutable, fmt.Sprintf("filter_subject %q to %q", info.Config.FilterSubject, subject+name))
+	}
+	if info.Config.AckPolicy != nats.AckExplicitPolicy {
+		immutable = append(immutable, fmt.Sprintf("ack_policy %s to explicit", info.Config.AckPolicy))
+	}
+	if info.Config.DeliverPolicy != nats.DeliverAllPolicy {
+		immutable = append(immutable, fmt.Sprintf("deliver_policy %d to all", info.Config.DeliverPolicy))
+	}
+	if info.Config.DeliverSubject == "" {
+		immutable = append(immutable, "pull to push")
+	}
+
+	switch {
+	case len(immutable) > 0:
+		slog.WarnContext(ctx, "events: the stored consumer differs in a setting NATS cannot change; deleting it so this subscription creates it again",
+			"durable", durable, "fields", immutable, "also", changed)
+		if err := j.js.DeleteConsumer(stream, durable, nats.Context(ctx)); err != nil {
+			return fmt.Errorf("delete the drifted consumer: %w", err)
+		}
+	case len(changed) > 0:
+		slog.InfoContext(ctx, "events: reconciling the stored consumer with this build",
+			"durable", durable, "fields", changed)
+		if _, err := j.js.UpdateConsumer(stream, &want, nats.Context(ctx)); err != nil {
+			return fmt.Errorf("update the drifted consumer: %w", err)
+		}
+	}
+	return nil
+}
 
 func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Sink) error {
+	if err := j.reconcile(ctx, durable, name); err != nil {
+		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
+	}
 	sub, err := j.js.Subscribe(subject+name, func(msg *nats.Msg) {
 		var ev Event
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
@@ -108,9 +210,7 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Si
 		slog.WarnContext(ctx, "events: handler failed, redelivering",
 			"event", ev.Name, "id", ev.ID, "error", err)
 		_ = msg.Nak()
-	}, nats.Durable(durable), nats.ManualAck(), nats.AckExplicit(), nats.DeliverAll(),
-		nats.AckWait(ackWait), nats.MaxDeliver(maxDeliveries), nats.BackOff(backoff),
-		nats.BindStream(stream))
+	}, wanted(durable, name)...)
 	if err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}

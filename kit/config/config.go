@@ -1,12 +1,14 @@
-// Package config is the one configuration surface: a YAML file, six environment
-// overrides, and a check that nothing needed is missing. There is no defaulting
-// layer and no reflection; a key that nothing reads does not belong here.
+// Package config is the one configuration surface: a YAML file, the environment
+// overrides, the overrides a composition passes to Load, and a check that
+// nothing needed is missing or malformed. There is no defaulting layer and no
+// reflection; a key that nothing reads does not belong here.
 package config
 
 import (
 	"bytes"
 	"fmt"
 	"net"
+	"net/mail"
 	"net/url"
 	"os"
 	"slices"
@@ -138,8 +140,66 @@ const (
 	DefaultFilesMaxBytes = 25 << 20
 )
 
-// Load reads path, applies the environment overrides, and validates the result.
-func Load(path string) (Config, error) {
+// keys is every string-valued key a deployment or a composition may set from
+// outside the file: its name, the environment variable that overrides it, where
+// it lives in a Config, and whether the application refuses to start without it.
+//
+// One table, because the three lists it replaced were the same list written
+// three times and drifted: a key the environment could override, a key Load
+// required, and a key an error message named. A composition's Set now reaches
+// exactly the keys the environment reaches, and an unknown name is refused
+// against this list rather than ignored.
+type key struct {
+	name     string
+	env      string
+	field    func(*Config) *string
+	required bool
+}
+
+var keys = []key{
+	{"server.addr", "PLATFORMKIT_SERVER_ADDR", func(c *Config) *string { return &c.Server.Addr }, true},
+	{"server.public_host", "PLATFORMKIT_SERVER_PUBLIC_HOST", func(c *Config) *string { return &c.Server.PublicHost }, true},
+	{"database.url", "PLATFORMKIT_DATABASE_URL", func(c *Config) *string { return &c.Database.URL }, true},
+	{"database.migrate_url", "PLATFORMKIT_DATABASE_MIGRATE_URL", func(c *Config) *string { return &c.Database.MigrateURL }, true},
+	{"nats.url", "PLATFORMKIT_NATS_URL", func(c *Config) *string { return &c.NATS.URL }, true},
+	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, true},
+	// The one secret in the surface with an override for a reason rather than
+	// for symmetry: rule 7 says never commit a secret, and config.yaml is a
+	// file somebody will commit.
+	{"auth.oidc.client_secret", "PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", func(c *Config) *string { return &c.Auth.OIDC.ClientSecret }, false},
+	// The second secret, for the same reason as the first.
+	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
+	// No environment override, and still overridable: the sender is a value a
+	// composition knows — one client, one from address — and a deployment that
+	// wrote it in the file wrote it once.
+	{"mail.from", "", func(c *Config) *string { return &c.Mail.From }, false},
+}
+
+// Override is one key a composition sets before the configuration is validated.
+type Override struct{ key, value string }
+
+// Set names a key — the same name the YAML file uses and the same name an error
+// message names — and the value a composition gives it.
+//
+// It exists because a client overlay that sets a host after Load has returned
+// sets a value nothing checked: validation has already run, so a host with a
+// scheme and a path in it becomes every link the application builds, and the
+// key the overlay was going to fill in has already been refused as empty. An
+// override belongs before validation or it is not an override, it is a
+// correction nobody read. See Load.
+func Set(name, value string) Override { return Override{key: name, value: value} }
+
+// Load reads path, applies the composition's overrides, then the environment's,
+// and validates the result.
+//
+// The order is the whole point of the signature. The file is what a deployment
+// wrote down; a composition's override is the value a client's overlay knows
+// and the file cannot ("this client is served at collect.example.com"); the
+// environment is last because it belongs to whoever is running the process, and
+// an override that code could silently outrank is an override that does
+// nothing — which is what PLATFORMKIT_SERVER_PUBLIC_HOST was in the flagship
+// binary. Validation runs after all three, on the values that will be used.
+func Load(path string, overrides ...Override) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
@@ -151,46 +211,45 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 
-	for _, o := range []struct {
-		env   string
-		field *string
-	}{
-		{"PLATFORMKIT_SERVER_ADDR", &c.Server.Addr},
-		{"PLATFORMKIT_SERVER_PUBLIC_HOST", &c.Server.PublicHost},
-		{"PLATFORMKIT_DATABASE_URL", &c.Database.URL},
-		{"PLATFORMKIT_DATABASE_MIGRATE_URL", &c.Database.MigrateURL},
-		{"PLATFORMKIT_NATS_URL", &c.NATS.URL},
-		{"PLATFORMKIT_LOG_LEVEL", &c.Log.Level},
-		// The one secret in the surface, and the one key that has an override
-		// for a reason rather than for symmetry: rule 7 says never commit a
-		// secret, and config.yaml is a file somebody will commit.
-		{"PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", &c.Auth.OIDC.ClientSecret},
-		// The second secret, for the same reason as the first.
-		{"PLATFORMKIT_MAIL_PASSWORD", &c.Mail.Password},
-	} {
-		if v, ok := os.LookupEnv(o.env); ok {
-			*o.field = v
+	for _, o := range overrides {
+		i := slices.IndexFunc(keys, func(k key) bool { return k.name == o.key })
+		if i < 0 {
+			names := make([]string, len(keys))
+			for j, k := range keys {
+				names[j] = k.name
+			}
+			return Config{}, fmt.Errorf("config %s: %q is not an overridable key; they are %s",
+				path, o.key, strings.Join(names, ", "))
+		}
+		*keys[i].field(&c) = o.value
+	}
+	for _, k := range keys {
+		if k.env == "" {
+			continue
+		}
+		if v, ok := os.LookupEnv(k.env); ok {
+			*k.field(&c) = v
 		}
 	}
 
-	for _, f := range []struct {
-		key   string
-		value string
-	}{
-		{"server.addr", c.Server.Addr},
-		{"server.public_host", c.Server.PublicHost},
-		{"database.url", c.Database.URL},
-		{"database.migrate_url", c.Database.MigrateURL},
-		{"nats.url", c.NATS.URL},
-		{"log.level", c.Log.Level},
-	} {
-		if f.value == "" {
-			return Config{}, fmt.Errorf("config %s: %s is empty", path, f.key)
+	for _, k := range keys {
+		if k.required && *k.field(&c) == "" {
+			return Config{}, fmt.Errorf("config %s: %s is empty", path, k.name)
 		}
 	}
 
 	if !slices.Contains(levels, c.Log.Level) {
 		return Config{}, fmt.Errorf("config %s: log.level is %q, one of %v", path, c.Log.Level, levels)
+	}
+	// A host, and not a URL. It is the key most likely to be written by a
+	// template or by an overlay rather than by a person, and the mistake is
+	// always the same one: "https://acme.example.com/" is what somebody writes
+	// when a key is called a host, and then every absolute link the application
+	// builds carries a scheme twice and a path in the middle. Refusing it here
+	// names the key; accepting it is a support conversation about broken mail.
+	if !validHost(c.Server.PublicHost) {
+		return Config{}, fmt.Errorf("config %s: server.public_host is %q; it is a host, optionally with a port, and not a URL",
+			path, c.Server.PublicHost)
 	}
 	// Both URLs are parsed here rather than by the driver, so a typo is a
 	// message naming the key instead of a dial error four steps later.
@@ -233,6 +292,23 @@ func Load(path string) (Config, error) {
 	return c, nil
 }
 
+// validHost reports whether h is a host — a name or an address, optionally with
+// a port — rather than a URL, a path or something with a space in it.
+//
+// It is spelled with url.Parse because that is the parser every consumer of the
+// value will use: a string this accepts is one that survives being put after
+// "https://" and before "/path".
+func validHost(h string) bool {
+	u, err := url.Parse("//" + h)
+	if err != nil || u.Host != h || u.Path != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	if host, port, err := net.SplitHostPort(h); err == nil {
+		return host != "" && port != "" && strings.IndexFunc(port, func(r rune) bool { return r < '0' || r > '9' }) < 0
+	}
+	return h != ""
+}
+
 // defaultSMTPPort is submission with STARTTLS, what a modern relay listens on.
 const defaultSMTPPort = 587
 
@@ -248,6 +324,13 @@ func (m *Mail) validate(path string) error {
 	}
 	if m.From == "" {
 		return fmt.Errorf("config %s: mail.from is empty; a message with no sender is refused by the far end", path)
+	}
+	// One bare address, because this is the envelope sender the SMTP session
+	// opens with (MAIL FROM) as well as the From header. A display name parses
+	// as an address and is refused by the relay hours later, in somebody else's
+	// log, which is the failure this key exists to avoid.
+	if a, err := mail.ParseAddress(m.From); err != nil || a.Address != m.From {
+		return fmt.Errorf("config %s: mail.from is %q; it is the envelope sender, so it is one bare address", path, m.From)
 	}
 	if m.Port == 0 {
 		m.Port = defaultSMTPPort
