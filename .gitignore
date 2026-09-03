@@ -4,8 +4,11 @@
 *.test
 *.out
 
-# Local configuration and secrets
+# Local configuration and secrets. config.yaml is unanchored for the same reason
+# data/ is, and apps/platformkit/config.yaml is named as well because that is
+# where somebody following the README's `cd apps/platformkit` puts one.
 config.yaml
+apps/platformkit/config.yaml
 .env
 
 # Dependencies. There is no generated stylesheet to ignore: the CSS is a Go
@@ -17,7 +20,12 @@ e2e/playwright-report/
 
 # Uploaded bytes. config.example.yaml puts them here, so a laptop needs no
 # absolute path and a container mounts a volume at it; see kit/config.Files.
-/data/
+#
+# Unanchored, because the path is relative to whatever the process's working
+# directory is: `make run` starts the app in apps/platformkit, so it writes
+# apps/platformkit/data/, and a root-anchored /data/ ignored none of it. A
+# review found an uploaded file staged for commit.
+data/
 
 # Scratch space
 .tmp/

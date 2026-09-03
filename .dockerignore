@@ -1,0 +1,32 @@
+# What the build context does not need, and what it must not carry.
+#
+# COPY . . in deploy/Dockerfile takes the whole directory, so without this the
+# image build ships the git history, whatever config.yaml a laptop has and
+# whatever a laptop has uploaded — into a layer, into a registry, and into every
+# `docker history` anybody runs. The build needs the Go tree and nothing else.
+
+# The history, and the credentials that may be in a remote URL.
+.git
+.github
+
+# A deployment's own configuration, which is git-ignored for the same reason:
+# it carries the database password.
+config.yaml
+.env
+
+# Uploaded bytes. config.example.yaml puts them here.
+data/
+
+# Dependencies and browser artefacts. The image runs no browser and no node.
+node_modules
+e2e/node_modules
+e2e/test-results
+e2e/playwright-report
+
+# Scratch space and editor junk.
+.tmp/
+.DS_Store
+*.swp
+
+# A build output somebody made on the host: the image builds its own.
+/platformkit

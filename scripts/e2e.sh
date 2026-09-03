@@ -97,7 +97,11 @@ for _ in $(seq 1 60); do
 done
 
 cd e2e
-[ -d node_modules ] || npm install --no-audit --no-fund
+# npm ci and not npm install: ci installs exactly what package-lock.json pins
+# and fails when the lock and the manifest disagree, which is what a gate wants.
+# install resolves afresh and rewrites the lock, so gate 10 could pass against a
+# Playwright nobody chose and leave the lock changed in somebody's working tree.
+[ -d node_modules ] || npm ci --no-audit --no-fund
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \
