@@ -432,8 +432,19 @@ func inputFieldWithSlots(
 	}
 	input = append(input, attrPairs(p.Attrs)...)
 	input = append(input, htmxAttrs(p.HTMXProps)...)
-	if p.Value != "" {
+	// A file input takes no value: no browser lets a page choose a file for
+	// somebody, and one that carried a value attribute would be a control the
+	// form submits nothing for.
+	if p.Value != "" && typ != "file" {
 		input = append(input, h.Value(p.Value))
+	}
+	if typ == "file" {
+		if p.Accept != "" {
+			input = append(input, g.Attr("accept", p.Accept))
+		}
+		if p.Multiple {
+			input = append(input, g.Attr("multiple", "multiple"))
+		}
 	}
 	if p.Placeholder != "" {
 		input = append(input, h.Placeholder(p.Placeholder))
@@ -537,7 +548,7 @@ func canonicalInputType(raw string) (string, bool) {
 	}
 	switch typ {
 	case "text", "email", "password", "number", "tel", "url", "search",
-		"date", "time", "datetime-local", "month", "week", "color", "hidden":
+		"date", "time", "datetime-local", "month", "week", "color", "hidden", "file":
 		return typ, true
 	default:
 		return typ, false
