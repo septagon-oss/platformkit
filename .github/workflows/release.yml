@@ -153,6 +153,7 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=semver,pattern={{version}}
+            type=semver,pattern=v{{version}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - id: build
@@ -173,7 +174,11 @@ jobs:
       - name: SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          image: ${{ env.IMAGE }}:${{ github.ref_name }}
+          # By digest, which is what was pushed, and with the registry
+          # credentials: a new package is private until the owner says otherwise.
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
           format: spdx-json
           output-file: platformkit-${{ github.ref_name }}.spdx.json
           upload-artifact: false
