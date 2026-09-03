@@ -1,0 +1,44 @@
+# What updates itself, and how often.
+#
+# Weekly rather than daily: a pull request a day is a pull request nobody reads,
+# and the gates that would catch a bad bump are the same gates either way. Three
+# ecosystems, because there are three sets of pinned versions in this repository
+# and a pin nobody updates is the reason the pin was a good idea and stopped
+# being one.
+#
+# There is no Docker ecosystem here. deploy/Dockerfile pins its base images by
+# digest with the tag beside them, and Dependabot's docker updater rewrites the
+# tag rather than the digest, so it would open a pull request that changes a
+# comment. The bases are bumped by hand, which the Dockerfile says how to do.
+version: 2
+updates:
+  # The Go modules the binary is built from. govulncheck in ci.yml is the other
+  # half of this: one says a version moved, the other says a version is
+  # reachable and dangerous.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+
+  # Playwright and its dependencies. They are gate 10's, so a bump that breaks
+  # them fails `make e2e` in the same pull request.
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+
+  # The actions, which are pinned by commit. Dependabot rewrites the SHA and the
+  # version comment together, which is the only sane way to keep a pinned action
+  # current: a pin somebody has to resolve by hand is a pin that goes stale.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore

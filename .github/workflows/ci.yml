@@ -17,7 +17,10 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Twenty, not ten. `make check` and `make e2e` together run a real Postgres,
+    # a real NATS and a browser, and a run that is cancelled at the deadline is a
+    # red tick that says nothing about the change.
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -32,9 +35,13 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      # Every action is pinned by commit, with the version it was beside it. A
+      # tag on somebody else's repository is a pointer they can move, and an
+      # action that moves is arbitrary code in a job holding this repository's
+      # token. release.yml pins the same way and RELEASE.md says so.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
 
@@ -92,11 +99,21 @@ jobs:
       - name: make check
         run: make check
 
+      # The dependencies, against the Go vulnerability database. It is a step
+      # rather than a gate in the Makefile because it needs the network and a
+      # laptop with no network is a laptop that can still run `make check`; and
+      # it is govulncheck rather than a scanner over the module graph because it
+      # reports the vulnerabilities this binary actually reaches, so a finding
+      # here is a finding somebody has to act on.
+      - name: govulncheck
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       # Gate 10. It runs after the other nine because it is the slowest and the
       # only one that needs a browser: a failure in gate 1 should not wait for a
       # download. The browser is chromium alone, because this is a gate and not
       # a compatibility matrix.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm

@@ -1,0 +1,9 @@
+# Who reviews what. One line, because there is one owner: this is a reference
+# architecture, and a repository whose whole claim is that one person can hold
+# the whole of it in their head does not have a directory somebody else owns.
+#
+# Replace the placeholder with the GitHub handle or team that owns the
+# repository. Until it is replaced this file matches nothing GitHub can resolve,
+# which is a review that never gets requested rather than one that gets
+# requested from the wrong person.
+* @OWNER-PLACEHOLDER
