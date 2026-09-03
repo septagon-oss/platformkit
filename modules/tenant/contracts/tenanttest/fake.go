@@ -96,8 +96,9 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 	return f.copy(t.ID)
 }
 
-// AddHost mirrors internal.Service.AddHost.
-func (f *Fake) AddHost(_ context.Context, _ db.Tx[db.System], id uuid.UUID, host string) (*contracts.Tenant, error) {
+// AddHost mirrors internal.Service.AddHost, primary and all: the list keeps the
+// primary host first, which is the same order the real one reads rows in.
+func (f *Fake) AddHost(_ context.Context, _ db.Tx[db.System], id uuid.UUID, host string, primary bool) (*contracts.Tenant, error) {
 	host, err := contracts.ValidHost(host)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
@@ -110,22 +111,48 @@ func (f *Fake) AddHost(_ context.Context, _ db.Tx[db.System], id uuid.UUID, host
 		return nil, crud.ErrNotFound
 	}
 	if owner, taken := f.hosts[host]; taken {
-		f.mu.Unlock()
-		if owner == id {
-			f.mu.Lock()
-			defer f.mu.Unlock()
-			return f.copy(id)
+		if owner != id {
+			f.mu.Unlock()
+			return nil, fmt.Errorf("%w: tenant_hosts_pkey", crud.ErrConflict)
 		}
-		return nil, fmt.Errorf("%w: tenant_hosts_pkey", crud.ErrConflict)
+		// A host the tenant already answers at. Promoting it is a change and
+		// adding it again is not, so only the first says anything.
+		if primary {
+			t.Hosts = order(t.Hosts, host)
+			f.tenants[id] = t
+		}
+		defer f.mu.Unlock()
+		return f.copy(id)
 	}
-	t.Hosts = append(slices.Clone(t.Hosts), host)
-	slices.Sort(t.Hosts)
+	t.Hosts = order(append(slices.Clone(t.Hosts), host), primaryOf(t.Hosts, host, primary))
 	f.tenants[id], f.hosts[host] = t, id
 	f.mu.Unlock()
 	f.record(contracts.EventHostAdded)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.copy(id)
+}
+
+// order is a host list with primary first and the rest by name, which is what
+// "is_primary DESC, host" means in the real one.
+func order(hosts []string, primary string) []string {
+	rest := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		if h != primary {
+			rest = append(rest, h)
+		}
+	}
+	slices.Sort(rest)
+	return append([]string{primary}, rest...)
+}
+
+// primaryOf is which host is the primary one after this addition: the new one
+// when it was asked for, and whichever held it otherwise.
+func primaryOf(was []string, host string, primary bool) string {
+	if primary || len(was) == 0 {
+		return host
+	}
+	return was[0]
 }
 
 // Suspend mirrors internal.Service.Suspend.

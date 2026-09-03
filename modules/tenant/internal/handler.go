@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 // path is the collection. The control plane is served on every tenant's host,
@@ -44,7 +45,7 @@ const path = "/api/v1/tenant/tenants"
 // system transaction cannot widen a tenant one: db.Detached is what says so out
 // loud. The consequence is written down where it matters — a tenant created
 // here is created whether or not the response afterwards reaches the caller.
-func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemToken) {
+func RegisterRoutes(api *httpx.API, svc contracts.Service, invite contracts.Inviter, token tenancy.SystemToken) {
 	system := func(ctx context.Context, fn func(context.Context, db.Tx[db.System]) error) error {
 		conn, ok := httpx.ConnFrom(ctx)
 		if !ok {
@@ -115,15 +116,50 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, token tenancy.SystemT
 		})
 
 	httpx.Register(api, op("add-host", http.MethodPost, path+"/{id}/hosts", http.StatusCreated, "Give a tenant another host",
-		"Adding a host the tenant already answers at changes nothing.",
+		"Adding a host the tenant already answers at changes nothing, unless it makes it the primary one. The primary host is what every absolute URL for this tenant is built on, so a link in a mail is a link to the name its people know.",
 		[]string{contracts.EventHostAdded}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *hostInput) (*itemOutput, error) {
 			out := &itemOutput{}
 			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
-				t, err := svc.AddHost(ctx, tx, in.ID, in.Body.Host)
+				t, err := svc.AddHost(ctx, tx, in.ID, in.Body.Host, in.Body.Primary)
 				out.Body = t
 				return err
+			})
+			return out, rest.Fault(err)
+		})
+
+	if invite == nil {
+		return
+	}
+	// The sixth route, and the one that makes the other five worth having.
+	//
+	// The control plane could create a tenant and could not put anybody in it.
+	// Every route that makes a user is a tenant route, authorized inside that
+	// tenant's own transaction, and the operator is at their own host — so a
+	// tenant created here had no first administrator and no way to get one
+	// except SQL, which is the answer that means the feature is missing.
+	//
+	// It is not "create a user in any tenant". The roles are this module's
+	// decision and not the caller's, no password crosses the boundary, and what
+	// is created is somebody invited: they cannot sign in until they have read
+	// the mail that user.invited causes. So the worst an operator can do with
+	// it is offer somebody a way into a tenant, which is what the control plane
+	// is for.
+	httpx.Register(api, op("invite", http.MethodPost, path+"/{id}/invite", http.StatusCreated,
+		"Give a tenant its first administrator",
+		"Creates an invited administrator in the named tenant and publishes user.invited, which is what mails them a link to choose a password. No password crosses the control plane, and the person cannot sign in until they have followed the link. Inviting an address the tenant already has is a conflict.",
+		[]string{usercontracts.EventInvited}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *inviteInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.Get(ctx, tx, in.ID)
+				if err != nil {
+					return err
+				}
+				out.Body = t
+				return invite.Invite(ctx, tx, t.ID, in.Body.Email, in.Body.DisplayName)
 			})
 			return out, rest.Fault(err)
 		})
@@ -161,7 +197,19 @@ type hostInput struct {
 	ID   uuid.UUID `path:"id" format:"uuid" doc:"The tenant's id"`
 	Body struct {
 		Host string `json:"host" minLength:"1" maxLength:"253" doc:"Another host this tenant answers at"`
+		// A tenant has exactly one primary host and it is the first one it was
+		// created with until somebody says otherwise, so this defaults to
+		// false: adding a name is not moving everybody's links to it.
+		Primary bool `json:"primary,omitempty" doc:"Make this the host absolute URLs for this tenant are built on"`
 	}
+}
+
+type inviteInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"The tenant to invite somebody into"`
+	Body struct {
+		Email       string `json:"email" format:"email" maxLength:"320" doc:"The address to invite" example:"ada@acme.example.com"`
+		DisplayName string `json:"displayName,omitempty" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
+	} `required:"true"`
 }
 
 type itemOutput struct {

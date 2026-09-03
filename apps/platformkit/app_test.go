@@ -43,8 +43,15 @@ import (
 const (
 	acmeHost   = "acme.localhost"
 	globexHost = "globex.localhost"
+	// initechHost is the third, and it exists for one claim: a tenant the
+	// control plane created gets a working administrator through the control
+	// plane, with no SQL and no shell. Acme's is the bootstrap's and Globex's
+	// is provisioned in-process, so neither of them could say it.
+	initechHost = "initech.localhost"
 
 	tasksPath   = "/api/v1/task/tasks"
+	usersPath   = "/api/v1/user/users"
+	invitePath  = "/api/v1/user/invitations"
 	tenantPath  = "/api/v1/tenant/tenants"
 	auditPath   = "/api/v1/audit/events"
 	noticePath  = "/api/v1/notification/notifications"
@@ -369,12 +376,62 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		t.Errorf("GET %s at an unknown host = %d, want 404", tasksPath, code)
 	}
 
+	// A tenant the control plane created, given its first administrator by the
+	// control plane. It is the hole E3.2's review found: every route that makes
+	// a user is a tenant route, authorized inside that tenant's own
+	// transaction, and the operator is at their own host — so a tenant created
+	// here had nobody in it and no way to get anybody in it except SQL, which
+	// is the answer that means the feature is missing.
+	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, tenantPath,
+		`{"slug":"initech","name":"Initech","host":"`+initechHost+`"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s for initech = %d %s, want 201", tenantPath, code, body)
+	}
+	initechID := uuid.MustParse(field(t, body, "id"))
+	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, tenantPath+"/"+initechID.String()+"/invite",
+		`{"email":"root@initech.localhost","displayName":"Root"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST the first administrator of initech = %d %s, want 201", code, body)
+	}
+	var first string
+	eventually(t, "initech's first administrator to be mailed a link", func() bool {
+		for _, sent := range box.Sent() {
+			if sent.To == "root@initech.localhost" {
+				first = sent.Body
+				return true
+			}
+		}
+		return false
+	})
+	// On initech's own host, not acme's and not the application's: the operator
+	// invited them from acme's host, and the link they follow is theirs.
+	if !strings.Contains(first, "http://"+initechHost+"/auth/reset") {
+		t.Errorf("the first administrator's link is not initech's own host:\n%s", first)
+	}
+	// No password crossed the control plane: the operator chose none, and this
+	// is where one is chosen.
+	if code, body = do(t, cfg, nil, http.MethodPost, initechHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, first)+`","new":"a chosen passphrase for initech"}`); code != http.StatusOK {
+		t.Fatalf("the first administrator's reset = %d %s, want 200", code, body)
+	}
+	boss := signIn(t, cfg, initechHost, "root@initech.localhost", "a chosen passphrase for initech")
+	// They administer their own tenant: listing its people needs user:read,
+	// which needs the admin role the invitation granted.
+	if code, body = do(t, cfg, boss, http.MethodGet, initechHost, usersPath, ""); code != http.StatusOK {
+		t.Errorf("GET %s as initech's first administrator = %d %s", usersPath, code, body)
+	}
+	// And nobody else's. The control plane handed over a tenant, not the
+	// installation.
+	if code, body = do(t, cfg, boss, http.MethodGet, initechHost, tenantPath, ""); code != http.StatusForbidden {
+		t.Errorf("initech's administrator reached the control plane = %d %s, want 403", code, body)
+	}
+
 	// Inviting somebody is the loop this stage closes: the user module creates
 	// a person with no password and publishes user.invited, the auth module
-	// subscribes to that, issues a one-time token and asks the notification
-	// module to mail the link, and the worker sends it. Nothing in the user
-	// module knows any of that happens.
-	invite(t, cfg, c, "grace@acme.localhost")
+	// subscribes to that, issues a one-time token and mails the link itself —
+	// the one message in this application that must not become a row on its way
+	// out. Nothing in the user module knows any of that happens.
+	invite(t, cfg, admin, "grace@acme.localhost")
 	var link string
 	eventually(t, "the invitation to be mailed", func() bool {
 		for _, sent := range box.Sent() {
@@ -741,34 +798,23 @@ func grant(t *testing.T, cfg config.Config, tenantID uuid.UUID, email string) {
 	}
 }
 
-// invite creates somebody with no password, through the service main holds.
+// invite creates somebody with no password, over the wire.
 //
-// It is the service and not a route because inviting is user.Service.Invite,
-// and the module mounts no route for it: the generic create publishes
-// user.user.created and this flow is driven by user.invited. That the two are
-// different events is the user module's business; what this test is about is
-// what the auth module does when it sees the second one.
-func invite(t *testing.T, cfg config.Config, c composition, email string) {
+// It used to reach for the service main holds, because the module mounted no
+// route for inviting: POST to the users collection publishes user.user.created,
+// which nothing subscribes to, so an administrator who used it made a person
+// who existed, could not sign in and was never told. There is a route now, and
+// a test that drives the flow through it is the one that would notice if it
+// went away.
+func invite(t *testing.T, cfg config.Config, client *http.Client, email string) {
 	t.Helper()
-	conn, err := db.Open(t.Context(), cfg.Database.URL)
-	if err != nil {
-		t.Fatalf("open: %v", err)
+	code, body := do(t, cfg, client, http.MethodPost, acmeHost, invitePath,
+		`{"email":"`+email+`","displayName":"Grace"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s for %s = %d %s, want 201", invitePath, email, code, body)
 	}
-	defer conn.Close()
-	var acme tenancy.Tenant
-	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
-		return err
-	})
-	if err != nil {
-		t.Fatalf("resolve %s: %v", acmeHost, err)
-	}
-	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.users.Invite(ctx, tx, email, "")
-		return err
-	})
-	if err != nil {
-		t.Fatalf("invite %s: %v", email, err)
+	if !strings.Contains(body, `"status":"invited"`) {
+		t.Errorf("the invited user is %s, want one who cannot sign in yet", body)
 	}
 }
 

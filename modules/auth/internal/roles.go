@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -122,13 +120,14 @@ func checked(permissions []string, declared []tenancy.Grant, tenant tenancy.Tena
 // Undeclared reports, for one tenant, every role row naming a permission the
 // application does not define.
 //
-// kit/app calls it at boot, once, under system access, and logs what it finds.
-// It is a warning and not a refusal: the rows belong to customers and were
-// legal when they were written — a module removed from a composition takes its
-// permissions with it — so a boot that refused would be an installation a
-// deployment could brick by dropping a module. What it buys is that "this role
-// grants nothing and nobody can see why" is a line in the log of the deploy
-// that caused it rather than a support conversation months later.
+// The hourly sweep is its one caller, once per tenant, inside that tenant's own
+// transaction; it logs what it finds. It is a warning and not a refusal: the
+// rows belong to customers and were legal when they were written — a module
+// removed from a composition takes its permissions with it — so a sweep that
+// refused would turn dropping a module into an installation somebody has to
+// repair by hand. What it buys is that "this role grants nothing and nobody can
+// see why" is a line in the log within the hour of the deploy that caused it
+// rather than a support conversation months later.
 func Undeclared(roles []*contracts.Role, declared []tenancy.Grant) map[string][]string {
 	known := make(map[string]bool, len(declared)+1)
 	known[contracts.Wildcard] = true
@@ -144,15 +143,4 @@ func Undeclared(roles []*contracts.Role, declared []tenancy.Grant) map[string][]
 		}
 	}
 	return out
-}
-
-// RolesOf is every role of one named tenant, read from a cross-tenant
-// transaction. It is the boot check's query and has no other caller: a request
-// reads roles through Roles, in its own tenant's transaction, under the policy.
-func RolesOf(tx db.Tx[db.System], tenantID uuid.UUID) ([]*contracts.Role, error) {
-	var out []*contracts.Role
-	if err := tx.DB().Where("tenant_id = ?", tenantID).Order("name").Find(&out).Error; err != nil {
-		return nil, fmt.Errorf("auth: read the roles of %s: %w", tenantID, err)
-	}
-	return out, nil
 }

@@ -158,6 +158,33 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
+		"a query cannot re-address a list": func(t *testing.T, f Fixture) {
+			// The recipient is the caller, resolved from the principal, and it
+			// is not a parameter. Both implementations set the filter rather
+			// than merging it, so there is no shape of Query that lists
+			// somebody else's rows — which is what lets the route be SignedIn
+			// with no permission at all. An implementation that honoured the
+			// caller's filter would turn one signed-in person into a reader of
+			// everybody's notifications, and it would look like paging.
+			if _, err := f.Service.Notify(f.Ctx, f.Tx, notice("Ada's")); err != nil {
+				t.Fatalf("Notify Ada: %v", err)
+			}
+			hers := notice("Bob's")
+			hers.Recipient = Bob
+			if _, err := f.Service.Notify(f.Ctx, f.Tx, hers); err != nil {
+				t.Fatalf("Notify Bob: %v", err)
+			}
+			rows, total, err := f.Service.ListFor(f.Ctx, f.Tx, Bob, crud.Query{
+				Filter: map[string]any{"recipientId": Ada},
+			})
+			if err != nil {
+				t.Fatalf("ListFor with a filter of the caller's own: %v", err)
+			}
+			if total != 1 || len(rows) != 1 || rows[0].RecipientID != Bob {
+				t.Fatalf("asking for Ada's rows as Bob returned %d of %d; the list is the caller's", len(rows), total)
+			}
+		},
+
 		"a list is one person's, newest first": func(t *testing.T, f Fixture) {
 			for _, title := range []string{"first", "second"} {
 				if _, err := f.Service.Notify(f.Ctx, f.Tx, notice(title)); err != nil {

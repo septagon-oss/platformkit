@@ -34,6 +34,13 @@ type Deps struct {
 	// runs when the worker gets to it, and the administrator this same
 	// transaction creates tries to sign in before that.
 	OnCreate []contracts.Hook
+
+	// Invite gives a tenant its first administrator. A composition that wires
+	// none does not mount the route, because a control plane that can create a
+	// tenant nobody can ever sign in to is a control plane that creates
+	// wreckage — and answering 501 to a route that exists is worse than not
+	// having it.
+	Invite contracts.Inviter
 }
 
 // Module is the manifest, and the service it is built on.
@@ -49,6 +56,13 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Name:        "tenant",
 		Permissions: permissions,
 		Events:      []string{contracts.EventCreated, contracts.EventSuspended, contracts.EventHostAdded},
+		// The invitation route publishes user.invited, which the user module
+		// declares and the auth module subscribes to. It is not listed above
+		// because a module's Events are the ones it owns: kit/app checks a
+		// route's declaration against the union of every manifest, so an event
+		// somebody else owns is still an event a subscriber can be written
+		// against.
+
 		Nav: []module.NavEntry{
 			{Label: "Tenants", Path: "/admin/tenant/tenants", Permission: contracts.PermissionTenantManage},
 		},
@@ -59,7 +73,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		// The one call in the application that takes cross-tenant access, at
 		// the one moment the kernel offers it, in the manifest a reviewer is
 		// already reading. See docs/adr/0006.
-		Routes: func(api *httpx.API) { internal.RegisterRoutes(api, svc, api.SystemToken()) },
+		Routes: func(api *httpx.API) { internal.RegisterRoutes(api, svc, deps.Invite, api.SystemToken()) },
 	}
 }
 
