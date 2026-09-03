@@ -70,3 +70,41 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
   // rendering it: the request is never made.
   await expect(page.getByLabel('Title')).toBeFocused();
 });
+
+// The theme is the one piece of state this application keeps in the browser,
+// and a default is not a piece of state. theme.js used to apply-and-store on
+// every load, so a person who never touched the toggle came back to a
+// remembered choice they had not made — and an installation shipping a dark
+// palette of its own was overridden by a stored "light" nobody chose.
+//
+// localStorage is replaced here rather than read, because the claim is about
+// what is written and "nothing was written" cannot be observed from what is
+// there.
+test('a page stores no theme until somebody chooses one', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as unknown as { __writes: string[] }).__writes = [];
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        length: 0,
+        key: () => null,
+        getItem: () => null,
+        removeItem: () => {},
+        clear: () => {},
+        setItem: (k: string, v: string) => {
+          (window as unknown as { __writes: string[] }).__writes.push(`${k}=${v}`);
+        },
+      },
+    });
+  });
+  const written = () => page.evaluate(() => (window as unknown as { __writes: string[] }).__writes);
+
+  await page.goto('/admin');
+  expect(await page.evaluate(() => document.documentElement.hasAttribute('data-theme'))).toBe(false);
+  expect(await written()).toEqual([]);
+
+  // A click is a choice: it applies, and only then is it remembered.
+  await page.getByRole('button', { name: 'Switch between the light and dark theme' }).click();
+  expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toMatch(/^(light|dark)$/);
+  expect(await written()).toHaveLength(1);
+});

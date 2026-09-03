@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -29,11 +30,10 @@ import (
 const tenantsPath = adminRoot + "/tenant/tenants"
 
 func Mount(api *httpx.API, s Shell) {
-	s.generated = map[string]bool{}
-	s.operatorOnly = map[string]bool{}
+	s.operatorOnly = map[string]bool{tenantsPath: true}
 	// Static, so a stylesheet and five scripts cost no tenant, no transaction
 	// and no authorization: they are the same bytes for everybody.
-	api.Static(assetPrefix, ui.Assets())
+	api.Static(assetPrefix, ui.Assets(s.Theme))
 
 	resources := api.Resources()
 	sort.Slice(resources, func(i, j int) bool { return screenPath(resources[i]) < screenPath(resources[j]) })
@@ -41,6 +41,25 @@ func Mount(api *httpx.API, s Shell) {
 		s.mountScreens(api, r)
 	}
 	s.pages(api, resources)
+
+	// What the application answers, asked of the kernel's own recording rather
+	// than remembered while mounting: a hand-written page counts as much as a
+	// generated one, and there is no second list to keep in step.
+	s.served = map[string]bool{}
+	for _, op := range api.Recorded() {
+		if op.Method == http.MethodGet {
+			s.served[op.Path] = true
+		}
+	}
+	// A nav entry nothing answers is a mistake in a module's manifest, and it
+	// is reported here, once, at boot — not rendered as a disabled row that
+	// every person using the application sees for the life of the deployment.
+	for _, entry := range s.Nav {
+		if !s.served[entry.Path] {
+			slog.Default().Warn("admin: a nav entry leads to a path no route serves",
+				"label", entry.Label, "path", entry.Path, "permission", entry.Permission)
+		}
+	}
 }
 
 // pages are the screens no schema describes: the way in, the way around, and
@@ -66,8 +85,6 @@ func (s *Shell) pages(api *httpx.API, resources []httpx.Resource) {
 	// wildcard they hold in their own tenant must not answer a question about
 	// everybody's. The kernel refuses it before the Authorizer is asked; the
 	// sidebar drops the link for the same reason, so the two agree.
-	s.generated[tenantsPath] = true
-	s.operatorOnly[tenantsPath] = true
 	html(api, s, "admin-tenants", http.MethodGet, tenantsPath, "The tenants of this installation",
 		httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
 		func(ctx context.Context, _ *emptyInput) (*page, error) { return s.tenants(ctx) })
@@ -109,11 +126,21 @@ func (s *Shell) login(ctx context.Context) g.Node {
 	)
 }
 
-// dashboard is what there is and how much of it: one card per resource with the
-// count its own list route would report, and the health of the instance.
+// dashboard is what there is and how much of it: one card per resource the
+// caller may read, with the count its own list route would report, and the
+// health of the instance.
+//
+// Readable is asked before the card is built rather than after the count came
+// back empty: a card saying "— tasks" for something a person may not look at is
+// still a card telling them it exists. The kernel refuses the list either way —
+// see httpx.RegisterResource — so this is what the refusal should look like on
+// a page, not the thing that makes it safe.
 func (s *Shell) dashboard(ctx context.Context, resources []httpx.Resource) g.Node {
 	cards := make([]g.Node, 0, len(resources))
 	for _, r := range resources {
+		if !r.Readable(ctx) {
+			continue
+		}
 		count := "—"
 		// The count is the resource's own list, asking for no rows: the total
 		// is what a page carries beside them, so this is one COUNT and not a
@@ -122,7 +149,7 @@ func (s *Shell) dashboard(ctx context.Context, resources []httpx.Resource) g.Nod
 			count = strconv.FormatInt(total, 10)
 		}
 		cards = append(cards, components.Card(components.CardProps{
-			Title: count + " " + humanize(r.Entity) + "s", Description: "In " + r.Module,
+			Title: count + " " + rest.Humanize(r.Entity) + "s", Description: "In " + r.Module,
 			Clickable: true, Href: screenPath(r),
 		}))
 	}
@@ -173,7 +200,7 @@ func (s *Shell) health(ctx context.Context) g.Node {
 					return nil
 				}
 				return components.Badge(components.BadgeProps{
-					Label: text(row.Cells["state"]), Tone: text(row.Cells["tone"]), Dot: true})
+					Label: rest.Text(row.Cells["state"]), Tone: rest.Text(row.Cells["tone"]), Dot: true})
 			},
 		}),
 	)
@@ -222,7 +249,11 @@ func (s *Shell) gallery(ctx context.Context) g.Node {
 		body = append(body, components.Card(components.CardProps{Title: example.Name}),
 			h.Div(g.Attr("data-gallery-example", example.Name), example.Node))
 	}
-	return s.page(ctx, "Components",
+	// The one page that links the second stylesheet: the components below are
+	// the ones no other screen renders, so their rules are not in app.css and
+	// every other page is that much smaller. See ui.GalleryStylesheet.
+	return s.frame(ctx, "Components",
+		[]g.Node{h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.GalleryFingerprint()))},
 		components.Toolbar(components.ToolbarProps{
 			Title: "Components", Subtitle: "Every component this application renders, once each."}),
 		components.Stack(components.StackProps{Gap: "6"}, body...),
@@ -273,13 +304,13 @@ func (s *Shell) tenants(ctx context.Context) (*page, error) {
 				switch c.Key {
 				case "status":
 					tone := "success"
-					if text(row.Cells["status"]) != tenantcontracts.StatusActive {
+					if rest.Text(row.Cells["status"]) != tenantcontracts.StatusActive {
 						tone = "warning"
 					}
-					return components.Badge(components.BadgeProps{Label: text(row.Cells["status"]), Tone: tone, Dot: true})
+					return components.Badge(components.BadgeProps{Label: rest.Text(row.Cells["status"]), Tone: tone, Dot: true})
 				case "hosts":
 					var links []g.Node
-					for _, host := range strings.Split(text(row.Cells["hosts"]), ", ") {
+					for _, host := range strings.Split(rest.Text(row.Cells["hosts"]), ", ") {
 						links = append(links, components.Link(components.LinkProps{
 							Label: host, Href: "https://" + host + adminRoot, External: true}))
 					}
@@ -297,7 +328,7 @@ func (s *Shell) tenants(ctx context.Context) (*page, error) {
 // bare is a page with no navigation: the sign-in screen, shown to somebody who
 // has none yet.
 func (s *Shell) bare(title string, body ...g.Node) g.Node {
-	return h.HTML(h.Lang("en"), head(title),
+	return h.HTML(h.Lang("en"), s.head(title),
 		h.Body(components.Container(components.ContainerProps{MaxWidth: "sm"},
 			components.Stack(components.StackProps{Gap: "6"}, body...))))
 }

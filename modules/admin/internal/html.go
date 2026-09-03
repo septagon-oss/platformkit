@@ -6,19 +6,16 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	g "maragu.dev/gomponents"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
-	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
@@ -30,10 +27,13 @@ type Shell struct {
 	Authorize httpx.Authorizer
 	Tenants   tenantcontracts.Service
 	Token     tenancy.SystemToken
-	// generated are the paths the screens took, so the sidebar can tell a link
-	// that leads somewhere from one that does not; operatorOnly are the ones
-	// only the operator's own tenant may follow.
-	generated    map[string]bool
+	// Theme is the installation's two palettes: the one thing about the look of
+	// this shell that belongs to whoever runs it. See design.Pair.
+	Theme design.Pair
+	// served is every path this application answers a GET on, so the sidebar
+	// shows a link only when there is something at the end of it; operatorOnly
+	// are the ones only the operator's own tenant may follow.
+	served       map[string]bool
 	operatorOnly map[string]bool
 }
 
@@ -80,11 +80,17 @@ func redirect(ctx context.Context, to string) *page {
 func html[I any](api *httpx.API, s *Shell, id, method, path, summary string, auth httpx.Auth,
 	handler func(context.Context, *I) (*page, error),
 ) {
-	httpx.Register(api, huma.Operation{
+	op := huma.Operation{
 		OperationID: id, Method: method, Path: path, Summary: summary,
 		Tags: []string{"admin"}, Hidden: true,
 		Errors: []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
-	}, auth, func(ctx context.Context, in *I) (*page, error) {
+	}
+	// Every page here says where its sign-in form is, so a person who follows a
+	// bookmark into the shell while signed out is sent to it rather than shown
+	// a JSON document about their own anonymity. The API routes beside them say
+	// nothing and keep the problem document. See httpx.SignInExtension.
+	httpx.SignIn(&op, adminRoot+"/login")
+	httpx.Register(api, op, auth, func(ctx context.Context, in *I) (*page, error) {
 		out, err := handler(ctx, in)
 		var to seeOther
 		switch {
@@ -133,103 +139,3 @@ type (
 	}
 	emptyInput struct{}
 )
-
-// values reads a submitted form into the shape the resource's write takes,
-// typed by the schema rather than by guesswork: a number field arrives as a
-// number, a checkbox that was not ticked arrives as false rather than as
-// missing, and a blank optional field is left out so a nullable column stays
-// null instead of becoming the zero time.
-func values(body []byte, fields []crud.Field) (map[string]any, error) {
-	form, err := url.ParseQuery(string(body))
-	if err != nil {
-		return nil, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
-	}
-	out := map[string]any{}
-	for _, f := range fields {
-		if f.ReadOnly {
-			continue
-		}
-		raw, sent := form[f.Name]
-		if f.Type == crud.TypeBool {
-			// An unticked checkbox sends nothing at all, which is the one case
-			// where absence is a value.
-			out[f.Name] = sent && raw[0] != "" && raw[0] != "false"
-			continue
-		}
-		if !sent {
-			continue
-		}
-		text := strings.TrimSpace(raw[0])
-		if text == "" {
-			continue
-		}
-		switch f.Type {
-		case crud.TypeInt:
-			n, err := strconv.ParseInt(text, 10, 64)
-			if err != nil {
-				return nil, invalid(f.Name, "is not a whole number")
-			}
-			out[f.Name] = n
-		case crud.TypeFloat:
-			n, err := strconv.ParseFloat(text, 64)
-			if err != nil {
-				return nil, invalid(f.Name, "is not a number")
-			}
-			out[f.Name] = n
-		case crud.TypeTime:
-			// A datetime-local control sends "2026-09-02T14:30" and the API
-			// speaks RFC 3339, so the zone the browser did not send is UTC.
-			if len(text) == 16 {
-				text += ":00"
-			}
-			if !strings.HasSuffix(text, "Z") && !strings.Contains(text[10:], "+") {
-				text += "Z"
-			}
-			out[f.Name] = text
-		case crud.TypeList:
-			parts := strings.Split(text, ",")
-			list := make([]string, 0, len(parts))
-			for _, p := range parts {
-				if p = strings.TrimSpace(p); p != "" {
-					list = append(list, p)
-				}
-			}
-			out[f.Name] = list
-		default:
-			out[f.Name] = text
-		}
-	}
-	return out, nil
-}
-
-func invalid(field, why string) error {
-	p := problem.New(http.StatusUnprocessableEntity, field+" "+why)
-	p.Errors = []string{field + ": " + why}
-	return p
-}
-
-// fieldErrors reads a problem back into the fields it is about, so a form marks
-// the control rather than only shouting above it. kit/problem's Errors carry
-// "field: message"; a Detail that names a field is matched too, because
-// kit/crud's own messages are prose that names it.
-func fieldErrors(err error, fields []crud.Field) (map[string]string, string) {
-	p, ok := err.(*problem.Problem)
-	if !ok {
-		return nil, err.Error()
-	}
-	out := map[string]string{}
-	for _, e := range p.Errors {
-		if name, message, found := strings.Cut(e, ": "); found {
-			if _, known := crud.FieldNamed(fields, name); known {
-				out[name] = message
-			}
-		}
-	}
-	detail := strings.TrimPrefix(p.Detail, "crud: invalid: ")
-	for _, f := range fields {
-		if _, taken := out[f.Name]; !taken && strings.Contains(detail, f.Name) {
-			out[f.Name] = detail
-		}
-	}
-	return out, detail
-}

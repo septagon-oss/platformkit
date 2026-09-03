@@ -6,13 +6,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
-	"unicode"
 
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/ui/components"
 )
 
@@ -29,7 +28,6 @@ const perPage = crud.DefaultLimit
 // entity to this application adds seven screens and no code.
 func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 	at := screenPath(r)
-	s.generated[at] = true
 	id := "admin-" + r.Module + "-" + r.Entity + "-"
 	read, write := httpx.Permission(r.Read), httpx.Permission(r.Write)
 	title := strings.ToUpper(r.Entity[:1]) + r.Entity[1:]
@@ -59,20 +57,23 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 
 	html(api, s, id+"new", http.MethodGet, at+"/new", "The new-"+r.Entity+" form", write,
 		func(ctx context.Context, _ *emptyInput) (*page, error) {
-			return ok(s.form(ctx, r, at, "New "+r.Entity, at, nil, nil, ""))
+			return ok(s.form(ctx, r, at, "New "+r.Entity, at, nil, nil, "", true))
 		})
 
 	html(api, s, id+"create", http.MethodPost, at, "Create a "+r.Entity, write,
 		func(ctx context.Context, in *formInput) (*page, error) {
-			sent, err := values(in.RawBody, r.Schema.Fields)
+			// Immutable is refused here rather than dropped: this form does not
+			// render those fields at all, so a value for one did not come from
+			// it. See rest.Values.
+			sent, err := rest.Values(in.RawBody, r.Schema.Fields, r.Immutable)
 			if err == nil {
 				var row map[string]any
 				if row, err = r.Create(ctx, sent); err == nil {
-					return nil, seeOther(at + "/" + text(row["id"]))
+					return nil, seeOther(at + "/" + rest.Text(row["id"]))
 				}
 			}
-			errs, detail := fieldErrors(err, r.Schema.Fields)
-			return unprocessable(s.form(ctx, r, at, "New "+r.Entity, at, sent, errs, detail))
+			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
+			return unprocessable(s.form(ctx, r, at, "New "+r.Entity, at, sent, errs, detail, true))
 		})
 
 	html(api, s, id+"read", http.MethodGet, at+"/{id}", "One "+r.Entity, read,
@@ -82,9 +83,13 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 				return nil, err
 			}
 			item := at + "/" + in.ID.String()
-			return ok(s.page(ctx, title,
-				breadcrumb(title+"s", at, label(row, r.Schema.Fields)),
-				components.Toolbar(components.ToolbarProps{Title: label(row, r.Schema.Fields)},
+			// The document's title is the row's own name, not the entity's: a
+			// browser tab, a bookmark and a history entry all read it, and
+			// eleven of them saying "Task" is eleven of them saying nothing.
+			named := label(row, r.Schema.Fields)
+			return ok(s.page(ctx, named,
+				breadcrumb(title+"s", at, named),
+				components.Toolbar(components.ToolbarProps{Title: named},
 					components.Button(components.ButtonProps{Label: "Edit", Href: item + "/edit"}),
 					deleteForm(item, r.Entity)),
 				details(r, row),
@@ -97,20 +102,20 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 			if err != nil {
 				return nil, err
 			}
-			return ok(s.form(ctx, r, at, "Edit "+r.Entity, at+"/"+in.ID.String(), row, nil, ""))
+			return ok(s.form(ctx, r, at, "Edit "+r.Entity, at+"/"+in.ID.String(), row, nil, "", false))
 		})
 
 	html(api, s, id+"update", http.MethodPost, at+"/{id}", "Update a "+r.Entity, write,
 		func(ctx context.Context, in *itemFormInput) (*page, error) {
 			item := at + "/" + in.ID.String()
-			sent, err := values(in.RawBody, r.Schema.Fields)
+			sent, err := rest.Values(in.RawBody, r.Schema.Fields, nil)
 			if err == nil {
-				if _, err = r.Update(ctx, in.ID, writable(sent, r)); err == nil {
+				if _, err = r.Update(ctx, in.ID, rest.Writable(sent, r.Immutable)); err == nil {
 					return nil, seeOther(item)
 				}
 			}
-			errs, detail := fieldErrors(err, r.Schema.Fields)
-			return unprocessable(s.form(ctx, r, at, "Edit "+r.Entity, item, sent, errs, detail))
+			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
+			return unprocessable(s.form(ctx, r, at, "Edit "+r.Entity, item, sent, errs, detail, false))
 		})
 
 	html(api, s, id+"delete", http.MethodPost, at+"/{id}/delete", "Delete a "+r.Entity, write,
@@ -120,19 +125,6 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 			}
 			return nil, seeOther(at)
 		})
-}
-
-// writable drops the fields a command of its own owns. The update route refuses
-// them with a 422 naming the field, which is right for an API and wrong for a
-// form that rendered them read-only and then posted them back.
-func writable(sent map[string]any, r httpx.Resource) map[string]any {
-	out := make(map[string]any, len(sent))
-	for name, v := range sent {
-		if !slices.Contains(r.Immutable, name) {
-			out[name] = v
-		}
-	}
-	return out
 }
 
 // table is the list screen's rows: the field a row is known by first, as the
@@ -152,16 +144,16 @@ func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.No
 	columns := make([]components.TableColumn, 0, len(shown))
 	for i, f := range shown {
 		columns = append(columns, components.TableColumn{
-			Key: f.Name, Label: humanize(f.Name), Sortable: f.Type != crud.TypeList, Primary: i == 0,
+			Key: f.Name, Label: rest.FieldLabel(f), Sortable: f.Type != crud.TypeList, Primary: i == 0,
 		})
 	}
 	out := make([]components.TableRow, 0, len(rows))
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
-			cells[f.Name] = display(f, row[f.Name])
+			cells[f.Name] = rest.Display(f, row[f.Name])
 		}
-		out = append(out, components.TableRow{ID: text(row["id"]), Cells: cells})
+		out = append(out, components.TableRow{ID: rest.Text(row["id"]), Cells: cells})
 	}
 	return components.TableWithSlots(components.TableProps{
 		HTMXProps: components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
@@ -189,7 +181,7 @@ func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.No
 				return nil
 			}
 			return components.Link(components.LinkProps{
-				Label: text(row.Cells[c.Key]), Href: at + "/" + row.ID})
+				Label: rest.Text(row.Cells[c.Key]), Href: at + "/" + row.ID})
 		},
 	})
 }
@@ -201,7 +193,7 @@ func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.No
 func details(r httpx.Resource, row map[string]any) g.Node {
 	items := make([]components.DetailItem, 0, len(r.Schema.Fields))
 	for _, f := range r.Schema.Fields {
-		items = append(items, components.DetailItem{Label: humanize(f.Name), Value: display(f, row[f.Name])})
+		items = append(items, components.DetailItem{Label: rest.FieldLabel(f), Value: rest.Display(f, row[f.Name])})
 	}
 	return components.DetailList(components.DetailListProps{Items: items})
 }
@@ -210,7 +202,7 @@ func details(r httpx.Resource, row map[string]any) g.Node {
 // from the field's type and its ui:"widget:" tag, with the fields a command
 // owns shown read-only so a person can see them and not change them here.
 func (s *Shell) form(ctx context.Context, r httpx.Resource, at, title, action string,
-	row map[string]any, errs map[string]string, detail string,
+	row map[string]any, errs map[string]string, detail string, create bool,
 ) g.Node {
 	body := []g.Node{}
 	if detail != "" {
@@ -221,13 +213,21 @@ func (s *Shell) form(ctx context.Context, r httpx.Resource, at, title, action st
 		if f.ReadOnly {
 			continue
 		}
-		body = append(body, control(f, text(row[f.Name]), errs[f.Name], slices.Contains(r.Immutable, f.Name)))
+		immutable := slices.Contains(r.Immutable, f.Name)
+		// A row that does not exist yet cannot have a value for a field only a
+		// command sets, and this form is not that command: a read-only control
+		// with a note under it is furniture. rest.Values refuses one that is
+		// submitted anyway, so hiding it is not the only thing stopping it.
+		if create && immutable {
+			continue
+		}
+		body = append(body, control(f, start(f, row, create), errs[f.Name], immutable))
 	}
 	body = append(body, components.FormActions(components.FormActionsProps{},
 		components.Button(components.ButtonProps{Label: "Cancel", Variant: "secondary", Href: at}),
 		components.Button(components.ButtonProps{Label: "Save", Type: "submit"})))
 	return s.page(ctx, title,
-		breadcrumb(humanize(r.Entity)+"s", at, title),
+		breadcrumb(rest.Humanize(r.Entity)+"s", at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{ID: "screen-form"},
@@ -243,24 +243,29 @@ func (s *Shell) form(ctx context.Context, r httpx.Resource, at, title, action st
 // from schemas": a select exists because the struct says enum, not because
 // somebody wrote a select.
 func control(f crud.Field, value, fieldErr string, immutable bool) g.Node {
-	label, name := humanize(f.Name), f.Name
+	label, name := rest.FieldLabel(f), f.Name
 	base := components.InputProps{
 		Name: name, Label: label, Value: value, Error: fieldErr,
+		HelpText: hint(rest.FieldHelp(f), immutableNote(immutable)),
 		Required: f.Required, ReadOnly: immutable, FullWidth: true,
-	}
-	if immutable {
-		base.HelpText = "Changed by a command of its own, not by this form."
 	}
 	switch {
 	case len(f.Enum) > 0 || f.Widget == "select":
 		options := make([]components.SelectOption, 0, len(f.Enum))
 		for _, v := range f.Enum {
-			options = append(options, components.SelectOption{Label: humanize(v), Value: v})
+			options = append(options, components.SelectOption{Label: rest.Humanize(v), Value: v})
+		}
+		// A field that declares a default has no unchosen state to name, and
+		// the default is already selected, so a "Choose a …" placeholder would
+		// be an option that cannot be what happens.
+		placeholder := ""
+		if f.Default == "" {
+			placeholder = "Choose a " + strings.ToLower(label)
 		}
 		return components.Select(components.SelectProps{
 			ComponentProps: components.ComponentProps{Disabled: immutable},
 			Name:           name, Label: label, Value: value, Error: fieldErr,
-			Required: f.Required, Options: options, Placeholder: "Choose a " + label,
+			Required: f.Required, Options: options, Placeholder: placeholder,
 			HelpText: base.HelpText,
 		})
 	case f.Widget == "textarea" || f.Type == crud.TypeText:
@@ -279,10 +284,10 @@ func control(f crud.Field, value, fieldErr string, immutable bool) g.Node {
 		// There is no picker yet, and pretending otherwise would be a control
 		// that looks like it searches and does not. It is the id, and the note
 		// says so.
-		base.HelpText = fallback(base.HelpText, "The identifier of the related record. There is no picker for it yet.")
+		base.HelpText = hint(base.HelpText, "The identifier of the related record. There is no picker for it yet.")
 		return components.Input(base)
 	case f.Type == crud.TypeList:
-		base.HelpText = fallback(base.HelpText, "Comma separated.")
+		base.HelpText = hint(base.HelpText, "Comma separated.")
 		return components.Input(base)
 	case f.Type == crud.TypeTime:
 		base.Type = "datetime-local"
@@ -363,77 +368,42 @@ func known(fields []crud.Field) crud.Field {
 
 // label is what one row is called.
 func label(row map[string]any, fields []crud.Field) string {
-	if v := text(row[known(fields).Name]); v != "" {
+	if v := rest.Text(row[known(fields).Name]); v != "" {
 		return v
 	}
-	return text(row["id"])
+	return rest.Text(row["id"])
 }
 
-// moment is how a screen writes an instant. The wire form is RFC 3339 with
-// microseconds, which is right for a machine and unreadable in a table cell.
-func moment(v any) string {
-	at, err := time.Parse(time.RFC3339, text(v))
-	if err != nil {
-		return text(v)
+// start is what a control opens with: what the row holds, or — on a create, for
+// a field nobody has filled in — the default the entity declares, so the select
+// a person leaves alone posts what the API would have stored anyway.
+func start(f crud.Field, row map[string]any, create bool) string {
+	if v, ok := row[f.Name]; ok {
+		return rest.Text(v)
 	}
-	return at.UTC().Format("2006-01-02 15:04")
+	if create {
+		return f.Default
+	}
+	return ""
 }
 
-// text is a value as a form and a link read it. Everything arrives as
-// encoding/json made it, so a number is a float64 and a list is a []any.
-func text(v any) string {
-	switch typed := v.(type) {
-	case string:
-		return typed
-	case bool:
-		return strconv.FormatBool(typed)
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	case []any:
-		parts := make([]string, 0, len(typed))
-		for _, item := range typed {
-			parts = append(parts, text(item))
-		}
-		return strings.Join(parts, ", ")
-	default:
-		return ""
-	}
-}
-
-// display is a field's value as a screen shows it: an instant in the form a
-// person reads, and a dash for nothing, because a blank cell reads as a bug
-// rather than as an empty field.
-func display(f crud.Field, v any) string {
-	out := text(v)
-	if out != "" && f.Type == crud.TypeTime {
-		out = moment(v)
-	}
-	if out == "" {
-		return "—"
-	}
-	return out
-}
-
-// humanize turns a JSON name into a label: "slaDeadline" becomes "Sla
-// deadline". It is not a dictionary and does not try to be one; a field that
-// wants a better label is a field that should say so, and no entity has yet
-// asked.
-func humanize(name string) string {
-	var b strings.Builder
-	for i, r := range name {
-		switch {
-		case i == 0:
-			b.WriteRune(unicode.ToUpper(r))
-		case unicode.IsUpper(r):
-			b.WriteByte(' ')
-			b.WriteRune(unicode.ToLower(r))
-		case r == '_' || r == '-':
-			b.WriteByte(' ')
-		default:
-			b.WriteRune(r)
+// hint joins the notes under a control: the field's own doc, and whatever this
+// form has to add about the control it chose for it.
+func hint(parts ...string) string {
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			kept = append(kept, part)
 		}
 	}
-	return b.String()
+	return strings.Join(kept, " ")
+}
+
+func immutableNote(immutable bool) string {
+	if immutable {
+		return "Changed by a command of its own, not by this form."
+	}
+	return ""
 }
 
 // next is the sort a header click asks for: the same field the other way round,
