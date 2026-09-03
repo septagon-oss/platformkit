@@ -48,9 +48,17 @@ type Tenant struct {
 	// the one `platformkit bootstrap` created, and no route writes it — see
 	// NewTenant.
 	Operator bool `json:"operator"`
-	// Hosts are the names this tenant is served at. They live in their own
-	// table and are loaded with the tenant, because a tenant without its hosts
-	// is a row nobody can reach and an admin screen that cannot say so.
+	// Hosts are the names this tenant is served at, the primary one first. They
+	// live in their own table and are loaded with the tenant, because a tenant
+	// without its hosts is a row nobody can reach and an admin screen that
+	// cannot say so.
+	//
+	// The order is the whole of what "primary" is for. A tenant may answer at
+	// several names and every absolute URL — a mailed set-password link, a
+	// notice somebody clicks from outside — has to be built on one of them.
+	// Before migrations/000020 the one chosen was whichever sorted first, so
+	// adding admin.acme.example.com silently moved every future link off
+	// acme.example.com and nobody chose that.
 	Hosts     []string   `json:"hosts" gorm:"-"`
 	CreatedAt time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
@@ -74,7 +82,7 @@ func (t *Tenant) Tenancy() tenancy.Tenant {
 type NewTenant struct {
 	Slug string `json:"slug" minLength:"2" maxLength:"63" doc:"URL-safe short name, unique across the installation" example:"acme"`
 	Name string `json:"name" minLength:"1" maxLength:"200" doc:"Display name" example:"Acme Corporation"`
-	Host string `json:"host" minLength:"1" maxLength:"253" doc:"The first host this tenant is served at" example:"acme.example.com"`
+	Host string `json:"host" minLength:"1" maxLength:"253" doc:"The first host this tenant is served at, which is its primary one" example:"acme.example.com"`
 
 	// Operator marks the installation's own tenant, and it is json:"-": it is
 	// in no request body, in no OpenAPI schema and in no generated form, so the
@@ -125,6 +133,26 @@ func ValidHost(host string) (string, error) {
 // created has already tried to sign in.
 type Hook func(ctx context.Context, tx db.Tx[db.System], t *Tenant) error
 
+// Inviter is how the control plane gives a tenant its first administrator
+// without this module naming the one that owns people.
+//
+// It is declared here and satisfied in apps/platformkit over the user module,
+// the way notification's RecipientLookup is: the consumer declares the
+// capability it needs and the application decides who has it, so this module
+// still imports nothing.
+//
+// The capability is narrow on purpose and it is a real one. It takes a system
+// transaction, because the tenant being invited into is not the tenant the
+// request resolved to — an operator is at their own host and the row belongs
+// somewhere else — and there is no other way to write into a tenant from
+// outside it. What it must not become is "create a user anywhere": the address
+// and the tenant are the arguments, the roles are this module's decision, and
+// no password crosses it, so the person invited is somebody who has to read
+// their own mailbox before they are anybody at all.
+type Inviter interface {
+	Invite(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, email, displayName string) error
+}
+
 // Service is the tenant lifecycle, and the kernel's host resolution.
 //
 // Every command takes a db.Tx[db.System], because these rows belong to no
@@ -141,8 +169,11 @@ type Service interface {
 	// one transaction. A slug or a host already taken is a conflict.
 	Create(ctx context.Context, tx db.Tx[db.System], in NewTenant) (*Tenant, error)
 
-	// AddHost gives an existing tenant another name to answer at.
-	AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string) (*Tenant, error)
+	// AddHost gives an existing tenant another name to answer at, and says
+	// whether it becomes the primary one — the host every absolute URL this
+	// application builds for that tenant is built on. Adding a host the tenant
+	// already answers at changes nothing unless it promotes it.
+	AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string, primary bool) (*Tenant, error)
 
 	// Suspend stops the tenant being served. Suspending it again changes
 	// nothing and publishes nothing.
@@ -161,8 +192,8 @@ type Service interface {
 	// outside those are the same fact and neither is an outage.
 	ByHost(ctx context.Context, tx db.Tx[db.System], host string) (tenancy.Tenant, error)
 
-	// Hosts are the names the transaction's own tenant is served at, first
-	// first.
+	// Hosts are the names the transaction's own tenant is served at, the
+	// primary one first.
 	//
 	// It is the one read here that takes a tenant transaction rather than a
 	// system one, and that is what it is for: a worker handling one tenant's

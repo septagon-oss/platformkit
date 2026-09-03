@@ -128,20 +128,29 @@ func (s *Service) ByEmail(_ context.Context, tx db.Tx[db.Tenant], email string) 
 	return &u, nil
 }
 
-// Provision creates an active user with a password in a named tenant, from a
-// transaction that belongs to no tenant. See contracts.Service.Provision: this
-// is the bootstrap's door, and the tenant is a parameter because the tenant is
-// being created in the same transaction.
+// Provision creates a user in a named tenant, from a transaction that belongs to
+// no tenant. See contracts.Service.Provision.
+//
+// An empty password makes an invited user rather than an active one, and that
+// is the whole of the second caller: the control plane creates a tenant and has
+// to give it a first administrator, in the same cross-tenant transaction, and
+// an operator who had to choose somebody else's password to do it would be an
+// operator who knows it. The invitation event that follows is what mails them a
+// link. The bootstrap passes a password and gets the active user it prints.
 func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID,
 	email, displayName, password string, roles []string,
 ) (*contracts.User, error) {
-	hash, err := contracts.HashPassword(password)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+	status, hash := contracts.StatusInvited, ""
+	if password != "" {
+		var err error
+		if hash, err = contracts.HashPassword(password); err != nil {
+			return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		}
+		status = contracts.StatusActive
 	}
 	at := db.Now()
 	u := &contracts.User{
-		Email: email, DisplayName: displayName, Status: contracts.StatusActive,
+		Email: email, DisplayName: displayName, Status: status,
 		Roles: normalise(roles), PasswordHash: hash,
 	}
 	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, at, at

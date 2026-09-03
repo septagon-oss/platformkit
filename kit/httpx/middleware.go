@@ -3,6 +3,7 @@ package httpx
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -677,22 +678,44 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// thinks, so commit and say so; if nothing has been sent, nobody decided,
 	// and a transaction nobody decided about must not commit.
 	keep, undecided := statusOf(ctx, a, inner.Status())
-	if err := p.Close(keep); err == nil {
-		if undecided {
-			if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
-				_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
-			}
+	err = p.Close(keep)
+	b, buffered := bufferFrom(ctx.Context())
+	switch {
+	case err == nil:
+		if undecided && buffered && b.reset() {
+			_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
 		}
-		return
-	} else if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
+	case hungUp(ctx.Context(), err):
+		// Nobody is waiting for this answer and nothing was written. See hungUp.
+		a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: the client hung up before the request transaction ended",
+			"method", ctx.Method(), "path", ctx.URL().Path)
+	case buffered && b.reset():
 		// Nothing has been sent yet, so the response can still tell the truth.
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the request transaction did not commit",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 		_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
-	} else {
+	default:
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: request transaction failed after the response was written",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 	}
+}
+
+// hungUp reports that the transaction ended the way a client going away ends
+// one, rather than the way a database going away does.
+//
+// A browser that closes the tab cancels the request context. database/sql
+// notices before this middleware does and rolls the transaction back itself, so
+// the commit asked for a moment later comes back "sql: transaction has already
+// been committed or rolled back", and the settings re-read before it fails on
+// the same cancelled context. Both read as faults and neither is one: nothing
+// was written, and there is nobody left to tell.
+//
+// It matters because the alternative was an ERROR line per abandoned request.
+// An alert that fires on ordinary browsing is an alert people turn off, and the
+// line it buries — the database is unreachable and requests are not committing —
+// is the one worth waking somebody for.
+func hungUp(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || errors.Is(err, sql.ErrTxDone) || errors.Is(err, context.Canceled)
 }
 
 // statusOf decides whether the request's transaction commits, and whether the

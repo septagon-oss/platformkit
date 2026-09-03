@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/fstest"
@@ -47,6 +48,29 @@ type fixture struct {
 	// authnErr makes the identity hook fail, which is an outage rather than an
 	// anonymous caller.
 	authnErr error
+
+	// logs is everything the kernel wrote about these requests. A test that
+	// cares which level a line came out at reads it.
+	logs *lines
+}
+
+// lines is a log sink a test can read. It is locked because the kernel logs
+// from whatever goroutine a request is on, and -race notices.
+type lines struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lines) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lines) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 func (f *fixture) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
@@ -102,6 +126,7 @@ func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
 	f := &fixture{
 		tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"},
 		app:    app,
+		logs:   &lines{},
 	}
 	f.exec = func(query string) {
 		t.Helper()
@@ -116,7 +141,7 @@ func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
 		Conn:         app,
 		Authorize:    f,
 		Authenticate: f.authenticate,
-		Log:          slog.New(slog.DiscardHandler),
+		Log:          slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	return api, router, f
 }
@@ -777,5 +802,51 @@ func TestAnOperatorRouteIsRefusedBeforeTheAuthorizer(t *testing.T) {
 	}
 	if got := f.asked.Load(); got != 1 {
 		t.Errorf("the authorizer was asked %d time(s), want exactly the operator's request", got)
+	}
+}
+
+// TestAClientHangingUpIsNotAnError. A browser that closes the tab cancels the
+// request; database/sql rolls the transaction back on its own before this
+// middleware asks, and the commit then comes back "already committed". That is
+// not a fault and must not be logged as one — an ERROR line per abandoned
+// request is an alert that fires on ordinary browsing, and it buries the line
+// that means the database is gone.
+func TestAClientHangingUpIsNotAnError(t *testing.T) {
+	api, router, f := setup(t)
+	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL)`)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	httpx.Register(api, huma.Operation{
+		OperationID: "hang-up", Method: http.MethodGet, Path: "/hangup",
+	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*body, error) {
+		tx, ok := httpx.TxFrom(ctx)
+		if !ok {
+			return nil, errors.New("the request had no transaction")
+		}
+		if err := tx.DB().Exec("INSERT INTO notes (tenant_id, body) VALUES (?, 'note')",
+			db.TenantOf(tx).ID).Error; err != nil {
+			return nil, err
+		}
+		// The client goes away with the transaction open and the answer
+		// decided, which is the case this test is about.
+		cancel()
+		return &body{}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://"+host+"/hangup", nil).WithContext(ctx)
+	router.ServeHTTP(httptest.NewRecorder(), req)
+
+	got := f.logs.String()
+	if !strings.Contains(got, "the client hung up before the request transaction ended") {
+		t.Errorf("the hang-up was not reported as one:\n%s", got)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(got), "\n") {
+		if strings.Contains(line, "level=ERROR") {
+			t.Errorf("a client hanging up logged an error: %s", line)
+		}
+	}
+	// And nothing was kept: the transaction the client abandoned rolled back.
+	if n := notes(t, f); n != 0 {
+		t.Errorf("the abandoned transaction left %d row(s)", n)
 	}
 }

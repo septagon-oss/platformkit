@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -53,7 +54,10 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	if err := tx.DB().Omit("Hosts").Create(t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
-	if err := s.attach(tx, t, host); err != nil {
+	// The first host is the primary one, because it is the only one: a tenant
+	// whose links pointed nowhere until somebody remembered to choose would be
+	// a tenant created half way.
+	if err := s.attach(tx, t, host, true); err != nil {
 		return nil, err
 	}
 	for _, hook := range s.hooks {
@@ -66,9 +70,11 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	})
 }
 
-// AddHost gives an existing tenant another name to answer at. The same host
-// again is the same tenant and no second event.
-func (s *Service) AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string) (*contracts.Tenant, error) {
+// AddHost gives an existing tenant another name to answer at, and says whether
+// it is the one to name. The same host again is the same tenant and no second
+// event — but it is still promoted, because "make this the primary" is a thing
+// somebody may ask about a host that is already there.
+func (s *Service) AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string, primary bool) (*contracts.Tenant, error) {
 	host, err := contracts.ValidHost(host)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
@@ -77,17 +83,30 @@ func (s *Service) AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	for _, existing := range t.Hosts {
-		if existing == httpx.HostOnly(host) {
+	key := httpx.HostOnly(host)
+	if slices.Contains(t.Hosts, key) {
+		if !primary {
 			return t, nil
 		}
+		if err := s.promote(tx, t.ID, key); err != nil {
+			return nil, err
+		}
+		return s.Get(ctx, tx, id)
 	}
-	if err := s.attach(tx, t, host); err != nil {
+	if err := s.attach(tx, t, host, primary); err != nil {
 		return nil, err
 	}
-	return t, events.PublishFor(ctx, tx, t.ID, contracts.EventHostAdded, contracts.HostAdded{
-		TenantID: t.ID, Host: httpx.HostOnly(host), At: db.Now(),
+	err = events.PublishFor(ctx, tx, t.ID, contracts.EventHostAdded, contracts.HostAdded{
+		TenantID: t.ID, Host: key, Primary: primary, At: db.Now(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	// Read back rather than patched in Go: what this returns is the host list
+	// as the database orders it, which is the list every caller will see next
+	// time. A value assembled here would agree with the table only for as long
+	// as two orderings happened to match.
+	return s.Get(ctx, tx, id)
 }
 
 // Suspend stops the tenant being served. Suspending it again changes nothing
@@ -141,7 +160,7 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.System]) ([]*contracts.Ten
 		TenantID uuid.UUID
 		Host     string
 	}
-	if err := tx.DB().Table("tenant_hosts").Order("host").Find(&rows).Error; err != nil {
+	if err := tx.DB().Table("tenant_hosts").Order("tenant_id, " + hostOrder).Find(&rows).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
 	byTenant := map[uuid.UUID][]string{}
@@ -174,25 +193,43 @@ func (s *Service) ByHost(_ context.Context, tx db.Tx[db.System], host string) (t
 	return t.Tenancy(), nil
 }
 
-// Hosts are the names the transaction's own tenant is served at.
+// Hosts are the names the transaction's own tenant is served at, the primary one
+// first.
 //
 // One query, under the tenant's own policy: tenant_hosts lets a tenant
 // transaction see its own rows and nothing else, so this needs no capability
 // and grants none. The order is the same as everywhere else here, so "the first
-// host" means the same thing to a mailed link as it does to a screen.
+// host" means the same thing to a mailed link as it does to a screen — and it
+// now means something a person chose, rather than whichever name sorts first.
 func (s *Service) Hosts(_ context.Context, tx db.Tx[db.Tenant]) ([]string, error) {
 	var hosts []string
-	err := tx.DB().Table("tenant_hosts").Order("host").Pluck("host", &hosts).Error
+	err := tx.DB().Table("tenant_hosts").Order(hostOrder).Pluck("host", &hosts).Error
 	if err != nil {
 		return nil, crud.Classify(err)
 	}
 	return hosts, nil
 }
 
+// hostOrder is the one order a host list is ever read in: the primary first,
+// then the rest by name. It is a constant because "the first host" is a
+// promise three callers make — a mailed link, a screen, and the tenant a
+// control-plane response describes — and three ORDER BY clauses that drifted
+// would be three different first hosts.
+const hostOrder = "is_primary DESC, host"
+
 // attach writes one host row and adds it to the tenant in hand.
-func (s *Service) attach(tx db.Tx[db.System], t *contracts.Tenant, host string) error {
+func (s *Service) attach(tx db.Tx[db.System], t *contracts.Tenant, host string, primary bool) error {
 	key := httpx.HostOnly(host)
-	err := tx.DB().Exec("INSERT INTO tenant_hosts (host, tenant_id) VALUES (?, ?)", key, t.ID).Error
+	if primary {
+		// The old one first: the partial unique index allows one per tenant, so
+		// two INSERTs in the other order is a constraint violation rather than
+		// a promotion.
+		if err := s.demote(tx, t.ID); err != nil {
+			return err
+		}
+	}
+	err := tx.DB().Exec("INSERT INTO tenant_hosts (host, tenant_id, is_primary) VALUES (?, ?, ?)",
+		key, t.ID, primary).Error
 	if err != nil {
 		return crud.Classify(err)
 	}
@@ -200,9 +237,34 @@ func (s *Service) attach(tx db.Tx[db.System], t *contracts.Tenant, host string) 
 	return nil
 }
 
+// promote makes one of a tenant's existing hosts the primary one, and demote
+// unmakes whichever held it. They are two statements because the index allows
+// one primary per tenant and an UPDATE that set the new one first would collide
+// with the old.
+func (s *Service) promote(tx db.Tx[db.System], id uuid.UUID, host string) error {
+	if err := s.demote(tx, id); err != nil {
+		return err
+	}
+	err := tx.DB().Exec("UPDATE tenant_hosts SET is_primary = true WHERE tenant_id = ? AND host = ?",
+		id, host).Error
+	if err != nil {
+		return crud.Classify(err)
+	}
+	return nil
+}
+
+func (s *Service) demote(tx db.Tx[db.System], id uuid.UUID) error {
+	err := tx.DB().Exec("UPDATE tenant_hosts SET is_primary = false WHERE tenant_id = ? AND is_primary",
+		id).Error
+	if err != nil {
+		return crud.Classify(err)
+	}
+	return nil
+}
+
 func (s *Service) hostsOf(tx db.Tx[db.System], id uuid.UUID) ([]string, error) {
 	var hosts []string
-	err := tx.DB().Table("tenant_hosts").Where("tenant_id = ?", id).Order("host").Pluck("host", &hosts).Error
+	err := tx.DB().Table("tenant_hosts").Where("tenant_id = ?", id).Order(hostOrder).Pluck("host", &hosts).Error
 	if err != nil {
 		return nil, crud.Classify(err)
 	}

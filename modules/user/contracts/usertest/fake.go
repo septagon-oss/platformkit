@@ -141,12 +141,18 @@ func (f *Fake) ByEmail(_ context.Context, _ db.Tx[db.Tenant], email string) (*co
 func (f *Fake) Provision(_ context.Context, _ db.Tx[db.System], tenantID uuid.UUID,
 	email, displayName, password string, roles []string,
 ) (*contracts.User, error) {
-	hash, err := contracts.HashPassword(password)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+	// An empty password makes an invited user, which is how the control plane
+	// gives a tenant its first administrator without knowing their password.
+	status, hash := contracts.StatusInvited, ""
+	if password != "" {
+		var err error
+		if hash, err = contracts.HashPassword(password); err != nil {
+			return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		}
+		status = contracts.StatusActive
 	}
 	u := &contracts.User{
-		Email: email, DisplayName: displayName, Status: contracts.StatusActive,
+		Email: email, DisplayName: displayName, Status: status,
 		Roles: Normalise(roles), PasswordHash: hash,
 	}
 	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, db.Now(), db.Now()

@@ -37,8 +37,11 @@ type Suspended struct {
 }
 
 // HostAdded is the payload of EventHostAdded: another name resolves here.
+// Primary says it also became the name this tenant's absolute URLs are built
+// on, which is a different fact and the one a subscriber would act on.
 type HostAdded struct {
 	TenantID uuid.UUID `json:"tenantId"`
 	Host     string    `json:"host"`
+	Primary  bool      `json:"primary"`
 	At       time.Time `json:"at"`
 }

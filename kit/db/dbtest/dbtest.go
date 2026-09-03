@@ -119,6 +119,13 @@ func RoleOf(t *testing.T, rawURL string) string {
 // pool opens from the URL, including the ones kit/app and db.Migrate open for
 // themselves. A statement would bind one session instead, which is why the
 // schema travels in the URL and not in a SET.
+//
+// The application_name goes with it, and it is the same string. Tests share one
+// database, so a test that asks pg_stat_activity a question — is anything of
+// mine idle in a transaction right now? — is otherwise asking about every
+// package running beside it, and answers whatever they happen to be doing. With
+// this, `application_name = current_setting('search_path')` on the owner
+// connection names exactly this test's own backends, and nobody else's.
 func withSchema(t *testing.T, rawURL, schema string) string {
 	t.Helper()
 	u, err := url.Parse(rawURL)
@@ -127,6 +134,7 @@ func withSchema(t *testing.T, rawURL, schema string) string {
 	}
 	q := u.Query()
 	q.Set("options", "-csearch_path="+schema)
+	q.Set("application_name", schema)
 	u.RawQuery = q.Encode()
 	return u.String()
 }

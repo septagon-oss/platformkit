@@ -186,7 +186,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
-			if _, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, "www.acme.example.com"); err != nil {
+			if _, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, "www.acme.example.com", false); err != nil {
 				t.Fatalf("AddHost: %v", err)
 			}
 			for _, host := range []string{"acme.example.com", "www.acme.example.com"} {
@@ -196,9 +196,45 @@ func cases() map[string]func(*testing.T, Fixture) {
 				}
 			}
 			// The same host again is the same tenant and no second event.
-			if _, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, "www.acme.example.com"); err != nil {
+			if _, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, "www.acme.example.com", false); err != nil {
 				t.Fatalf("AddHost again: %v", err)
 			}
+			published(t, f, contracts.EventCreated, contracts.EventHostAdded)
+		},
+
+		"the first host is the primary one, and stays it until somebody says otherwise": func(t *testing.T, f Fixture) {
+			// "The first host" used to mean whichever sorted first, so adding
+			// admin.acme.example.com moved every absolute URL this application
+			// builds — a mailed set-password link, a notice somebody clicks
+			// from outside — onto a name nobody chose. It is now a column.
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if got := created.Hosts; len(got) != 1 || got[0] != "acme.example.com" {
+				t.Fatalf("a new tenant's hosts are %v, want the one it was created with", got)
+			}
+			// A name that sorts before it, deliberately: this is the addition
+			// that used to steal the answer, silently, from every link the
+			// application would build from then on.
+			const earlier = "a.acme.example.com"
+			after, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, earlier, false)
+			if err != nil {
+				t.Fatalf("AddHost: %v", err)
+			}
+			if got := after.Hosts; len(got) != 2 || got[0] != "acme.example.com" {
+				t.Errorf("the hosts are %v; the primary one is first and adding a name does not move it", got)
+			}
+			// And it moves when somebody asks, which is the other half: one
+			// primary per tenant, not two.
+			moved, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, earlier, true)
+			if err != nil {
+				t.Fatalf("AddHost promoting: %v", err)
+			}
+			if got := moved.Hosts; len(got) != 2 || got[0] != earlier {
+				t.Errorf("the hosts are %v after a promotion, want the promoted one first", got)
+			}
+			// Promoting a host that is already there is not a second addition.
 			published(t, f, contracts.EventCreated, contracts.EventHostAdded)
 		},
 
@@ -210,7 +246,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if _, err := f.Service.Suspend(f.Ctx, f.Tx, id); !errors.Is(err, crud.ErrNotFound) {
 				t.Errorf("Suspend of an unknown tenant = %v, want ErrNotFound", err)
 			}
-			if _, err := f.Service.AddHost(f.Ctx, f.Tx, id, "x.example.com"); !errors.Is(err, crud.ErrNotFound) {
+			if _, err := f.Service.AddHost(f.Ctx, f.Tx, id, "x.example.com", false); !errors.Is(err, crud.ErrNotFound) {
 				t.Errorf("AddHost on an unknown tenant = %v, want ErrNotFound", err)
 			}
 		},

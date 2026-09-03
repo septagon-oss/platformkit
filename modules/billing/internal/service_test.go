@@ -280,9 +280,16 @@ func (s *spy) Charge(ctx context.Context, c contracts.Charge) (contracts.Receipt
 	s.calls++
 	// idle in transaction is what a backend looks like between a BEGIN and its
 	// COMMIT. If the renewal held one across this call there would be one.
+	//
+	// Scoped to this test's own connections, which is what dbtest's
+	// application_name is for: every test in the suite shares one database, so
+	// counting every backend in it counted whatever modules/auth or modules/user
+	// happened to be doing at the time — and this failed on a tree where the
+	// renewal held nothing, roughly one run in two.
 	var open int
 	err := s.admin.QueryRowContext(ctx,
-		`SELECT count(*) FROM pg_stat_activity WHERE state = 'idle in transaction' AND datname = current_database()`).Scan(&open)
+		`SELECT count(*) FROM pg_stat_activity
+		 WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`).Scan(&open)
 	if err == nil {
 		s.inTransaction += open
 	}

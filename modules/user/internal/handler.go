@@ -2,11 +2,14 @@ package internal
 
 import (
 	"context"
+	"net/http"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -22,6 +25,50 @@ import (
 // answer. spec.Immutable is the other half of that argument, and rest.Command
 // is the part all three share.
 func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contracts.Service) {
+	// The invitation, which is a route of its own and not the create route with
+	// a flag.
+	//
+	// POST to the collection writes a row and publishes user.user.created, and
+	// nothing subscribes to that: an administrator who used it made somebody
+	// who exists, cannot sign in, and was never told. Inviting is a different
+	// intention — somebody should be able to get in — and user.invited is the
+	// event the auth module listens for in order to mail them a link. It is a
+	// collection of its own rather than a command on a user, because there is
+	// no user yet to command.
+	httpx.Register(api, huma.Operation{
+		OperationID:   "user-invitation-create",
+		Method:        http.MethodPost,
+		Path:          invitations,
+		Summary:       "Invite somebody into this tenant",
+		Description:   "Creates a person who cannot sign in yet and publishes user.invited, which is what mails them a link to choose a password. Inviting an address that is already here is a conflict. Roles are granted in the same transaction, so an invitation that names them is one event about who was made what.",
+		Tags:          []string{"user"},
+		DefaultStatus: http.StatusCreated,
+		Errors: []int{http.StatusConflict, http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable},
+		Extensions: map[string]any{httpx.EventsExtension: []string{
+			contracts.EventInvited, contracts.EventRolesSet,
+		}},
+	}, httpx.Permission(contracts.PermissionUserManage),
+		func(ctx context.Context, in *inviteInput) (*rest.Item[*contracts.User], error) {
+			tx, ok := httpx.TxFrom(ctx)
+			if !ok {
+				return nil, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
+			}
+			u, err := svc.Invite(ctx, tx, in.Body.Email, in.Body.DisplayName)
+			if err != nil {
+				return nil, rest.Fault(err)
+			}
+			if len(in.Body.Roles) > 0 {
+				// In the same transaction as the invitation, so that a person
+				// who is invited as an administrator was never, for a moment, a
+				// person with no roles who had already been mailed a link.
+				if u, err = svc.SetRoles(ctx, tx, u.ID, in.Body.Roles); err != nil {
+					return nil, rest.Fault(err)
+				}
+			}
+			return &rest.Item[*contracts.User]{Body: u}, nil
+		})
+
 	rest.Command(api, spec, "set-password",
 		"Set a user's password",
 		"Stores an argon2id hash and makes an invited user active. It is not idempotent: setting a password to what it already was is still a password change, and somebody who did it deliberately has to see it in their own audit trail.",
@@ -59,4 +106,17 @@ type passwordBody struct {
 
 type rolesBody struct {
 	Roles []string `json:"roles" doc:"The roles this person holds from now on" example:"admin"`
+}
+
+// invitations is where somebody is invited. It is beside the users collection
+// rather than under it because an invitation is not a sub-resource of the user
+// it creates.
+const invitations = "/api/v1/user/invitations"
+
+type inviteInput struct {
+	Body struct {
+		Email       string   `json:"email" format:"email" maxLength:"320" doc:"The address to invite" example:"ada@acme.example.com"`
+		DisplayName string   `json:"displayName,omitempty" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
+		Roles       []string `json:"roles,omitempty" doc:"Roles to grant in the same transaction" example:"admin"`
+	} `required:"true"`
 }

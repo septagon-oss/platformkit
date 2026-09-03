@@ -116,6 +116,11 @@ func compose(cfg config.Config) composition {
 
 	tenants, tenantModule := tenant.Module(tenant.Deps{
 		OnCreate: []tenantcontracts.Hook{seedRoles(auths)},
+		// The adapter that lets the control plane give a tenant its first
+		// administrator without the tenant module naming the one that owns
+		// people. It is the same shape as recipients and tenantHosts: the
+		// consumer declares the capability and the application says who has it.
+		Invite: firstAdmin{users: users},
 	})
 
 	// Active rather than the service itself: the periodic jobs walk the tenants
@@ -186,13 +191,15 @@ func (d *deferred) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Ten
 	return d.lister.List(ctx, tx)
 }
 
-// tenantHosts is the adapter that lets the notification module build a link to
-// the recipient's own host without naming the tenant module.
+// tenantHosts is the adapter that lets the notification and auth modules build a
+// link to the recipient's own host without naming the tenant module.
 //
 // The lookup runs in the worker's own tenant transaction, so what it reads is
-// the one tenant's rows the policy shows it; the first host is the one a mailed
-// link is built from, because a tenant with several answers at all of them and
-// a message has to pick one.
+// the one tenant's rows the policy shows it. A tenant with several hosts answers
+// at all of them and a message has to pick one, so it picks the primary — the
+// first row of a list ordered by it (migrations/000020). It used to pick
+// whichever name sorted first, which meant adding admin.acme.example.com moved
+// every future link onto it.
 type tenantHosts struct{ tenants tenantcontracts.Service }
 
 func (h *tenantHosts) PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error) {
@@ -219,6 +226,26 @@ func (r recipients) Email(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.
 		return "", err
 	}
 	return u.Email, nil
+}
+
+// firstAdmin is the adapter behind POST /api/v1/tenant/tenants/{id}/invite.
+//
+// Provision with no password is the whole of it, and the two halves of that are
+// deliberate. No password, so an operator who invites somebody into a customer's
+// tenant does not know their credentials and never held them; the invitation
+// event mails a link and the person chooses one. The admin role, because the
+// route's purpose is a tenant that somebody can administer — an invitation that
+// granted nothing would be a tenant still nobody can get into, which is the
+// defect this route exists to close.
+//
+// It runs in the control plane's own system transaction, which is the only way
+// to write a row into a tenant the request did not resolve to.
+type firstAdmin struct{ users usercontracts.Service }
+
+func (a firstAdmin) Invite(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, email, displayName string) error {
+	_, err := a.users.Provision(ctx, tx, tenantID, email, displayName, "",
+		[]string{authcontracts.RoleAdmin})
+	return err
 }
 
 // seedRoles is the hook the tenant module runs inside the transaction that

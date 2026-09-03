@@ -175,13 +175,15 @@ type Service interface {
 	// compared without case. It is ErrNotFound for an address nobody has.
 	ByEmail(ctx context.Context, tx db.Tx[db.Tenant], email string) (*User, error)
 
-	// Provision creates an active user with a password from a cross-tenant
-	// transaction, naming the tenant.
+	// Provision creates a user from a cross-tenant transaction, naming the
+	// tenant. An empty password makes an invited user; anything else makes an
+	// active one. Either way it publishes user.invited.
 	//
-	// It is the bootstrap's door and nothing else's. Every other way a user
+	// It is the control plane's door and nothing else's. Every other way a user
 	// comes into being is Invite, inside the tenant's own transaction; this
-	// exists because the first administrator of an installation is created in
-	// the same transaction as the tenant they administer, and that transaction
-	// belongs to no tenant because the tenant is being created in it.
+	// exists because a tenant's first administrator is created from outside
+	// that tenant — by the bootstrap, in the same transaction as the tenant
+	// itself, and by the operator inviting one into a tenant they do not
+	// otherwise have a transaction in.
 	Provision(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, email, displayName, password string, roles []string) (*User, error)
 }
