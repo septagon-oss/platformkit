@@ -71,19 +71,20 @@ func TestTheSoftDelayHoldsNoTransaction(t *testing.T) {
 
 	// This test's own backends and nobody else's: every test in the suite
 	// shares one database, and dbtest names each pool after the schema it
-	// works in. Counting every backend would count whatever modules/billing
-	// happened to be doing at the time.
-	open := func() int {
-		var n int
-		const q = `SELECT count(*) FROM pg_stat_activity
+	// works in. What is measured is the age of the oldest open transaction and
+	// not how many there are: the limiter and the failed-login record write
+	// through short detached transactions on this same pool, and a sample can
+	// land between two of their statements. A transaction that has been open
+	// for half a second is one the sleeping request is holding; nothing else
+	// on this pool lives that long.
+	longest := func() float64 {
+		var age float64
+		const q = `SELECT COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start)), 0) FROM pg_stat_activity
 			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`
-		if err := admin.QueryRowContext(t.Context(), q).Scan(&n); err != nil {
+		if err := admin.QueryRowContext(t.Context(), q).Scan(&age); err != nil {
 			t.Errorf("read pg_stat_activity: %v", err)
 		}
-		return n
-	}
-	if held := open(); held != 0 {
-		t.Fatalf("%d transactions were already open before the delayed request", held)
+		return age
 	}
 
 	done := make(chan *httptest.ResponseRecorder, 1)
@@ -97,19 +98,17 @@ func TestTheSoftDelayHoldsNoTransaction(t *testing.T) {
 	// While it waits it holds nothing. Sampled over the first three quarters of
 	// the delay, so the loop is finished well before the handler wakes up and
 	// legitimately opens one.
-	samples, held := 0, 0
+	samples, oldest := 0, 0.0
 	for time.Since(start) < contracts.SoftDelay*3/4 {
-		if open() > 0 {
-			held++
-		}
+		oldest = max(oldest, longest())
 		samples++
 		time.Sleep(20 * time.Millisecond)
 	}
 	if samples < 10 {
 		t.Fatalf("only %d samples were taken during the delay", samples)
 	}
-	if held != 0 {
-		t.Errorf("the sleeping request held a transaction open in %d of %d samples", held, samples)
+	if oldest > 0.5 {
+		t.Errorf("the sleeping request held a transaction open for %.2fs of its delay", oldest)
 	}
 
 	res, took := <-done, time.Since(start)
