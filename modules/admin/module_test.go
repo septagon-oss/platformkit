@@ -25,7 +25,13 @@ import (
 	"github.com/septagon-oss/platformkit/ui"
 )
 
-const host = "acme.test"
+const (
+	host = "acme.test"
+	// operatorHost is where the installation's own tenant is served. The
+	// control plane answers at every host, so the difference between the two is
+	// the tenant the request resolved to and nothing else.
+	operatorHost = "operator.test"
+)
 
 // Note is a module's entity, declared here rather than imported so that this
 // test exercises the generator and not one particular module's tags: every
@@ -71,21 +77,59 @@ CREATE POLICY admin_notes_tenant ON admin_notes
 	USING (platformkit_tenant_match(tenant_id))
 	WITH CHECK (platformkit_tenant_match(tenant_id));`
 
-var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
+var (
+	acme     = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
+	operator = tenancy.Tenant{ID: uuid.New(), Slug: "operator", Name: "PlatformKit", Operator: true}
+)
 
 // caller resolves the host and answers every permission but one, so the nav
 // filter has something to hide.
 type caller struct{}
 
 func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
-	if h != host {
-		return tenancy.Tenant{}, tenancy.ErrNoSuchHost
+	switch h {
+	case host:
+		return acme, nil
+	case operatorHost:
+		return operator, nil
 	}
-	return acme, nil
+	return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 }
 
 func (caller) Allowed(_ context.Context, _ tenancy.Tenant, g tenancy.Grant) (bool, error) {
 	return g.Permission != "secret:read", nil
+}
+
+// Plan is the shape of an installation's own data: every tenant reads the
+// catalogue and only the operator writes it, which is modules/billing's plan
+// and the case the hard-coded map did not cover.
+type Plan struct {
+	crud.Base
+	Name string `json:"name" validate:"required"`
+}
+
+func (Plan) TableName() string { return "admin_plans" }
+
+const plansDDL = `
+CREATE TABLE admin_plans (
+	id uuid PRIMARY KEY,
+	tenant_id uuid NOT NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	deleted_at timestamptz,
+	name text NOT NULL
+);
+ALTER TABLE admin_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_plans FORCE ROW LEVEL SECURITY;
+-- Read by every tenant, written only in the tenant that owns the row, which is
+-- migrations/000016's shape for the price list.
+CREATE POLICY admin_plans_scope ON admin_plans
+	USING (true)
+	WITH CHECK (platformkit_tenant_match(tenant_id));`
+
+var plans = rest.Spec[*Plan]{
+	Module: "plans", Entity: "plan", Path: "/api/v1/plans/plans",
+	Read: "plan:read", Write: "plan:write", OperatorWrite: true,
 }
 
 var spec = rest.Spec[*Note]{
@@ -104,8 +148,8 @@ func mount(t *testing.T) chi.Router { return mountAs(t, caller{}) }
 func mountAs(t *testing.T, authorize httpx.Authorizer) chi.Router {
 	t.Helper()
 	adminDB, app := dbtest.Schema(t)
-	if _, err := adminDB.ExecContext(t.Context(), ddl); err != nil {
-		t.Fatalf("create notes: %v", err)
+	if _, err := adminDB.ExecContext(t.Context(), ddl+plansDDL); err != nil {
+		t.Fatalf("create the tables: %v", err)
 	}
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: authorize,
@@ -124,11 +168,26 @@ func mountAs(t *testing.T, authorize httpx.Authorizer) chi.Router {
 		},
 		Routes: func(api *httpx.API) { spec.Mount(api) },
 	}
-	shell := admin.Module(admin.Deps{Modules: []module.Module{notes}, Authorize: authorize})
-	if err := module.Validate([]module.Module{notes, shell}); err != nil {
+	// The second module is the installation's own data: every tenant reads the
+	// catalogue and only the operator writes it.
+	catalogue := module.Module{
+		Name:        "plans",
+		Permissions: []module.Permission{{Key: "plan:read"}, {Key: "plan:write", Operator: true}},
+		Events:      plans.Events(),
+		Nav: []module.NavEntry{
+			{Label: "Plans", Path: "/admin/plans/plans", Permission: "plan:read"},
+			// The affordance the operator has and a customer does not: a nav
+			// entry guarded by the permission the routes declare as operator.
+			{Label: "Add a plan", Path: "/admin/plans/plans/new", Permission: "plan:write"},
+		},
+		Routes: func(api *httpx.API) { plans.Mount(api) },
+	}
+	shell := admin.Module(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: authorize})
+	if err := module.Validate([]module.Module{notes, catalogue, shell}); err != nil {
 		t.Fatalf("the composition is invalid: %v", err)
 	}
 	notes.Routes(api)
+	catalogue.Routes(api)
 	shell.Routes(api)
 	// The gate every route in this application passes, the shell's included.
 	if err := api.ValidateDeclarations(); err != nil {
@@ -139,7 +198,14 @@ func mountAs(t *testing.T, authorize httpx.Authorizer) chi.Router {
 
 func call(t *testing.T, r http.Handler, method, path, body string) (int, string, string) {
 	t.Helper()
-	req := httptest.NewRequest(method, "http://"+host+path, strings.NewReader(body))
+	return callAt(t, r, host, method, path, body)
+}
+
+// callAt is call at a named host, which is how a case asks the same question of
+// a customer's tenant and of the operator's.
+func callAt(t *testing.T, r http.Handler, at, method, path, body string) (int, string, string) {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+at+path, strings.NewReader(body))
 	// The session cookie is the one credential shape the kernel recognises, so
 	// a test that wants its identity hook called presents one. The value is not
 	// read: the hook above answers without looking.
@@ -530,5 +596,82 @@ func TestANavEntryNoRouteServesIsABootWarning(t *testing.T) {
 	}
 	if strings.Contains(body, `aria-disabled="true"`) {
 		t.Error("the sidebar still renders a disabled entry")
+	}
+}
+
+// TestAnOperatorsResourceOffersNoWriteToACustomer.
+//
+// Every tenant reads the installation's catalogue and only the operator writes
+// it (docs/adr/0008). The screens knew the first half and not the second: a
+// customer's administrator, whose wildcard is everything in their own tenant,
+// was shown the New button, the Edit button and the delete form, and every one
+// of them was a 403 at the save. The kernel was right and the interface was
+// teaching people it was broken.
+//
+// The same router answers both hosts, because the difference is the tenant the
+// request resolved to and nothing else.
+func TestAnOperatorsResourceOffersNoWriteToACustomer(t *testing.T) {
+	router := mount(t)
+
+	// The operator creates one, through the generated form.
+	code, body, at := callAt(t, router, operatorHost, http.MethodPost, "/admin/plans/plans", "name=Standard")
+	if code != http.StatusSeeOther {
+		t.Fatalf("the operator's create = %d %s", code, body)
+	}
+	if !strings.HasPrefix(at, "/admin/plans/plans/") {
+		t.Fatalf("the create redirected to %q", at)
+	}
+
+	for _, tt := range []struct {
+		who   string
+		host  string
+		wants bool
+	}{
+		{"the operator's own tenant", operatorHost, true},
+		{"a customer's tenant", host, false},
+	} {
+		t.Run(tt.who, func(t *testing.T) {
+			_, list, _ := callAt(t, router, tt.host, http.MethodGet, "/admin/plans/plans", "")
+			if got := strings.Contains(list, ">New plan<"); got != tt.wants {
+				t.Errorf("the list offers New plan = %v, want %v", got, tt.wants)
+			}
+			// The row itself is visible either way: the catalogue is read by
+			// everybody, which is the whole reason the write is the exception.
+			if !strings.Contains(list, "Standard") {
+				t.Errorf("the list does not show the catalogue: %s", list)
+			}
+
+			_, detail, _ := callAt(t, router, tt.host, http.MethodGet, at, "")
+			// The delete affordance is its form, not the word: the confirm
+			// dialog every page carries says "Delete" on its accept button.
+			for what, fragment := range map[string]string{
+				"Edit":   `href="` + at + `/edit"`,
+				"Delete": `action="` + at + `/delete"`,
+			} {
+				if got := strings.Contains(detail, fragment); got != tt.wants {
+					t.Errorf("the detail offers %s = %v, want %v", what, got, tt.wants)
+				}
+			}
+
+			// And the nav entry guarded by the operator's own permission. It is
+			// labelled differently from the toolbar's button, which points at
+			// the same path, so each assertion sees one of them.
+			if got := strings.Contains(list, ">Add a plan<"); got != tt.wants {
+				t.Errorf("the sidebar offers the new-plan entry = %v, want %v", got, tt.wants)
+			}
+			// The entry a customer does hold is there for both.
+			if !strings.Contains(list, `href="/admin/plans/plans"`) {
+				t.Errorf("the sidebar dropped the catalogue itself: %s", list)
+			}
+		})
+	}
+
+	// The screens are not the guard, and this is what says so: the customer's
+	// tenant is refused at the door as well as offered nothing.
+	if code, body, _ := callAt(t, router, host, http.MethodGet, "/admin/plans/plans/new", ""); code != http.StatusForbidden {
+		t.Errorf("a customer opening the operator's form = %d %s, want 403", code, body)
+	}
+	if code, body, _ := callAt(t, router, host, http.MethodPost, "/admin/plans/plans", "name=Sneaky"); code != http.StatusForbidden {
+		t.Errorf("a customer posting the operator's form = %d %s, want 403", code, body)
 	}
 }

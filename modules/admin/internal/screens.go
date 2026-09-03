@@ -38,7 +38,7 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 	title := strings.ToUpper(r.Entity[:1]) + r.Entity[1:]
 
 	html(api, s, id+"list", http.MethodGet, at, "The "+r.Entity+" list", read,
-		func(ctx context.Context, in *listInput) (*page, error) {
+		func(ctx context.Context, in *listInput) (*httpx.Page, error) {
 			page := max(in.Page, 1)
 			rows, total, err := r.List(ctx, crud.Query{
 				Limit: perPage, Offset: (page - 1) * perPage, Sort: in.Sort,
@@ -50,8 +50,8 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 				components.Toolbar(components.ToolbarProps{
 					Title:    title + "s",
 					Subtitle: plural(total, title),
-				}, components.Button(components.ButtonProps{
-					Label: "New " + r.Entity, Href: at + "/new"})),
+				}, writable(ctx, r, components.Button(components.ButtonProps{
+					Label: "New " + r.Entity, Href: at + "/new"}))...),
 				table(r, at, rows, in.Sort),
 				components.Pagination(components.PaginationProps{
 					HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
@@ -61,12 +61,12 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 		})
 
 	html(api, s, id+"new", http.MethodGet, at+"/new", "The new-"+r.Entity+" form", write,
-		func(ctx context.Context, _ *emptyInput) (*page, error) {
+		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) {
 			return ok(s.form(ctx, r, at, "New "+r.Entity, at, nil, nil, "", true))
 		})
 
 	html(api, s, id+"create", http.MethodPost, at, "Create a "+r.Entity, write,
-		func(ctx context.Context, in *formInput) (*page, error) {
+		func(ctx context.Context, in *formInput) (*httpx.Page, error) {
 			// Immutable is refused here rather than dropped: this form does not
 			// render those fields at all, so a value for one did not come from
 			// it. See rest.Values.
@@ -74,7 +74,7 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 			if err == nil {
 				var row map[string]any
 				if row, err = r.Create(ctx, sent); err == nil {
-					return nil, seeOther(at + "/" + rest.Text(row["id"]))
+					return nil, httpx.SeeOther(at + "/" + rest.Text(row["id"]))
 				}
 			}
 			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
@@ -82,7 +82,7 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 		})
 
 	html(api, s, id+"read", http.MethodGet, at+"/{id}", "One "+r.Entity, read,
-		func(ctx context.Context, in *itemInput) (*page, error) {
+		func(ctx context.Context, in *itemInput) (*httpx.Page, error) {
 			row, err := r.Get(ctx, in.ID)
 			if err != nil {
 				return nil, err
@@ -95,14 +95,15 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 			return ok(s.page(ctx, named,
 				breadcrumb(title+"s", at, named),
 				components.Toolbar(components.ToolbarProps{Title: named},
-					components.Button(components.ButtonProps{Label: "Edit", Href: item + "/edit"}),
-					deleteForm(item, r.Entity)),
+					writable(ctx, r,
+						components.Button(components.ButtonProps{Label: "Edit", Href: item + "/edit"}),
+						deleteForm(item, r.Entity))...),
 				details(r, row),
 			))
 		})
 
 	html(api, s, id+"edit", http.MethodGet, at+"/{id}/edit", "The edit-"+r.Entity+" form", write,
-		func(ctx context.Context, in *itemInput) (*page, error) {
+		func(ctx context.Context, in *itemInput) (*httpx.Page, error) {
 			row, err := r.Get(ctx, in.ID)
 			if err != nil {
 				return nil, err
@@ -111,12 +112,12 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 		})
 
 	html(api, s, id+"update", http.MethodPost, at+"/{id}", "Update a "+r.Entity, write,
-		func(ctx context.Context, in *itemFormInput) (*page, error) {
+		func(ctx context.Context, in *itemFormInput) (*httpx.Page, error) {
 			item := at + "/" + in.ID.String()
 			sent, err := rest.Values(in.RawBody, r.Schema.Fields, nil)
 			if err == nil {
 				if _, err = r.Update(ctx, in.ID, rest.Writable(sent, r.Immutable)); err == nil {
-					return nil, seeOther(item)
+					return nil, httpx.SeeOther(item)
 				}
 			}
 			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
@@ -124,11 +125,11 @@ func (s *Shell) mountScreens(api *httpx.API, r httpx.Resource) {
 		})
 
 	html(api, s, id+"delete", http.MethodPost, at+"/{id}/delete", "Delete a "+r.Entity, write,
-		func(ctx context.Context, in *itemInput) (*page, error) {
+		func(ctx context.Context, in *itemInput) (*httpx.Page, error) {
 			if err := r.Delete(ctx, in.ID); err != nil {
 				return nil, err
 			}
-			return nil, seeOther(at)
+			return nil, httpx.SeeOther(at)
 		})
 }
 
@@ -322,6 +323,22 @@ func deleteForm(item, entity string) g.Node {
 			}},
 			Label: "Delete", Type: "submit", Tone: "danger", Size: "md",
 		}))
+}
+
+// writable is the write affordances, or none of them: a person who may not
+// write this resource is not shown a form that would refuse them.
+//
+// It asks the resource the same question the route behind the form asks — and
+// that question carries the operator flag, so a customer's administrator, whose
+// wildcard is everything in their own tenant, is not offered the price list's
+// New button at a tenant that is not the operator's. The button was there and
+// the save was a 403, which is the shape of interface that teaches people the
+// application is broken. See httpx.Resource.Writable and docs/adr/0008.
+func writable(ctx context.Context, r httpx.Resource, actions ...g.Node) []g.Node {
+	if !r.Writable(ctx) {
+		return nil
+	}
+	return actions
 }
 
 func breadcrumb(collection, at, here string) g.Node {

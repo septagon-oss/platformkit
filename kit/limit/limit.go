@@ -81,16 +81,14 @@ var systemToken = syscap.NewSystemToken("rate limit counters")
 // wrong for a paywall.
 var ErrNoConnection = errors.New("limit: no database connection on this context")
 
-// Connections is where a limiter finds the pool. httpx.ConnFrom is the one the
-// application passes: the kernel puts the connection on every request's
-// context, and a job is handed one it can put there itself.
+// Connections is where a limiter finds the pool, and httpx.ConnFrom is what the
+// application passes: the kernel puts the connection on every request's context.
 //
 // It is a parameter rather than an import for two reasons. A composition builds
-// its modules before kit/app opens the pool, so a limiter cannot be handed a
-// connection at construction; and a package that counts rows has no business
-// linking a web server to find out where they go — modules/auth's contracts
-// package holds a Limiter, and a contracts package is the entity and the
-// interfaces (ARCHITECTURE, idea 3).
+// its modules before kit/app opens the pool, so a limiter cannot be handed one
+// at construction; and a package that counts rows has no business linking a web
+// server to find out where they go — modules/auth's contracts package holds a
+// Limiter, and a contracts package is the entity and the interfaces.
 type Connections func(context.Context) (*db.Conn, bool)
 
 // Postgres returns the limiter every replica shares.
