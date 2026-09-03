@@ -53,7 +53,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		// that is asleep holds a goroutine and nothing else.
 		r, _ := httpx.RequestFrom(ctx)
 		from := ClientOf(r)
-		if svc.Precheck(in.Body.Email, from.IP) == contracts.Delay {
+		if svc.Precheck(ctx, in.Body.Email, from.IP) == contracts.Delay {
 			pause(ctx, contracts.SoftDelay)
 		}
 		tx, err := transaction(ctx)
@@ -168,7 +168,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		// limit on the address asked about — that would be the oracle this
 		// route exists not to be.
 		r, _ := httpx.RequestFrom(ctx)
-		if !svc.MayAsk(ClientOf(r).IP) {
+		if !svc.MayAsk(ctx, ClientOf(r).IP) {
 			return nil, problem.New(http.StatusTooManyRequests,
 				"too many reset requests from this address; wait and try again")
 		}

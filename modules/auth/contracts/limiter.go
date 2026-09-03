@@ -1,9 +1,12 @@
 package contracts
 
 import (
+	"context"
+	"log/slog"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/septagon-oss/platformkit/kit/limit"
 )
 
 // The lockout: ten failures for one address in fifteen minutes, and that
@@ -64,16 +67,8 @@ const (
 	ResetRequests = 10
 )
 
-// Limiter counts failed logins, per account and per source address, in this
-// process's memory.
-//
-// In this process's memory, and that is the honest limit of it: with three
-// replicas an attacker gets thirty attempts per window rather than ten, and a
-// deploy resets the count. A cluster-wide limit needs a durable shared counter —
-// a Postgres table, a write on the path of every failed login, and a purge — and
-// it belongs with the rest of the abuse controls in E5 rather than half-built
-// here. What this does buy is the thing worth buying now: an online guessing
-// attack against one account cannot run at the speed of the network.
+// Limiter counts failed logins, per account and per source address, in the one
+// counter every replica shares (kit/limit).
 //
 // Two counters, because one of them is a weapon. A per-account lockout is a
 // denial of service anybody can trigger against anybody whose address they
@@ -82,6 +77,14 @@ const (
 // from many addresses are somebody attacking the lockout, and that account gets
 // a delay rather than a refusal; failures from one address against many
 // accounts are somebody working through a list, and that address gets the same.
+//
+// # Counting distinct addresses without a set
+//
+// MaxSources asks how many places one account has failed from, and the store
+// counts events rather than remembering them. So the first failure of an
+// account-and-address pair inside a window — a limit of one on the pair's own
+// key — is what raises the account's source count. A hundred failures from one
+// address raise it once, which is the question being asked.
 //
 // # The residual, stated
 //
@@ -99,36 +102,30 @@ const (
 // Closing it properly means proving the caller is not the account's owner —
 // a second factor, or a challenge — and neither exists here yet.
 //
+// A limiter that cannot reach its store allows the attempt and says so in the
+// log. It is the right way for this one to fail: the alternative is an
+// installation nobody can sign in to because a counter table is unreachable,
+// and every refusal this makes is a refusal the password check would make
+// anyway.
+//
 // It lives in contracts rather than in internal/ because the lockout is part of
 // what Login promises, so the fake keeps it too and the conformance suite can
 // check that both do.
-type Limiter struct {
-	mu      sync.Mutex
-	windows map[string]window
-	sources map[string]window
-}
+type Limiter struct{ store limit.Limiter }
 
-type window struct {
-	failures int
-	until    time.Time
-	// from is the distinct addresses this account has failed from inside the
-	// window, bounded by MaxSources+1: past the bound the answer is the same
-	// whatever else arrives, so nothing more is remembered and a botnet cannot
-	// grow the map by trying one more machine.
-	from map[string]bool
-}
+// NewLimiter returns a limiter over a store: kit/limit's Postgres one in the
+// application, its memory one in a fake.
+func NewLimiter(store limit.Limiter) *Limiter { return &Limiter{store: store} }
 
-// maxTracked bounds the map. An attacker who tries a fresh invented address
-// every time would otherwise fill it: past the bound the expired entries are
-// dropped and, if that was not enough, the map is emptied, which costs the
-// honest failures their count and costs an attacker nothing they did not
-// already have.
-const maxTracked = 10_000
-
-// NewLimiter returns an empty limiter.
-func NewLimiter() *Limiter {
-	return &Limiter{windows: map[string]window{}, sources: map[string]window{}}
-}
+// The keys, each namespaced by what it counts. kit/limit puts the tenant in
+// front of them, so these say nothing about which customer is being attacked.
+// The separator inside a compound key is a space, which no address contains.
+func accountKey(email string) string   { return "auth/account/" + EmailKey(email) }
+func sourcesKey(email string) string   { return "auth/sources/" + EmailKey(email) }
+func sourceKey(ip string) string       { return "auth/source/" + ip }
+func pairKey(email, ip string) string  { return "auth/pair/" + EmailKey(email) + " " + ip }
+func forgotKey(ip string) string       { return "auth/forgot/" + ip }
+func notedKey(email, ip string) string { return "auth/noted/" + EmailKey(email) + " " + ip }
 
 // Verdict is what the limiter says about one attempt before it is made.
 type Verdict int
@@ -153,21 +150,17 @@ const (
 
 // Check is what the limiter says about an attempt on this address from this
 // one. It reads and does not record; Failed and Succeeded are the writes.
-func (l *Limiter) Check(email, ip string) Verdict {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := time.Now()
-	account, live := l.windows[EmailKey(email)]
-	live = live && now.Before(account.until)
-	switch {
-	case live && account.failures >= MaxAttempts && len(account.from) > MaxSources:
-		// Locked, but by a crowd: this is somebody trying to lock the account's
-		// owner out, and answering "too many attempts" is doing it for them.
-		return Delay
-	case live && account.failures >= MaxAttempts:
+func (l *Limiter) Check(ctx context.Context, email, ip string) Verdict {
+	if l.count(ctx, accountKey(email)) >= MaxAttempts {
+		if l.count(ctx, sourcesKey(email)) > MaxSources {
+			// Locked, but by a crowd: this is somebody trying to lock the
+			// account's owner out, and answering "too many attempts" is doing
+			// it for them.
+			return Delay
+		}
 		return Refuse
 	}
-	if source, ok := l.sources[ip]; ok && now.Before(source.until) && source.failures >= SourceAttempts {
+	if ip != "" && l.count(ctx, sourceKey(ip)) >= SourceAttempts {
 		// One machine working through a list of addresses. Each account's own
 		// counter is untouched, so this is the only thing that sees it.
 		return Delay
@@ -176,70 +169,38 @@ func (l *Limiter) Check(email, ip string) Verdict {
 }
 
 // Failed records one failure, from one address, against one account.
-func (l *Limiter) Failed(email, ip string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.prune()
-	now := time.Now()
-
-	k := EmailKey(email)
-	w, ok := l.windows[k]
-	if !ok || now.After(w.until) {
-		w = window{until: now.Add(AttemptWindow), from: map[string]bool{}}
-	}
-	w.failures++
-	if ip != "" && len(w.from) <= MaxSources {
-		w.from[ip] = true
-	}
-	l.windows[k] = w
-
+func (l *Limiter) Failed(ctx context.Context, email, ip string) {
+	l.record(ctx, accountKey(email), MaxAttempts)
 	if ip == "" {
 		return
 	}
-	s, ok := l.sources[ip]
-	if !ok || now.After(s.until) {
-		s = window{until: now.Add(AttemptWindow)}
+	// The first failure of this pair in this window, and only it, is a new
+	// place this account has been attacked from.
+	if l.within(ctx, pairKey(email, ip), 1) {
+		l.record(ctx, sourcesKey(email), MaxSources)
 	}
-	s.failures++
-	l.sources[ip] = s
+	l.record(ctx, sourceKey(ip), SourceAttempts)
 }
 
-// Succeeded forgets an address: somebody proved they are who they said. The
-// source's count stays, because one correct password out of fifty attempts is
-// what a successful guessing run looks like.
-func (l *Limiter) Succeeded(email string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.windows, EmailKey(email))
-}
-
-// count records one event of a kind in a window and reports whether it is still
-// within max.
-//
-// The two callers below are what it is for, and both are counts of a string per
-// window, which is what sources already holds. space keeps their keys apart
-// from an address's — a plain IP never contains a NUL — so this is one map and
-// one prune rather than three of each.
-func (l *Limiter) count(space, key string, max int) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.prune()
-	now := time.Now()
-	k := space + "\x00" + key
-	w, ok := l.sources[k]
-	if !ok || now.After(w.until) {
-		w = window{until: now.Add(AttemptWindow)}
+// Succeeded forgets an account's failures: somebody proved they are who they
+// said. The addresses stay — one correct password out of fifty attempts is what
+// a successful guessing run looks like — and so does the count of places this
+// account has been attacked from, because a sign-in is not evidence that the
+// attack stopped. The consequence is the safe one: a lockout that follows is a
+// delay rather than a refusal.
+func (l *Limiter) Succeeded(ctx context.Context, email string) {
+	if err := l.store.Forget(ctx, accountKey(email)); err != nil {
+		slog.ErrorContext(ctx, "auth: the limiter could not forget an account", "error", err)
 	}
-	w.failures++
-	l.sources[k] = w
-	return w.failures <= max
 }
 
 // Requested counts one forgotten-password request from an address and reports
 // whether it is within ResetRequests for this window. The address is the one
 // asking; the address being asked about is never counted, because a cap that
 // depended on it would answer the question the route exists not to answer.
-func (l *Limiter) Requested(ip string) bool { return l.count("forgot", ip, ResetRequests) }
+func (l *Limiter) Requested(ctx context.Context, ip string) bool {
+	return l.within(ctx, forgotKey(ip), ResetRequests)
+}
 
 // Noted reports whether a refusal for this account from this address is worth
 // writing down, which is the first one in the window and no more.
@@ -249,29 +210,36 @@ func (l *Limiter) Requested(ip string) bool { return l.count("forgot", ip, Reset
 // does not change: the first one says the account is under attack and the
 // nine hundredth says it still is. The failures themselves are still recorded
 // one for one — those are attempts that were actually made.
-func (l *Limiter) Noted(email, ip string) bool {
-	return l.count("noted", EmailKey(email)+"\x00"+ip, 1)
+func (l *Limiter) Noted(ctx context.Context, email, ip string) bool {
+	return l.within(ctx, notedKey(email, ip), 1)
 }
 
-// prune drops what has expired, and empties the maps if that was not enough.
-// The caller holds the lock.
-func (l *Limiter) prune() {
-	if len(l.windows)+len(l.sources) < maxTracked {
-		return
+// count is how many events a key has in the window, or zero when the store
+// cannot be reached: a limiter that refused what it could not count would make
+// an unreachable table an installation nobody can sign in to.
+func (l *Limiter) count(ctx context.Context, key string) int {
+	n, _, err := l.store.Count(ctx, key, AttemptWindow)
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: the limiter could not be read; the attempt is allowed", "key", key, "error", err)
+		return 0
 	}
-	now := time.Now()
-	for _, m := range []map[string]window{l.windows, l.sources} {
-		for k, w := range m {
-			if now.After(w.until) {
-				delete(m, k)
-			}
-		}
-	}
-	if len(l.windows)+len(l.sources) >= maxTracked {
-		clear(l.windows)
-		clear(l.sources)
-	}
+	return n
 }
+
+// within records one event and reports whether the key is still inside max.
+func (l *Limiter) within(ctx context.Context, key string, max int) bool {
+	ok, _, err := l.store.Allow(ctx, key, max, AttemptWindow)
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: the limiter could not be written; the attempt is allowed", "key", key, "error", err)
+		return true
+	}
+	return ok
+}
+
+// record counts an event whose verdict is read separately, because the lockout
+// has three answers rather than two: what a failure is worth is Check's to say,
+// after the count that Failed has just raised.
+func (l *Limiter) record(ctx context.Context, key string, max int) { _ = l.within(ctx, key, max) }
 
 // EmailKey is the address as this module counts it: one that differs only in
 // case or in whitespace is the same account being attacked, and the same

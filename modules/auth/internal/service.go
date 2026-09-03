@@ -19,6 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -73,15 +74,22 @@ func (s *Service) declared() []tenancy.Grant {
 
 // NewService returns the auth service. module.go constructs it.
 func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery, operator []string) *Service {
-	return &Service{users: users, notify: notify, mail: mail, limiter: contracts.NewLimiter(), operator: operator}
+	// The counters every replica shares. httpx.ConnFrom is where they find the
+	// pool: this module is constructed before kit/app opens one, and every
+	// caller below is inside a request that carries it.
+	return &Service{users: users, notify: notify, mail: mail,
+		limiter: contracts.NewLimiter(limit.Postgres(httpx.ConnFrom)), operator: operator}
 }
 
-// Precheck is the limiter's verdict, read from memory. See contracts.Service.
-func (s *Service) Precheck(email, ip string) contracts.Verdict { return s.limiter.Check(email, ip) }
+// Precheck is the limiter's verdict, read from the shared counters. See
+// contracts.Service.
+func (s *Service) Precheck(ctx context.Context, email, ip string) contracts.Verdict {
+	return s.limiter.Check(ctx, email, ip)
+}
 
 // MayAsk counts one forgotten-password request from an address. See
 // contracts.Service.
-func (s *Service) MayAsk(ip string) bool { return s.limiter.Requested(ip) }
+func (s *Service) MayAsk(ctx context.Context, ip string) bool { return s.limiter.Requested(ctx, ip) }
 
 var _ contracts.Service = (*Service)(nil)
 
@@ -97,12 +105,12 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 	// Precheck — a two-second sleep here holds one of sixteen pool connections,
 	// and twenty-four of them at once took a replica to twenty-nine seconds of
 	// latency for every other request. See contracts.Service.Precheck.
-	if s.limiter.Check(email, from.IP) == contracts.Refuse {
+	if s.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
 		// Once per account per address per window. The refusal happens before
 		// anything is checked, so a script against a locked account produces
 		// one of these a millisecond; the first says the account is under
 		// attack and the nine hundredth says it still is.
-		if s.limiter.Noted(email, from.IP) {
+		if s.limiter.Noted(ctx, email, from.IP) {
 			s.recordFailure(ctx, email, from, true)
 		}
 		return nil, nil, contracts.ErrTooManyAttempts
@@ -123,7 +131,7 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 	case !user.CheckPassword(password):
 		return nil, nil, s.fail(ctx, email, from)
 	}
-	s.limiter.Succeeded(email)
+	s.limiter.Succeeded(ctx, email)
 	session, identity, err := s.open(ctx, tx, user, from, "password")
 	if err != nil {
 		return nil, nil, err
@@ -408,8 +416,8 @@ func (s *Service) identify(ctx context.Context, tx db.Tx[db.Tenant], user *userc
 
 // fail records one failure and returns the one answer a failed login gets.
 func (s *Service) fail(ctx context.Context, email string, from contracts.Client) error {
-	s.limiter.Failed(email, from.IP)
-	s.recordFailure(ctx, email, from, s.limiter.Check(email, from.IP) == contracts.Refuse)
+	s.limiter.Failed(ctx, email, from.IP)
+	s.recordFailure(ctx, email, from, s.limiter.Check(ctx, email, from.IP) == contracts.Refuse)
 	return contracts.ErrCredentials
 }
 

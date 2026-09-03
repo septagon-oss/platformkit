@@ -9,6 +9,7 @@ package internal_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/migrations"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
@@ -362,4 +364,67 @@ func TestAnExpiredSessionGoesOnTheRefusalItCauses(t *testing.T) {
 	if left != 0 {
 		t.Errorf("%d expired session(s) survived the refusal they caused", left)
 	}
+}
+
+// TestTheLockoutIsOneCounterForEveryReplica is what kit/limit bought.
+//
+// The counters used to be a map in one process: three pods were three lockouts,
+// so an attacker got MaxAttempts times the replica count and got it all back on
+// every deploy. Here two pools on one database are two pods, the ten failures
+// are split between them, and neither will take the eleventh — which is a test
+// that fails on any counter that lives in a process.
+func TestTheLockoutIsOneCounterForEveryReplica(t *testing.T) {
+	adminURL, appURL := dbtest.URLs(t)
+	if err := db.Migrate(t.Context(), adminURL, migrations.FS); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pods := []*db.Conn{pool(t, appURL), pool(t, appURL)}
+	services := []contracts.Service{service(t), service(t)}
+	person(t, pods[0], "ada@acme.localhost")
+
+	login := func(pod int, password string) error {
+		t.Helper()
+		conn := pods[pod]
+		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
+		var attempt error
+		if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			_, _, attempt = services[pod].Login(ctx, tx, "ada@acme.localhost", password, nobody)
+			return nil
+		}); err != nil {
+			t.Fatalf("the transaction: %v", err)
+		}
+		return attempt
+	}
+
+	for i := range contracts.MaxAttempts {
+		if err := login(i%len(pods), "the wrong passphrase"); !errors.Is(err, contracts.ErrCredentials) {
+			t.Fatalf("failure %d on pod %d = %v, want ErrCredentials", i+1, i%len(pods), err)
+		}
+	}
+	// Both of them refuse, and they refuse the correct password: five failures
+	// each is what one pod would still be letting through.
+	for pod := range pods {
+		if err := login(pod, authtest.Password); !errors.Is(err, contracts.ErrTooManyAttempts) {
+			t.Errorf("the correct password on pod %d after %d failures spread over %d pods = %v, want ErrTooManyAttempts",
+				pod, contracts.MaxAttempts, len(pods), err)
+		}
+	}
+}
+
+// pool is one pod's connection pool, on a schema somebody else migrated.
+func pool(t *testing.T, appURL string) *db.Conn {
+	t.Helper()
+	conn, err := db.Open(t.Context(), appURL)
+	if err != nil {
+		t.Fatalf("open a pod's pool: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+// service is one pod's auth service: its own value, its own everything, the way
+// a second process has its own.
+func service(t *testing.T) contracts.Service {
+	t.Helper()
+	return internal.NewService(realUsers(), &authtest.Notices{}, delivery(&authtest.Mailbox{}), operatorPermissions)
 }
