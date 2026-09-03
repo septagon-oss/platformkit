@@ -14,6 +14,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
+// htmlContentType is what every Page carries. The constant itself is not
+// exported — nothing outside the package builds a Page by hand — so the two
+// assertions below spell it.
+const htmlContentType = "text/html; charset=utf-8"
+
 // TestAPageIsAnOperation. The helpers used to live in modules/admin, where a
 // client's storefront copied them and the copy drifted: this is the shape both
 // of them are now, mounted through the same Register, recorded by the same
@@ -42,7 +47,7 @@ func TestAPageIsAnOperation(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("the page = %d %s", res.Code, res.Body)
 	}
-	if ct := res.Header().Get("Content-Type"); ct != httpx.HTMLContentType {
+	if ct := res.Header().Get("Content-Type"); ct != htmlContentType {
 		t.Errorf("the page is served as %q", ct)
 	}
 	if body := res.Body.String(); !strings.HasPrefix(body, "<!doctype html>") || !strings.Contains(body, "Note 7") {
@@ -91,7 +96,7 @@ func TestAFragmentIsTheSameHTMLWithoutTheDoctype(t *testing.T) {
 	if strings.Contains(string(fragment.Body), "doctype") {
 		t.Errorf("the fragment carries a doctype: %s", fragment.Body)
 	}
-	if document.ContentType != fragment.ContentType || fragment.ContentType != httpx.HTMLContentType {
+	if document.ContentType != fragment.ContentType || fragment.ContentType != htmlContentType {
 		t.Errorf("the two content types are %q and %q", document.ContentType, fragment.ContentType)
 	}
 }

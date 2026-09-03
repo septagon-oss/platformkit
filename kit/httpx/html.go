@@ -38,7 +38,7 @@ type Page struct {
 // HTMLContentType is what every Page carries. It is exported because a handler
 // that builds a Page itself — one that serves bytes it did not render from a
 // node — should not spell it a second way.
-const HTMLContentType = "text/html; charset=utf-8"
+const htmlContentType = "text/html; charset=utf-8"
 
 // Document renders a node as a whole HTML document: the doctype, and then the
 // node. Without the doctype a browser parses the page in quirks mode, which is
@@ -64,13 +64,13 @@ func render(node g.Node, status int, document bool) (*Page, error) {
 	if err := node.Render(&b); err != nil {
 		return nil, err
 	}
-	return &Page{Status: status, ContentType: HTMLContentType, Body: []byte(b.String())}, nil
+	return &Page{Status: status, ContentType: htmlContentType, Body: []byte(b.String())}, nil
 }
 
-// Redirect sends the caller somewhere else after a write. htmx does not follow
+// redirect sends the caller somewhere else after a write. htmx does not follow
 // a 303 the way a browser does — it would swap the target page into a fragment
 // — so a request it made is answered with the header it understands instead.
-func Redirect(ctx context.Context, to string) *Page {
+func redirect(ctx context.Context, to string) *Page {
 	if r, ok := RequestFrom(ctx); ok && r.Header.Get("HX-Request") == "true" {
 		return &Page{Status: http.StatusNoContent, HXRedirect: to}
 	}
@@ -121,7 +121,7 @@ func (s SeeOther) Error() string { return "see " + string(s) }
 // dropped by the browser and reported in a console nobody is reading. This is
 // the shape that cannot be written wrong.
 func Script(ctx context.Context, js string) g.Node {
-	return h.Script(g.Attr("nonce", NonceFrom(ctx)), g.Raw(js))
+	return h.Script(g.Attr("nonce", nonceFrom(ctx)), g.Raw(js))
 }
 
 // pageErrors are the statuses a page can answer with when its caller declares
@@ -148,7 +148,7 @@ func HTML[I any](api *API, op huma.Operation, auth Auth, handler func(context.Co
 		out, err := handler(ctx, in)
 		var to SeeOther
 		if errors.As(err, &to) {
-			return Redirect(ctx, string(to)), nil
+			return redirect(ctx, string(to)), nil
 		}
 		return out, err
 	})

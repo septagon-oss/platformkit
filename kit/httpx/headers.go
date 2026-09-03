@@ -79,10 +79,11 @@ const noStore = "no-store"
 
 type nonceKey struct{}
 
-// NonceFrom is the content security policy nonce of the request ctx belongs to,
-// or "" outside one. A template that has to emit an inline <script> puts it on
-// the tag; nothing else needs it.
-func NonceFrom(ctx context.Context) string {
+// nonceFrom is the content security policy nonce of the request ctx belongs to,
+// or "" outside one. Script below is the only caller and the only thing that
+// should be one: a template that reaches for the nonce itself is a template
+// that can forget it.
+func nonceFrom(ctx context.Context) string {
 	n, _ := ctx.Value(nonceKey{}).(string)
 	return n
 }

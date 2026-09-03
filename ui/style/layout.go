@@ -70,12 +70,12 @@ func (b Breakpoint) Prefix() string {
 	return string(b) + ":"
 }
 
+// The two breakpoints this application lays out at. Three more were declared
+// and nothing ever named one; a component that needs md:, xl: or 2xl: adds it
+// back where it uses it.
 const (
-	BreakpointSM  Breakpoint = "sm"  // >= 640px
-	BreakpointMD  Breakpoint = "md"  // >= 768px
-	BreakpointLG  Breakpoint = "lg"  // >= 1024px
-	BreakpointXL  Breakpoint = "xl"  // >= 1280px
-	Breakpoint2XL Breakpoint = "2xl" // >= 1536px
+	BreakpointSM Breakpoint = "sm" // >= 640px
+	BreakpointLG Breakpoint = "lg" // >= 1024px
 )
 
 // AllDisplays returns every Display const in stable order.

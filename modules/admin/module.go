@@ -17,7 +17,6 @@ package admin
 
 import (
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/admin/internal"
@@ -67,7 +66,6 @@ func Module(deps Deps) module.Module {
 		Routes: func(api *httpx.API) {
 			internal.Mount(api, internal.Shell{
 				Nav:       navigation(deps.Modules),
-				Checks:    checks(deps.Modules),
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
 				Theme:     theme(deps.Theme),
@@ -98,17 +96,6 @@ func navigation(mods []module.Module) []module.NavEntry {
 	var out []module.NavEntry
 	for _, m := range mods {
 		out = append(out, m.Nav...)
-	}
-	return out
-}
-
-// checks is every module's health checks, for the health page. kit/app collects
-// the same list for /ready; this one is rendered rather than counted, so a
-// person can see which dependency is the unhappy one.
-func checks(mods []module.Module) []health.Check {
-	var out []health.Check
-	for _, m := range mods {
-		out = append(out, m.Health...)
 	}
 	return out
 }

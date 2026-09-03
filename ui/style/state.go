@@ -14,22 +14,15 @@ func (s State) Prefix() string {
 	return string(s) + ":"
 }
 
-// Canonical state modifiers.
+// The state modifiers this application uses. Eleven more were declared and
+// nothing ever named one — a vocabulary is a list of what a component may say,
+// and a word with no speaker is a word a reader has to look up. A component that
+// needs first:, odd: or group-hover: adds it back in the commit that uses it,
+// which is also the commit that makes the CSS carry the rule.
 const (
 	StateHover        State = "hover"
 	StateFocus        State = "focus"
 	StateFocusVisible State = "focus-visible"
-	StateFocusWithin  State = "focus-within"
-	StateActive       State = "active"
 	StateDisabled     State = "disabled"
-	StateChecked      State = "checked"
-	StateFirst        State = "first"
-	StateLast         State = "last"
-	StateOdd          State = "odd"
-	StateEven         State = "even"
-	StateGroupHover   State = "group-hover"
-	StateGroupFocus   State = "group-focus"
-	StatePeer         State = "peer"
 	StatePlaceholder  State = "placeholder"
-	StateDark         State = "dark"
 )

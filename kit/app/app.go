@@ -249,14 +249,16 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	}
 	api.Declare(catalogue)
 
-	checks := []health.Check{health.DatabaseCheck(conn)}
 	for _, m := range a.mods {
 		if m.Routes != nil {
 			m.Routes(api)
 		}
-		checks = append(checks, m.Health...)
 	}
-	health.Register(api, checks...)
+	// One check, and the reason there is one is that /ready answers a question a
+	// probe can act on: is this instance's database reachable. Modules used to
+	// be able to contribute their own and none ever did in three repositories,
+	// so the list was this line and a loop over nothing.
+	health.Register(api, health.DatabaseCheck(conn))
 
 	// The gates. An operation that declares no authorization, one guarded by a
 	// permission no module defines, or one that would publish an event no
@@ -343,11 +345,7 @@ func (a *App) race(ctx context.Context, halves ...func(context.Context) error) e
 // same address the web role listens on, so one orchestrator manifest describes
 // both roles. kit/health owns the shape, so the two roles answer alike.
 func (a *App) probes(conn *db.Conn) http.Handler {
-	checks := []health.Check{health.DatabaseCheck(conn)}
-	for _, m := range a.mods {
-		checks = append(checks, m.Health...)
-	}
-	return health.Mux(a.log, checks...)
+	return health.Mux(a.log, health.DatabaseCheck(conn))
 }
 
 // routeKind names the constructor a route used, for the one error that has to

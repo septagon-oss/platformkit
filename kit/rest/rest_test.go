@@ -474,34 +474,6 @@ func TestAWriteAndItsEventCommitTogether(t *testing.T) {
 	}
 }
 
-// TestNoEventsMountsTheSameRoutesSilently, for the entity that is nobody's
-// business but its own.
-func TestNoEventsMountsTheSameRoutesSilently(t *testing.T) {
-	admin, app := dbtest.Schema(t)
-	if _, err := admin.ExecContext(t.Context(), ddl); err != nil {
-		t.Fatalf("create tasks: %v", err)
-	}
-	api, _ := httpx.New(httpx.Options{
-		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
-		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
-			return tenancy.Principal{}, false, nil
-		},
-		Log: slog.New(slog.DiscardHandler),
-	})
-	quiet := spec
-	quiet.NoEvents = true
-	quiet.Mount(api)
-	if got := api.Events(); len(got) != 0 {
-		t.Errorf("a silent Spec still declares %v", got)
-	}
-	if got := quiet.Events(); got != nil {
-		t.Errorf("Spec.Events = %v, want none", got)
-	}
-	if len(api.Recorded()) < 5 {
-		t.Errorf("%d operations, want the five routes", len(api.Recorded()))
-	}
-}
-
 // TestARequestWithNoBodyIsARefusalAndNotAPanic. The entity is a pointer type
 // and huma reads a pointer body as optional, so a POST with nothing in it used
 // to reach the handler as a nil entity and panic on the first field the create

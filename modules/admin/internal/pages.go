@@ -189,7 +189,7 @@ func (s *Shell) dashboard(ctx context.Context, resources []httpx.Resource) g.Nod
 // names what failed; this runs the same checks and says so one at a time, which
 // is what somebody looking at a broken deployment needs.
 func (s *Shell) health(ctx context.Context) g.Node {
-	rows := make([]components.TableRow, 0, len(s.Checks)+1)
+	rows := make([]components.TableRow, 0, 1)
 	for _, c := range s.checks(ctx) {
 		state, tone := "ok", "success"
 		if c.err != nil {
@@ -236,16 +236,15 @@ type result struct {
 // mismatch, which is what /ready never hits because a probe queries nothing
 // before it. See db.Detached.
 func (s *Shell) checks(ctx context.Context) []result {
-	all := s.Checks
-	if conn, reachable := httpx.ConnFrom(ctx); reachable {
-		all = append([]health.Check{health.DatabaseCheck(conn)}, all...)
+	// One check, because /ready is one check: modules could contribute their
+	// own and none ever did, so the list was a loop over nothing wrapped around
+	// this line.
+	conn, reachable := httpx.ConnFrom(ctx)
+	if !reachable {
+		return nil
 	}
-	loose := db.Detached(ctx)
-	out := make([]result, 0, len(all))
-	for _, c := range all {
-		out = append(out, result{name: c.Name(), err: c.Check(loose)})
-	}
-	return out
+	c := health.DatabaseCheck(conn)
+	return []result{{name: c.Name(), err: c.Check(db.Detached(ctx))}}
 }
 
 // gallery renders every component once, with its props, from the package's own

@@ -35,11 +35,15 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 	httpx.Register(api, huma.Operation{
 		OperationID: "read-page", Method: http.MethodGet, Path: "/page",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*huma.StreamResponse, error) {
-		nonce := httpx.NonceFrom(ctx)
+		// httpx.Script and not the nonce by hand, which is the point of the
+		// helper: the policy allows an inline script only with the nonce, so a
+		// tag written without one is dropped by the browser and reported in a
+		// console nobody is reading. There is no exported way to read the nonce
+		// on its own, because a template that reaches for it can forget it.
 		return &huma.StreamResponse{Body: func(hctx huma.Context) {
 			hctx.SetHeader("Content-Type", "text/html; charset=utf-8")
 			hctx.SetStatus(http.StatusOK)
-			_, _ = hctx.BodyWriter().Write([]byte(`<script nonce="` + nonce + `">1</script>`))
+			_ = httpx.Script(ctx, "1").Render(hctx.BodyWriter())
 		}}, nil
 	})
 

@@ -40,8 +40,12 @@ const (
 // widget the screens can produce is on this struct.
 type Note struct {
 	crud.Base
-	Title  string     `json:"title" validate:"required" doc:"What this note is about"`
-	Body   string     `json:"body,omitempty" gorm:"type:text" ui:"hide:list"`
+	Title string `json:"title" validate:"required" doc:"What this note is about"`
+	Body  string `json:"body,omitempty" gorm:"type:text" ui:"widget:textarea;hide:list"`
+	// Email is a text column that is not a paragraph, which is what an address,
+	// a display name and a link all are: it renders as an input, because the
+	// widget and not the storage type is what decides.
+	Email  string     `json:"email,omitempty" gorm:"type:text" ui:"hide:list"`
 	Status string     `json:"status" enum:"open,done" ui:"widget:select" required:"false" default:"open"`
 	Rank   int        `json:"rank,omitempty"`
 	Pinned bool       `json:"pinned" required:"false"`
@@ -68,6 +72,7 @@ CREATE TABLE admin_notes (
 	deleted_at timestamptz,
 	title text NOT NULL,
 	body text NOT NULL DEFAULT '',
+	email text NOT NULL DEFAULT '',
 	status text NOT NULL DEFAULT 'open',
 	rank int NOT NULL DEFAULT 0,
 	pinned boolean NOT NULL DEFAULT false,
@@ -244,15 +249,16 @@ func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 		t.Fatalf("the new form = %d %s", code, form)
 	}
 	for what, want := range map[string]string{
-		"an enum renders a select":               `<select`,
-		"a text column renders a textarea":       `<textarea`,
-		"a bool renders a checkbox":              `type="checkbox"`,
-		"a required field says so":               `required`,
-		"an entity-picker says there is none":    "There is no picker for it yet",
-		"a list field says how to write one":     "Comma separated",
-		"the server owns the id and timestamps":  `name="title"`,
-		"a field's own doc is the note under it": "What this note is about",
-		"a declared default is preselected":      `<option value="open" selected>`,
+		"an enum renders a select":                  `<select`,
+		"a field that asks for a textarea gets one": `<textarea`,
+		"a text column that does not gets an input": `name="email"`,
+		"a bool renders a checkbox":                 `type="checkbox"`,
+		"a required field says so":                  `required`,
+		"an entity-picker says there is none":       "There is no picker for it yet",
+		"a list field says how to write one":        "Comma separated",
+		"the server owns the id and timestamps":     `name="title"`,
+		"a field's own doc is the note under it":    "What this note is about",
+		"a declared default is preselected":         `<option value="open" selected>`,
 	} {
 		if !strings.Contains(form, want) {
 			t.Errorf("%s: %q is not in the form", what, want)
@@ -267,6 +273,12 @@ func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 	// A select whose field declares a default has no unchosen state to name.
 	if strings.Contains(form, "Choose a status") {
 		t.Error("a select with a default still offers a placeholder that cannot happen")
+	}
+	// And there is exactly one textarea: the field that asked for one. Every
+	// string column used to get one, so a user's email address was a five-row
+	// box asking them to write a paragraph into it.
+	if n := strings.Count(form, "<textarea"); n != 1 {
+		t.Errorf("the form has %d textareas, want the one field that asked for one", n)
 	}
 	if strings.Contains(form, `name="createdAt"`) {
 		t.Error("the form offers a field the server owns")

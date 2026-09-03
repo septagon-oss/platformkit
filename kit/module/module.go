@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/events"
-	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 )
@@ -70,8 +69,11 @@ type Module struct {
 	// Nav is where this module appears in navigation.
 	Nav []NavEntry
 
-	// Health are the checks that must pass before an instance serves.
-	Health []health.Check
+	// There is no Health. Nothing in three repositories ever contributed a
+	// check, and /ready is the one question a probe can act on — is this
+	// instance's database reachable — which kit/app asks directly. A module
+	// that has a dependency of its own to check adds the field back in the
+	// commit that uses it.
 
 	// Migrations is this module's SQL, with the files at the root of the given
 	// fs.FS. Every module in this repository leaves it nil and puts its SQL in
@@ -154,12 +156,6 @@ func Validate(mods []Module) error {
 				continue
 			}
 			owner[p.Key] = m.Name
-		}
-
-		for i, c := range m.Health {
-			if c == nil {
-				add("module %q: health check %d is nil; /ready would panic on it", m.Name, i)
-			}
 		}
 
 		for _, j := range m.Jobs {

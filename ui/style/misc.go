@@ -107,7 +107,6 @@ type ResizeMode string
 const (
 	ResizeModeNone ResizeMode = "none"
 	ResizeModeY    ResizeMode = "y"
-	ResizeModeX    ResizeMode = "x"
 	ResizeModeBoth ResizeMode = "both"
 )
 

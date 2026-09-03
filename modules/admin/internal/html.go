@@ -12,7 +12,6 @@ import (
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -22,7 +21,6 @@ import (
 // Shell is what the manifest hands the implementation.
 type Shell struct {
 	Nav       []module.NavEntry
-	Checks    []health.Check
 	Authorize httpx.Authorizer
 	Tenants   tenantcontracts.Service
 	Token     tenancy.SystemToken

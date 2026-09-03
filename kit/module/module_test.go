@@ -8,7 +8,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
-	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 )
 
@@ -87,18 +86,6 @@ func TestValidateRejectsMalformedTokens(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not report %s\ngot:\n%v", want, err)
 		}
-	}
-}
-
-// TestValidateRejectsAManifestThatCannotRun: a nil check panics inside /ready,
-// so it is a composition error rather than a runtime surprise.
-func TestValidateRejectsAManifestThatCannotRun(t *testing.T) {
-	err := Validate([]Module{{Name: "billing", Health: []health.Check{nil}}})
-	if err == nil {
-		t.Fatal("Validate accepted a manifest that cannot run")
-	}
-	if !strings.Contains(err.Error(), "health check 0 is nil") {
-		t.Errorf("error does not report the nil check\ngot:\n%v", err)
 	}
 }
 

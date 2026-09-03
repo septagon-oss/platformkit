@@ -99,10 +99,14 @@ func (a Auth) MarshalJSON() ([]byte, error) {
 	}{a.kind, a.permission})
 }
 
-// declared reports whether a came from one of the three constructors. The zero
+// Declared reports whether a came from one of the four constructors. The zero
 // Auth is not a declaration: Go lets any package write httpx.Auth{}, and an
 // empty struct must never read as "public".
-func (a Auth) declared() bool {
+//
+// It is exported because kit/rest asks it about an optional field — a command
+// that names no Auth takes its Spec's — and that question is the same one this
+// package asks before it mounts anything.
+func (a Auth) Declared() bool {
 	switch a.kind {
 	case kindPublic, kindSignedIn:
 		return true
@@ -142,7 +146,7 @@ func declarationOf(op *huma.Operation) (Auth, bool) {
 		return Auth{}, false
 	}
 	a, ok := op.Extensions[AuthExtension].(Auth)
-	if !ok || !a.declared() {
+	if !ok || !a.Declared() {
 		return Auth{}, false
 	}
 	return a, true
@@ -161,7 +165,7 @@ func declare(op *huma.Operation, auth Auth) {
 // is the only way a module registers a handler, and the declaration is a
 // parameter rather than a field, so an operation cannot be written without one.
 func Register[I, O any](api *API, op huma.Operation, auth Auth, handler func(context.Context, *I) (*O, error)) {
-	if !auth.declared() {
+	if !auth.Declared() {
 		panic("httpx.Register: " + describe(&op) + " was passed the zero Auth; use Permission, Public or SignedIn")
 	}
 	declare(&op, auth)
