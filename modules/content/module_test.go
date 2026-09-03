@@ -2,6 +2,7 @@ package content_test
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -188,4 +189,161 @@ func field(t *testing.T, body, name string) string {
 	}
 	out, _, _ := strings.Cut(rest, `"`)
 	return out
+}
+
+// TestThePublicPageIsConditional. Rendering is the expensive half of the public
+// route — the review measured 2.25 seconds for one large body, on every
+// anonymous request — so a reader who already has the page is told so and the
+// renderer never runs.
+func TestThePublicPageIsConditional(t *testing.T) {
+	_, router := mounted(t)
+	code, out := call(t, router, http.MethodPost, path, `{"slug":"about-us","title":"About us","body":"# Hello"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	id := field(t, out, "id")
+	if code, out = call(t, router, http.MethodPost, path+"/"+id+"/publish", ""); code != http.StatusOK {
+		t.Fatalf("publish = %d %s", code, out)
+	}
+
+	first := get(t, router, public+"about-us", "")
+	tag := first.Header().Get("ETag")
+	switch {
+	case first.Code != http.StatusOK:
+		t.Fatalf("the public page = %d %s", first.Code, first.Body.String())
+	case tag == "":
+		t.Fatal("the public page carries no ETag, so every reader renders it again")
+	case !strings.Contains(first.Body.String(), "<h1"):
+		t.Errorf("the page did not render: %s", first.Body.String())
+	}
+
+	again := get(t, router, public+"about-us", tag)
+	if again.Code != http.StatusNotModified {
+		t.Errorf("the same page with its own tag = %d, want 304", again.Code)
+	}
+	if again.Header().Get("ETag") != tag {
+		t.Errorf("the 304 carries %q, want the tag it was asked about", again.Header().Get("ETag"))
+	}
+	// A tag from another version, and the wildcard, are the two other things a
+	// caller sends.
+	if stale := get(t, router, public+"about-us", `W/"nonsense"`); stale.Code != http.StatusOK {
+		t.Errorf("a stale tag = %d, want the page", stale.Code)
+	}
+
+	// And an edit moves the tag, or a reader keeps a page that has changed.
+	if code, out = call(t, router, http.MethodPatch, path+"/"+id, `{"body":"# Hello again"}`); code != http.StatusOK {
+		t.Fatalf("PATCH = %d %s", code, out)
+	}
+	if edited := get(t, router, public+"about-us", tag); edited.Code != http.StatusOK {
+		t.Errorf("after an edit the old tag = %d, want the new page", edited.Code)
+	}
+}
+
+// get is one anonymous public read, with an optional If-None-Match.
+func get(t *testing.T, r http.Handler, at, tag string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "http://"+host+at, nil)
+	if tag != "" {
+		req.Header.Set("If-None-Match", tag)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// TestABodyHasACeiling: the public route renders this column on every anonymous
+// request, so an unbounded body is a way to take the site down with one write.
+func TestABodyHasACeiling(t *testing.T) {
+	_, router := mounted(t)
+	body := `{"slug":"big","title":"Big","body":"` + strings.Repeat("x", contracts.MaxBody+1) + `"}`
+	if code, out := call(t, router, http.MethodPost, path, body); code != http.StatusUnprocessableEntity {
+		t.Errorf("a body past the ceiling = %d %s, want 422", code, out[:min(len(out), 200)])
+	}
+	// Exactly the ceiling is stored, which is what makes it a boundary.
+	body = `{"slug":"just","title":"Just","body":"` + strings.Repeat("x", contracts.MaxBody) + `"}`
+	if code, out := call(t, router, http.MethodPost, path, body); code != http.StatusCreated {
+		t.Errorf("a body of exactly the ceiling = %d %s", code, out[:min(len(out), 200)])
+	}
+	// The route above is refused by the schema, which is the first of three
+	// checks; this is the second, and it is the one a caller that did not come
+	// through huma meets — a hook, a seed, another module's write. The third is
+	// the column's own CHECK.
+	over := contracts.Content{Slug: "big", Title: "Big", Body: strings.Repeat("x", contracts.MaxBody+1)}
+	if err := over.Validate(t.Context()); err == nil {
+		t.Error("the entity accepted a body past the ceiling")
+	}
+	// And a title is counted in characters, not bytes: 200 Chinese characters
+	// are 600 bytes and used to be refused.
+	long := contracts.Content{Slug: "long", Title: strings.Repeat("日", contracts.MaxTitle)}
+	if err := long.Validate(t.Context()); err != nil {
+		t.Errorf("a title of exactly the limit in characters: %v", err)
+	}
+	long.Title += "日"
+	if err := long.Validate(t.Context()); err == nil {
+		t.Error("a title one character past the limit was accepted")
+	}
+}
+
+// TestASlugSurvivesItsLanguage. Slugify used to drop every character outside
+// a-z0-9, so "Über uns" became "ber-uns" and "Ærø" became nothing at all — a
+// title an author could type and a 422 they could not act on.
+func TestASlugSurvivesItsLanguage(t *testing.T) {
+	for _, tt := range []struct{ title, want string }{
+		{"Über uns", "uber-uns"},
+		{"Ærø i Danmark", "aero-i-danmark"},
+		{"Grüße aus Köln", "grusse-aus-koln"},
+		{"Câțiva ani", "cativa-ani"},
+		{"Zażółć gęślą jaźń", "zazolc-gesla-jazn"},
+		{"Crème brûlée", "creme-brulee"},
+		{"About Us", "about-us"},
+		{"  spaced  out  ", "spaced-out"},
+	} {
+		if got := contracts.Slugify(tt.title); got != tt.want {
+			t.Errorf("Slugify(%q) = %q, want %q", tt.title, got, tt.want)
+		}
+	}
+}
+
+// TestAMarkdownLinkSaysWhereItGoes. "[click](//evil.example)" reads like a path
+// within this site, in the source and in the rendered anchor, and every browser
+// resolves it against the current scheme and leaves the site.
+func TestAMarkdownLinkSaysWhereItGoes(t *testing.T) {
+	_, router := mounted(t)
+	const body = `[a](//evil.example) [b](/\evil.example) [c](/about-us) [d](https://example.com) [e](#top)`
+	code, out := call(t, router, http.MethodPost, path,
+		`{"slug":"links","title":"Links","body":`+quote(body)+`}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	id := field(t, out, "id")
+	if code, out = call(t, router, http.MethodPost, path+"/"+id+"/publish", ""); code != http.StatusOK {
+		t.Fatalf("publish = %d %s", code, out)
+	}
+	html := get(t, router, public+"links", "").Body.String()
+	for _, want := range []string{
+		`https://evil.example`, // rewritten, and now visibly somebody else's
+		`/about-us`,            // an ordinary path is untouched
+		`https://example.com`,  // so is an ordinary absolute URL
+		`#top`,                 // and an anchor
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("the rendered page does not carry %s: %s", want, html)
+		}
+	}
+	// The two forms of the trick are gone: no link is left that a browser would
+	// read as an authority.
+	for _, gone := range []string{`href=\"//`, `href=\"/\\`} {
+		if strings.Contains(html, gone) {
+			t.Errorf("a protocol-relative link survived: %s", html)
+		}
+	}
+}
+
+// quote is one string as a JSON one.
+func quote(s string) string {
+	out, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(out)
 }

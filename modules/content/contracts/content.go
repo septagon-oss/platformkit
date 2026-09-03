@@ -16,8 +16,11 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -47,23 +50,49 @@ var (
 	statuses = []string{StatusDraft, StatusPublished, StatusArchived}
 )
 
-// MaxSlug is the longest slug there is, which is also the column's width.
-const MaxSlug = 200
+// The bounds. MaxSlug and MaxTitle are the columns' widths; MaxBody is a quarter
+// of a megabyte, which is roughly forty thousand words — longer than anything
+// anybody writes in one page and short enough that the public route can render
+// it on every anonymous request without becoming the way to take the site down.
+// The review measured 2.25 seconds for one 8.5 MB body.
+const (
+	MaxSlug  = 200
+	MaxTitle = 200
+	MaxBody  = 262144
+)
+
+// fold is the transliteration Slugify does before it drops what is left. It is
+// the letters that carry no combining mark to strip — norm.NFD gets the accents,
+// and these are the ones decomposition does not touch — so that a German, Danish,
+// Polish or Turkish title becomes a name a URL can carry instead of becoming
+// nothing at all. "Über uns" used to slugify to "ber-uns"; "Ærø" to nothing.
+var fold = strings.NewReplacer(
+	"ß", "ss", "æ", "ae", "ø", "o", "å", "a", "œ", "oe",
+	"đ", "d", "ð", "d", "þ", "th", "ł", "l", "ı", "i", "ħ", "h", "ŋ", "n", "ĸ", "k",
+)
 
 // Slugify is the one definition of a slug: lower case, words joined by single
 // dashes, nothing outside a-z, 0-9 and the dash. It exists as a function
 // because the write path and the public read path have to agree — a slug
 // normalised on the way in and looked up verbatim is a page nobody can reach.
 func Slugify(s string) string {
+	// Decompose first, so an accented letter becomes its base letter and a
+	// combining mark, and then drop the marks: é is e, ñ is n, ā is a. The fold
+	// above catches the letters decomposition leaves alone. Without both, every
+	// language but English produced a slug with holes in it — and a title of
+	// nothing but non-ASCII letters produced no slug at all, which is a 422 an
+	// author cannot act on.
 	var b strings.Builder
 	last := byte('-')
-	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+	for _, r := range norm.NFD.String(fold.Replace(strings.ToLower(strings.TrimSpace(s)))) {
 		var c byte
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			c = byte(r)
 		case r == '-' || r == ' ' || r == '_' || r == '/' || r == '.':
 			c = '-'
+		case unicode.Is(unicode.Mn, r):
+			continue // a combining mark, whose base letter has already been written
 		default:
 			continue // anything else is not part of a name a URL can carry
 		}
@@ -97,7 +126,7 @@ type Content struct {
 	// Body is Markdown. It is stored as it was written and rendered on read, so
 	// a change to what the renderer allows applies to everything ever written
 	// rather than to whatever happens to be saved next.
-	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" ui:"widget:textarea;hide:list" doc:"The content itself, in Markdown"`
+	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:textarea;hide:list" doc:"The content itself, in Markdown"`
 
 	// Kind and Status are closed sets; the enum tag is what a form renders as a
 	// select and what Validate refuses a value outside.
@@ -141,6 +170,16 @@ func (c *Content) Validate(ctx context.Context) error {
 		return fmt.Errorf("a page needs a slug, and %q leaves nothing a URL can carry", c.Slug)
 	case c.Title == "":
 		return fmt.Errorf("a page needs a title")
+	// Characters, not bytes: len() counts bytes, so a title of 80 Chinese
+	// characters used to be refused as 240 and a 200-character column was
+	// handed 200 characters that did not fit.
+	case utf8.RuneCountInString(c.Title) > MaxTitle:
+		return fmt.Errorf("a title is at most %d characters", MaxTitle)
+	// Bytes here, and deliberately: this one is a bound on what is stored and
+	// on what the public route renders per anonymous request, and both are
+	// measured in bytes. The column carries the same check.
+	case len(c.Body) > MaxBody:
+		return fmt.Errorf("a body is at most %d bytes, and this one is %d; a document longer than that is a file and not a page", MaxBody, len(c.Body))
 	case !slices.Contains(kinds, c.Kind):
 		return fmt.Errorf("kind %q is not %s or %s", c.Kind, KindPage, KindPost)
 	case !slices.Contains(statuses, c.Status):

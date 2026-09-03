@@ -15,9 +15,11 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -70,6 +72,31 @@ type NavItem struct {
 	// carry an absolute one is a navigation somebody can use to send a tenant's
 	// visitors somewhere else.
 	Path string `json:"path" doc:"Path within this site" example:"/about-us"`
+}
+
+// InSite reports whether p is a path within this site.
+//
+// The check used to be strings.HasPrefix(p, "/"), which the documentation above
+// described as refusing absolute URLs and did not: "//evil.example" starts with
+// a slash and is a network-path reference, which every browser resolves against
+// the current scheme and sends the visitor to another origin. So does
+// "/\evil.example", because the URL parser of every browser normalises a
+// backslash to a slash before it decides what the authority is.
+//
+// url.Parse is what tells the rest apart: a path within this site parses to no
+// scheme, no authority and a path that begins with a slash.
+func InSite(p string) bool {
+	// A second slash, however many follow it, is an authority: a browser
+	// resolving "////evil.example" against this site collapses the slashes and
+	// goes to evil.example, and url.Parse does not — it reports an empty host
+	// and a path of "//evil.example", which is why the parse alone is not the
+	// check. The backslash is refused outright, because it has no meaning in a
+	// path and its only use here is to look like something else.
+	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.ContainsRune(p, '\\') {
+		return false
+	}
+	u, err := url.Parse(p)
+	return err == nil && u.Scheme == "" && u.Host == "" && strings.HasPrefix(u.Path, "/")
 }
 
 // Nav is the navigation, one jsonb column. It is a named type so the codec is
@@ -144,9 +171,12 @@ func (s *SiteSettings) Validate(context.Context) error {
 		s.PrimaryColor = DefaultPrimaryColor
 	}
 	switch {
-	case len(s.Title) > MaxTitle:
+	// Characters, not bytes, here and below: len() counts bytes, so a title of
+	// 60 Chinese characters used to be refused as 180. The same correction is
+	// in modules/content, modules/billing and modules/file.
+	case utf8.RuneCountInString(s.Title) > MaxTitle:
 		return fmt.Errorf("a title is at most %d characters", MaxTitle)
-	case len(s.Tagline) > MaxTagline:
+	case utf8.RuneCountInString(s.Tagline) > MaxTagline:
 		return fmt.Errorf("a tagline is at most %d characters", MaxTagline)
 	case s.HomeSlug != "" && !slug.MatchString(s.HomeSlug):
 		return fmt.Errorf("%q is not a slug, so nothing can be served at it", s.HomeSlug)
@@ -161,9 +191,9 @@ func (s *SiteSettings) Validate(context.Context) error {
 		item := &s.Nav[i]
 		item.Label, item.Path = strings.TrimSpace(item.Label), strings.TrimSpace(item.Path)
 		switch {
-		case item.Label == "" || len(item.Label) > MaxLabel:
+		case item.Label == "" || utf8.RuneCountInString(item.Label) > MaxLabel:
 			return fmt.Errorf("a link needs a label of at most %d characters, and %q is not one", MaxLabel, item.Label)
-		case !strings.HasPrefix(item.Path, "/") || len(item.Path) > MaxPath:
+		case !InSite(item.Path) || utf8.RuneCountInString(item.Path) > MaxPath:
 			return fmt.Errorf("a link points at a path within this site, and %q is not one", item.Path)
 		}
 	}
