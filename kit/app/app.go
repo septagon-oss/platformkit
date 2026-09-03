@@ -195,7 +195,7 @@ func (a *App) Run(ctx context.Context) error {
 // included: the advisory lock makes the race safe, which removes the ordering
 // problem instead of sequencing it. See docs/adr/0005.
 func (a *App) migrate(ctx context.Context) error {
-	src, err := sources(a.mods)
+	src, err := MigrationSources(a.mods)
 	if err != nil {
 		return err
 	}

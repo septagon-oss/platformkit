@@ -23,26 +23,15 @@ var (
 	unavailable = problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
 )
 
-// RegisterRoutes mounts the three routes a singleton has: read it, subscribe,
-// cancel. There is no rest.Spec, and the reason is one sentence: a Spec is five
-// routes on a collection, and there is one subscription per tenant. The plans
-// beside it are a collection and do have one; ../module.go mounts it.
+// RegisterRoutes mounts the two commands beside the singleton's read.
+//
+// The read is rest.Singleton now — one row per tenant, mounted by ../module.go
+// — and it carries no Write: a subscription is moved by subscribe and cancel,
+// which are rules about the state it is in, and a PUT would be a customer
+// writing its own period and its own price. The two commands are here because
+// kit/rest's Command puts an id in the path and a singleton has none, which is
+// the only thing a singleton changes about a command.
 func RegisterRoutes(api *httpx.API, svc contracts.Service) {
-	httpx.Register(api, huma.Operation{
-		OperationID: "billing-subscription-read",
-		Method:      http.MethodGet,
-		Path:        path,
-		Summary:     "Read this tenant's subscription",
-		Description: "A tenant that has never subscribed has no subscription, which is a 404.",
-		Tags:        []string{"billing"},
-		Errors:      faults,
-	}, httpx.Permission(contracts.PermissionBillingRead),
-		func(ctx context.Context, _ *struct{}) (*rest.Item[*contracts.Subscription], error) {
-			return answer(ctx, func(tx db.Tx[db.Tenant]) (*contracts.Subscription, error) {
-				return svc.Current(ctx, tx)
-			})
-		})
-
 	command(api, "subscribe", "Subscribe this tenant to a plan",
 		"Subscribing to the plan already in force changes nothing. A different plan takes effect at the next renewal; the period being served is not moved.",
 		contracts.EventSubscribed,

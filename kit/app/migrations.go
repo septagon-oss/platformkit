@@ -11,7 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/migrations"
 )
 
-// sources presents migrations/ and every module's SQL to kit/db as one
+// MigrationSources presents migrations/ and every module's SQL to kit/db as one
 // directory.
 //
 // It is one directory because there is one ledger. golang-migrate records a
@@ -23,7 +23,15 @@ import (
 //
 // The price is that version numbers are global. A collision is refused here,
 // naming both owners, rather than becoming a migration that never runs.
-func sources(mods []module.Module) (fs.FS, error) {
+//
+// It is exported because a repository composing its own modules on top of this
+// one has to build the same union to test them: db.Migrate run once per source
+// does not work — the second call compares its own files against the first's
+// recorded version and fails on the version it cannot find — so a test that
+// migrates a mixed composition needs the union this builds. The catalogue
+// repository wrote its own copy of it, which is one implementation too many for
+// the thing that decides what the schema is.
+func MigrationSources(mods []module.Module) (fs.FS, error) {
 	u := union{files: map[string]fs.FS{}}
 	owner := map[string]string{} // version -> the source that claimed it
 
