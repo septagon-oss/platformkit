@@ -36,7 +36,10 @@ type fixture struct {
 	principal  *tenancy.Principal
 	allow      bool
 	authErr    error
-	app        *db.Conn
+	// asked counts the calls to Allowed, which is how a test says the
+	// authorizer was never reached rather than that it said no.
+	asked atomic.Int32
+	app   *db.Conn
 	// exec runs one DDL statement as the schema owner, which is all a test
 	// wants the admin connection for.
 	exec func(query string)
@@ -61,6 +64,7 @@ func (f *fixture) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenan
 }
 
 func (f *fixture) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
+	f.asked.Add(1)
 	return f.allow, f.authErr
 }
 
@@ -726,5 +730,52 @@ func TestInvalidateHostForgetsTheResolution(t *testing.T) {
 	}
 	if n := f.loads.Load(); n != 2 {
 		t.Errorf("the loader was asked %d times, want 2: the invalidation did not take", n)
+	}
+}
+
+// TestAnOperatorRouteIsRefusedBeforeTheAuthorizer is the kernel's own proof of
+// the rule modules/tenant's five control-plane routes depend on, and it is here
+// rather than only in apps/ because the rule is the kernel's.
+//
+// The control plane is served at every tenant's host, so an operator route is
+// reachable with a customer's own credentials, and a customer's administrator
+// holds the wildcard in their own tenant by construction. If the check ran
+// after the authorizer, that wildcard would answer a question about every
+// tenant. So the authorizer here always says yes — the strongest answer it can
+// give — and the refusal has to come anyway, from the tenant flag alone.
+//
+// The counter is the other half: it is not enough that the answer is 403, the
+// question must never have been asked. Deleting the four lines at the refusal
+// in middleware.go turns both halves red.
+func TestAnOperatorRouteIsRefusedBeforeTheAuthorizer(t *testing.T) {
+	api, router, f := setup(t)
+	httpx.Register(api, huma.Operation{
+		OperationID: "operate-widget", Method: http.MethodGet, Path: "/widgets/all",
+	}, httpx.OperatorPermission("widget:operate"), ok)
+	// An authorizer that grants everything, so nothing here can be mistaken for
+	// the roles table refusing.
+	f.allow, f.authErr = true, nil
+	f.signedIn()
+
+	res := get(t, router, "/widgets/all")
+	if res.Code != http.StatusForbidden {
+		t.Errorf("a customer's tenant reached an operator route: %d %s", res.Code, res.Body)
+	}
+	if !strings.Contains(res.Body.String(), "AUTH_NOT_OPERATOR") {
+		t.Errorf("the refusal does not say why: %s", res.Body)
+	}
+	if got := f.asked.Load(); got != 0 {
+		t.Errorf("the authorizer was asked %d time(s); the tenant flag decides this before the roles table", got)
+	}
+
+	// The operator's own tenant is asked, and gets in. Same route, same
+	// authorizer, same caller: the tenant is the whole difference.
+	f.tenant.Operator = true
+	api.InvalidateHost(host)
+	if res := get(t, router, "/widgets/all"); res.Code != http.StatusOK {
+		t.Errorf("the operator's own tenant got %d %s", res.Code, res.Body)
+	}
+	if got := f.asked.Load(); got != 1 {
+		t.Errorf("the authorizer was asked %d time(s), want exactly the operator's request", got)
 	}
 }
