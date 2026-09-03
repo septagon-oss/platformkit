@@ -1,10 +1,7 @@
 package rest
 
 // command.go is the command with no row in the path. Command — POST
-// {Path}/{id}/{verb} — is in rest.go beside the five routes it belongs with;
-// this is its collection-level twin, and it is a file of its own because the
-// difference between them is exactly one path segment and one argument, and
-// that is easier to see side by side than interleaved.
+// {Path}/{id}/{verb} — is in rest.go, beside the five routes it belongs with.
 
 import (
 	"context"

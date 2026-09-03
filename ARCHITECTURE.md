@@ -58,7 +58,7 @@ marked `(E1)`, `(E2)`, ... does not exist yet.
 
 | Directory | Holds | Stage |
 |---|---|---|
-| `kit/` | the kernel: db, tenancy, config, problem, httpx, module, crud, rest, events, jobs, health | E1 |
+| `kit/` | the kernel: db, tenancy, config, problem, httpx, module, crud, rest, events, jobs, health, limit | E1 |
 | `modules/` | business modules, each `contracts/` + `internal/` + `module.go` | E2, E3, E5 |
 | `ui/` | typed components, the class builder and the CSS emitter, the browser controllers | E4 |
 | `design/` | design tokens and the two themes | E4 |

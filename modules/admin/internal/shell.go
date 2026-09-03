@@ -32,10 +32,11 @@ const assetPrefix = adminRoot + "/assets"
 // applied by a deferred script is a page that flashes white on the way to dark.
 //
 // Inline is also the one thing the content security policy forbids, so the tag
-// carries the request's nonce (kit/httpx/headers.go). A nonce rather than a
-// file because a file cannot be it: this has to run before the first paint, so
-// it cannot be deferred, and a blocking <script src> in the head is a round
-// trip on every page load to save four lines.
+// carries the request's nonce — httpx.Script is the shape that cannot be
+// written without one. A nonce rather than a file because a file cannot be it:
+// this has to run before the first paint, so it cannot be deferred, and a
+// blocking <script src> in the head is a round trip on every page load to save
+// four lines.
 const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}`
 
 // page renders a whole document around a screen: the head, the frame, the
@@ -85,7 +86,7 @@ func (s *Shell) head(ctx context.Context, title string, extra ...g.Node) g.Node 
 		h.Meta(h.Name("color-scheme"), h.Content("light dark")),
 		h.TitleEl(g.Text(title)),
 		h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/app.css?v="+ui.Fingerprint(s.Theme))),
-		h.Script(g.Attr("nonce", httpx.NonceFrom(ctx)), g.Raw(beforePaint)),
+		httpx.Script(ctx, beforePaint),
 		g.Group(scripts),
 		g.Group(extra),
 	)
@@ -138,12 +139,15 @@ func (s *Shell) sidebar(ctx context.Context) g.Node {
 		// An operator screen is not shown to a customer, for the same reason
 		// the kernel refuses it before it asks the Authorizer: the wildcard an
 		// administrator holds in their own tenant is not a claim on everybody
-		// else's. See httpx.OperatorPermission.
-		if s.operatorOnly[entry.Path] && !tenant.Operator {
+		// else's. The grant carries the flag the route declared, so the
+		// Authorizer is asked the same question the kernel would ask.
+		// See httpx.OperatorPermission.
+		grant := tenancy.Grant{Permission: entry.Permission, Operator: s.operator[entry.Permission]}
+		if grant.Operator && !tenant.Operator {
 			continue
 		}
 		if hasTenant {
-			allowed, err := s.Authorize.Allowed(ctx, tenant, tenancy.Grant{Permission: entry.Permission})
+			allowed, err := s.Authorize.Allowed(ctx, tenant, grant)
 			if err != nil || !allowed {
 				continue
 			}
@@ -171,7 +175,7 @@ func (s *Shell) sidebar(ctx context.Context) g.Node {
 // status so the kernel still rolls the transaction back and a probe still sees
 // what happened. A 5xx keeps kit/problem's silence: the reason is in the log,
 // with the request id this page does not print.
-func (s *Shell) fault(ctx context.Context, err error) (*page, error) {
+func (s *Shell) fault(ctx context.Context, err error) (*httpx.Page, error) {
 	status, detail := http.StatusInternalServerError, ""
 	var p *problem.Problem
 	if errors.As(err, &p) {
@@ -186,7 +190,7 @@ func (s *Shell) fault(ctx context.Context, err error) (*page, error) {
 			Tone: "danger", Message: fallback(detail, "That did not work."), Bordered: true}),
 		components.Link(components.LinkProps{Label: "Back to the dashboard", Href: adminRoot}),
 	)
-	return document(body, status)
+	return httpx.Document(body, status)
 }
 
 // version is what the footer says. It is the revision the binary was built

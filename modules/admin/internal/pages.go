@@ -30,7 +30,6 @@ import (
 const tenantsPath = adminRoot + "/tenant/tenants"
 
 func Mount(api *httpx.API, s Shell) {
-	s.operatorOnly = map[string]bool{tenantsPath: true}
 	// Static, so a stylesheet and five scripts cost no tenant, no transaction
 	// and no authorization: they are the same bytes for everybody.
 	api.Static(assetPrefix, ui.Assets(s.Theme))
@@ -51,6 +50,18 @@ func Mount(api *httpx.API, s Shell) {
 			s.served[op.Path] = true
 		}
 	}
+	// Which permissions are the operator's, asked of the same recording. It
+	// used to be a map of one path written here, which was right for the one
+	// screen anybody had thought about and silently wrong for the next: the
+	// price list is the operator's too, and a customer's administrator was
+	// shown its form and refused at the save. A route says which kind of
+	// permission it declared, so this asks the routes.
+	s.operator = map[string]bool{}
+	for _, g := range api.Required() {
+		if g.Operator {
+			s.operator[g.Permission] = true
+		}
+	}
 	// A nav entry nothing answers is a mistake in a module's manifest, and it
 	// is reported here, once, at boot — not rendered as a disabled row that
 	// every person using the application sees for the life of the deployment.
@@ -66,16 +77,16 @@ func Mount(api *httpx.API, s Shell) {
 // the two that are about the installation rather than about its data.
 func (s *Shell) pages(api *httpx.API, resources []httpx.Resource) {
 	html(api, s, "admin-login", http.MethodGet, adminRoot+"/login", "Sign in", httpx.Public(),
-		func(ctx context.Context, _ *emptyInput) (*page, error) { return ok(s.login(ctx)) })
+		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return ok(s.login(ctx)) })
 
 	html(api, s, "admin-dashboard", http.MethodGet, adminRoot, "The dashboard", httpx.SignedIn(),
-		func(ctx context.Context, _ *emptyInput) (*page, error) { return ok(s.dashboard(ctx, resources)) })
+		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return ok(s.dashboard(ctx, resources)) })
 
 	html(api, s, "admin-health", http.MethodGet, adminRoot+"/health", "Health", httpx.SignedIn(),
-		func(ctx context.Context, _ *emptyInput) (*page, error) { return ok(s.health(ctx)) })
+		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return ok(s.health(ctx)) })
 
 	html(api, s, "admin-gallery", http.MethodGet, adminRoot+"/_gallery", "The component gallery", httpx.SignedIn(),
-		func(ctx context.Context, _ *emptyInput) (*page, error) { return ok(s.gallery(ctx)) })
+		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return ok(s.gallery(ctx)) })
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -87,7 +98,7 @@ func (s *Shell) pages(api *httpx.API, resources []httpx.Resource) {
 	// sidebar drops the link for the same reason, so the two agree.
 	html(api, s, "admin-tenants", http.MethodGet, tenantsPath, "The tenants of this installation",
 		httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
-		func(ctx context.Context, _ *emptyInput) (*page, error) { return s.tenants(ctx) })
+		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return s.tenants(ctx) })
 }
 
 // login is the way in. The form posts to the auth module's own JSON route
@@ -267,7 +278,7 @@ func (s *Shell) gallery(ctx context.Context) g.Node {
 // tenant, so listing them takes a system transaction, opened on a detached
 // context so it is a transaction of its own rather than a widening of the
 // request's. See docs/adr/0006.
-func (s *Shell) tenants(ctx context.Context) (*page, error) {
+func (s *Shell) tenants(ctx context.Context) (*httpx.Page, error) {
 	conn, reachable := httpx.ConnFrom(ctx)
 	if !reachable {
 		return nil, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
