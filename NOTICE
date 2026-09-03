@@ -3,8 +3,16 @@ Copyright 2026 Septagon
 
 This product includes software developed at Septagon.
 
+Licensed under the Apache License, Version 2.0; see LICENSE. No source file in
+this repository carries a per-file copyright or licence header, and none should:
+the root LICENSE covers the tree, and everything pulled from elsewhere is named
+below. A file that arrives with a header of its own is a file whose provenance
+is not accounted for here yet.
+
 Portions of this repository derive from the septagon-oss `pk-*` repositories,
-which are licensed under the Apache License, Version 2.0:
+which are licensed under the Apache License, Version 2.0 and are copyright
+Septagon — the same holder as this repository. None of them ships a NOTICE file
+of its own, so there is nothing further to carry forward.
 
   ui/components from pk-ui (the component contracts and the web renderer)
   ui/a11y       from pk-ui (accessibility)
@@ -19,8 +27,62 @@ catalog and is contributed here by its owner.
 
 Third-party assets shipped to the browser:
 
-  ui/assets/js/htmx.min.js   htmx 2.0.8, Copyright (c) 2020, Big Sky Software,
-                             under the BSD 2-Clause licence.
+  ui/assets/js/htmx.min.js   htmx 2.0.8, by Big Sky Software, under the
+                             Zero-Clause BSD licence. Its full text is below.
+                             0BSD requires no attribution; htmx is named here
+                             because a reader of this repository should know
+                             what the one third-party byte the browser runs is.
+
   ui/icon/icon.go            vector path data from phosphor-icons/core,
                              Copyright (c) 2023 Phosphor Icons, under the MIT
-                             licence.
+                             licence. Its full text is below; the MIT licence
+                             does require the notice to travel with the data.
+
+--------------------------------------------------------------------------------
+htmx — Zero-Clause BSD
+
+Permission to use, copy, modify, and/or distribute this software for
+any purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE
+FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY
+DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+--------------------------------------------------------------------------------
+phosphor-icons/core — MIT
+
+Copyright (c) 2023 Phosphor Icons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+Go module dependencies
+
+No third-party Go source is vendored into this repository; go.mod and go.sum are
+the whole list, and the release image's SBOM (RELEASE.md §3) is the authoritative
+one for a build. Every module in that list is under a permissive licence — MIT,
+Apache-2.0 or BSD-3-Clause — with no copyleft anywhere in the graph. The check is
+one command, and it is a release precondition:
+
+  go install github.com/google/go-licenses@latest
+  go-licenses report ./...
