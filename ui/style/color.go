@@ -7,12 +7,6 @@ package style
 // class.
 type Color string
 
-// IsZero reports whether the Color is the zero value.
-func (c Color) IsZero() bool { return c == "" }
-
-// String returns the semantic token name.
-func (c Color) String() string { return string(c) }
-
 // Surface colors — backgrounds and filled surfaces.
 const (
 	SurfacePrimary     Color = "surface-primary"

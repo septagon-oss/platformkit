@@ -111,11 +111,6 @@ const (
 	ResizeModeBoth ResizeMode = "both"
 )
 
-// AllResizeModes returns every ResizeMode in stable order.
-func AllResizeModes() []ResizeMode {
-	return []ResizeMode{ResizeModeNone, ResizeModeY, ResizeModeX, ResizeModeBoth}
-}
-
 // BorderStyle is a typed border-style utility (dashed / solid / dotted).
 // The Border() method sets width + base "border"; BorderStyle() layers
 // the style on top.

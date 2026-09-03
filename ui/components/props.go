@@ -275,7 +275,7 @@ type SpinnerProps struct {
 	Tone  string `json:"tone,omitempty"`  // neutral, brand, success, warning, danger, info (default brand)
 }
 
-// SkeletonProps lives in skeleton.go alongside DeferredSlotProps: the earlier
+// SkeletonProps lives in skeleton.go: the earlier
 // contract-only draft here (free-string width/height) predated the audited
 // class pipeline and had no renderer or consumers.
 
@@ -301,15 +301,6 @@ type SkeletonProps struct {
 	Shape string `json:"shape,omitempty"` // block, text, circle
 	Size  string `json:"size,omitempty"`  // sm, md, lg
 	Lines int    `json:"lines,omitempty"` // shape=text: placeholder line count (default 1)
-}
-
-// DeferredSlotProps defines a placeholder region that HTMX replaces with a
-// server-rendered fragment. Get names the fragment URL; Trigger defaults to
-// "load" and Swap to "outerHTML", so the fragment replaces the slot (and its
-// skeleton) wholesale with zero client code.
-type DeferredSlotProps struct {
-	ComponentProps
-	HTMXProps
 }
 
 // ---- contracts/layouts/layouts.go
@@ -485,16 +476,6 @@ type SidebarSection struct {
 	Items      []SidebarItem `json:"items,omitempty"`
 }
 
-// Option represents a selectable option.
-type Option struct {
-	Label       string `json:"label"`
-	Value       string `json:"value"`
-	Description string `json:"description,omitempty"`
-	Icon        string `json:"icon,omitempty"`
-	Group       string `json:"group,omitempty"`
-	Disabled    bool   `json:"disabled,omitempty"`
-}
-
 // ---- contracts/molecules/navigation.go
 // TabsProps defines properties for a tabbed interface.
 type TabsProps struct {
@@ -543,41 +524,13 @@ type PaginationProps struct {
 	ComponentProps
 	HTMXProps
 
-	CurrentPage     int    `json:"currentPage"`
-	TotalPages      int    `json:"totalPages"`
-	PerPage         int    `json:"perPage,omitempty"`
-	Siblings        int    `json:"siblings,omitempty"` // pages shown around current
-	BaseURL         string `json:"baseURL,omitempty"`
-	CursorMode      string `json:"cursorMode,omitempty"` // previous-next, load-more
-	PreviousCursor  string `json:"previousCursor,omitempty"`
-	NextCursor      string `json:"nextCursor,omitempty"`
-	BeforeParameter string `json:"beforeParameter,omitempty"`
-	AfterParameter  string `json:"afterParameter,omitempty"`
-	PreviousURL     string `json:"previousURL,omitempty"`
-	NextURL         string `json:"nextURL,omitempty"`
-	PreviousLabel   string `json:"previousLabel,omitempty"`
-	NextLabel       string `json:"nextLabel,omitempty"`
-	LoadMoreLabel   string `json:"loadMoreLabel,omitempty"`
+	CurrentPage int `json:"currentPage"`
+	TotalPages  int `json:"totalPages"`
+	// Siblings is how many pages are shown either side of the current one.
+	Siblings int    `json:"siblings,omitempty"`
+	BaseURL  string `json:"baseURL,omitempty"`
+	// NavigationLabel names this landmark, for a page carrying more than one.
 	NavigationLabel string `json:"navigationLabel,omitempty"`
-}
-
-// ActionMenuItem represents a single menu entry.
-type ActionMenuItem struct {
-	Label     string `json:"label"`
-	Icon      string `json:"icon,omitempty"`
-	Href      string `json:"href,omitempty"`
-	Tone      string `json:"tone,omitempty"` // neutral, danger
-	Danger    bool   `json:"danger,omitempty"`
-	Disabled  bool   `json:"disabled,omitempty"`
-	HxGet     string `json:"hxGet,omitempty"`
-	HxPost    string `json:"hxPost,omitempty"`
-	HxDelete  string `json:"hxDelete,omitempty"`
-	HxTarget  string `json:"hxTarget,omitempty"`
-	HxSwap    string `json:"hxSwap,omitempty"`
-	HxConfirm string `json:"hxConfirm,omitempty"`
-	Action    string `json:"action,omitempty"`
-	// Attrs is a trusted Go-only escape hatch for stable data attributes.
-	Attrs map[string]string `json:"attrs,omitempty" delivery:"internal"`
 }
 
 // ---- contracts/molecules/skeleton.go

@@ -8,6 +8,7 @@ package components
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -389,6 +390,21 @@ func validDetailSemanticRole(value string) string {
 	return value
 }
 
+// tableWidth is the grammar of TableColumn.Width: a whole number and one of
+// three units. It is the one caller value that reached a style attribute, and a
+// column width is the sort of prop that gets filled in from a config file — so
+// it is matched against a shape rather than interpolated, and anything else is
+// no width at all rather than a declaration a browser might read as something
+// else entirely.
+var tableWidth = regexp.MustCompile(`^[0-9]+(px|%|rem)$`)
+
+func width(value string) string {
+	if tableWidth.MatchString(value) {
+		return value
+	}
+	return ""
+}
+
 // TableSlots is the trusted Go composition seam for rich web cells and
 // server-driven sorting. Portable table data remains in TableProps; callers
 // only opt into these callbacks when a cell needs real markup.
@@ -442,36 +458,46 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 			case "descending":
 				glyph = "↓"
 			}
-			button := []g.Node{
-				h.Class(clTableSortBtn.Compile()), h.Type("button"),
+			control := []g.Node{
+				h.Class(clTableSortBtn.Compile()),
 				g.Attr("data-pk-sort", c.Key),
 				g.Text(c.Label),
 				h.Span(g.Attr("aria-hidden", "true"), g.Attr("data-pk-sort-icon", ""), g.Text(glyph)),
 			}
+			sortURL := ""
 			if slots.SortURL != nil {
-				if sortURL := slots.SortURL(c); sortURL != "" {
-					enhancement := p.HTMXProps
-					enhancement.Get = sortURL
-					enhancement.Trigger = ""
-					button = append(button, htmxAttrs(enhancement)...)
-				}
+				sortURL = slots.SortURL(c)
+			}
+			if sortURL != "" {
+				enhancement := p.HTMXProps
+				enhancement.Get = sortURL
+				enhancement.Trigger = ""
+				control = append(control, htmxAttrs(enhancement)...)
 			}
 			if slots.SortButtonAttrs != nil {
-				button = append(button, slots.SortButtonAttrs(c)...)
+				control = append(control, slots.SortButtonAttrs(c)...)
 			}
-			// A real button inside the th: keyboard operable, and the page
-			// script owns cycling aria-sort none → ascending → descending.
+			// A server-sorted column is a link, because that is what it is: a
+			// different URL showing the same table in another order, which a
+			// person can open in a tab, bookmark, or reach with no JavaScript
+			// running at all. The hx-get above is an enhancement on top of the
+			// href, not the thing that makes the header work. Where there is no
+			// URL the sort is the page script's, and a button is right.
+			var sorter g.Node = h.Button(append(control, h.Type("button"))...)
+			if sortURL != "" {
+				sorter = h.A(append(control, h.Href(sortURL))...)
+			}
 			headCells = append(headCells, h.Th(
 				h.Class(clTableThSort.Compile()), g.Attr("scope", "col"),
 				g.Attr("aria-sort", sortState),
-				g.If(c.Width != "", g.Attr("style", "width:"+c.Width)),
-				h.Button(button...),
+				g.If(width(c.Width) != "", g.Attr("style", "width:"+width(c.Width))),
+				sorter,
 			))
 			continue
 		}
 		cell := []g.Node{h.Class(clTableTh.Compile()), g.Attr("scope", "col")}
-		if c.Width != "" {
-			cell = append(cell, g.Attr("style", "width:"+c.Width))
+		if w := width(c.Width); w != "" {
+			cell = append(cell, g.Attr("style", "width:"+w))
 		}
 		headCells = append(headCells, h.Th(append(cell, g.Text(c.Label))...))
 	}
@@ -822,6 +848,8 @@ func SidebarWithSlots(p SidebarProps, slots SidebarSlots) g.Node {
 		attrs = append(attrs, g.Attr("aria-expanded", boolText(!p.Collapsed)))
 	}
 
+	attrs = append(attrs, g.Attr("aria-label", label))
+
 	column := []g.Node{h.Class(columnClass.Compile())}
 	if brand := sidebarBrand(p, slots.Brand, flavor, brandClass); brand != nil {
 		column = append(column, brand)
@@ -1061,7 +1089,11 @@ func sidebarItemNode(
 	if strings.TrimSpace(item.Href) != "" && !disabled {
 		itemLink = h.A(append([]g.Node{h.Href(item.Href)}, content...)...)
 	} else {
-		itemLink = h.Span(content...)
+		// A span has no role, and aria-label and aria-disabled are prohibited
+		// on an element that has none — axe says so and it is right: an
+		// attribute nothing can apply to is an attribute nothing reads. An
+		// entry that cannot be followed is still a link, so it says it is one.
+		itemLink = h.Span(append([]g.Node{g.Attr("role", "link")}, content...)...)
 	}
 	if len(item.Children) == 0 {
 		attrs = append(attrs, itemLink)
@@ -1290,7 +1322,8 @@ func Pagination(p PaginationProps) g.Node {
 	}
 
 	nav := baseAttrs(p.ComponentProps)
-	nav = append(nav, g.Attr("data-component", "pagination"), g.Attr("aria-label", "Pagination"))
+	nav = append(nav, g.Attr("data-component", "pagination"),
+		g.Attr("aria-label", fallbackText(strings.TrimSpace(p.NavigationLabel), "Pagination")))
 	nav = append(nav, items...)
 	return h.Nav(nav...)
 }

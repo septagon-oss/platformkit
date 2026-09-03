@@ -141,9 +141,27 @@ func Dark() Theme {
 	}
 }
 
-// Themes are the themes the application ships, in the order a picker lists
-// them. The first is the default.
-func Themes() []Theme { return []Theme{Light(), Dark()} }
+// Pair is the two palettes one installation ships: what its pages look like in
+// the light and what they look like in the dark. It is a value rather than a
+// package-level pair of functions because a client's own colours are the one
+// thing about this design system that is theirs — everything above the tokens
+// (the roles, the utilities, the components, the class lists, the stylesheet's
+// shape) is unchanged by them, which is the whole point of the role
+// indirection. Supplying a Pair is the entire seam: there is no second
+// stylesheet, no override layer and no build step.
+//
+// It is comparable, so ui memoises one stylesheet per Pair rather than
+// recomposing on every request.
+type Pair struct {
+	Light, Dark Theme
+}
+
+// Default is the palette this repository ships, and what an application that
+// says nothing about colour gets.
+func Default() Pair { return Pair{Light: Light(), Dark: Dark()} }
+
+// Both is the pair in the order a picker lists them. The first is the default.
+func (p Pair) Both() []Theme { return []Theme{p.Light, p.Dark} }
 
 // tokens is the theme as custom properties, in the order they are declared
 // above. It is one list rather than reflection so that the property name and
@@ -188,9 +206,11 @@ func (t Theme) tokens() []css.Declaration {
 // The attribute wins over the query, which is the ordering a theme toggle
 // needs: setting data-theme="light" on a machine in dark mode has to mean
 // light. That is why the media block is qualified by :root:not([data-theme]).
-func CSS() *css.Sheet {
+//
+// It takes the two themes rather than reading the two above, so that a client
+// with its own colours changes this one argument and nothing else. See Pair.
+func CSS(light, dark Theme) *css.Sheet {
 	s := css.NewSheet()
-	light, dark := Light(), Dark()
 	s.Select(":root", append(light.tokens(),
 		css.Decl("--pk-font-display", css.Literal(FontDisplay)),
 		css.Decl("--pk-font-body", css.Literal(FontBody)),

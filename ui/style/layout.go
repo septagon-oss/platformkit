@@ -12,25 +12,6 @@ const (
 	DisplayGrid        Display = "grid"
 	DisplayInlineGrid  Display = "inline-grid"
 	DisplayHidden      Display = "hidden"
-	// DisplayContents makes the element invisible to layout while its
-	// children remain positioned as if they were the element's
-	// siblings (CSS `display: contents`). Used by pass-through
-	// wrappers such as the tooltip's trigger slot.
-	DisplayContents Display = "contents"
-	// Table display modes — used by responsive-table components to
-	// swap between stacked mobile view and tabular desktop view.
-	DisplayTable            Display = "table"
-	DisplayInlineTable      Display = "inline-table"
-	DisplayTableCaption     Display = "table-caption"
-	DisplayTableCell        Display = "table-cell"
-	DisplayTableColumn      Display = "table-column"
-	DisplayTableColumnGroup Display = "table-column-group"
-	DisplayTableFooterGroup Display = "table-footer-group"
-	DisplayTableHeaderGroup Display = "table-header-group"
-	DisplayTableRow         Display = "table-row"
-	DisplayTableRowGroup    Display = "table-row-group"
-	DisplayFlowRoot         Display = "flow-root"
-	DisplayListItem         Display = "list-item"
 )
 
 // Items maps to align-items.
@@ -80,8 +61,6 @@ const (
 // Breakpoint is a typed responsive breakpoint (Tailwind defaults).
 type Breakpoint string
 
-func (b Breakpoint) IsZero() bool { return b == "" }
-
 // Prefix returns the Tailwind breakpoint prefix including the trailing
 // colon, e.g. "sm:". Zero value returns empty string (no prefix).
 func (b Breakpoint) Prefix() string {
@@ -90,9 +69,6 @@ func (b Breakpoint) Prefix() string {
 	}
 	return string(b) + ":"
 }
-
-// String returns the breakpoint key.
-func (b Breakpoint) String() string { return string(b) }
 
 const (
 	BreakpointSM  Breakpoint = "sm"  // >= 640px
@@ -134,12 +110,5 @@ func AllPositions() []Position {
 	return []Position{
 		PositionStatic, PositionRelative, PositionAbsolute,
 		PositionFixed, PositionSticky,
-	}
-}
-
-// AllBreakpoints returns every Breakpoint const in stable order.
-func AllBreakpoints() []Breakpoint {
-	return []Breakpoint{
-		BreakpointSM, BreakpointMD, BreakpointLG, BreakpointXL, Breakpoint2XL,
 	}
 }

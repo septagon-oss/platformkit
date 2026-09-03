@@ -14,8 +14,8 @@ var hex = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 
 func TestEveryThemeSetsEveryColourAsHex(t *testing.T) {
 	t.Parallel()
-	for _, theme := range design.Themes() {
-		css := design.CSS().CSS()
+	for _, theme := range design.Default().Both() {
+		css := design.CSS(design.Light(), design.Dark()).CSS()
 		if !strings.Contains(css, theme.SurfacePrimary) {
 			t.Errorf("theme %q is not in the rendered stylesheet", theme.Name)
 		}
@@ -33,7 +33,7 @@ func TestEveryThemeSetsEveryColourAsHex(t *testing.T) {
 
 func TestBothThemesDeclareTheSameProperties(t *testing.T) {
 	t.Parallel()
-	css := design.CSS().CSS()
+	css := design.CSS(design.Light(), design.Dark()).CSS()
 	root, dark := properties(css, ":root {"), properties(css, `[data-theme="dark"] {`)
 	if len(root) == 0 || len(dark) == 0 {
 		t.Fatalf("found %d light and %d dark properties", len(root), len(dark))
@@ -52,7 +52,7 @@ func TestBothThemesDeclareTheSameProperties(t *testing.T) {
 
 func TestTheAttributeBeatsThePreference(t *testing.T) {
 	t.Parallel()
-	css := design.CSS().CSS()
+	css := design.CSS(design.Light(), design.Dark()).CSS()
 	attribute := strings.Index(css, `[data-theme="dark"] {`)
 	query := strings.Index(css, "@media (prefers-color-scheme: dark)")
 	if attribute < 0 || query < 0 {
