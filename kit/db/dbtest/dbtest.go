@@ -71,14 +71,14 @@ func URLs(t *testing.T) (adminURL, appURL string) {
 	return withSchema(t, baseAdmin, name), withSchema(t, baseApp, name)
 }
 
-// Schema is URLs with migrations/ applied and both handles open: the owner as a
-// plain *sql.DB, because DDL is all a test wants it for, and the application
-// role as a *db.Conn, because db.Open is the only way to obtain one and it
-// refuses any role row-level security would not bind.
-func Schema(t *testing.T) (admin *sql.DB, app *db.Conn) {
+// Schema creates an isolated database schema with the foundation and the named
+// capabilities. It returns an owner handle for assertions and an application
+// connection subject to row-level security.
+func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.Conn) {
 	t.Helper()
 	adminURL, appURL := URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
+	sources := append([]db.MigrationSource{migrations.Source}, extra...)
+	if err := db.Migrate(t.Context(), adminURL, sources...); err != nil {
 		t.Fatalf("dbtest: migrate: %v", err)
 	}
 	admin = Open(t, adminURL)
