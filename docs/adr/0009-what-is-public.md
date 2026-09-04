@@ -25,7 +25,7 @@ and why each one is worth the `go get` it costs.
 ## Decision
 
 **Three repositories, and the seam between them is a Go module boundary and a
-migration-number range.**
+migration ownership.**
 
 | Repository | Visibility | Holds |
 |---|---|---|
@@ -93,30 +93,13 @@ not tidiness — it is that a `replace` makes the private repository's CI depend
 a directory that only exists on one laptop, and that failure appears as a green
 build that proved nothing.
 
-### Migration numbers are global across the three repositories
+### Migration ownership
 
-`kit/app` merges the public `migrations/` directory with every composed module's
-own `Migrations fs.FS` into one flat set, applies it with one ledger, and
-**refuses at boot a version that two sources both claim, naming both.** So the
-version number is global across three repositories that never see each other's
-files, and the ranges are what keep them apart:
-
-| Repository | Versions |
-|---|---|
-| `septagon-oss/platformkit` | **1 – 999** |
-| the private catalog | 1001 – 1999 |
-| the private clients repository | 2001 upward |
-
-This repository owns 1–999 and allocates from the bottom; it is at `000022`. The
-gaps between the ranges are deliberate: a range that ended where the next began
-would make the first over-allocation collide instead of failing to reserve.
-
-Two consequences follow and both are rules rather than advice. **Files are
-append-only from v1.0.0**: before it, a migration is the schema this repository
-would create today and correcting one in place is cheaper than shipping a
-history nobody ran; after it, somebody has run it. And **a public migration
-number is never reused**, even for a module that is deleted, because the private
-repositories cannot see that it became free.
+The global numbering decision is superseded by
+[0010](0010-migration-ownership.md). The foundation and each selected module
+own independent histories. `kit/app` passes those sources to one runner in
+composition order. A module's name is its stable owner; versions increase only
+within that owner. Repositories allocate no global ranges.
 
 ### The ceilings are a published commitment
 
@@ -169,19 +152,14 @@ it.
   history is public, so making it private later removes it from the tree and
   from nowhere else. Deciding a module is catalog is a decision made before it
   lands, not after.
-- A number allocated in one repository's migration range is spent for all three.
-  Two modules written in parallel in the same repository still need the range
-  written down; the private repositories keep a `migrations/README.md` table for
-  that, and this one keeps the numbers in the filenames of one directory.
-
 ## Evidence
 
 ```sh
 # The public module requires nothing private, and replaces nothing.
 grep -E '^replace|^\trequire' go.mod | grep -v septagon-oss   # no private module
 
-# One ledger, one directory, versions 1-999 and no duplicates.
-ls migrations/*.up.sql | sed 's#.*/\([0-9]*\)_.*#\1#' | sort | uniq -d   # no output
+# Independent histories advance even below another owner's latest version.
+go test ./kit/db -run TestMigrationOwnersAdvanceIndependently
 
 # The ceilings hold, and CI fails a pull request that raises one.
 make check-loc

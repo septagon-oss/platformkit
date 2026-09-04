@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -98,12 +98,9 @@ func hello() module.Module {
 		Permissions: []module.Permission{{Key: "note:write"}},
 		Events:      []string{"hello.note_written"},
 		Nav:         []module.NavEntry{{Label: "Notes", Path: "/hello", Permission: "note:write"}},
-		// Numbered far past migrations/, because a module's SQL joins the one
-		// ledger and a number the repository will reach is a collision waiting
-		// for the next stage. The gap is the point, not the value.
+		// Each owner starts its own numbering at 1.
 		Migrations: fstest.MapFS{
-			"000900_notes.up.sql":   {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
-			"000900_notes.down.sql": {Data: []byte(`DROP TABLE notes`)},
+			"000001_notes.up.sql": {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
 		},
 		Routes: func(api *httpx.API) {
 			httpx.Register(api, huma.Operation{
@@ -331,48 +328,22 @@ func TestNewRefusesAnInvalidComposition(t *testing.T) {
 	}
 }
 
-// TestMigrationVersionsAreGlobal: one ledger means one numbering. A module that
-// reuses a version is refused by name rather than silently never applied.
-func TestMigrationVersionsAreGlobal(t *testing.T) {
-	clash := module.Module{Name: "clash", Migrations: fstest.MapFS{
+// Source ownership and dependency order come from the composition itself.
+func TestMigrationSourcesFollowComposition(t *testing.T) {
+	mods := []module.Module{hello(), {Name: "no-sql"}, {Name: "another", Migrations: fstest.MapFS{
 		"000001_other.up.sql": {Data: []byte("SELECT 1")},
-	}}
-	_, err := MigrationSources([]module.Module{clash})
-	if err == nil {
-		t.Fatal("sources accepted a module that reuses version 000001")
+	}}}
+	sources := MigrationSources(mods)
+	var owners []string
+	for _, source := range sources {
+		owners = append(owners, source.Owner)
 	}
-	for _, want := range []string{"000001", "migrations/", "module clash"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the error does not name %q: %v", want, err)
-		}
+	if !slices.Equal(owners, []string{"platformkit", "hello", "another"}) {
+		t.Fatalf("migration owners = %v", owners)
 	}
-
-	// A module that embedded its migrations directory rather than the files in
-	// it contributes nothing, which has to be an error and not a quiet boot.
-	_, err = MigrationSources([]module.Module{{Name: "nested", Migrations: fstest.MapFS{
-		"migrations/000009_x.up.sql": {Data: []byte("SELECT 1")},
-	}}})
-	if err == nil || !strings.Contains(err.Error(), "fs.Sub") {
-		t.Errorf("sources = %v, want the fs.Sub hint", err)
-	}
-
-	// A module numbered past the root's migrations joins the same directory.
-	merged, err := MigrationSources([]module.Module{hello()})
-	if err != nil {
-		t.Fatalf("sources: %v", err)
-	}
-	entries, err := fs.ReadDir(merged, ".")
-	if err != nil {
-		t.Fatalf("read the merged directory: %v", err)
-	}
-	var names []string
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	for _, want := range []string{"000001_tenancy.up.sql", "000900_notes.up.sql"} {
-		if !strings.Contains(strings.Join(names, " "), want) {
-			t.Errorf("the merged directory lacks %s: %v", want, names)
-		}
+	migrateURL, _ := dbtest.URLs(t)
+	if err := db.Migrate(t.Context(), migrateURL, sources...); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -473,7 +444,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	// The worker migrates too, but the test writes its event first, so the
 	// schema has to exist before Run does anything. Applying it twice is the
 	// ordinary case: see docs/adr/0005.
-	if err := db.Migrate(t.Context(), migrateURL, migrations.FS); err != nil {
+	if err := db.Migrate(t.Context(), migrateURL, migrations.Source); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	conn, err := db.Open(t.Context(), appURL)

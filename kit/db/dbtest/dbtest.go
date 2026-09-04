@@ -78,7 +78,7 @@ func URLs(t *testing.T) (adminURL, appURL string) {
 func Schema(t *testing.T) (admin *sql.DB, app *db.Conn) {
 	t.Helper()
 	adminURL, appURL := URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.FS); err != nil {
+	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
 		t.Fatalf("dbtest: migrate: %v", err)
 	}
 	admin = Open(t, adminURL)

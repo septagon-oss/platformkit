@@ -146,7 +146,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 // makes it.
 func TestTwoReplicasShareOneLimit(t *testing.T) {
 	adminURL, appURL := dbtest.URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.FS); err != nil {
+	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	first, second := replica(t, appURL), replica(t, appURL)

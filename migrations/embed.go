@@ -1,11 +1,14 @@
-// Package migrations is the one migration directory. Every table in PlatformKit
-// is created here, numbered once, and applied by kit/db.Migrate as the owner
-// role against the single "schema_migrations" ledger.
+// Package migrations owns the foundation schema shared by PlatformKit apps.
 package migrations
 
-import "embed"
+import (
+	"embed"
 
-// FS holds the migration files. kit/db.Migrate reads it through source/iofs.
-//
-//go:embed *.sql
-var FS embed.FS
+	"github.com/septagon-oss/platformkit/kit/db"
+)
+
+//go:embed *.up.sql
+var files embed.FS
+
+// Source is the foundation's append-only migration history.
+var Source = db.MigrationSource{Owner: "platformkit", Files: files}

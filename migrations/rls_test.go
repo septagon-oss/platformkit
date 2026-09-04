@@ -25,16 +25,14 @@ import (
 // and is greppable from outside the repository.
 const exemption = "platformkit:tenant-scoping-exempt"
 
-// ledger is golang-migrate's own bookkeeping. It is created by the migration
-// tool rather than by any file here, so it cannot carry a comment of ours, and
-// it holds one row saying which version was applied — no tenant's data and
-// nothing a policy would narrow.
+// The runner owns migration history and revokes application access to it.
+// It contains schema metadata, not tenant data. kit/db tests its privileges.
 const ledger = "schema_migrations"
 
 // TestEveryTableIsScopedOrExemptOnPurpose.
 func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
 	adminURL, _ := dbtest.URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.FS); err != nil {
+	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	rows, err := dbtest.Open(t, adminURL).QueryContext(t.Context(), `

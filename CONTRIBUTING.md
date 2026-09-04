@@ -71,7 +71,7 @@ When a change exceeds a ceiling:
 go run ./tools/locbudget --write lowers ceilings. Rebaselining with --round 100
 can raise them and requires that owner review. CI rejects implementation pull
 requests that raise source or package ceilings against main. This process
-also applies to necessary regression tests and released-data compatibility.
+also applies to necessary regression tests.
 
 ## Commits and pull requests
 
@@ -82,8 +82,8 @@ how it was verified; paste the real command output into the commit body.
 For a behavior change, demonstrate a relevant failing case before its correction.
 For a refactor, preserve the independent behavior tests and state what became
 easier to follow, test or change. Include concurrency and rollback checks when
-transactional behavior is affected. Track any necessary compatibility code's
-consumer and removal condition.
+transactional behavior is affected. This rebuild starts fresh: remove replaced
+APIs and implementations without legacy conversion or compatibility shims.
 
 Measure maintainability with a bounded change by an unfamiliar maintainer:
 time to find the owner, time to a correct tested change, assistance and unrelated

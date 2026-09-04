@@ -375,7 +375,7 @@ func TestAnExpiredSessionGoesOnTheRefusalItCauses(t *testing.T) {
 // that fails on any counter that lives in a process.
 func TestTheLockoutIsOneCounterForEveryReplica(t *testing.T) {
 	adminURL, appURL := dbtest.URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.FS); err != nil {
+	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	pods := []*db.Conn{pool(t, appURL), pool(t, appURL)}

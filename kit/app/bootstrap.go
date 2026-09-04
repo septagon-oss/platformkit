@@ -36,11 +36,7 @@ const bootstrapLock = "platformkit:bootstrap"
 // one. pg_advisory_xact_lock serializes them, so the second reads the first
 // one's tenant and refuses.
 func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn func(context.Context, db.Tx[db.System]) error) error {
-	src, err := MigrationSources(mods)
-	if err != nil {
-		return err
-	}
-	if err := db.Migrate(ctx, cfg.Database.MigrateURL, src); err != nil {
+	if err := db.Migrate(ctx, cfg.Database.MigrateURL, MigrationSources(mods)...); err != nil {
 		return err
 	}
 	conn, err := db.Open(ctx, cfg.Database.URL)

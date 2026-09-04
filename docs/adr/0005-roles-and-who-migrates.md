@@ -33,8 +33,10 @@ first and nothing to wait for.
 - A worker cannot serve a stale schema: it applied the schema itself.
 - A migration that is slow makes every replica's boot slow, which is visible in
   the rollout rather than hidden in a job that finished an hour ago.
-- Backwards-compatible migrations are not optional. Old and new code run at once
-  during a rolling deploy, both against the newest schema.
+- This rebuild starts on a fresh database, with no old-ledger conversion.
+  Later releases must choose a rollout explicitly: expand the schema for
+  overlapping binaries, or stop the old processes before a breaking change.
+  An old binary cannot restart with an incomplete migration history.
 - The probes are a plain mux in both roles, not the API: a probe has no tenant,
   no session and no operation to declare, so it has no business building one.
   The web role mounts the same mux beside the API, outside the middleware chain,

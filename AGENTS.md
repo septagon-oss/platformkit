@@ -12,9 +12,9 @@ readability and review criteria. docs/adr/ records the decisions.
 2. **No new channel.** No new registry type, config key namespace or generated
    document. Extend the existing composition and verification paths.
 3. **One task, one commit, green build.** make check passes before you commit.
-4. **Remove replaced implementations in the same change.** Compatibility code
-   needed by a released contract or stored data has a named consumer, test and
-   removal condition. It does not justify parallel business-rule implementations.
+4. **Remove replaced implementations in the same change.** This rebuild has
+   no legacy API or data compatibility requirement. Start from a fresh schema;
+   keep subsequent changes testable through the new upgrade path.
 5. **Keep scope bounded.** Record an unrelated defect separately.
 6. **Verify before claiming.** Paste real command output into the commit body.
 7. **Never commit secrets**, config.yaml, binaries or generated assets.
