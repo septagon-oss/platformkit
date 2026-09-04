@@ -1,82 +1,96 @@
 # Contributing
 
-Read [ARCHITECTURE.md](ARCHITECTURE.md) first: the ten ideas, the ceilings, the
-gates. [AGENTS.md](AGENTS.md) is the nine rules, and they apply to people too.
-[docs/adr](docs/adr) says why.
+Read [ARCHITECTURE.md](ARCHITECTURE.md) for the current implementation,
+[AGENTS.md](AGENTS.md) for contribution rules and [docs/adr](docs/adr) for decisions.
 
-    scripts/start.sh    # docker, go, Postgres, NATS, config, first tenant, run
+    scripts/start.sh    # local dependencies, configuration, first tenant, app
 
-Then `make check` for gates 1–9, and `make e2e` for gate 10 (needs node).
+Run make check for the required checks and make e2e for browser journeys.
+Tests need real Postgres and NATS; make up starts the local dependencies.
 
 ## The shape of a change
 
-A module is three things and nothing else: `contracts/` (the entity, the events,
-the permission tokens, the service interface, a fake and a conformance suite),
-`internal/` (every implementation), and `module.go` (the manifest and a `Deps`
-struct). Copy `modules/task`; it is the exemplar and it is short.
+A module owns a business capability: contracts/ defines its public behavior,
+internal/ implements it, and module.go declares its dependencies and manifest.
+Use modules/task to understand the current shape; define a new capability's
+contracts for its own domain.
 
-- **Contracts before implementations.** The `contracts/` package and its
-  conformance suite exist and pass against the fake before `internal/` is filled.
-- **Cross-module dependencies are interfaces** from the provider's `contracts/`.
-  Importing another module's `internal/` is a gate failure, not a review comment.
-- **A screen is generated from a schema.** A hand-written page earns itself in a
-  comment saying why (ADR 0007). There are five in the whole application.
-- **No new channel.** No new registry type, config key namespace or generated
-  document. Fifteen make targets, ten gates, one config surface.
-- **Close duplicates, never add them.** An interface is justified by a passing
-  fake, not by a second production implementation.
+- Define contracts and independent conformance cases before implementation.
+- Import other modules through their contracts; keep their implementation private.
+- Keep business decisions separate from persistence and transport when that
+  makes the rule easier to understand and test. Start within the owning module.
+- Use the existing generated admin for record management. Give custom workflows
+  an explicit surface and journey tests.
+- Extend the existing composition path. Add no registry type, configuration
+  namespace or generated document.
+- Keep each business rule in one place. A real service and a fake can share pure
+  decisions while independently specified cases check their behavior.
 
-## Gates
+## Code should read like the business
 
-`make check` is gates 1–9 and is what CI runs on every pull request: `build`,
-`vet`, `fmt-check`, `test`, `check-loc`, `check-packages`, `check-gucs` and the
-import gate. `make e2e` is gate 10. Both are green before you push, and
-`make test` needs a real Postgres — `make up` starts one.
+Use the words people use for the capability: assign a task, renew a subscription,
+settle a payment. Names should explain intent at the point where they are read.
 
-`check-loc` is a ratchet: net lines go down. `go run ./tools/locbudget --write`
-only lowers a ceiling. Raising one is an owner commit with a reason, and CI
-fails a pull request that raises one by hand.
+- Make the normal path readable from top to bottom. Use early returns for
+  refusals and errors; avoid clever expressions and deeply nested control flow.
+- Name a helper for a meaningful domain concept or actual repetition. Avoid
+  chains of helpers that make a reader chase trivial steps across files.
+- Show inputs, time, IDs, state changes, transaction ownership and external
+  effects explicitly. Do not hide required facts or services in context values.
+- Keep decision functions deterministic and leave caller-owned values unchanged.
+  Mutating newly owned local data is fine when it makes the code clearer.
+- Use narrow types and contracts that state what a caller needs. Do not create
+  a generic framework for a single behavior.
+- Explain constraints and reasons in comments. Let clear code express the steps.
+- Write tests around examples, refusals and invariants with independently chosen
+  expected results. Keep database and provider failure tests at their boundaries.
 
-### When your pull request crosses a ceiling
+A reviewer should be able to explain a changed command's inputs, decision,
+state change, effects and failure behavior from the command and its relevant
+rule. Record where a reader needed hidden knowledge or unrelated files.
+Naming conventions, line counts and coverage percentages cannot prove this.
 
-`check-loc` prints the bucket, the count and by how much. There are three
-answers and the order matters.
+## Budgets and verification
 
-1. **Delete something first.** A ceiling is a claim that this repository is
-   small enough to hold in one head, so the first question is what the change
-   made redundant: the old path it replaces, the helper it duplicates, the
-   comment that now says what the code says. Rule 4 asks for the deletion in the
-   same commit anyway.
-2. **Split the change.** A pull request that has to cross a ceiling is usually
-   two changes, and one of them is a refactor that pays for the other. Land the
-   refactor, which lowers the count, and then the feature.
-3. **Ask the owner to raise it.** That is a commit of its own, on main, with the
-   reason in the body — not a line in your pull request, because a ceiling that
-   any change may raise on its way past is not a ceiling. Every bucket has room
-   for a hundred lines by construction (`--write --round 100`), so a change that
-   is over is over by more than a comment.
+make check runs build, vet, formatting, real-service tests, source/package
+budgets and import/tenancy checks. make e2e exercises the browser. Both pass
+before a push; the required make check passes before each commit.
 
-Do not raise a ceiling in the same commit as the change that crossed it. CI
-compares `loc-budget.json` against `main` and fails exactly that.
+Budgets keep the kernel, modules, UI and tests accountable for their cost.
+They allow a useful capability or test to grow within its reviewed allocation.
+Do not compress readable code or remove useful tests to make a count smaller.
 
-## Commits
+When a change exceeds a ceiling:
 
-- **One task, one commit, green build.** `make check` passes before you commit.
-- **Delete the old path in the same commit that lands the new one.** No shim
-  outlives its task; if the deletion will not fit, the task is wrong — split it.
-- **Do not widen scope.** A defect outside the task is one line in an issue.
-- **Verify before claiming.** Paste the real command output into the commit body.
-- Conventional subject (`feat(kit):`, `fix(auth):`, `docs:`, `chore:`), present
-  tense, one line, no trailing period.
-- **Never commit** secrets, `config.yaml`, binaries or generated assets.
+1. Remove the implementation or duplication the change actually replaces.
+2. Split unrelated responsibilities into independently green changes.
+3. If the remaining cost is justified, make a separate owner budget commit
+   before the implementation. Name the behavior or maintenance improvement,
+   affected bucket, expected cost and evidence that will validate the benefit.
 
-## Pull requests
+go run ./tools/locbudget --write lowers ceilings. Rebaselining with --round 100
+can raise them and requires that owner review. CI rejects implementation pull
+requests that raise source or package ceilings against main. This process
+also applies to necessary regression tests and released-data compatibility.
 
-One logical change. Say what you ran and paste what it printed. New behaviour
-comes with a test that fails without it — for a module that is a case in the
-conformance suite, so the fake and the real implementation are both held to it.
+## Commits and pull requests
 
-By contributing you agree your work is licensed under Apache-2.0. Do not add a
-per-file copyright header: [LICENSE](LICENSE) covers the tree and anything
-pulled from elsewhere is named in [NOTICE](NOTICE). Security issues go to
-[SECURITY.md](SECURITY.md), never to an issue.
+Keep one logical change in one repository. Use a conventional subject in the
+present tense, with no trailing period. Describe the behavior, its owner and
+how it was verified; paste the real command output into the commit body.
+
+For a behavior change, demonstrate a relevant failing case before its correction.
+For a refactor, preserve the independent behavior tests and state what became
+easier to follow, test or change. Include concurrency and rollback checks when
+transactional behavior is affected. Track any necessary compatibility code's
+consumer and removal condition.
+
+Measure maintainability with a bounded change by an unfamiliar maintainer:
+time to find the owner, time to a correct tested change, assistance and unrelated
+owners touched. Measure reuse with different products using the same shared
+implementation. Keep failed attempts and rework visible.
+
+Never commit secrets, config.yaml, binaries or generated assets. By contributing
+you agree your work is licensed under Apache-2.0. [LICENSE](LICENSE) covers the
+tree; record third-party material in [NOTICE](NOTICE). Report security issues
+through [SECURITY.md](SECURITY.md).

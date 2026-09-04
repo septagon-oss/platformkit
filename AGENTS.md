@@ -1,35 +1,31 @@
 # Working in this repository
 
-Read `ARCHITECTURE.md` first: it names the ten ideas, the layout, the ceilings
-and the gates. `docs/adr/` says why. Nothing else is required context.
+Read ARCHITECTURE.md for the current boundaries and CONTRIBUTING.md for the
+readability and review criteria. docs/adr/ records the decisions.
 
 ## Rules
 
-1. **Net lines go down.** `make check-loc` must pass. `go run ./tools/locbudget
-   --write` only lowers a ceiling; raising one is an owner commit with a reason.
-   A ceiling is the tree plus the smallest round margin — the count rounded up
-   to the next hundred, which `--write --round 100` writes — and a tag
-   re-ratchets. A ceiling at exactly the count is a ceiling the next one-line
-   pull request fails, and a margin nobody can argue about is worth more than a
-   tight one.
+1. **Make changes easy to understand and maintain.** Use domain language,
+   explicit control flow and visible effects. Source size is a reviewed cost,
+   not the objective. Keep make check-loc and make check-packages green;
+   raising a ceiling remains a separate owner commit with a reason.
 2. **No new channel.** No new registry type, config key namespace or generated
-   document. Fourteen make targets, ten gates, one config surface.
-3. **One task, one commit, green build.** `make check` passes before you commit.
-4. **Delete the old path in the same commit that lands the new one.** No shim
-   outlives its task; if the deletion cannot fit, the task is wrong — split it.
-5. **Do not widen scope.** A defect outside the task is one line in an issue,
-   not a fix in this commit.
-6. **Verify before claiming.** Paste the real command output into the commit body.
-7. **Never commit secrets**, `config.yaml`, binaries or generated assets.
-8. **Close duplicates, never add them.** A second implementation of anything
-   already here is rejected at review; an interface is justified by a passing
-   fake, not by a second production implementation.
-9. **Contracts before implementations.** A module's `contracts/` package and its
-   conformance suite exist and pass before `internal/` is filled.
+   document. Extend the existing composition and verification paths.
+3. **One task, one commit, green build.** make check passes before you commit.
+4. **Remove replaced implementations in the same change.** Compatibility code
+   needed by a released contract or stored data has a named consumer, test and
+   removal condition. It does not justify parallel business-rule implementations.
+5. **Keep scope bounded.** Record an unrelated defect separately.
+6. **Verify before claiming.** Paste real command output into the commit body.
+7. **Never commit secrets**, config.yaml, binaries or generated assets.
+8. **One implementation per business rule.** Real and in-memory services may
+   share pure decisions; their conformance cases need independent expectations.
+   A fake proves a testing seam. Reuse requires evidence from different products.
+9. **Contracts before implementations.** Define the module's public behavior and
+   conformance cases before filling its implementation.
 
 ## Commands
 
     make up               # Postgres and NATS, waiting for both
-    make check            # build, vet, fmt-check, test, check-loc,
-                          #   check-packages, check-gucs
+    make check            # build, vet, formatting, tests, budgets and boundaries
     make run              # the reference app, on config.yaml

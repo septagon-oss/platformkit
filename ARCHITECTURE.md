@@ -1,16 +1,17 @@
 # Architecture
 
-PlatformKit is a reference architecture: a working multi-tenant SaaS whose value
-is insight per line, so every idea below is implemented exactly once. All ten
-ideas, all ten gates and all eleven modules are here; `git log` is where the
-order they arrived in is recorded, which is the only place it belongs.
+PlatformKit is a public foundation for composing multi-tenant SaaS products.
+Its boundaries should make products easy to assemble, understand and upgrade.
+The ideas below describe the current implementation; CONTRIBUTING.md defines
+how changes are reviewed for readability, ownership and demonstrated behavior.
 
 ## The ten ideas
 
 1. **Composition is a list.** An application is a slice of modules constructed in
    `apps/platformkit/modules.go` with typed dependency structs in dependency
-   order, so the compiler checks the wiring graph and there is no container to
-   learn. A module is `Module(Deps{...})`: one function, one struct.
+   order. A module is `Module(Deps{...})`: one function, one struct.
+   Compilation checks dependency types; composition tests check that required
+   dependencies are supplied and the intended modules are selected.
 2. **A module is three things.** `contracts/` (interfaces, DTOs, events,
    permission tokens, and a conformance suite), `internal/` (every
    implementation), and `module.go` (the manifest). `modules/task` is the
@@ -50,9 +51,9 @@ order they arrived in is recorded, which is the only place it belongs.
   
 9. **A client is configuration.** One image, one binary, `--role web|worker|all`;
    clients differ by configuration and assets, never by build.
-10. **Invariants are gates.** Everything above is checked by a command that runs
-    on every pull request in under five minutes; a rule that does not run is not
-    a rule.
+10. **Claims need evidence.** The gates below check the implemented boundaries.
+    A declaration, a passing compile and a product journey establish different
+    things. Report executed results and timings; keep untested claims explicit.
 
 ## Layout
 
@@ -194,7 +195,7 @@ a minute and so is a target of its own. CI runs both. The list stops at ten.
 
 | # | Gate | Proves |
 |---|---|---|
-| 1 | `make build` | the wiring graph type-checks |
+| 1 | `make build` | constructors and code type-check |
 | 2 | `make vet` + `make fmt-check` | no known-bad and no unformatted Go |
 | 3 | `make test` | the suite passes against a real Postgres |
 | 4 | `make check-loc` | no bucket exceeds its ceiling |

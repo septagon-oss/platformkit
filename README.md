@@ -84,9 +84,9 @@ when `server.docs` is on; it is off by default.
 A module is a directory: `contracts/` (the entity, a service interface, its
 events and permissions, a fake, and a conformance suite), `internal/`, and a
 `module.go` that takes a struct of typed dependencies and returns a manifest.
-`apps/platformkit/modules.go` is the whole wiring graph — a list, in dependency
-order, that the compiler checks. A dependency you forgot is a compile error on
-the line that forgot it, not a nil at boot.
+`apps/platformkit/modules.go` lists the constructors in dependency order.
+Compilation checks their types; composition tests verify that required
+dependencies are supplied. An omitted struct field can still be nil.
 
 ```go
 task.Module(task.Deps{Tenants: tenants}),
