@@ -7,6 +7,11 @@
 // here post to the ones that already exist. That is thirty lines instead of a
 // duplicate implementation of the thing most worth having exactly once.
 (function () {
+  // Where a session begins is written on <html> by the shell that has one;
+  // this script names no route, so a shell with no sign-in page redirects
+  // nowhere rather than somewhere that does not exist.
+  const signin = document.documentElement.getAttribute("data-signin");
+
   async function post(url, body) {
     return fetch(url, {
       method: "POST",
@@ -31,7 +36,7 @@
           password: data.get("password"),
         });
         if (response.ok) {
-          window.location.assign(form.getAttribute("data-next") || "/admin");
+          window.location.assign(form.getAttribute("data-next") || "/");
           return;
         }
         const problem = await response.json().catch(() => ({}));
@@ -51,6 +56,6 @@
     if (!out) return;
     event.preventDefault();
     await post("/api/v1/auth/logout", null);
-    window.location.assign("/admin/login");
+    window.location.assign(signin || "/");
   });
 })();

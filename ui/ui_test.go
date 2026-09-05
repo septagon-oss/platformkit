@@ -149,3 +149,17 @@ func TestAClientsOwnPaletteIsTheOnlyThingThatChanges(t *testing.T) {
 		}
 	}
 }
+
+func TestControllersNameNoRoute(t *testing.T) {
+	t.Parallel()
+	assets := ui.Assets(ui.Compose(design.Default()))
+	for _, name := range []string{"session.js", "htmx-config.js", "confirm.js", "theme.js"} {
+		body, err := fs.ReadFile(assets, "js/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), "/admin") {
+			t.Fatalf("%s names a route; the sign-in path is data-signin on <html>", name)
+		}
+	}
+}

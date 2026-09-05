@@ -11,6 +11,8 @@
 // a failure a person reports is one grep away from the log line behind it.
 (function () {
   if (!window.htmx) return;
+  // The sign-in page, if this shell has one, is on <html>. See session.js.
+  const signin = document.documentElement.getAttribute("data-signin");
 
   htmx.config.responseHandling = [
     { code: "204", swap: false },
@@ -35,8 +37,8 @@
   document.body.addEventListener("htmx:responseError", function (event) {
     if (event.detail.xhr.status === 401 || event.detail.xhr.status === 403) {
       const problem = event.detail.xhr.getResponseHeader("Content-Type") || "";
-      if (problem.indexOf("problem+json") >= 0 && event.detail.xhr.status === 401) {
-        window.location.assign("/admin/login?next=" + encodeURIComponent(window.location.pathname));
+      if (problem.indexOf("problem+json") >= 0 && event.detail.xhr.status === 401 && signin) {
+        window.location.assign(signin + "?next=" + encodeURIComponent(window.location.pathname));
       }
     }
   });

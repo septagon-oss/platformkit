@@ -19,15 +19,22 @@
     }
     el.querySelector("[data-confirm-message]").textContent = message;
     const yes = el.querySelector("[data-confirm-accept]");
+    // Cancel closes the dialog from here rather than from an onclick on the
+    // button: the content security policy admits no inline handler, so an
+    // attribute would have been a button that did nothing.
+    const no = el.querySelector("[data-confirm-cancel]");
     if (label) yes.textContent = label;
     let accepted = false;
     const accept = () => {
       accepted = true;
       el.close();
     };
+    const cancel = () => el.close();
     yes.addEventListener("click", accept, { once: true });
+    if (no) no.addEventListener("click", cancel, { once: true });
     el.addEventListener("close", function () {
       yes.removeEventListener("click", accept);
+      if (no) no.removeEventListener("click", cancel);
       if (accepted) onYes();
     }, { once: true });
     el.showModal();

@@ -140,7 +140,9 @@ type ConfirmDialogProps struct {
 // browser's — the controller that opens it is twenty lines and traps nothing.
 //
 // There is one per page, and the message is written into it at the moment it
-// opens, because a dialog per destructive button is a dialog per row.
+// opens, because a dialog per destructive button is a dialog per row. Neither
+// button carries a handler of its own: the policy admits no inline script, so
+// confirm.js wires both.
 func ConfirmDialog(p ConfirmDialogProps) g.Node {
 	id := p.ID
 	if id == "" {
@@ -159,7 +161,6 @@ func ConfirmDialog(p ConfirmDialogProps) g.Node {
 		h.Div(h.Class(clFormActions.Compile()),
 			h.Button(h.Type("button"), g.Attr("data-confirm-cancel"),
 				h.Class(clButtonBase.Merge(clButtonVariant["secondary"]).Merge(clButtonSize["md"]).Compile()),
-				g.Attr("onclick", "this.closest('dialog').close()"),
 				g.Text(fallbackText(p.CancelLabel, "Cancel"))),
 			h.Button(h.Type("button"), g.Attr("data-confirm-accept"),
 				h.Class(clButtonBase.Merge(clButtonTone["danger"]).Merge(clButtonSize["md"]).Compile()),

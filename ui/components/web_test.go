@@ -1347,3 +1347,21 @@ func TestTheAdminSidebarFooterIsLegibleOnTheInvertedSurface(t *testing.T) {
 		t.Error("the content sidebar's footer took the inverted colour")
 	}
 }
+
+func TestNoComponentEmitsAnInlineHandler(t *testing.T) {
+	t.Parallel()
+	for _, example := range Gallery() {
+		var b strings.Builder
+		if err := example.Node.Render(&b); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(b.String(), " onclick=") || strings.Contains(b.String(), "javascript:") {
+			t.Fatalf("%s emits an inline handler, which script-src 'self' 'nonce-…' blocks:\n%s", example.Name, b.String())
+		}
+	}
+	var b strings.Builder
+	_ = ConfirmDialog(ConfirmDialogProps{}).Render(&b)
+	if strings.Contains(b.String(), "onclick") {
+		t.Fatal("the confirm dialog's cancel button has an inline handler; confirm.js closes it")
+	}
+}
