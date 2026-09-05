@@ -1,0 +1,21 @@
+{
+  "name": "@platformkit/openpencil-adapter",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "test": "node --import ./register.mjs --test *.test.mjs",
+    "test:stock": "node --test native.test.mjs"
+  },
+  "dependencies": {
+    "@open-pencil/core": "0.14.0",
+    "@open-pencil/fig": "0.14.0",
+    "@open-pencil/scene-graph": "0.14.0"
+  },
+  "overrides": {
+    "@open-pencil/fig": "0.14.0",
+    "@open-pencil/kiwi": "0.14.0",
+    "@open-pencil/pen": "0.14.0",
+    "@open-pencil/scene-graph": "0.14.0"
+  }
+}

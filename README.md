@@ -98,6 +98,10 @@ component catalog. Core retains the `pk-ui.component.*` identities as stable
 component names, not references to additional repositories.
 
 The snapshot is adapter input, not a `.fig` file, editable library or prototype.
+[OpenPencil tooling](tools/designexport/openpencil/README.md) owns the pinned
+native SDK corrections and their conformance tests. It is not yet a snapshot
+converter or hosted editor build; its support limits and release blockers are
+documented there.
 These packages are the implemented UI system. They do not by themselves prove
 an editable OpenPencil library, design-file round trips or end-to-end coverage
 of a product flow.

@@ -20,6 +20,7 @@ data/
 # Dependencies and browser artefacts. The image runs no browser and no node.
 node_modules
 e2e/node_modules
+tools/designexport/openpencil/node_modules
 e2e/test-results
 e2e/playwright-report
 

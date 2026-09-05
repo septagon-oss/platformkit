@@ -117,7 +117,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: e2e/package-lock.json
+          cache-dependency-path: |
+            e2e/package-lock.json
+            tools/designexport/openpencil/package-lock.json
+
+      - name: Native design conformance
+        working-directory: tools/designexport/openpencil
+        run: |
+          npm ci --ignore-scripts
+          npm test
 
       - name: Install the browser
         working-directory: e2e

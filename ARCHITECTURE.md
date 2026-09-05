@@ -100,6 +100,14 @@ behavior; the snapshot itself is neither another registry nor a JSON runtime
 engine for constructing pages. Existing `pk-ui.component.*` identities remain
 stable without restoring the former repository layout.
 
+[tools/designexport/openpencil](tools/designexport/openpencil/) owns native
+adapter tooling, not another component catalog. Its version- and source-checked
+SDK corrections operate on build/process inputs without modifying an installed
+editor. Node conformance is a separate CI and tagged-tree gate; the correction
+must also be integrated and verified in a browser build before editor release.
+Native tooling and tests have their own reviewed source budgets, separate from
+the application's browser controllers.
+
 [ui/page](ui/page/) models a document as shared `Chrome`, a request value,
 a handler's `View` and a composing `Frame`. `page.Serve` adapts that
 composition to the router. [ui/screens](ui/screens/) renders resource screens
