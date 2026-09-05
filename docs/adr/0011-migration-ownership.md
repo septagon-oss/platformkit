@@ -1,4 +1,4 @@
-# 0010: Capabilities own migration progress
+# 0011: Capabilities own migration progress
 
 Status: accepted for the clean rebuild; supersedes the global ledger in 0009.
 

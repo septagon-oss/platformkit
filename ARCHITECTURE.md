@@ -40,7 +40,7 @@ how changes are reviewed for readability, ownership and demonstrated behavior.
 7. **Capabilities own their migration histories.** One runner applies the
    foundation and selected modules in composition order. Each owner numbers its
    own files. SQL and its checksum/history row commit together; failed files
-   roll back. Applied files are immutable. See docs/adr/0010-migration-ownership.md.
+   roll back. Applied files are immutable. See docs/adr/0011-migration-ownership.md.
 8. **Screens derive from schemas.** `rest.Spec.Mount` registers the entity
    beside its routes, and `modules/admin` generates seven pages from each one:
    list, detail, two forms, two writes and delete. A `select` exists because the
@@ -66,7 +66,7 @@ how changes are reviewed for readability, ownership and demonstrated behavior.
 | `tools/` | `locbudget`, the line-budget ratchet |
 | `migrations/` | the foundation schema; modules may carry their own SQL |
 | `deploy/` | Dockerfile, Postgres bootstrap |
-| `docs/adr/` | the decisions, ten files at most |
+| `docs/adr/` | the decisions, one number each, eleven today |
 
 ## Limits
 

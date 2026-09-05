@@ -96,7 +96,7 @@ build that proved nothing.
 ### Migration ownership
 
 The global numbering decision is superseded by
-[0010](0010-migration-ownership.md). The foundation and each selected module
+[0011](0011-migration-ownership.md). The foundation and each selected module
 own independent histories. `kit/app` passes those sources to one runner in
 composition order. A module's name is its stable owner; versions increase only
 within that owner. Repositories allocate no global ranges.
