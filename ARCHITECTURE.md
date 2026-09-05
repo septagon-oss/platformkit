@@ -60,7 +60,7 @@ how changes are reviewed for readability, ownership and demonstrated behavior.
 |---|---|
 | `kit/` | the kernel: db, tenancy, config, problem, httpx, module, crud, rest, events, jobs, health, limit |
 | `modules/` | business modules, each `contracts/` + `internal/` + `module.go` |
-| `ui/` | typed components, the class builder and the CSS emitter, the browser controllers |
+| `ui/` | typed components, the class builder and the CSS emitter, the browser controllers; `page` (documents as values) and `screens` (screens generated from schemas, and the resources catalog) |
 | `design/` | design tokens and the two themes |
 | `apps/` | `platformkit`, the reference binary |
 | `tools/` | `locbudget`, the line-budget ratchet |
@@ -120,6 +120,19 @@ palette, at the first request, and serves the result from memory — so a
 component that is deleted takes its CSS with it, and a class no component
 declares has no rule. Both directions are tested: `ui/components` proves its
 declarations resolve, `modules/admin` proves the shell declares nothing else.
+
+`ui.Compose` is the whole stylesheet API: the kernel's lists plus a consumer's
+own lists and rules, resolved together so a shared utility has one rule,
+returned as a `Sheet` the consumer computes once at mount and carries. `ui/page`
+is a document as a value — a `Chrome` every page of a shell shares, a `Request`
+read once at the edge, a `View` a handler returns, a `Frame` that arranges them
+— and `page.Serve` is the one adapter between a handler and the router.
+`ui/screens` is the seven generated pages of a resource as pure renderers, for
+any shell that mounts them, and `screens.Describe` is the same knowledge as JSON
+at `/api/v1/admin/resources`, which is what a shell that is not a browser
+generates its screens from. `modules/admin` and a client's storefront are
+callers of these three and write no frame, head, stylesheet cache or class
+string of their own.
 
 There are two sheets, and the split is about what a page downloads rather than
 about how the CSS is written. `ui.Stylesheet` is the tokens, the roles, the base
