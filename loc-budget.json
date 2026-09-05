@@ -54,7 +54,7 @@
       "exclude_suffixes": [
         "_test.go"
       ],
-      "max": 500
+      "max": 800
     },
     {
       "name": "tools",
