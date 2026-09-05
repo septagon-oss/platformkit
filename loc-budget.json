@@ -116,6 +116,35 @@
       "max": 300
     },
     {
+      "name": "design_tooling",
+      "paths": [
+        "tools/designexport/openpencil/"
+      ],
+      "suffixes": [
+        ".js",
+        ".mjs",
+        ".ts"
+      ],
+      "exclude_suffixes": [
+        ".test.js",
+        ".test.mjs",
+        ".test.ts"
+      ],
+      "max": 800
+    },
+    {
+      "name": "design_tooling_test",
+      "paths": [
+        "tools/designexport/openpencil/"
+      ],
+      "suffixes": [
+        ".test.js",
+        ".test.mjs",
+        ".test.ts"
+      ],
+      "max": 800
+    },
+    {
       "name": "markdown",
       "suffixes": [
         ".md"
