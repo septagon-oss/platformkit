@@ -13,7 +13,7 @@ services:
     volumes:
       # Runs once, on an empty data directory, and creates the unprivileged
       # role the app connects as. See the comments in the file.
-      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./apps/platformkit/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d platformkit"]
       interval: 5s

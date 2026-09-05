@@ -36,8 +36,10 @@ func main() {
 		err = run(args)
 	case "bootstrap":
 		err = bootstrap(args)
+	case "start":
+		err = startApp(args)
 	default:
-		err = fmt.Errorf("%q is not a command; there are two, run and bootstrap", command)
+		err = fmt.Errorf("%q is not a command; there are three: run, bootstrap and start", command)
 	}
 	if err != nil {
 		// The error goes to stderr rather than through the logger, because the

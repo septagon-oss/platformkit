@@ -49,7 +49,7 @@ go build -o "$work/platformkit" ./apps/platformkit
 echo "e2e: a database of its own"
 psql_admin -c "DROP DATABASE IF EXISTS $database WITH (FORCE);" >/dev/null
 psql_admin -c "CREATE DATABASE $database;" >/dev/null
-# The role exists (deploy/postgres/init.sql made it); the grants are per
+# The role exists (apps/platformkit/postgres-init.sql made it); the grants are per
 # database, so a fresh one needs them again.
 psql "$(swap "$admin_url")" -v ON_ERROR_STOP=1 -q \
 	-c "GRANT USAGE ON SCHEMA public TO platformkit_app;" \

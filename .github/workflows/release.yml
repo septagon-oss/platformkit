@@ -97,7 +97,7 @@ jobs:
       - name: Create the platformkit_app role
         env:
           PGPASSWORD: platformkit
-        run: psql -h localhost -U postgres -d platformkit -v ON_ERROR_STOP=1 -f deploy/postgres/init.sql
+        run: psql -h localhost -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
 
       - name: make check
         run: make check

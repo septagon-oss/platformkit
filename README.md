@@ -12,29 +12,35 @@ an implementation, [Contributing](CONTRIBUTING.md) to change it, and
 
 ## Run the reference application
 
-Use the existing checkout. A new installation needs Git, Docker with Compose,
-and the Go version declared in [go.mod](go.mod). From this repository:
+One command, with Go installed and nothing else:
 
 ```sh
-scripts/start.sh
+go run github.com/septagon-oss/platformkit/apps/platformkit@latest start
 ```
 
-The script starts local PostgreSQL and NATS, creates `config.yaml` if it is
-missing, migrates the configured database, bootstraps the first tenant and
-administrator, and serves the application. It preserves existing configuration.
-The generated administrator password is printed once; keep it private.
+`start` runs its own PostgreSQL 16 — downloaded once into your user cache,
+its data under `./data` — creates the application role, migrates, bootstraps
+the first tenant and administrator when there is none, and serves on `:8080`.
+The generated administrator password is printed once; keep it private. A second
+`start` in the same directory finds the tenant and serves it again.
 
 Open [the local sign-in page](http://platformkit.localhost:8080/admin/login).
 The request host selects the tenant, so use `platformkit.localhost`, not an
 arbitrary host alias. The component gallery is at `/admin/_gallery`.
+`--data` and `--addr` move the data directory and the listening address.
 
-If you want setup without starting the server, use
-`scripts/start.sh --no-run`, then run the launch command it prints. That command
-includes the application environment overrides needed for nondefault ports;
-`make run` alone does not translate Compose port settings into configuration.
-Set `PLATFORMKIT_PG_PORT` and `PLATFORMKIT_NATS_PORT` when running the setup
-script and tests. Check `docker compose ps` before starting another stack.
-The example configuration is for local development, not a production deployment.
+From a checkout, the development loop is the Compose stack and `run`:
+
+```sh
+make up     # PostgreSQL and NATS, waiting for both
+make run    # the application on config.yaml, created from config.example.yaml when missing
+```
+
+`run` is what a deployment uses too: a `config.yaml` of its own and a database
+of its own. Set `PLATFORMKIT_PG_PORT` and `PLATFORMKIT_NATS_PORT` when running
+the Compose stack and the tests beside another one, and check
+`docker compose ps` before starting a second stack. The example configuration
+is for local development, not a production deployment.
 
 ## Compose a product
 

@@ -62,7 +62,7 @@ jobs:
       - name: Create the platformkit_app role
         env:
           PGPASSWORD: platformkit
-        run: psql -h localhost -U postgres -d platformkit -v ON_ERROR_STOP=1 -f deploy/postgres/init.sql
+        run: psql -h localhost -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
 
       # The ratchet only ever lowers a ceiling. `--write` cannot raise one, but
       # a hand edit can, so the raise is caught here rather than in review.
