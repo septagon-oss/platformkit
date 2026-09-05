@@ -1,186 +1,130 @@
-<img src="docs/logo.png" alt="PlatformKit — seven modular segments assembling into one heptagon" width="96" align="right">
-
 # PlatformKit
 
-**A runnable, open-source reference architecture for multi-tenant SaaS in Go.**
-Clone it, run one command, and get tenants, users, sessions and OIDC, roles,
-audit, notifications, billing, content, files, a public site and an operator
-console — one binary, eleven modules, Postgres row-level security on every
-table, and an admin screen generated for every entity.
+PlatformKit is a Go foundation for composing multi-tenant SaaS applications.
+It brings together a runtime, reference business modules, typed web components
+and an operator interface generated from resource schemas. Applications choose
+modules through explicit Go dependency structs and supply their own capabilities
+where the product needs them.
 
-[![ci](https://github.com/septagon-oss/platformkit/actions/workflows/ci.yml/badge.svg)](https://github.com/septagon-oss/platformkit/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
-[![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8)](https://go.dev/dl/)
+Start with the application below. Read [Architecture](ARCHITECTURE.md) to locate
+an implementation, [Contributing](CONTRIBUTING.md) to change it, and
+[AGENTS.md](AGENTS.md) when working with a coding agent.
 
-## Run it
+## Run the reference application
 
-One command on a machine with Docker and Go:
+Use the existing checkout. A new installation needs Git, Docker with Compose,
+and the Go version declared in [go.mod](go.mod). From this repository:
 
-```bash
-git clone https://github.com/septagon-oss/platformkit && cd platformkit
+```sh
 scripts/start.sh
 ```
 
-It brings up Postgres and NATS, writes `config.yaml` from the example,
-migrates an empty database, creates the first tenant and its administrator,
-prints the administrator's password once, and serves. The five commands it
-wraps, for when you want to see each step:
+The script starts local PostgreSQL and NATS, creates `config.yaml` if it is
+missing, migrates the configured database, bootstraps the first tenant and
+administrator, and serves the application. It preserves existing configuration.
+The generated administrator password is printed once; keep it private.
 
-```bash
-make up
-cp config.example.yaml config.yaml
-go run ./apps/platformkit bootstrap --config config.yaml \
-    --tenant platformkit --host platformkit.localhost \
-    --name PlatformKit --admin-email admin@platformkit.localhost
-make run
+Open [the local sign-in page](http://platformkit.localhost:8080/admin/login).
+The request host selects the tenant, so use `platformkit.localhost`, not an
+arbitrary host alias. The component gallery is at `/admin/_gallery`.
+
+If you want setup without starting the server, use
+`scripts/start.sh --no-run`, then run the launch command it prints. That command
+includes the application environment overrides needed for nondefault ports;
+`make run` alone does not translate Compose port settings into configuration.
+Set `PLATFORMKIT_PG_PORT` and `PLATFORMKIT_NATS_PORT` when running the setup
+script and tests. Check `docker compose ps` before starting another stack.
+The example configuration is for local development, not a production deployment.
+
+## Compose a product
+
+[modules/task](modules/task/) shows a capability's shape: `contracts/` owns
+its public behavior and conformance tests, `internal/` implements it, and
+`module.go` accepts dependencies and returns a manifest. The reference
+application lists its constructors in
+[apps/platformkit/modules.go](apps/platformkit/modules.go).
+
+A module may depend on another module's `contracts/`, never its implementation
+or constructor. Supply the dependency in the application's composition.
+Compilation checks its type; composition and behavior tests check that it is
+present and does what the consumer needs.
+
+The reference modules cover tenants, users, authentication, audit,
+notifications, billing, content, files, sites, tasks and administration. The
+built-in billing provider records charges but does not move money. A real
+payment processor is a separate implementation of the public contract.
+
+A downstream application pins this Go module by version and composes it with
+its own modules. This repository does not need access to private catalog or
+client repositories to build.
+
+## Build a screen
+
+[design](design/) owns the theme values and typography.
+[ui/icon](ui/icon/) owns icons, [ui/components](ui/components/) owns typed
+components, and [ui/style](ui/style/) resolves their declared classes.
+[ui.Compose](ui/ui.go) combines the shared stylesheet with a consumer's
+declarations. [ui/page](ui/page/) represents documents and serves them through
+one router adapter; [ui/screens](ui/screens/) renders resource-based screens.
+
+Use the generated screens for record management. Compose a custom page for
+a workflow that needs its own interaction, and test the resulting journey.
+A client palette is a `design.Pair`; components continue to use semantic roles.
+There is no separate CSS build or JavaScript application framework.
+
+These packages are the implemented UI system. They do not by themselves prove
+an editable OpenPencil library, design-file round trips or end-to-end coverage
+of a product flow.
+
+## Use the HTTP API
+
+Sessions use cookies. The reference application's login endpoint is
+`POST /api/v1/auth/login`; authenticated resource routes live under
+`/api/v1/<module>/<entities>`. Send the configured tenant host with every
+request. The application rejects undeclared authorization requirements at boot.
+
+`GET /health` and `GET /ready` report process and dependency readiness.
+`GET /api/v1/admin/resources` describes registered resources for another
+authorized shell. OpenAPI is available at `/openapi.json` when
+`server.docs` is enabled. See [config.example.yaml](config.example.yaml) and
+the owning module's routes for the exact configuration and access contract.
+
+## Verify a change
+
+From this repository, use the local test services and run:
+
+```sh
+make check
 ```
 
-Then open **<http://platformkit.localhost:8080/admin/login>**. Behind it is the
-whole application: a dashboard, a screen for every entity mounted through
-`rest.Spec`, roles, health, and `/admin/_gallery` for every component it is
-drawn with. Every tenant is reached at its own host name, so the `Host` header
-is what decides whose data a request sees.
+`make check` builds, vets and formats-checks Go, runs real-service tests, and
+checks source budgets, package budgets, imports and tenant-setting ownership.
+`make e2e` runs browser journeys and also needs Node, npm, `psql`, `curl`
+and Playwright-managed Chromium. Install the browser dependencies once before
+the first run:
 
-`bootstrap` refuses to run twice, which is what makes it safe to leave in the
-binary. The password goes to stderr once, or comes from
-`PLATFORMKIT_BOOTSTRAP_PASSWORD`. Ports move with `PLATFORMKIT_PG_PORT` and
-`PLATFORMKIT_NATS_PORT`.
-
-## Use the API
-
-Sessions are cookies; the same login serves the browser and `curl`.
-
-```bash
-curl -sc jar -H 'Host: platformkit.localhost' -H 'Content-Type: application/json' \
-    -d '{"email":"admin@platformkit.localhost","password":"<the printed password>"}' \
-    localhost:8080/api/v1/auth/login
-
-curl -sb jar -H 'Host: platformkit.localhost' -H 'Content-Type: application/json' \
-    -d '{"title":"chiller-2 supply temperature"}' \
-    localhost:8080/api/v1/task/tasks
+```sh
+npm --prefix e2e ci
+npm --prefix e2e run install:browsers
 ```
 
-| Route | Purpose | Access |
-|---|---|---|
-| `/admin`, `/admin/login` | Operator console and sign-in | signed in |
-| `/health`, `/ready` | Liveness and readiness; never touch a tenant | public |
-| `/api/v1/auth/login`, `/logout`, `/me` | Sessions | public / signed in |
-| `/api/v1/auth/password/forgot`, `/reset` | Password reset by mail | public |
-| `/api/v1/auth/roles` | A tenant's roles and their permissions | `role:manage` |
-| `/api/v1/<module>/<entities>` | Five generated routes per entity: list, get, create, patch, delete | `<module>:read` / `:manage` |
-| `/api/v1/content/public/{slug}` | A published page, rendered from Markdown | public |
-| `/api/v1/site/settings/public` | The tenant's public site facts | public |
-| `/api/v1/file/files` | Streaming uploads under a per-tenant quota | `file:read` / `file:manage` |
-| `/api/v1/tenant/tenants`, `/api/v1/billing/plans` | The control plane and the price list | operator tenant only |
+The browser setup may require permission to install operating-system packages.
+The test script recreates the fixed `platformkit_e2e` database on the configured
+development server; confirm it is disposable and do not run this target
+concurrently against that server. Once the prerequisites and disposable target
+are confirmed, run `make e2e` with the same dependency-port settings.
+Both checks run in CI. See [Makefile](Makefile) for the current targets and
+[Contributing](CONTRIBUTING.md) for focused checks and review requirements.
 
-Every operation declares exactly one of *public*, *signed in*, or a named
-permission, and the application refuses to boot if one does not. A permission
-the operator holds (`tenant:manage`, `billing:catalog`) is a class of its own
-that a tenant's `*` never expands to. OpenAPI is served at `/openapi.json`
-when `server.docs` is on; it is off by default.
+Tests create and remove their own database schemas. Use development test
+services, never production credentials. `make down` removes the local Compose
+volumes as well as stopping services; it is a data deletion, not a test step.
 
-## Make it your product
+## Release and support
 
-A module is a directory: `contracts/` (the entity, a service interface, its
-events and permissions, a fake, and a conformance suite), `internal/`, and a
-`module.go` that takes a struct of typed dependencies and returns a manifest.
-`apps/platformkit/modules.go` lists the constructors in dependency order.
-Compilation checks their types; composition tests verify that required
-dependencies are supplied. An omitted struct field can still be nil.
-
-```go
-task.Module(task.Deps{Tenants: tenants}),
-```
-
-The `task` module is the exemplar: about six hundred lines for an entity with a
-lifecycle, three commands, five generated routes, a periodic sweep, six events
-and two permissions. Copy its shape; `CONTRIBUTING.md` says what a change looks
-like and `ARCHITECTURE.md` says why the kernel is shaped the way it is.
-
-## What is included
-
-- **Tenants** — a control-plane table; every other table carries `tenant_id`
-  and `FORCE ROW LEVEL SECURITY`, set per transaction by the kernel.
-- **Users and roles** — one row per tenant, argon2id passwords, roles as
-  permission lists.
-- **Authentication** — hashed server-side sessions, password reset, OIDC with
-  PKCE, a limiter shared across replicas.
-- **Audit** — every event of every module, with the acting user, under a
-  retention job.
-- **Notifications** — in-app records plus mail through one SMTP sender.
-- **Billing** — plans owned by the operator, a subscription per tenant, monthly
-  and yearly renewal with idempotent dunning.
-- **Content** — pages and posts with a sanitized public render.
-- **Files** — streamed uploads, downloads served as attachments unless
-  render-safe, quotas, orphan
-  reconciliation.
-- **Site** — the tenant's public settings and navigation.
-- **Tasks** — the exemplar module.
-- **Admin** — the operator console, generated from entity schemas.
-
-Underneath: `kit/db` (phantom-typed tenant and system transactions),
-`kit/events` (a transactional outbox relayed to JetStream; events are the job
-queue), `kit/jobs`, `kit/limit`, `kit/rest` (an entity's five routes and its
-admin screens from one declaration), and `ui/` (typed components and a
-stylesheet emitted by Go — no Node, no Tailwind build).
-
-## Verify before shipping
-
-```bash
-make check   # build, vet, gofmt, tests against real Postgres and NATS, and the size, package, tenancy and import gates
-make e2e     # a fresh database, a bootstrap, and a browser through the admin
-```
-
-Ten gates, all run on every pull request and on every tag; the tag also builds
-`ghcr.io/septagon-oss/platformkit`, attaches an SBOM and publishes the release.
-`loc-budget.json` holds the size ceilings and they only ratchet down: the
-kernel is about eight thousand lines and stays under its number.
-
-## Boundaries and expectations
-
-- Postgres and NATS are the only stores. There is no SQLite profile.
-- Extension code is Go. Schemas are structs compiled into the binary; there is
-  no runtime collection builder.
-- A module never imports another module's `internal/` or manifest, only its
-  `contracts/`. A script refuses the rest.
-- The admin is an operator surface generated from schemas, not a page builder.
-  A screen needing custom interaction is hand-written beside the generated one.
-- Money moves through a `PaymentProvider` interface; the built-in provider
-  records charges and moves nothing. A real processor lives outside this
-  repository.
-- Version 1 is what `v1.0.0` promises; the ceilings are part of the promise.
-  [CHANGELOG.md](CHANGELOG.md) says what changed, and the 0.x scaffolder that
-  used to live at this module path is kept under the `legacy-0.x` branch.
-
-## How the pieces fit
-
-```mermaid
-flowchart LR
-  kit["kit/\ndb · tenancy · httpx · rest · events · jobs · limit"]
-  ui["ui/ + design/\ntyped components, tokens, one stylesheet"]
-  modules["modules/\neleven reference modules"]
-  app["apps/platformkit\none binary, --role web | worker | all"]
-  yours["your repository\nyour modules, your composition"]
-
-  kit --> modules
-  ui --> modules
-  modules --> app
-  kit -. "contracts" .-> yours
-  modules -. "contracts" .-> yours
-```
-
-The earlier `pk-ui`, `tw`, `pk-styleengine` and `pk-design` foundations were
-folded into `ui/` and `design/`; a downstream product composes the public
-modules with its own through the same `Deps` structs and pins this module by
-tag. [ADR 0009](docs/adr/0009-what-is-public.md) says what is public and what
-is not.
-
-## Project links
-
-- [Architecture](ARCHITECTURE.md) and the [decision records](docs/adr)
-- [Changelog](CHANGELOG.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-- [Release procedure](RELEASE.md)
-- [Discussions](https://github.com/septagon-oss/platformkit/discussions)
-- [Apache-2.0 license](LICENSE)
+[RELEASE.md](RELEASE.md) describes the reviewed tag and image workflow.
+A successful build is not evidence of a deployed service; verify the image
+digest and the receiving environment separately.
+[CHANGELOG.md](CHANGELOG.md) records versioned changes,
+[SECURITY.md](SECURITY.md) explains private vulnerability reporting, and
+[LICENSE](LICENSE) and [NOTICE](NOTICE) record licensing and provenance.

@@ -1,6 +1,8 @@
 # 1. One repository
 
-Status: accepted, 2026-09-02
+Status: accepted, 2026-09-02. The public/private repository boundary is refined
+by [ADR 0009](0009-what-is-public.md). Current package ceilings live in
+[packages-budget.json](../../packages-budget.json).
 
 ## Context
 
@@ -14,15 +16,14 @@ repository was released on its own cadence.
 ## Decision
 
 One public repository, `github.com/septagon-oss/platformkit`, holds the kernel,
-the module catalog, the UI stack and the reference app in a single Go module.
-The `pk-*` packages that are worth keeping fold into it as ordinary packages
-under `ui/`, `design/` and `kit/`; the `pk-*` repositories are retired. Client
-overlays and secrets stay in two private repositories.
+reference modules, UI stack and reference app in a single Go module. Shared
+implementations live as ordinary packages under `ui/`, `design/` and `kit/`.
+Commercial capabilities and client applications remain private consumers as
+described in ADR 0009.
 
-Cost of a repository is paid in package count, not in repository count, so that
-is what the gate measures: the app may link at most 400 first-party packages.
-A module that needs a package earns it; a layer that exists to bridge two
-repositories does not survive the merge.
+Package count is one reviewed cost of composition. The package gate checks the
+ceiling in `packages-budget.json`; a new package must justify its ownership and
+maintenance cost rather than exist only to bridge repositories.
 
 ## Consequences
 
@@ -36,5 +37,5 @@ repositories does not survive the merge.
 ## Evidence
 
 ```sh
-make check-packages   # first-party packages linked into ./apps/platformkit <= 400
+make check-packages   # checks the current ceiling in packages-budget.json
 ```
