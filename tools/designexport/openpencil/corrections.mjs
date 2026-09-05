@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { correctExporter, correctPropertyTarget } from './exporter-correction.mjs'
-import { correctPropertyActions } from './property-correction.mjs'
+import { correctPropertyActions, correctComponentSync, correctEditorCreation } from './property-correction.mjs'
+import { correctLayout, correctGridRecompute } from './layout-correction.mjs'
 
 // Source hashes pin the exact upstream implementation, not just its version
 // label. A dependency upgrade requires a new review and the conformance suite.
@@ -17,6 +18,22 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/editor/components/properties.js': {
     sha256: '7bc49a01f5148053123559f7e4a523317a7ea61339429607dd2fd338243ed123',
     transform: (source, replace) => correctPropertyActions(correctPropertyTarget(source, replace), replace),
+  },
+  '@open-pencil/core/dist/editor/component-sync.js': {
+    sha256: '7381406b1455668e57afa48c313e89e4041e11592d9634a074d1de6da512a001',
+    transform: correctComponentSync,
+  },
+  '@open-pencil/core/dist/editor/create.js': {
+    sha256: '3d164478f09a94567cdd35e7a0c1b3d175a95afcb312695f18b284d756fc4f26',
+    transform: correctEditorCreation,
+  },
+  '@open-pencil/core/dist/layout.js': {
+    sha256: '358130698d8aa61bfcad65e4695679ed3883aac9efbb048df5a09cbe98f2b299',
+    transform: correctLayout,
+  },
+  '@open-pencil/core/dist/layout/apply.js': {
+    sha256: 'a02c896a0f808fd3ccb24ca6a8c09975ca7ef06e2555bc6313b54091e37e8c8d',
+    transform: correctGridRecompute,
   },
 })
 

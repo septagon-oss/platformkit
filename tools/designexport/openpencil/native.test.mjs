@@ -33,7 +33,7 @@ async function reopen(graph) {
 }
 
 function editor(graph) {
-  return createEditor({ graph, skipInitialGraphSetup: true })
+  return createEditor({ graph })
 }
 
 function nestedFixture() {
@@ -158,10 +158,10 @@ test('imported HUG frame and child resize, undo, redo and reopen with intact mas
   check(graph, 'Save', 40)
   actions.setInstanceComponentProperty(named(graph, 'Edited').id, '40:1', 'Longer caption')
   check(graph, 'Longer caption', 140)
-  actions.undo.undo()
+  actions.undoAction()
   check(graph, 'Save', 40)
   assert.deepEqual(geometry(graph, named(graph, 'Edited')), initial)
-  actions.undo.redo()
+  actions.redoAction()
   check(graph, 'Longer caption', 140)
   check(await reopen(graph), 'Longer caption', 140)
 })
@@ -177,8 +177,8 @@ test('undo restores unusual imported geometry exactly rather than remeasuring it
   actions.setInstanceComponentProperty(instance.id, '40:1', 'Longer caption')
   const after = geometry(graph, instance)
   assert.notDeepEqual(after, before)
-  actions.undo.undo()
+  actions.undoAction()
   assert.deepEqual(geometry(graph, instance), before)
-  actions.undo.redo()
+  actions.redoAction()
   assert.deepEqual(geometry(graph, instance), after)
 })

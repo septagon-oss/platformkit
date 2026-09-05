@@ -28,6 +28,8 @@ function snapshotPropertyHistory(ctx, ids) {
     if (!node) throw new Error("Missing node in text-property history: " + id);
     state.set(id, structuredClone({
       x: node.x, y: node.y, width: node.width, height: node.height,
+      primaryAxisSizing: node.primaryAxisSizing,
+      counterAxisSizing: node.counterAxisSizing,
       figmaDerivedLayout: node.figmaDerivedLayout,
       source: node.source,
       text: node.text,
@@ -49,27 +51,65 @@ function retainChangedPropertyHistory(before, after) {
   }
 }
 
+function checkPropertyMasterGeometry(ctx, before) {
+  for (const [id, snapshot] of before) {
+    const node = ctx.graph.getNode(id);
+    if (node?.type === "COMPONENT" && (node.width !== snapshot.width || node.height !== snapshot.height)) {
+      throw new Error("Property layout resizing another master requires downstream instance history");
+    }
+  }
+}
+
 function restorePropertyHistory(ctx, state) {
   for (const id of state.keys()) {
     if (!ctx.graph.getNode(id)) throw new Error("Missing node in text-property history: " + id);
   }
-  ctx.graph.preserveSourceMetadataDuring(() => {
-    for (const [id, snapshot] of state) {
-      // updateNode emits invalidation events, but must not add source edit marks.
-      // Clone on every replay so a later edit cannot change stored undo data.
-      ctx.graph.updateNode(id, structuredClone(snapshot));
-    }
+  ctx.withoutComponentSync(() => {
+    ctx.graph.withLayoutMutations(() => ctx.graph.preserveSourceMetadataDuring(() => {
+      for (const [id, snapshot] of state) {
+        // updateNode emits invalidation events, but must not add source edit marks.
+        // Clone on every replay so a later edit cannot change stored undo data.
+        ctx.graph.updateNode(id, structuredClone(snapshot));
+      }
+    }));
   });
 }
 
 function refreshPropertyLayout(ctx, target) {
   if (target?.field !== "TEXT") return;
-  for (let node = target.node; node && node.type !== "CANVAS"; node = node.parentId ? ctx.graph.getNode(node.parentId) : null) {
-    ctx.graph.updateNode(node.id, { figmaDerivedLayout: null });
-  }
-  ctx.runLayoutForNode(target.node.id);
+  ctx.withoutComponentSync(() => {
+    for (let node = target.node; node && node.type !== "CANVAS"; node = node.parentId ? ctx.graph.getNode(node.parentId) : null) {
+      ctx.graph.updateNode(node.id, { figmaDerivedLayout: null });
+    }
+    ctx.runLayoutForNode(target.node.id);
+  });
 }
 `
+
+// Reuse the scheduler's own reentrancy guard for the synchronous property
+// operation only. Ordinary authored/layout changes retain upstream behavior.
+export function correctComponentSync(source, replace) {
+  return replace(source, '\treturn { scheduleComponentSync };', String.raw`
+  function withoutComponentSync(fn) {
+    const previous = isFlushingComponentSync;
+    isFlushingComponentSync = true;
+    try {
+      return fn();
+    } finally {
+      isFlushingComponentSync = previous;
+    }
+  }
+  return { scheduleComponentSync, withoutComponentSync };`)
+}
+
+export function correctEditorCreation(source, replace) {
+  source = replace(source,
+    'const { scheduleComponentSync } = createComponentSyncScheduler',
+    'const { scheduleComponentSync, withoutComponentSync } = createComponentSyncScheduler')
+  return replace(source,
+    '\t\trunLayoutForNode,\n\t\tsubscribeToGraph',
+    '\t\trunLayoutForNode,\n\t\twithoutComponentSync,\n\t\tsubscribeToGraph')
+}
 
 // Hash/version guards belong to corrections.mjs. Every structural anchor here
 // must match exactly once before any substituted module is allowed to load.
@@ -93,6 +133,7 @@ export function correctPropertyActions(source, replaceOnce) {
       applyPropertyValue(ctx, instanceId, definition, value);
       if (propertyBefore) {
         refreshPropertyLayout(ctx, target);
+        checkPropertyMasterGeometry(ctx, propertyBefore);
         propertyAfter = snapshotPropertyHistory(ctx, propertyBefore.keys());
         retainChangedPropertyHistory(propertyBefore, propertyAfter);
       }

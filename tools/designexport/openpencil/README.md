@@ -41,12 +41,19 @@ paths, not plugin metadata. Repeated saves merge overrides by path. Reflow and
 undo preserve the linked component relationship; they do not detach instances.
 The conformance fixtures use a deterministic text measurer, so their exact
 dimensions demonstrate layout state rather than real font shaping.
+Editor fixtures use the normal graph subscriptions and public history actions.
+Assertions cover the state after deferred notifications settle, not just the
+immediate return from undo. Genuine authored master changes still propagate;
+the property operation pauses component synchronization only while computing or
+restoring its captured geometry. Ordinary authored parent resizing still
+propagates new master dimensions to instances. Failed text measurement restores
+grid sizing modes and explicitly frees the successfully built Yoga trees.
 
 Supported behavior is deliberately narrower than the editor's entire API:
 single-target, placed-instance text properties, their nested references, native
-save/reopen, and exact undo/redo of the affected layout state. Identity correspondence must
-be unambiguous. Editing inside a component master, instance swaps, variant
-replacement and arbitrary imported documents require further conformance
+save/reopen, and exact undo/redo of the affected layout state. Identity
+correspondence must be unambiguous. Editing inside a component master, instance
+swaps, variant replacement and arbitrary imported documents require further conformance
 before they can be advertised as supported. Unsupported cases must not be
 silently treated as passing replacement contracts.
 The reordered-instance tests prove that labels retain the correct identity;
@@ -60,6 +67,15 @@ SVG vector fidelity, responsive and accessibility checks, and save/reopen in
 the interactive editor. The snapshot converter and source-freshness gate are
 unfinished. Product prototypes need actual runtime-state mappings and governed
 end-to-end persistence tests in their owning product repository.
+Programmatic batches with an unrelated master update already queued before a
+property edit need further lifecycle work: wait for that preceding update to
+settle before using the verified edit/history boundary. The current correction
+does not make overlapping authored-change batches transactional.
+Likewise, property-driven layout that resizes a neighboring master requires
+downstream instance synchronization and history that are not implemented yet.
+The edit is rolled back with an explicit error; it is not counted as supported
+composition. This temporary guard prevents stale external instances while that
+cross-component behavior remains a release requirement.
 
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
 or editor release. The 5 September 2026 audit fails with four high-severity

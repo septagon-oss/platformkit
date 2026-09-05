@@ -64,7 +64,7 @@ for (const deep of [false, true]) {
         // editor: serializer-only fixes must not hide editor mis-targeting.
         graph.reorderChild(first.id, edited.id, 2)
         graph.reorderChild(label.id, label.parentId, 2)
-        const editor = createEditor({ graph, skipInitialGraphSetup: true })
+        const editor = createEditor({ graph })
         for (const [name, id] of [['First', '30:1'], ['Second', '30:2']]) {
           editor.setInstanceComponentProperty(edited.id, id, `${name} ${cycle}`)
           assert.equal(named(graph, named(graph, edited, name), 'Label').text, `${name} ${cycle}`)
@@ -116,7 +116,7 @@ test('ambiguous imported repeated-instance lineage rejects before mutation and e
   // Model imported correspondence loss explicitly. No descendant witness can
   // disambiguate these empty instances; names and child order are not identity.
   for (const child of graph.getChildren(edited.id)) graph.updateNode(child.id, { componentId: importedLeaf.id })
-  const editor = createEditor({ graph, skipInitialGraphSetup: true })
+  const editor = createEditor({ graph })
   const before = structuredClone([...graph.getAllNodes()])
   assert.throws(() => editor.setInstanceComponentProperty(edited.id, '31:1', 'false'), /native source identity/)
   assert.deepEqual([...graph.getAllNodes()], before)
@@ -133,7 +133,7 @@ test('invalid explicit and component-chain source identities reject without edit
       const source = explicit === 'missing' ? 'missing' : named(graph, graph.getPages()[0], 'Leaf').id
       graph.updateNode(edited.id, { overrides: { [`${first.id}:sourceComponentId`]: source } })
     } else graph.updateNode(first.id, { componentId: 'missing' })
-    const editor = createEditor({ graph, skipInitialGraphSetup: true })
+    const editor = createEditor({ graph })
     const before = structuredClone([...graph.getAllNodes()])
     assert.throws(() => editor.setInstanceComponentProperty(edited.id, '30:1', 'No edit'), /native source identity/)
     assert.deepEqual([...graph.getAllNodes()], before)
