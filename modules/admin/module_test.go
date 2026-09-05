@@ -409,7 +409,7 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 		}
 		return rules
 	}
-	app := ruled(ui.Stylesheet(design.Default()))
+	app := ruled(ui.Compose(design.Default()).Body)
 	if len(app) < 100 {
 		t.Fatalf("the stylesheet has %d rules; the parser above is wrong", len(app))
 	}
@@ -417,7 +417,7 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 	// page checked against both. Every other page is checked against app.css
 	// alone, which is what makes the split honest: a shell class that moved
 	// into gallery.css by mistake fails here.
-	both := ruled(ui.Stylesheet(design.Default()), ui.GalleryStylesheet())
+	both := ruled(ui.Compose(design.Default()).Body, ui.Gallery().Body)
 	for path, rules := range map[string]map[string]bool{
 		"/admin": app, "/admin/login": app, "/admin/health": app,
 		"/admin/notes/notes": app, "/admin/notes/notes/new": app,
@@ -438,7 +438,7 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 	}
 	// And the second sheet is linked exactly where its classes are rendered.
 	_, gallery, _ := call(t, router, http.MethodGet, "/admin/_gallery", "")
-	if !strings.Contains(gallery, "/admin/assets/gallery.css?v="+ui.GalleryFingerprint()) {
+	if !strings.Contains(gallery, "/admin/assets/gallery.css?v="+ui.Gallery().Fingerprint) {
 		t.Error("the gallery does not link the sheet its own components need")
 	}
 	_, dashboard, _ := call(t, router, http.MethodGet, "/admin", "")

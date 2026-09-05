@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	"github.com/septagon-oss/platformkit/ui"
 )
 
 // Shell is what the manifest hands the implementation.
@@ -27,6 +28,8 @@ type Shell struct {
 	// Theme is the installation's two palettes: the one thing about the look of
 	// this shell that belongs to whoever runs it. See design.Pair.
 	Theme design.Pair
+	// Sheet is the composed stylesheet, built once in Mount.
+	Sheet ui.Sheet
 	// served is every path this application answers a GET on, so the sidebar
 	// shows a link only when there is something at the end of it; operator is
 	// every permission a route declared as the operator's, so a nav entry

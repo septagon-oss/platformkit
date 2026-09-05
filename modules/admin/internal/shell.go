@@ -85,7 +85,7 @@ func (s *Shell) head(ctx context.Context, title string, extra ...g.Node) g.Node 
 		h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
 		h.Meta(h.Name("color-scheme"), h.Content("light dark")),
 		h.TitleEl(g.Text(title)),
-		h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/app.css?v="+ui.Fingerprint(s.Theme))),
+		h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/app.css?v="+s.Sheet.Fingerprint)),
 		httpx.Script(ctx, beforePaint),
 		g.Group(scripts),
 		g.Group(extra),

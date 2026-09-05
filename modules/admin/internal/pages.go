@@ -32,7 +32,8 @@ const tenantsPath = adminRoot + "/tenant/tenants"
 func Mount(api *httpx.API, s Shell) {
 	// Static, so a stylesheet and five scripts cost no tenant, no transaction
 	// and no authorization: they are the same bytes for everybody.
-	api.Static(assetPrefix, ui.Assets(s.Theme))
+	s.Sheet = ui.Compose(s.Theme)
+	api.Static(assetPrefix, ui.Assets(s.Sheet))
 
 	resources := api.Resources()
 	sort.Slice(resources, func(i, j int) bool { return screenPath(resources[i]) < screenPath(resources[j]) })
@@ -266,7 +267,7 @@ func (s *Shell) gallery(ctx context.Context) g.Node {
 	// the ones no other screen renders, so their rules are not in app.css and
 	// every other page is that much smaller. See ui.GalleryStylesheet.
 	return s.frame(ctx, "Components",
-		[]g.Node{h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.GalleryFingerprint()))},
+		[]g.Node{h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.Gallery().Fingerprint))},
 		components.Toolbar(components.ToolbarProps{
 			Title: "Components", Subtitle: "Every component this application renders, once each."}),
 		components.Stack(components.StackProps{Gap: "6"}, body...),
