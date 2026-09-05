@@ -1,0 +1,121 @@
+{
+  "resources": [
+    {
+      "module": "note",
+      "entity": "note",
+      "path": "/api/v1/note/notes",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "readOnly": true
+        },
+        {
+          "name": "createdAt",
+          "type": "time",
+          "readOnly": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "time",
+          "readOnly": true
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "doc": "What this note is about"
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "widget": "textarea",
+          "hideList": true
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "enum": [
+            "open",
+            "done"
+          ],
+          "default": "open"
+        },
+        {
+          "name": "rank",
+          "type": "int"
+        },
+        {
+          "name": "pinned",
+          "type": "bool"
+        },
+        {
+          "name": "tags",
+          "type": "list",
+          "elem": "string"
+        }
+      ],
+      "immutable": [
+        "status"
+      ],
+      "writable": true
+    },
+    {
+      "module": "note",
+      "entity": "tag",
+      "path": "/api/v1/note/tags",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "readOnly": true
+        },
+        {
+          "name": "createdAt",
+          "type": "time",
+          "readOnly": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "time",
+          "readOnly": true
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "doc": "What this note is about"
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "widget": "textarea",
+          "hideList": true
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "enum": [
+            "open",
+            "done"
+          ],
+          "default": "open"
+        },
+        {
+          "name": "rank",
+          "type": "int"
+        },
+        {
+          "name": "pinned",
+          "type": "bool"
+        },
+        {
+          "name": "tags",
+          "type": "list",
+          "elem": "string"
+        }
+      ],
+      "writable": false
+    }
+  ]
+}
