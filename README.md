@@ -78,6 +78,26 @@ a workflow that needs its own interaction, and test the resulting journey.
 A client palette is a `design.Pair`; components continue to use semantic roles.
 There is no separate CSS build or JavaScript application framework.
 
+To inspect the Core design contract without starting the application, run:
+
+```sh
+go run ./tools/designexport
+```
+
+The command writes a JSON snapshot to standard output: stable example and
+component identities, supported typed property values and schemas, named slot
+support, rendered HTML, the matching CSS, theme tokens and SVG glyphs with
+source and license information.
+Font values are system fallback stacks; no font files are embedded. A content
+hash lets a consumer detect whether its source snapshot has changed.
+
+[ui.Export](ui/export.go) accepts a palette, explicitly bound examples and
+optional stylesheet additions. A product uses that same API with its own
+`design.Pair`, examples and `ui.Extra` values; it does not register a second
+component catalog. Core retains the `pk-ui.component.*` identities as stable
+component names, not references to additional repositories.
+
+The snapshot is adapter input, not a `.fig` file, editable library or prototype.
 These packages are the implemented UI system. They do not by themselves prove
 an editable OpenPencil library, design-file round trips or end-to-end coverage
 of a product flow.

@@ -85,6 +85,21 @@ Go functions returning HTML and declares the classes those functions can emit.
 classes and rules into a stylesheet value. Deleting a component should not
 leave an independently maintained stylesheet behind.
 
+[Gallery](ui/components/gallery.go) captures the existing constructor calls as
+flat examples with stable identities, typed properties and named Go slots.
+The gallery still renders through those constructors. Property edits and
+supported `Node` or `[]Node` slot replacements produce another bound example;
+slot nodes are trusted Go capabilities, not user-supplied markup. Callbacks
+and compound slot data are described but are not portable replacement inputs.
+
+[ui.Export](ui/export.go) projects those examples with their palette, glyphs
+and stylesheet into a content-addressed snapshot. Products supply their own
+bound examples and reuse that boundary. An OpenPencil adapter must translate
+the snapshot and separately prove native editing, sizing and save/reopen
+behavior; the snapshot itself is neither another registry nor a JSON runtime
+engine for constructing pages. Existing `pk-ui.component.*` identities remain
+stable without restoring the former repository layout.
+
 [ui/page](ui/page/) models a document as shared `Chrome`, a request value,
 a handler's `View` and a composing `Frame`. `page.Serve` adapts that
 composition to the router. [ui/screens](ui/screens/) renders resource screens

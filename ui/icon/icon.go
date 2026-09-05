@@ -14,7 +14,8 @@
 package icon
 
 import (
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -27,8 +28,10 @@ const ViewBox = "0 0 256 256"
 // <svg> the Icon component draws. The body is trusted markup — it is a
 // constant in this file — and the component writes it raw.
 type Glyph struct {
-	Name string
-	Body string
+	Name    string `json:"name"`
+	Body    string `json:"body"`
+	Source  string `json:"source"`
+	License string `json:"license"`
 }
 
 // Fallback is the glyph an unknown name resolves to. A missing icon renders as
@@ -44,21 +47,21 @@ func Resolve(name string) (Glyph, bool) {
 	if to, ok := aliases[canonical]; ok {
 		canonical = to
 	}
-	if body, ok := bodies[canonical]; ok {
-		return Glyph{Name: canonical, Body: body}, true
+	body, known := bodies[canonical]
+	if !known {
+		canonical, body = Fallback, bodies[Fallback]
 	}
-	return Glyph{Name: Fallback, Body: bodies[Fallback]}, false
+	source, license := "github.com/phosphor-icons/core", "MIT"
+	if canonical == "sun" || canonical == "moon" {
+		source, license = "github.com/septagon-oss/platformkit/ui/icon", "Apache-2.0"
+	}
+	return Glyph{Name: canonical, Body: body, Source: source, License: license}, known
 }
 
 // Names is every glyph this set draws, sorted. The gallery renders them all, so
 // a glyph that is added and never used is visible rather than merely present.
 func Names() []string {
-	out := make([]string, 0, len(bodies))
-	for name := range bodies {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(bodies))
 }
 
 // caret is the one chevron, turned. The four directions are one path drawn four

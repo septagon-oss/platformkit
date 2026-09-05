@@ -2,7 +2,7 @@
 // ships and the custom properties they render to.
 //
 // A theme is a struct of named roles, not a token graph. The previous design
-// system expressed the same twenty-three values as a DTCG document with a
+// system expressed the same twenty-two values as a DTCG document with a
 // parser, a resolver, an alias graph, nine layer kinds and a validator — 2,200
 // lines to answer "what colour is the accent". This is the answer: a struct
 // literal per theme, rendered to `--pk-color-*` custom properties that
@@ -163,10 +163,17 @@ func Default() Pair { return Pair{Light: Light(), Dark: Dark()} }
 // Both is the pair in the order a picker lists them. The first is the default.
 func (p Pair) Both() []Theme { return []Theme{p.Light, p.Dark} }
 
-// tokens is the theme as custom properties, in the order they are declared
-// above. It is one list rather than reflection so that the property name and
-// the field are next to each other and a rename is one edit.
-func (t Theme) tokens() []css.Declaration {
+// Token is one CSS custom property's identity, value kind and literal value.
+// Font families are CSS fallback stacks, not a claim that fonts are bundled.
+type Token struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+// Tokens returns detached values for this theme and its shared typography.
+// This is the same list CSS renders, not a second design registry.
+func (t Theme) Tokens() []Token {
 	pairs := [...][2]string{
 		{"surface-canvas", t.SurfaceCanvas},
 		{"surface-primary", t.SurfacePrimary},
@@ -191,9 +198,23 @@ func (t Theme) tokens() []css.Declaration {
 		{"sidebar-text", t.SidebarText},
 		{"sidebar-muted", t.SidebarMute},
 	}
-	out := make([]css.Declaration, 0, len(pairs)+3)
+	out := make([]Token, 0, len(pairs)+3)
 	for _, p := range pairs {
-		out = append(out, css.Decl("--pk-color-"+p[0], css.Literal(p[1])))
+		out = append(out, Token{Name: "--pk-color-" + p[0], Type: "color", Value: p[1]})
+	}
+	return append(out,
+		Token{Name: "--pk-font-display", Type: "fontFamily", Value: FontDisplay},
+		Token{Name: "--pk-font-body", Type: "fontFamily", Value: FontBody},
+		Token{Name: "--pk-font-mono", Type: "fontFamily", Value: FontMono},
+	)
+}
+
+func (t Theme) declarations(includeFonts bool) []css.Declaration {
+	var out []css.Declaration
+	for _, token := range t.Tokens() {
+		if token.Type == "color" || includeFonts {
+			out = append(out, css.Decl(token.Name, css.Literal(token.Value)))
+		}
 	}
 	return out
 }
@@ -211,17 +232,14 @@ func (t Theme) tokens() []css.Declaration {
 // with its own colours changes this one argument and nothing else. See Pair.
 func CSS(light, dark Theme) *css.Sheet {
 	s := css.NewSheet()
-	s.Select(":root", append(light.tokens(),
-		css.Decl("--pk-font-display", css.Literal(FontDisplay)),
-		css.Decl("--pk-font-body", css.Literal(FontBody)),
-		css.Decl("--pk-font-mono", css.Literal(FontMono)),
+	s.Select(":root", append(light.declarations(true),
 		css.Decl("color-scheme", css.Literal("light")),
 	)...)
-	s.Select(`[data-theme="dark"]`, append(dark.tokens(),
+	s.Select(`[data-theme="dark"]`, append(dark.declarations(false),
 		css.Decl("color-scheme", css.Literal("dark")),
 	)...)
 	s.Media("(prefers-color-scheme: dark)", func(inner *css.Sheet) {
-		inner.Select(`:root:not([data-theme])`, append(dark.tokens(),
+		inner.Select(`:root:not([data-theme])`, append(dark.declarations(false),
 			css.Decl("color-scheme", css.Literal("dark")),
 		)...)
 	})

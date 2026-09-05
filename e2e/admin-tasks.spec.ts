@@ -71,6 +71,25 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
   await expect(page.getByLabel('Title')).toBeFocused();
 });
 
+test('the typed gallery retains native controls at desktop and narrow widths', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/admin/_gallery');
+  await expect(page.locator('[data-gallery-example]')).toHaveCount(105);
+  const primary = page.locator('[data-gallery-example="Button / primary"] button');
+  const emailField = page.locator('[data-gallery-example="Input / email"] input');
+  for (const width of [1280, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(primary).toBeVisible();
+    await expect(primary).toHaveAccessibleName('Save');
+    await expect(primary).toHaveAttribute('type', 'button');
+    await expect(emailField).toHaveAccessibleName(/Email/);
+    await expect(emailField).toHaveAttribute('type', 'email');
+  }
+  await expect(page.locator('[data-gallery-example="Button / with icon"] svg')).toHaveAttribute('aria-hidden', 'true');
+  expect(errors).toEqual([]);
+});
+
 // The theme is the one piece of state this application keeps in the browser,
 // and a default is not a piece of state. theme.js used to apply-and-store on
 // every load, so a person who never touched the toggle came back to a
