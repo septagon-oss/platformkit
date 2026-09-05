@@ -2,6 +2,7 @@ package admin_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"html"
 	"log/slog"
@@ -733,5 +734,69 @@ func TestAnOperatorsResourceOffersNoWriteToACustomer(t *testing.T) {
 	}
 	if code, body, _ := callAt(t, router, host, http.MethodPost, "/admin/plans/plans", "name=Sneaky"); code != http.StatusForbidden {
 		t.Errorf("a customer posting the operator's form = %d %s, want 403", code, body)
+	}
+}
+
+// TestTheCatalogIsTheSameKnowledgeAsJSON is the seam a native shell reads: the
+// resources this caller may reach, each with its schema and whether the caller
+// may write it — answered by the same Authorizer the screens and the routes ask.
+func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
+	type entry struct {
+		Module, Entity, Path string
+		Writable             bool
+		Immutable            []string
+		Fields               []struct{ Name, Type string }
+	}
+	read := func(t *testing.T, router http.Handler, at string) []entry {
+		t.Helper()
+		code, body, _ := callAt(t, router, at, http.MethodGet, "/api/v1/admin/resources", "")
+		if code != http.StatusOK {
+			t.Fatalf("resources = %d %s", code, body)
+		}
+		var doc struct{ Resources []entry }
+		if err := json.Unmarshal([]byte(body), &doc); err != nil {
+			t.Fatalf("not a catalog: %v\n%s", err, body)
+		}
+		return doc.Resources
+	}
+	find := func(entries []entry, entity string) *entry {
+		for i := range entries {
+			if entries[i].Entity == entity {
+				return &entries[i]
+			}
+		}
+		return nil
+	}
+
+	// The administrator at a customer's tenant reads both resources and writes
+	// notes; the plan is the operator's, so it is readable and not writable.
+	admin := read(t, mount(t), host)
+	note, plan := find(admin, "note"), find(admin, "plan")
+	if note == nil || plan == nil {
+		t.Fatalf("the administrator's catalog lacks a resource: %+v", admin)
+	}
+	if !note.Writable || note.Path != "/api/v1/notes/notes" || len(note.Immutable) != 1 || note.Immutable[0] != "rank" {
+		t.Errorf("note = %+v", *note)
+	}
+	if plan.Writable {
+		t.Error("a customer's administrator is told they may write the operator's price list")
+	}
+	if len(note.Fields) == 0 || note.Fields[0].Name != "id" || note.Fields[0].Type != "uuid" {
+		t.Errorf("the schema does not lead with the id: %+v", note.Fields)
+	}
+
+	// At the operator's own tenant the plan is writable.
+	if plan := find(read(t, mount(t), operatorHost), "plan"); plan == nil || !plan.Writable {
+		t.Errorf("the operator's catalog = %+v", plan)
+	}
+
+	// A member who may only read notes is told about notes, read-only, and
+	// nothing about the plans they may not look at.
+	only := read(t, mountAs(t, member{"note:read": true}), host)
+	if n := find(only, "note"); n == nil || n.Writable {
+		t.Errorf("a read-only member's note = %+v", n)
+	}
+	if find(only, "plan") != nil {
+		t.Error("a member who may not read plans is told they exist")
 	}
 }

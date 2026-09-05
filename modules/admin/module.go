@@ -2,12 +2,14 @@
 // a program calls.
 //
 // It writes almost no screens. ARCHITECTURE.md's eighth idea is that list,
-// detail and form come from an entity's schema, and kit/httpx now carries that
-// schema for every resource kit/rest mounted — so this module asks the API what
-// exists and generates seven pages for each answer. What is written by hand is
-// the frame around them, the dashboard, the health page, the sign-in page and
-// the gallery: five screens for the whole application, and a sixth arrives only
-// when an interaction cannot be derived.
+// detail and form come from an entity's schema, and kit/httpx carries that
+// schema for every resource kit/rest mounted. The generated screens are
+// ui/screens'; this module composes them with its own chrome, frame and
+// navigation, adds the five pages no schema describes — the dashboard, the
+// health page, the sign-in page, the gallery and the tenant switcher — and
+// serves the same knowledge as JSON at /api/v1/admin/resources for a shell that
+// is not a browser. A sixth hand-written page arrives only when an interaction
+// cannot be derived.
 //
 // It is composed last, and that is load-bearing rather than tidy: kit/app calls
 // each module's Routes in composition order, so a module mounted after this one

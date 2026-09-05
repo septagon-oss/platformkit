@@ -2,9 +2,7 @@ package internal
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -20,74 +18,40 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
-// Mount is the whole shell: the assets, the five pages written by hand, the
-// tenant switcher, and seven generated screens for every resource kit/rest
-// registered before this module was composed.
-// tenantsPath is where the switcher lives: the path the tenant module's nav
-// entry names.
-const tenantsPath = adminRoot + "/tenant/tenants"
-
-func Mount(api *httpx.API, s Shell) {
-	// Static, so a stylesheet and five scripts cost no tenant, no transaction
-	// and no authorization: they are the same bytes for everybody.
-	s.Sheet = ui.Compose(s.Theme)
-	api.Static(assetPrefix, ui.Assets(s.Sheet))
-
-	resources := api.Resources()
-	sort.Slice(resources, func(i, j int) bool { return screenPath(resources[i]) < screenPath(resources[j]) })
-	for _, r := range resources {
-		s.mountScreens(api, r)
-	}
-	s.pages(api, resources)
-
-	// What the application answers, asked of the kernel's own recording rather
-	// than remembered while mounting: a hand-written page counts as much as a
-	// generated one, and there is no second list to keep in step.
-	s.served = map[string]bool{}
-	for _, op := range api.Recorded() {
-		if op.Method == http.MethodGet {
-			s.served[op.Path] = true
-		}
-	}
-	// Which permissions are the operator's, asked of the same recording. It
-	// used to be a map of one path written here, which was right for the one
-	// screen anybody had thought about and silently wrong for the next: the
-	// price list is the operator's too, and a customer's administrator was
-	// shown its form and refused at the save. A route says which kind of
-	// permission it declared, so this asks the routes.
-	s.operator = map[string]bool{}
-	for _, g := range api.Required() {
-		if g.Operator {
-			s.operator[g.Permission] = true
-		}
-	}
-	// A nav entry nothing answers is a mistake in a module's manifest, and it
-	// is reported here, once, at boot — not rendered as a disabled row that
-	// every person using the application sees for the life of the deployment.
-	for _, entry := range s.Nav {
-		if !s.served[entry.Path] {
-			slog.Default().Warn("admin: a nav entry leads to a path no route serves",
-				"label", entry.Label, "path", entry.Path, "permission", entry.Permission)
-		}
-	}
+// pages are the screens no schema describes: the way in, the way around, and
+// the two that are about the installation rather than about its data. Each is
+// a function of what it read and of the request, and returns a View; the
+// document around it is page.Serve's.
+type pages struct {
+	Shell
+	shell     page.Shell
+	resources []httpx.Resource
 }
 
-// pages are the screens no schema describes: the way in, the way around, and
-// the two that are about the installation rather than about its data.
-func (s *Shell) pages(api *httpx.API, resources []httpx.Resource) {
-	html(api, s, "admin-login", http.MethodGet, adminRoot+"/login", "Sign in", httpx.Public(),
-		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return ok(s.login(ctx)) })
+func (p pages) mount(api *httpx.API) {
+	page.Serve(api, p.shell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: loginPath, Summary: "Sign in"},
+		httpx.Public(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
+			return login(ctx), nil
+		})
 
-	html(api, s, "admin-dashboard", http.MethodGet, adminRoot, "The dashboard", httpx.SignedIn(),
-		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return ok(s.dashboard(ctx, resources)) })
+	page.Serve(api, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: adminRoot, Summary: "The dashboard"},
+		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
+			return p.dashboard(ctx), nil
+		})
 
-	html(api, s, "admin-health", http.MethodGet, adminRoot+"/health", "Health", httpx.SignedIn(),
-		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return ok(s.health(ctx)) })
+	page.Serve(api, p.shell, page.Route{ID: "admin-health", Method: http.MethodGet, Path: healthPath, Summary: "Health"},
+		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
+			return healthPage(checks(ctx)), nil
+		})
 
-	html(api, s, "admin-gallery", http.MethodGet, adminRoot+"/_gallery", "The component gallery", httpx.SignedIn(),
-		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return ok(s.gallery(ctx)) })
+	page.Serve(api, p.shell, page.Route{ID: "admin-gallery", Method: http.MethodGet, Path: galleryPath, Summary: "The component gallery"},
+		httpx.SignedIn(), func(context.Context, page.Request, *page.Empty) (page.View, error) {
+			return gallery(), nil
+		})
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -97,17 +61,19 @@ func (s *Shell) pages(api *httpx.API, resources []httpx.Resource) {
 	// wildcard they hold in their own tenant must not answer a question about
 	// everybody's. The kernel refuses it before the Authorizer is asked; the
 	// sidebar drops the link for the same reason, so the two agree.
-	html(api, s, "admin-tenants", http.MethodGet, tenantsPath, "The tenants of this installation",
+	page.Serve(api, p.shell, page.Route{ID: "admin-tenants", Method: http.MethodGet, Path: tenantsPath, Summary: "The tenants of this installation"},
 		httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
-		func(ctx context.Context, _ *emptyInput) (*httpx.Page, error) { return s.tenants(ctx) })
+		func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
+			return p.tenants(ctx)
+		})
 }
 
 // login is the way in. The form posts to the auth module's own JSON route
 // rather than to a handler here: that route already mints the session cookie,
 // and a second one that minted it differently is the duplicate most worth not
 // having. ui/assets/js/session.js is the thirty lines that make a form post
-// JSON.
-func (s *Shell) login(ctx context.Context) g.Node {
+// JSON. It is a bare page: somebody who has no session yet has no navigation.
+func login(ctx context.Context) page.View {
 	next := adminRoot
 	if r, ok := httpx.RequestFrom(ctx); ok {
 		// The kernel's rule, because this one used to be its own and was
@@ -117,7 +83,7 @@ func (s *Shell) login(ctx context.Context) g.Node {
 			next = to
 		}
 	}
-	return s.bare(ctx, "Sign in",
+	return page.View{Title: "Sign in", Bare: true, Body: []g.Node{
 		components.Card(components.CardProps{Title: "Sign in", Description: "Use the address this tenant knows you by."}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
@@ -138,7 +104,7 @@ func (s *Shell) login(ctx context.Context) g.Node {
 			components.FormActions(components.FormActionsProps{},
 				components.Button(components.ButtonProps{Label: "Sign in", Type: "submit", FullWidth: true})),
 		),
-	)
+	}}
 }
 
 // dashboard is what there is and how much of it: one card per resource the
@@ -150,9 +116,9 @@ func (s *Shell) login(ctx context.Context) g.Node {
 // still a card telling them it exists. The kernel refuses the list either way —
 // see httpx.RegisterResource — so this is what the refusal should look like on
 // a page, not the thing that makes it safe.
-func (s *Shell) dashboard(ctx context.Context, resources []httpx.Resource) g.Node {
-	cards := make([]g.Node, 0, len(resources))
-	for _, r := range resources {
+func (p pages) dashboard(ctx context.Context) page.View {
+	cards := make([]g.Node, 0, len(p.resources))
+	for _, r := range p.resources {
 		if !r.Readable(ctx) {
 			continue
 		}
@@ -165,33 +131,33 @@ func (s *Shell) dashboard(ctx context.Context, resources []httpx.Resource) g.Nod
 		}
 		cards = append(cards, components.Card(components.CardProps{
 			Title: count + " " + rest.Humanize(r.Entity) + "s", Description: "In " + r.Module,
-			Clickable: true, Href: screenPath(r),
+			Clickable: true, Href: screens.Path(r, opts),
 		}))
 	}
 	var failed []string
-	for _, r := range s.checks(ctx) {
-		if r.err != nil {
-			failed = append(failed, r.name)
+	for _, c := range checks(ctx) {
+		if c.err != nil {
+			failed = append(failed, c.name)
 		}
 	}
 	tone, message := "success", "Every check passes."
 	if len(failed) > 0 {
 		tone, message = "danger", "Not ready: "+strings.Join(failed, ", ")
 	}
-	return s.page(ctx, "Dashboard",
+	return page.View{Title: "Dashboard", Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
 			Title: "Dashboard", Subtitle: "What this tenant has, and whether the instance is well."}),
 		components.Alert(components.AlertProps{Tone: tone, Message: message, Bordered: true}),
 		components.Grid(components.GridProps{Columns: "3", Gap: "4"}, cards...),
-	)
+	}}
 }
 
-// health is the readiness probe with names on it. /ready answers 200 or 503 and
-// names what failed; this runs the same checks and says so one at a time, which
-// is what somebody looking at a broken deployment needs.
-func (s *Shell) health(ctx context.Context) g.Node {
-	rows := make([]components.TableRow, 0, 1)
-	for _, c := range s.checks(ctx) {
+// healthPage is the readiness probe with names on it. /ready answers 200 or 503
+// and names what failed; this shows the same checks one at a time, which is
+// what somebody looking at a broken deployment needs.
+func healthPage(results []result) page.View {
+	rows := make([]components.TableRow, 0, len(results))
+	for _, c := range results {
 		state, tone := "ok", "success"
 		if c.err != nil {
 			state, tone = "failing", "danger"
@@ -200,7 +166,7 @@ func (s *Shell) health(ctx context.Context) g.Node {
 			"check": c.name, "state": state, "tone": tone,
 		}})
 	}
-	return s.page(ctx, "Health",
+	return page.View{Title: "Health", Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
 			Title: "Health", Subtitle: "The checks behind /ready, one at a time."}),
 		components.TableWithSlots(components.TableProps{
@@ -218,7 +184,7 @@ func (s *Shell) health(ctx context.Context) g.Node {
 					Label: rest.Text(row.Cells["state"]), Tone: rest.Text(row.Cells["tone"]), Dot: true})
 			},
 		}),
-	)
+	}}
 }
 
 // result is one check and what it said.
@@ -227,19 +193,12 @@ type result struct {
 	err  error
 }
 
-// checks runs every module's check, plus the database. The database one is not
-// in any manifest — kit/app adds it — so it is added here for the same reason:
-// an instance that cannot reach Postgres is the failure this page exists for.
-//
-// They run on a detached context. A check is about the instance and not about
-// this tenant, and this request has already opened a tenant transaction to
-// recognise its caller: a readiness query joined to that one would be a scope
-// mismatch, which is what /ready never hits because a probe queries nothing
-// before it. See db.Detached.
-func (s *Shell) checks(ctx context.Context) []result {
-	// One check, because /ready is one check: modules could contribute their
-	// own and none ever did, so the list was a loop over nothing wrapped around
-	// this line.
+// checks runs the database check, which is the one /ready runs: modules could
+// contribute their own and none ever did in three repositories. It runs on a
+// detached context: a check is about the instance and not about this tenant,
+// and this request has already opened a tenant transaction to recognise its
+// caller. See db.Detached.
+func checks(ctx context.Context) []result {
 	conn, reachable := httpx.ConnFrom(ctx)
 	if !reachable {
 		return nil
@@ -251,8 +210,10 @@ func (s *Shell) checks(ctx context.Context) []result {
 // gallery renders every component once, with its props, from the package's own
 // exported list. It is not a fixture: ui/components' tests render the same list
 // to prove every class it emits has a rule, so this page and that test cannot
-// disagree about what exists.
-func (s *Shell) gallery(ctx context.Context) g.Node {
+// disagree about what exists. It is the one page that links the second
+// stylesheet: the components below are the ones no other screen renders, so
+// their rules are not in app.css and every other page is that much smaller.
+func gallery() page.View {
 	var body []g.Node
 	group := ""
 	for _, example := range components.Gallery() {
@@ -263,15 +224,15 @@ func (s *Shell) gallery(ctx context.Context) g.Node {
 		body = append(body, components.Card(components.CardProps{Title: example.Name}),
 			h.Div(g.Attr("data-gallery-example", example.Name), example.Node))
 	}
-	// The one page that links the second stylesheet: the components below are
-	// the ones no other screen renders, so their rules are not in app.css and
-	// every other page is that much smaller. See ui.GalleryStylesheet.
-	return s.frame(ctx, "Components",
-		[]g.Node{h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.Gallery().Fingerprint))},
-		components.Toolbar(components.ToolbarProps{
-			Title: "Components", Subtitle: "Every component this application renders, once each."}),
-		components.Stack(components.StackProps{Gap: "6"}, body...),
-	)
+	return page.View{
+		Title: "Components",
+		Head:  []g.Node{h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.Gallery().Fingerprint))},
+		Body: []g.Node{
+			components.Toolbar(components.ToolbarProps{
+				Title: "Components", Subtitle: "Every component this application renders, once each."}),
+			components.Stack(components.StackProps{Gap: "6"}, body...),
+		},
+	}
 }
 
 // tenants is the switcher: every tenant of this installation and the host each
@@ -281,19 +242,19 @@ func (s *Shell) gallery(ctx context.Context) g.Node {
 // tenant, so listing them takes a system transaction, opened on a detached
 // context so it is a transaction of its own rather than a widening of the
 // request's. See docs/adr/0006.
-func (s *Shell) tenants(ctx context.Context) (*httpx.Page, error) {
+func (p pages) tenants(ctx context.Context) (page.View, error) {
 	conn, reachable := httpx.ConnFrom(ctx)
 	if !reachable {
-		return nil, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
+		return page.View{}, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
 	}
 	var all []*tenantcontracts.Tenant
-	err := db.RunSystem(db.Detached(ctx), conn, s.Token, func(ctx context.Context, tx db.Tx[db.System]) error {
+	err := db.RunSystem(db.Detached(ctx), conn, p.Token, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error
-		all, err = s.Tenants.List(ctx, tx)
+		all, err = p.Tenants.List(ctx, tx)
 		return err
 	})
 	if err != nil {
-		return nil, rest.Fault(err)
+		return page.View{}, rest.Fault(err)
 	}
 	rows := make([]components.TableRow, 0, len(all))
 	for _, t := range all {
@@ -301,7 +262,7 @@ func (s *Shell) tenants(ctx context.Context) (*httpx.Page, error) {
 			"name": t.Name, "slug": t.Slug, "status": t.Status, "hosts": strings.Join(t.Hosts, ", "),
 		}})
 	}
-	return ok(s.page(ctx, "Tenants",
+	return page.View{Title: "Tenants", Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
 			Title: "Tenants", Subtitle: "Every tenant of this installation. A link opens that tenant's own shell."}),
 		components.TableWithSlots(components.TableProps{
@@ -336,13 +297,5 @@ func (s *Shell) tenants(ctx context.Context) (*httpx.Page, error) {
 				return nil
 			},
 		}),
-	))
-}
-
-// bare is a page with no navigation: the sign-in screen, shown to somebody who
-// has none yet.
-func (s *Shell) bare(ctx context.Context, title string, body ...g.Node) g.Node {
-	return h.HTML(h.Lang("en"), s.head(ctx, title),
-		h.Body(components.Container(components.ContainerProps{MaxWidth: "sm"},
-			components.Stack(components.StackProps{Gap: "6"}, body...))))
+	}}, nil
 }
