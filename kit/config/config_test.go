@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,6 +24,9 @@ func TestLoadExample(t *testing.T) {
 	if got.Server.PublicHost == "" || got.Database.URL == "" ||
 		got.Database.MigrateURL == "" || got.NATS.URL == "" || got.Log.Level == "" {
 		t.Errorf("a key is missing from %s: %+v", example, got)
+	}
+	if _, err := config.Load(filepath.Join(t.TempDir(), "config.yaml")); err == nil || !strings.Contains(err.Error(), "config.example.yaml") {
+		t.Errorf("a missing config.yaml should be told where to get one, got %v", err)
 	}
 }
 

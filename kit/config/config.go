@@ -6,7 +6,9 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/mail"
 	"net/url"
@@ -219,6 +221,11 @@ func Set(name, value string) Override { return Override{key: name, value: value}
 // binary. Validation runs after all three, on the values that will be used.
 func Load(path string, overrides ...Override) (Config, error) {
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		// The most common first-run mistake, said in terms of what to do next
+		// rather than of what the file system saw.
+		return Config{}, fmt.Errorf("config: %s does not exist; copy config.example.yaml to it (make run does), or run scripts/start.sh", path)
+	}
 	if err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}

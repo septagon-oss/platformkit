@@ -37,8 +37,15 @@ test: ## Run the tests against the compose Postgres
 vet: ## Run go vet
 	go vet ./...
 
-run: ## Run the reference app (needs config.yaml; see config.example.yaml)
+run: config.yaml ## Run the reference app; a missing config.yaml is created from the example
 	cd apps/platformkit && go run . --config ../../config.yaml
+
+# A first run has no config.yaml, and the example is the development
+# configuration `make up` matches, so the first run gets a copy of it. The rule
+# has no prerequisite on purpose: a file that exists is up to date, so an edited
+# config.yaml is never overwritten, whatever the example's timestamp says.
+config.yaml:
+	cp config.example.yaml config.yaml
 
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
