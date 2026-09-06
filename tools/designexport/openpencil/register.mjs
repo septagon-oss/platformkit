@@ -10,6 +10,13 @@ for (const name of ['core', 'fig', 'scene-graph']) {
   if (version !== sdkVersion) throw new Error(`Expected ${name}@${sdkVersion}; found ${version}`)
 }
 
+const coreRequire = createRequire(require.resolve('@open-pencil/core'))
+const parserManifest = resolve(dirname(coreRequire.resolve('expr-eval')), '../package.json')
+const parser = JSON.parse(readFileSync(parserManifest, 'utf8'))
+if (parser.name !== 'expr-eval-fork' || parser.version !== '3.0.3') {
+  throw new Error(`Expected expr-eval-fork@3.0.3; found ${parser.name}@${parser.version}`)
+}
+
 registerHooks({
   load(url, context, nextLoad) {
     const loaded = nextLoad(url, context)

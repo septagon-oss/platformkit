@@ -77,16 +77,29 @@ The edit is rolled back with an explicit error; it is not counted as supported
 composition. This temporary guard prevents stale external instances while that
 cross-component behavior remains a release requirement.
 
+The SDK's expression dependency is overridden with `expr-eval-fork@3.0.3`,
+the maintained fork addressing the published
+[prototype-access](https://github.com/advisories/GHSA-8gw3-rxh4-v6jx) and
+[unrestricted-function](https://github.com/advisories/GHSA-jc85-fpwf-qm7x)
+advisories. The locked tarball contains the updated builds;
+[the fork's changelog](https://github.com/jorenbroekema/expr-eval/blob/8212543faa2686054a25f49fe96b614aa5d9ea4c/CHANGELOG.md)
+records the stale-build correction in 3.0.2. Source-checked corrections initialize the function
+counter and give each SDK calculation its own parser, including each batch item.
+This preserves multiple expression-defined functions without leaking them into
+later calculations. Calculator tests exercise arithmetic and errors through the
+real SDK tool, plus harmless callback/prototype rejection in both module formats.
+These checks are not a general-purpose sandbox or a browser-security approval.
+
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
-or editor release. The 5 September 2026 audit fails with four high-severity
-affected packages: `expr-eval` through the SDK and `image-size` through
-`pptxgenjs`, with their dependent packages also counted. This is an unresolved
-security gate, not an accepted exception. Do not run `npm audit fix --force`:
-its proposed SDK downgrade invalidates the pinned corrections. Dependency
-remediation and reachable browser-surface verification remain required.
-The narrow SDK imports used by these tests do not load those vulnerable
-packages; the import-boundary test guards that observation. It does not waive
-the audit failure or establish safety for the broader editor and its tools.
+or editor release. It still fails with three high-severity affected packages:
+`image-size`, its dependent `pptxgenjs`, and the SDK that depends on it. This is
+an unresolved security gate, not an accepted exception. Do not run
+`npm audit fix --force`: its proposed SDK downgrade invalidates the pinned
+corrections. Dependency remediation and reachable browser-surface verification
+remain required. The import-boundary test verifies that the narrower native
+editing/FIG imports do not load the expression or presentation packages; the
+calculator tests intentionally use the broader tools entry point. Neither
+observation waives the remaining audit failure.
 
 Nothing in this directory changes the deployed editor or authorizes release.
 The reference Go application's container does not install these dependencies.

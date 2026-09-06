@@ -35,7 +35,30 @@ export const corrections = Object.freeze({
     sha256: 'a02c896a0f808fd3ccb24ca6a8c09975ca7ef06e2555bc6313b54091e37e8c8d',
     transform: correctGridRecompute,
   },
+  '@open-pencil/core/dist/tools/calc.js': {
+    sha256: '35d6fd205094a3e26f5098b98833c92ffe96a2defdb377208576f58c6e71b67d',
+    transform(source, replace) {
+      // Expression-defined functions belong to one calculation, not a shared
+      // parser or batch. The reviewed fork registers them on its Parser.
+      source = replace(source, 'const parser = new ExprEval.Parser();\n', '')
+      return replace(source, 'parser.evaluate(expr)', 'new ExprEval.Parser().evaluate(expr)')
+    },
+  },
+  '@open-pencil/core/node_modules/expr-eval/dist/index.mjs': {
+    sha256: 'a90044058f0447a30c7bd4fbcb9a42ad944680cdae727649542014e2212bb711',
+    transform: correctParserCounter,
+  },
+  '@open-pencil/core/node_modules/expr-eval/dist/bundle.js': {
+    sha256: '2c7aa9e7513101788f4b21cc368c05fbeff61b5be8f8eda0131b86213106e9ef',
+    transform: correctParserCounter,
+  },
 })
+
+function correctParserCounter(source, replace) {
+  // Fork 3.0.3 otherwise overwrites every expression-defined function under
+  // lambda_NaN, breaking expressions that declare more than one function.
+  return replace(source, 'this.functions = {', 'this.functions = {\n    __counter: 0,')
+}
 
 function replaceOnce(source, before, after) {
   if (source.split(before).length !== 2) {
