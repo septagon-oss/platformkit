@@ -15,8 +15,11 @@ an implementation, [Contributing](CONTRIBUTING.md) to change it, and
 One command, with Go installed and nothing else:
 
 ```sh
-go run github.com/septagon-oss/platformkit/apps/platformkit@latest start
+go run github.com/septagon-oss/platformkit/apps/platformkit@main start
 ```
+
+`@main` names the branch because the last tagged release, v1.0.0, predates
+`start`; once a later version is tagged, `@latest` works too.
 
 `start` runs its own PostgreSQL 16 — downloaded once into your user cache,
 its data under `./data` — creates the application role, migrates, bootstraps

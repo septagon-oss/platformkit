@@ -2,7 +2,7 @@ package main
 
 // start.go is the one command: from nothing to a running application.
 //
-//	go run github.com/septagon-oss/platformkit/apps/platformkit@latest start
+//	go run github.com/septagon-oss/platformkit/apps/platformkit@main start
 //
 // It runs its own PostgreSQL — downloaded once into the user's cache, its data
 // under ./data — creates the application role, migrates, bootstraps the first
