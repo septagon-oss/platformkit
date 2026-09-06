@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { correctExporter, correctPropertyTarget } from './exporter-correction.mjs'
+import { correctExporter, correctPropertyTarget, correctPaintImporter } from './exporter-correction.mjs'
 import { correctPropertyActions, correctComponentSync, correctEditorCreation } from './property-correction.mjs'
 import { correctLayout, correctGridRecompute } from './layout-correction.mjs'
 import { correctScaleDefaults, correctScaleGraph, correctScaleNodeChange, correctScaleImport } from './scaling-correction.mjs'
@@ -45,7 +45,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/fig/dist/instance-overrides.js': {
     sha256: '5efd3f221660fbbed3d60879f187cb946e391bc1556f80213961d4804b027eb0',
-    transform: (source, replace) => correctScaleImport(correctImporter(source, replace), replace),
+    transform: (source, replace) => correctScaleImport(correctPaintImporter(correctImporter(source, replace), replace), replace),
   },
   '@open-pencil/scene-graph/dist/types.js': {
     sha256: '79dcc003679545dae0cfeadfdbb68dc10c6e92b85468d344ac89a14cbbdfe8e6',

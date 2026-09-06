@@ -182,6 +182,13 @@ emits no graph events; SDK copy helpers are reused. Geometry calculation and sou
 identity reconciliation contain no product or catalog rules. The effect boundary
 owns ID allocation, notifications and temporary deletion ancestry, so a missing
 reference is never treated as evidence of a deletion.
+Nested instances retain their own root and descendant overrides during a
+containing-component synchronization; explicit outer paths retain precedence.
+
+Native fill/stroke bindings and literal or empty paints retain their tested
+values through two saves and subsequent synchronization. Binding-only stroke
+edits still inherit master stroke-width changes. These checks do not establish
+inheritance of every future master paint attribute, including opacity or count.
 
 Tests cover path additions, removals and reordering, empty-master recovery,
 unscaled geometry, nested identities, explicit geometry and paint overrides, and

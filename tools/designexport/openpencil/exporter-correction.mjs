@@ -133,6 +133,49 @@ function serializeTextOverrides(context, instance, counter) {
   }
   return result;
 }
+
+function serializePaintOverrides(context, instance, counter) {
+  const result = [];
+  const nativePaint = paint => {
+    const { colorVariableBinding, ...fields } = paint;
+    if (colorVariableBinding) fields.colorVar = {
+      dataType: 'ALIAS', resolvedDataType: 'COLOR', value: { alias: { guid: colorVariableBinding.variableID } }
+    };
+    return fields;
+  };
+  function visit(parent, owners, seen) {
+    if (seen.has(parent.id)) throw new Error('Cyclic native paint override subtree');
+    const next = new Set(seen).add(parent.id);
+    for (const id of parent.childIds) {
+      const target = context.graph.getNode(id);
+      if (!target || target.parentId !== parent.id) throw new Error('Missing native paint override child');
+      const scopes = target.type === 'INSTANCE' ? [...owners, target] : owners;
+      const owns = field => scopes.some(owner => Object.hasOwn(owner.overrides,
+        owner.id === target.id ? field : target.id + ':' + field));
+      const fields = ['fills', 'strokes'].filter(field => owns(field) || owns('boundVariables'));
+      if (fields.length) {
+        const override = { guidPath: nativeOverridePath(context, instance, target, counter) };
+        if (fields.includes('fills')) override.fillPaints = target.fills.map((fill, index) =>
+          nativePaint(applyColorVariableBinding(context, target, context.fillToKiwiPaint(fill), 'fills/' + index + '/color')));
+        if (fields.includes('strokes')) {
+          override.strokePaints = createStrokePaints(context, target).map(nativePaint);
+          if (owns('strokes') && target.strokes.length) {
+            const first = target.strokes[0];
+            if (target.strokes.some(stroke => stroke.weight !== first.weight || stroke.align !== first.align)) {
+              throw new Error('Native paint override requires one shared stroke weight and alignment');
+            }
+            override.strokeWeight = first.weight;
+            override.strokeAlign = first.align;
+          }
+        }
+        result.push(override);
+      }
+      visit(target, scopes, next);
+    }
+  }
+  visit(instance, [instance], new Set());
+  return result;
+}
 `
 
 function replaceSection(source, start, end, replacement) {
@@ -162,6 +205,7 @@ function mergeTextOverrides(symbolOverrides, overrides) {
   source = replaceOnce(source,
     'mergeTextOverrides(symbolOverrides, serializeTextOverrides(context, node, localIdCounter));',
     'mergeTextOverrides(symbolOverrides, serializeNestedReferences(context, node, localIdCounter));\n' +
+    '\t\tmergeTextOverrides(symbolOverrides, serializePaintOverrides(context, node, localIdCounter));\n' +
     '\t\tmergeTextOverrides(symbolOverrides, serializeTextOverrides(context, node, localIdCounter));')
   source = replaceOnce(source,
     'if (node.source.fig.componentPropAssignments.length > 0) nc.componentPropAssignments =',
@@ -185,6 +229,53 @@ function mergeTextOverrides(symbolOverrides, overrides) {
     'const definition = context.componentPropertyDefinitionsById.get(propertyId);',
     'const definition = context.componentPropertyDefinitionsById.get(propertyId);\n' +
     '\t\tif (!definition) throw new Error("Missing native component property definition: " + propertyId);')
+}
+
+export function correctPaintImporter(source, replace) {
+  source = replace(source, 'const props = convertOverrideToProps(fields);', String.raw`
+    const props = convertOverrideToProps(fields);
+    const target = ctx.graph.getNode(targetId);
+    if (props.strokes && target) props.strokes = props.strokes.map((stroke, index) => ({
+      ...stroke,
+      ...(fields.strokeWeight == null && target.strokes[index] ? { weight: target.strokes[index].weight } : {}),
+      ...(fields.strokeAlign == null && target.strokes[index] ? { align: target.strokes[index].align } : {})
+    }));`)
+  source = replace(source,
+    'if (props.boundVariables) props.boundVariables = {\n\t\t\t\t...target.boundVariables,\n\t\t\t\t...props.boundVariables\n\t\t\t};',
+    String.raw`if (props.boundVariables || Object.hasOwn(props, 'fills') || Object.hasOwn(props, 'strokes')) {
+      const replaced = ['fills', 'strokes'].filter(field => Object.hasOwn(props, field));
+      props.boundVariables = {
+        ...Object.fromEntries(Object.entries(target.boundVariables).filter(([key]) =>
+          !replaced.some(field => key === field || key.startsWith(field + '/')))),
+        ...props.boundVariables
+      };
+    }`)
+  return replace(source,
+    'overriddenNodes.add(targetId);\n\t\t\tapplyOverridePatch(ctx, patch);',
+    String.raw`overriddenNodes.add(targetId);
+      const paintFields = ['fills', 'strokes'].filter(field => Object.hasOwn(patch.props ?? {}, field));
+      let paintOwner, paintOverrides;
+      if (paintFields.length) {
+        let current = ctx.graph.getNode(targetId);
+        const visited = new Set();
+        while (current) {
+          if (visited.has(current.id)) throw new Error('Cyclic native paint override ancestry');
+          visited.add(current.id);
+          if (!paintOwner && current.type === 'INSTANCE') paintOwner = current;
+          if (current.id === nodeId) break;
+          current = ctx.graph.getNode(current.parentId);
+        }
+        if (!current || !paintOwner) throw new Error('Native paint override is outside its declaring instance');
+        paintOverrides = { ...paintOwner.overrides };
+        for (const paintField of paintFields) {
+          const field = paintField === 'strokes' && ov.strokePaints?.length && ov.strokeWeight == null && ov.strokeAlign == null
+            ? 'boundVariables' : paintField;
+          paintOverrides[paintOwner.id === targetId ? field : targetId + ':' + field] = true;
+        }
+      }
+      applyOverridePatch(ctx, patch);
+      if (paintOwner) ctx.graph.preserveSourceMetadataDuring(() =>
+        ctx.graph.updateNode(paintOwner.id, { overrides: paintOverrides }));`)
 }
 
 export function correctPropertyTarget(source) {

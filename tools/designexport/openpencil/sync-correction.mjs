@@ -83,6 +83,15 @@ function syncProperties(source, target, keys, overrides, prefix = '') {
   return { ...target, ...structuredClone(changes) }
 }
 
+function syncNestedOverrides(target, inherited) {
+  if (target.type !== 'INSTANCE') return inherited
+  // Native edits belong to their nearest instance. Qualify its root fields
+  // before descending; explicit outer-instance paths retain precedence.
+  const own = Object.fromEntries(Object.entries(target.overrides).map(([key, value]) =>
+    [key.includes(':') ? key : `${target.id}:${key}`, value]))
+  return { ...own, ...inherited }
+}
+
 function syncRemapOverrides(overrides, identities, copiedSource = false) {
   return Object.fromEntries(Object.entries(overrides).map(([key, value]) => {
     const separator = key.lastIndexOf(':')
@@ -167,12 +176,13 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     for (const child of plan.children) {
       const id = plan.matches.get(child.id) ?? clone(child.id, targetId)
       const current = nodes.get(id)
+      const childOverrides = syncNestedOverrides(current, overrides)
       const keys = [...INSTANCE_SYNC_PROPS, ...SYNC_CHILD_PROPS]
       if (child.type === 'VECTOR') keys.push('x', 'y', 'vectorNetwork', 'fillGeometry', 'strokeGeometry')
-      nodes.set(id, syncProperties(child, current, keys, overrides, `${id}:`))
+      nodes.set(id, syncProperties(child, current, keys, childOverrides, `${id}:`))
       if (current.type === 'INSTANCE') affected.add(id)
-      if (!Object.hasOwn(overrides, `${id}:componentId`)) {
-        children(child.id, id, overrides, new Set(ancestors).add(pair))
+      if (!Object.hasOwn(childOverrides, `${id}:componentId`)) {
+        children(child.id, id, childOverrides, new Set(ancestors).add(pair))
       }
       order.push(id)
     }
@@ -276,7 +286,7 @@ export function correctSyncGraph(source, replace) {
   const syncStart = source.indexOf('function syncInstances(')
   const syncEnd = source.indexOf('function detachInstance(', syncStart)
   if (syncStart < 0 || syncEnd < 0) throw new Error('Native sync instance anchor changed')
-  const helpers = [syncReadView, syncSourceOccurrence, syncReconciliation, syncProperties, syncRemapOverrides,
+  const helpers = [syncReadView, syncSourceOccurrence, syncReconciliation, syncProperties, syncNestedOverrides, syncRemapOverrides,
     planNativeSync, applyNativeSync, syncInstances].map(fn => fn.toString()).join('\n')
   return replace(source, source.slice(syncStart, syncEnd),
     `${lineageHelpers}\nconst SYNC_CHILD_PROPS = ${fieldList};\n${helpers}\n`)
