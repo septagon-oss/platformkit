@@ -104,12 +104,14 @@ function syncRemapOverrides(overrides, identities, copiedSource = false) {
   }))
 }
 
-function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodeParents) {
+function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodeParents, replacementId = null) {
   const component = previousNodes.get(componentId)
   if (component?.type !== 'COMPONENT') return null
+  const replacement = replacementId === null ? null : previousNodes.get(replacementId)
+  if (replacementId !== null && replacement?.type !== 'INSTANCE') throw new Error('Invalid native replacement instance')
   const nodes = new Map(previousNodes), created = [], removed = new Set(), affected = new Set()
   const deletedParents = new Map(deletedNodeParents)
-  const reachable = new Set(), queue = [componentId]
+  const reachable = new Set(replacement ? [replacementId] : []), queue = [replacementId ?? componentId]
   for (let index = 0; index < queue.length; index++) {
     for (const id of instanceIndex.get(queue[index]) ?? []) {
       if (reachable.has(id)) continue
@@ -121,11 +123,12 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
   for (const id of reachable) {
     const target = previousNodes.get(id)
     if (target?.type !== 'INSTANCE') throw new Error('Invalid native instance index')
-    const source = syncSourceOccurrence(previousNodes, target)
+    const source = id === replacementId ? component : syncSourceOccurrence(previousNodes, target)
     if (!source || !['COMPONENT', 'INSTANCE'].includes(source.type)) throw new Error('Missing native sync source')
     sources.set(id, source.id)
   }
   let serial = 0
+  const originalScales = new Map(replacement ? uniformScalePlan(syncReadView(previousNodes), replacement)?.updates ?? [] : [])
   function temporaryId() {
     let id
     do { id = `native-sync:${serial++}` } while (nodes.has(id) || previousNodes.has(id))
@@ -135,6 +138,16 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     if (ancestors.has(id)) throw new Error('Cyclic native sync removal')
     const node = nodes.get(id)
     if (!node) throw new Error('Missing native sync removal target')
+    if (replacement) {
+      const parent = previousNodes.get(node.parentId)
+      sourceChildren(syncReadView(previousNodes), chain(syncReadView(previousNodes), parent, 'componentId').at(-1), parent, parent.overrides)
+    }
+    const expected = replacement && { ...chain(syncReadView(previousNodes), node, 'componentId').at(-1), ...originalScales.get(id) }
+    const edited = replacement && node.source.editedFields.some(field => JSON.stringify(node[field]) !== JSON.stringify(expected[field]))
+    if (replacement && (edited || chain(syncReadView(previousNodes), replacement, 'parentId').some(owner =>
+      Object.keys(owner.overrides).some(key => key.startsWith(`${id}:`))))) {
+      throw new Error('Native replacement of edited descendants requires subtree history')
+    }
     for (const child of node.childIds) {
       if (nodes.get(child)?.parentId !== id) throw new Error('Invalid native sync removal child')
       remove(child, new Set(ancestors).add(id))
@@ -187,6 +200,14 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
       order.push(id)
     }
     nodes.set(targetId, { ...nodes.get(targetId), childIds: [...order, ...plan.local] })
+  }
+  if (replacement) {
+    // Replacement discards the old child occurrence, not the canonical source.
+    // Reuse the same planned clone/removal and derived-scale validation as sync.
+    for (const id of replacement.childIds) remove(id)
+    const previous = previousNodes.get(replacement.componentId)
+    const name = previous && replacement.name !== previous.name ? replacement.name : component.name
+    nodes.set(replacementId, { ...replacement, componentId, name, childIds: [] })
   }
   const completed = new Set(), active = new Set()
   function instance(id) {
@@ -275,6 +296,16 @@ function syncInstances(graph, componentId) {
   applyNativeSync(graph, planNativeSync(graph.nodes, graph.instanceIndex, componentId, graph.deletedNodeParents))
 }
 
+function swapInstanceComponent(graph, instanceId, componentId) {
+  const instance = graph.getNode(instanceId), component = graph.getNode(componentId)
+  if (instance?.type !== 'INSTANCE' || component?.type !== 'COMPONENT') throw new Error('Missing native replacement instance or component')
+  if (instance.componentId === componentId) return
+  const plan = planNativeSync(graph.nodes, graph.instanceIndex, componentId, graph.deletedNodeParents, instanceId)
+  applyNativeSync(graph, plan)
+  // The native link is authored; the validated clone geometry is derived.
+  graph.updateNode(instanceId, { componentId })
+}
+
 export function correctSyncGraph(source, replace) {
   const start = source.indexOf('function syncChildren(')
   const end = source.indexOf('function copyInstanceComponentProps(', start)
@@ -283,11 +314,12 @@ export function correctSyncGraph(source, replace) {
   if (start < 0 || end < 0 || fields?.length !== 1) throw new Error('Native sync child field anchor changed')
   const fieldList = fields[0].slice('for (const key of '.length, -1)
   source = replace(source, original, '')
+  const swapStart = source.indexOf('function swapInstanceComponent(')
   const syncStart = source.indexOf('function syncInstances(')
   const syncEnd = source.indexOf('function detachInstance(', syncStart)
-  if (syncStart < 0 || syncEnd < 0) throw new Error('Native sync instance anchor changed')
+  if (swapStart < 0 || syncStart < swapStart || syncEnd < 0) throw new Error('Native sync instance anchor changed')
   const helpers = [syncReadView, syncSourceOccurrence, syncReconciliation, syncProperties, syncNestedOverrides, syncRemapOverrides,
-    planNativeSync, applyNativeSync, syncInstances].map(fn => fn.toString()).join('\n')
-  return replace(source, source.slice(syncStart, syncEnd),
+    planNativeSync, applyNativeSync, syncInstances, swapInstanceComponent].map(fn => fn.toString()).join('\n')
+  return replace(source, source.slice(swapStart, syncEnd),
     `${lineageHelpers}\nconst SYNC_CHILD_PROPS = ${fieldList};\n${helpers}\n`)
 }

@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
+import { createEditor } from '@open-pencil/core/editor'
 import { computeAllLayouts } from '@open-pencil/core/layout'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
@@ -26,6 +27,7 @@ function checkScale(graph, instance, master, factor, storedFactor = factor) {
   close(instance.width, master.width * factor)
   close(instance.height, master.height * factor)
   assert.equal(instance.uniformScaleFactor, storedFactor)
+  assert.equal(graph.getChildren(instance.id).length, graph.getChildren(master.id).length)
   for (const [index, child] of graph.getChildren(instance.id).entries()) {
     const source = graph.getChildren(master.id)[index]
     for (const key of ['x', 'y', 'width', 'height']) close(child[key], source[key] * factor)
@@ -160,4 +162,195 @@ test('invalid factors and unsupported masters reject before creating an instance
   const dashed = structuredClone([...graph.getAllNodes()])
   assert.throws(() => graph.createInstance(master.id, page.id, { uniformScaleFactor: 0.5 }), /uniform scale/i)
   assert.deepEqual([...graph.getAllNodes()], dashed)
+})
+
+const component = (graph, name) => [...graph.getAllNodes()].find(node => node.type === 'COMPONENT' && node.name === name)
+const subtree = (graph, node) => [node, ...graph.getChildren(node.id).flatMap(child => subtree(graph, child))]
+const reopen = async graph => parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+
+for (const size of [20, 16]) test(`component replacement preserves canonical ${size}px icon geometry through two saves`, async () => {
+  let graph = buildFoundation(snapshot)
+  const page = graph.addPage('Replacement conformance')
+  const parent = graph.createNode('FRAME', page.id, { name: 'Replacement placement' })
+  const original = component(graph, 'plus'), replacement = component(graph, 'x')
+  const factor = Math.fround(size / 24)
+  const instance = graph.createInstance(original.id, parent.id, { uniformScaleFactor: factor, x: 5, y: 7 })
+  const sibling = graph.createInstance(original.id, page.id, { name: 'Replacement sibling' })
+  const reference = graph.createInstance(replacement.id, page.id, { uniformScaleFactor: factor })
+  const expectedPixels = await pixels(graph, reference)
+  const untouched = structuredClone([subtree(graph, original), subtree(graph, replacement), subtree(graph, sibling)])
+  graph.swapInstanceComponent(instance.id, replacement.id)
+  assert.equal(graph.getNode(instance.id), instance, 'replacement retains the instance root')
+  assert.deepEqual([instance.x, instance.y], [5, 7])
+  assert.deepEqual([subtree(graph, original), subtree(graph, replacement), subtree(graph, sibling)], untouched)
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const swapped = graph.getChildren(named(graph, 'Replacement placement').id)[0]
+    assert.equal(swapped.type, 'INSTANCE')
+    assert.equal(graph.getNode(swapped.componentId)?.name, 'x')
+    checkScale(graph, swapped, component(graph, 'x'), factor)
+    assert.deepEqual(await pixels(graph, swapped), expectedPixels, `replacement pixels at cycle ${cycle}`)
+    checkScale(graph, named(graph, 'Replacement sibling'), component(graph, 'plus'), 1, null)
+    if (cycle < 2) graph = await reopen(graph)
+  }
+})
+
+for (const imported of [false, true]) test(`nested INSTANCE_SWAP preserves occurrence identity, history and saves; imported=${imported}`, async () => {
+  let graph = buildFoundation(snapshot)
+  const page = graph.addPage('Property replacement conformance')
+  const original = component(graph, 'plus')
+  const wrapper = graph.createNode('COMPONENT', page.id, {
+    name: 'Replacement owner', width: 64, height: 32,
+    componentPropertyDefinitions: [
+      { id: '91:1', name: 'Leading icon', type: 'INSTANCE_SWAP', defaultValue: original.id },
+      { id: '91:2', name: 'Trailing icon', type: 'INSTANCE_SWAP', defaultValue: original.id },
+    ],
+  })
+  for (const [propertyId, size, x] of [['91:1', 20, 0], ['91:2', 16, 32]]) {
+    graph.createInstance(original.id, wrapper.id, { uniformScaleFactor: size / 24, x,
+      componentPropertyReferences: [{ propertyId, field: 'INSTANCE_SWAP' }] })
+  }
+  graph.createInstance(wrapper.id, page.id, { name: 'Property replacement edited' })
+  graph.createInstance(wrapper.id, page.id, { name: 'Property replacement untouched' })
+  if (imported) graph = await reopen(graph)
+  const edited = named(graph, 'Property replacement edited'), actions = createEditor({ graph })
+  const target = graph.getChildren(edited.id)[0], guard = graph.getChildren(edited.id)[1]
+  const originalLink = target.componentId
+  const unaffected = ['Replacement owner', 'Property replacement untouched'].map(name => named(graph, name))
+  const before = structuredClone([subtree(graph, guard), ...unaffected.map(node => subtree(graph, node))])
+  for (let cycle = 0; cycle < 2; cycle++) {
+    actions.setInstanceComponentProperty(edited.id, '91:1', component(graph, 'x').id)
+    await Promise.resolve()
+    checkScale(graph, target, component(graph, 'x'), Math.fround(20 / 24))
+    assert.equal(graph.getNode(target.id), target)
+    assert.equal(target.componentId, component(graph, 'x').id)
+    actions.undoAction()
+    await Promise.resolve()
+    assert.equal(target.componentId, originalLink, 'undo restores the original source occurrence, not just its master')
+    checkScale(graph, target, component(graph, 'plus'), Math.fround(20 / 24))
+    assert.deepEqual(edited.componentPropertyAssignments, {})
+    actions.redoAction()
+    await Promise.resolve()
+    checkScale(graph, target, component(graph, 'x'), Math.fround(20 / 24))
+    assert.equal(edited.componentPropertyAssignments['91:1'], component(graph, 'x').id)
+    actions.undoAction()
+    await Promise.resolve()
+  }
+  assert.deepEqual([subtree(graph, guard), ...unaffected.map(node => subtree(graph, node))], before)
+  actions.setInstanceComponentProperty(edited.id, '91:1', component(graph, 'x').id)
+  await Promise.resolve()
+  for (let cycle = 0; cycle < 2; cycle++) {
+    const encoded = await exportFigFile(graph), raw = parseFigBuffer(encoded.slice().buffer)
+    const source = raw.nodeChanges.find(node => node.type === 'SYMBOL' && node.name === 'plus')
+    const replacement = raw.nodeChanges.find(node => node.type === 'SYMBOL' && node.name === 'x')
+    const rawOwner = raw.nodeChanges.find(node => node.name === 'Replacement owner')
+    const rawEdited = raw.nodeChanges.find(node => node.name === 'Property replacement edited')
+    assert.equal(rawOwner.componentPropDefs.length, 2)
+    for (const definition of rawOwner.componentPropDefs) assert.deepEqual(definition.initialValue.guidValue, source.guid)
+    assert.deepEqual(rawEdited.componentPropAssignments, [{ defID: { sessionID: 91, localID: 1 },
+      value: { guidValue: replacement.guid } }], 'property values must use allocated file GUIDs, not live node IDs')
+    const leadingSource = raw.nodeChanges.find(node => node.type === 'INSTANCE' &&
+      JSON.stringify(node.parentIndex.guid) === JSON.stringify(rawOwner.guid) &&
+      node.componentPropRefs.some(ref => ref.defID.sessionID === 91 && ref.defID.localID === 1))
+    const swaps = rawEdited.symbolData.symbolOverrides.filter(override => override.overriddenSymbolID)
+    assert.equal(swaps.length, 1, 'only the selected occurrence is replaced')
+    assert.deepEqual(swaps[0].guidPath.guids, [leadingSource.guid])
+    assert.deepEqual(swaps[0].overriddenSymbolID, replacement.guid)
+    graph = await parseFigFile(encoded.slice().buffer, { populate: 'all' })
+    const owner = named(graph, 'Property replacement edited')
+    const [leading, trailing] = graph.getChildren(owner.id)
+    checkScale(graph, leading, component(graph, 'x'), Math.fround(20 / 24))
+    checkScale(graph, trailing, component(graph, 'plus'), Math.fround(16 / 24))
+    for (const name of ['Replacement owner', 'Property replacement untouched']) {
+      const [first, second] = graph.getChildren(named(graph, name).id)
+      checkScale(graph, first, component(graph, 'plus'), Math.fround(20 / 24))
+      checkScale(graph, second, component(graph, 'plus'), Math.fround(16 / 24))
+    }
+    const definition = createEditor({ graph }).getInstanceComponentPropertyDefinitions(owner.id).find(value => value.id === '91:1')
+    assert.equal(createEditor({ graph }).getInstanceComponentPropertyValue(owner.id, definition), component(graph, 'x').id)
+  }
+})
+
+for (const property of [false, true]) test(`unsupported scaled replacement refuses before graph or history changes; property=${property}`, async () => {
+  const graph = buildFoundation(snapshot), page = graph.addPage('Rejected replacement')
+  const original = component(graph, 'plus')
+  const unsupported = graph.createNode('COMPONENT', page.id, { width: 24, height: 24 })
+  graph.createNode('TEXT', unsupported.id, { text: 'Unsupported scaled text' })
+  const owner = graph.createNode('COMPONENT', page.id, {
+    componentPropertyDefinitions: [{ id: '92:1', name: 'Icon', type: 'INSTANCE_SWAP', defaultValue: original.id }],
+  })
+  graph.createInstance(original.id, owner.id, { uniformScaleFactor: 20 / 24,
+    componentPropertyReferences: [{ propertyId: '92:1', field: 'INSTANCE_SWAP' }] })
+  const outer = graph.createInstance(owner.id, page.id), target = graph.getChildren(outer.id)[0]
+  const actions = createEditor({ graph }), events = []
+  const before = structuredClone([...graph.getAllNodes()])
+  const unsubscribe = graph.onNodeEvents({ created: () => events.push('created'),
+    updated: () => events.push('updated'), deleted: () => events.push('deleted') })
+  try {
+    assert.throws(() => property
+      ? actions.setInstanceComponentProperty(outer.id, '92:1', unsupported.id)
+      : graph.swapInstanceComponent(target.id, unsupported.id), /uniform scale/i)
+    await Promise.resolve()
+    assert.deepEqual([...graph.getAllNodes()], before)
+    assert.deepEqual(events, [], 'validation must precede every mutation notification')
+    assert.equal(actions.undo.canUndo, false)
+  } finally { unsubscribe() }
+})
+
+for (const scenario of ['missing component', 'edited descendant', 'imported edited descendant',
+  'local descendant', 'imported local descendant', 'local instance descendant', 'local duplicate descendant']) {
+  test(`replacement refuses ${scenario} without losing authored state`, async () => {
+    let graph = buildFoundation(snapshot)
+    const page = graph.addPage('Replacement authored-state conformance')
+    const original = component(graph, 'plus')
+    const owner = graph.createNode('COMPONENT', page.id, {
+      componentPropertyDefinitions: [{ id: '93:1', name: 'Icon', type: 'INSTANCE_SWAP', defaultValue: original.id }],
+    })
+    graph.createInstance(original.id, owner.id, { uniformScaleFactor: scenario.includes('local') ? null : 20 / 24,
+      componentPropertyReferences: [{ propertyId: '93:1', field: 'INSTANCE_SWAP' }] })
+    graph.createInstance(owner.id, page.id, { name: 'Authored replacement instance' })
+    if (scenario.startsWith('imported')) graph = await reopen(graph)
+    const outer = named(graph, 'Authored replacement instance')
+    if (scenario.includes('edited')) {
+      const target = graph.getChildren(outer.id)[0]
+      graph.updateNode(graph.getChildren(target.id)[0].id, { opacity: 0.35 })
+    }
+    if (scenario.includes('local')) {
+      const target = graph.getChildren(outer.id)[0]
+      if (scenario.includes('instance')) graph.createInstance(component(graph, 'x').id, target.id)
+      else if (scenario.includes('duplicate')) graph.createNode('VECTOR', target.id, { componentId: graph.getChildren(target.id)[0].componentId })
+      else graph.createNode('RECTANGLE', target.id, { name: 'Locally authored content', width: 3, height: 5 })
+    }
+    const actions = createEditor({ graph }), events = []
+    const before = structuredClone([...graph.getAllNodes()])
+    const unsubscribe = graph.onNodeEvents({ created: () => events.push('created'),
+      updated: () => events.push('updated'), deleted: () => events.push('deleted') })
+    try {
+      const value = scenario === 'missing component' ? 'missing-native-component' : component(graph, 'x').id
+      assert.throws(() => actions.setInstanceComponentProperty(outer.id, '93:1', value),
+        /missing native replacement|replacement.*history|override|edited|native source identity/i)
+      await Promise.resolve()
+      assert.deepEqual([...graph.getAllNodes()], before)
+      assert.deepEqual(events, [], 'refused history must not publish even transient graph changes')
+      assert.equal(actions.undo.canUndo, false)
+    } finally { unsubscribe() }
+  })
+}
+
+for (const field of ['width', 'stroke weight']) test(`replacement rejects FIG float32 overflow in ${field} before effects`, () => {
+  const graph = buildFoundation(snapshot), page = graph.addPage('Replacement precision refusal')
+  const replacement = masterOf(graph)
+  if (field === 'width') graph.updateNode(replacement.id, { width: 1e40 })
+  else {
+    const path = graph.getChildren(replacement.id)[1]
+    graph.updateNode(path.id, { strokes: path.strokes.map(stroke => ({ ...stroke, weight: 1e40 })) })
+  }
+  const instance = graph.createInstance(component(graph, 'plus').id, page.id, { uniformScaleFactor: 20 / 24 })
+  const before = structuredClone([...graph.getAllNodes()]), events = []
+  const unsubscribe = graph.onNodeEvents({ created: () => events.push('created'),
+    updated: () => events.push('updated'), deleted: () => events.push('deleted') })
+  try {
+    assert.throws(() => graph.swapInstanceComponent(instance.id, replacement.id), /native.*scale|finite/i)
+    assert.deepEqual([...graph.getAllNodes()], before)
+    assert.deepEqual(events, [])
+  } finally { unsubscribe() }
 })

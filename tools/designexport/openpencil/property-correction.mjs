@@ -114,6 +114,20 @@ export function correctEditorCreation(source, replace) {
 // Hash/version guards belong to corrections.mjs. Every structural anchor here
 // must match exactly once before any substituted module is allowed to load.
 export function correctPropertyActions(source, replaceOnce) {
+  // Validate and replace the native target before publishing its assignment.
+  // A refused replacement must leave both the graph and property value intact.
+  source = replaceOnce(source,
+    '\tconst swapComponentId = target?.field === "INSTANCE_SWAP" ? swapTargetId(ctx, value) : null;',
+    '\tconst swapComponentId = target?.field === "INSTANCE_SWAP" ? swapTargetId(ctx, value) : null;\n' +
+      '\tif (target?.field === "INSTANCE_SWAP") {\n' +
+      '\t\tif (!swapComponentId) throw new Error("Missing native replacement component");\n' +
+      '\t\tupdatePropertyTarget(ctx, target, value, swapComponentId);\n' +
+      '\t}',
+  )
+  source = replaceOnce(source,
+    '\tupdatePropertyTarget(ctx, target, value, swapComponentId);\n}',
+    '\tif (target?.field !== "INSTANCE_SWAP") updatePropertyTarget(ctx, target, value, swapComponentId);\n}',
+  )
   source = replaceOnce(source,
     'function createComponentPropertyActions(ctx, switchVariant) {',
     helpers + '\nfunction createComponentPropertyActions(ctx, switchVariant) {',
@@ -123,8 +137,28 @@ export function correctPropertyActions(source, replaceOnce) {
     '\t\tconst target = propertyTarget(ctx, instance, propertyId);\n' +
       '\t\tconst propertyScope = propertyHistoryScope(ctx, target);\n' +
       '\t\tconst propertyBefore = propertyScope ? snapshotPropertyHistory(ctx, propertyScope) : null;\n' +
+      '\t\tconst previousTargetComponentId = target?.node.componentId;\n' +
       '\t\tconst assignedValue =',
   )
+  source = replaceOnce(source,
+    '\t\t\t\tif (live) {\n\t\t\t\t\tctx.graph.updateNode(instanceId, {',
+    '\t\t\t\tif (live) {\n' +
+      '\t\t\t\t\tconst restoredTarget = propertyTarget(ctx, live, propertyId);\n' +
+      '\t\t\t\t\tif (restoredTarget?.field === "INSTANCE_SWAP") {\n' +
+      '\t\t\t\t\t\tconst componentId = swapTargetId(ctx, previousValue);\n' +
+      '\t\t\t\t\t\tif (!componentId) throw new Error("Missing native replacement history component");\n' +
+      '\t\t\t\t\t\tctx.graph.swapInstanceComponent(restoredTarget.node.id, componentId);\n' +
+      '\t\t\t\t\t\tctx.graph.updateNode(restoredTarget.node.id, { componentId: previousTargetComponentId });\n' +
+      '\t\t\t\t\t}\n' +
+      '\t\t\t\t\tctx.graph.updateNode(instanceId, {',
+  )
+  source = replaceOnce(source, '\t\t\t\t\tconst restoredTarget = propertyTarget(ctx, live, propertyId);\n' +
+    '\t\t\t\t\tif (restoredTarget?.field === "TEXT"', '\t\t\t\t\tif (restoredTarget?.field === "TEXT"')
+  source = replaceOnce(source,
+    '\t\t\t\t\telse if (restoredTarget?.field === "INSTANCE_SWAP") {\n' +
+      '\t\t\t\t\t\tconst componentId = swapTargetId(ctx, previousValue);\n' +
+      '\t\t\t\t\t\tif (componentId && restoredTarget.node.type === "INSTANCE") ctx.graph.swapInstanceComponent(restoredTarget.node.id, componentId);\n' +
+      '\t\t\t\t\t}', '')
   source = replaceOnce(source,
     '\t\tapplyPropertyValue(ctx, instanceId, definition, value);\n\t\tctx.undo.push({',
     String.raw`

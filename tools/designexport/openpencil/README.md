@@ -169,14 +169,18 @@ remain unsupported. Native text properties still accept empty values; preserving
 their identity does not prove whitespace-only flex layout after an edit. Do not
 treat this development boundary as a complete editable component library.
 
-At the lower native boundary, `createInstance` and `updateNode` accept FIG's
-authored `uniformScaleFactor`. Flat, solid-painted vector masters scale from
-canonical geometry, including strokes, without detaching or cumulative resizing.
-The tests cover 20px and 16px instances, composition, master geometry updates, factor edits
-and clearing, plus two saves with unchanged rendered pixels. Effective stroke
-caps and joins survive serialization; conflicting per-stroke styles are refused.
-This does not yet establish scaling for text, effects, dashed vectors, arbitrary nested masters,
-editor drag handles or source-owned icon-slot replacement.
+Native creation, updates and replacement retain FIG's authored `uniformScaleFactor`.
+Flat, solid-painted vector masters scale from FIG-representable canonical geometry,
+including strokes, without detaching or cumulative resizing. Tests cover 20px and
+16px instances, composition, master updates, factor edits and clearing.
+Direct swaps retain geometry and links; placed-instance `INSTANCE_SWAP` tests cover
+repeated slots, undo/redo and two saves without changing siblings or masters.
+File-level references and strict rendered pixels are checked independently of the
+importer. Replacing locally edited descendants is refused before mutation because
+subtree history is unfinished. Stroke caps and joins survive serialization;
+conflicting styles, unsupported scaled masters and nonrepresentable geometry are refused.
+This does not establish scaling for text, effects, dashed vectors, arbitrary
+nested masters, editor drag handles or source-owned icon-slot replacement.
 
 [Synchronization](sync-correction.mjs) plans and validates a projected result before
 applying changes through native graph APIs. Planning allocates no native IDs and
@@ -253,13 +257,9 @@ restoring its captured geometry. Ordinary authored parent resizing still
 propagates new master dimensions to instances. Failed text measurement restores
 grid sizing modes and explicitly frees the successfully built Yoga trees.
 
-Supported behavior is deliberately narrower than the editor's entire API:
-single-target, placed-instance text properties, their nested references, native
-save/reopen, and exact undo/redo of the affected layout state. Identity
-correspondence must be unambiguous. Editing inside a component master, instance
-swaps, variant replacement and arbitrary imported documents require further conformance
-before they can be advertised as supported. Unsupported cases must not be
-silently treated as passing replacement contracts.
+Text-property guarantees cover single placed targets and exact layout undo/redo.
+Master-owned edits, variants and arbitrary imports remain unverified; identity
+must be unambiguous. These tests are not a universal replacement contract.
 The reordered-instance tests prove that labels retain the correct identity;
 they do not prove persistence of per-instance child order. The SDK currently
 rehydrates children in master order.

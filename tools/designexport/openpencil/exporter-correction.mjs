@@ -76,7 +76,7 @@ function nativeOverridePath(context, instance, target, counter) {
     if (!guid) throw new Error('Missing native override GUID');
     guids.push(guid);
     source = linked.type === 'INSTANCE'
-      ? context.graph.getNode(resolveInstanceComponentId(context, linked.componentId))
+      ? context.graph.getNode(resolveInstanceComponentId(context, child.componentId))
       : linked;
     parent = child;
   }
@@ -94,6 +94,14 @@ function nativePropertyGuid(value) {
   return { sessionID, localID };
 }
 
+function nativeComponentGuid(context, value, counter) {
+  const direct = context.graph.getNode(value);
+  const matches = direct?.type === 'COMPONENT' ? [direct] : [...context.graph.getAllNodes()].filter(node =>
+    node.type === 'COMPONENT' && [node.source.id, node.componentKey, node.sourceLibraryKey].includes(value));
+  if (matches.length !== 1) throw new Error('Missing or ambiguous native replacement component');
+  return getOrCreateNodeGuid(context, matches[0].id, counter);
+}
+
 function serializeNestedReferences(context, instance, counter) {
   const result = [];
   const pending = [...instance.childIds];
@@ -105,9 +113,11 @@ function serializeNestedReferences(context, instance, counter) {
     const child = context.graph.getNode(id);
     if (!child) throw new Error('Missing native reference child');
     pending.push(...child.childIds);
-    if (!child.componentPropertyReferences.length) continue;
+    const swapped = Object.hasOwn(instance.overrides, id + ':componentId');
+    if (!child.componentPropertyReferences.length && !swapped) continue;
     result.push({
       guidPath: nativeOverridePath(context, instance, child, counter),
+      ...(swapped ? { overriddenSymbolID: nativeComponentGuid(context, resolveInstanceComponentId(context, child.componentId), counter) } : {}),
       componentPropRefs: child.componentPropertyReferences.map(ref => ({
         defID: nativePropertyGuid(ref.propertyId),
         componentPropNodeField: componentPropertyNodeField(ref.field)
@@ -221,6 +231,12 @@ function mergeTextOverrides(symbolOverrides, overrides) {
     '\tif (field === "VISIBLE") return "VISIBLE";\n' +
     '\tthrow new Error("Unsupported native component property field: " + field);')
   for (const [before, after] of [
+    ['componentPropertyValue(type, value, graph)', 'componentPropertyValue(type, value, context, localIdCounter)'],
+    ['parseGuidOrNull(graph.getNode(value)?.source.id ?? value)', 'nativeComponentGuid(context, value, localIdCounter)'],
+    ['function applyComponentMetadata(context, node, nc)', 'function applyComponentMetadata(context, node, nc, localIdCounter)'],
+    ['applyComponentMetadata(context, node, nc);', 'applyComponentMetadata(context, node, nc, localIdCounter);'],
+    ['componentPropertyValue(def.type, def.defaultValue, context.graph)', 'componentPropertyValue(def.type, def.defaultValue, context, localIdCounter)'],
+    ['componentPropertyValue(definition.type, value, context.graph)', 'componentPropertyValue(definition.type, value, context, localIdCounter)'],
     ['const id = parseGuidOrNull(def.id);', 'const id = nativePropertyGuid(def.id);'],
     ['const defID = parseGuidOrNull(ref.propertyId);', 'const defID = nativePropertyGuid(ref.propertyId);'],
     ['const defID = parseGuidOrNull(propertyId);', 'const defID = nativePropertyGuid(propertyId);'],
@@ -232,6 +248,17 @@ function mergeTextOverrides(symbolOverrides, overrides) {
 }
 
 export function correctPaintImporter(source, replace) {
+  source = replace(source, 'overriddenNodes.add(targetId);', String.raw`
+    if (patch.swapComponentId) {
+      const key = guidToString(guids.at(-1));
+      const sourceId = ctx.guidToNodeId.get(ctx.overrideKeyToGuid.get(key) ?? key);
+      const owner = ctx.graph.getNode(nodeId);
+      if (!owner || !ctx.graph.getNode(sourceId)) throw new Error('Missing native replacement occurrence');
+      ctx.graph.preserveSourceMetadataDuring(() => ctx.graph.updateNode(nodeId, { overrides: {
+        ...owner.overrides, [targetId + ':sourceComponentId']: sourceId, [targetId + ':componentId']: patch.swapComponentId
+      } }));
+    }
+    overriddenNodes.add(targetId);`)
   source = replace(source, 'const props = convertOverrideToProps(fields);', String.raw`
     const props = convertOverrideToProps(fields);
     const target = ctx.graph.getNode(targetId);

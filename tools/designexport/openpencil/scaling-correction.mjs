@@ -21,7 +21,7 @@ function uniformScaleSource(graph, first) {
 }
 
 function uniformScaleMaster(graph, master, factor) {
-  const finite = values => values.every(Number.isFinite)
+  const finite = values => values.every(value => Number.isFinite(Math.fround(value)))
   if (master.layoutMode !== 'NONE' || !finite([master.width, master.height]) || master.width <= 0 || master.height <= 0 ||
     !finite([master.width * factor, master.height * factor]) || master.effects.length || master.strokes.length || master.fills.length) {
     throw new Error('Native uniform scale requires a finite freeform vector master')
@@ -29,10 +29,10 @@ function uniformScaleMaster(graph, master, factor) {
   const children = graph.getChildren(master.id)
   if (children.some(child => child.type !== 'VECTOR' || child.childIds.length || child.effects.length ||
     child.rotation !== 0 || child.flipX || child.flipY || !child.vectorNetwork || child.dashPattern.length ||
-    validateVectorNetwork(child.vectorNetwork).length ||
-    !finite([child.x, child.y, child.width, child.height]) || child.width < 0 || child.height < 0 ||
+    validateVectorNetwork(nativeScaleGeometry(child).vectorNetwork).length ||
+    !finite([child.x, child.y, child.width, child.height].flatMap(value => [value, value * factor])) || child.width < 0 || child.height < 0 ||
     child.fills.some(fill => fill.type !== 'SOLID') ||
-    child.strokes.some(stroke => !Number.isFinite(stroke.weight) || stroke.weight < 0 || stroke.dashPattern?.length))) {
+    child.strokes.some(stroke => !finite([stroke.weight, stroke.weight * factor]) || stroke.weight < 0 || stroke.dashPattern?.length))) {
     throw new Error('Native uniform scale currently requires flat solid-painted vector children')
   }
   return children
@@ -44,12 +44,25 @@ function hasScaleOverride(graph, instance, target, field) {
     Object.hasOwn(owner.overrides, `${target.id}:${field}`))
 }
 
+function nativeScaleGeometry(source) {
+  // FIG and CanvasKit store these coordinates as float32. Round the canonical
+  // inputs before multiplying, so reopening does not change the derived shape.
+  const vectorNetwork = structuredClone(source.vectorNetwork)
+  for (const point of [...vectorNetwork.vertices, ...vectorNetwork.segments.flatMap(segment =>
+    [segment.tangentStart, segment.tangentEnd])]) {
+    point.x = Math.fround(point.x)
+    point.y = Math.fround(point.y)
+    if (point.cornerRadius !== undefined) point.cornerRadius = Math.fround(point.cornerRadius)
+  }
+  return { ...source, vectorNetwork, ...Object.fromEntries(['x', 'y', 'width', 'height'].map(field => [field, Math.fround(source[field])])) }
+}
+
 function uniformScalePlan(graph, instance, value = instance.uniformScaleFactor) {
   const factor = uniformScaleFactorValue(value)
   if (factor === null) return null
   if (instance.type !== 'INSTANCE') throw new Error('Native uniform scale belongs to an instance')
   const master = uniformScaleSource(graph, instance)
-  const sources = uniformScaleMaster(graph, master, factor)
+  const sources = uniformScaleMaster(graph, master, factor).map(nativeScaleGeometry)
   const byId = new Map(sources.map(source => [source.id, source]))
   const seen = new Set(), updates = []
   for (const child of graph.getChildren(instance.id)) {
@@ -60,6 +73,7 @@ function uniformScalePlan(graph, instance, value = instance.uniformScaleFactor) 
       chain.add(source.id)
       source = graph.getNode(source.componentId)
     }
+    source = source && byId.get(source.id)
     const ownsStrokes = hasScaleOverride(graph, instance, child, 'strokes')
     if (!source || seen.has(source.id) || child.type !== 'VECTOR' ||
       (!ownsStrokes && child.strokes.length !== source.strokes.length)) {
@@ -74,7 +88,7 @@ function uniformScalePlan(graph, instance, value = instance.uniformScaleFactor) 
       vectorNetwork, fillGeometry: scaleGeometryPaths(source.fillGeometry, factor, factor),
       strokeGeometry: scaleGeometryPaths(source.strokeGeometry, factor, factor),
       strokes: ownsStrokes ? child.strokes : child.strokes.map((stroke, index) =>
-        ({ ...stroke, weight: source.strokes[index].weight * factor })),
+        ({ ...stroke, weight: Math.fround(source.strokes[index].weight) * factor })),
       dashPattern: source.dashPattern.map(length => length * factor), boundVariables: { ...child.boundVariables },
     }
     const patch = Object.fromEntries(Object.entries(derived).filter(([field]) => !hasScaleOverride(graph, instance, child, field)))
@@ -84,8 +98,8 @@ function uniformScalePlan(graph, instance, value = instance.uniformScaleFactor) 
     updates.push([child.id, patch])
   }
   if (seen.size !== sources.length) throw new Error('Missing native uniform scale children')
-  const width = hasScaleOverride(graph, instance, instance, 'width') ? instance.width : master.width * factor
-  const height = hasScaleOverride(graph, instance, instance, 'height') ? instance.height : master.height * factor
+  const width = hasScaleOverride(graph, instance, instance, 'width') ? instance.width : Math.fround(master.width) * factor
+  const height = hasScaleOverride(graph, instance, instance, 'height') ? instance.height : Math.fround(master.height) * factor
   if (![width, height].every(Number.isFinite)) throw new Error('Invalid native scale dimensions')
   return { factor, width, height, updates }
 }
@@ -116,7 +130,7 @@ function planDerivedInstanceScales(nodes, previousNodes, affectedIds) {
 }
 
 const factorSource = uniformScaleFactorValue.toString()
-const graphSource = [uniformScaleFactorValue, uniformScaleSource, uniformScaleMaster, hasScaleOverride, uniformScalePlan,
+const graphSource = [uniformScaleFactorValue, uniformScaleSource, uniformScaleMaster, hasScaleOverride, nativeScaleGeometry, uniformScalePlan,
   applyNativeUniformScale, planDerivedInstanceScales]
   .map(fn => fn.toString()).join('\n')
 
