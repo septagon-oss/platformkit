@@ -65,7 +65,7 @@ async function pixels(graph, instance) {
 }
 
 for (const size of [20, 16]) test(`native uniform scale ${size}/24 retains live master links, HUG layout and two FIG saves`, async () => {
-  let graph = buildFoundation(snapshot), master = masterOf(graph)
+  let graph = buildFoundation(snapshot).graph, master = masterOf(graph)
   const page = graph.addPage('Scaled icon conformance')
   const parent = graph.createNode('COMPONENT', page.id, { name: 'Composed master', layoutMode: 'HORIZONTAL',
     primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG', itemSpacing: 8, fills: [] })
@@ -114,14 +114,14 @@ for (const size of [20, 16]) test(`native uniform scale ${size}/24 retains live 
 
 test('FIG refuses conflicting per-stroke cap and join styles instead of silently changing them', async () => {
   for (const field of ['cap', 'join']) {
-    const graph = buildFoundation(snapshot), path = graph.getChildren(masterOf(graph).id)[1]
+    const graph = buildFoundation(snapshot).graph, path = graph.getChildren(masterOf(graph).id)[1]
     graph.updateNode(path.id, { strokes: [...path.strokes, { ...path.strokes[0], [field]: field === 'cap' ? 'SQUARE' : 'BEVEL' }] })
     await assert.rejects(exportFigFile(graph), /conflicting native stroke styles/i)
   }
 })
 
 test('factor edits propagate through composition and clearing survives imported source metadata', async () => {
-  let graph = buildFoundation(snapshot), master = masterOf(graph)
+  let graph = buildFoundation(snapshot).graph, master = masterOf(graph)
   const page = graph.addPage('Editable scale')
   const parent = graph.createNode('COMPONENT', page.id, { name: 'Editable composition' })
   const icon = graph.createInstance(master.id, parent.id, { name: 'Editable icon', uniformScaleFactor: 20 / 24 })
@@ -146,7 +146,7 @@ test('factor edits propagate through composition and clearing survives imported 
 })
 
 test('invalid factors and unsupported masters reject before creating an instance', () => {
-  const graph = buildFoundation(snapshot), master = masterOf(graph), page = graph.addPage('Rejected scale')
+  const graph = buildFoundation(snapshot).graph, master = masterOf(graph), page = graph.addPage('Rejected scale')
   for (const factor of [0, -1, NaN, Infinity, '0.5', Number.MIN_VALUE]) {
     const before = structuredClone([...graph.getAllNodes()])
     assert.throws(() => graph.createInstance(master.id, page.id, { uniformScaleFactor: factor }), /uniform scale/i)
@@ -169,7 +169,7 @@ const subtree = (graph, node) => [node, ...graph.getChildren(node.id).flatMap(ch
 const reopen = async graph => parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
 
 for (const size of [20, 16]) test(`component replacement preserves canonical ${size}px icon geometry through two saves`, async () => {
-  let graph = buildFoundation(snapshot)
+  let graph = buildFoundation(snapshot).graph
   const page = graph.addPage('Replacement conformance')
   const parent = graph.createNode('FRAME', page.id, { name: 'Replacement placement' })
   const original = component(graph, 'plus'), replacement = component(graph, 'x')
@@ -195,7 +195,7 @@ for (const size of [20, 16]) test(`component replacement preserves canonical ${s
 })
 
 for (const imported of [false, true]) test(`nested INSTANCE_SWAP preserves occurrence identity, history and saves; imported=${imported}`, async () => {
-  let graph = buildFoundation(snapshot)
+  let graph = buildFoundation(snapshot).graph
   const page = graph.addPage('Property replacement conformance')
   const original = component(graph, 'plus')
   const wrapper = graph.createNode('COMPONENT', page.id, {
@@ -271,7 +271,7 @@ for (const imported of [false, true]) test(`nested INSTANCE_SWAP preserves occur
 })
 
 for (const property of [false, true]) test(`unsupported scaled replacement refuses before graph or history changes; property=${property}`, async () => {
-  const graph = buildFoundation(snapshot), page = graph.addPage('Rejected replacement')
+  const graph = buildFoundation(snapshot).graph, page = graph.addPage('Rejected replacement')
   const original = component(graph, 'plus')
   const unsupported = graph.createNode('COMPONENT', page.id, { width: 24, height: 24 })
   graph.createNode('TEXT', unsupported.id, { text: 'Unsupported scaled text' })
@@ -299,7 +299,7 @@ for (const property of [false, true]) test(`unsupported scaled replacement refus
 for (const scenario of ['missing component', 'edited descendant', 'imported edited descendant', 'bound descendant', 'imported bound descendant', 'noop bound descendant',
   'local descendant', 'imported local descendant', 'local instance descendant', 'local duplicate descendant']) {
   test(`replacement refuses ${scenario} without losing authored state`, async () => {
-    let graph = buildFoundation(snapshot)
+    let graph = buildFoundation(snapshot).graph
     const page = graph.addPage('Replacement authored-state conformance')
     const original = component(graph, 'plus')
     const owner = graph.createNode('COMPONENT', page.id, {
@@ -340,7 +340,7 @@ for (const scenario of ['missing component', 'edited descendant', 'imported edit
 }
 
 for (const field of ['width', 'stroke weight']) test(`replacement rejects FIG float32 overflow in ${field} before effects`, () => {
-  const graph = buildFoundation(snapshot), page = graph.addPage('Replacement precision refusal')
+  const graph = buildFoundation(snapshot).graph, page = graph.addPage('Replacement precision refusal')
   const replacement = masterOf(graph)
   if (field === 'width') graph.updateNode(replacement.id, { width: 1e40 })
   else {
@@ -362,7 +362,7 @@ const foreground = graph => [...graph.variables.values()].find(variable => varia
 
 for (const scenario of ['partial', 'conflicting', 'literal binding', 'missing destination', 'local role edit']) {
   test(`paint role replacement refuses ${scenario} correspondence atomically`, () => {
-    const graph = buildFoundation(snapshot), page = graph.addPage('Role refusal')
+    const graph = buildFoundation(snapshot).graph, page = graph.addPage('Role refusal')
     const original = masterOf(graph), replacement = component(graph, 'x')
     const owner = graph.createNode('COMPONENT', page.id, {
       componentPropertyDefinitions: [{ id: '95:1', name: 'Glyph', type: 'INSTANCE_SWAP', defaultValue: original.id }],
@@ -411,7 +411,7 @@ function checkForeground(graph, instance, name) {
 
 for (const replacementName of ['x', 'uniform-scale-fixture']) for (const size of [20, 16]) {
   for (const imported of [false, true]) test(`source-owned role paints survive ${replacementName} replacement at ${size}px; imported=${imported}`, async () => {
-    let graph = buildFoundation(snapshot)
+    let graph = buildFoundation(snapshot).graph
     const page = graph.addPage('Role replacement conformance'), original = component(graph, 'plus')
     const owner = graph.createNode('COMPONENT', page.id, { name: 'Role owner', width: 32, height: 32,
       componentPropertyDefinitions: [{ id: '94:1', name: 'Glyph', type: 'INSTANCE_SWAP', defaultValue: original.id }] })

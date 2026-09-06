@@ -24,7 +24,7 @@ async function generate(args) {
   const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
     cwd: repository, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120_000,
   }))
-  const bytes = await exportFigFile(buildFoundation(snapshot))
+  const bytes = await exportFigFile(buildFoundation(snapshot).graph)
   // Fail before creating an output if the produced FIG cannot be reopened.
   await parseFigFile(bytes.slice().buffer, { populate: 'all' })
   const temporary = await mkdtemp(join(parent, '.platformkit-design-'))

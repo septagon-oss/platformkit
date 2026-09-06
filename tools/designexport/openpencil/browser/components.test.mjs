@@ -10,6 +10,7 @@ import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
+import { parseFigBuffer } from '@open-pencil/fig'
 import { buildFoundation } from '../foundation.mjs'
 import { materializeComponent } from '../components.mjs'
 import { captureExample } from './capture.mjs'
@@ -50,7 +51,7 @@ function colorCollection(graph) {
 test('real source Button becomes a linked editable component with fractional native HUG geometry', async () => {
   const snapshot = source(), before = structuredClone(snapshot)
   for (const mode of ['light', 'dark']) {
-    let graph = buildFoundation(snapshot)
+    let graph = buildFoundation(snapshot).graph
     const page = graph.addPage('Component conformance')
     const collection = graph.variableCollections.get(colorCollection(graph))
     graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
@@ -142,6 +143,146 @@ test('real source Button becomes a linked editable component with fractional nat
   assert.deepEqual(snapshot, before)
 })
 
+test('source icon slots become linked editable native composition through mixed history and two saves', async () => {
+  for (const [id, slotName, size] of [['with-icon', 'IconEnd', 20], ['with-leading-icon', 'IconStart', 16]]) {
+    for (const mode of ['light', 'dark']) {
+      const exampleId = `pk-ui.component.button/${id}`, snapshot = source('Save', exampleId)
+      const built = buildFoundation(snapshot), page = built.graph.addPage('Source composition')
+      let graph = built.graph
+      graph.updateNode(page.id, { variableModes: { [built.collection.id]: built.collection.modes.find(item => item.name === mode).modeId } })
+      const observation = await observe(snapshot, mode)
+      const region = observation.roots[0].children.find(child => child.kind === 'slot')
+      const result = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, built.collection.id,
+        [{ region, master: built.icons.get(region.children[0].icon.canonicalName) }])
+      let master = result.master
+      const labelProperty = result.properties.find(property => property.name === 'label')
+      const slotProperty = result.properties.find(property => property.name === slotName)
+      assert.equal(slotProperty.type, 'INSTANCE_SWAP')
+      assert.equal(slotProperty.defaultValue, built.icons.get('plus').id)
+      let edited = graph.createInstance(master.id, page.id, { name: 'Edited source composition', x: 250 })
+      let sibling = graph.createInstance(master.id, page.id, { name: 'Untouched source composition', x: 600 })
+      const target = node => graph.getChildren(node.id).find(child => child.componentPropertyReferences.some(ref => ref.propertyId === slotProperty.id))
+      const check = (node, expected, glyph) => {
+        close(node.width, expected.bounds.width, 'composed width')
+        close(node.height, expected.bounds.height, 'composed height')
+        const icon = target(node), svg = expected.children.find(child => child.kind === 'slot').children[0]
+        assert.equal(icon.type, 'INSTANCE')
+        assert.equal(graph.getNode(icon.componentId).name, glyph)
+        close(icon.x, svg.bounds.x - expected.bounds.x, 'slot x')
+        close(icon.y, svg.bounds.y - expected.bounds.y, 'slot y')
+        close(icon.width, size, 'slot width')
+        close(icon.height, size, 'slot height')
+        for (const vector of graph.getChildren(icon.id)) {
+          assert.equal(graph.variables.get(vector.boundVariables['fills/0/color']).name, svg.paintSources.fill.directCandidate)
+        }
+      }
+      check(master, observation.roots[0], 'plus')
+      const actions = createEditor({ graph })
+      actions.setCanvasKit(ck, renderer)
+      let labelValue = 'Create album', changed = await observe(source(labelValue, exampleId), mode)
+      actions.setInstanceComponentProperty(edited.id, labelProperty.id, labelValue)
+      actions.setInstanceComponentProperty(edited.id, slotProperty.id, built.icons.get('x').id)
+      await Promise.resolve()
+      check(edited, changed.roots[0], 'x')
+      actions.undoAction()
+      actions.undoAction()
+      await Promise.resolve()
+      check(edited, observation.roots[0], 'plus')
+      actions.redoAction()
+      actions.redoAction()
+      await Promise.resolve()
+      check(edited, changed.roots[0], 'x')
+      for (let cycle = 0; cycle < 3; cycle++) {
+        check(edited, changed.roots[0], 'x')
+        check(sibling, observation.roots[0], 'plus')
+        check(master, observation.roots[0], 'plus')
+        const label = graph.getChildren(edited.id).find(child => child.type === 'TEXT')
+        assert.equal(label.text, labelValue)
+        assert.equal(graph.getChildren(sibling.id).find(child => child.type === 'TEXT').text, 'Save')
+        assert.equal(edited.componentId, master.id)
+        if (cycle < 2) {
+          const bytes = await exportFigFile(graph)
+          const raw = parseFigBuffer(bytes.slice().buffer).nodeChanges
+          const rawEdited = raw.find(node => node.name === edited.name)
+          const rawMaster = raw.find(node => node.type === 'SYMBOL' && node.name === master.name)
+          const [sessionID, localID] = slotProperty.id.split(':').map(Number)
+          const occurrences = raw.filter(node => node.type === 'INSTANCE' &&
+            JSON.stringify(node.parentIndex.guid) === JSON.stringify(rawMaster.guid) &&
+            node.componentPropRefs.some(ref => ref.defID.sessionID === sessionID && ref.defID.localID === localID))
+          assert.equal(occurrences.length, 1, 'one exact source icon occurrence in the file')
+          const path = JSON.stringify({ guids: [occurrences[0].guid] })
+          const derived = rawEdited.derivedSymbolData?.filter(entry => JSON.stringify(entry.guidPath) === path) ?? []
+          assert.equal(derived.length, 1, 'one fresh derived layout entry, before any importer runs')
+          const icon = target(edited)
+          assert.deepEqual(derived[0].size, { x: Math.fround(icon.width), y: Math.fround(icon.height) })
+          const transform = { m00: 1, m01: 0, m02: icon.x, m10: 0, m11: 1, m12: icon.y }
+          for (const [field, value] of Object.entries(transform)) {
+            assert.ok(Math.abs(derived[0].transform[field] - Math.fround(value)) < 1e-6, `persisted icon ${field}`)
+          }
+          assert.equal(rawEdited.symbolData.symbolOverrides.some(entry =>
+            JSON.stringify(entry.guidPath) === path && Object.hasOwn(entry, 'transform')), false)
+          graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+          edited = [...graph.getAllNodes()].find(node => node.name === 'Edited source composition')
+          sibling = [...graph.getAllNodes()].find(node => node.name === 'Untouched source composition')
+          master = graph.getNode(edited.componentId)
+          check(edited, changed.roots[0], 'x')
+          labelValue = cycle === 0 ? 'Retry saving' : 'Create album again'
+          changed = await observe(source(labelValue, exampleId), mode)
+          const reopenedActions = createEditor({ graph })
+          reopenedActions.setCanvasKit(ck, renderer)
+          reopenedActions.setInstanceComponentProperty(edited.id, labelProperty.id, labelValue)
+          await Promise.resolve()
+        }
+      }
+    }
+  }
+})
+
+test('icon composition refuses forged identities, altered geometry and unsupported presentation without leftovers', async () => {
+  const snapshot = source('Save', 'pk-ui.component.button/with-icon'), observation = await observe(snapshot)
+  for (const mutate of [
+    input => { input.targets[0].region = structuredClone(input.targets[0].region) },
+    input => { input.targets.push(input.targets[0]) },
+    input => { input.targets[0].master = { ...input.targets[0].master } },
+    input => { input.targets[0].master = input.built.icons.get('x') },
+    input => { input.graph.getChildren(input.targets[0].master.id)[0].vectorNetwork.vertices[0].x += 1 },
+    input => { input.svg.children[0].attributes.d = 'M0 0L20 20' },
+    input => { input.svg.children[0].style.d = 'path("M0 0L20 20")' },
+    input => { input.svg.children[0].style.filter = 'blur(1px)' },
+    input => { input.svg.children[0].style.transform = 'matrix(1, 0, 0, 1, 1, 0)' },
+    input => { input.svg.children[0].style.opacity = '0.5' },
+    input => { input.svg.children[0].style.stroke = 'rgb(0, 0, 0)' },
+    input => { input.svg.children[0].style['stroke-dasharray'] = '2px, 2px' },
+    input => { input.svg.children[0].paintSources.fill = { tokens: [], directCandidate: null } },
+    input => { input.source.examples[0].slots.find(slot => slot.name === 'IconEnd').supported = false },
+    input => { input.targets[0].region.name = 'iconEnd' },
+  ]) {
+    const built = buildFoundation(snapshot), captured = structuredClone(observation), selected = captured.roots[0].children.find(child => child.kind === 'slot')
+    const input = { built, graph: built.graph, source: structuredClone(snapshot), observation: captured, svg: selected.children[0],
+      targets: [{ region: selected, master: built.icons.get('plus') }] }
+    mutate(input)
+    const page = input.graph.addPage('Rejected icon'), before = structuredClone([...input.graph.getAllNodes()])
+    const hook = getTextMeasurer()
+    await assert.rejects(materializeComponent(input.graph, page.id, input.source, input.observation, faces, renderer,
+      built.collection.id, input.targets))
+    assert.deepEqual([...input.graph.getAllNodes()], before)
+    assert.equal(getTextMeasurer(), hook)
+  }
+})
+
+for (const rule of ['outline: 4px solid red', 'filter: opacity(0.5)']) test(`source root effects fail closed: ${rule}`, async () => {
+  const snapshot = source('Save', 'pk-ui.component.button/with-icon')
+  snapshot.css += `\nbutton[data-component="button"] { ${rule}; }`
+  const observation = await observe(snapshot), built = buildFoundation(snapshot)
+  const page = built.graph.addPage('Rejected source effect')
+  const region = observation.roots[0].children.find(child => child.kind === 'slot')
+  const before = structuredClone([...built.graph.getAllNodes()]), hook = getTextMeasurer()
+  await assert.rejects(materializeComponent(built.graph, page.id, snapshot, observation, faces, renderer,
+    built.collection.id, [{ region, master: built.icons.get('plus') }]), /outline|filter/i)
+  assert.deepEqual([...built.graph.getAllNodes()], before)
+  assert.equal(getTextMeasurer(), hook)
+})
+
 test('unsupported native input is explicit and does not leave partial definitions in the caller graph', async () => {
   const snapshot = source(), observation = await observe(snapshot)
   const cases = [
@@ -151,7 +292,7 @@ test('unsupported native input is explicit and does not leave partial definition
     { ...observation, fontFaces: [] },
   ]
   for (const input of cases) {
-    const graph = buildFoundation(snapshot), page = graph.addPage('Rejected')
+    const graph = buildFoundation(snapshot).graph, page = graph.addPage('Rejected')
     const before = structuredClone([...graph.getAllNodes()])
     await assert.rejects(materializeComponent(graph, page.id, snapshot, input, faces, renderer, colorCollection(graph)))
     assert.deepEqual([...graph.getAllNodes()], before)
@@ -161,7 +302,7 @@ test('unsupported native input is explicit and does not leave partial definition
     ['Save', 'pk-ui.component.button/with-icon', {}], ['Save', primary, { fullWidth: true }],
   ]) {
     const unsupported = source(label, id, extra), captured = await observe(unsupported)
-    const graph = buildFoundation(unsupported), page = graph.addPage('Rejected')
+    const graph = buildFoundation(unsupported).graph, page = graph.addPage('Rejected')
     const before = structuredClone([...graph.getAllNodes()])
     await assert.rejects(materializeComponent(graph, page.id, unsupported, captured, faces, renderer, colorCollection(graph)))
     assert.deepEqual([...graph.getAllNodes()], before)
@@ -174,7 +315,7 @@ test('native composition refuses unbound slot groups without flattening or dropp
     const input = structuredClone(observation), root = input.roots[0]
     const slot = { kind: 'slot', name: empty ? 'IconEnd' : 'Content', children: empty ? [] : root.children }
     root.children = empty ? [...root.children, slot] : [slot]
-    const graph = buildFoundation(snapshot), page = graph.addPage('Rejected slot')
+    const graph = buildFoundation(snapshot).graph, page = graph.addPage('Rejected slot')
     const before = structuredClone([...graph.getAllNodes()])
     await assert.rejects(materializeComponent(graph, page.id, snapshot, input, faces, renderer, colorCollection(graph)), /named slots/)
     assert.deepEqual([...graph.getAllNodes()], before)
@@ -185,7 +326,7 @@ test('a mismatched default-headless rendering environment rolls back native cons
   const defaultBrowser = await chromium.launch({ headless: true, args: ['--enable-automation'] })
   try {
     const snapshot = source(), observation = await observe(snapshot, 'light', defaultBrowser)
-    const graph = buildFoundation(snapshot), page = graph.addPage('Rejected font metrics')
+    const graph = buildFoundation(snapshot).graph, page = graph.addPage('Rejected font metrics')
     const before = structuredClone([...graph.getAllNodes()]), measurer = getTextMeasurer()
     await assert.rejects(materializeComponent(graph, page.id, snapshot, observation, faces, renderer, colorCollection(graph)), /rendering environment/)
     assert.deepEqual([...graph.getAllNodes()], before)
@@ -196,7 +337,7 @@ test('a mismatched default-headless rendering environment rolls back native cons
 
 for (const fails of [false, true]) test(`font loading preserves a newer caller measurement hook, failure=${fails}`, async () => {
   const snapshot = source(), observation = await observe(snapshot)
-  const graph = buildFoundation(snapshot), page = graph.addPage('Loading hook ownership')
+  const graph = buildFoundation(snapshot).graph, page = graph.addPage('Loading hook ownership')
   const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
   const entered = Promise.withResolvers(), resume = Promise.withResolvers()
   const initial = () => null, concurrent = () => null
@@ -227,7 +368,7 @@ for (const fails of [false, true]) test(`font loading preserves a newer caller m
 test('zero-advance text requires a working native renderer even when fallback dimensions would match', async () => {
   const snapshot = source('\u0301'), observation = await observe(snapshot)
   assert.equal(observation.roots[0].children[0].bounds.width, 0)
-  const graph = buildFoundation(snapshot), page = graph.addPage('Zero-advance shaping')
+  const graph = buildFoundation(snapshot).graph, page = graph.addPage('Zero-advance shaping')
   const { master } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, colorCollection(graph))
   assert.equal(graph.getChildren(master.id)[0].width, 0, 'a real zero advance remains valid')
   const destroyed = new SkiaRenderer(ck, ck.MakeSurface(100, 50))
@@ -245,7 +386,7 @@ test('unavailable or invalid native measurements reject without layout fallback 
     { width: -1, height: 20 }, { width: 31, height: -1 }, { width: 31, height: 0 },
     { width: '31', height: 20 },
   ]) {
-    const graph = buildFoundation(snapshot), page = graph.addPage('Rejected measurement')
+    const graph = buildFoundation(snapshot).graph, page = graph.addPage('Rejected measurement')
     const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
     const invalid = { loadFonts: () => renderer.loadFonts(), measureTextNode: () => measured }
     await assert.rejects(materializeComponent(graph, page.id, snapshot, observation, faces, invalid, colorCollection(graph)), /native text measurement/)
@@ -265,7 +406,7 @@ test('paint binding refuses ambiguous, stale or derived inputs before graph muta
     input => { input.observation.roots[0].paintSources['background-color'].tokens = [] },
     input => { input.graph.renameMode(input.collectionId, input.graph.variableCollections.get(input.collectionId).defaultModeId, 'other') },
   ]) {
-    const graph = buildFoundation(snapshot), page = graph.addPage('Refused paint')
+    const graph = buildFoundation(snapshot).graph, page = graph.addPage('Refused paint')
     const input = { graph, collectionId: colorCollection(graph), observation: structuredClone(observation) }
     change(input)
     const before = structuredClone({ nodes: [...graph.getAllNodes()], variables: [...graph.variables] })

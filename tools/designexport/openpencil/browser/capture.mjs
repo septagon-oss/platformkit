@@ -102,12 +102,23 @@ export async function captureExample(browser, snapshot, exampleId, {
         'font-feature-settings', 'font-variation-settings', 'line-height', 'letter-spacing',
         'white-space', 'text-align', 'text-transform', 'text-decoration-line',
         'overflow-x', 'overflow-y', 'outline-style', 'outline-width', 'outline-color',
-        'animation-name', 'animation-duration',
+        'animation-name', 'animation-duration', 'filter',
       ]
+      const svgProperties = [
+        'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-opacity', 'stroke-width',
+        'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset',
+        'transform-origin', 'transform-box', 'translate', 'rotate', 'scale', 'zoom',
+        'vector-effect', 'clip', 'clip-path', 'clip-rule', 'mask', 'mask-type',
+        'paint-order', 'shape-rendering', 'color-interpolation', 'color-interpolation-filters',
+        'mix-blend-mode', 'isolation', 'marker-start', 'marker-mid', 'marker-end',
+        'x', 'y', 'width', 'height', 'rx', 'ry', 'cx', 'cy', 'r', 'd',
+      ]
+      const isSVG = node => node.namespaceURI === 'http://www.w3.org/2000/svg'
       const bounds = rect => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
       const style = element => {
         const computed = getComputedStyle(element)
-        return Object.fromEntries(properties.map(name => [name, computed.getPropertyValue(name)]))
+        const names = isSVG(element) ? [...properties, ...svgProperties] : properties
+        return Object.fromEntries(names.map(name => [name, computed.getPropertyValue(name)]))
       }
       function text(range, nodes, property) {
         return {
@@ -185,11 +196,12 @@ export async function captureExample(browser, snapshot, exampleId, {
         if (node.localName === 'svg') out.icon = {
           name: node.getAttribute('data-pk-icon'), canonicalName: node.getAttribute('data-pk-icon-canonical'), svg: node.outerHTML,
         }
-        else out.children = children(node)
+        if (isSVG(node)) out.attributes = Object.fromEntries([...node.attributes].map(attribute => [attribute.name, attribute.value]))
+        out.children = children(node)
         return out
       }
       const roots = children(document.body)
-      const paints = ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color']
+      const paints = ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color', 'fill', 'stroke']
       const values = () => elements.map(node => {
         const computed = getComputedStyle(node)
         return paints.map(paint => computed.getPropertyValue(paint))

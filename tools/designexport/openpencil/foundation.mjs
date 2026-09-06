@@ -215,11 +215,13 @@ export function buildFoundation(snapshot) {
     graph.bindVariable(frame.id, 'fills/0/color', background.id)
     return frame
   })
+  const iconMasters = new Map()
   for (const [index, icon] of [...icons.values()].entries()) {
     const position = { x: 24 + (index % 6) * 64, y: 24 + Math.floor(index / 6) * 64 }
     const master = createIcon(graph, masters, icon, foreground)
+    iconMasters.set(icon.name, master)
     graph.updateNode(master.id, position)
     for (const frame of previews) graph.createInstance(master.id, frame.id, { ...position, name: icon.name })
   }
-  return graph
+  return { graph, collection: graph.variableCollections.get(collection.id), icons: iconMasters }
 }

@@ -1,7 +1,8 @@
 import { parseColor } from '@open-pencil/core/color'
 import { computeAllLayouts, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
-import { bindTextProperties } from './bindings.mjs'
+import { bindComponentProperties } from './bindings.mjs'
 import { loadFonts, validateFonts } from './fonts.mjs'
+import { planIcon } from './icon-composition.mjs'
 
 function requireComponent(condition, message) {
   if (!condition) throw new Error(`Native component: ${message}`)
@@ -55,10 +56,9 @@ function observedPaint(graph, collection, snapshot, observation, root, property)
   return { fills: [fill], boundVariables: { 'fills/0/color': variable.id } }
 }
 
-// Construct a native component from an existing source observation. This first
-// layout boundary is a single row of explicitly bound text. Paint aliases use
-// the caller's native collection; icon/slot replacement and interaction follow.
-export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId) {
+// Construct one observed text row with explicit named SVG slots. The caller
+// supplies exact foundation handles; source names never locate native layers.
+export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets = []) {
   requireComponent(['FRAME', 'CANVAS'].includes(graph.getNode(parentId)?.type), 'existing definition parent required')
   requireComponent(snapshot?.schema === 'platformkit.design-export.v1' && /^[a-f0-9]{64}$/.test(snapshot.sha256) &&
     observation?.sourceSHA === snapshot.sha256, 'observation must identify the selected source snapshot')
@@ -73,6 +73,9 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
     'definition parent variable mode must match the observation')
   requireComponent(observation.roots.length === 1 && observation.roots[0].kind === 'element', 'one component root required')
   const root = observation.roots[0], style = root.style
+  const visibleOutline = !['none', 'hidden'].includes(style['outline-style']) &&
+    pixels(style['outline-width']) > 0 && color(style['outline-color']).a > 0
+  requireComponent(!visibleOutline && style.filter === 'none', 'visible outlines and filters require further native conversion')
   requireComponent(['inline-flex', 'flex'].includes(style.display) && style['flex-direction'] === 'row' &&
     style['flex-wrap'] === 'nowrap' && style['justify-content'] === 'center' && style['align-items'] === 'center',
   'centered, nonwrapping row layout required')
@@ -84,9 +87,22 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
   requireComponent(root.sizing.width === 'auto' && root.sizing.height === 'auto' &&
     ['auto', '0px'].includes(root.sizing['min-width']) && ['auto', '0px'].includes(root.sizing['min-height']) &&
     root.sizing['max-width'] === 'none' && root.sizing['max-height'] === 'none', 'constrained sizing requires parent layout conversion')
-  requireComponent(root.children.length === 1 && root.children[0].kind === 'text',
-    'adjacent text regions, icons, nested elements and named slots require their own native composition mapping')
+  const textRegions = root.children.filter(child => child.kind === 'text')
+  const slots = root.children.filter(child => child.kind === 'slot')
+  requireComponent(textRegions.length === 1 && root.children.length === textRegions.length + slots.length &&
+    Array.isArray(iconTargets) && iconTargets.length === slots.length &&
+    iconTargets.every(target => slots.includes(target?.region)),
+  'one text region and explicit construction handles for named slots required')
   requireComponent(root.children.some(child => Object.hasOwn(child, 'property')), 'explicit source text properties required')
+  const icons = new Map(slots.map(region => {
+    const targets = iconTargets.filter(target => target.region === region)
+    requireComponent(targets.length === 1 && region.children.length === 1, 'one unambiguous icon target per named slot required')
+    const svg = region.children[0]
+    const assets = snapshot.icons.filter(asset => asset.name === svg.icon?.canonicalName)
+    requireComponent(svg.kind === 'element' && svg.tag === 'svg' && assets.length === 1, 'one canonical source SVG required')
+    return [region, planIcon(graph, assets[0], svg, targets[0].master, collection.id,
+      (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))]
+  }))
   requireComponent(style['white-space'] === 'normal' && style['text-transform'] === 'none' &&
     style['text-decoration-line'] === 'none' && style['font-feature-settings'] === 'normal' &&
     style['font-variation-settings'] === 'normal' && style['font-stretch'] === '100%', 'text transformations require further conversion')
@@ -94,7 +110,7 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
   const fontSize = pixels(style['font-size']), lineHeight = pixels(style['line-height'])
   requireComponent(fontSize > 0 && lineHeight > 0, 'positive text metrics required')
   const letterSpacing = style['letter-spacing'] === 'normal' ? 0 : pixels(style['letter-spacing'])
-  const texts = root.children.map(region => {
+  const texts = textRegions.map(region => {
     requireComponent(region.text !== '' && region.text === region.text.replace(/[\t\n\r\f ]+/g, ' ').replace(/^ | $/g, '') &&
       region.rects.length === 1, 'empty, collapsed-whitespace or multiline text needs additional layout semantics')
     requireComponent(region.fonts.length === 1 && region.fonts[0].isCustomFont, 'one actual supplied face per text region required')
@@ -125,7 +141,7 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
     bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
     pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
       schema: snapshot.schema, sha256: snapshot.sha256, exampleId: example.id, componentId: example.componentId,
-      mode: observation.mode, scope: 'text-component-observed-aliases',
+      mode: observation.mode, scope: icons.size ? 'text-and-icon-component-observed-aliases' : 'text-component-observed-aliases',
       environment: observation.environment, viewport: observation.viewport,
       fontFaces: observation.fontFaces, props: example.props,
     }) }],
@@ -139,16 +155,27 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
     await renderer.loadFonts()
     master = graph.createNode('COMPONENT', parentId, masterProps)
     const targets = []
-    for (const { region, face } of texts) {
-      const nativeNode = graph.createNode('TEXT', master.id, {
-        name: region.property ?? 'Text', text: region.text,
-        width: region.bounds.width, height: lineHeight,
-        fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
-        fontSize, lineHeight, letterSpacing, textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
-      })
-      if (Object.hasOwn(region, 'property')) targets.push({ region, nativeNode })
+    for (const region of root.children) {
+      const icon = icons.get(region)
+      let nativeNode
+      if (icon) {
+        nativeNode = graph.createInstance(icon.master.id, master.id, { uniformScaleFactor: icon.scale })
+        for (const { sourceNode, field, variableId } of icon.paints) {
+          const children = graph.getChildren(nativeNode.id).filter(child => child.componentId === sourceNode.id)
+          requireComponent(children.length === 1, 'one exact native vector occurrence required')
+          graph.bindVariable(children[0].id, field, variableId)
+        }
+      } else {
+        const { face } = texts.find(text => text.region === region)
+        nativeNode = graph.createNode('TEXT', master.id, {
+          name: region.property, text: region.text, width: region.bounds.width, height: lineHeight,
+          fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
+          fontSize, lineHeight, letterSpacing, textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
+        })
+      }
+      targets.push({ region, nativeNode })
     }
-    const properties = bindTextProperties(graph, master, example, targets)
+    const properties = bindComponentProperties(graph, master, example, targets)
     // The hook is process-wide: own it only during synchronous native layout,
     // never across font-loading awaits that allow another caller to replace it.
     const previousMeasurer = getTextMeasurer()
@@ -163,6 +190,12 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
     } finally { setTextMeasurer(previousMeasurer) }
     requireComponent(Math.abs(master.width - root.bounds.width) <= 1 / 64 && Math.abs(master.height - root.bounds.height) <= 1 / 64,
       'native geometry differs from the observed rendering environment')
+    for (const { region, nativeNode } of targets.filter(target => target.region.kind === 'slot')) {
+      const expected = region.children[0].bounds
+      requireComponent(['width', 'height', 'x', 'y'].every(field => Math.abs(nativeNode[field] -
+        (expected[field] - (['x', 'y'].includes(field) ? root.bounds[field] : 0))) <= 1 / 64),
+      'native icon geometry differs from the source slot')
+    }
     return { master, properties }
   } catch (error) {
     if (master) graph.deleteNode(master.id)

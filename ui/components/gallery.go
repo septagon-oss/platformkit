@@ -69,6 +69,8 @@ func Gallery() []Example {
 			ButtonProps{ComponentProps: ComponentProps{Disabled: true}, HTMXProps: HTMXProps{Get: "/admin", Boost: true}, Label: "Unavailable", Href: "/admin"}, ButtonSlots{}, ButtonWithSlots),
 		ExampleWithSlots(info("pk-ui.component.button/with-icon", "Action", "Button / with icon"),
 			ButtonProps{Label: "Iconed", Variant: "primary", Tone: "neutral", Size: "md"}, ButtonSlots{IconEnd: []g.Node{Icon(IconProps{Name: "plus", Size: "md", Tone: "neutral"})}}, ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/with-leading-icon", "Action", "Button / leading icon"),
+			ButtonProps{Label: "Add item", Variant: "primary", Tone: "neutral", Size: "md"}, ButtonSlots{IconStart: []g.Node{Icon(IconProps{Name: "plus", Size: "sm", Tone: "neutral"})}}, ButtonWithSlots),
 
 		ExampleWithSlots(info("pk-ui.component.badge/default", "Status", "Badge / default"), BadgeProps{Label: "Default"}, BadgeSlots{}, BadgeWithSlots),
 		ExampleWithSlots(info("pk-ui.component.badge/brand-dot", "Status", "Badge / brand dot"),

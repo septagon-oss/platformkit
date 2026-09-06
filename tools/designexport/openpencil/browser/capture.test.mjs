@@ -240,6 +240,58 @@ test('browser capture retains source-owned canonical icon identities for aliases
   }
 })
 
+test('browser capture retains actual Button SVG topology, attributes and descendant paint dependencies', async () => {
+  for (const mode of ['light', 'dark']) {
+    const result = await captureExample(browser, source, withIcon, { mode })
+    const svg = observed(result.roots).find(node => node.icon)
+    assert.deepEqual(observed([svg]).map(node => node.tag), ['svg', 'path'])
+    assert.equal(svg.attributes.fill, 'currentColor')
+    assert.equal(svg.attributes['aria-hidden'], 'true')
+    assert.equal(svg.attributes['data-pk-icon-canonical'], 'plus')
+    const path = svg.children[0]
+    assert.deepEqual(path.attributes, { d: source.icons.find(icon => icon.name === 'plus').svg.match(/<path d="([^"]+)"/)[1] })
+    assert.equal(path.style.fill, svg.style.color)
+    assert.equal(path.style.stroke, 'none')
+    assert.ok(path.paintSources.fill.directCandidate)
+    assert.deepEqual(path.paintSources.fill, svg.paintSources.color)
+    assert.ok(observed([svg]).every(node => !Object.hasOwn(node, 'observationId')))
+  }
+})
+
+test('browser capture retains CSS-altered SVG evidence despite unchanged canonical metadata', async () => {
+  const original = observed((await captureExample(browser, source, withIcon)).roots).find(node => node.icon)
+  const snapshot = structuredClone(source)
+  snapshot.css += `
+    svg[data-pk-icon] { fill: #13579b; opacity: .6; transform: translateX(3px); }
+    svg[data-pk-icon] > path {
+      fill: var(--pk-color-text-primary); fill-opacity: .7; fill-rule: evenodd;
+      stroke: color-mix(in srgb, var(--pk-color-accent-on) 50%, #010203); stroke-opacity: .8;
+      stroke-width: 2px; stroke-linecap: round; stroke-linejoin: bevel; stroke-miterlimit: 5;
+      stroke-dasharray: 2px 3px; stroke-dashoffset: 1px; vector-effect: non-scaling-stroke;
+      transform: scale(.5); transform-origin: 2px 3px; transform-box: fill-box;
+      d: path("M0 0H20V20Z"); clip-path: inset(1px); filter: blur(1px); visibility: hidden;
+    }`
+  const result = await captureExample(browser, snapshot, withIcon)
+  const svg = observed(result.roots).find(node => node.icon), path = svg.children[0]
+  assert.equal(svg.icon.canonicalName, 'plus')
+  assert.deepEqual(svg.icon, original.icon)
+  assert.equal(svg.style.fill, 'rgb(19, 87, 155)')
+  assert.deepEqual(svg.paintSources.fill, { tokens: [], directCandidate: null })
+  assert.equal(svg.style.opacity, '0.6')
+  assert.equal(svg.style.transform, 'matrix(1, 0, 0, 1, 3, 0)')
+  assert.equal(path.paintSources.fill.directCandidate, '--pk-color-text-primary')
+  assert.deepEqual(path.paintSources.stroke, { tokens: ['--pk-color-accent-on'], directCandidate: null })
+  for (const [field, expected] of Object.entries({
+    'fill-opacity': '0.7', 'fill-rule': 'evenodd', 'stroke-opacity': '0.8', 'stroke-width': '2px',
+    'stroke-linecap': 'round', 'stroke-linejoin': 'bevel', 'stroke-miterlimit': '5',
+    'stroke-dasharray': '2px, 3px', 'stroke-dashoffset': '1px', 'vector-effect': 'non-scaling-stroke',
+    transform: 'matrix(0.5, 0, 0, 0.5, 0, 0)', 'transform-origin': '2px 3px', 'transform-box': 'fill-box',
+    'clip-path': 'inset(1px)', filter: 'blur(1px)', visibility: 'hidden',
+  })) assert.equal(path.style[field], expected, field)
+  assert.match(path.style.d, /^path\(/)
+  assert.notEqual(path.style.d, `path("${path.attributes.d}")`)
+})
+
 test('browser capture retains named slot boundaries without changing source layout or paints', async () => {
   const result = await captureExample(browser, source, withIcon, { fonts: faces })
   const button = result.roots[0], slot = button.children.find(node => node.kind === 'slot')

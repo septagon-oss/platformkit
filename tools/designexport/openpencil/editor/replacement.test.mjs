@@ -74,7 +74,7 @@ test('browser file-input replacement survives public editing, history and two do
   const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
     cwd: new URL('../../../../', import.meta.url), encoding: 'utf8',
   }))
-  const graph = buildFoundation(source), pageNode = graph.addPage('Editor replacement')
+  const graph = buildFoundation(source).graph, pageNode = graph.addPage('Editor replacement')
   const plus = masterOf(graph, 'plus')
   const role = [...graph.variables.values()].find(variable => variable.name === '--pk-color-accent-on')
   const master = graph.createNode('COMPONENT', pageNode.id, {

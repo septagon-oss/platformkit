@@ -33,7 +33,9 @@ strings preserve the CSS fallback stacks; they are not installed fonts, a
 typography scale or native text styles. There are no page prototypes in this file.
 
 [foundation.mjs](foundation.mjs) also accepts a snapshot from a product's existing
-`ui.Export` call. It does not register another palette or icon catalog. Token
+`ui.Export` call and returns `{ graph, collection, icons }`. The collection and
+icon-name map contain the exact native construction handles for later adapter
+composition, not another palette or icon catalog. Token
 names and canonical icon names retain source identity; native file-local GUIDs
 may change on import. Source hash, scope and attribution travel on the Foundation
 frame, and each master carries its glyph provenance. These records describe
@@ -121,6 +123,9 @@ remain authoritative; nested slot names alone do not establish component ownersh
 Icons separately expose their requested name and source-resolved
 `data-pk-icon-canonical` identity. Capture retains both, including aliases and
 fallbacks; an adapter must still verify the canonical asset and its provenance.
+SVG observations retain ordered children, exact attributes and computed geometry,
+fill/stroke dependencies and presentation, so canonical markup cannot conceal
+CSS changes to paths, paint or effects.
 
 Paint observations probe the existing root color variables with two distinct
 values. This distinguishes tested direct aliases and mixed paints from unrelated,
@@ -129,17 +134,20 @@ not a binding guarantee. These are observed dependencies, not a general CSS
 expression parser or proof for arbitrary functions and locally overridden themes.
 They must not be used to advertise universal token-binding support.
 
-## Construct the experimental text component
+## Construct an experimental native component
 
 [materializeComponent](components.mjs) takes an existing native graph and
 definition-parent ID, its source snapshot and observation, exact supplied font
 faces, a live Skia renderer, and an explicit native color-collection ID. The
-parent's effective native mode must match the observation. It returns a master and its
-property definitions. Create linked instances through the existing graph API;
-this helper does not publish a library or add another component registry.
+optional final argument supplies `{ region, master }` pairs for exact observed
+slot regions and native icon masters. The parent's effective native mode must
+match the observation. The result contains a master and property definitions;
+create linked instances through the existing graph API. This is an OpenPencil
+adapter API, not the unfinished shared provider interface or a library publisher.
 
 The current supported input is one explicitly bound, nonempty text region in a
-centered, unconstrained, nonwrapping horizontal flex container. Construction
+centered, unconstrained, nonwrapping horizontal flex container, optionally with
+named slots containing one canonical SVG each. Construction
 preserves observed solid paints, corner radii and padding including transparent
 border insets. Observed direct token aliases become native bindings only when
 the selected collection's identities and values match every source theme.
@@ -149,25 +157,30 @@ Construction requires successful native text measurement and refuses outer
 geometry differences larger than 1/64 CSS pixel. Rejection removes the newly
 constructed nodes and restores the caller's measurement hook.
 
-[bindTextProperties](bindings.mjs) binds exact constructed text handles to
-unconstrained source string properties, after preflighting every target. It uses
-native definitions and references, not names or plugin metadata to drive behavior.
+[bindComponentProperties](bindings.mjs) preflights exact constructed handles before
+binding source strings to native `TEXT` properties and the supported single-icon
+occurrences to `INSTANCE_SWAP`. This restricted projection does not redefine Go
+content slots as single replacements. Native definitions and references drive behavior.
 Provenance records the source invocation, font identities, viewport and observed
 environment; it is not an authentication or edited-document freshness check.
 
-Browser tests compare the actual Go Button in both themes with supplied IBM Plex
-Sans 600 and explicit `--font-render-hinting=none`. Label edits, undo/redo and two
-FIG round trips retain native links and match independently rendered source
-dimensions within 1/64 pixel. The precision correction preserves CanvasKit's
+Browser tests compare the actual Go Button, including 16px leading and 20px trailing
+icons, in both themes with supplied IBM Plex Sans 600 and explicit
+`--font-render-hinting=none`. Label edits, icon swaps, undo/redo and two FIG round
+trips retain native links and match source dimensions and icon placement within
+1/64 pixel. Fresh native derived-layout records preserve sibling positions after
+text grows; edits after reopening must still reflow. The precision correction preserves CanvasKit's
 shaped advances; it does not reproduce every platform's font hinting. These are
 geometry and persistence checks, not an accessibility audit or a complete source
 pixel comparison. Separate assertions change palette values and verify native
 painted pixels after each save. Page-mode serialization and imported instance
 index corrections keep the native mode and live links from silently disappearing.
 
-Icons inside source component conversion, slots, visible
-borders, wrapping, constrained widths and empty or collapsed-whitespace inputs
-remain unsupported. Native text properties still accept empty values; preserving
+Icon composition verifies canonical flat path/circle geometry, attributes and
+observed paints; grouped, transformed or potentially clipped SVGs are refused.
+Empty/multiple or arbitrary nested slot content, visible borders/outlines, filters,
+wrapping, constrained widths and empty or collapsed-whitespace inputs remain
+unsupported. Native text properties still accept empty values; preserving
 their identity does not prove whitespace-only flex layout after an edit. Do not
 treat this development boundary as a complete editable component library.
 
@@ -188,7 +201,8 @@ Literal-only vectors retain their existing inheritance. Swapped bindings become
 explicit native overrides: token value changes remain live, but later source-role
 reassignment does not automatically retarget those overrides.
 This does not establish scaling for text, effects, dashed vectors, arbitrary
-nested masters, editor drag handles or source-owned icon-slot replacement.
+nested masters or editor drag handles. The source-conversion checks above cover
+only their stated icon-slot subset, not generic nested component replacement.
 
 [Synchronization](sync-correction.mjs) plans and validates a projected result before
 applying changes through native graph APIs. Planning allocates no native IDs and

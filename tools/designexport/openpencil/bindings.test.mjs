@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import { SceneGraph, generateId } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
-import { bindTextProperties } from './bindings.mjs'
+import { bindComponentProperties } from './bindings.mjs'
 
 const snapshot = JSON.parse(execFileSync('go', [
   'run', './tools/designexport', '--example', 'pk-ui.component.button/primary',
@@ -24,7 +24,7 @@ test('source property binding uses the exact constructed text handle through edi
   let { graph, master, lookalike, targets } = fixture()
   const beforeExample = structuredClone(example)
   const beforeRegion = structuredClone(targets[0].region)
-  const definitions = bindTextProperties(graph, master, example, targets)
+  const definitions = bindComponentProperties(graph, master, example, targets)
   assert.equal(definitions.length, 1)
   const definition = definitions[0]
   assert.equal(definition.name, 'label')
@@ -78,6 +78,46 @@ test('source property binding uses the exact constructed text handle through edi
   assert.deepEqual(targets[0].region, beforeRegion)
 })
 
+test('one binding pass preflights typed text and exact named slots before any definitions', () => {
+  for (const invalid of [null, 'case', 'unsupported', 'duplicate', 'type', 'nested', 'copy',
+    'multiple', 'untrusted', 'empty', 'not-svg', 'name', 'instance-link']) {
+    const { graph, master, targets } = fixture(), source = structuredClone(example)
+    const glyph = graph.createNode('COMPONENT', graph.getPages()[0].id, { name: 'Not a slot name', width: 24, height: 24 })
+    const nativeNode = graph.createInstance(glyph.id, master.id)
+    const region = { kind: 'slot', name: 'IconEnd', children: [{ kind: 'element', tag: 'svg' }] }
+    const target = { region, nativeNode }
+    targets.push(target)
+    const declaration = source.slots.find(slot => slot.name === region.name)
+    if (invalid === 'case') region.name = 'iconEnd'
+    if (invalid === 'unsupported') declaration.supported = false
+    if (invalid === 'duplicate') source.slots.push({ ...declaration })
+    if (invalid === 'type') declaration.goType = 'string'
+    if (invalid === 'multiple') declaration.multiple = false
+    if (invalid === 'untrusted') declaration.trustedOnly = false
+    if (invalid === 'empty') region.children = []
+    if (invalid === 'not-svg') region.children[0].tag = 'span'
+    if (invalid === 'name') target.region = Object.assign(Object.create({ name: 'IconEnd' }), { kind: 'slot', children: region.children })
+    if (invalid === 'instance-link') graph.updateNode(nativeNode.id, { componentId: graph.createInstance(glyph.id, master.id).id })
+    if (invalid === 'copy') target.nativeNode = { ...nativeNode }
+    if (invalid === 'nested') {
+      const other = graph.createInstance(glyph.id, master.id)
+      graph.reparentNode(nativeNode.id, other.id)
+    }
+    const before = structuredClone([...graph.getAllNodes()])
+    if (invalid) {
+      assert.throws(() => bindComponentProperties(graph, master, source, targets))
+      assert.deepEqual([...graph.getAllNodes()], before, invalid)
+      continue
+    }
+    const definitions = bindComponentProperties(graph, master, source, targets)
+    assert.deepEqual(definitions.map(({ name, type, defaultValue }) => ({ name, type, defaultValue })), [
+      { name: 'label', type: 'TEXT', defaultValue: 'Save' },
+      { name: 'IconEnd', type: 'INSTANCE_SWAP', defaultValue: glyph.id },
+    ])
+    assert.deepEqual(nativeNode.componentPropertyReferences, [{ propertyId: definitions[1].id, field: 'INSTANCE_SWAP' }])
+  }
+})
+
 test('binding retains exact empty, whitespace and escaped labels from fresh Go projections', () => {
   for (const value of ['', ' ', '\u00a0', 'Save & <tag>"<!--/pk-text:label-->']) {
     const projected = JSON.parse(execFileSync('go', [
@@ -86,7 +126,7 @@ test('binding retains exact empty, whitespace and escaped labels from fresh Go p
     assert.equal(projected.props.label, value)
     const before = structuredClone(projected)
     const input = fixture(value)
-    const definitions = bindTextProperties(input.graph, input.master, projected, input.targets)
+    const definitions = bindComponentProperties(input.graph, input.master, projected, input.targets)
     assert.equal(definitions[0].defaultValue, value)
     assert.equal(input.targets[0].nativeNode.text, value)
     assert.equal(input.targets[0].region.text, value)
@@ -145,7 +185,7 @@ test('binding preflights all identities, types, values and ownership without mut
     const before = structuredClone([...input.graph.getAllNodes()])
     const beforeExample = structuredClone(input.example)
     const beforeRegions = structuredClone(input.targets.map(target => target.region))
-    assert.throws(() => bindTextProperties(input.graph, input.master, input.example, input.targets))
+    assert.throws(() => bindComponentProperties(input.graph, input.master, input.example, input.targets))
     assert.deepEqual([...input.graph.getAllNodes()], before, 'no partial definitions, references or value changes')
     assert.deepEqual(input.example, beforeExample)
     assert.deepEqual(input.targets.map(target => target.region), beforeRegions)
@@ -166,7 +206,7 @@ test('binding requires own source fields and object string schemas', async t => 
     const props = input.example.props
     const properties = input.example.schema.properties
     const descriptor = properties.label
-    assert.throws(() => bindTextProperties(input.graph, input.master, input.example, input.targets), /source.*property/)
+    assert.throws(() => bindComponentProperties(input.graph, input.master, input.example, input.targets), /source.*property/)
     assert.deepEqual([...input.graph.getAllNodes()], before)
     assert.equal(input.example.props, props)
     assert.equal(input.example.schema.properties, properties)
@@ -180,7 +220,7 @@ test('binding supports distinct source string fields without aliasing returned d
   custom.props.caption = 'Save'
   custom.schema.properties.caption = { type: 'string', description: 'Independent text with the same visible value' }
   input.targets.push({ region: { kind: 'text', property: 'caption', text: 'Save' }, nativeNode: input.lookalike })
-  const definitions = bindTextProperties(input.graph, input.master, custom, input.targets)
+  const definitions = bindComponentProperties(input.graph, input.master, custom, input.targets)
   assert.deepEqual(definitions.map(item => item.name), ['label', 'caption'])
   assert.notEqual(definitions[0].id, definitions[1].id)
   definitions[0].name = 'Caller mutation'
@@ -211,7 +251,7 @@ test('binding avoids imported property IDs before native edits and FIG serializa
   const nativeNode = graph.createNode('TEXT', master.id, { text: 'Save', width: 40, height: 20 })
   const [nextSession, nextLocal] = generateId().split(':')
   assert.ok(reserved.includes(`${nextSession}:${Number(nextLocal) + 1}`), 'fixture would collide with the next allocation')
-  const [definition] = bindTextProperties(graph, master, example, [{
+  const [definition] = bindComponentProperties(graph, master, example, [{
     region: { kind: 'text', property: 'label', text: 'Save' }, nativeNode,
   }])
   const instance = graph.createInstance(master.id, page.id, { name: 'Edited fresh instance' })

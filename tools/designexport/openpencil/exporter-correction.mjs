@@ -144,6 +144,30 @@ function serializeTextOverrides(context, instance, counter) {
   return result;
 }
 
+function serializeDerivedLayout(context, instance, counter) {
+  const result = [];
+  function visit(parent, seen) {
+    if (seen.has(parent.id)) throw new Error('Cyclic native derived-layout subtree');
+    const next = new Set(seen).add(parent.id);
+    for (const id of parent.childIds) {
+      const target = context.graph.getNode(id);
+      if (!target || target.parentId !== parent.id) throw new Error('Missing native derived-layout child');
+      if (parent.layoutMode !== 'NONE' && target.layoutPositioning !== 'ABSOLUTE' && target.visible) {
+        const size = { x: target.width, y: target.height };
+        const transform = context.computeExportTransform(target);
+        const values = [size.x, size.y, ...['m00', 'm01', 'm02', 'm10', 'm11', 'm12'].map(key => transform[key])];
+        if (size.x < 0 || size.y < 0 || !values.every(value => Number.isFinite(value) && Number.isFinite(Math.fround(value)))) {
+          throw new Error('Native derived layout exceeds finite FIG geometry');
+        }
+        result.push({ guidPath: nativeOverridePath(context, instance, target, counter), size, transform });
+      }
+      visit(target, next);
+    }
+  }
+  visit(instance, new Set());
+  return result;
+}
+
 function serializePaintOverrides(context, instance, counter) {
   const result = [];
   const nativePaint = paint => {
@@ -221,6 +245,16 @@ function mergeTextOverrides(symbolOverrides, overrides) {
     'if (node.source.fig.componentPropAssignments.length > 0) nc.componentPropAssignments =',
     'if (!node.source.editedFields?.includes("componentPropertyAssignments") && ' +
     'node.source.fig.componentPropAssignments.length > 0) nc.componentPropAssignments =')
+  source = replaceOnce(source,
+    '\tif (node.source.fig.derivedSymbolDataLayoutVersion != null) nc.derivedSymbolDataLayoutVersion = node.source.fig.derivedSymbolDataLayoutVersion;',
+    String.raw`
+  if (node.source.fig.derivedSymbolDataLayoutVersion != null) nc.derivedSymbolDataLayoutVersion = node.source.fig.derivedSymbolDataLayoutVersion;
+  const layout = serializeDerivedLayout(context, node, localIdCounter);
+  if (layout.length) {
+    const derived = nc.derivedSymbolData ?? [];
+    mergeTextOverrides(derived, layout);
+    nc.derivedSymbolData = derived;
+  }`)
   source = replaceOnce(source,
     'function resolveTextAutoResize(node, graph) {\n\tif (node.source.id) return node.textAutoResize;',
     'function resolveTextAutoResize(node, graph) {\n' +

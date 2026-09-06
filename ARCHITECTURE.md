@@ -105,8 +105,8 @@ supported `Node` or `[]Node` slot replacements produce another bound example;
 slot nodes are trusted Go capabilities, not user-supplied markup. Callbacks
 and compound slot data are described but are not portable replacement inputs.
 Examples sharing a component identity must agree on property editability,
-the property schema and every named slot declaration; field order and example
-content do not change that interface. Navigation tabs, panel tabs and modal
+the property schema and every named slot declaration; slot declaration order and
+example content do not change that interface. Navigation tabs, panel tabs and modal
 helpers retain distinct contract identities even when grouped together in the
 gallery. Alert and EmptyState expose their existing typed slot constructors to
 consumers, so their gallery examples do not require private rendering adapters.
@@ -138,9 +138,10 @@ Browser observations reuse the exported HTML and CSS rather than reimplementing
 Go components. Source-owned text comments identify exact property regions without
 adding layout elements. Observations and supplied-font checks are converter inputs,
 not proof of native component editing or slot replacement. Experimental native
-construction now binds one observed text region to its source string property;
-its guide distinguishes tested geometry and persistence from the unfinished
-component library and interactive editor.
+construction binds one observed text region and explicitly supplied single-SVG
+slot occurrences to native properties. This is a restricted OpenPencil capability,
+not the common provider interface. Its guide distinguishes tested geometry and
+persistence from the unfinished component library and product prototype.
 Native tooling and tests have their own reviewed source budgets, separate from
 the application's browser controllers.
 

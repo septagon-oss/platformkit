@@ -121,7 +121,11 @@ test('fresh foundation retains tokens, linked icons, provenance and rendered col
   prepared.children[0].properties.vectorNetwork.vertices[0].x += 1
   assert.deepEqual(prepareIcon(snapshot.icons[0]), pristine, 'prepared geometry is deterministic and independently owned')
   assert.throws(() => prepareIcon({ ...snapshot.icons[0], name: '' }), /icon identity/)
-  let graph = buildFoundation(snapshot)
+  const built = buildFoundation(snapshot)
+  let graph = built.graph
+  assert.equal(built.collection, graph.variableCollections.get(built.collection.id))
+  assert.deepEqual([...built.icons.keys()], snapshot.icons.map(icon => icon.name))
+  assert.ok([...built.icons.values()].every(master => graph.getNode(master.id) === master && master.type === 'COMPONENT'))
   assert.deepEqual(snapshot, before)
   const baseline = new Map()
   for (let cycle = 0; cycle < 3; cycle++) {
@@ -146,7 +150,7 @@ test('native foreground follows changed tokens while literal paints remain indep
   const changed = structuredClone(snapshot)
   const token = changed.themes[1].tokens.find(candidate => candidate.name === '--pk-color-text-primary')
   token.value = '#123456'
-  const graph = buildFoundation(changed)
+  const graph = buildFoundation(changed).graph
   const icon = named(graph, 'sun', named(graph, 'dark'))
   assert.deepEqual(opaqueColors(await pixels(graph, icon)), ['18,52,86'], 'changed dark Sun')
   // Keep the multi-shape paint regression independent of the catalog's Sun,
@@ -158,7 +162,7 @@ test('native foreground follows changed tokens while literal paints remain indep
     source: 'platformkit/native-conformance-fixture', license: 'Apache-2.0',
   }
   changed.icons.push(fixture)
-  let mixed = buildFoundation(changed)
+  let mixed = buildFoundation(changed).graph
   const baseline = new Map()
   for (let cycle = 0; cycle < 3; cycle++) {
     const master = named(mixed, fixture.name, named(mixed, 'Icon masters'))
@@ -214,7 +218,7 @@ test('malformed foundation inputs are refused without changing their caller-owne
     const invalid = structuredClone(snapshot)
     mutate(invalid)
     const before = structuredClone(invalid)
-    assert.throws(() => buildFoundation(invalid), error)
+    assert.throws(() => buildFoundation(invalid).graph, error)
     assert.deepEqual(invalid, before)
   }
 })
