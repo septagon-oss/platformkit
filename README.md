@@ -97,6 +97,25 @@ optional stylesheet additions. A product uses that same API with its own
 component catalog. Core retains the `pk-ui.component.*` identities as stable
 component names, not references to additional repositories.
 
+To inspect one existing invocation, pass its exact exported example ID. Add
+`--props` to read a property patch from standard input:
+
+```sh
+go run ./tools/designexport --example pk-ui.component.button/primary
+printf '%s\n' '{"label":"Create album","loading":true}' |
+  go run ./tools/designexport --example pk-ui.component.button/primary --props
+```
+
+The result uses the same snapshot schema with one example and the complete
+stylesheet, themes and icons. Its hash addresses that projection. The patch
+passes through [Example.WithProps](ui/components/example.go): exact public field
+names and types, no duplicate keys, unknown fields, internal transport properties
+or trailing JSON. Input is limited to 1 MiB. Helpers without typed properties
+can be selected but cannot be patched. Without `--props`, the command never
+reads standard input. This changes only the in-memory invocation; it does not
+edit source, create a runtime resource, execute an interaction or deploy anything.
+Trusted Go slots still use `WithSlot`; they are not a JSON page language.
+
 The snapshot is adapter input, not a `.fig` file, editable library or prototype.
 [OpenPencil tooling](tools/designexport/openpencil/README.md) converts its tokens
 and icons into native variables and linked icon components in a `.fig` file.

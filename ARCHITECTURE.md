@@ -99,6 +99,9 @@ the snapshot and separately prove native editing, sizing and save/reopen
 behavior; the snapshot itself is neither another registry nor a JSON runtime
 engine for constructing pages. Existing `pk-ui.component.*` identities remain
 stable without restoring the former repository layout.
+The export CLI can select an existing example and apply `Example.WithProps`
+before calling `ui.Export`. This supplies source-owned rendered variations for
+adapter comparison without reconstructing component behavior in another language.
 
 [tools/designexport/openpencil](tools/designexport/openpencil/) owns native
 adapter tooling, not another component catalog. Its version- and source-checked
