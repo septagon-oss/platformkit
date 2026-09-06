@@ -181,6 +181,12 @@ File-level references and strict rendered pixels are checked independently of th
 importer. Replacing locally edited descendants is refused before mutation because
 subtree history is unfinished. Stroke caps and joins survive serialization;
 conflicting styles, unsupported scaled masters and nonrepresentable geometry are refused.
+For flat vector replacements, consistent source-occurrence color-variable mappings
+also survive history and two saves. Correspondence uses native variable identities,
+not token names or vector positions; ambiguous, partial or missing roles are refused.
+Literal-only vectors retain their existing inheritance. Swapped bindings become
+explicit native overrides: token value changes remain live, but later source-role
+reassignment does not automatically retarget those overrides.
 This does not establish scaling for text, effects, dashed vectors, arbitrary
 nested masters, editor drag handles or source-owned icon-slot replacement.
 
@@ -251,7 +257,8 @@ PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18089 node --import ./register.mjs -
 The [editor check](editor/replacement.test.mjs) refuses stale build inputs before
 opening disposable documents. It uses the real property picker, keyboard history,
 parse/export workers and two downloaded FIG saves in fresh browser contexts.
-Master/sibling geometry, paints, links and occurrence references are checked.
+Source-owned icon color bindings, master/sibling geometry, fallback paints, links
+and occurrence references are checked.
 Chromium uses software WebGL and its file-input/download fallback; native OS
 pickers, hardware GPUs and a full accessibility audit remain unverified.
 No document, WebGPU assets or product fonts are packaged; PWA registration is disabled.

@@ -104,6 +104,54 @@ function syncRemapOverrides(overrides, identities, copiedSource = false) {
   }))
 }
 
+function syncPaintRoles(nodes, target) {
+  const view = syncReadView(nodes), parent = nodes.get(target.parentId)
+  if (!parent || ['CANVAS', 'COMPONENT', 'COMPONENT_SET'].includes(parent.type)) return new Map()
+  const sourceParent = syncSourceOccurrence(nodes, parent)
+  if (!sourceParent) return new Map()
+  const owner = chain(view, parent, 'parentId').find(node => node.type === 'INSTANCE')
+  const occurrence = sourceChild(view, sourceParent, target, owner?.overrides ?? {})
+  if (occurrence.type !== 'INSTANCE') return new Map()
+  const canonical = chain(view, occurrence, 'componentId').at(-1)
+  const pairs = sourceChildren(view, canonical, occurrence, occurrence.overrides)
+  const roles = new Map()
+  for (const [id, source] of pairs) {
+    const effective = nodes.get(id)
+    for (const field of new Set([...Object.keys(source.boundVariables), ...Object.keys(effective.boundVariables)])) {
+      if (!/^(fills|strokes)\/\d+\/color$/.test(field)) continue
+      const from = source.boundVariables[field], to = effective.boundVariables[field]
+      if (!from || !to || roles.has(from) && roles.get(from) !== to) {
+        throw new Error('Ambiguous or partial native paint role correspondence')
+      }
+      roles.set(from, to)
+    }
+  }
+  return new Map([...roles].filter(([from, to]) => from !== to))
+}
+
+function syncRoleBindings(source, roles) {
+  return Object.fromEntries(Object.entries(source.boundVariables).map(([field, variable]) =>
+    [field, /^(fills|strokes)\/\d+\/color$/.test(field) ? roles.get(variable) ?? variable : variable]))
+}
+
+function syncApplyPaintRoles(nodes, instance, roles) {
+  if (!roles.size) return
+  const view = syncReadView(nodes), used = new Set(), overrides = { ...instance.overrides }
+  for (const child of view.getChildren(instance.id)) {
+    const source = chain(view, child, 'componentId').at(-1)
+    if (source.type !== 'VECTOR' || source.childIds.length) throw new Error('Native paint roles require flat vector correspondence')
+    const matches = Object.entries(source.boundVariables).filter(([field, variable]) =>
+      /^(fills|strokes)\/\d+\/color$/.test(field) && roles.has(variable))
+    if (!matches.length) continue
+    const boundVariables = syncRoleBindings(source, roles)
+    for (const [, variable] of matches) used.add(variable)
+    nodes.set(child.id, { ...child, boundVariables })
+    overrides[`${child.id}:boundVariables`] = true
+  }
+  if ([...roles.keys()].some(variable => !used.has(variable))) throw new Error('Missing native replacement paint role')
+  nodes.set(instance.id, { ...instance, overrides })
+}
+
 function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodeParents, replacementId = null) {
   const component = previousNodes.get(componentId)
   if (component?.type !== 'COMPONENT') return null
@@ -129,6 +177,7 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
   }
   let serial = 0
   const originalScales = new Map(replacement ? uniformScalePlan(syncReadView(previousNodes), replacement)?.updates ?? [] : [])
+  const paintRoles = replacement ? syncPaintRoles(previousNodes, replacement) : new Map()
   function temporaryId() {
     let id
     do { id = `native-sync:${serial++}` } while (nodes.has(id) || previousNodes.has(id))
@@ -142,10 +191,13 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
       const parent = previousNodes.get(node.parentId)
       sourceChildren(syncReadView(previousNodes), chain(syncReadView(previousNodes), parent, 'componentId').at(-1), parent, parent.overrides)
     }
-    const expected = replacement && { ...chain(syncReadView(previousNodes), node, 'componentId').at(-1), ...originalScales.get(id) }
+    const canonical = replacement && chain(syncReadView(previousNodes), node, 'componentId').at(-1)
+    const expected = replacement && { ...canonical, ...originalScales.get(id), boundVariables: syncRoleBindings(canonical, paintRoles) }
+    const derivedPaint = field => paintRoles.size && ['fills', 'strokes', 'boundVariables'].includes(field) &&
+      JSON.stringify(node[field]) === JSON.stringify(expected[field])
     const edited = replacement && node.source.editedFields.some(field => JSON.stringify(node[field]) !== JSON.stringify(expected[field]))
     if (replacement && (edited || chain(syncReadView(previousNodes), replacement, 'parentId').some(owner =>
-      Object.keys(owner.overrides).some(key => key.startsWith(`${id}:`))))) {
+      Object.keys(owner.overrides).some(key => key.startsWith(`${id}:`) && !derivedPaint(key.slice(id.length + 1)))))) {
       throw new Error('Native replacement of edited descendants requires subtree history')
     }
     for (const child of node.childIds) {
@@ -232,6 +284,7 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
       ![...removed].some(removedId => key.startsWith(`${removedId}:`))))
     nodes.set(id, { ...node, overrides })
   }
+  if (replacement) syncApplyPaintRoles(nodes, nodes.get(replacementId), paintRoles)
   for (const [id, changes] of planDerivedInstanceScales(nodes, previousNodes, affected)) {
     if (!nodes.has(id)) throw new Error('Derived scale targets a missing projected node')
     nodes.set(id, { ...nodes.get(id), ...structuredClone(changes) })
@@ -319,6 +372,7 @@ export function correctSyncGraph(source, replace) {
   const syncEnd = source.indexOf('function detachInstance(', syncStart)
   if (swapStart < 0 || syncStart < swapStart || syncEnd < 0) throw new Error('Native sync instance anchor changed')
   const helpers = [syncReadView, syncSourceOccurrence, syncReconciliation, syncProperties, syncNestedOverrides, syncRemapOverrides,
+    syncPaintRoles, syncRoleBindings, syncApplyPaintRoles,
     planNativeSync, applyNativeSync, syncInstances, swapInstanceComponent].map(fn => fn.toString()).join('\n')
   return replace(source, source.slice(swapStart, syncEnd),
     `${lineageHelpers}\nconst SYNC_CHILD_PROPS = ${fieldList};\n${helpers}\n`)

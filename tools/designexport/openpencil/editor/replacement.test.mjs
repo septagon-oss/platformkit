@@ -76,6 +76,7 @@ test('browser file-input replacement survives public editing, history and two do
   }))
   const graph = buildFoundation(source), pageNode = graph.addPage('Editor replacement')
   const plus = masterOf(graph, 'plus')
+  const role = [...graph.variables.values()].find(variable => variable.name === '--pk-color-accent-on')
   const master = graph.createNode('COMPONENT', pageNode.id, {
     name: 'Replacement owner', x: 20, y: 20, width: 64, height: 32,
     componentPropertyDefinitions: [
@@ -84,8 +85,11 @@ test('browser file-input replacement survives public editing, history and two do
     ],
   })
   for (const [propertyId, size, x] of [['91:1', 20, 0], ['91:2', 16, 32]]) {
-    graph.createInstance(plus.id, master.id, { uniformScaleFactor: size / 24, x,
+    const occurrence = graph.createInstance(plus.id, master.id, { uniformScaleFactor: size / 24, x,
       componentPropertyReferences: [{ propertyId, field: 'INSTANCE_SWAP' }] })
+    if (propertyId === '91:1') for (const vector of graph.getChildren(occurrence.id)) {
+      for (const field of Object.keys(vector.boundVariables)) graph.bindVariable(vector.id, field, role.id)
+    }
   }
   graph.createInstance(master.id, pageNode.id, { name: 'Edited instance', x: 150, y: 20 })
   graph.createInstance(master.id, pageNode.id, { name: 'Untouched sibling', x: 300, y: 20 })
@@ -98,6 +102,19 @@ test('browser file-input replacement survives public editing, history and two do
   const reference = baseline.createInstance(masterOf(baseline, 'x').id, named(baseline, 'Editor replacement').id, {
     x: leadingBefore.x, y: leadingBefore.y, uniformScaleFactor: 20 / 24,
   })
+  const importedRole = [...baseline.variables.values()].find(variable => variable.name === role.name)
+  for (const vector of baseline.getChildren(reference.id)) {
+    const paints = structuredClone({ fills: vector.fills, strokes: vector.strokes })
+    for (const field of Object.keys(vector.boundVariables)) {
+      baseline.bindVariable(vector.id, field, importedRole.id)
+      // FIG materializes the resolved override as a float32 fallback paint.
+      // The independent reference has not been serialized since this binding.
+      const [paint, index] = field.split('/')
+      paints[paint][Number(index)].color = Object.fromEntries(Object.entries(
+        baseline.resolveColorVariableForNode(vector.id, importedRole.id)).map(([channel, value]) => [channel, Math.fround(value)]))
+    }
+    baseline.updateNode(vector.id, paints)
+  }
   const replacementGeometry = geometry(baseline, reference)
   const browser = await chromium.launch({ headless: true, args: [
     '--enable-automation', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',

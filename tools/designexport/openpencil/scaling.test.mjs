@@ -8,7 +8,7 @@ import { computeAllLayouts } from '@open-pencil/core/layout'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { parseFigBuffer } from '@open-pencil/fig'
-import { buildFoundation } from './foundation.mjs'
+import { buildFoundation, prepareIcon } from './foundation.mjs'
 
 const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
   cwd: new URL('../../../', import.meta.url), encoding: 'utf8',
@@ -296,7 +296,7 @@ for (const property of [false, true]) test(`unsupported scaled replacement refus
   } finally { unsubscribe() }
 })
 
-for (const scenario of ['missing component', 'edited descendant', 'imported edited descendant',
+for (const scenario of ['missing component', 'edited descendant', 'imported edited descendant', 'bound descendant', 'imported bound descendant', 'noop bound descendant',
   'local descendant', 'imported local descendant', 'local instance descendant', 'local duplicate descendant']) {
   test(`replacement refuses ${scenario} without losing authored state`, async () => {
     let graph = buildFoundation(snapshot)
@@ -305,8 +305,10 @@ for (const scenario of ['missing component', 'edited descendant', 'imported edit
     const owner = graph.createNode('COMPONENT', page.id, {
       componentPropertyDefinitions: [{ id: '93:1', name: 'Icon', type: 'INSTANCE_SWAP', defaultValue: original.id }],
     })
-    graph.createInstance(original.id, owner.id, { uniformScaleFactor: scenario.includes('local') ? null : 20 / 24,
+    const source = graph.createInstance(original.id, owner.id, { uniformScaleFactor: scenario.includes('local') ? null : 20 / 24,
       componentPropertyReferences: [{ propertyId: '93:1', field: 'INSTANCE_SWAP' }] })
+    if (scenario.startsWith('noop')) graph.bindVariable(graph.getChildren(source.id)[0].id, 'fills/0/color',
+      graph.getChildren(original.id)[0].boundVariables['fills/0/color'])
     graph.createInstance(owner.id, page.id, { name: 'Authored replacement instance' })
     if (scenario.startsWith('imported')) graph = await reopen(graph)
     const outer = named(graph, 'Authored replacement instance')
@@ -314,6 +316,7 @@ for (const scenario of ['missing component', 'edited descendant', 'imported edit
       const target = graph.getChildren(outer.id)[0]
       graph.updateNode(graph.getChildren(target.id)[0].id, { opacity: 0.35 })
     }
+    if (scenario.includes('bound')) bindForeground(graph, graph.getChildren(outer.id)[0], 'plus')
     if (scenario.includes('local')) {
       const target = graph.getChildren(outer.id)[0]
       if (scenario.includes('instance')) graph.createInstance(component(graph, 'x').id, target.id)
@@ -354,3 +357,118 @@ for (const field of ['width', 'stroke weight']) test(`replacement rejects FIG fl
     assert.deepEqual(events, [])
   } finally { unsubscribe() }
 })
+
+const foreground = graph => [...graph.variables.values()].find(variable => variable.name === '--pk-color-accent-on')
+
+for (const scenario of ['partial', 'conflicting', 'literal binding', 'missing destination', 'local role edit']) {
+  test(`paint role replacement refuses ${scenario} correspondence atomically`, () => {
+    const graph = buildFoundation(snapshot), page = graph.addPage('Role refusal')
+    const original = masterOf(graph), replacement = component(graph, 'x')
+    const owner = graph.createNode('COMPONENT', page.id, {
+      componentPropertyDefinitions: [{ id: '95:1', name: 'Glyph', type: 'INSTANCE_SWAP', defaultValue: original.id }],
+    })
+    const source = graph.createInstance(original.id, owner.id, { uniformScaleFactor: 20 / 24,
+      componentPropertyReferences: [{ propertyId: '95:1', field: 'INSTANCE_SWAP' }] })
+    bindForeground(graph, source, original.name)
+    const [literal, stroke, fill] = graph.getChildren(source.id)
+    if (scenario === 'partial') graph.unbindVariable(stroke.id, 'strokes/0/color')
+    if (scenario === 'conflicting') graph.bindVariable(fill.id, 'fills/0/color', graph.getNode(fill.componentId).boundVariables['fills/0/color'])
+    if (scenario === 'literal binding') graph.bindVariable(literal.id, 'fills/0/color', foreground(graph).id)
+    if (scenario === 'missing destination') graph.unbindVariable(graph.getChildren(replacement.id)[0].id, 'fills/0/color')
+    const outer = graph.createInstance(owner.id, page.id), target = graph.getChildren(outer.id)[0]
+    if (scenario === 'local role edit') graph.bindVariable(graph.getChildren(target.id)[2].id, 'fills/0/color',
+      graph.getNode(fill.componentId).boundVariables['fills/0/color'])
+    const actions = createEditor({ graph }), before = structuredClone([...graph.getAllNodes()]), events = []
+    const unsubscribe = graph.onNodeEvents({ created: () => events.push('created'),
+      updated: () => events.push('updated'), deleted: () => events.push('deleted') })
+    try {
+      assert.throws(() => actions.setInstanceComponentProperty(outer.id, '95:1', replacement.id), /paint role|replacement.*history/i)
+      assert.deepEqual([...graph.getAllNodes()], before)
+      assert.deepEqual(events, [])
+      assert.equal(actions.undo.canUndo, false)
+    } finally { unsubscribe() }
+  })
+}
+
+function bindForeground(graph, instance, name) {
+  const prepared = prepareIcon(snapshot.icons.find(icon => icon.name === name))
+  for (const [index, child] of graph.getChildren(instance.id).entries()) {
+    for (const field of prepared.children[index].currentColorFields) graph.bindVariable(child.id, field, foreground(graph).id)
+  }
+}
+
+function checkForeground(graph, instance, name) {
+  const prepared = prepareIcon(snapshot.icons.find(icon => icon.name === name))
+  for (const [index, child] of graph.getChildren(instance.id).entries()) {
+    if (!prepared.children[index].currentColorFields.length) {
+      assert.equal(Object.hasOwn(instance.overrides, `${child.id}:boundVariables`), false, 'literal-only vectors keep native binding inheritance')
+    }
+    for (const field of prepared.children[index].currentColorFields) {
+      assert.equal(child.boundVariables[field], foreground(graph).id, `${name} retains ${field} role binding`)
+    }
+  }
+}
+
+for (const replacementName of ['x', 'uniform-scale-fixture']) for (const size of [20, 16]) {
+  for (const imported of [false, true]) test(`source-owned role paints survive ${replacementName} replacement at ${size}px; imported=${imported}`, async () => {
+    let graph = buildFoundation(snapshot)
+    const page = graph.addPage('Role replacement conformance'), original = component(graph, 'plus')
+    const owner = graph.createNode('COMPONENT', page.id, { name: 'Role owner', width: 32, height: 32,
+      componentPropertyDefinitions: [{ id: '94:1', name: 'Glyph', type: 'INSTANCE_SWAP', defaultValue: original.id }] })
+    const source = graph.createInstance(original.id, owner.id, { uniformScaleFactor: size / 24,
+      componentPropertyReferences: [{ propertyId: '94:1', field: 'INSTANCE_SWAP' }] })
+    bindForeground(graph, source, 'plus')
+    graph.createInstance(owner.id, page.id, { name: 'Role edited' })
+    graph.createInstance(owner.id, page.id, { name: 'Role sibling' })
+    const reference = graph.createInstance(component(graph, replacementName).id, page.id, {
+      name: 'Role reference', uniformScaleFactor: size / 24 })
+    bindForeground(graph, reference, replacementName)
+    if (imported) graph = await reopen(graph)
+    const edited = named(graph, 'Role edited'), target = graph.getChildren(edited.id)[0]
+    const originalLink = target.componentId, actions = createEditor({ graph })
+    const untouched = ['Role owner', 'Role sibling'].map(name => named(graph, name))
+      .concat([component(graph, 'plus'), component(graph, replacementName)])
+    const before = structuredClone(untouched.flatMap(node => subtree(graph, node)))
+    actions.setInstanceComponentProperty(edited.id, '94:1', component(graph, replacementName).id)
+    await Promise.resolve()
+    checkForeground(graph, target, replacementName)
+    actions.undoAction()
+    await Promise.resolve()
+    assert.equal(target.componentId, originalLink)
+    checkForeground(graph, target, 'plus')
+    actions.redoAction()
+    await Promise.resolve()
+    checkForeground(graph, target, replacementName)
+    assert.deepEqual(untouched.flatMap(node => subtree(graph, node)), before)
+    for (let cycle = 0; cycle < 3; cycle++) {
+      graph.syncInstances(named(graph, 'Role owner').id)
+      graph.syncInstances(component(graph, 'plus').id)
+      graph.syncInstances(component(graph, replacementName).id)
+      const current = graph.getChildren(named(graph, 'Role edited').id)[0]
+      assert.equal(graph.getNode(current.componentId).name, replacementName)
+      close(current.width, size)
+      close(current.height, size)
+      assert.equal(current.uniformScaleFactor, Math.fround(size / 24))
+      checkForeground(graph, current, replacementName)
+      checkForeground(graph, graph.getChildren(named(graph, 'Role sibling').id)[0], 'plus')
+      const collection = graph.variableCollections.get(foreground(graph).collectionId)
+      for (const mode of collection.modes) {
+        graph.updateNode(current.parentId, { variableModes: { [collection.id]: mode.modeId } })
+        graph.updateNode(named(graph, 'Role reference').id, { variableModes: { [collection.id]: mode.modeId } })
+        assert.deepEqual(await pixels(graph, current), await pixels(graph, named(graph, 'Role reference')),
+          `native role and literal paints, ${mode.name}, FIG cycle ${cycle}`)
+      }
+      if (cycle < 2) graph = await reopen(graph)
+    }
+    const current = graph.getChildren(named(graph, 'Role edited').id)[0], beforePalette = await pixels(graph, current)
+    const variable = foreground(graph), changed = { r: 0.2, g: 0.8, b: 0.4, a: 1 }
+    graph.addVariable({ ...variable, valuesByMode: Object.fromEntries(Object.keys(variable.valuesByMode).map(mode => [mode, changed])) })
+    assert.notDeepEqual(await pixels(graph, current), beforePalette, 'replacement remains live-bound, not a frozen color')
+    assert.deepEqual(await pixels(graph, current), await pixels(graph, named(graph, 'Role reference')))
+    const sourceAfter = graph.getChildren(named(graph, 'Role owner').id)[0]
+    graph.bindVariable(graph.getChildren(sourceAfter.id)[0].id, 'fills/0/color',
+      graph.getChildren(component(graph, 'plus').id)[0].boundVariables['fills/0/color'])
+    graph.syncInstances(named(graph, 'Role owner').id)
+    checkForeground(graph, current, replacementName) // Native explicit ownership, not dynamic role-interface inheritance.
+  })
+}
