@@ -112,7 +112,11 @@ config.resolve.alias = [
 ]
 config.plugins.unshift(nativeBoundary())
 config.worker = { plugins: () => [nativeBoundary()] }
-await build({ ...config, configFile: false, root: upstream, build: { ...config.build, reportCompressedSize: false } })
+// Vite owns dependency discovery; this report is not a copied-asset license audit.
+const dependencyLicenses = 'licenses/bundled-dependencies.json'
+await build({ ...config, configFile: false, root: upstream, build: {
+  ...config.build, reportCompressedSize: false, license: { fileName: dependencyLicenses },
+} })
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
@@ -133,6 +137,7 @@ writeFileSync(join(upstream, 'dist/platformkit-provenance.json'), JSON.stringify
   upstream: { version: sdkVersion, commit: 'c29654cd07ac46b53e76c16b18505919f16571be' },
   adapter: { inputs, correctedModules: [...seen].sort() },
   upstreamLockSHA256: sha256(readFileSync(join(upstream, 'bun.lock'))),
+  dependencyLicenses: { path: dependencyLicenses, sha256: sha256(readFileSync(join(upstream, 'dist', dependencyLicenses))) },
   designProfile: null, defaultDocument: null,
   scope: 'generic-editor-without-packaged-design',
 }, null, 2) + '\n', { flag: 'wx' })

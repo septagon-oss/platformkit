@@ -234,8 +234,8 @@ From the repository root, run
 `docker build -f tools/designexport/openpencil/Dockerfile -t platformkit-openpencil:local .`.
 Run it on port 8080 with UID/GID 101 and writable `/tmp`, `/var/run` and
 `/var/cache/nginx`. `/healthz` and `/platformkit-provenance.json` identify the image;
-`/licenses/` carries project and bundled-font notices. No default document is
-packaged, and PWA registration is disabled. Product assets remain client-owned.
+`/licenses/bundled-dependencies.json` adds Vite's report to project/font notices.
+No document is packaged; PWA registration is disabled. Product assets remain client-owned.
 This builds locally; CI also builds but neither publishes nor runs image browser checks.
 WebGL startup, scaling and FIG downloads were checked locally; WebGPU assets and product fonts are absent.
 
@@ -266,8 +266,8 @@ rehydrates children in master order.
 
 ## Release blockers
 
-The pinned app's full Bun audit still fails. Direct adapter pins replace affected
-browser imports; build-tool findings and transitive notices remain release blockers.
+The pinned app's full workspace audit still fails. Adapter pins replace the observed
+affected browser imports; build tools, copied assets and complete notices still need review.
 Supplied fonts, SVG fidelity, responsive/accessibility, interactive editing, typed conversion
 and source freshness remain incomplete. Product prototypes need runtime-state mappings
 and governed end-to-end persistence tests in their owning product repository.
