@@ -27,6 +27,7 @@ jobs:
       PLATFORMKIT_PG_PORT: "58432"
       PLATFORMKIT_NATS_PORT: "57222"
       PLATFORMKIT_E2E_PORT: "8199"
+      COMPOSE_PROJECT_NAME: platformkit-ci
       GOFLAGS: -p=4
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -34,7 +35,11 @@ jobs:
           fetch-depth: 0
 
       - name: Start Postgres and NATS
-        run: make up
+        run: |
+          # A cancelled run leaves its containers behind. They are this job's own,
+          # under a project name of CI's, so clearing them touches nobody else's.
+          make down >/dev/null 2>&1 || true
+          make up || { ss -ltnp | grep -E ":($PLATFORMKIT_PG_PORT|$PLATFORMKIT_NATS_PORT) "; exit 1; }
 
       - name: Budgets only ratchet down
         env:

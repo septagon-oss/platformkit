@@ -85,17 +85,20 @@ files:
 YAML
 
 password="e2e-$(date +%s)-password"
-# Runtime overrides belong to the caller's application, not this fixture.
-# The subshell preserves the parent's environment; exec keeps cleanup's PID
-# attached to the application rather than to an intermediate shell.
-run_app() (
+# Runtime overrides belong to the caller's application, not this fixture, so
+# the function execs after clearing them, and is therefore only ever called in
+# a subshell: the explicit one around bootstrap, and the fork `&` makes for the
+# server. Were the body itself a subshell, bash would put a shell of its own
+# between this script and the backgrounded application; cleanup would stop that
+# shell and orphan the application, still on the port, for the next run to hit.
+run_app() {
 	for variable in "${!PLATFORMKIT_@}"; do unset "$variable"; done
 	export PLATFORMKIT_BOOTSTRAP_PASSWORD="$password"
 	exec "$work/platformkit" "$@"
-)
+}
 echo "e2e: one tenant and one administrator"
-run_app bootstrap --config "$work/config.yaml" \
-	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test >/dev/null
+(run_app bootstrap --config "$work/config.yaml" \
+	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test) >/dev/null
 
 if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ":$port "; then
 	echo "e2e: something is already listening on $port; set PLATFORMKIT_E2E_PORT." >&2
