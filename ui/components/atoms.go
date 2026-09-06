@@ -115,13 +115,18 @@ func ButtonWithSlots(p ButtonProps, slots ButtonSlots) g.Node {
 		typ = "button"
 	}
 	componentProps := p.ComponentProps
+	transport := p.HTMXProps
 	if p.Href != "" {
 		// disabled is not a valid anchor attribute; link mode emits the
 		// equivalent accessible state below.
 		componentProps.Disabled = false
+		if p.Disabled {
+			// ARIA and pointer-events alone cannot prevent keyboard activation.
+			transport = HTMXProps{Disable: true}
+		}
 	}
 	var children []g.Node
-	children = append(children, baseAttrs(componentProps, htmxAttrs(p.HTMXProps)...)...)
+	children = append(children, baseAttrs(componentProps, htmxAttrs(transport)...)...)
 	children = append(children,
 		classes(cl.Compile(), p.Class),
 		g.Attr("data-component", "button"),
@@ -162,15 +167,15 @@ func ButtonWithSlots(p ButtonProps, slots ButtonSlots) g.Node {
 		}
 	}
 	if p.Href != "" {
-		children = append(children,
-			h.Href(p.Href),
-			g.Attr("data-button-as-link", "true"),
-		)
+		children = append(children, g.Attr("data-button-as-link", "true"))
 		if p.Disabled {
 			children = append(children,
+				h.Role("link"),
 				g.Attr("aria-disabled", "true"),
 				g.Attr("tabindex", "-1"),
 			)
+		} else {
+			children = append(children, h.Href(p.Href))
 		}
 		return h.A(children...)
 	}

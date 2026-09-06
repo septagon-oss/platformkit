@@ -89,6 +89,48 @@ test('the typed gallery retains native controls at desktop and narrow widths', a
   expect(errors).toEqual([]);
 });
 
+test('a disabled gallery link refuses keyboard, pointer and HTMX activation', async ({ page }) => {
+  await page.goto('/admin/_gallery');
+  expect(await page.evaluate(() => 'htmx' in window)).toBe(true);
+  const disabled = page.locator('[data-gallery-example="Button / disabled link"]')
+    .getByRole('link', { name: 'Unavailable', exact: true });
+  await expect(disabled).toHaveAttribute('role', 'link');
+  await expect(disabled).toHaveAttribute('aria-disabled', 'true');
+  await expect(disabled).toHaveAttribute('tabindex', '-1');
+  await expect(disabled).toHaveAttribute('hx-disable', 'true');
+  for (const attribute of ['href', 'hx-get', 'hx-boost']) {
+    await expect(disabled).not.toHaveAttribute(attribute);
+  }
+
+  const adminRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/admin') {
+      adminRequests.push(request.method());
+    }
+  });
+  // tabindex=-1 still allows focus(), and pointer-events does not block Enter.
+  await disabled.focus();
+  await expect(disabled).toBeFocused();
+  await page.keyboard.press('Enter');
+
+  // locator.click() refuses aria-disabled controls instead of exercising them.
+  await disabled.scrollIntoViewIfNeeded();
+  const bounds = await disabled.boundingBox();
+  if (!bounds) throw new Error('The disabled gallery link has no pointer target');
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  // Bypass pointer hit-testing too: HTMX must not handle a direct DOM activation.
+  await disabled.evaluate(node => (node as HTMLElement).click());
+
+  // Complete an enabled navigation before inspecting requests. The structural
+  // guards above, not an immediate URL check or a sleep, establish inactivity.
+  const enabled = page.locator('[data-gallery-example="Button / as link"]')
+    .getByRole('link', { name: 'Open', exact: true });
+  await expect(enabled).toHaveAttribute('href', '/somewhere');
+  await enabled.click();
+  await expect(page).toHaveURL(/\/somewhere$/);
+  expect(adminRequests).toEqual([]);
+});
+
 // The theme is the one piece of state this application keeps in the browser,
 // and a default is not a piece of state. theme.js used to apply-and-store on
 // every load, so a person who never touched the toggle came back to a

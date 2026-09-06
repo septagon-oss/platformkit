@@ -133,16 +133,18 @@ func TestButtonOwnsNativeLinkSlotsAndStateContract(t *testing.T) {
 	}
 
 	var link strings.Builder
-	if err := ButtonWithSlots(ButtonProps{
+	linkProps := ButtonProps{
 		ComponentProps: ComponentProps{Disabled: true},
+		HTMXProps:      HTMXProps{Get: "/continue-fragment", Boost: true},
 		Label:          "Continue",
 		Href:           "/continue",
 		AriaLabel:      "Continue to checkout",
-	}, ButtonSlots{Content: []g.Node{h.Span(g.Text("Compound action"))}}).Render(&link); err != nil {
+	}
+	if err := ButtonWithSlots(linkProps, ButtonSlots{Content: []g.Node{h.Span(g.Text("Compound action"))}}).Render(&link); err != nil {
 		t.Fatal(err)
 	}
 	for _, fragment := range []string{
-		`<a`, `href="/continue"`, `data-button-as-link="true"`,
+		`<a`, `role="link"`, `hx-disable="true"`, `data-button-as-link="true"`,
 		`aria-disabled="true"`, `tabindex="-1"`,
 		`aria-label="Continue to checkout"`, `Compound action`,
 	} {
@@ -150,9 +152,21 @@ func TestButtonOwnsNativeLinkSlotsAndStateContract(t *testing.T) {
 			t.Errorf("link Button output is missing %q: %s", fragment, link.String())
 		}
 	}
-	for _, forbidden := range []string{` type=`, ` disabled="`, `>Continue<`} {
+	for _, forbidden := range []string{` type=`, ` disabled="`, `>Continue<`, ` href=`, ` hx-get=`, ` hx-boost=`} {
 		if strings.Contains(link.String(), forbidden) {
 			t.Errorf("link Button output unexpectedly contains %q: %s", forbidden, link.String())
+		}
+	}
+	linkProps.Disabled = false
+	enabled := renderNodeToString(t, Button(linkProps))
+	for _, want := range []string{`href="/continue"`, `hx-get="/continue-fragment"`, `hx-boost="true"`} {
+		if !strings.Contains(enabled, want) {
+			t.Errorf("enabled link lost native navigation or trusted transport %q: %s", want, enabled)
+		}
+	}
+	for _, forbidden := range []string{`aria-disabled=`, `hx-disable=`, `tabindex="-1"`} {
+		if strings.Contains(enabled, forbidden) {
+			t.Errorf("enabled link retained disabled behavior %q: %s", forbidden, enabled)
 		}
 	}
 }

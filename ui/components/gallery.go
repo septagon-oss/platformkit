@@ -65,6 +65,8 @@ func Gallery() []Example {
 		ExampleWithSlots(info("pk-ui.component.button/success", "Action", "Button / success"), ButtonProps{Label: "OK", Variant: "primary", Tone: "success"}, ButtonSlots{}, ButtonWithSlots),
 		ExampleWithSlots(info("pk-ui.component.button/loading", "Action", "Button / loading"), ButtonProps{Label: "Busy", Loading: true}, ButtonSlots{}, ButtonWithSlots),
 		ExampleWithSlots(info("pk-ui.component.button/as-link", "Action", "Button / as link"), ButtonProps{Label: "Open", Href: "/somewhere"}, ButtonSlots{}, ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/disabled-link", "Action", "Button / disabled link"),
+			ButtonProps{ComponentProps: ComponentProps{Disabled: true}, HTMXProps: HTMXProps{Get: "/admin", Boost: true}, Label: "Unavailable", Href: "/admin"}, ButtonSlots{}, ButtonWithSlots),
 		ExampleWithSlots(info("pk-ui.component.button/with-icon", "Action", "Button / with icon"),
 			ButtonProps{Label: "Iconed", Variant: "primary", Tone: "neutral", Size: "md"}, ButtonSlots{IconEnd: []g.Node{Icon(IconProps{Name: "plus", Size: "md", Tone: "neutral"})}}, ButtonWithSlots),
 
