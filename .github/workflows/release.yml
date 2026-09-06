@@ -133,6 +133,9 @@ jobs:
           npx playwright install --with-deps chromium
           npm run test:browser
 
+      - name: Corrected editor image builds without publishing
+        run: docker build -f tools/designexport/openpencil/Dockerfile -t platformkit-openpencil:check .
+
       - name: make e2e
         run: make e2e
 

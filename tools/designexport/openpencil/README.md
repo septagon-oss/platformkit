@@ -9,8 +9,8 @@ The implemented boundary is a tokens-and-icons FIG generator, supplied-font
 validation, browser observations, experimental single-text component construction
 and a pinned SDK correction layer with conformance tests. The generator does not
 include these experimental components; pages and flows are not converted yet.
-This tooling neither builds nor deploys the editor;
-a passing native test is not a production release.
+The generic browser image below contains no product document and is not deployed
+by this tooling; a passing native test is not a production release.
 
 ## Generate the foundation
 
@@ -227,17 +227,17 @@ complete OFL notice are recorded in [NOTICE](../../../NOTICE).
 ## Understand the correction boundary
 
 [register.mjs](register.mjs) checks the SDK versions and installs a process-local
-Node loader. [corrections.mjs](corrections.mjs) checks the SHA-256 of each affected
-upstream module before transforming it. A changed or already-corrected source
-is an error. Installed dependencies remain untouched. The same source transform
-can be used at a browser build boundary, but that integration is unfinished.
-The upstream Vite configuration aliases engine packages to source, which bypasses
-these guarded distribution files. An isolated build of the pinned upstream with
-the `309f2f2` correction snapshot passed offline canvas startup after resolving one
-locked SDK tree, applying guards in main and worker builds, using OpenType's UMD
-entry, correcting published worker URLs from `.ts` to `.js`, and disabling PWA
-registration. This is feasibility evidence, not a retained build pipeline or a
-test of the newer scaling corrections, custom fonts, document edits or deployment.
+Node loader. [corrections.mjs](corrections.mjs) rejects changed upstream bytes.
+[Dockerfile](Dockerfile) applies the same guards to main and worker browser builds
+through [build-editor.mjs](build-editor.mjs), using pinned source, images and locks.
+From the repository root, run
+`docker build -f tools/designexport/openpencil/Dockerfile -t platformkit-openpencil:local .`.
+Run it on port 8080 with UID/GID 101 and writable `/tmp`, `/var/run` and
+`/var/cache/nginx`. `/healthz` and `/platformkit-provenance.json` identify the image;
+`/licenses/` carries project and bundled-font notices. No default document is
+packaged, and PWA registration is disabled. Product assets remain client-owned.
+This builds locally; CI also builds but neither publishes nor runs image browser checks.
+WebGL startup, scaling and FIG downloads were checked locally; WebGPU assets and product fonts are absent.
 
 The correction uses native component/property identities and FIG override
 paths, not plugin metadata. Repeated saves merge overrides by path. Reflow and
@@ -266,9 +266,9 @@ rehydrates children in master order.
 
 ## Release blockers
 
-The browser build still needs these corrections, supplied-font integration, independent
-SVG visual-fidelity comparison, responsive and accessibility checks, and save/reopen
-in the interactive editor. Typed component conversion and edited-document
+The pinned app's full Bun audit fails, including high advisories; shipped-path triage
+and transitive notice review remain release blockers. Supplied fonts, independent SVG,
+responsive/accessibility and interactive edit coverage are incomplete. Typed conversion and
 source-freshness verification are unfinished. Product prototypes need runtime-state mappings and governed
 end-to-end persistence tests in their owning product repository.
 Native component sizing still needs evidence beyond the declared single-text
@@ -311,7 +311,7 @@ tests the image boundary, not browser rasterization or PowerPoint visual fidelit
 
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
 or editor release. CI and the tagged-tree release workflow enforce this gate
-after the locked install and before the native tests. The locked tree currently passes with zero reported
+after the locked install and before the native tests. The adapter's npm-locked tree currently passes with zero reported
 vulnerabilities; this is not a general security certification. Do not use
 `npm audit fix --force` to downgrade the SDK or bypass its source checks.
 The import-boundary test verifies that narrower native editing/FIG imports do
