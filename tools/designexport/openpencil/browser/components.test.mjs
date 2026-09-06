@@ -168,6 +168,19 @@ test('unsupported native input is explicit and does not leave partial definition
   }
 })
 
+test('native composition refuses unbound slot groups without flattening or dropping their content', async () => {
+  const snapshot = source(), observation = await observe(snapshot)
+  for (const empty of [false, true]) {
+    const input = structuredClone(observation), root = input.roots[0]
+    const slot = { kind: 'slot', name: empty ? 'IconEnd' : 'Content', children: empty ? [] : root.children }
+    root.children = empty ? [...root.children, slot] : [slot]
+    const graph = buildFoundation(snapshot), page = graph.addPage('Rejected slot')
+    const before = structuredClone([...graph.getAllNodes()])
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, input, faces, renderer, colorCollection(graph)), /named slots/)
+    assert.deepEqual([...graph.getAllNodes()], before)
+  }
+})
+
 test('a mismatched default-headless rendering environment rolls back native construction', async () => {
   const defaultBrowser = await chromium.launch({ headless: true, args: ['--enable-automation'] })
   try {

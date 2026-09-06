@@ -118,15 +118,33 @@ export async function captureExample(browser, snapshot, exampleId, {
       }
       function children(parent) {
         const result = []
+        const regions = [{ children: result }]
         const nodes = [...parent.childNodes]
         for (let index = 0; index < nodes.length; index++) {
           const node = nodes[index]
-          if (node.nodeType === Node.ELEMENT_NODE) result.push(element(node))
+          const target = regions.at(-1).children
+          if (node.nodeType === Node.ELEMENT_NODE) target.push(element(node))
           else if (node.nodeType === Node.TEXT_NODE) {
             const range = document.createRange()
             range.selectNode(node)
-            result.push(text(range, [node]))
+            target.push(text(range, [node]))
           } else if (node.nodeType === Node.COMMENT_NODE) {
+            if (/^\/?pk-slot:/.test(node.data)) {
+              const marker = /^(\/?)pk-slot:([A-Za-z][A-Za-z0-9]*)$/.exec(node.data)
+              if (!marker) throw new Error('Invalid slot marker')
+              const [, closing, name] = marker
+              if (closing) {
+                if (regions.length === 1 || regions.at(-1).name !== name) throw new Error('Unmatched slot closing marker')
+                regions.pop()
+              } else {
+                // Structural evidence only: the converter must establish the
+                // declaration and owning component before binding this name.
+                const region = { kind: 'slot', name, children: [] }
+                target.push(region)
+                regions.push(region)
+              }
+              continue
+            }
             if (node.data.startsWith('/pk-text:')) throw new Error('Unmatched text-property closing marker')
             if (!node.data.startsWith('pk-text:')) continue
             const property = node.data.slice('pk-text:'.length)
@@ -142,9 +160,10 @@ export async function captureExample(browser, snapshot, exampleId, {
               throw new Error('Text-property markers must enclose only text and close exactly')
             }
             range.setEndBefore(end)
-            result.push(text(range, textNodes, property))
+            target.push(text(range, textNodes, property))
           }
         }
+        if (regions.length !== 1) throw new Error('Unclosed slot marker')
         return result
       }
       function element(node) {
@@ -214,10 +233,11 @@ export async function captureExample(browser, snapshot, exampleId, {
       }
       function annotate(nodes) {
         for (const node of nodes) {
-          if (node.kind !== 'element') continue
-          node.paintSources = sources[node.observationId]
-          delete node.observationId
-          annotate(node.children)
+          if (node.kind === 'element') {
+            node.paintSources = sources[node.observationId]
+            delete node.observationId
+          }
+          if (node.children) annotate(node.children)
         }
       }
       annotate(roots)
@@ -251,7 +271,7 @@ export async function captureExample(browser, snapshot, exampleId, {
       await session.send('DOM.getDocument')
       async function inspect(nodes) {
         for (const node of nodes) {
-          if (node.kind === 'element') {
+          if (node.children) {
             await inspect(node.children)
             continue
           }

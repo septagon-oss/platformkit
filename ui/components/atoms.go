@@ -6,6 +6,7 @@ package components
 // "data schema, not behavior" stance.
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -146,7 +147,7 @@ func ButtonWithSlots(p ButtonProps, slots ButtonSlots) g.Node {
 		)
 	}
 	if len(slots.Content) > 0 {
-		children = append(children, slots.Content...)
+		children = append(children, slotRegion("Content", slots.Content))
 	} else if p.Loading {
 		indicatorAppearance := variantOr(clButtonLoadingVariant, variant, "primary")
 		if tone != "neutral" {
@@ -157,14 +158,14 @@ func ButtonWithSlots(p ButtonProps, slots ButtonSlots) g.Node {
 			indicatorAppearance,
 		))
 	} else if len(slots.IconStart) > 0 {
-		children = append(children, slots.IconStart...)
+		children = append(children, slotRegion("IconStart", slots.IconStart))
 	}
 	if len(slots.Content) == 0 && !p.IconOnly {
 		children = append(children, g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"))
 	}
 	if len(slots.Content) == 0 && !p.Loading {
 		if len(slots.IconEnd) > 0 {
-			children = append(children, slots.IconEnd...)
+			children = append(children, slotRegion("IconEnd", slots.IconEnd))
 		}
 	}
 	if p.Href != "" {
@@ -182,6 +183,15 @@ func ButtonWithSlots(p ButtonProps, slots ButtonSlots) g.Node {
 	}
 	children = append(children, h.Type(typ))
 	return h.Button(children...)
+}
+
+// slotRegion retains the source-owned slot name without introducing a DOM box.
+func slotRegion(name string, nodes []g.Node) g.Node {
+	return g.Group{
+		g.Raw("<!--pk-slot:" + name + "-->"),
+		g.Group(slices.Clone(nodes)),
+		g.Raw("<!--/pk-slot:" + name + "-->"),
+	}
 }
 
 // Badge renders BadgeProps without adornment slots.

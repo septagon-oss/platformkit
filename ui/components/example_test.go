@@ -141,6 +141,75 @@ func TestButtonReplacedLabelHasNoTextRegion(t *testing.T) {
 	}
 }
 
+func TestButtonSlotRegionsFollowTheRenderedComposition(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		props   c.ButtonProps
+		slots   c.ButtonSlots
+		regions []string
+	}{
+		{name: "absent"},
+		{name: "leading", slots: c.ButtonSlots{IconStart: []g.Node{g.Text("Start &"), g.El("i")}},
+			regions: []string{"<!--pk-slot:IconStart-->Start &amp;<i></i><!--/pk-slot:IconStart-->"}},
+		{name: "trailing", slots: c.ButtonSlots{IconEnd: []g.Node{g.Text("End")}},
+			regions: []string{"<!--pk-slot:IconEnd-->End<!--/pk-slot:IconEnd-->"}},
+		{name: "empty rendered group", slots: c.ButtonSlots{IconStart: []g.Node{g.Group{}}},
+			regions: []string{"<!--pk-slot:IconStart--><!--/pk-slot:IconStart-->"}},
+		{name: "content owns its name", slots: c.ButtonSlots{
+			Content: []g.Node{g.Text("Own")}, IconStart: []g.Node{g.Text("ignored")}, IconEnd: []g.Node{g.Text("ignored")}},
+			regions: []string{"<!--pk-slot:Content-->Own<!--/pk-slot:Content-->"}},
+		{name: "loading replaces icons", props: c.ButtonProps{Loading: true},
+			slots: c.ButtonSlots{IconStart: []g.Node{g.Text("ignored")}, IconEnd: []g.Node{g.Text("ignored")}}},
+		{name: "icon only", props: c.ButtonProps{IconOnly: true}, slots: c.ButtonSlots{
+			IconStart: []g.Node{g.Text("First")}, IconEnd: []g.Node{g.Text("Last")}},
+			regions: []string{"<!--pk-slot:IconStart-->First<!--/pk-slot:IconStart-->", "<!--pk-slot:IconEnd-->Last<!--/pk-slot:IconEnd-->"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.props.Label = "Save"
+			example := c.ExampleWithSlots(exampleInfo, tc.props, tc.slots, c.ButtonWithSlots)
+			description := describeExample(t, example)
+			if strings.Count(description.HTML, "<!--pk-slot:") != len(tc.regions) {
+				t.Fatalf("rendered slot ownership differs: %s", description.HTML)
+			}
+			for _, region := range tc.regions {
+				if !strings.Contains(description.HTML, region) {
+					t.Errorf("missing exact unwrapped region %s", region)
+				}
+			}
+			if strings.Contains(description.HTML, "ignored") {
+				t.Fatal("a replaced slot was rendered")
+			}
+			if tc.props.IconOnly && !strings.Contains(description.HTML, `aria-label="Save"`) {
+				t.Fatal("source regions changed the icon-only accessible name")
+			}
+			if describeExample(t, example).HTML != description.HTML {
+				t.Fatal("rendering changed the source invocation")
+			}
+		})
+	}
+}
+
+func TestButtonSlotRegionsCopyCallerContainers(t *testing.T) {
+	for _, href := range []string{"", "/next"} {
+		nodes := []g.Node{g.Text("before"), g.Attr("data-supplied", "yes")}
+		for name, slots := range map[string]c.ButtonSlots{
+			"IconStart": {IconStart: nodes}, "IconEnd": {IconEnd: nodes}, "Content": {Content: nodes},
+		} {
+			nodes[0] = g.Text("before")
+			button := c.ButtonWithSlots(c.ButtonProps{Label: "Save", Href: href}, slots)
+			nodes[0] = g.Text("after")
+			var rendered strings.Builder
+			if err := button.Render(&rendered); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(rendered.String(), "<!--pk-slot:"+name+"-->before<!--/pk-slot:"+name+"-->") ||
+				!strings.Contains(rendered.String(), `data-supplied="yes"`) {
+				t.Fatalf("slot %s changed caller-container or attribute semantics: %s", name, &rendered)
+			}
+		}
+	}
+}
+
 func TestExampleStrictPatch(t *testing.T) {
 	example := c.ExampleOf(exampleInfo, c.ButtonProps{Label: "Save"}, c.Button)
 	for _, patch := range []string{
@@ -216,6 +285,13 @@ func TestExampleSlotReplacementCopiesContainers(t *testing.T) {
 	}
 	if strings.Index(updatedHTML, "Save") > strings.Index(updatedHTML, "new-icon") {
 		t.Fatal("replacement did not use canonical trailing icon renderer")
+	}
+	if !strings.Contains(updatedHTML, "<!--pk-slot:IconEnd-->new-icon<!--/pk-slot:IconEnd-->") {
+		t.Fatal("replacement lost its unwrapped source slot identity")
+	}
+	cleared, err := button.WithSlot("IconEnd")
+	if err != nil || strings.Contains(describeExample(t, cleared).HTML, "<!--pk-slot:") {
+		t.Fatal("cleared slot retained a rendered region")
 	}
 	if _, err := button.WithSlot("iconEnd", g.Text("wrong-case")); err == nil {
 		t.Fatal("accepted slot case folding")

@@ -35,15 +35,22 @@ function observed(nodes) {
   return nodes.flatMap(node => [node, ...observed(node.children ?? [])])
 }
 
-// Independent DOM measurements use the original Go markup with only the two
-// source annotations removed. No capture traversal or layout helper is reused.
-async function originalLayout(snapshot, id, mode, size = viewport) {
+// Independent DOM measurements remove the source annotations entirely.
+// No capture traversal or layout helper is reused.
+async function originalLayout(snapshot, id, mode, size = viewport, fonts = []) {
   const example = snapshot.examples.find(example => example.id === id)
-  const html = example.html.replaceAll('<!--pk-text:label-->', '').replaceAll('<!--/pk-text:label-->', '')
+  const html = example.html.replace(/<!--\/?pk-(?:text|slot):[A-Za-z][A-Za-z0-9]*-->/g, '')
   const context = await browser.newContext({ viewport: size, colorScheme: mode, reducedMotion: 'reduce' })
   try {
     const page = await context.newPage()
     await page.setContent(`<!doctype html><html lang="en" data-theme="${mode}"><head><style>${snapshot.css}</style></head><body>${html}</body></html>`)
+    await page.evaluate(async fonts => {
+      for (const font of fonts) {
+        const face = new FontFace(font.family, Uint8Array.from(font.bytes), { weight: String(font.weight), style: font.style })
+        document.fonts.add(await face.load())
+      }
+      await document.fonts.ready
+    }, fonts.map(font => ({ family: font.family, weight: font.weight, style: font.style, bytes: [...font.bytes] })))
     return await page.locator('body > :first-child').evaluate(element => {
       const rect = element => {
         const { x, y, width, height } = element.getBoundingClientRect()
@@ -175,7 +182,7 @@ test('browser capture follows source full-width layout at mobile and wide viewpo
     assert.equal(button.bounds.width, width)
     assert.equal(button.bounds.height, 38)
     assert.equal(button.style['column-gap'], '8px')
-    assert.deepEqual(button.children.filter(node => node.icon).map(node => node.bounds), original.icons)
+    assert.deepEqual(observed(button.children).filter(node => node.icon).map(node => node.bounds), original.icons)
     const text = button.children.find(node => node.property === 'label')
     assert.equal(text.text, label)
     assert.equal(text.text, original.text)
@@ -184,13 +191,13 @@ test('browser capture follows source full-width layout at mobile and wide viewpo
 })
 
 test('browser capture does not add flex gaps for empty labels or parse escaped text as markers', async () => {
-  for (const text of ['', ' ', 'A & <b> <!--/pk-text:label-->']) {
+  for (const text of ['', ' ', 'A & <b> <!--/pk-text:label--> <!--pk-slot:Content-->']) {
     const snapshot = projection(withIcon, { label: text })
     const result = await captureExample(browser, snapshot, withIcon)
     const original = await originalLayout(snapshot, withIcon, 'light')
     const button = result.roots[0]
     assert.deepEqual(button.bounds, original.bounds)
-    assert.deepEqual(button.children.filter(node => node.icon).map(node => node.bounds), original.icons)
+    assert.deepEqual(observed(button.children).filter(node => node.icon).map(node => node.bounds), original.icons)
     const labels = observed(result.roots).filter(node => node.property === 'label')
     assert.equal(labels.length, 1)
     assert.equal(labels[0].text, text)
@@ -230,6 +237,49 @@ test('browser capture retains source-owned canonical icon identities for aliases
     assert.equal(icon.canonicalName, canonicalName)
     assert.ok(snapshot.icons.some(asset => asset.name === icon.canonicalName))
     assert.ok(icon.svg.includes(`data-pk-icon-canonical="${canonicalName}"`))
+  }
+})
+
+test('browser capture retains named slot boundaries without changing source layout or paints', async () => {
+  const result = await captureExample(browser, source, withIcon, { fonts: faces })
+  const button = result.roots[0], slot = button.children.find(node => node.kind === 'slot')
+  assert.deepEqual(Object.keys(slot).toSorted(), ['children', 'kind', 'name'])
+  assert.equal(slot.name, 'IconEnd')
+  assert.equal(slot.children.length, 1)
+  assert.equal(slot.children[0].icon.canonicalName, 'plus')
+  assert.deepEqual(slot.children[0].paintSources.color, button.paintSources.color)
+  assert.ok(button.children.find(node => node.property === 'label').fonts[0].isCustomFont)
+  const snapshot = structuredClone(source)
+  snapshot.examples.find(example => example.id === primary).html = `<button data-component="button">
+    <!--pk-slot:Content--><!--pk-slot:IconStart--><!--/pk-slot:IconStart--><span>First</span>
+    <!--pk-slot:Nested--><!--pk-text:unknown-->Second<!--/pk-text:unknown--><!--/pk-slot:Nested--><!--/pk-slot:Content--></button>`
+  const capture = await captureExample(browser, snapshot, primary, { fonts: faces })
+  const root = capture.roots[0], content = root.children.find(node => node.kind === 'slot')
+  assert.equal(content.name, 'Content')
+  assert.deepEqual(content.children[0], { kind: 'slot', name: 'IconStart', children: [] })
+  assert.equal(content.children[1].tag, 'span')
+  assert.equal(content.children[1].paintSources.color.directCandidate, '--pk-color-text-primary')
+  const nested = content.children.find(node => node.kind === 'slot' && node.name === 'Nested')
+  assert.equal(nested.children[0].text, 'Second')
+  assert.equal(nested.children[0].property, 'unknown', 'balanced observations do not certify typed ownership')
+  assert.ok(nested.children[0].fonts[0].isCustomFont)
+  assert.deepEqual(root.bounds, (await originalLayout(snapshot, primary, 'light', viewport, faces)).bounds)
+})
+
+test('browser capture refuses malformed slot boundaries without leaking contexts', async () => {
+  for (const content of [
+    '<!--/pk-slot:IconStart-->', '<!--pk-slot:IconStart-->Save',
+    '<!--pk-slot:IconStart--><!--/pk-slot:IconEnd-->',
+    '<!--pk-slot:bad-name--><!--/pk-slot:bad-name-->', '<!--pk-slot:--><!--/pk-slot:-->',
+    '<!--pk-slot:Content--><!--pk-slot:IconStart--><!--/pk-slot:Content--><!--/pk-slot:IconStart-->',
+    '<!--pk-text:label--><!--pk-slot:Content-->Save<!--/pk-slot:Content--><!--/pk-text:label-->',
+    '<!--pk-slot:Content--><!--pk-text:label-->Save<!--/pk-slot:Content--><!--/pk-text:label-->',
+    '<!--pk-slot:Content--><span><!--/pk-slot:Content--></span>',
+  ]) {
+    const snapshot = structuredClone(source)
+    snapshot.examples.find(example => example.id === primary).html = `<button>${content}</button>`
+    await assert.rejects(captureExample(browser, snapshot, primary), /marker|text/i)
+    assert.equal(browser.contexts().length, 0)
   }
 })
 

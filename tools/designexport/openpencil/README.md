@@ -112,6 +112,12 @@ empty labels beside icons. Content-slot replacement and icon-only rendering
 omit the region. Capture records exact markers rather than guessing from visible
 strings. Typed ownership, native property binding and named-slot replacement
 remain the converter's responsibility; a balanced marker is not readiness proof.
+Rendered Button slots also carry paired `pk-slot:IconStart`, `pk-slot:IconEnd`
+or `pk-slot:Content` comments. Capture retains ordered slot groups, including
+empty or nested content, without inventing layout boxes. Missing markers mean
+that branch supplied no rendered slot, not that the source lacks a declaration.
+Malformed or crossed boundaries are refused. The existing example declarations
+remain authoritative; nested slot names alone do not establish component ownership.
 Icons separately expose their requested name and source-resolved
 `data-pk-icon-canonical` identity. Capture retains both, including aliases and
 fallbacks; an adapter must still verify the canonical asset and its provenance.
