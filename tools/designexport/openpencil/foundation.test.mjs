@@ -74,7 +74,7 @@ function checkGraph(graph) {
         name: icon.name, sha256: icon.sha256, source: icon.source, license: icon.license,
       })
       const vectors = graph.getChildren(master.id)
-      assert.equal(vectors.length, icon.name === 'sun' ? 2 : 1, icon.name)
+      assert.equal(vectors.length, 1, icon.name)
       for (const vector of vectors) assert.equal(vector.type, 'VECTOR')
       for (const vector of graph.getChildren(instance.id)) {
         const variable = graph.variables.get(vector.boundVariables['fills/0/color'])
@@ -145,12 +145,35 @@ test('native foreground follows changed tokens while literal paints remain indep
   const graph = buildFoundation(changed)
   const icon = named(graph, 'sun', named(graph, 'dark'))
   assert.deepEqual(opaqueColors(await pixels(graph, icon)), ['18,52,86'], 'changed dark Sun')
-  const sun = changed.icons.find(candidate => candidate.name === 'sun')
-  sun.svg = sun.svg.replace('<circle', '<circle fill="#fedcba"')
-  sun.sha256 = digest(sun.svg)
-  const mixed = buildFoundation(changed)
-  const image = await pixels(mixed, named(mixed, 'sun', named(mixed, 'dark')))
-  assert.deepEqual(opaqueColors(image), ['18,52,86', '254,220,186'])
+  // Keep the multi-shape paint regression independent of the catalog's Sun,
+  // which is now a single Phosphor path rather than our former circle + rays.
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor">' +
+    '<circle cx="64" cy="128" r="40" fill="#fedcba"/><path d="M136 88h80v80h-80Z"/></svg>'
+  const fixture = {
+    name: 'mixed-paint-regression', svg, sha256: digest(svg),
+    source: 'platformkit/native-conformance-fixture', license: 'Apache-2.0',
+  }
+  changed.icons.push(fixture)
+  let mixed = buildFoundation(changed)
+  let baseline
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const master = named(mixed, fixture.name, named(mixed, 'Icon masters'))
+    const instance = named(mixed, fixture.name, named(mixed, 'dark'))
+    assert.equal(instance.componentId, master.id)
+    const vectors = mixed.getChildren(instance.id)
+    assert.equal(vectors.length, 2, 'separate native paths preserve literal and bound paints')
+    assert.equal(vectors[0].boundVariables['fills/0/color'], undefined, 'literal paint stays unbound')
+    const variable = mixed.variables.get(vectors[1].boundVariables['fills/0/color'])
+    assert.equal(variable?.name, '--pk-color-text-primary')
+    const image = await pixels(mixed, instance)
+    assert.deepEqual(opaqueColors(image), ['18,52,86', '254,220,186'])
+    if (cycle === 0) baseline = image
+    else assert.deepEqual(image, baseline, `mixed paint round trip ${cycle}`)
+    if (cycle < 2) {
+      const bytes = await exportFigFile(mixed)
+      mixed = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    }
+  }
 })
 
 test('malformed foundation inputs are refused without changing their caller-owned data', () => {
