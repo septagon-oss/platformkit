@@ -85,9 +85,16 @@ files:
 YAML
 
 password="e2e-$(date +%s)-password"
-export PLATFORMKIT_BOOTSTRAP_PASSWORD="$password"
+# Runtime overrides belong to the caller's application, not this fixture.
+# The subshell preserves the parent's environment; exec keeps cleanup's PID
+# attached to the application rather than to an intermediate shell.
+run_app() (
+	for variable in "${!PLATFORMKIT_@}"; do unset "$variable"; done
+	export PLATFORMKIT_BOOTSTRAP_PASSWORD="$password"
+	exec "$work/platformkit" "$@"
+)
 echo "e2e: one tenant and one administrator"
-"$work/platformkit" bootstrap --config "$work/config.yaml" \
+run_app bootstrap --config "$work/config.yaml" \
 	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test >/dev/null
 
 if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ":$port "; then
@@ -96,7 +103,7 @@ if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ":$port "; then
 fi
 
 echo "e2e: serving on $port"
-"$work/platformkit" run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
+run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
 app_pid=$!
 for _ in $(seq 1 60); do
 	if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then break; fi
