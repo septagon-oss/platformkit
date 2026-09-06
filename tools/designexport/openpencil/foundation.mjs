@@ -107,7 +107,11 @@ function inspectSVG(svg) {
   return paths
 }
 
-function createIcon(graph, parent, icon, foreground) {
+// Reuse the SDK's placement calculations without allocating graph IDs or
+// emitting graph events. The result contains ordinary native node properties
+// and exact paint fields; callers supply their own semantic variable bindings.
+export function prepareIcon(icon) {
+  requireValue(typeof icon?.name === 'string' && icon.name !== '' && icon.name.trim() === icon.name, 'icon identity missing')
   for (const field of ['svg', 'sha256', 'source', 'license']) {
     requireValue(typeof icon[field] === 'string' && icon[field].trim() !== '', `missing icon ${field}: ${icon.name}`)
   }
@@ -117,31 +121,50 @@ function createIcon(graph, parent, icon, foreground) {
   const first = convert('#123456')
   const second = convert('#abcdef')
   requireValue(first?.paths.length === count && second?.paths.length === count, `lost SVG paths: ${icon.name}`)
-  const { name, sha256, source, license } = icon
-  const master = graph.createNode('COMPONENT', parent.id, {
-    name, width: 24, height: 24, fills: [],
-    pluginData: provenance('platformkit.icon', { name, sha256, source, license }),
-  })
+  const nodes = []
   // Do not flatten adjacent paths: region-local paints bypass native variable bindings.
-  createVectorFrameChildren(graph, master.id, first, { x: 0, y: 0, width: 24, height: 24, offsetX: 0, offsetY: 0 })
-  const children = graph.getChildren(master.id)
-  requireValue(children.length === count, `empty SVG geometry: ${name}`)
-  for (const [index, node] of children.entries()) {
-    requireValue([node.x, node.y, node.width, node.height].every(Number.isFinite) && node.vectorNetwork.segments.length > 0, `invalid SVG geometry: ${name}`)
+  createVectorFrameChildren({ createNode(type, _parentId, properties) {
+    requireValue(type === 'VECTOR', 'SVG placement must produce native vectors')
+    nodes.push(structuredClone(properties))
+  } }, null, first, { x: 0, y: 0, width: 24, height: 24, offsetX: 0, offsetY: 0 })
+  requireValue(nodes.length === count, `empty SVG geometry: ${icon.name}`)
+  const children = nodes.map((properties, index) => {
+    requireValue([properties.x, properties.y, properties.width, properties.height].every(Number.isFinite) && properties.vectorNetwork.segments.length > 0, `invalid SVG geometry: ${icon.name}`)
     const a = first.paths[index]
     const b = second.paths[index]
-    requireValue(isDeepStrictEqual(a.vectorNetwork, b.vectorNetwork), `unstable SVG geometry: ${name}`)
+    const currentColorFields = []
+    requireValue(isDeepStrictEqual(a.vectorNetwork, b.vectorNetwork), `unstable SVG geometry: ${icon.name}`)
     for (const field of ['fills', 'strokes']) {
-      requireValue(a[field].length === b[field].length, `unstable SVG paints: ${name}`)
+      requireValue(a[field].length === b[field].length, `unstable SVG paints: ${icon.name}`)
       for (const [paintIndex, paint] of a[field].entries()) {
         const witness = b[field][paintIndex]
-        requireValue(isDeepStrictEqual({ ...paint, color: null }, { ...witness, color: null }), `unstable SVG paint topology: ${name}`)
+        requireValue(isDeepStrictEqual({ ...paint, color: null }, { ...witness, color: null }), `unstable SVG paint topology: ${icon.name}`)
         if (!isDeepStrictEqual(paint.color, witness.color)) {
-          graph.bindVariable(node.id, `${field}/${paintIndex}/color`, foreground.id)
-          paint.color = structuredClone(foreground.valuesByMode[graph.variableCollections.get(foreground.collectionId).defaultModeId])
+          currentColorFields.push(`${field}/${paintIndex}/color`)
         }
       }
     }
+    return { properties, currentColorFields }
+  })
+  const { name, sha256, source, license } = icon
+  return { provenance: { name, sha256, source, license }, children }
+}
+
+function createIcon(graph, parent, icon, foreground) {
+  const prepared = prepareIcon(icon)
+  const master = graph.createNode('COMPONENT', parent.id, {
+    name: prepared.provenance.name, width: 24, height: 24, fills: [],
+    pluginData: provenance('platformkit.icon', prepared.provenance),
+  })
+  const defaultColor = foreground.valuesByMode[graph.variableCollections.get(foreground.collectionId).defaultModeId]
+  for (const child of prepared.children) {
+    const properties = structuredClone(child.properties)
+    for (const field of child.currentColorFields) {
+      const [paint, index] = field.split('/')
+      properties[paint][Number(index)].color = structuredClone(defaultColor)
+    }
+    const node = graph.createNode('VECTOR', master.id, properties)
+    for (const field of child.currentColorFields) graph.bindVariable(node.id, field, foreground.id)
   }
   return master
 }

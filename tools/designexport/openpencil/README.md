@@ -42,6 +42,8 @@ frame, and each master carries its glyph provenance. These records describe
 origin, not native component behavior or proof that an edited document is fresh.
 The CLI obtains fresh source itself; the in-process API trusts its caller's
 producer hash rather than attempting a second implementation of Go JSON hashing.
+`prepareIcon` validates SVG into caller-owned native properties and paint fields
+without creating nodes; the generator consumes that same preparation.
 
 Supported inputs are the existing light/dark token contract, literal hexadecimal
 colors, font-family strings and the canonical path/circle SVG glyphs with group

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
-import { buildFoundation } from './foundation.mjs'
+import { buildFoundation, prepareIcon } from './foundation.mjs'
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url))
 const cli = fileURLToPath(new URL('./generate.mjs', import.meta.url))
@@ -117,6 +117,10 @@ function opaqueColors(bytes) {
 
 test('fresh foundation retains tokens, linked icons, provenance and rendered colors through two FIG saves', async () => {
   const before = structuredClone(snapshot)
+  const prepared = prepareIcon(snapshot.icons[0]), pristine = structuredClone(prepared)
+  prepared.children[0].properties.vectorNetwork.vertices[0].x += 1
+  assert.deepEqual(prepareIcon(snapshot.icons[0]), pristine, 'prepared geometry is deterministic and independently owned')
+  assert.throws(() => prepareIcon({ ...snapshot.icons[0], name: '' }), /icon identity/)
   let graph = buildFoundation(snapshot)
   assert.deepEqual(snapshot, before)
   const baseline = new Map()
