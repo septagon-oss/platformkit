@@ -222,9 +222,10 @@ test('browser capture records markers rather than inferring properties from look
 
 test('browser capture retains source-owned canonical icon identities for aliases and fallback', async () => {
   for (const [name, canonicalName] of [['upload', 'upload-simple'], [' X_MARK ', 'x'], ['missing-glyph', 'question']]) {
-    const snapshot = projection('pk-ui.component.icon/check', { name })
+    const snapshot = projection('pk-ui.component.icon/check', { name, tone: 'neutral' })
     const captured = await captureExample(browser, snapshot, snapshot.examples[0].id)
     const icon = captured.roots[0].icon
+    assert.equal(captured.roots[0].style.color, 'rgb(21, 34, 31)', 'source foreground has settled before observation')
     assert.equal(icon.name, name)
     assert.equal(icon.canonicalName, canonicalName)
     assert.ok(snapshot.icons.some(asset => asset.name === icon.canonicalName))

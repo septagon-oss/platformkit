@@ -54,10 +54,29 @@ export async function captureExample(browser, snapshot, exampleId, {
         if (!image.src.startsWith('data:')) throw new Error('Capture requires supplied, in-memory image assets')
         await image.decode()
       }
-      // The source's reduced-motion rule still gives every element a tiny
-      // transition duration. Settle the initial stylesheet before measuring,
-      // including the browser's default body margin becoming the source's zero.
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      // Inherited transitions can start only when descendant styles are read.
+      // Flush those styles and await actual completion, not a fixed frame count.
+      let settlingTimer
+      try {
+        await Promise.race([
+          (async () => {
+            while (true) {
+              for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
+              const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState))
+              if (active.length === 0) return
+              if (active.some(animation => animation.playState === 'paused' ||
+                !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
+                throw new Error('Capture requires finite, running source animations to settle')
+              }
+              // A cancelled transition can start a replacement; inspect again.
+              await Promise.all(active.map(animation => animation.finished.catch(() => {})))
+            }
+          })(),
+          new Promise((_, reject) => {
+            settlingTimer = setTimeout(() => reject(new Error('Capture source animation settling timed out')), 1000)
+          }),
+        ])
+      } finally { clearTimeout(settlingTimer) }
       if (violations.length) throw new Error(`Capture refused resources blocked by CSP: ${violations.join(', ')}`)
     }, {
       css: snapshot.css, html: example.html, mode,

@@ -94,12 +94,12 @@ headless flag and explicitly selected font-hinting mode, never the full launch
 arguments or user-agent string. `fontHinting: 'default'` means no explicit flag;
 it does not promise the same default across browsers or operating systems.
 
-Each observation uses a disposable, unauthenticated document with the exported
-HTML and CSS. External resources and executable content are refused; image
-assets must already be supplied as data URLs. Application controllers do not
-run. Two viewport cases and both themes are checked against independently
-rendered source HTML; this is not an application-wide responsive or accessibility
-audit. Install Chromium, then run the local browser checks:
+Each observation uses a disposable, unauthenticated document. Resources must be
+supplied in memory; executable content and application controllers do not run.
+Capture flushes descendant styles and allows one second for finite motion to
+settle; paused or perpetual animations are refused. Tests compare both themes
+and two viewports with independent source HTML, not full responsive or
+accessibility coverage. Install Chromium, then run the local browser checks:
 
 ```sh
 npx playwright install --with-deps chromium
