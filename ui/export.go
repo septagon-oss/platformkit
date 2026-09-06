@@ -71,8 +71,14 @@ func Export(theme design.Pair, examples []components.Example, extra ...Extra) (D
 		Icons:    []IconExport{},
 		Examples: []components.ExampleDescription{},
 	}
+	type componentContract struct {
+		exampleID string
+		editable  bool
+		schema    string
+		slots     []components.SlotDescription
+	}
 	seen := make(map[string]bool, len(examples))
-	schemas := make(map[string]string)
+	contracts := make(map[string]componentContract)
 	for _, example := range examples {
 		if strings.TrimSpace(example.ID) == "" || strings.TrimSpace(example.ComponentID) == "" {
 			return DesignExport{}, fmt.Errorf("design export: example %q has no stable identity", example.Name)
@@ -85,13 +91,16 @@ func Export(theme design.Pair, examples []components.Example, extra ...Extra) (D
 		if err != nil {
 			return DesignExport{}, fmt.Errorf("design export %s: %w", example.ID, err)
 		}
-		if description.PropsEditable {
-			schema := string(description.Schema)
-			if previous, exists := schemas[example.ComponentID]; exists && previous != schema {
-				return DesignExport{}, fmt.Errorf("design export: conflicting property contracts for %q", example.ComponentID)
-			}
-			schemas[example.ComponentID] = schema
+		// Named slots form an interface independently of Go declaration order,
+		// rendered content or the properties of this particular invocation.
+		slots := slices.Clone(description.Slots)
+		slices.SortFunc(slots, func(a, b components.SlotDescription) int { return cmp.Compare(a.Name, b.Name) })
+		contract := componentContract{example.ID, description.PropsEditable, string(description.Schema), slots}
+		if previous, exists := contracts[example.ComponentID]; exists &&
+			(previous.editable != contract.editable || previous.schema != contract.schema || !slices.Equal(previous.slots, contract.slots)) {
+			return DesignExport{}, fmt.Errorf("design export: conflicting component contracts for %q between examples %q and %q", example.ComponentID, previous.exampleID, example.ID)
 		}
+		contracts[example.ComponentID] = contract
 		out.Examples = append(out.Examples, description)
 	}
 	slices.SortFunc(out.Examples, func(a, b components.ExampleDescription) int { return cmp.Compare(a.ID, b.ID) })

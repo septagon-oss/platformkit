@@ -104,6 +104,14 @@ The gallery still renders through those constructors. Property edits and
 supported `Node` or `[]Node` slot replacements produce another bound example;
 slot nodes are trusted Go capabilities, not user-supplied markup. Callbacks
 and compound slot data are described but are not portable replacement inputs.
+Examples sharing a component identity must agree on property editability,
+the property schema and every named slot declaration; field order and example
+content do not change that interface. Navigation tabs, panel tabs and modal
+helpers retain distinct contract identities even when grouped together in the
+gallery. Alert and EmptyState expose their existing typed slot constructors to
+consumers, so their gallery examples do not require private rendering adapters.
+These are source-interface checks, not yet nested occurrence identity or a
+complete cross-editor replacement contract.
 
 [ui.Export](ui/export.go) projects those examples with their palette, glyphs
 and stylesheet into a content-addressed snapshot. Products supply their own

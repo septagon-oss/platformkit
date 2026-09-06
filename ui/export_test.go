@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -150,5 +151,64 @@ func TestDesignExportKeepsPreviewAndGoSlotSupportExplicit(t *testing.T) {
 		if slot.Supported && !slot.TrustedOnly {
 			t.Fatal("trusted Go replacement advertised as portable/native support")
 		}
+	}
+}
+
+func slotContractExample[S any](info c.ExampleInfo, label string, slots S) c.Example {
+	return c.ExampleWithSlots(info, c.ButtonProps{Label: label}, slots, func(p c.ButtonProps, _ S) g.Node {
+		return g.Text(p.Label)
+	})
+}
+
+func TestDesignExportRejectsConflictingSlotAndEditabilityContracts(t *testing.T) {
+	info := c.ExampleInfo{ID: "owner/first", ComponentID: "owner"}
+	base := slotContractExample(info, "First", struct{ Body g.Node }{g.Text("Body")})
+	other := c.ExampleInfo{ID: "owner/second", ComponentID: "owner"}
+	cases := map[string]c.Example{
+		"missing":  slotContractExample(other, "Second", struct{}{}),
+		"extra":    slotContractExample(other, "Second", struct{ Body, Footer g.Node }{}),
+		"renamed":  slotContractExample(other, "Second", struct{ Content g.Node }{}),
+		"multiple": slotContractExample(other, "Second", struct{ Body []g.Node }{}),
+		"callback": slotContractExample(other, "Second", struct{ Body func() g.Node }{}),
+		"preview":  c.ExamplePreview(other, g.Text("Preview"), "No typed contract"),
+	}
+	for name, example := range cases {
+		t.Run(name, func(t *testing.T) {
+			for _, examples := range [][]c.Example{{base, example}, {example, base}} {
+				doc, err := ui.Export(design.Default(), examples)
+				if err == nil || !reflect.DeepEqual(doc, ui.DesignExport{}) {
+					t.Fatalf("conflicting interface must fail without partial export: error=%v, examples=%d", err, len(doc.Examples))
+				}
+			}
+		})
+	}
+	callback := slotContractExample(info, "First", struct{ Body func() g.Node }{})
+	changed := slotContractExample(other, "Second", struct{ Body func(string) g.Node }{})
+	if doc, err := ui.Export(design.Default(), []c.Example{callback, changed}); err == nil || !reflect.DeepEqual(doc, ui.DesignExport{}) {
+		t.Fatal("accepted conflicting opaque callback types or returned a partial export")
+	}
+}
+
+func TestDesignExportSlotContractsIgnoreDeclarationOrderAndExampleValues(t *testing.T) {
+	type ordered struct {
+		Body   g.Node
+		Footer []g.Node
+	}
+	type reversed struct {
+		Footer []g.Node
+		Body   g.Node
+	}
+	first := c.ExampleInfo{ID: "owner/first", ComponentID: "owner", Name: "First", Group: "One"}
+	second := c.ExampleInfo{ID: "owner/second", ComponentID: "owner", Name: "Second", Group: "Two"}
+	examples := []c.Example{
+		slotContractExample(first, "First label", ordered{g.Text("Body"), nil}),
+		slotContractExample(second, "Second label", reversed{[]g.Node{g.Text("Footer")}, g.Text("Changed")}),
+	}
+	doc, err := ui.Export(design.Default(), examples)
+	if err != nil || len(doc.Examples) != 2 {
+		t.Fatalf("compatible interfaces rejected: %v", err)
+	}
+	if string(doc.Examples[0].Props) == string(doc.Examples[1].Props) || doc.Examples[0].HTML == doc.Examples[1].HTML {
+		t.Fatal("export discarded distinct example values")
 	}
 }

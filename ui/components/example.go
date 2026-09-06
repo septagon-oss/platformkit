@@ -14,6 +14,8 @@ import (
 
 // ExampleInfo identifies a particular constructor invocation, not a second
 // component registry. IDs are supplied by the owner of the example collection.
+// ComponentID names one Props/slot interface independently of example grouping;
+// helpers with different interfaces need distinct component identities.
 type ExampleInfo struct {
 	ID          string `json:"id"`
 	ComponentID string `json:"componentId"`

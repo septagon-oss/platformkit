@@ -82,17 +82,14 @@ func Gallery() []Example {
 		ExampleWithSlots(info("pk-ui.component.badge/outline", "Status", "Badge / outline"), BadgeProps{Label: "Outlined", Variant: "outline"}, BadgeSlots{}, BadgeWithSlots),
 		ExampleWithSlots(info("pk-ui.component.badge/count", "Status", "Badge / count"), BadgeProps{Label: "Messages", Count: 120, Removable: true, Live: true}, BadgeSlots{}, BadgeWithSlots),
 
-		ExampleOf(info("pk-ui.component.alert/success", "Status", "Alert / success"), AlertProps{Title: "Saved", Message: "All good.", Tone: "success"}, Alert),
+		ExampleWithSlots(info("pk-ui.component.alert/success", "Status", "Alert / success"), AlertProps{Title: "Saved", Message: "All good.", Tone: "success"}, AlertSlots{}, AlertWithSlots),
 		ExampleWithSlots(info("pk-ui.component.alert/warning", "Status", "Alert / warning"), AlertProps{Message: "Careful now.", Tone: "warning"},
-			struct{ IconStart, Actions []g.Node }{IconStart: []g.Node{Icon(IconProps{Name: "warning", Size: "md", Tone: "warning"})}, Actions: nil},
-			func(p AlertProps, slots struct{ IconStart, Actions []g.Node }) g.Node {
-				return alertWithSlots(p, slots.IconStart, slots.Actions)
-			}),
-		ExampleOf(info("pk-ui.component.alert/danger", "Status", "Alert / danger"), AlertProps{Message: "That failed.", Tone: "danger"}, Alert),
-		ExampleOf(info("pk-ui.component.alert/info", "Status", "Alert / info"), AlertProps{Message: "Heads up.", Tone: "info"}, Alert),
-		ExampleOf(info("pk-ui.component.alert/compact", "Status", "Alert / compact"), AlertProps{Message: "Compact.", Tone: "info", Compact: true}, Alert),
-		ExampleOf(info("pk-ui.component.alert/bordered", "Status", "Alert / bordered"), AlertProps{Message: "Accented.", Tone: "warning", Bordered: true}, Alert),
-		ExampleOf(info("pk-ui.component.alert/dismissible", "Status", "Alert / dismissible"), AlertProps{Message: "Dismiss me.", Tone: "success", Dismissible: true}, Alert),
+			AlertSlots{IconStart: []g.Node{Icon(IconProps{Name: "warning", Size: "md", Tone: "warning"})}}, AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/danger", "Status", "Alert / danger"), AlertProps{Message: "That failed.", Tone: "danger"}, AlertSlots{}, AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/info", "Status", "Alert / info"), AlertProps{Message: "Heads up.", Tone: "info"}, AlertSlots{}, AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/compact", "Status", "Alert / compact"), AlertProps{Message: "Compact.", Tone: "info", Compact: true}, AlertSlots{}, AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/bordered", "Status", "Alert / bordered"), AlertProps{Message: "Accented.", Tone: "warning", Bordered: true}, AlertSlots{}, AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/dismissible", "Status", "Alert / dismissible"), AlertProps{Message: "Dismiss me.", Tone: "success", Dismissible: true}, AlertSlots{}, AlertWithSlots),
 
 		ExampleOf(info("pk-ui.component.spinner/brand", "Status", "Spinner / brand"), SpinnerProps{Size: "sm", Tone: "brand"}, Spinner),
 		ExampleOf(info("pk-ui.component.spinner/labelled", "Status", "Spinner / labelled"), SpinnerProps{Size: "md", Tone: "info", Label: "Fetching"}, Spinner),
@@ -108,11 +105,8 @@ func Gallery() []Example {
 
 		ExampleWithSlots(info("pk-ui.component.emptystate/default", "Status", "EmptyState"),
 			EmptyStateProps{Title: "No tenants yet", Description: "Create the first tenant to get started.", Bordered: true},
-			struct{ IconStart, Actions []g.Node }{IconStart: nil, Actions: []g.Node{Link(LinkProps{Label: "New tenant", Href: "/admin/tenants/new"})}},
-			func(p EmptyStateProps, slots struct{ IconStart, Actions []g.Node }) g.Node {
-				return emptyStateWithSlots(p, slots.IconStart, slots.Actions)
-			}),
-		ExampleOf(info("pk-ui.component.emptystate/compact", "Status", "EmptyState / compact"), EmptyStateProps{Title: "Empty", Compact: true}, EmptyState),
+			EmptyStateSlots{Actions: []g.Node{Link(LinkProps{Label: "New tenant", Href: "/admin/tenants/new"})}}, EmptyStateWithSlots),
+		ExampleWithSlots(info("pk-ui.component.emptystate/compact", "Status", "EmptyState / compact"), EmptyStateProps{Title: "Empty", Compact: true}, EmptyStateSlots{}, EmptyStateWithSlots),
 
 		ExampleOf(info("pk-ui.component.label/default", "Form", "Label"), LabelProps{Text: "Standalone", For: "x", Required: true}, Label),
 		ExampleOf(info("pk-ui.component.input/email", "Form", "Input / email"), InputProps{Name: "email", Type: "email", Label: "Email",
@@ -199,7 +193,7 @@ func Gallery() []Example {
 		ExampleOf(info("pk-ui.component.tabs/default", "Navigation", "Tabs"), TabsProps{ActiveTab: "b", Items: []TabItem{
 			{Key: "a", Label: "First", URL: "/tab/a"}, {Key: "b", Label: "Second"},
 		}}, Tabs),
-		ExampleWithSlots(info("pk-ui.component.tabs/vertical-pills", "Navigation", "Tabs / vertical pills"),
+		ExampleWithSlots(ExampleInfo{ID: "pk-ui.component.tabs/vertical-pills", ComponentID: "pk-ui.component.tabpanels", Group: "Navigation", Name: "Tabs / vertical pills"},
 			TabsProps{ActiveTab: "profile", Orientation: "vertical", Variant: "pills"}, TabsSlots{Tabs: []TabSlot{
 				{ID: "profile", Label: "Profile", Icon: "user", Badge: "New", Content: []g.Node{g.Text("Profile panel")}},
 				{ID: "security", Label: "Security", Disabled: true, Content: []g.Node{g.Text("Security panel")}},
@@ -248,12 +242,13 @@ func Gallery() []Example {
 			Closable: new(false), CloseOnOverlay: new(false), CloseOnEscape: new(false), ShowClose: new(false), ShowOverlay: new(false), Centered: new(false)}, ModalSlots{}, ModalWithSlots),
 		ExampleWithSlots(info("pk-ui.component.modal/deferred", "Overlay", "Modal / deferred"), ModalProps{ComponentProps: ComponentProps{ID: "server-modal"},
 			AriaLabel: "Server dialog", Deferred: true, OpenOnSwap: true}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/panel", "Overlay", "Modal / panel"), ModalProps{Title: "Panel only"}, struct{ Body g.Node }{Body: g.Text("Body")},
-			func(p ModalProps, slots struct{ Body g.Node }) g.Node { return ModalPanel(p, slots.Body) }),
-		ExamplePreview(info("pk-ui.component.modal/form", "Overlay", "Modal / form"), ModalForm(g.Text("Fields")), "ModalForm accepts arbitrary nodes rather than typed properties."),
-		ExamplePreview(info("pk-ui.component.modal/close-button", "Overlay", "Modal / close button"),
+		ExampleWithSlots(ExampleInfo{ID: "pk-ui.component.modal/panel", ComponentID: "pk-ui.component.modalpanel", Group: "Overlay", Name: "Modal / panel"},
+			ModalProps{Title: "Panel only"}, ModalSlots{Body: []g.Node{g.Text("Body")}}, ModalPanelWithSlots),
+		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/form", ComponentID: "pk-ui.component.modalform", Group: "Overlay", Name: "Modal / form"},
+			ModalForm(g.Text("Fields")), "ModalForm accepts arbitrary nodes rather than typed properties."),
+		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/close-button", ComponentID: "pk-ui.component.modalclosebutton", Group: "Overlay", Name: "Modal / close button"},
 			ModalCloseButton("Close", ""), "ModalCloseButton accepts strings rather than a typed properties contract."),
-		ExamplePreview(info("pk-ui.component.modal/cancel-button", "Overlay", "Modal / cancel button"),
+		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/cancel-button", ComponentID: "pk-ui.component.modalcancelbutton", Group: "Overlay", Name: "Modal / cancel button"},
 			ModalCancelButton("Cancel", ""), "ModalCancelButton accepts strings rather than a typed properties contract."),
 		ExampleOf(info("pk-ui.component.confirmdialog/default", "Overlay", "ConfirmDialog"), ConfirmDialogProps{
 			Title: "Delete this row?", AcceptLabel: "Delete", CancelLabel: "Keep"}, ConfirmDialog),

@@ -283,14 +283,17 @@ func BadgeWithSlots(p BadgeProps, slots BadgeSlots) g.Node {
 // Alert renders AlertProps with role="alert" for danger/warning and
 // role="status" otherwise, so severity maps to interruption behavior.
 func Alert(p AlertProps) g.Node {
-	return alertWithSlots(p, nil, nil)
+	return AlertWithSlots(p, AlertSlots{})
 }
 
-func alertWithSlots(
-	p AlertProps,
-	iconStart []g.Node,
-	actions []g.Node,
-) g.Node {
+// AlertSlots carries trusted Go adornments and actions around the message.
+type AlertSlots struct {
+	IconStart, Actions []g.Node
+}
+
+// AlertWithSlots retains the same status semantics and dismissal behavior as Alert.
+func AlertWithSlots(p AlertProps, slots AlertSlots) g.Node {
+	iconStart, actions := slots.IconStart, slots.Actions
 	tone := p.Tone
 	if tone == "" {
 		tone = "info"
@@ -1240,14 +1243,16 @@ func normalizeSpinnerTone(tone string) string {
 
 // EmptyState renders EmptyStateProps.
 func EmptyState(p EmptyStateProps) g.Node {
-	return emptyStateWithSlots(p, nil, nil)
+	return EmptyStateWithSlots(p, EmptyStateSlots{})
 }
 
-func emptyStateWithSlots(
-	p EmptyStateProps,
-	iconStart []g.Node,
-	actions []g.Node,
-) g.Node {
+// EmptyStateSlots carries trusted Go adornments and recovery actions.
+type EmptyStateSlots struct {
+	IconStart, Actions []g.Node
+}
+
+// EmptyStateWithSlots composes content through the existing empty-state renderer.
+func EmptyStateWithSlots(p EmptyStateProps, slots EmptyStateSlots) g.Node {
 	cl := clEmpty.Merge(clEmptyPad)
 	if p.Compact {
 		cl = clEmpty.Merge(clEmptyCompact)
@@ -1258,12 +1263,12 @@ func emptyStateWithSlots(
 	var children []g.Node
 	children = append(children, baseAttrs(p.ComponentProps)...)
 	children = append(children, classes(cl.Compile(), p.Class))
-	children = append(children, iconStart...)
+	children = append(children, slots.IconStart...)
 	children = append(children, h.P(h.Class(clEmptyTitle.Compile()), g.Text(p.Title)))
 	if p.Description != "" {
 		children = append(children, h.P(h.Class(clEmptyDesc.Compile()), g.Text(p.Description)))
 	}
-	children = append(children, actions...)
+	children = append(children, slots.Actions...)
 	return h.Div(children...)
 }
 
