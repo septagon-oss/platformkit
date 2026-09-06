@@ -41,7 +41,7 @@ var permissions = []module.Permission{{Key: contracts.PermissionSiteManage}}
 // neither module had a generated screen. The kernel has the shape now, and this
 // is the module that shows what it takes: a Load that answers with the defaults
 // rather than a 404, a Save, and a Face saying what a visitor may see.
-func Module(_ Deps) module.Module {
+func Module(_ Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
 	settings := rest.Singleton[*contracts.SiteSettings]{
 		Module: "site", Entity: "settings", Path: "/api/v1/site/settings",
@@ -68,7 +68,7 @@ func Module(_ Deps) module.Module {
 			return &contracts.Public{Title: s.Title, Nav: nav, Theme: s.Theme}
 		},
 	}
-	return module.Module{
+	return svc, module.Module{
 		Name:        "site",
 		Permissions: permissions,
 		Events:      contracts.Events,

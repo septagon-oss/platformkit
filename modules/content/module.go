@@ -61,9 +61,9 @@ var permissions = []module.Permission{
 
 // Module is the manifest. The implementation is constructed here, in one line,
 // and handed to the one place that uses it.
-func Module(_ Deps) module.Module {
+func Module(_ Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
-	return module.Module{
+	return svc, module.Module{
 		Name:        "content",
 		Permissions: permissions,
 		Events:      contracts.Events,

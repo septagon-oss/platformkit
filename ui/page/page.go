@@ -15,6 +15,7 @@
 package page
 
 import (
+	"cmp"
 	"maps"
 	"net/http"
 	"slices"
@@ -75,16 +76,20 @@ type View struct {
 	Title  string
 	Status int
 	Bare   bool
-	Head   []g.Node
-	Body   []g.Node
+	// Theme pins data-theme on this document over the chrome's, for a page
+	// whose theme is the tenant's choice rather than the shell's. A pinned
+	// document carries no theme script: the choice is not the visitor's.
+	Theme string
+	Head  []g.Node
+	Body  []g.Node
 }
 
 // Document renders a whole HTML document: the head from the chrome and the
 // view, and the framed body. It is pure; body is the frame's result.
 func Document(c Chrome, r Request, v View, body g.Node) g.Node {
 	attrs := []g.Node{h.Lang("en")}
-	if c.Theme != "" {
-		attrs = append(attrs, g.Attr("data-theme", c.Theme))
+	if theme := cmp.Or(v.Theme, c.Theme); theme != "" {
+		attrs = append(attrs, g.Attr("data-theme", theme))
 	}
 	if c.SignIn != "" {
 		attrs = append(attrs, g.Attr("data-signin", c.SignIn))
@@ -139,7 +144,7 @@ func head(c Chrome, r Request, v View) g.Node {
 		h.Meta(h.Name("color-scheme"), h.Content("light dark")),
 		h.TitleEl(g.Text(v.Title+" · "+Brand(c, r))),
 		h.Link(h.Rel("stylesheet"), h.Href(c.Assets+"/app.css?v="+c.Stylesheet.Fingerprint)),
-		g.Group(r.Inline),
+		g.If(v.Theme == "", g.Group(r.Inline)),
 		g.Group(scripts),
 		g.Group(v.Head),
 	)

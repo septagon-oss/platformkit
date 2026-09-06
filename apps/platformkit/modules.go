@@ -25,6 +25,7 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
+	"github.com/septagon-oss/platformkit/modules/web"
 )
 
 // composition is the application: every module it is made of, and the values
@@ -85,6 +86,8 @@ func compose(cfg config.Config) composition {
 	// The file service is returned beside its manifest, as user's and
 	// notification's are: a module that has to open a stored file takes
 	// filecontracts.Opener, and this is where it would be handed one.
+	contents, contentModule := content.Module(content.Deps{})
+	sites, siteModule := site.Module(site.Deps{})
 	_, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
 		QuotaBytes: cfg.Files.QuotaBytes,
@@ -102,9 +105,12 @@ func compose(cfg config.Config) composition {
 		// itself — how money is taken, where files go — from here, which is the
 		// file that names every module by definition.
 		billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()}),
-		content.Module(content.Deps{}),
-		site.Module(site.Deps{}),
+		contentModule,
+		siteModule,
 		fileModule,
+		// The public site reads what the two above publish and claims the root.
+		// A product with a storefront of its own composes that instead.
+		web.Module(web.Deps{Site: sites, Content: contents, Theme: design.Default()}),
 	}
 	mods = append(mods, audit.Module(audit.Deps{
 		Tenants:       active,

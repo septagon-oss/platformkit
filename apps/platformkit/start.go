@@ -123,7 +123,7 @@ func startApp(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "  http://%s/admin/login\n\n", cfg.Server.PublicHost)
+	fmt.Fprintf(os.Stderr, "  site   http://%s/\n  admin  http://%s/admin/login\n  api    http://%s/docs\n\n", cfg.Server.PublicHost, cfg.Server.PublicHost, cfg.Server.PublicHost)
 	return a.Run(ctx)
 }
 
@@ -140,7 +140,7 @@ func startConfig(data, addr string, pgPort int) config.Config {
 		return fmt.Sprintf("postgres://%s:platformkit@127.0.0.1:%d/platformkit?sslmode=disable&connect_timeout=5", user, pgPort)
 	}
 	return config.Config{
-		Server:   config.Server{Addr: addr, PublicHost: startHost + ":" + port, ReadTimeout: 30 * time.Second},
+		Server:   config.Server{Addr: addr, PublicHost: startHost + ":" + port, ReadTimeout: 30 * time.Second, Docs: true},
 		Database: config.Database{URL: url("platformkit_app"), MigrateURL: url("postgres")},
 		Log:      config.Log{Level: "info"},
 		Auth:     config.Auth{OIDC: config.OIDC{RedirectPath: "/api/v1/auth/oidc/callback"}},

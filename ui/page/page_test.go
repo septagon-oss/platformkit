@@ -177,3 +177,19 @@ func TestServedIsEveryRecordedGET(t *testing.T) {
 		t.Fatalf("served = %v", got)
 	}
 }
+
+func TestAViewPinsItsOwnThemeAndDropsTheThemeScript(t *testing.T) {
+	c := chrome()
+	r := page.Request{Inline: []g.Node{h.Script(g.Raw("stored theme"))}}
+	out := render(t, page.Document(c, r, page.View{Title: "Home", Theme: "dark"}, h.Main()))
+	if !strings.Contains(out, `data-theme="dark"`) {
+		t.Fatal("the view's theme was not pinned on the document")
+	}
+	if strings.Contains(out, "stored theme") {
+		t.Fatal("a pinned document carried the visitor's theme script")
+	}
+	out = render(t, page.Document(c, r, page.View{Title: "Home"}, h.Main()))
+	if !strings.Contains(out, "stored theme") {
+		t.Fatal("an unpinned document dropped the theme script")
+	}
+}

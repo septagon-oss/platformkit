@@ -227,7 +227,7 @@ func TestRenderStripsWhatAMarkdownBodyShouldNotCarry(t *testing.T) {
 		"[click me](javascript:alert('xss'))\n\n" +
 		"<a href=\"https://example.com\" onclick=\"steal()\">a link</a>\n\n" +
 		"Some **bold** text and a [real link](https://example.com/docs).\n"
-	html, err := internal.Render(body)
+	html, err := contracts.Render(body)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}

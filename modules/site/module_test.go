@@ -50,7 +50,8 @@ func mounted(t *testing.T) chi.Router {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	site.Module(site.Deps{}).Routes(api)
+	_, sites := site.Module(site.Deps{})
+	sites.Routes(api)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}

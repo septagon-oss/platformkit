@@ -91,7 +91,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.Content], svc cont
 			// 304, and nothing else: net/http does not send a body with one.
 			return &published{Status: http.StatusNotModified, ETag: tag}, nil
 		}
-		html, err := Render(c.Body)
+		html, err := contracts.Render(c.Body)
 		if err != nil {
 			return nil, rest.Fault(err)
 		}
