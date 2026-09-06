@@ -809,6 +809,11 @@ func statusOf(ctx huma.Context, a *API, status int) (keep, undecided bool) {
 	return false, true
 }
 
+// ExpectedPrincipalHeader optionally pins a protected, state-changing request
+// to the actor who prepared it. A mismatch is refused before authorization or
+// the handler runs. It is a request precondition, never an authentication input.
+const ExpectedPrincipalHeader = "X-Expected-Principal"
+
 // authorize enforces the operation's declaration.
 //
 // Every refusal is a 403, never a 401: which of the four conditions failed says
@@ -839,6 +844,10 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 			return
 		}
 		a.deny(ctx, "AUTH_ANONYMOUS", "this operation requires a signed-in caller")
+		return
+	}
+	if expected := ctx.Header(ExpectedPrincipalHeader); unsafeMethod(ctx.Method()) && expected != "" && expected != p.UserID.String() {
+		a.deny(ctx, "AUTH_PRINCIPAL_CHANGED", "the signed-in account differs from the one that prepared this request")
 		return
 	}
 	t, hasTenant := tenancy.FromContext(ctx.Context())

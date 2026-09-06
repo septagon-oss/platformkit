@@ -15,13 +15,15 @@
 package page
 
 import (
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -40,10 +42,8 @@ type Chrome struct {
 	// Assets + "/js/". A shell lists the kernel's it wants and its own.
 	Scripts []string
 	// SignIn is where an anonymous visitor to a guarded page is sent, and the
-	// route the controllers redirect to when a session ends. Empty means the
-	// shell has none: the kernel refuses with a problem document and the
-	// scripts redirect nowhere. It is written on <html> as data-signin, so a
-	// script never names a route.
+	// route offered for recovery without leaving an unsaved form. Empty means
+	// the shell has no sign-in link. Controllers never invent a route.
 	SignIn string
 	// Theme pins data-theme on <html>: a shop is the brand's colour and has no
 	// toggle. Empty follows the operating system and the person's own toggle,
@@ -89,15 +89,39 @@ func Document(c Chrome, r Request, v View, body g.Node) g.Node {
 	if c.SignIn != "" {
 		attrs = append(attrs, g.Attr("data-signin", c.SignIn))
 	}
-	keys := make([]string, 0, len(c.Attrs))
-	for k := range c.Attrs {
-		keys = append(keys, k)
+	if r.SignedIn {
+		attrs = append(attrs, g.Attr("data-principal", r.Principal.UserID.String()))
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(c.Attrs)) {
 		attrs = append(attrs, g.Attr(k, c.Attrs[k]))
 	}
-	return h.HTML(append(attrs, head(c, r, v), h.Body(body))...)
+	return h.HTML(append(attrs, head(c, r, v), h.Body(body, requestNotices(c)))...)
+}
+
+// Notices are source-rendered components, not HTML rebuilt by a controller.
+// They stay outside the form's swap target; its input is never serialized.
+func requestNotices(c Chrome) g.Node {
+	if !slices.Contains(c.Scripts, "htmx-config.js") {
+		return nil
+	}
+	var nodes []g.Node
+	for _, notice := range []struct {
+		kind, title, message string
+		signin               bool
+	}{
+		{"anonymous", "Sign-in required", "Keep this page open to retain your input. Sign in in another tab, then return and try again. Nothing is retried automatically.", true},
+		{"denied", "Permission denied", "You do not have permission for this action. Keep this page open to retain your input and contact an administrator if you need access.", false},
+		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
+		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
+	} {
+		nodes = append(nodes, h.Div(h.ID("pk-auth-"+notice.kind), h.Hidden(""), g.Attr("data-request-notice", ""),
+			components.Stack(components.StackProps{Gap: "3"},
+				components.Alert(components.AlertProps{Tone: "danger", Title: notice.title, Message: notice.message, Bordered: true}),
+				g.If(notice.signin && httpx.LocalPath(c.SignIn), components.Link(components.LinkProps{
+					Label: "Sign in (opens a new tab)", Href: c.SignIn, External: true})),
+			)))
+	}
+	return g.Group(nodes)
 }
 
 // head is every page's head: the stylesheet with its fingerprint, the inline

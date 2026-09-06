@@ -3,6 +3,7 @@ package httpx_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -245,6 +246,103 @@ func TestSignedInRequiresAPrincipalOfThisTenant(t *testing.T) {
 	f.signedIn()
 	if got := get(t, router, "/me").Code; got != http.StatusOK {
 		t.Errorf("signed-in caller got %d, want 200", got)
+	}
+}
+
+func expectedPrincipalRequest(router http.Handler, method, path, expected string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, "http://"+host+path, nil)
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
+	req.Header.Set(httpx.ExpectedPrincipalHeader, expected)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	return res
+}
+
+func TestExpectedPrincipalChangeRefusesWritesBeforeAuthorization(t *testing.T) {
+	if httpx.ExpectedPrincipalHeader != "X-Expected-Principal" {
+		t.Fatalf("unexpected principal header: %q", httpx.ExpectedPrincipalHeader)
+	}
+	api, router, f := setup(t)
+	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL)`)
+	f.signedIn()
+	f.allow = true
+	original := *f.principal
+	calls := 0
+	methods := []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
+	for _, method := range methods {
+		httpx.Register(api, huma.Operation{OperationID: "write-note-" + method, Method: method, Path: "/notes"},
+			httpx.Permission("note:write"), func(ctx context.Context, _ *struct{}) (*body, error) {
+				calls++
+				tx, _ := httpx.TxFrom(ctx)
+				err := tx.DB().Exec("INSERT INTO notes (tenant_id, body) VALUES (?, ?)", f.tenant.ID, "saved").Error
+				return &body{}, err
+			})
+	}
+	httpx.Register(api, huma.Operation{OperationID: "read-notes", Method: http.MethodGet, Path: "/notes"}, httpx.SignedIn(), ok)
+	if res := get(t, router, "/notes"); res.Code != http.StatusOK {
+		t.Fatalf("original user's initial read: %d %s", res.Code, res.Body)
+	}
+	f.signedIn()
+	for _, method := range methods {
+		for _, expected := range []string{original.UserID.String(), "not-a-principal-id"} {
+			res := expectedPrincipalRequest(router, method, "/notes", expected)
+			var problem struct{ Detail string }
+			err := json.Unmarshal(res.Body.Bytes(), &problem)
+			if res.Code != http.StatusForbidden || err != nil || !strings.HasPrefix(problem.Detail, "AUTH_PRINCIPAL_CHANGED:") {
+				t.Errorf("%s with stale/malformed principal: %d %s", method, res.Code, res.Body)
+			}
+		}
+	}
+	f.principal = nil
+	res := expectedPrincipalRequest(router, http.MethodPost, "/notes", original.UserID.String())
+	if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "AUTH_ANONYMOUS:") {
+		t.Errorf("anonymous refusal lost precedence: %d %s", res.Code, res.Body)
+	}
+	if count := notes(t, f); count != 0 || calls != 0 || f.asked.Load() != 0 {
+		t.Fatalf("refused requests reached work: rows=%d handlers=%d authorizer=%d", count, calls, f.asked.Load())
+	}
+	f.principal = new(original)
+	res = expectedPrincipalRequest(router, http.MethodPost, "/notes", original.UserID.String())
+	if res.Code != http.StatusOK || notes(t, f) != 1 || calls != 1 || f.asked.Load() != 1 {
+		t.Errorf("original-user retry must write once: status=%d handlers=%d authorizer=%d", res.Code, calls, f.asked.Load())
+	}
+}
+
+func TestExpectedPrincipalPreservesAuthorizationBoundaries(t *testing.T) {
+	const actor = "11111111-1111-4111-8111-111111111111"
+	for _, tc := range []struct {
+		name, method, expected string
+		auth                   httpx.Auth
+		signedIn, allow        bool
+		status                 int
+		asked                  int32
+	}{
+		{"missing allowed", http.MethodPost, "", httpx.Permission("note:write"), true, true, http.StatusOK, 1},
+		{"matching denied", http.MethodPost, actor, httpx.Permission("note:write"), true, false, http.StatusForbidden, 1},
+		{"missing denied", http.MethodPost, "", httpx.Permission("note:write"), true, false, http.StatusForbidden, 1},
+		{"signed-in mismatch", http.MethodPost, "stale", httpx.SignedIn(), true, true, http.StatusForbidden, 0},
+		{"signed-in matching", http.MethodPost, actor, httpx.SignedIn(), true, true, http.StatusOK, 0},
+		{"safe read", http.MethodGet, "stale", httpx.Permission("note:read"), true, true, http.StatusOK, 1},
+		{"public anonymous", http.MethodPost, "stale", httpx.Public(), false, false, http.StatusOK, 0},
+		{"public signed in", http.MethodPost, "stale", httpx.Public(), true, false, http.StatusOK, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api, router, f := setup(t)
+			if tc.signedIn {
+				f.principal = new(tenancy.Principal{UserID: uuid.MustParse(actor)})
+			}
+			f.allow = tc.allow
+			called := false
+			httpx.Register(api, huma.Operation{OperationID: "boundary", Method: tc.method, Path: "/boundary"}, tc.auth,
+				func(context.Context, *struct{}) (*body, error) {
+					called = true
+					return &body{}, nil
+				})
+			res := expectedPrincipalRequest(router, tc.method, "/boundary", tc.expected)
+			if res.Code != tc.status || f.asked.Load() != tc.asked || called != (tc.status == http.StatusOK) {
+				t.Errorf("status=%d authorizer=%d handler=%t: %s", res.Code, f.asked.Load(), called, res.Body)
+			}
+		})
 	}
 }
 

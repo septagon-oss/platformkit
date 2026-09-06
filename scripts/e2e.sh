@@ -122,6 +122,7 @@ cd e2e
 # Playwright nobody chose and leave the lock changed in somebody's working tree.
 [ -d node_modules ] || npm ci --no-audit --no-fund
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
+	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \
 	npx playwright test --output "$work/results" "$@"

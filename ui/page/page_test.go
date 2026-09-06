@@ -75,6 +75,31 @@ func TestDocumentPinsATheme(t *testing.T) {
 	}
 }
 
+func TestDocumentOffersRecoveryWithoutSerializingInputs(t *testing.T) {
+	t.Parallel()
+	c := chrome()
+	c.Scripts = append(c.Scripts, "htmx-config.js")
+	r := page.Request{SignedIn: true, Principal: tenancy.Principal{UserID: uuid.MustParse("bf81ba02-7ae1-468e-a908-842736ba7246")}}
+	out := render(t, page.Document(c, r, page.View{}, h.Main()))
+	for _, want := range []string{
+		`data-principal="bf81ba02-7ae1-468e-a908-842736ba7246"`,
+		`id="pk-auth-anonymous" hidden`, `id="pk-auth-denied" hidden`, `id="pk-auth-changed" hidden`,
+		`role="alert"`, "Sign-in required", "Permission denied", "Account changed",
+		`href="/admin/login" target="_blank" rel="noopener noreferrer"`, "Sign in (opens a new tab)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recovery document lacks %q", want)
+		}
+	}
+	for _, signin := range []string{"", "https://elsewhere.test/login", "//elsewhere.test/login", `/\elsewhere.test/login`} {
+		c.SignIn = signin
+		out = render(t, page.Document(c, page.Request{}, page.View{}, h.Main()))
+		if strings.Contains(out, "data-principal") || strings.Contains(out, "Sign in (opens a new tab)") {
+			t.Errorf("anonymous page or unsafe sign-in %q exposed recovery identity/link", signin)
+		}
+	}
+}
+
 func TestFaultKeepsTheStatusAndTheWayBack(t *testing.T) {
 	t.Parallel()
 	v := page.Fault(http.StatusNotFound, "no such task", "/admin", "Back to the dashboard")
