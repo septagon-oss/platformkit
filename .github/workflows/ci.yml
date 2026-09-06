@@ -64,37 +64,10 @@ jobs:
           PGPASSWORD: platformkit
         run: psql -h localhost -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
 
-      # The ratchet only ever lowers a ceiling. `--write` cannot raise one, but
-      # a hand edit can, so the raise is caught here rather than in review.
-      # Skipped when there is no main to compare against, which is the first
-      # commit and nothing else.
       - name: Budgets only ratchet down
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main 2>/dev/null || true
-          if ! git cat-file -e origin/main:loc-budget.json 2>/dev/null; then
-            echo "no base ref yet; skipping"
-            exit 0
-          fi
-          raised=$(jq -rn \
-            --argjson base "$(git show origin/main:loc-budget.json)" \
-            --argjson head "$(cat loc-budget.json)" \
-            '[$head.buckets[] as $h
-              | ($base.buckets[] | select(.name == $h.name)) as $b
-              | select($h.max > $b.max)
-              | "loc-budget.json: \($h.name) raised from \($b.max) to \($h.max)"] | .[]')
-          base_pkgs=$(git show origin/main:packages-budget.json | jq .packages)
-          head_pkgs=$(jq .packages packages-budget.json)
-          if [ "$head_pkgs" -gt "$base_pkgs" ]; then
-            raised="$raised
-          packages-budget.json: raised from $base_pkgs to $head_pkgs"
-          fi
-          if [ -n "$(printf '%s' "$raised" | tr -d '[:space:]')" ]; then
-            echo "A ceiling went up. Raising one is an owner commit with a reason:" >&2
-            echo "$raised" >&2
-            exit 1
-          fi
-          echo "budgets did not go up"
+        env:
+          BUDGET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bash scripts/check_budget_ratchet.sh "$BUDGET_BASE"
 
       - name: make check
         run: make check
