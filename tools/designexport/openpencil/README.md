@@ -120,6 +120,8 @@ empty or nested content, without inventing layout boxes. Missing markers mean
 that branch supplied no rendered slot, not that the source lacks a declaration.
 Malformed or crossed boundaries are refused. The existing example declarations
 remain authoritative; nested slot names alone do not establish component ownership.
+The source snapshot now retains captured child occurrences; this browser/native
+adapter does not yet consume that nested ownership contract.
 Icons separately expose their requested name and source-resolved
 `data-pk-icon-canonical` identity. Capture retains both, including aliases and
 fallbacks; an adapter must still verify the canonical asset and its provenance.

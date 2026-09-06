@@ -98,20 +98,27 @@ Go functions returning HTML and declares the classes those functions can emit.
 classes and rules into a stylesheet value. Deleting a component should not
 leave an independently maintained stylesheet behind.
 
-[Gallery](ui/components/gallery.go) captures the existing constructor calls as
-flat examples with stable identities, typed properties and named Go slots.
-The gallery still renders through those constructors. Property edits and
+[Gallery](ui/components/gallery.go) captures the existing constructor calls with
+stable identities, typed properties and named Go slots. Passing a captured
+example's `.Node` into another constructor retains its source identity without
+another rendering API. The gallery still renders through those constructors. Property edits and
 supported `Node` or `[]Node` slot replacements produce another bound example;
 slot nodes are trusted Go capabilities, not user-supplied markup. Callbacks
 and compound slot data are described but are not portable replacement inputs.
+Nested identities are local to their enclosing occurrence, not array positions
+or labels. Export retains declared slot ownership and byte spans from one
+synchronous rendering. A missing span means unobserved, not absent: opaque nodes
+can buffer or duplicate output. `OpaqueSlots` identifies unbound slot inputs;
+these records do not certify complete composition through arbitrary Go wrappers.
 Examples sharing a component identity must agree on property editability,
-the property schema and every named slot declaration; slot declaration order and
+the property schema and every named slot declaration, including nested and
+unobserved children; slot declaration order and
 example content do not change that interface. Navigation tabs, panel tabs and modal
 helpers retain distinct contract identities even when grouped together in the
 gallery. Alert and EmptyState expose their existing typed slot constructors to
 consumers, so their gallery examples do not require private rendering adapters.
-These are source-interface checks, not yet nested occurrence identity or a
-complete cross-editor replacement contract.
+Replacing a captured node or changing its identity invalidates typed projection
+and edits. These source checks are not a complete cross-editor replacement contract.
 
 [ui.Export](ui/export.go) projects those examples with their palette, glyphs
 and stylesheet into a content-addressed snapshot. Products supply their own

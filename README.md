@@ -91,6 +91,8 @@ The command writes a JSON snapshot to standard output: example and component
 identities, typed property values and schemas, named slot support, rendered
 HTML, the matching CSS, theme tokens and SVG glyphs with source and license
 information.
+Captured children additionally retain local identities, declared ownership and
+same-render byte spans; opaque inputs and unobserved children remain explicit.
 Font values are system fallback stacks; no font files are embedded. A content
 hash lets a consumer detect whether its source snapshot has changed.
 

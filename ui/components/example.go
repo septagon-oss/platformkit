@@ -7,7 +7,6 @@ import (
 	"io"
 	"reflect"
 	"slices"
-	"strings"
 
 	g "maragu.dev/gomponents"
 )
@@ -33,9 +32,10 @@ type Example struct {
 	slots  reflect.Value
 	render func(reflect.Value, reflect.Value) g.Node
 	reason string
+	bound  *exampleNode
 }
 
-// ExampleDescription is a flat export of one actual constructor invocation.
+// ExampleDescription projects one captured invocation and its known children.
 // PropsEditable and slot support describe Go APIs, not native/editor readiness.
 type ExampleDescription struct {
 	ExampleInfo
@@ -45,6 +45,8 @@ type ExampleDescription struct {
 	Schema        json.RawMessage   `json:"schema"`
 	Slots         []SlotDescription `json:"slots"`
 	HTML          string            `json:"html"`
+	Children      []ChildOccurrence `json:"children"`
+	OpaqueSlots   []string          `json:"opaqueSlots"`
 }
 
 // SlotDescription advertises the actual field type. Supported replacements
@@ -91,19 +93,17 @@ func ExamplePreview(info ExampleInfo, node g.Node, reason string) Example {
 
 func (e Example) capture() Example {
 	e.props, e.slots = copyExampleValue(e.props), copyExampleValue(e.slots)
-	e.Node = g.NodeFunc(func(w io.Writer) error {
-		node := e.render(copyExampleValue(e.props), copyExampleValue(e.slots))
-		if node == nil {
-			return fmt.Errorf("example %q rendered a nil node", e.ID)
-		}
-		return node.Render(w)
-	})
+	// A new capture must not retain the preceding Node/capture chain.
+	e.Node, e.bound = nil, nil
+	e.bound = &exampleNode{example: e}
+	e.Node = e.bound
 	return e
 }
 
-// Describe projects only portable data and uses the captured constructor for HTML.
-func (e Example) Describe() (ExampleDescription, error) {
-	d := ExampleDescription{ExampleInfo: e.ExampleInfo, Reason: e.reason, Slots: []SlotDescription{}}
+// describeInputs does not execute a constructor, callback or node.
+func (e Example) describeInputs() (ExampleDescription, error) {
+	d := ExampleDescription{ExampleInfo: e.ExampleInfo, Reason: e.reason,
+		Slots: []SlotDescription{}, Children: []ChildOccurrence{}, OpaqueSlots: []string{}}
 	if e.render != nil {
 		if e.props.Kind() != reflect.Struct || e.slots.Kind() != reflect.Struct {
 			return d, fmt.Errorf("example %q requires struct Props and slots", e.ID)
@@ -135,14 +135,6 @@ func (e Example) Describe() (ExampleDescription, error) {
 		}
 		d.PropsEditable = true
 	}
-	if e.Node == nil {
-		return d, fmt.Errorf("example %q has no node", e.ID)
-	}
-	var html strings.Builder
-	if err := e.Node.Render(&html); err != nil {
-		return d, err
-	}
-	d.HTML = html.String()
 	return d, nil
 }
 
@@ -152,6 +144,9 @@ func (e Example) Describe() (ExampleDescription, error) {
 func (e Example) WithProps(patch json.RawMessage) (Example, error) {
 	if e.render == nil || e.props.Kind() != reflect.Struct {
 		return Example{}, fmt.Errorf("example %q has no editable Props contract", e.ID)
+	}
+	if err := e.validateCapture(); err != nil {
+		return Example{}, err
 	}
 	fields, err := exampleFields(e.props.Type())
 	if err != nil {
@@ -184,6 +179,9 @@ func (e Example) WithProps(patch json.RawMessage) (Example, error) {
 func (e Example) WithSlot(name string, nodes ...g.Node) (Example, error) {
 	if e.render == nil || e.slots.Kind() != reflect.Struct {
 		return Example{}, fmt.Errorf("example %q has no replaceable slots", e.ID)
+	}
+	if err := e.validateCapture(); err != nil {
+		return Example{}, err
 	}
 	fields, err := exampleFields(e.slots.Type())
 	if err != nil {

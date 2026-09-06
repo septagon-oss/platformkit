@@ -212,3 +212,28 @@ func TestDesignExportSlotContractsIgnoreDeclarationOrderAndExampleValues(t *test
 		t.Fatal("export discarded distinct example values")
 	}
 }
+
+func TestDesignExportValidatesNestedContractsWithoutGlobalChildIDs(t *testing.T) {
+	childInfo := c.ExampleInfo{ID: "action", ComponentID: "button"}
+	button := c.ExampleOf(childInfo, c.ButtonProps{Label: "Save"}, c.Button)
+	parent := func(id string, child c.Example, hide bool) c.Example {
+		return c.ExampleWithChildren(c.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, []g.Node{child.Node},
+			func(p c.FormProps, nodes ...g.Node) g.Node {
+				if hide {
+					return c.Form(p)
+				}
+				return c.Form(p, nodes...)
+			})
+	}
+	first := parent("first", button, false)
+	if _, err := ui.Export(design.Default(), []c.Example{first, parent("second", button, false)}); err != nil {
+		t.Fatalf("the same local child identity in different owners is valid: %v", err)
+	}
+	conflicting := c.ExampleOf(childInfo, c.TextProps{Content: "Different interface"}, c.Text)
+	for _, hide := range []bool{false, true} {
+		doc, err := ui.Export(design.Default(), []c.Example{first, parent("second", conflicting, hide)})
+		if err == nil || !reflect.DeepEqual(doc, ui.DesignExport{}) {
+			t.Fatalf("nested interface conflict escaped validation (unobserved=%v): %v", hide, err)
+		}
+	}
+}

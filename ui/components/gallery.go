@@ -259,9 +259,16 @@ func Gallery() []Example {
 		ExampleWithChildren(info("pk-ui.component.toolbar/default", "Frame", "Toolbar"),
 			ToolbarProps{Title: "Tasks", Subtitle: "12 records"}, []g.Node{Button(ButtonProps{Label: "New task", Href: "/admin/task/tasks/new"})}, Toolbar),
 		ExampleWithChildren(info("pk-ui.component.form/default", "Frame", "Form"),
-			FormProps{Action: "/admin/task/tasks", Label: "New task"}, []g.Node{Input(InputProps{Name: "title", Label: "Title", Required: true}), FormActions(FormActionsProps{},
-				Button(ButtonProps{Label: "Cancel", Variant: "secondary", Href: "/admin/task/tasks"}),
-				Button(ButtonProps{Label: "Create", Type: "submit"}))}, Form),
+			FormProps{Action: "/admin/task/tasks", Label: "New task"}, []g.Node{
+				ExampleOf(ExampleInfo{ID: "title", ComponentID: "pk-ui.component.input"},
+					InputProps{Name: "title", Label: "Title", Required: true}, Input).Node,
+				ExampleWithChildren(ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, FormActionsProps{}, []g.Node{
+					ExampleWithSlots(ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
+						ButtonProps{Label: "Cancel", Variant: "secondary", Href: "/admin/task/tasks"}, ButtonSlots{}, ButtonWithSlots).Node,
+					ExampleWithSlots(ExampleInfo{ID: "create", ComponentID: "pk-ui.component.button"},
+						ButtonProps{Label: "Create", Type: "submit"}, ButtonSlots{}, ButtonWithSlots).Node,
+				}, FormActions).Node,
+			}, Form),
 		// Shell is not in this list, and cannot be: it renders <main>, and the
 		// page this gallery is on is itself a Shell, so an example would be a
 		// second main landmark inside the first — two documents in one, which

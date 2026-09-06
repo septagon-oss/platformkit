@@ -79,6 +79,26 @@ func Export(theme design.Pair, examples []components.Example, extra ...Extra) (D
 	}
 	seen := make(map[string]bool, len(examples))
 	contracts := make(map[string]componentContract)
+	var checkContract func(components.ExampleDescription, []string) error
+	checkContract = func(description components.ExampleDescription, parent []string) error {
+		path := append(slices.Clone(parent), description.ID)
+		// Named slots form an interface independently of Go declaration order,
+		// rendered content or the properties of this particular invocation.
+		slots := slices.Clone(description.Slots)
+		slices.SortFunc(slots, func(a, b components.SlotDescription) int { return cmp.Compare(a.Name, b.Name) })
+		contract := componentContract{fmt.Sprintf("%q", path), description.PropsEditable, string(description.Schema), slots}
+		if previous, exists := contracts[description.ComponentID]; exists &&
+			(previous.editable != contract.editable || previous.schema != contract.schema || !slices.Equal(previous.slots, contract.slots)) {
+			return fmt.Errorf("design export: conflicting component contracts for %q between occurrences %s and %s", description.ComponentID, previous.exampleID, contract.exampleID)
+		}
+		contracts[description.ComponentID] = contract
+		for _, child := range description.Children {
+			if err := checkContract(child.Description, path); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for _, example := range examples {
 		if strings.TrimSpace(example.ID) == "" || strings.TrimSpace(example.ComponentID) == "" {
 			return DesignExport{}, fmt.Errorf("design export: example %q has no stable identity", example.Name)
@@ -91,16 +111,9 @@ func Export(theme design.Pair, examples []components.Example, extra ...Extra) (D
 		if err != nil {
 			return DesignExport{}, fmt.Errorf("design export %s: %w", example.ID, err)
 		}
-		// Named slots form an interface independently of Go declaration order,
-		// rendered content or the properties of this particular invocation.
-		slots := slices.Clone(description.Slots)
-		slices.SortFunc(slots, func(a, b components.SlotDescription) int { return cmp.Compare(a.Name, b.Name) })
-		contract := componentContract{example.ID, description.PropsEditable, string(description.Schema), slots}
-		if previous, exists := contracts[example.ComponentID]; exists &&
-			(previous.editable != contract.editable || previous.schema != contract.schema || !slices.Equal(previous.slots, contract.slots)) {
-			return DesignExport{}, fmt.Errorf("design export: conflicting component contracts for %q between examples %q and %q", example.ComponentID, previous.exampleID, example.ID)
+		if err := checkContract(description, nil); err != nil {
+			return DesignExport{}, err
 		}
-		contracts[example.ComponentID] = contract
 		out.Examples = append(out.Examples, description)
 	}
 	slices.SortFunc(out.Examples, func(a, b components.ExampleDescription) int { return cmp.Compare(a.ID, b.ID) })
