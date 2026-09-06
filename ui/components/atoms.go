@@ -159,7 +159,7 @@ func ButtonWithSlots(p ButtonProps, slots ButtonSlots) g.Node {
 		children = append(children, slots.IconStart...)
 	}
 	if len(slots.Content) == 0 && !p.IconOnly {
-		children = append(children, g.Text(p.Label))
+		children = append(children, g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"))
 	}
 	if len(slots.Content) == 0 && !p.Loading {
 		if len(slots.IconEnd) > 0 {

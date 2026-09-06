@@ -71,6 +71,76 @@ func TestExampleDescribesActualPropsAndPreservesTransport(t *testing.T) {
 	}
 }
 
+func TestButtonTextRegionNamesItsActualProperty(t *testing.T) {
+	for _, label := range []struct{ name, value, escaped string }{
+		{"empty", "", ""},
+		{"metacharacters", `Save & <tag>"'<!--/pk-text:label-->`, `Save &amp; &lt;tag&gt;&#34;&#39;&lt;!--/pk-text:label--&gt;`},
+	} {
+		t.Run(label.name, func(t *testing.T) {
+			props := c.ButtonProps{
+				ComponentProps: c.ComponentProps{Disabled: true, Attrs: map[string]string{"data-local": "kept"}},
+				HTMXProps:      c.HTMXProps{Post: "/save", Target: "#result"},
+				Label:          label.value, Loading: true,
+			}
+			before, err := json.Marshal(props)
+			if err != nil {
+				t.Fatal(err)
+			}
+			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Button))
+			var values map[string]any
+			var schema struct {
+				Properties map[string]struct{ Type string }
+			}
+			if err := json.Unmarshal(description.Props, &values); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(description.Schema, &schema); err != nil {
+				t.Fatal(err)
+			}
+			if values["label"] != label.value || schema.Properties["label"].Type != "string" {
+				t.Fatal("the label region does not name the exported string property")
+			}
+			for _, marker := range []string{"<!--pk-text:label-->", "<!--/pk-text:label-->"} {
+				if strings.Count(description.HTML, marker) != 1 {
+					t.Fatalf("expected one exact %q marker: %s", marker, description.HTML)
+				}
+			}
+			if !strings.Contains(description.HTML, "<!--pk-text:label-->"+label.escaped+"<!--/pk-text:label-->") {
+				t.Fatal("the text region added a wrapper or failed to escape its label")
+			}
+			for _, attribute := range []string{`disabled`, `aria-busy="true"`, `hx-post="/save"`, `hx-target="#result"`, `data-local="kept"`} {
+				if !strings.Contains(description.HTML, attribute) {
+					t.Errorf("text annotation lost runtime attribute %s", attribute)
+				}
+			}
+			after, err := json.Marshal(props)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("rendering changed caller-owned props: %s / %s (%v)", before, after, err)
+			}
+		})
+	}
+}
+
+func TestButtonReplacedLabelHasNoTextRegion(t *testing.T) {
+	original := c.ExampleWithSlots(exampleInfo, c.ButtonProps{Label: "Save"}, c.ButtonSlots{}, c.ButtonWithSlots)
+	iconOnly, err := original.WithProps(json.RawMessage(`{"iconOnly":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := original.WithSlot("Content", g.Text("Save"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, example := range []c.Example{iconOnly, content} {
+		if strings.Contains(describeExample(t, example).HTML, "pk-text:label") {
+			t.Fatal("an icon-only label or identical slot text was advertised as rendered label text")
+		}
+	}
+	if !strings.Contains(describeExample(t, original).HTML, "<!--pk-text:label-->Save<!--/pk-text:label-->") {
+		t.Fatal("replacement changed the original label region")
+	}
+}
+
 func TestExampleStrictPatch(t *testing.T) {
 	example := c.ExampleOf(exampleInfo, c.ButtonProps{Label: "Save"}, c.Button)
 	for _, patch := range []string{
