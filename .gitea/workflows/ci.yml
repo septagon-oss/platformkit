@@ -1,0 +1,66 @@
+# Gitea Actions: the same gates as .github/workflows/ci.yml, run on the
+# workstation runner registered for this organisation. The job runs on the
+# host rather than in a job container because the gates need Postgres and NATS
+# reachable at localhost, psql, Docker, Go, Node and a browser, all of which the
+# host has and the runner images do not. The Compose stack and the browser
+# journey take their own ports so a run never collides with a developer's
+# stack on the same machine, and the stack is torn down whatever happened.
+#
+# Gitea ignores .github/workflows when this directory exists, so the release
+# workflow, which publishes to GitHub, does not run here.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: workstation
+    timeout-minutes: 30
+    env:
+      PLATFORMKIT_PG_PORT: "58432"
+      PLATFORMKIT_NATS_PORT: "57222"
+      PLATFORMKIT_E2E_PORT: "8199"
+      GOFLAGS: -p=4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Start Postgres and NATS
+        run: make up
+
+      - name: Budgets only ratchet down
+        env:
+          BUDGET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ "$BUDGET_BASE" =~ ^0+$ ]]; then echo "first push of the branch; nothing to compare"; exit 0; fi
+          bash scripts/check_budget_ratchet.sh "$BUDGET_BASE"
+
+      - name: make check
+        run: make check
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      - name: Native design conformance
+        working-directory: tools/designexport/openpencil
+        run: |
+          npm ci --ignore-scripts
+          npm test
+
+      - name: make e2e
+        run: |
+          npm --prefix e2e ci
+          npx --prefix e2e playwright install chromium
+          make e2e
+
+      - name: Stop Postgres and NATS
+        if: always()
+        run: make down
