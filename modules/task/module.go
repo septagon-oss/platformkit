@@ -3,9 +3,8 @@
 //
 // It is the shape every module follows: contracts/, internal/, and one exported
 // function taking a struct of typed dependencies and returning a module.Module.
-// main constructs it in dependency order and the compiler checks the wiring,
-// which is the whole of docs/adr/0002 — a dependency this module needs and main
-// did not pass is a compile error at the construction site, not a nil at boot.
+// The application constructs it in dependency order. Compilation checks the
+// dependency types; composition tests exercise the values supplied.
 package task
 
 import (
@@ -24,8 +23,8 @@ import (
 // a fourth positional argument. Every module follows this, and an empty Deps is
 // a module that needs nothing.
 type Deps struct {
-	// Tenants is how the SLA sweep reaches every tenant. The tenant module
-	// implements it in E3; until then apps/platformkit/dev.go does.
+	// Tenants is how the SLA sweep reaches active tenants. The application
+	// supplies tenant/contracts.Active over its tenant service.
 	Tenants jobs.TenantLister
 
 	// SweepEvery is how often the sweep runs; zero means a minute. The promise

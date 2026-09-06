@@ -29,9 +29,9 @@ func NewService() *Service { return &Service{} }
 
 var _ contracts.Service = (*Service)(nil)
 
-// Invite creates a user with no password. They cannot sign in until somebody
-// sets one, which in E3.2 is a link in an email a subscriber to this event
-// sends; until then it is SetPassword, called by an administrator.
+// Invite creates a user with no password and publishes the invitation. Auth's
+// subscriber sends the link through the delivery capability the app supplies;
+// redeeming it lets the recipient choose their password.
 func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*contracts.User, error) {
 	u := &contracts.User{Email: email, DisplayName: displayName, Status: contracts.StatusInvited}
 	if err := crud.Create(ctx, tx, u); err != nil {

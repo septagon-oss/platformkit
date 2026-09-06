@@ -220,8 +220,7 @@ func TestTheSweepBreachesTheOverdueAndNothingElse(t *testing.T) {
 	}
 }
 
-// lister is what the tenant module implements in E3, and what
-// apps/platformkit/dev.go implements until then.
+// lister fixes the tenants visited by this test's sweep.
 type lister []tenancy.Tenant
 
 func (l lister) List(context.Context, db.Tx[db.System]) ([]tenancy.Tenant, error) { return l, nil }
