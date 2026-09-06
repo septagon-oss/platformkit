@@ -1,13 +1,5 @@
-# Gitea Actions: the same gates as .github/workflows/ci.yml, run on the
-# workstation runner registered for this organisation. The job runs on the
-# host rather than in a job container because the gates need Postgres and NATS
-# reachable at localhost, psql, Docker, Go, Node and a browser, all of which the
-# host has and the runner images do not. The Compose stack and the browser
-# journey take their own ports so a run never collides with a developer's
-# stack on the same machine, and the stack is torn down whatever happened.
-#
-# Gitea ignores .github/workflows when this directory exists, so the release
-# workflow, which publishes to GitHub, does not run here.
+# Verification only. The runner supplies a dedicated Docker daemon and a fresh
+# job network; no workstation services or deployment credentials are required.
 name: ci
 
 on:
@@ -15,38 +7,77 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
-    runs-on: workstation
-    timeout-minutes: 30
+    # This self-hosted capacity accepts trusted same-repository changes only.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: pkit-ci-linux-amd64
+    timeout-minutes: 45
     env:
-      PLATFORMKIT_PG_PORT: "58432"
-      PLATFORMKIT_NATS_PORT: "57222"
-      PLATFORMKIT_E2E_PORT: "8199"
-      COMPOSE_PROJECT_NAME: platformkit-ci
+      PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
       GOFLAGS: -p=4
+    services:
+      postgres:
+        image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
+        env:
+          POSTGRES_PASSWORD: platformkit
+          POSTGRES_DB: platformkit
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platformkit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Start Postgres and NATS
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install the database client
         run: |
-          # A cancelled run leaves its containers behind. They are this job's own,
-          # under a project name of CI's, so clearing them touches nobody else's.
-          make down >/dev/null 2>&1 || true
-          make up || { ss -ltnp | grep -E ":($PLATFORMKIT_PG_PORT|$PLATFORMKIT_NATS_PORT) "; exit 1; }
+          apt-get update
+          apt-get install --yes --no-install-recommends postgresql-client
+
+      - name: Start NATS with JetStream on this job's network
+        id: nats
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+        run: |
+          test -n "$JOB_NETWORK"
+          container=$(docker run -d --network "$JOB_NETWORK" --network-alias nats \
+            nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3 \
+            --jetstream --http_port 8222)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -fsS http://nats:8222/healthz >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
+      - name: Create the platformkit_app role
+        env:
+          PGPASSWORD: platformkit
+        run: psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
 
       - name: Budgets only ratchet down
         env:
           BUDGET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [[ "$BUDGET_BASE" =~ ^0+$ ]]; then echo "first push of the branch; nothing to compare"; exit 0; fi
-          bash scripts/check_budget_ratchet.sh "$BUDGET_BASE"
+        run: bash scripts/check_budget_ratchet.sh "$BUDGET_BASE"
 
       - name: make check
         run: make check
@@ -54,18 +85,46 @@ jobs:
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
-      - name: Native design conformance
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: ''
+          package-manager-cache: false
+
+      - name: Native design conformance and dependency audit
         working-directory: tools/designexport/openpencil
         run: |
           npm ci --ignore-scripts
+          npm audit --omit=dev --audit-level=high
           npm test
 
-      - name: make e2e
+      - name: Install the browser
+        working-directory: e2e
         run: |
-          npm --prefix e2e ci
-          npx --prefix e2e playwright install chromium
-          make e2e
+          npm ci
+          npx playwright install --with-deps chromium
 
-      - name: Stop Postgres and NATS
+      - name: Native browser observations
+        working-directory: tools/designexport/openpencil
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
+
+      - name: Corrected editor image builds without publishing
+        env:
+          IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
+        run: docker build -f tools/designexport/openpencil/Dockerfile -t "$IMAGE" .
+
+      - name: make e2e
+        run: make e2e
+
+      - name: Remove this job's manually created resources
         if: always()
-        run: make down
+        env:
+          NATS_CONTAINER: ${{ steps.nats.outputs.container }}
+          IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
+        run: |
+          status=0
+          if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
+          if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
+          exit "$status"
