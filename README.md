@@ -161,10 +161,10 @@ npm --prefix e2e run install:browsers
 ```
 
 The browser setup may require permission to install operating-system packages.
-The test script recreates the fixed `platformkit_e2e` database on the configured
-development server; confirm it is disposable and do not run this target
-concurrently against that server. Once the prerequisites and disposable target
-are confirmed, run `make e2e` with the same dependency-port settings.
+The test script creates a unique database on the configured development server
+and removes only that database when it exits. Uploads and browser artifacts use
+the run's temporary directory. Run `make e2e` with the same dependency-port
+settings; concurrent runs also need distinct `PLATFORMKIT_E2E_PORT` values.
 Both checks run in CI. See [Makefile](Makefile) for the current targets and
 [Contributing](CONTRIBUTING.md) for focused checks and review requirements.
 

@@ -17,7 +17,7 @@ cd "$root"
 port="${PLATFORMKIT_E2E_PORT:-8099}"
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:?the owner connection; make e2e exports it}"
 app_url="${PLATFORMKIT_TEST_DATABASE_URL:?the application connection; make e2e exports it}"
-database="platformkit_e2e"
+database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
 
 if ! command -v node >/dev/null; then
 	echo "e2e: node is not installed; gate 10 needs it. See e2e/package.json." >&2
@@ -26,17 +26,27 @@ fi
 
 # A URL with the database swapped for this run's own. Everything else — host,
 # port, credentials — is whatever the suite already uses.
-swap() { printf '%s' "$1" | sed -E "s#(://[^/]+)/[^?]+#\1/$database#"; }
-psql_admin() { psql "$(swap "$admin_url" | sed -E "s#/$database#/postgres#")" -v ON_ERROR_STOP=1 -q "$@"; }
+swap() {
+	node -e 'try {
+		const url = new URL(process.argv[1]);
+		if (!["postgres:", "postgresql:"].includes(url.protocol)) throw new Error();
+		url.pathname = "/" + process.argv[2];
+		process.stdout.write(url.toString());
+	} catch { console.error("e2e: invalid PostgreSQL URL"); process.exit(1); }' "$1" "${2:-$database}"
+}
+psql_admin() { psql "$(swap "$admin_url" postgres)" -v ON_ERROR_STOP=1 -q "$@"; }
 
 work="$(mktemp -d)"
 app_pid=""
+created=false
 cleanup() {
 	if [ -n "$app_pid" ]; then
 		kill "$app_pid" 2>/dev/null || true
 		wait "$app_pid" 2>/dev/null || true
 	fi
-	psql_admin -c "DROP DATABASE IF EXISTS $database WITH (FORCE);" >/dev/null 2>&1 || true
+	if "$created"; then
+		psql_admin -c "DROP DATABASE $database WITH (FORCE);" >/dev/null || echo "e2e: could not remove $database" >&2
+	fi
 	rm -rf "$work"
 }
 trap cleanup EXIT
@@ -47,8 +57,8 @@ trap cleanup EXIT
 go build -o "$work/platformkit" ./apps/platformkit
 
 echo "e2e: a database of its own"
-psql_admin -c "DROP DATABASE IF EXISTS $database WITH (FORCE);" >/dev/null
 psql_admin -c "CREATE DATABASE $database;" >/dev/null
+created=true
 # The role exists (apps/platformkit/postgres-init.sql made it); the grants are per
 # database, so a fresh one needs them again.
 psql "$(swap "$admin_url")" -v ON_ERROR_STOP=1 -q \
@@ -70,6 +80,8 @@ log:
   level: "warn"
 audit:
   retention_days: 365
+files:
+  dir: "$work/files"
 YAML
 
 password="e2e-$(date +%s)-password"
@@ -105,4 +117,4 @@ cd e2e
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \
-	npx playwright test "$@"
+	npx playwright test --output "$work/results" "$@"
