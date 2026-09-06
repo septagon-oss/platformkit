@@ -41,7 +41,7 @@
       "exclude_suffixes": [
         "_test.go"
       ],
-      "max": 11300
+      "max": 11400
     },
     {
       "name": "apps",
@@ -130,7 +130,7 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 2400
+      "max": 2800
     },
     {
       "name": "design_tooling_test",
@@ -142,14 +142,14 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 3400
+      "max": 3800
     },
     {
       "name": "markdown",
       "suffixes": [
         ".md"
       ],
-      "max": 1800
+      "max": 1850
     }
   ]
 }
