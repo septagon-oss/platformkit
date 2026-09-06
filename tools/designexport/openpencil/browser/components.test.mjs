@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
+import { parseColor } from '@open-pencil/core/color'
 import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
@@ -41,14 +42,26 @@ function close(actual, expected, message) {
   assert.ok(Math.abs(actual - expected) <= 1 / 64, `${message}: ${actual} versus ${expected}`)
 }
 
+function colorCollection(graph) {
+  assert.equal(graph.variableCollections.size, 1, 'fixture has one explicit foundation collection')
+  return [...graph.variableCollections.keys()][0]
+}
+
 test('real source Button becomes a linked editable component with fractional native HUG geometry', async () => {
   const snapshot = source(), before = structuredClone(snapshot)
   for (const mode of ['light', 'dark']) {
     let graph = buildFoundation(snapshot)
     const page = graph.addPage('Component conformance')
+    const collection = graph.variableCollections.get(colorCollection(graph))
+    graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
     const observation = await observe(snapshot, mode)
     const oldMeasurer = getTextMeasurer()
-    let { master, properties } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer)
+    let { master, properties } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, collection.id)
+    const background = [...graph.variables.values()].find(item => item.name === '--pk-color-accent-default')
+    const foreground = [...graph.variables.values()].find(item => item.name === '--pk-color-accent-on')
+    assert.equal(master.boundVariables['fills/0/color'], background.id)
+    assert.equal(graph.getChildren(master.id)[0].boundVariables['fills/0/color'], foreground.id)
+    assert.deepEqual(graph.resolveColorVariableForNode(master.id, background.id), parseColor(observation.roots[0].style['background-color']))
     assert.equal(getTextMeasurer(), oldMeasurer, 'conversion does not replace the caller measurement hook')
     const property = properties[0]
     assert.equal(property.name, 'label')
@@ -78,6 +91,10 @@ test('real source Button becomes a linked editable component with fractional nat
       assert.deepEqual([edited, ...graph.getChildren(edited.id)], before)
       actions.redoAction()
       close(edited.width, expected.bounds.width, 'redo width')
+      const expectedPaint = parseColor(label === 'Create album' ? '#123456' : '#fedcba')
+      const variable = graph.variables.get(master.boundVariables['fills/0/color'])
+      const modeId = graph.getNodeVariableModeId(master.id, variable.collectionId)
+      graph.addVariable({ ...variable, valuesByMode: { ...variable.valuesByMode, [modeId]: expectedPaint } })
       const encoded = await exportFigFile(graph)
       graph = await parseFigFile(encoded.slice().buffer, { populate: 'all' })
       const find = name => {
@@ -99,6 +116,27 @@ test('real source Button becomes a linked editable component with fractional nat
       assert.equal(sibling.componentId, master.id)
       assert.equal(graph.getChildren(sibling.id)[0].text, 'Save')
       assert.equal(graph.getChildren(master.id)[0].text, 'Save')
+      for (const node of [master, sibling, edited]) {
+        const backgroundId = node.boundVariables['fills/0/color']
+        const foregroundId = graph.getChildren(node.id)[0].boundVariables['fills/0/color']
+        assert.equal(graph.variables.get(backgroundId).name, '--pk-color-accent-default')
+        assert.equal(graph.variables.get(foregroundId).name, '--pk-color-accent-on')
+        const resolved = graph.resolveColorVariableForNode(node.id, backgroundId)
+        for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(resolved[channel] - expectedPaint[channel]) < 1e-6,
+          `${mode}/${label}/${node.name}/${channel}: ${resolved[channel]} != ${expectedPaint[channel]}; mode ${graph.getNodeVariableModeId(node.id, graph.variables.get(backgroundId).collectionId)}`)
+      }
+      const surface = ck.MakeSurface(128, 64), draw = new SkiaRenderer(ck, surface)
+      try {
+        await draw.loadFonts()
+        const canvas = surface.getCanvas()
+        canvas.clear(ck.TRANSPARENT)
+        canvas.translate(-edited.x, -edited.y)
+        draw.renderSceneToCanvas(canvas, graph, edited.parentId)
+        surface.flush()
+        const pixel = canvas.readPixels(3, 18, { width: 1, height: 1, alphaType: ck.AlphaType.Unpremul,
+          colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB })
+        assert.deepEqual([...pixel], ['r', 'g', 'b', 'a'].map(channel => Math.round(expectedPaint[channel] * 255)))
+      } finally { draw.destroy() }
     }
   }
   assert.deepEqual(snapshot, before)
@@ -115,7 +153,7 @@ test('unsupported native input is explicit and does not leave partial definition
   for (const input of cases) {
     const graph = buildFoundation(snapshot), page = graph.addPage('Rejected')
     const before = structuredClone([...graph.getAllNodes()])
-    await assert.rejects(materializeComponent(graph, page.id, snapshot, input, faces, renderer))
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, input, faces, renderer, colorCollection(graph)))
     assert.deepEqual([...graph.getAllNodes()], before)
   }
   for (const [label, id, extra] of [
@@ -125,7 +163,7 @@ test('unsupported native input is explicit and does not leave partial definition
     const unsupported = source(label, id, extra), captured = await observe(unsupported)
     const graph = buildFoundation(unsupported), page = graph.addPage('Rejected')
     const before = structuredClone([...graph.getAllNodes()])
-    await assert.rejects(materializeComponent(graph, page.id, unsupported, captured, faces, renderer))
+    await assert.rejects(materializeComponent(graph, page.id, unsupported, captured, faces, renderer, colorCollection(graph)))
     assert.deepEqual([...graph.getAllNodes()], before)
   }
 })
@@ -136,7 +174,7 @@ test('a mismatched default-headless rendering environment rolls back native cons
     const snapshot = source(), observation = await observe(snapshot, 'light', defaultBrowser)
     const graph = buildFoundation(snapshot), page = graph.addPage('Rejected font metrics')
     const before = structuredClone([...graph.getAllNodes()]), measurer = getTextMeasurer()
-    await assert.rejects(materializeComponent(graph, page.id, snapshot, observation, faces, renderer), /rendering environment/)
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, observation, faces, renderer, colorCollection(graph)), /rendering environment/)
     assert.deepEqual([...graph.getAllNodes()], before)
     assert.equal(getTextMeasurer(), measurer)
     assert.equal(defaultBrowser.contexts().length, 0)
@@ -161,7 +199,7 @@ for (const fails of [false, true]) test(`font loading preserves a newer caller m
   }
   try {
     setTextMeasurer(initial)
-    const pending = materializeComponent(graph, page.id, snapshot, observation, faces, gated)
+    const pending = materializeComponent(graph, page.id, snapshot, observation, faces, gated, colorCollection(graph))
     await entered.promise
     setTextMeasurer(concurrent)
     resume.resolve()
@@ -177,12 +215,12 @@ test('zero-advance text requires a working native renderer even when fallback di
   const snapshot = source('\u0301'), observation = await observe(snapshot)
   assert.equal(observation.roots[0].children[0].bounds.width, 0)
   const graph = buildFoundation(snapshot), page = graph.addPage('Zero-advance shaping')
-  const { master } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer)
+  const { master } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, colorCollection(graph))
   assert.equal(graph.getChildren(master.id)[0].width, 0, 'a real zero advance remains valid')
   const destroyed = new SkiaRenderer(ck, ck.MakeSurface(100, 50))
   destroyed.destroy()
   const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
-  await assert.rejects(materializeComponent(graph, page.id, snapshot, observation, faces, destroyed), /native text measurement/)
+  await assert.rejects(materializeComponent(graph, page.id, snapshot, observation, faces, destroyed, colorCollection(graph)), /native text measurement/)
   assert.deepEqual([...graph.getAllNodes()], before)
   assert.equal(getTextMeasurer(), previous)
 })
@@ -197,8 +235,29 @@ test('unavailable or invalid native measurements reject without layout fallback 
     const graph = buildFoundation(snapshot), page = graph.addPage('Rejected measurement')
     const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
     const invalid = { loadFonts: () => renderer.loadFonts(), measureTextNode: () => measured }
-    await assert.rejects(materializeComponent(graph, page.id, snapshot, observation, faces, invalid), /native text measurement/)
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, observation, faces, invalid, colorCollection(graph)), /native text measurement/)
     assert.deepEqual([...graph.getAllNodes()], before)
     assert.equal(getTextMeasurer(), previous)
+  }
+})
+
+test('paint binding refuses ambiguous, stale or derived inputs before graph mutation', async () => {
+  const snapshot = source(), observation = await observe(snapshot)
+  for (const change of [
+    input => { input.collectionId = undefined },
+    input => { input.graph.createVariable('--pk-color-accent-default', 'COLOR', input.collectionId, parseColor('#123456')) },
+    input => { input.graph.variables.values().find(item => item.name === '--pk-color-accent-default').valuesByMode = {} },
+    input => { input.observation.roots[0].style['background-color'] = 'rgb(1, 2, 3)' },
+    input => { input.observation.roots[0].paintSources['background-color'].directCandidate = null },
+    input => { input.observation.roots[0].paintSources['background-color'].tokens = [] },
+    input => { input.graph.renameMode(input.collectionId, input.graph.variableCollections.get(input.collectionId).defaultModeId, 'other') },
+  ]) {
+    const graph = buildFoundation(snapshot), page = graph.addPage('Refused paint')
+    const input = { graph, collectionId: colorCollection(graph), observation: structuredClone(observation) }
+    change(input)
+    const before = structuredClone({ nodes: [...graph.getAllNodes()], variables: [...graph.variables] })
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, input.observation, faces, renderer, input.collectionId),
+      /paint|variable|collection|mode/)
+    assert.deepEqual({ nodes: [...graph.getAllNodes()], variables: [...graph.variables] }, before)
   }
 })

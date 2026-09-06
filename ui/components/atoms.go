@@ -49,6 +49,7 @@ func Icon(p IconProps) g.Node {
 		g.Attr("fill", "currentColor"),
 		g.Attr("focusable", "false"),
 		g.Attr("data-pk-icon", p.Name),
+		g.Attr("data-pk-icon-canonical", glyph.Name),
 	)
 	if !known {
 		nodes = append(nodes, g.Attr("data-pk-icon-fallback", "true"))

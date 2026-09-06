@@ -19,10 +19,46 @@ function color(value) {
 
 const paint = value => ({ type: 'SOLID', color: color(value), opacity: 1, visible: true })
 
+function sameColor(a, b, tolerance = 1e-6) {
+  return a && b && ['r', 'g', 'b', 'a'].every(channel => Number.isFinite(a[channel]) &&
+    Number.isFinite(b[channel]) && Math.abs(a[channel] - b[channel]) <= tolerance)
+}
+
+// Bind only the direct aliases witnessed by capture, with matching source and
+// native values in every supplied mode. Mixed/derived paints need their own
+// representation; silently freezing them would break palette replacement.
+function observedPaint(graph, collection, snapshot, observation, root, property) {
+  const fill = paint(root.style[property]), source = root.paintSources[property]
+  requireComponent(Array.isArray(source?.tokens), 'paint dependency evidence required')
+  if (source.tokens.length === 0) {
+    requireComponent(source.directCandidate === null, 'literal paint has contradictory alias evidence')
+    return { fills: [fill], boundVariables: {} }
+  }
+  requireComponent(source.tokens.length === 1 && source.directCandidate === source.tokens[0],
+    'mixed or derived paint dependencies need further native conversion')
+  const variables = graph.getVariablesForCollection(collection.id).filter(item => item.name === source.directCandidate)
+  requireComponent(variables.length === 1 && variables[0].type === 'COLOR', 'one matching native color variable required')
+  const variable = variables[0]
+  for (const theme of snapshot.themes) {
+    const tokens = theme.tokens.filter(item => item.name === source.directCandidate)
+    const modes = collection.modes.filter(item => item.name === theme.mode)
+    requireComponent(tokens.length === 1 && tokens[0].type === 'color' && modes.length === 1,
+      'source color and native mode identities must be unambiguous')
+    const expected = parseColor(tokens[0].value)
+    requireComponent(sameColor(graph.resolveVariable(variable.id, modes[0].modeId), expected),
+      'native color variable differs from the source palette')
+    if (theme.mode === observation.mode) {
+      // Chromium serializes alpha to a limited decimal precision.
+      requireComponent(sameColor(fill.color, expected, 0.00051), 'observed paint differs from its source token')
+    }
+  }
+  return { fills: [fill], boundVariables: { 'fills/0/color': variable.id } }
+}
+
 // Construct a native component from an existing source observation. This first
-// layout boundary is a single row of explicitly bound text, with observed solid
-// paints. It does not claim token bindings, icon/slot replacement or interaction.
-export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer) {
+// layout boundary is a single row of explicitly bound text. Paint aliases use
+// the caller's native collection; icon/slot replacement and interaction follow.
+export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId) {
   requireComponent(['FRAME', 'CANVAS'].includes(graph.getNode(parentId)?.type), 'existing definition parent required')
   requireComponent(snapshot?.schema === 'platformkit.design-export.v1' && /^[a-f0-9]{64}$/.test(snapshot.sha256) &&
     observation?.sourceSHA === snapshot.sha256, 'observation must identify the selected source snapshot')
@@ -30,6 +66,11 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
   requireComponent(examples.length === 1 && examples[0].componentId === observation.componentId, 'one matching source invocation required')
   requireComponent(snapshot.themes.some(theme => theme.mode === observation.mode), 'unknown observed theme')
   const example = examples[0]
+  const collection = graph.variableCollections.get(colorCollectionId)
+  requireComponent(collection, 'explicit native color collection required')
+  const modes = collection.modes.filter(item => item.name === observation.mode)
+  requireComponent(modes.length === 1 && graph.getNodeVariableModeId(parentId, collection.id) === modes[0].modeId,
+    'definition parent variable mode must match the observation')
   requireComponent(observation.roots.length === 1 && observation.roots[0].kind === 'element', 'one component root required')
   const root = observation.roots[0], style = root.style
   requireComponent(['inline-flex', 'flex'].includes(style.display) && style['flex-direction'] === 'row' &&
@@ -78,18 +119,18 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
     layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG',
     primaryAxisAlign: 'CENTER', counterAxisAlign: 'CENTER', layoutWrap: 'NO_WRAP',
     itemSpacing: pixels(style['column-gap']), counterAxisSpacing: pixels(style['row-gap']), ...insets,
-    fills: [paint(style['background-color'])], opacity: Number(style.opacity),
+    ...observedPaint(graph, collection, snapshot, observation, root, 'background-color'), opacity: Number(style.opacity),
     independentCorners: true,
     topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
     bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
     pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
       schema: snapshot.schema, sha256: snapshot.sha256, exampleId: example.id, componentId: example.componentId,
-      mode: observation.mode, scope: 'text-component-observed-paints',
+      mode: observation.mode, scope: 'text-component-observed-aliases',
       environment: observation.environment, viewport: observation.viewport,
       fontFaces: observation.fontFaces, props: example.props,
     }) }],
   }
-  const textFill = paint(style.color)
+  const textPaint = observedPaint(graph, collection, snapshot, observation, root, 'color')
   let master
   try {
     await loadFonts(faces, texts.map(({ region, face }) => ({
@@ -103,7 +144,7 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
         name: region.property ?? 'Text', text: region.text,
         width: region.bounds.width, height: lineHeight,
         fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
-        fontSize, lineHeight, letterSpacing, textAutoResize: 'WIDTH_AND_HEIGHT', fills: [structuredClone(textFill)],
+        fontSize, lineHeight, letterSpacing, textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
       })
       if (Object.hasOwn(region, 'property')) targets.push({ region, nativeNode })
     }

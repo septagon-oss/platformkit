@@ -144,7 +144,9 @@ export async function captureExample(browser, snapshot, exampleId, {
           const content = getComputedStyle(node, pseudo).content
           if (content !== 'none' && content !== 'normal') throw new Error('Generated pseudo-element content needs explicit native conversion')
         }
-        if (node.localName === 'svg') out.icon = { name: node.getAttribute('data-pk-icon'), svg: node.outerHTML }
+        if (node.localName === 'svg') out.icon = {
+          name: node.getAttribute('data-pk-icon'), canonicalName: node.getAttribute('data-pk-icon-canonical'), svg: node.outerHTML,
+        }
         else out.children = children(node)
         return out
       }

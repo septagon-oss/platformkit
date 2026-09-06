@@ -52,6 +52,7 @@ func TestIconRendersAccessibleEditableSVG(t *testing.T) {
 		`fill="currentColor"`,
 		`focusable="false"`,
 		`data-pk-icon="check"`,
+		`data-pk-icon-canonical="check"`,
 		`role="img"`,
 		`aria-label="Complete"`,
 		`<path`,
@@ -75,6 +76,7 @@ func TestIconUnknownNameUsesVisibleDecorativeFallback(t *testing.T) {
 	html := rendered.String()
 	for _, fragment := range []string{
 		`data-pk-icon="not-a-real-icon"`,
+		`data-pk-icon-canonical="question"`,
 		`data-pk-icon-fallback="true"`,
 		`aria-hidden="true"`,
 		`<path`,
@@ -82,6 +84,30 @@ func TestIconUnknownNameUsesVisibleDecorativeFallback(t *testing.T) {
 		if !strings.Contains(html, fragment) {
 			t.Errorf("fallback Icon output is missing %q: %s", fragment, html)
 		}
+	}
+}
+
+func TestIconExposesResolvedIdentityWithoutReplacingRequestedName(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ requested, canonical string }{
+		{"upload", "upload-simple"}, {"search", "magnifying-glass"},
+		{" X_MARK ", "x"}, {"missing-glyph", "question"},
+	} {
+		t.Run(tc.requested, func(t *testing.T) {
+			var rendered strings.Builder
+			if err := Icon(IconProps{Name: tc.requested}).Render(&rendered); err != nil {
+				t.Fatal(err)
+			}
+			for _, fragment := range []string{
+				`data-pk-icon="` + tc.requested + `"`,
+				`data-pk-icon-canonical="` + tc.canonical + `"`,
+				`aria-hidden="true"`, `focusable="false"`,
+			} {
+				if !strings.Contains(rendered.String(), fragment) {
+					t.Errorf("missing %s", fragment)
+				}
+			}
+		})
 	}
 }
 

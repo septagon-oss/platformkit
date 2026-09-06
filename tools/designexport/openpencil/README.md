@@ -114,6 +114,9 @@ empty labels beside icons. Content-slot replacement and icon-only rendering
 omit the region. Capture records exact markers rather than guessing from visible
 strings. Typed ownership, native property binding and named-slot replacement
 remain the converter's responsibility; a balanced marker is not readiness proof.
+Icons separately expose their requested name and source-resolved
+`data-pk-icon-canonical` identity. Capture retains both, including aliases and
+fallbacks; an adapter must still verify the canonical asset and its provenance.
 
 Paint observations probe the existing root color variables with two distinct
 values. This distinguishes tested direct aliases and mixed paints from unrelated,
@@ -126,14 +129,19 @@ They must not be used to advertise universal token-binding support.
 
 [materializeComponent](components.mjs) takes an existing native graph and
 definition-parent ID, its source snapshot and observation, exact supplied font
-faces, and a live Skia renderer. It returns a native component master and its
+faces, a live Skia renderer, and an explicit native color-collection ID. The
+parent's effective native mode must match the observation. It returns a master and its
 property definitions. Create linked instances through the existing graph API;
 this helper does not publish a library or add another component registry.
 
 The current supported input is one explicitly bound, nonempty text region in a
 centered, unconstrained, nonwrapping horizontal flex container. Construction
 preserves observed solid paints, corner radii and padding including transparent
-border insets. It requires successful native text measurement and refuses outer
+border insets. Observed direct token aliases become native bindings only when
+the selected collection's identities and values match every source theme.
+Literal paints remain unbound; ambiguous, stale and derived paints are refused.
+This uses capture's measured alias evidence, not a general CSS equivalence proof.
+Construction requires successful native text measurement and refuses outer
 geometry differences larger than 1/64 CSS pixel. Rejection removes the newly
 constructed nodes and restores the caller's measurement hook.
 
@@ -148,13 +156,38 @@ Sans 600 and explicit `--font-render-hinting=none`. Label edits, undo/redo and t
 FIG round trips retain native links and match independently rendered source
 dimensions within 1/64 pixel. The precision correction preserves CanvasKit's
 shaped advances; it does not reproduce every platform's font hinting. These are
-geometry and persistence checks, not a pixel comparison or accessibility audit.
+geometry and persistence checks, not an accessibility audit or a complete source
+pixel comparison. Separate assertions change palette values and verify native
+painted pixels after each save. Page-mode serialization and imported instance
+index corrections keep the native mode and live links from silently disappearing.
 
-Component paints are observed literals, not token bindings. Icons, slots, visible
+Icons inside source component conversion, slots, visible
 borders, wrapping, constrained widths and empty or collapsed-whitespace inputs
 remain unsupported. Native text properties still accept empty values; preserving
 their identity does not prove whitespace-only flex layout after an edit. Do not
 treat this development boundary as a complete editable component library.
+
+At the lower native boundary, `createInstance` and `updateNode` accept FIG's
+authored `uniformScaleFactor`. Flat, solid-painted vector masters scale from
+canonical geometry, including strokes, without detaching or cumulative resizing.
+The tests cover 20px and 16px instances, composition, master geometry updates, factor edits
+and clearing, plus two saves with unchanged rendered pixels. Effective stroke
+caps and joins survive serialization; conflicting per-stroke styles are refused.
+This does not yet establish scaling for text, effects, dashed vectors, arbitrary nested masters,
+editor drag handles or source-owned icon-slot replacement.
+
+[Synchronization](sync-correction.mjs) plans and validates a projected result before
+applying changes through native graph APIs. Planning allocates no native IDs and
+emits no graph events; SDK copy helpers are reused. Geometry calculation and source
+identity reconciliation contain no product or catalog rules. The effect boundary
+owns ID allocation, notifications and temporary deletion ancestry, so a missing
+reference is never treated as evidence of a deletion.
+
+Tests cover path additions, removals and reordering, empty-master recovery,
+unscaled geometry, nested identities, explicit geometry and paint overrides, and
+two saves. Normal editor deletion notifications are checked without manual sync.
+Unrelated invalid components remain untouched. Unlinked local children survive;
+linked children without unambiguous source correspondence are refused.
 
 ## Supply exact font faces
 
@@ -189,6 +222,13 @@ Node loader. [corrections.mjs](corrections.mjs) checks the SHA-256 of each affec
 upstream module before transforming it. A changed or already-corrected source
 is an error. Installed dependencies remain untouched. The same source transform
 can be used at a browser build boundary, but that integration is unfinished.
+The upstream Vite configuration aliases engine packages to source, which bypasses
+these guarded distribution files. An isolated build of the pinned upstream with
+the `309f2f2` correction snapshot passed offline canvas startup after resolving one
+locked SDK tree, applying guards in main and worker builds, using OpenType's UMD
+entry, correcting published worker URLs from `.ts` to `.js`, and disabling PWA
+registration. This is feasibility evidence, not a retained build pipeline or a
+test of the newer scaling corrections, custom fonts, document edits or deployment.
 
 The correction uses native component/property identities and FIG override
 paths, not plugin metadata. Repeated saves merge overrides by path. Reflow and

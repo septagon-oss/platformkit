@@ -58,7 +58,7 @@ function sourceChildren(graph, source, instance, overrides) {
   return result
 }
 
-const lineageHelpers = [chain, sourceChild, sourceChildren].map(fn => fn.toString()).join('\n')
+export const lineageHelpers = [chain, sourceChild, sourceChildren].map(fn => fn.toString()).join('\n')
 
 const exporterHelpers = String.raw`
 function nativeOverridePath(context, instance, target, counter) {

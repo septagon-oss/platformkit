@@ -220,6 +220,18 @@ test('browser capture records markers rather than inferring properties from look
   assert.equal(unknown.find(node => node.kind === 'text').property, 'unknown')
 })
 
+test('browser capture retains source-owned canonical icon identities for aliases and fallback', async () => {
+  for (const [name, canonicalName] of [['upload', 'upload-simple'], [' X_MARK ', 'x'], ['missing-glyph', 'question']]) {
+    const snapshot = projection('pk-ui.component.icon/check', { name })
+    const captured = await captureExample(browser, snapshot, snapshot.examples[0].id)
+    const icon = captured.roots[0].icon
+    assert.equal(icon.name, name)
+    assert.equal(icon.canonicalName, canonicalName)
+    assert.ok(snapshot.icons.some(asset => asset.name === icon.canonicalName))
+    assert.ok(icon.svg.includes(`data-pk-icon-canonical="${canonicalName}"`))
+  }
+})
+
 test('browser capture refuses missing identities and invalid themes or viewports', async () => {
   await assert.rejects(captureExample(browser, source, 'missing'), /exactly one example/)
   await assert.rejects(captureExample(browser, source, primary, { mode: 'missing' }), /theme/)
