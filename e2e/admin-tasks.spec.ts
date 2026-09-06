@@ -123,10 +123,13 @@ test('a disabled gallery link refuses keyboard, pointer and HTMX activation', as
 
   // Complete an enabled navigation before inspecting requests. The structural
   // guards above, not an immediate URL check or a sleep, establish inactivity.
+  // The gallery renders its modal examples open, and an open modal's backdrop
+  // covers the page, so the pointer cannot reach this link: activate it the
+  // way the disabled link was activated, through the DOM.
   const enabled = page.locator('[data-gallery-example="Button / as link"]')
     .getByRole('link', { name: 'Open', exact: true });
   await expect(enabled).toHaveAttribute('href', '/somewhere');
-  await enabled.click();
+  await enabled.evaluate(node => (node as HTMLElement).click());
   await expect(page).toHaveURL(/\/somewhere$/);
   expect(adminRequests).toEqual([]);
 });
