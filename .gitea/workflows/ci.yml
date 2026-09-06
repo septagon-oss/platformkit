@@ -115,6 +115,28 @@ jobs:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
         run: docker build -f tools/designexport/openpencil/Dockerfile -t "$IMAGE" .
 
+      - name: Verify editing and downloaded FIG saves in the built editor
+        id: editor
+        working-directory: tools/designexport/openpencil
+        env:
+          IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
+          JOB_NETWORK: ${{ job.container.network }}
+          PLATFORMKIT_OPENPENCIL_URL: http://openpencil:8080
+        run: |
+          test -n "$JOB_NETWORK"
+          container=$(docker run -d --network "$JOB_NETWORK" --network-alias openpencil \
+            --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
+            --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
+            --tmpfs /var/cache/nginx:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 "$IMAGE")
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
+          node --import ./register.mjs --test editor/*.test.mjs
+
       - name: make e2e
         run: make e2e
 
@@ -122,9 +144,11 @@ jobs:
         if: always()
         env:
           NATS_CONTAINER: ${{ steps.nats.outputs.container }}
+          EDITOR_CONTAINER: ${{ steps.editor.outputs.container }}
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
         run: |
           status=0
+          if [ -n "$EDITOR_CONTAINER" ]; then docker rm -f "$EDITOR_CONTAINER" || status=1; fi
           if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
           if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
           exit "$status"

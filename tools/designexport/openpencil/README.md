@@ -9,8 +9,6 @@ The implemented boundary is a tokens-and-icons FIG generator, supplied-font
 validation, browser observations, experimental single-text component construction
 and a pinned SDK correction layer with conformance tests. The generator does not
 include these experimental components; pages and flows are not converted yet.
-The generic browser image below contains no product document and is not deployed
-by this tooling; a passing native test is not a production release.
 
 ## Generate the foundation
 
@@ -72,8 +70,7 @@ two successive FIG round trips. CanvasKit renders every light/dark icon in memor
 without requiring a GPU. This verifies native raster persistence, not browser
 interaction or comparison with an independent SVG renderer. Separate supplied-font
 tests exercise actual shaping within the boundary described below.
-CI and the tagged-tree workflow run the same command. `make check` remains the
-Go and repository-policy gate; this suite is an additional native boundary.
+This suite supplements `make check`'s Go and repository-policy gates.
 
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release
@@ -107,8 +104,7 @@ npm run test:browser
 ```
 
 The first command downloads a browser and may install system dependencies.
-CI and the tagged-tree workflow run these checks in addition to the native
-suite and the reference application's `make e2e` journeys.
+CI runs these checks alongside the native suite and `make e2e`.
 
 The Button constructor marks its actual `label` text with paired
 `<!--pk-text:label-->` comments. They preserve escaping and layout, including
@@ -234,28 +230,33 @@ complete OFL notice are recorded in [NOTICE](../../../NOTICE).
 Node loader. [corrections.mjs](corrections.mjs) rejects changed upstream bytes.
 [Dockerfile](Dockerfile) applies the same guards to main and worker browser builds
 through [build-editor.mjs](build-editor.mjs), using pinned source, images and locks.
-From the repository root, run
+Build locally from the repository root:
 `docker build -f tools/designexport/openpencil/Dockerfile -t platformkit-openpencil:local .`.
-Run it on port 8080 with UID/GID 101 and writable `/tmp`, `/var/run` and
-`/var/cache/nginx`. `/healthz` and `/platformkit-provenance.json` identify the image;
-`/licenses/bundled-dependencies.json` adds Vite's report to project/font notices.
-No document is packaged; PWA registration is disabled. Product assets remain client-owned.
-This builds locally; CI also builds but neither publishes nor runs image browser checks.
-WebGL startup, scaling and FIG downloads were checked locally; WebGPU assets and product fonts are absent.
+Serve that disposable image on a free loopback port (here 18089), container port 8080,
+UID/GID 101 and writable `/tmp`, `/var/run` and `/var/cache/nginx`. Its `/healthz`,
+`/platformkit-provenance.json` and `/licenses/bundled-dependencies.json` expose
+health, build-input hashes and bundled dependency notices. CI builds and tests
+the editor without publishing. From this directory, set the test image's URL:
 
-The correction uses native component/property identities and FIG override
-paths, not plugin metadata. Repeated saves merge overrides by path. Reflow and
-undo preserve the linked component relationship; they do not detach instances.
-The low-level property conformance fixtures use a deterministic text measurer,
-so their exact dimensions demonstrate layout state rather than real font shaping.
-The experimental component checks separately use the supplied real fonts.
-Editor fixtures use the normal graph subscriptions and public history actions.
-Assertions cover the state after deferred notifications settle, not just the
-immediate return from undo. Genuine authored master changes still propagate;
-the property operation pauses component synchronization only while computing or
-restoring its captured geometry. Ordinary authored parent resizing still
-propagates new master dimensions to instances. Failed text measurement restores
-grid sizing modes and explicitly frees the successfully built Yoga trees.
+```sh
+PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18089 node --import ./register.mjs --test editor/*.test.mjs
+```
+
+The [editor check](editor/replacement.test.mjs) refuses stale build inputs before
+opening disposable documents. It uses the real property picker, keyboard history,
+parse/export workers and two downloaded FIG saves in fresh browser contexts.
+Master/sibling geometry, paints, links and occurrence references are checked.
+Chromium uses software WebGL and its file-input/download fallback; native OS
+pickers, hardware GPUs and a full accessibility audit remain unverified.
+No document, WebGPU assets or product fonts are packaged; PWA registration is disabled.
+
+Native properties and FIG override paths retain links through reflow and undo;
+repeated saves merge overrides by path. Low-level property fixtures use a
+deterministic measurer, while component comparisons use the supplied real fonts.
+Normal graph subscriptions and history are checked after deferred notifications
+settle. Property operations pause synchronization only while computing/restoring
+captured geometry; authored parent resizing still propagates master dimensions.
+Failed measurement restores grid sizing modes and frees the built Yoga trees.
 
 Text-property guarantees cover single placed targets and exact layout undo/redo.
 Master-owned edits, variants and arbitrary imports remain unverified; identity
@@ -319,7 +320,6 @@ not load the expression or presentation packages. Calculator and presentation
 tests intentionally exercise broader entry points. Reachable browser-surface
 verification and the other release requirements above remain unfinished.
 
-Nothing in this directory changes the deployed editor or authorizes release.
-The reference Go application's container does not install these dependencies.
+This tooling neither deploys the editor nor installs dependencies in the Go image.
 OpenPencil attribution and license terms are recorded in the root
 [NOTICE](../../../NOTICE).
