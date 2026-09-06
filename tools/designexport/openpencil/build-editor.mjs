@@ -15,6 +15,7 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 const engine = /^@open-pencil\/(core|fig|scene-graph|pen|kiwi)(\/.*)?$/
 const engineRoot = /\/packages\/(core|fig|scene-graph|pen|kiwi)\//
 const pinned = specifier => require.resolve(specifier)
+const dependencies = JSON.parse(readFileSync(join(adapter, 'package.json'), 'utf8')).dependencies
 const manifest = JSON.parse(readFileSync(join(upstream, 'package.json'), 'utf8'))
 if (manifest.version !== sdkVersion) throw new Error('Upstream app and corrected SDK versions differ')
 for (const name of ['core', 'fig', 'scene-graph', 'pen', 'kiwi']) {
@@ -55,8 +56,16 @@ const seen = new Set()
 function nativeBoundary() {
   return {
     name: 'platformkit-native-boundary', enforce: 'pre',
-    resolveId(specifier) {
-      return engine.test(specifier) ? pinned(specifier) : null
+    async resolveId(specifier, importer, options) {
+      const name = specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/')
+      if (engine.test(specifier)) return pinned(specifier)
+      if (!Object.hasOwn(dependencies, name)) return null
+      // Resolve from our lock while retaining Vite's browser/import conditions.
+      const resolved = await this.resolve(specifier, join(adapter, 'package.json'), { ...options, skipSelf: true })
+      if (!resolved || resolved.external || !resolved.id.startsWith(adapter + '/node_modules/')) {
+        throw new Error(`Browser dependency escaped the adapter lock: ${specifier}`)
+      }
+      return resolved
     },
     load(id) {
       const path = id.split('?')[0]
@@ -91,7 +100,8 @@ function nativeBoundary() {
 }
 
 // Use Node's package-export resolver, not a second subpath mapping. Vue and
-// dom-css stay upstream UI sources; every engine reference resolves once.
+// dom-css stay upstream UI sources. Direct adapter dependencies also override
+// bare UI imports, keeping their reviewed versions and browser entry points.
 const aliases = config.resolve.alias.filter(alias => {
   const replacement = alias.replacement
   return !engineRoot.test(replacement) && alias.find !== 'opentype.js'

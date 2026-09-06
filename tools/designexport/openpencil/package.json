@@ -14,9 +14,13 @@
     "@open-pencil/fig": "0.14.0",
     "@open-pencil/scene-graph": "0.14.0",
     "@xmldom/xmldom": "0.9.12",
+    "defu": "6.1.7",
+    "fflate": "0.8.3",
     "opentype.js": "2.0.0",
     "playwright": "1.62.1",
-    "svgpath": "2.6.0"
+    "svgpath": "2.6.0",
+    "unhead": "2.1.13",
+    "valibot": "1.4.2"
   },
   "devDependencies": {
     "@fontsource/ibm-plex-sans": "5.3.0"

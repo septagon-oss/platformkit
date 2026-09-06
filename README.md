@@ -121,15 +121,12 @@ reads standard input. This changes only the in-memory invocation; it does not
 edit source, create a runtime resource, execute an interaction or deploy anything.
 Trusted Go slots still use `WithSlot`; they are not a JSON page language.
 
-The snapshot is adapter input, not a `.fig` file, editable library or prototype.
-[OpenPencil tooling](tools/designexport/openpencil/README.md) converts its tokens
-and icons into native variables and linked icon components in a `.fig` file.
-It owns the pinned SDK corrections and native conformance tests; component,
-page and flow conversion and the hosted editor build remain unfinished.
-The tooling guide explains generation, supported inputs and release blockers.
-These packages are the implemented UI system. They do not by themselves prove
-an editable OpenPencil library, design-file round trips or end-to-end coverage
-of a product flow.
+[OpenPencil tooling](tools/designexport/openpencil/README.md) converts tokens and
+icons into native FIG variables and linked icon components. It also owns the
+pinned SDK corrections, native conformance tests and generic browser build.
+The snapshot itself is not an editable library or prototype. Component, page
+and flow conversion and a verified hosted release remain unfinished. Follow the
+tooling guide for generation, supported inputs and release blockers.
 
 ## Use the HTTP API
 

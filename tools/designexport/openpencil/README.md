@@ -266,11 +266,11 @@ rehydrates children in master order.
 
 ## Release blockers
 
-The pinned app's full Bun audit fails, including high advisories; shipped-path triage
-and transitive notice review remain release blockers. Supplied fonts, independent SVG,
-responsive/accessibility and interactive edit coverage are incomplete. Typed conversion and
-source-freshness verification are unfinished. Product prototypes need runtime-state mappings and governed
-end-to-end persistence tests in their owning product repository.
+The pinned app's full Bun audit still fails. Direct adapter pins replace affected
+browser imports; build-tool findings and transitive notices remain release blockers.
+Supplied fonts, SVG fidelity, responsive/accessibility, interactive editing, typed conversion
+and source freshness remain incomplete. Product prototypes need runtime-state mappings
+and governed end-to-end persistence tests in their owning product repository.
 Native component sizing still needs evidence beyond the declared single-text
 comparison environment, including visible borders, wrapping and whitespace-only
 flex participation during edits. Correct font loading alone does not resolve
