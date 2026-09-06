@@ -155,20 +155,22 @@ test('native foreground follows changed tokens while literal paints remain indep
   }
   changed.icons.push(fixture)
   let mixed = buildFoundation(changed)
-  let baseline
+  const baseline = new Map()
   for (let cycle = 0; cycle < 3; cycle++) {
     const master = named(mixed, fixture.name, named(mixed, 'Icon masters'))
-    const instance = named(mixed, fixture.name, named(mixed, 'dark'))
-    assert.equal(instance.componentId, master.id)
-    const vectors = mixed.getChildren(instance.id)
-    assert.equal(vectors.length, 2, 'separate native paths preserve literal and bound paints')
-    assert.equal(vectors[0].boundVariables['fills/0/color'], undefined, 'literal paint stays unbound')
-    const variable = mixed.variables.get(vectors[1].boundVariables['fills/0/color'])
-    assert.equal(variable?.name, '--pk-color-text-primary')
-    const image = await pixels(mixed, instance)
-    assert.deepEqual(opaqueColors(image), ['18,52,86', '254,220,186'])
-    if (cycle === 0) baseline = image
-    else assert.deepEqual(image, baseline, `mixed paint round trip ${cycle}`)
+    for (const [mode, foreground] of [['light', '21,34,31'], ['dark', '18,52,86']]) {
+      const instance = named(mixed, fixture.name, named(mixed, mode))
+      assert.equal(instance.componentId, master.id)
+      const vectors = mixed.getChildren(instance.id)
+      assert.equal(vectors.length, 2, 'separate native paths preserve literal and bound paints')
+      assert.equal(vectors[0].boundVariables['fills/0/color'], undefined, 'literal paint stays unbound')
+      const variable = mixed.variables.get(vectors[1].boundVariables['fills/0/color'])
+      assert.equal(variable?.name, '--pk-color-text-primary')
+      const image = await pixels(mixed, instance)
+      assert.deepEqual(opaqueColors(image), [foreground, '254,220,186'].sort())
+      if (cycle === 0) baseline.set(mode, image)
+      else assert.deepEqual(image, baseline.get(mode), `${mode} mixed paint round trip ${cycle}`)
+    }
     if (cycle < 2) {
       const bytes = await exportFigFile(mixed)
       mixed = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
