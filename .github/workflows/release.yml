@@ -35,6 +35,8 @@ jobs:
   # touches both, and it renames the required status check, which is why it is
   # not this one.
   check:
+    # Only on GitHub: Gitea reads this directory too and runs .gitea/workflows for itself.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

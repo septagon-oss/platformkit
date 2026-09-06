@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   check:
+    # Only on GitHub: Gitea reads this directory too and runs .gitea/workflows for itself.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     # Twenty, not ten. `make check` and `make e2e` together run a real Postgres,
     # a real NATS and a browser, and a run that is cancelled at the deadline is a
