@@ -3,7 +3,6 @@ package authtest
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -33,10 +32,6 @@ type Fake struct {
 	// Users is where the fake finds people. It is exported so that a consumer
 	// invites somebody through the same interface the real module takes.
 	Users contracts.Users
-
-	// Operator are the permissions the operator's own administrator is granted
-	// by name, the same list the application hands the real module.
-	Operator []string
 
 	limiter *contracts.Limiter
 
@@ -235,23 +230,15 @@ func (f *Fake) Roles(_ context.Context, _ db.Tx[db.Tenant]) ([]*contracts.Role, 
 // permission nothing declares and an operator permission outside the operator's
 // own tenant are what the route promises to refuse, so the fake refuses them.
 func (f *Fake) SetRole(_ context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
-	tenant := db.TenantOf(tx)
-	want := make(contracts.Permissions, 0, len(permissions))
-	for _, p := range permissions {
-		if p == contracts.Wildcard {
-			want = append(want, p)
-			continue
-		}
-		i := slices.IndexFunc(declared, func(g tenancy.Grant) bool { return g.Permission == p })
-		switch {
-		case i < 0:
-			return nil, fmt.Errorf("%w: no module defines the permission %q", crud.ErrInvalid, p)
-		case declared[i].Operator && !tenant.Operator:
-			return nil, fmt.Errorf("%w: %q belongs to the operator of this installation", crud.ErrInvalid, p)
-		}
-		want = append(want, p)
+	name, err := contracts.ValidRoleName(name)
+	if err != nil {
+		return nil, err
 	}
-	slices.Sort(want)
+	tenant := db.TenantOf(tx)
+	want, err := contracts.CheckedPermissions(permissions, declared, tenant)
+	if err != nil {
+		return nil, err
+	}
 	f.mu.Lock()
 	was, existed := f.roles[name]
 	same := existed && slices.Equal([]string(was), []string(want))
@@ -371,27 +358,6 @@ func (f *Fake) Logout(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) error
 	f.mu.Unlock()
 	if ok {
 		f.record(contracts.EventLoggedOut)
-	}
-	return nil
-}
-
-// SeedRoles mirrors internal.Service.SeedRoles, Operator and all: the fake is
-// held to the same rule, so a consumer testing against it sees the same refusal
-// the real service gives.
-func (f *Fake) SeedRoles(_ context.Context, _ db.Tx[db.System], _ uuid.UUID, operator bool) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	admin := []string{contracts.Wildcard}
-	if operator {
-		admin = append(admin, f.Operator...)
-	}
-	for name, permissions := range map[string][]string{
-		contracts.RoleAdmin:  admin,
-		contracts.RoleMember: {},
-	} {
-		if _, taken := f.roles[name]; !taken {
-			f.roles[name] = permissions
-		}
 	}
 	return nil
 }

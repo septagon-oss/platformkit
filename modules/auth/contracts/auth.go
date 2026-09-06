@@ -310,17 +310,6 @@ type Service interface {
 	// password.
 	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client) (*Session, *Identity, error)
 
-	// SeedRoles installs admin and member in a tenant that has just been
-	// created. It takes a system transaction because it is called from the one
-	// that creates the tenant, as a hook the tenant module was handed.
-	//
-	// operator says the tenant is the installation's own, and it is the one
-	// thing that differs: the operator's admin is granted the control plane's
-	// permission by name as well as the wildcard, because a wildcard does not
-	// satisfy an operator grant. Every other tenant's admin gets the wildcard
-	// and nothing else, which is "everything in this tenant".
-	SeedRoles(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, operator bool) error
-
 	// Permissions is the union of what these roles grant in this tenant. A role
 	// nobody defined grants nothing rather than failing: a user carrying a role
 	// that was deleted is a user with less authority, not a broken request.
@@ -409,7 +398,7 @@ type Service interface {
 // by naming it. An operator permission is granted only by naming it, and that
 // exception is the point: Wildcard means "everything in this tenant", and the
 // control plane is not in this tenant — it is every tenant. A customer's
-// administrator holds the wildcard by construction (SeedRoles), so letting it
+// administrator holds the wildcard by construction (auth.SeedRoles), so letting it
 // answer for an operator permission would hand every customer the installation.
 func Grants(held []string, g tenancy.Grant) bool {
 	if g.Operator {

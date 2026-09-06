@@ -2,16 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
-	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
-	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
@@ -46,32 +43,19 @@ type composition struct {
 	mail    notificationcontracts.Mailer
 }
 
-// compose is the whole wiring graph and there is nothing else to read.
-//
-// The order below is the construction order, and the construction order is the
-// dependency order: notification and auth take the user module's capability,
-// and the tenant module takes a hook from auth. That last edge is the one worth
-// pausing on. By imports, tenant is the lowest module here and auth is the
-// highest: nothing in modules/tenant names modules/auth. By construction,
-// tenant comes later, because it is handed a function auth owns. A hook is how
-// a module low in the graph is notified by one above it without depending on
-// it, and this line is where the two orders meet — visibly, in one file,
-// checked by the compiler.
-//
-// Audit is last only because it reads well there. It subscribes to every event
-// every other module declares, and the kernel expands that after every manifest
-// has been read — so moving this line would change nothing, which is exactly
-// what the earlier design could not say.
-//
-// A dependency somebody forgot is a compile error on the line that forgot it,
-// and a cycle cannot be expressed. See docs/adr/0002.
+// compose constructs complete dependencies in order: users, tenants,
+// notification delivery, then authentication. Role provisioning is independent
+// of the authentication service, so the graph needs no late binding.
 func compose(cfg config.Config) composition {
 	users, userModule := user.Module(user.Deps{})
 
+	tenants, tenantModule := tenant.Module(tenant.Deps{
+		OnCreate: []tenantcontracts.Hook{seedRoles},
+		Invite:   firstAdmin{users: users},
+	})
+	active := tenantcontracts.Active{Service: tenants}
+	hosts := tenantHosts{tenants: tenants}
 	mail := mailer(cfg)
-	// hosts is filled in once the tenant module exists, for the same reason
-	// active is: this module is composed before it. See deferred.
-	hosts := &tenantHosts{}
 	notify, notificationModule := notification.Module(notification.Deps{
 		// The app adapts, so notification never names user or tenant: both
 		// interfaces are declared in notification/contracts and satisfied here.
@@ -83,16 +67,6 @@ func compose(cfg config.Config) composition {
 		Secure: !config.Local(cfg.Server.PublicHost),
 	})
 
-	// active is the tenant list the periodic jobs walk, and it is filled in
-	// three lines below, once the tenant module exists.
-	//
-	// The knot is real and this is where it is tied. By construction the tenant
-	// module comes after auth, because it is handed auth's role-seeding hook;
-	// by need, auth's hourly sweep walks every tenant. Two edges pointing
-	// opposite ways, and one of them has to be late. It is read at the first
-	// tick of an hourly job, long after compose has returned, and a nil one is
-	// an error the job reports rather than a panic.
-	active := &deferred{}
 	auths, authModule := auth.Module(auth.Deps{
 		Users:  users,
 		Notify: notify,
@@ -101,34 +75,11 @@ func compose(cfg config.Config) composition {
 		// without it becoming a row first: a set-password link belongs in the
 		// mail and in nothing else. Everything else this application mails goes
 		// out of the notification worker, which renders a row.
-		Mailer:  mail,
-		Hosts:   hosts,
-		Tenants: active,
-		// The permissions the operator's own administrator is granted by name.
-		// The auth module cannot name tenant:manage — it is composed before the
-		// module that declares it, and naming another module's manifest is gate
-		// 6 — so the application, which names every module by definition, says
-		// which permissions belong to the installation rather than to a
-		// customer. kit/app refuses to start if a route and a manifest disagree
-		// about that, so a name that drifts is a boot failure and not a hole.
-		Operator: []string{
-			tenantcontracts.PermissionTenantManage,
-			// The price list is the installation's and not a customer's: a
-			// tenant that could write a plan could price itself, and a review
-			// did exactly that from past_due. See docs/adr/0008.
-			billingcontracts.PermissionBillingCatalog,
-		},
+		Mailer:     mail,
+		Hosts:      hosts,
+		Tenants:    active,
 		OIDC:       auth.OIDC(cfg.Auth.OIDC),
 		PublicHost: cfg.Server.PublicHost,
-	})
-
-	tenants, tenantModule := tenant.Module(tenant.Deps{
-		OnCreate: []tenantcontracts.Hook{seedRoles(auths)},
-		// The adapter that lets the control plane give a tenant its first
-		// administrator without the tenant module naming the one that owns
-		// people. It is the same shape as recipients and tenantHosts: the
-		// consumer declares the capability and the application says who has it.
-		Invite: firstAdmin{users: users},
 	})
 
 	// The file service is returned beside its manifest, as user's and
@@ -139,15 +90,11 @@ func compose(cfg config.Config) composition {
 		QuotaBytes: cfg.Files.QuotaBytes,
 	})
 
-	// Active rather than the service itself: the periodic jobs walk the tenants
-	// that are being served, and a suspended one is not.
-	active.lister = tenantcontracts.Active{Service: tenants}
-	hosts.tenants = tenants
 	mods := []module.Module{
 		userModule,
+		tenantModule,
 		notificationModule,
 		authModule,
-		tenantModule,
 		task.Module(task.Deps{Tenants: active}),
 		// The four reference modules a product is actually made of: what a
 		// tenant pays, what it publishes, what its site looks like, and the
@@ -192,25 +139,6 @@ func mailer(cfg config.Config) notificationcontracts.Mailer {
 	})
 }
 
-// deferred is the tenant list the modules composed before modules/tenant walk,
-// filled in by compose as soon as that module exists.
-//
-// It is the one late binding in the wiring graph and it is written down rather
-// than hidden. Composition order is dependency order everywhere else; here two
-// dependencies point opposite ways — the tenant module takes a hook the auth
-// module owns, and the auth module's sweep takes the list the tenant module
-// answers — so one of them is a value that arrives a few lines later. Nothing
-// reads it until the first tick of an hourly job, and a composition that forgot
-// to fill it in is an error in that job's log rather than a nil dereference.
-type deferred struct{ lister jobs.TenantLister }
-
-func (d *deferred) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant, error) {
-	if d.lister == nil {
-		return nil, errors.New("app: the tenant list was never wired; see compose")
-	}
-	return d.lister.List(ctx, tx)
-}
-
 // tenantHosts is the adapter that lets the notification and auth modules build a
 // link to the recipient's own host without naming the tenant module.
 //
@@ -222,10 +150,7 @@ func (d *deferred) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Ten
 // every future link onto it.
 type tenantHosts struct{ tenants tenantcontracts.Service }
 
-func (h *tenantHosts) PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error) {
-	if h.tenants == nil {
-		return "", errors.New("app: the tenant service was never wired; see compose")
-	}
+func (h tenantHosts) PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error) {
 	hosts, err := h.tenants.Hosts(ctx, tx)
 	if err != nil || len(hosts) == 0 {
 		return "", err
@@ -268,17 +193,11 @@ func (a firstAdmin) Invite(ctx context.Context, tx db.Tx[db.System], tenantID uu
 	return err
 }
 
-// seedRoles is the hook the tenant module runs inside the transaction that
-// creates a tenant: a new customer gets the two roles their first administrator
-// is about to be granted.
-//
-// Grepping SystemToken and this function is how a reader finds every place the
-// application crosses a tenant boundary on purpose.
-func seedRoles(a authcontracts.Auth) tenantcontracts.Hook {
-	return func(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
-		// The operator's own tenant gets the control plane's permission by
-		// name; every customer's gets the wildcard, which is everything in
-		// their own tenant and nothing outside it.
-		return a.SeedRoles(ctx, tx, t.ID, t.Operator)
-	}
+// seedRoles provisions auth's defaults in the tenant's creation transaction.
+// Operator grants are named by the application that composes their owners.
+func seedRoles(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
+	return auth.SeedRoles(ctx, tx, t.Tenancy(), []string{
+		tenantcontracts.PermissionTenantManage,
+		billingcontracts.PermissionBillingCatalog,
+	}, nil)
 }

@@ -13,6 +13,13 @@ of module constructors. Each constructor accepts a typed `Deps` struct and
 returns a manifest. There is no runtime discovery step. The compiler checks
 dependency types; composition tests check required values and selected modules.
 
+Tenant creation uses [auth.SeedRoles](modules/auth/module.go) inside its existing
+transaction. Provisioning is independent of the authentication service, so
+tenants, host lookup and active-tenant enumeration exist before notification
+and auth construction. Applications validate custom initial grants through
+[auth contracts](modules/auth/contracts/roles.go) against their composed
+permissions; auth owns the role writes and preserves existing grants on retry.
+
 A module has three parts. `contracts/` defines its entities, public service,
 events, permissions and conformance suite. `internal/` contains its
 implementation. `module.go` declares the constructor and manifest.

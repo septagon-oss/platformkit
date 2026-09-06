@@ -3,22 +3,13 @@ package internal
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"slices"
-	"strings"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
-
-// roleName is the grammar of a role: a lower-case identifier, the same rule
-// user/contracts applies to the names it stores, because they are the same
-// names and a role a user can hold but nobody can define is a grant that never
-// resolves.
-var roleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // Roles is every role in this tenant, in name order, under the tenant's own
 // policy — so this is the same query from every host and answers about one
@@ -44,12 +35,12 @@ func (s *Service) Roles(_ context.Context, tx db.Tx[db.Tenant]) ([]*contracts.Ro
 // writing one is either a misunderstanding of what the permission is or an
 // attempt to grant the installation to a customer. Both are 422s.
 func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
-	name = strings.ToLower(strings.TrimSpace(name))
-	if !roleName.MatchString(name) {
-		return nil, fmt.Errorf("%w: role %q is not a lower-case identifier", crud.ErrInvalid, name)
+	name, err := contracts.ValidRoleName(name)
+	if err != nil {
+		return nil, err
 	}
 	tenant := db.TenantOf(tx)
-	want, err := checked(permissions, declared, tenant)
+	want, err := contracts.CheckedPermissions(permissions, declared, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -81,40 +72,6 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 	return role, events.Publish(ctx, tx, contracts.EventRoleSet, contracts.RoleSet{
 		Role: name, Was: was, Now: want, At: at,
 	})
-}
-
-// checked normalises a permission list and refuses the two ways one can be
-// wrong. The result is sorted and deduplicated, so "the same permissions in
-// another order" is the same value and SetRole can tell that nothing changed.
-func checked(permissions []string, declared []tenancy.Grant, tenant tenancy.Tenant) (contracts.Permissions, error) {
-	out := make(contracts.Permissions, 0, len(permissions))
-	for _, p := range permissions {
-		p = strings.ToLower(strings.TrimSpace(p))
-		switch {
-		case p == "":
-			continue
-		case slices.Contains(out, p):
-			continue
-		case p == contracts.Wildcard:
-			// The wildcard is not in the declared list and never will be: it is
-			// the rule rather than a permission, and it grants every ordinary
-			// permission and no operator one. See contracts.Grants.
-			out = append(out, p)
-			continue
-		}
-		i := slices.IndexFunc(declared, func(g tenancy.Grant) bool { return g.Permission == p })
-		switch {
-		case i < 0:
-			return nil, fmt.Errorf("%w: no module defines the permission %q, so a role naming it would grant nothing",
-				crud.ErrInvalid, p)
-		case declared[i].Operator && !tenant.Operator:
-			return nil, fmt.Errorf("%w: %q belongs to the operator of this installation, and %s is not it",
-				crud.ErrInvalid, p, tenant.Slug)
-		}
-		out = append(out, p)
-	}
-	slices.Sort(out)
-	return out, nil
 }
 
 // Undeclared reports, for one tenant, every role row naming a permission the

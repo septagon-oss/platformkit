@@ -142,8 +142,8 @@ func TestTheResetTokenIsInTheMailAndInNoRow(t *testing.T) {
 	users := realUsers()
 	notify, _ := notification.Module(notification.Deps{Mailer: notification.NewMailbox()})
 	box := &authtest.Mailbox{}
-	svc := internal.NewService(users, notify, delivery(box), operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, notify, delivery(box))
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -426,7 +426,7 @@ func pool(t *testing.T, appURL string) *db.Conn {
 // a second process has its own.
 func service(t *testing.T) contracts.Service {
 	t.Helper()
-	return internal.NewService(realUsers(), &authtest.Notices{}, delivery(&authtest.Mailbox{}), operatorPermissions)
+	return internal.NewService(realUsers(), &authtest.Notices{}, delivery(&authtest.Mailbox{}))
 }
 
 // TestTheLimiterCountsAnAddressWithoutStoringIt. platformkit_limits is an

@@ -79,7 +79,7 @@ func mountOn(t *testing.T, conn *db.Conn, oidc auth.OIDC) (chi.Router, *db.Conn,
 		OIDC: oidc, PublicHost: host,
 	})
 	subs = authModule.Subscriptions
-	seed(t, conn, svc, acme)
+	seed(t, conn, acme)
 
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: site{}, Conn: conn,

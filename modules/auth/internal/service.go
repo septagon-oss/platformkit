@@ -45,11 +45,6 @@ type Service struct {
 	notify  contracts.Notifier
 	mail    Delivery
 	limiter *contracts.Limiter
-	// operator are the permissions the operator's own administrator holds by
-	// name. They are named and not implied because a wildcard does not satisfy
-	// an operator grant; the application supplies them, because they belong to
-	// the modules that declare them and this one is composed before those are.
-	operator []string
 
 	// catalogue is every permission the application defines, handed over by the
 	// kernel when this module's routes are registered. The hourly sweep reads
@@ -73,12 +68,12 @@ func (s *Service) declared() []tenancy.Grant {
 }
 
 // NewService returns the auth service. module.go constructs it.
-func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery, operator []string) *Service {
+func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery) *Service {
 	// The counters every replica shares. httpx.ConnFrom is where they find the
 	// pool: this module is constructed before kit/app opens one, and every
 	// caller below is inside a request that carries it.
 	return &Service{users: users, notify: notify, mail: mail,
-		limiter: contracts.NewLimiter(limit.Postgres(httpx.ConnFrom)), operator: operator}
+		limiter: contracts.NewLimiter(limit.Postgres(httpx.ConnFrom))}
 }
 
 // Precheck is the limiter's verdict, read from the shared counters. See
@@ -348,35 +343,6 @@ func (s *Service) Logout(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	return events.Publish(ctx, tx, contracts.EventLoggedOut, contracts.LoggedOut{
 		UserID: session.UserID, SessionID: id, At: db.Now(),
 	})
-}
-
-// SeedRoles installs the two roles a tenant starts with, in the transaction
-// that created it. ON CONFLICT DO NOTHING, because a tenant that already has an
-// admin role has one that somebody may have edited, and seeding is not the
-// place to put it back.
-//
-// The operator's own tenant gets one permission more, named rather than
-// implied: the wildcard does not satisfy an operator grant, so tenant:manage
-// has to appear in the list for anybody to reach the control plane. That row is
-// the whole of the installation's own authority, and it exists in exactly one
-// tenant — the one the bootstrap created.
-func (s *Service) SeedRoles(_ context.Context, tx db.Tx[db.System], tenantID uuid.UUID, operator bool) error {
-	admin := []string{contracts.Wildcard}
-	if operator {
-		admin = append(admin, s.operator...)
-	}
-	for name, permissions := range map[string][]string{
-		contracts.RoleAdmin:  admin,
-		contracts.RoleMember: {},
-	} {
-		err := tx.DB().Exec(
-			"INSERT INTO roles (tenant_id, name, permissions) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
-			tenantID, name, pq.StringArray(permissions)).Error
-		if err != nil {
-			return fmt.Errorf("auth: seed the %s role: %w", name, err)
-		}
-	}
-	return nil
 }
 
 // Permissions is the union of what these roles grant in this tenant: one query,

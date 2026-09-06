@@ -45,11 +45,8 @@ type Deps struct {
 
 // Module is the manifest, and the service it is built on.
 //
-// It is the one module that returns its implementation as well as its
-// description, and the reason is written in the package comment: the kernel
-// resolves every host through it, the periodic jobs walk its list, and the task
-// module takes it as a dependency, so main has to hold the value. Every other
-// module keeps its implementation to itself.
+// The application passes this service to host resolution, periodic jobs and
+// consumers before constructing their modules.
 func Module(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService(deps.OnCreate)
 	return svc, module.Module{

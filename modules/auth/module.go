@@ -1,12 +1,8 @@
 // Package auth is signing in: sessions, passwords, single sign-on, and the
 // roles that decide what a caller may do.
 //
-// It is the top of the dependency order — it takes the user module's capability
-// and nothing takes its — and the module the kernel asks two questions of on
-// every request: who is calling (httpx.Options.Authenticate) and may they
-// (httpx.Authorizer). The tenant module sits below it and is notified of a new
-// tenant through a hook main hands over, so that seeding a tenant's roles does
-// not make the control plane import this package.
+// The application constructs tenants with SeedRoles before wiring notification
+// delivery and authentication. Role provisioning needs no running auth service.
 package auth
 
 import (
@@ -20,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -69,16 +66,6 @@ type Deps struct {
 	// none, and then the two OIDC routes are not registered at all.
 	OIDC OIDC
 
-	// Operator are the permissions the operator's own administrator is granted
-	// by name when their tenant is created. A wildcard does not satisfy an
-	// operator grant, so they are listed rather than implied.
-	//
-	// The application supplies them because they belong to the modules that
-	// declare them — tenant:manage is modules/tenant's — and this module is
-	// composed before those exist. A name missing from the list is a permission
-	// nobody can exercise, which is the safe direction for a list to be wrong in.
-	Operator []string
-
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
 	// browser refuses a Secure cookie over http://localhost, so a development
@@ -87,13 +74,12 @@ type Deps struct {
 }
 
 // Module is the manifest, and the service it is built on: main hands the same
-// value to kit/app as the authorizer and the identity hook, and hands its
-// SeedRoles to the tenant module as a create hook.
+// value to kit/app as the authorizer and the identity hook.
 func Module(deps Deps) (contracts.Auth, module.Module) {
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure,
-	}, deps.Operator)
+	})
 	cookies := internal.NewCookies(secure)
 	return svc, module.Module{
 		Name:        "auth",
@@ -150,3 +136,11 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 // routes. Every other route here is about the caller themselves. See
 // contracts/permissions.go.
 var permissions = []module.Permission{{Key: contracts.PermissionRoleManage}}
+
+// SeedRoles provisions a newly created tenant through auth's own storage path,
+// independently of sessions, delivery and periodic jobs. Pass trusted defaults
+// checked against the composition with contracts.CheckedPermissions before
+// bootstrap or startup. Existing role grants are preserved on repeated calls.
+func SeedRoles(ctx context.Context, tx db.Tx[db.System], tenant tenancy.Tenant, operator []string, defaults []contracts.Role) error {
+	return internal.SeedRoles(ctx, tx, tenant, operator, defaults)
+}

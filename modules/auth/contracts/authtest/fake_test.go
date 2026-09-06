@@ -22,9 +22,8 @@ func TestFakeConforms(t *testing.T) {
 		notices, box := &authtest.Notices{}, &authtest.Mailbox{}
 		fake.Notify, fake.Mailer = notices, box
 		ctx, tx := t.Context(), db.Tx[db.Tenant]{}
-		if err := fake.SeedRoles(ctx, db.Tx[db.System]{}, uuid.New(), false); err != nil {
-			t.Fatalf("SeedRoles: %v", err)
-		}
+		fake.Grant(contracts.RoleAdmin, contracts.Wildcard)
+		fake.Grant(contracts.RoleMember)
 		run(authtest.Fixture{
 			Ctx: ctx, Tx: tx, Service: fake, Published: fake.Published,
 			Role: fake.Grant, Sent: notices.Sent, Mailed: box.Sent, Sessions: fake.SessionsOf,

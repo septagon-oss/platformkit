@@ -413,6 +413,27 @@ func cases() map[string]func(*testing.T, Fixture) {
 			published(t, f, contracts.EventRoleSet)
 		},
 
+		"role normalization is idempotent and rejects invalid names": func(t *testing.T, f Fixture) {
+			permissions := []string{" WIDGET:READ ", "widget:read", "", "widget:manage"}
+			role, err := f.Service.SetRole(f.Ctx, f.Tx, " Editor ", permissions, Declared)
+			if err != nil {
+				t.Fatalf("SetRole: %v", err)
+			}
+			if role.Name != "editor" || !slices.Equal([]string(role.Grants), []string{"widget:manage", "widget:read"}) {
+				t.Fatalf("normalized role = %s %v", role.Name, role.Grants)
+			}
+			if permissions[0] != " WIDGET:READ " {
+				t.Fatal("SetRole mutated its input")
+			}
+			if _, err := f.Service.SetRole(f.Ctx, f.Tx, "editor", []string{"widget:read", "widget:manage"}, Declared); err != nil {
+				t.Fatalf("repeat SetRole: %v", err)
+			}
+			if _, err := f.Service.SetRole(f.Ctx, f.Tx, "bad-role", nil, Declared); !errors.Is(err, crud.ErrInvalid) {
+				t.Fatalf("invalid role name = %v, want ErrInvalid", err)
+			}
+			published(t, f, contracts.EventRoleSet)
+		},
+
 		"an operator permission cannot be granted in a customer's tenant": func(t *testing.T, f Fixture) {
 			// This tenant is a customer's — every fixture's is — so naming the
 			// installation's own permission in one of its roles is refused. It

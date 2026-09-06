@@ -57,8 +57,8 @@ func TestServiceConforms(t *testing.T) {
 		users := realUsers()
 		notices := &authtest.Notices{}
 		box := &authtest.Mailbox{}
-		svc := internal.NewService(users, notices, delivery(box), operatorPermissions)
-		seed(t, conn, svc, acme)
+		svc := internal.NewService(users, notices, delivery(box))
+		seed(t, conn, acme)
 
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
 		err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -118,10 +118,10 @@ func delivery(box *authtest.Mailbox) internal.Delivery {
 // seed installs the two roles a tenant is created with, in a cross-tenant
 // transaction, exactly as the tenant module's create hook does. The tenant's
 // own Operator flag decides which admin role it gets, as it does in production.
-func seed(t *testing.T, conn *db.Conn, svc contracts.Service, tenant tenancy.Tenant) {
+func seed(t *testing.T, conn *db.Conn, tenant tenancy.Tenant) {
 	t.Helper()
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		return svc.SeedRoles(ctx, tx, tenant.ID, tenant.Operator)
+		return internal.SeedRoles(ctx, tx, tenant, operatorPermissions, nil)
 	})
 	if err != nil {
 		t.Fatalf("seed the roles of %s: %v", tenant.Slug, err)
@@ -155,9 +155,9 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
-	seed(t, conn, svc, acme)
-	seed(t, conn, svc, globex)
+	svc := internal.NewService(users, nil, internal.Delivery{})
+	seed(t, conn, acme)
+	seed(t, conn, globex)
 
 	var session uuid.UUID
 	ctx := httpx.WithConn(t.Context(), conn)
@@ -198,8 +198,8 @@ func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, nil, internal.Delivery{})
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	var live, expired uuid.UUID
@@ -271,8 +271,8 @@ func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, nil, internal.Delivery{})
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -310,8 +310,8 @@ func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 func TestAFailedLoginIsRecordedThoughItsRequestIsRolledBack(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, nil, internal.Delivery{})
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	_ = db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -357,8 +357,8 @@ func row(t *testing.T, admin *sql.DB, query string, args ...any) *sql.Row {
 func TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, nil, internal.Delivery{})
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	var session uuid.UUID
@@ -406,8 +406,8 @@ func TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes(t *testing.T) {
 func TestTheSlideNeverPassesTheCap(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
-	svc := internal.NewService(users, nil, internal.Delivery{}, operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, nil, internal.Delivery{})
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	var session uuid.UUID
@@ -451,8 +451,8 @@ func TestThePurgeTakesExpiredCredentials(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
 	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
-	svc := internal.NewService(users, notices, delivery(box), operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, notices, delivery(box))
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -508,8 +508,8 @@ func TestOnePendingLinkPerPerson(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
 	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
-	svc := internal.NewService(users, notices, delivery(box), operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, notices, delivery(box))
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -567,8 +567,8 @@ func TestTheTokenTableHoldsNoToken(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	users := realUsers()
 	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
-	svc := internal.NewService(users, notices, delivery(box), operatorPermissions)
-	seed(t, conn, svc, acme)
+	svc := internal.NewService(users, notices, delivery(box))
+	seed(t, conn, acme)
 	ctx := httpx.WithConn(t.Context(), conn)
 
 	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
