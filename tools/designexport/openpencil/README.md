@@ -136,16 +136,26 @@ later calculations. Calculator tests exercise arithmetic and errors through the
 real SDK tool, plus harmless callback/prototype rejection in both module formats.
 These checks are not a general-purpose sandbox or a browser-security approval.
 
+The SDK's presentation dependency is separately aliased to
+[`@neo-ma/pptxgenjs@4.3.0`](https://github.com/NeomaVerwaltung/PptxGenJS/releases/tag/v4.3.0),
+whose published package removes the vulnerable `image-size` dependency. The
+OpenPencil versions and source-hash checks remain unchanged. The loader verifies
+both replacement package identities without loading their executable modules.
+Presentation tests call the actual public SDK export through `@open-pencil/core/io`
+and inspect the resulting OOXML: editable text and shapes, styling, geometry,
+PNG relationships and bytes, unchanged source nodes, and explicit failure states.
+Both published ESM and CommonJS builds are exercised. The supplied PNG callback
+tests the image boundary, not browser rasterization or PowerPoint visual fidelity.
+
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
-or editor release. It still fails with three high-severity affected packages:
-`image-size`, its dependent `pptxgenjs`, and the SDK that depends on it. This is
-an unresolved security gate, not an accepted exception. Do not run
-`npm audit fix --force`: its proposed SDK downgrade invalidates the pinned
-corrections. Dependency remediation and reachable browser-surface verification
-remain required. The import-boundary test verifies that the narrower native
-editing/FIG imports do not load the expression or presentation packages; the
-calculator tests intentionally use the broader tools entry point. Neither
-observation waives the remaining audit failure.
+or editor release. CI and the tagged-tree release workflow enforce this gate
+after the locked install and before the native tests. The locked tree currently passes with zero reported
+vulnerabilities; this is not a general security certification. Do not use
+`npm audit fix --force` to downgrade the SDK or bypass its source checks.
+The import-boundary test verifies that narrower native editing/FIG imports do
+not load the expression or presentation packages. Calculator and presentation
+tests intentionally exercise broader entry points. Reachable browser-surface
+verification and the other release requirements above remain unfinished.
 
 Nothing in this directory changes the deployed editor or authorizes release.
 The reference Go application's container does not install these dependencies.

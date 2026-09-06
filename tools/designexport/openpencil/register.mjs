@@ -11,10 +11,15 @@ for (const name of ['core', 'fig', 'scene-graph']) {
 }
 
 const coreRequire = createRequire(require.resolve('@open-pencil/core'))
-const parserManifest = resolve(dirname(coreRequire.resolve('expr-eval')), '../package.json')
-const parser = JSON.parse(readFileSync(parserManifest, 'utf8'))
-if (parser.name !== 'expr-eval-fork' || parser.version !== '3.0.3') {
-  throw new Error(`Expected expr-eval-fork@3.0.3; found ${parser.name}@${parser.version}`)
+for (const [specifier, name, version] of [
+  ['expr-eval', 'expr-eval-fork', '3.0.3'],
+  ['pptxgenjs', '@neo-ma/pptxgenjs', '4.3.0'],
+]) {
+  const manifest = resolve(dirname(coreRequire.resolve(specifier)), '../package.json')
+  const dependency = JSON.parse(readFileSync(manifest, 'utf8'))
+  if (dependency.name !== name || dependency.version !== version) {
+    throw new Error(`Expected ${name}@${version}; found ${dependency.name}@${dependency.version}`)
+  }
 }
 
 registerHooks({

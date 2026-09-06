@@ -125,6 +125,7 @@ jobs:
         working-directory: tools/designexport/openpencil
         run: |
           npm ci --ignore-scripts
+          npm audit --omit=dev --audit-level=high
           npm test
 
       - name: Install the browser

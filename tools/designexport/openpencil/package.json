@@ -17,7 +17,8 @@
   },
   "overrides": {
     "@open-pencil/core": {
-      "expr-eval": "npm:expr-eval-fork@3.0.3"
+      "expr-eval": "npm:expr-eval-fork@3.0.3",
+      "pptxgenjs": "npm:@neo-ma/pptxgenjs@4.3.0"
     },
     "@open-pencil/fig": "0.14.0",
     "@open-pencil/kiwi": "0.14.0",
