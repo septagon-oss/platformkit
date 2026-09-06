@@ -155,3 +155,61 @@ test('one native process cannot replace a loaded face with different bytes', asy
   await assert.rejects(loadFonts([alternate], [requirements[0]]), /already loaded|different bytes/i)
   assert.equal(fontManager.loadedData(family, 'Regular'), before)
 })
+
+for (const [text, maxWidth, expectedWidth, expectedHeight] of [
+  ['Save', undefined, 31.289871215820312, 20],
+  ['AV office affinity', undefined, 106.777587890625, 20],
+  ['João Ação Été', undefined, 91.51765441894531, 20],
+  ['AV office affinity', 50, 46.143829345703125, 60],
+]) test(`native text measurement preserves shaped precision: ${text}, width ${maxWidth ?? 'node'}`, async () => {
+  await loadFonts(faces, [{ family, weight: 600, style: 'normal', text }])
+  const ck = await initCanvasKit()
+  const surface = ck.MakeSurface(500, 100)
+  assert.ok(surface)
+  const renderer = new SkiaRenderer(ck, surface)
+  const graph = new SceneGraph()
+  const node = graph.createNode('TEXT', graph.getPages()[0].id, {
+    text, fontFamily: family, fontWeight: 600, fontSize: 14, lineHeight: 20,
+    width: 500, height: 100, textAutoResize: 'NONE',
+  })
+  try {
+    await renderer.loadFonts()
+    const paragraph = renderer.buildParagraph(node)
+    try {
+      paragraph.layout(maxWidth ?? node.width)
+      const expected = { width: paragraph.getLongestLine(), height: paragraph.getHeight() }
+      assert.deepEqual(expected, { width: expectedWidth, height: expectedHeight })
+      assert.equal(Number.isInteger(expected.width), false, 'fixture has fractional shaped width')
+      const lines = paragraph.getShapedLines()
+      assert.deepEqual(missingGlyphCharacters(text, lines), [])
+      assert.deepEqual([...new Set(lines.flatMap(line => line.runs.map(run => run.typeface.getFamilyName())))],
+        [`${family} SemiBold`])
+      if (text === 'AV office affinity' && maxWidth === undefined) {
+        assert.ok(lines.flatMap(line => line.runs).reduce((count, run) => count + run.glyphs.length, 0) < text.length,
+          'real ligature shaping combines characters, not a manual sum of glyph advances')
+      }
+      assert.deepEqual(renderer.measureTextNode(node, maxWidth), expected)
+    } finally { paragraph.delete() }
+  } finally { renderer.destroy() }
+})
+
+test('precise native text measurement retains font readiness and empty-text guards', async () => {
+  await loadFonts(faces, requirements)
+  const ck = await initCanvasKit()
+  const surface = ck.MakeSurface(100, 50)
+  assert.ok(surface)
+  const renderer = new SkiaRenderer(ck, surface)
+  const graph = new SceneGraph()
+  const node = graph.createNode('TEXT', graph.getPages()[0].id, {
+    text: 'Save', fontFamily: family, fontWeight: 600, fontSize: 14, width: 100, height: 50,
+  })
+  try {
+    assert.equal(renderer.measureTextNode(node), null, 'renderer font provider is not ready')
+    await renderer.loadFonts()
+    assert.ok(renderer.measureTextNode(node))
+    node.text = ''
+    assert.equal(renderer.measureTextNode(node), null, 'empty paragraph sentinel is not a measurement')
+    const rectangle = graph.createNode('RECTANGLE', graph.getPages()[0].id, { width: 10, height: 10 })
+    assert.equal(renderer.measureTextNode(rectangle), null)
+  } finally { renderer.destroy() }
+})

@@ -203,7 +203,26 @@ export async function captureExample(browser, snapshot, exampleId, {
       return roots
     }, snapshot.themes.find(theme => theme.mode === mode).tokens.filter(token => token.type === 'color').map(token => token.name))
     const session = await context.newCDPSession(page)
+    let environment
     try {
+      const [version, commandLine] = await Promise.all([
+        session.send('Browser.getVersion'),
+        session.send('Browser.getBrowserCommandLine').catch(() => {
+          throw new Error('Capture requires Chromium launched with --enable-automation to verify rendering metadata')
+        }),
+      ])
+      // Retain only rendering metadata. Launch arguments can contain private
+      // profile paths or credentials and must never enter a design snapshot.
+      const hint = commandLine.arguments.findLast(argument => argument.startsWith('--font-render-hinting='))
+      const fontHinting = hint ? hint.slice('--font-render-hinting='.length) : 'default'
+      if (!['default', 'none', 'slight', 'medium', 'full'].includes(fontHinting)) {
+        throw new Error('Capture requires a recognized Chromium font-hinting mode')
+      }
+      environment = {
+        browser: version.product, protocol: version.protocolVersion,
+        headless: commandLine.arguments.some(argument => argument === '--headless' || argument.startsWith('--headless=')),
+        fontHinting,
+      }
       // Whitespace nodes otherwise may have no frontend DOM ID. Query actual
       // font use even at zero advance: combining marks can still paint ink.
       await session.send('DOM.enable', { includeWhitespace: 'all' })
@@ -239,7 +258,7 @@ export async function captureExample(browser, snapshot, exampleId, {
     if (requests.length > 0) throw new Error(`Capture refused external resources: ${requests.join(', ')}`)
     return {
       sourceSHA: snapshot.sha256, exampleId, componentId: example.componentId,
-      mode, viewport: { ...viewport }, roots,
+      mode, viewport: { ...viewport }, environment, roots,
       fontFaces: faces.map(({ family, weight, style, sha256, postscriptName }) => ({ family, weight, style, sha256, postscriptName })),
     }
   } finally {

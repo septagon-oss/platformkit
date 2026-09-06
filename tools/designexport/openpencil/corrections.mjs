@@ -41,6 +41,14 @@ export const corrections = Object.freeze({
       'import * as OpenTypeSync from "opentype.js";',
       'import OpenTypeSync from "opentype.js";'),
   },
+  '@open-pencil/core/dist/canvas/text/index.js': {
+    sha256: 'ebabf318ffdc67ffac0f90519c5681a81e0b02dbdb0552cded05b2ec0ee87a05',
+    // Layout consumes shaped advances, not raster pixel bounds. Preserve the
+    // paragraph's precision without changing shaping or readiness checks.
+    transform: (source, replace) => replace(source,
+      'width: Math.ceil(width),\n\t\theight: Math.ceil(height)',
+      'width,\n\t\theight'),
+  },
   '@open-pencil/core/dist/tools/calc.js': {
     sha256: '35d6fd205094a3e26f5098b98833c92ffe96a2defdb377208576f58c6e71b67d',
     transform(source, replace) {

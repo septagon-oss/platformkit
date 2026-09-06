@@ -21,7 +21,7 @@ const faces = [400, 600].map(weight => {
 })
 const face = faces[1]
 let browser
-before(async () => { browser = await chromium.launch({ headless: true }) })
+before(async () => { browser = await chromium.launch({ headless: true, args: ['--enable-automation'] }) })
 after(async () => { await browser?.close() })
 afterEach(() => assert.equal(browser.contexts().length, 0, 'capture closed every disposable context'))
 
@@ -73,6 +73,13 @@ test('browser capture preserves real Button layout, text regions and source iden
     assert.equal(result.componentId, 'pk-ui.component.button')
     assert.equal(result.mode, mode)
     assert.deepEqual(result.viewport, viewport)
+    assert.deepEqual(Object.keys(result.environment).toSorted(), ['browser', 'fontHinting', 'headless', 'protocol'])
+    assert.equal(typeof result.environment.browser, 'string')
+    assert.ok(result.environment.browser.length > 0)
+    assert.equal(typeof result.environment.protocol, 'string')
+    assert.ok(result.environment.protocol.length > 0)
+    assert.equal(result.environment.headless, true)
+    assert.equal(result.environment.fontHinting, 'default')
     assert.equal(result.roots.length, 1)
     const button = result.roots[0]
     assert.equal(button.kind, 'element')
@@ -100,6 +107,29 @@ test('browser capture preserves real Button layout, text regions and source iden
       !Object.hasOwn(node, 'observationId') && !Object.hasOwn(node, 'fontObservationIds')))
   }
   assert.deepEqual(source, beforeSource)
+})
+
+test('browser capture records explicit font hinting without leaking browser arguments', async () => {
+  const privateMarker = 'private-capture-fixture:/private/capture-fixture'
+  const unhinted = await chromium.launch({
+    headless: true, args: ['--enable-automation', '--font-render-hinting=none', `--user-agent=${privateMarker}`],
+  })
+  try {
+    const result = await captureExample(unhinted, source, primary)
+    assert.equal(result.environment.fontHinting, 'none')
+    assert.equal(result.environment.headless, true)
+    assert.deepEqual(Object.keys(result.environment).toSorted(), ['browser', 'fontHinting', 'headless', 'protocol'])
+    assert.ok(!JSON.stringify(result.environment).includes(privateMarker))
+    assert.equal(unhinted.contexts().length, 0)
+  } finally { await unhinted.close() }
+})
+
+test('browser capture refuses uninspectable rendering metadata without leaking contexts', async () => {
+  const uninspectable = await chromium.launch({ headless: true, ignoreDefaultArgs: ['--enable-automation'] })
+  try {
+    await assert.rejects(captureExample(uninspectable, source, primary), /requires Chromium launched with --enable-automation/)
+    assert.equal(uninspectable.contexts().length, 0)
+  } finally { await uninspectable.close() }
 })
 
 test('browser capture observes token alias candidates, mixed paints and equal-colored literals', async () => {

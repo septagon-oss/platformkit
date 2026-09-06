@@ -6,8 +6,9 @@ typed examples and stylesheet remain the source of truth. There is no second
 component registry, page language or client-specific library here.
 
 The implemented boundary is a tokens-and-icons FIG generator, supplied-font
-validation, browser observations and a pinned SDK correction layer with
-conformance tests. Component examples, pages and flows are not converted yet.
+validation, browser observations, experimental single-text component construction
+and a pinned SDK correction layer with conformance tests. The generator does not
+include these experimental components; pages and flows are not converted yet.
 This tooling neither builds nor deploys the editor;
 a passing native test is not a production release.
 
@@ -85,6 +86,12 @@ paint observations, text regions and the faces Chromium used for each region. It
 does not construct native components or assert that those observations can all
 be represented faithfully in a FIG file.
 
+Launch Chromium with `args: ['--enable-automation']` so capture can inspect its
+rendering environment. Observations retain the browser product, protocol version,
+headless flag and explicitly selected font-hinting mode, never the full launch
+arguments or user-agent string. `fontHinting: 'default'` means no explicit flag;
+it does not promise the same default across browsers or operating systems.
+
 Each observation uses a disposable, unauthenticated document with the exported
 HTML and CSS. External resources and executable content are refused; image
 assets must already be supplied as data URLs. Application controllers do not
@@ -114,6 +121,40 @@ equal-colored literals. `directCandidate` names an observed alias candidate,
 not a binding guarantee. These are observed dependencies, not a general CSS
 expression parser or proof for arbitrary functions and locally overridden themes.
 They must not be used to advertise universal token-binding support.
+
+## Construct the experimental text component
+
+[materializeComponent](components.mjs) takes an existing native graph and
+definition-parent ID, its source snapshot and observation, exact supplied font
+faces, and a live Skia renderer. It returns a native component master and its
+property definitions. Create linked instances through the existing graph API;
+this helper does not publish a library or add another component registry.
+
+The current supported input is one explicitly bound, nonempty text region in a
+centered, unconstrained, nonwrapping horizontal flex container. Construction
+preserves observed solid paints, corner radii and padding including transparent
+border insets. It requires successful native text measurement and refuses outer
+geometry differences larger than 1/64 CSS pixel. Rejection removes the newly
+constructed nodes and restores the caller's measurement hook.
+
+[bindTextProperties](bindings.mjs) binds exact constructed text handles to
+unconstrained source string properties, after preflighting every target. It uses
+native definitions and references, not names or plugin metadata to drive behavior.
+Provenance records the source invocation, font identities, viewport and observed
+environment; it is not an authentication or edited-document freshness check.
+
+Browser tests compare the actual Go Button in both themes with supplied IBM Plex
+Sans 600 and explicit `--font-render-hinting=none`. Label edits, undo/redo and two
+FIG round trips retain native links and match independently rendered source
+dimensions within 1/64 pixel. The precision correction preserves CanvasKit's
+shaped advances; it does not reproduce every platform's font hinting. These are
+geometry and persistence checks, not a pixel comparison or accessibility audit.
+
+Component paints are observed literals, not token bindings. Icons, slots, visible
+borders, wrapping, constrained widths and empty or collapsed-whitespace inputs
+remain unsupported. Native text properties still accept empty values; preserving
+their identity does not prove whitespace-only flex layout after an edit. Do not
+treat this development boundary as a complete editable component library.
 
 ## Supply exact font faces
 
@@ -152,8 +193,9 @@ can be used at a browser build boundary, but that integration is unfinished.
 The correction uses native component/property identities and FIG override
 paths, not plugin metadata. Repeated saves merge overrides by path. Reflow and
 undo preserve the linked component relationship; they do not detach instances.
-The conformance fixtures use a deterministic text measurer, so their exact
-dimensions demonstrate layout state rather than real font shaping.
+The low-level property conformance fixtures use a deterministic text measurer,
+so their exact dimensions demonstrate layout state rather than real font shaping.
+The experimental component checks separately use the supplied real fonts.
 Editor fixtures use the normal graph subscriptions and public history actions.
 Assertions cover the state after deferred notifications settle, not just the
 immediate return from undo. Genuine authored master changes still propagate;
@@ -180,9 +222,10 @@ SVG visual-fidelity comparison, responsive and accessibility checks, and save/re
 in the interactive editor. Typed component conversion and edited-document
 source-freshness verification are unfinished. Product prototypes need runtime-state mappings and governed
 end-to-end persistence tests in their owning product repository.
-Native component sizing still needs independent evidence for border insets,
-browser/native text rounding and whitespace-only flex participation during edits.
-Correct font loading alone does not resolve those layout differences.
+Native component sizing still needs evidence beyond the declared single-text
+comparison environment, including visible borders, wrapping and whitespace-only
+flex participation during edits. Correct font loading alone does not resolve
+those layout differences.
 Programmatic batches with an unrelated master update already queued before a
 property edit need further lifecycle work: wait for that preceding update to
 settle before using the verified edit/history boundary. The current correction

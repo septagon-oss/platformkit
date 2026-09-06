@@ -122,7 +122,10 @@ or product flows. See its guide for the supported SVG and token boundary.
 Browser observations reuse the exported HTML and CSS rather than reimplementing
 Go components. Source-owned text comments identify exact property regions without
 adding layout elements. Observations and supplied-font checks are converter inputs,
-not proof of native component editing or slot replacement.
+not proof of native component editing or slot replacement. Experimental native
+construction now binds one observed text region to its source string property;
+its guide distinguishes tested geometry and persistence from the unfinished
+component library and interactive editor.
 Native tooling and tests have their own reviewed source budgets, separate from
 the application's browser controllers.
 
