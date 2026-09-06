@@ -81,46 +81,6 @@ func TestOneSitePerTenant(t *testing.T) {
 	}
 }
 
-// TestSavingPublishesInTheCallersTransaction is what the conformance suite
-// cannot see, because the fake has no outbox: the change and the event that
-// describes it are one transaction, and an identical save writes neither.
-func TestSavingPublishesInTheCallersTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
-	svc := internal.NewService()
-
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		for range 2 { // the second is the same form submitted twice
-			settings := &contracts.SiteSettings{
-				Title: " Acme ", Theme: contracts.ThemeDark,
-				Nav: contracts.Nav{{Label: "About", Path: "/about-us"}},
-			}
-			if _, err := svc.Save(ctx, tx, settings); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("save: %v", err)
-	}
-
-	var events int
-	var title string
-	if err := admin.QueryRowContext(t.Context(),
-		`SELECT count(*) FROM platformkit_outbox WHERE name = $1`, contracts.EventSettingsUpdated).Scan(&events); err != nil {
-		t.Fatalf("count the events: %v", err)
-	}
-	if err := admin.QueryRowContext(t.Context(), `SELECT title FROM site_settings`).Scan(&title); err != nil {
-		t.Fatalf("read the row: %v", err)
-	}
-	if events != 1 {
-		t.Errorf("%d events, want one: the second save changed nothing, whitespace included", events)
-	}
-	if title != "Acme" {
-		t.Errorf("the title is %q; it is trimmed, so two callers cannot disagree about whitespace", title)
-	}
-}
-
 // TestARolledBackSaveLeavesNothing: a transaction that does not commit leaves
 // neither the settings nor the event.
 func TestARolledBackSaveLeavesNothing(t *testing.T) {

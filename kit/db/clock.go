@@ -1,6 +1,17 @@
 package db
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// NewID is the id every row and every event is born with: a version 7 UUID,
+// which sorts by the moment it was made and, within one moment, by the order it
+// was made in. Ordering by (created_at, id) is therefore creation order even for
+// rows one transaction stamped with the same instant; a random id would leave
+// that to chance.
+func NewID() uuid.UUID { return uuid.Must(uuid.NewV7()) }
 
 // Now is the clock everything that writes a timestamp reads: UTC, truncated to
 // the microsecond.

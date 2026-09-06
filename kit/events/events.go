@@ -142,7 +142,7 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	}
 	if err := gdb.Exec(
 		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor) VALUES (?, ?, ?, ?::jsonb, ?)",
-		uuid.New(), tenantID, name, string(body), actor,
+		db.NewID(), tenantID, name, string(body), actor,
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}

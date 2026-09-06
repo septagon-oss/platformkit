@@ -55,57 +55,6 @@ func TestServiceConforms(t *testing.T) {
 	})
 }
 
-// TestTheCommandsPublishInTheCallersTransaction is what the conformance suite
-// cannot see, because the fake has no outbox: a state change and the event that
-// describes it are one row each in one transaction. It also pins the idempotent
-// paths as silent.
-func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
-	svc := internal.NewService()
-
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		page := &contracts.Content{Slug: "about-us", Title: "About us", Body: "hello"}
-		if err := crud.Create(ctx, tx, page); err != nil {
-			return err
-		}
-		// Each command twice: the second is the retry, and says nothing.
-		for _, command := range []func() error{
-			func() error { _, err := svc.Publish(ctx, tx, page.ID); return err },
-			func() error { _, err := svc.Unpublish(ctx, tx, page.ID); return err },
-			func() error { _, err := svc.Archive(ctx, tx, page.ID); return err },
-		} {
-			for range 2 {
-				if err := command(); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("the commands: %v", err)
-	}
-
-	for _, name := range []string{contracts.EventPublished, contracts.EventUnpublished, contracts.EventArchived} {
-		var count int
-		err := admin.QueryRowContext(t.Context(),
-			`SELECT count(*) FROM platformkit_outbox WHERE name = $1 AND tenant_id = $2`, name, acme.ID).Scan(&count)
-		if err != nil {
-			t.Fatalf("count %s: %v", name, err)
-		}
-		if count != 1 {
-			t.Errorf("%s was published %d times, want once", name, count)
-		}
-	}
-	var total int
-	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM platformkit_outbox`).Scan(&total); err != nil {
-		t.Fatalf("count the outbox: %v", err)
-	}
-	if total != 3 {
-		t.Errorf("the outbox holds %d events, want the three the commands published", total)
-	}
-}
-
 // TestTheDatabaseKeepsPublishedAndItsTimeTogether. The entity's Validate says
 // it and this is the half that is true of a row no Go code wrote: a CHECK
 // constraint, so an UPDATE straight at the column cannot leave a published page

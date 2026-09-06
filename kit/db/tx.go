@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -54,6 +55,21 @@ func (System) isScope() {}
 type Tx[S Scope] struct {
 	db    *gorm.DB
 	scope S
+	at    time.Time
+}
+
+// At is the instant the transaction opened, and the one "now" inside it. A
+// command's decision takes it as an argument, the rows the command writes are
+// stamped with it — the handle's clock is pinned to it, see pinned — and the
+// event that announces the change carries it, so nothing one transaction did
+// can disagree about when it happened, and a test can read the instant instead
+// of guessing a window around its own clock.
+func (t Tx[S]) At() time.Time { return t.at }
+
+// pinned is the handle with its clock stopped at the transaction's instant, so
+// every created_at and updated_at GORM stamps inside it is At.
+func pinned(gdb *gorm.DB, at time.Time) *gorm.DB {
+	return gdb.Session(&gorm.Session{NowFunc: func() time.Time { return at }})
 }
 
 // DB is the transaction-bound GORM handle. Every query on it runs inside the
@@ -72,6 +88,7 @@ type openTx struct {
 	db     *gorm.DB
 	system bool
 	tenant tenancy.Tenant
+	at     time.Time
 }
 
 type txKey struct{}
@@ -85,8 +102,8 @@ func current(ctx context.Context) (openTx, bool) {
 	// readiness check open a system transaction, while the request holds a
 	// Pending it never used.
 	if p, ok := pendingOf(ctx); ok {
-		if gtx := p.handle(); gtx != nil {
-			return openTx{db: gtx, tenant: p.tenant}, true
+		if gtx, at := p.handle(); gtx != nil {
+			return openTx{db: gtx, tenant: p.tenant, at: at}, true
 		}
 	}
 	return openTx{}, false
@@ -123,7 +140,7 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 		if cur.system || cur.tenant.ID != t.ID {
 			return ErrScopeMismatch
 		}
-		return fn(ctx, Tx[Tenant]{db: cur.db, scope: Tenant{tenant: t}})
+		return fn(ctx, Tx[Tenant]{db: cur.db, scope: Tenant{tenant: t}, at: cur.at})
 	}
 	if p, ok := pendingOf(ctx); ok {
 		// A request that has not queried yet. Opening here hands the caller the
@@ -150,7 +167,7 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 			panic(r)
 		}
 	}()
-	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: tx.db, tenant: t}), tx); err != nil {
+	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: tx.db, tenant: t, at: tx.at}), tx); err != nil {
 		_ = p.Close(false)
 		return err
 	}
@@ -170,18 +187,19 @@ func RunSystem(ctx context.Context, c *Conn, tok tenancy.SystemToken, fn func(ct
 		if !cur.system {
 			return ErrScopeMismatch
 		}
-		return fn(ctx, Tx[System]{db: cur.db})
+		return fn(ctx, Tx[System]{db: cur.db, at: cur.at})
 	}
 	// Debug, not Info: a cross-tenant transaction is rare by design, but the
 	// readiness probe and every host resolution open one, and a log line per
 	// probe is a log nobody reads.
 	slog.DebugContext(ctx, "db: cross-tenant transaction", "reason", tok.Reason())
-	return c.db.WithContext(ctx).Transaction(func(gtx *gorm.DB) error {
+	at := Now()
+	return pinned(c.db.WithContext(ctx), at).Transaction(func(gtx *gorm.DB) error {
 		if err := gtx.Exec("SELECT set_config('platformkit.system_access', 'true', true)").Error; err != nil {
 			return fmt.Errorf("db: set system access: %w", err)
 		}
-		inner := context.WithValue(ctx, txKey{}, openTx{db: gtx, system: true})
-		if err := fn(inner, Tx[System]{db: gtx}); err != nil {
+		inner := context.WithValue(ctx, txKey{}, openTx{db: gtx, system: true, at: at})
+		if err := fn(inner, Tx[System]{db: gtx, at: at}); err != nil {
 			return err
 		}
 		return sealed(gtx, "", "true")
@@ -202,6 +220,7 @@ type Pending struct {
 
 	mu  sync.Mutex
 	gtx *gorm.DB
+	at  time.Time
 	err error
 }
 
@@ -241,7 +260,8 @@ func (p *Pending) Tx(ctx context.Context) (Tx[Tenant], error) {
 		return Tx[Tenant]{}, p.err
 	}
 	if p.gtx == nil {
-		gtx := p.conn.db.WithContext(ctx).Begin()
+		at := Now()
+		gtx := pinned(p.conn.db.WithContext(ctx), at).Begin()
 		if gtx.Error != nil {
 			p.err = fmt.Errorf("db: begin: %w", gtx.Error)
 			return Tx[Tenant]{}, p.err
@@ -251,9 +271,9 @@ func (p *Pending) Tx(ctx context.Context) (Tx[Tenant], error) {
 			p.err = fmt.Errorf("db: set tenant: %w", err)
 			return Tx[Tenant]{}, p.err
 		}
-		p.gtx = gtx
+		p.gtx, p.at = gtx, at
 	}
-	return Tx[Tenant]{db: p.gtx, scope: Tenant{tenant: p.tenant}}, nil
+	return Tx[Tenant]{db: p.gtx, scope: Tenant{tenant: p.tenant}, at: p.at}, nil
 }
 
 // Err is the failure that stopped the transaction opening, if one did.
@@ -263,10 +283,10 @@ func (p *Pending) Err() error {
 	return p.err
 }
 
-func (p *Pending) handle() *gorm.DB {
+func (p *Pending) handle() (*gorm.DB, time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.gtx
+	return p.gtx, p.at
 }
 
 // Close ends the transaction: it commits when keep is true and the settings the

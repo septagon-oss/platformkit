@@ -2,10 +2,10 @@ package contenttest
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -14,21 +14,25 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 )
 
-// Fake is contracts.Service over a map: the same rules, no database, no
-// transaction. A consumer that wants to test what it does when a page is
-// published takes one of these instead of a Postgres.
+// Fake is contracts.Service over a map: the same decisions as the real thing,
+// applied to memory instead of to Postgres. A consumer that wants to test what
+// it does when a page is published takes one of these instead of a database.
 //
 // It ignores the transaction it is handed, and that is the honest limit of it:
 // it cannot tell a caller that a write did not commit, because nothing here
 // commits. Everything it can be wrong about is what RunService checks.
 type Fake struct {
+	// Clock is the instant its commands run at, standing in for the
+	// transaction's. It is the kernel's clock unless a test pins it.
+	Clock func() time.Time
+
 	mu        sync.Mutex
 	rows      map[uuid.UUID]contracts.Content
 	published []string
 }
 
 // NewFake returns an empty store.
-func NewFake() *Fake { return &Fake{rows: map[uuid.UUID]contracts.Content{}} }
+func NewFake() *Fake { return &Fake{Clock: db.Now, rows: map[uuid.UUID]contracts.Content{}} }
 
 var _ contracts.Service = (*Fake)(nil)
 
@@ -39,7 +43,7 @@ func (f *Fake) Put(c *contracts.Content) uuid.UUID {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if c.ID == uuid.Nil {
-		c.ID = uuid.New()
+		c.ID = db.NewID()
 	}
 	c.Slug = contracts.Slugify(c.Slug)
 	if c.Kind == "" {
@@ -66,47 +70,23 @@ func (f *Fake) Contents() map[uuid.UUID]contracts.Content {
 	return maps.Clone(f.rows)
 }
 
-// Publish mirrors internal.Service.Publish.
+// Publish is contracts.Publish, applied to the map.
 func (f *Fake) Publish(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.Content, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	c, err := f.get(id)
-	if err != nil {
-		return nil, err
-	}
-	switch c.Status {
-	case contracts.StatusPublished:
-		return c, nil
-	case contracts.StatusArchived:
-		return nil, fmt.Errorf("%w: archived content is not published from the archive; unpublish it first", crud.ErrConflict)
-	}
-	at := db.Now()
-	c.Status, c.PublishedAt = contracts.StatusPublished, &at
-	return f.commit(c, contracts.EventPublished), nil
+	return f.apply(id, contracts.Publish)
 }
 
-// Unpublish mirrors internal.Service.Unpublish.
+// Unpublish is contracts.Unpublish, applied to the map.
 func (f *Fake) Unpublish(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.Content, error) {
-	return f.to(id, contracts.StatusDraft, contracts.EventUnpublished)
+	return f.apply(id, func(c contracts.Content, at time.Time) (crud.Outcome[contracts.Content], error) {
+		return contracts.Unpublish(c, at), nil
+	})
 }
 
-// Archive mirrors internal.Service.Archive.
+// Archive is contracts.Archive, applied to the map.
 func (f *Fake) Archive(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.Content, error) {
-	return f.to(id, contracts.StatusArchived, contracts.EventArchived)
-}
-
-func (f *Fake) to(id uuid.UUID, status, event string) (*contracts.Content, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	c, err := f.get(id)
-	if err != nil {
-		return nil, err
-	}
-	if c.Status == status {
-		return c, nil
-	}
-	c.Status, c.PublishedAt = status, nil
-	return f.commit(c, event), nil
+	return f.apply(id, func(c contracts.Content, at time.Time) (crud.Outcome[contracts.Content], error) {
+		return contracts.Archive(c, at), nil
+	})
 }
 
 // Public mirrors internal.Service.Public: the published row at this slug and
@@ -123,21 +103,25 @@ func (f *Fake) Public(_ context.Context, _ db.Tx[db.Tenant], slug string) (*cont
 	return nil, crud.ErrNotFound
 }
 
-// get is a copy of the stored content, so a caller that mutates what it was
-// handed does not reach into the store. The caller holds the lock.
-func (f *Fake) get(id uuid.UUID) (*contracts.Content, error) {
-	stored, ok := f.rows[id]
+// apply is crud.Apply over the map: read, decide, and when the decision moved
+// the content, store it stamped with the instant and record the event.
+func (f *Fake) apply(id uuid.UUID, decide func(contracts.Content, time.Time) (crud.Outcome[contracts.Content], error)) (*contracts.Content, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.rows[id]
 	if !ok {
 		return nil, crud.ErrNotFound
 	}
-	return &stored, nil
-}
-
-// commit stores the changed content and records the event. The caller holds
-// the lock.
-func (f *Fake) commit(c *contracts.Content, event string) *contracts.Content {
-	c.UpdatedAt = db.Now()
-	f.rows[c.ID] = *c
-	f.published = append(f.published, event)
-	return c
+	at := f.Clock()
+	out, err := decide(c, at)
+	if err != nil {
+		return nil, err
+	}
+	if out.Event == "" {
+		return &c, nil
+	}
+	out.Next.UpdatedAt = at
+	f.rows[id] = out.Next
+	f.published = append(f.published, out.Event)
+	return &out.Next, nil
 }

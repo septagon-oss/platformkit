@@ -43,6 +43,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The three failures a caller distinguishes. Everything else is an outage and
@@ -172,7 +173,7 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 	}
 	b := e.base()
 	if b.ID == uuid.Nil {
-		b.ID = uuid.New()
+		b.ID = db.NewID()
 	}
 	tenant := db.TenantOf(tx).ID
 	if b.TenantID != uuid.Nil && b.TenantID != tenant {
@@ -311,11 +312,12 @@ func conditions(fields []Field, filter map[string]any) ([]string, []any, error) 
 	return where, args, nil
 }
 
-// ordering turns "field" or "-field" into an ORDER BY, always ending in the id
-// so the order is total.
+// ordering turns "field" or "-field" into an ORDER BY, always ending in the id,
+// the same way round, so the order is total: ids are made in creation order
+// (db.NewID), so rows one instant cannot tell apart are listed as they were made.
 func ordering(fields []Field, sort string) (string, error) {
 	if sort == "" {
-		return "created_at DESC, id", nil
+		return "created_at DESC, id DESC", nil
 	}
 	name, dir := sort, "ASC"
 	if name[0] == '-' {
@@ -325,7 +327,7 @@ func ordering(fields []Field, sort string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return f.Column + " " + dir + ", id", nil
+	return f.Column + " " + dir + ", id " + dir, nil
 }
 
 // comparable is the field with this name, refused when a query cannot compare
@@ -376,4 +378,48 @@ func Classify(err error) error {
 		return fmt.Errorf("%w: %s", ErrConflict, pg.ConstraintName)
 	}
 	return err
+}
+
+// Outcome is what a decision about one row concluded: the row as it is next,
+// and the event that announces the change, with its payload. No event means the
+// decision found nothing to change, and Next is the row as it was read.
+//
+// A decision is a pure function of the row and the instant it runs — the same
+// row at the same instant gives the same Outcome, and it touches no database,
+// no clock and no caller's copy. It lives in the module's contracts/, which is
+// what lets the module's fake apply the very same rules to a map that Apply
+// applies to Postgres, instead of mirroring them in a second copy.
+type Outcome[E any] struct {
+	Next    E
+	Event   string
+	Payload any
+}
+
+// Apply is the half of a command that touches the world. It reads the row,
+// hands a copy to decide with nothing else, and when the decision moved the row
+// writes columns back and publishes the event in the same transaction. When it
+// did not, Apply writes nothing and says nothing, so a repeated command is
+// silent. E is the entity by value and PE its pointer, which is what rows are.
+func Apply[E any, PE interface {
+	*E
+	Entity
+}](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
+	decide func(E) (Outcome[E], error), columns ...string,
+) (PE, error) {
+	row, err := Get[PE](tx, id)
+	if err != nil {
+		return nil, err
+	}
+	out, err := decide(*row)
+	if err != nil {
+		return nil, err
+	}
+	if out.Event == "" {
+		return row, nil
+	}
+	next := PE(&out.Next)
+	if err := Update(ctx, tx, next, columns...); err != nil {
+		return nil, err
+	}
+	return next, events.Publish(ctx, tx, out.Event, out.Payload)
 }
