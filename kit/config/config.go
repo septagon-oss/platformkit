@@ -224,7 +224,7 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		// The most common first-run mistake, said in terms of what to do next
 		// rather than of what the file system saw.
-		return Config{}, fmt.Errorf("config: %s does not exist; copy config.example.yaml to it (make run does), or run scripts/start.sh", path)
+		return Config{}, fmt.Errorf("config: %s does not exist; copy config.example.yaml to it (make run does), or use the start command, which needs none", path)
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)

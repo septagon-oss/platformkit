@@ -1,9 +1,7 @@
 package design_test
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -11,12 +9,30 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 )
 
-func TestTokenExportPreservesExistingCSS(t *testing.T) {
+// The export and the stylesheet are two readings of one list. Every exported
+// token is declared with its value; each colour is declared three times (on
+// :root, under [data-theme="dark"] and again under the media query) and each
+// font stack once, because the dark theme only overrides colours.
+func TestExportedTokensAreTheDeclarationsTheStylesheetEmits(t *testing.T) {
 	t.Parallel()
-	const before = "7572b45da15e196c80da6f172007792b655a7a5906eb79de951981c7265fe9b8"
-	got := fmt.Sprintf("%x", sha256.Sum256([]byte(design.CSS(design.Light(), design.Dark()).CSS())))
-	if got != before {
-		t.Fatalf("token export changed the existing stylesheet: hash %s", got)
+	light, dark := design.Light(), design.Dark()
+	css := design.CSS(light, dark).CSS()
+	for _, theme := range []design.Theme{light, dark} {
+		for _, token := range theme.Tokens() {
+			if !strings.Contains(css, token.Name+": "+token.Value+";") {
+				t.Errorf("%s exports %s = %q, which the stylesheet does not declare", theme.Name, token.Name, token.Value)
+			}
+			want := 3
+			if token.Type == "fontFamily" {
+				want = 1
+			}
+			if got := strings.Count(css, token.Name+":"); got != want {
+				t.Errorf("%s is declared %d times, want %d", token.Name, got, want)
+			}
+		}
+	}
+	if got := strings.Count(css, "--pk-"); got != 3*22+3 {
+		t.Errorf("the stylesheet declares %d custom properties; the export has 22 colours and 3 font stacks", got)
 	}
 }
 

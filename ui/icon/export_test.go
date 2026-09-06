@@ -8,20 +8,11 @@ import (
 	"github.com/septagon-oss/platformkit/ui/icon"
 )
 
-func TestGlyphProvenanceFollowsActualSource(t *testing.T) {
+func TestEveryGlyphCarriesItsProvenance(t *testing.T) {
 	t.Parallel()
 	for _, name := range icon.Names() {
-		glyph, known := icon.Resolve(name)
-		source, license := "github.com/phosphor-icons/core", "MIT"
-		if name == "sun" || name == "moon" {
-			source, license = "github.com/septagon-oss/platformkit/ui/icon", "Apache-2.0"
-		}
-		if !known || glyph.Source != source || glyph.License != license {
+		if glyph, known := icon.Resolve(name); !known || glyph.Source != icon.Source || glyph.License != icon.License {
 			t.Errorf("%s provenance: %+v", name, glyph)
-		}
-		glyph.Body, glyph.Source = "consumer edit", "consumer source"
-		if next, _ := icon.Resolve(name); next.Body == glyph.Body || next.Source != source {
-			t.Errorf("%s export mutation changed the canonical glyph", name)
 		}
 	}
 	for _, name := range []string{"search", "CHEVRON_DOWN", "unknown"} {

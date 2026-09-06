@@ -97,8 +97,9 @@ and stylesheet into a content-addressed snapshot. Products supply their own
 bound examples and reuse that boundary. An OpenPencil adapter must translate
 the snapshot and separately prove native editing, sizing and save/reopen
 behavior; the snapshot itself is neither another registry nor a JSON runtime
-engine for constructing pages. Existing `pk-ui.component.*` identities remain
-stable without restoring the former repository layout.
+engine for constructing pages. Example identities are strings assigned in
+gallery.go; the `pk-ui.component.` prefix is a namespace, not a reference to
+another repository.
 The export CLI can select an existing example and apply `Example.WithProps`
 before calling `ui.Export`. This supplies source-owned rendered variations for
 adapter comparison without reconstructing component behavior in another language.

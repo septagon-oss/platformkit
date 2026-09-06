@@ -84,18 +84,20 @@ To inspect the Core design contract without starting the application, run:
 go run ./tools/designexport
 ```
 
-The command writes a JSON snapshot to standard output: stable example and
-component identities, supported typed property values and schemas, named slot
-support, rendered HTML, the matching CSS, theme tokens and SVG glyphs with
-source and license information.
+The command writes a JSON snapshot to standard output: example and component
+identities, typed property values and schemas, named slot support, rendered
+HTML, the matching CSS, theme tokens and SVG glyphs with source and license
+information.
 Font values are system fallback stacks; no font files are embedded. A content
 hash lets a consumer detect whether its source snapshot has changed.
 
 [ui.Export](ui/export.go) accepts a palette, explicitly bound examples and
 optional stylesheet additions. A product uses that same API with its own
 `design.Pair`, examples and `ui.Extra` values; it does not register a second
-component catalog. Core retains the `pk-ui.component.*` identities as stable
-component names, not references to additional repositories.
+component catalog. Example identities are assigned in
+[gallery.go](ui/components/gallery.go) and outlive changes to labels and
+grouping; the `pk-ui.component.` prefix is a namespace, not a reference to
+another repository.
 
 To inspect one existing invocation, pass its exact exported example ID. Add
 `--props` to read a property patch from standard input:

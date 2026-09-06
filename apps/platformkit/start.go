@@ -11,9 +11,8 @@ package main
 // is the development one config.example.yaml documents, with the database's
 // port filled in.
 //
-// It replaces scripts/start.sh, which did the same thing with Docker and a
-// shell. NATS is not needed: the combined role carries events in memory, which
-// is what kit/app does for it anyway. A deployment never runs this; a deployment
+// NATS is not needed: the combined role carries events in memory, which is
+// what kit/app does for it anyway. A deployment never runs this; a deployment
 // has a config.yaml and a database of its own, and uses `run`.
 
 import (

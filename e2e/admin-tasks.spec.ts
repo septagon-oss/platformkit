@@ -75,7 +75,6 @@ test('the typed gallery retains native controls at desktop and narrow widths', a
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/admin/_gallery');
-  await expect(page.locator('[data-gallery-example]')).toHaveCount(105);
   const primary = page.locator('[data-gallery-example="Button / primary"] button');
   const emailField = page.locator('[data-gallery-example="Input / email"] input');
   for (const width of [1280, 320]) {

@@ -24,6 +24,14 @@ import (
 // mixed set is how icons end up at different optical sizes.
 const ViewBox = "0 0 256 256"
 
+// Source and License are where every glyph in this file comes from and on what
+// terms. Each Glyph carries them so that an export of the vector data travels
+// with its notice; see NOTICE for the licence text.
+const (
+	Source  = "github.com/phosphor-icons/core"
+	License = "MIT"
+)
+
 // Glyph is one icon: its canonical name and the SVG elements inside the
 // <svg> the Icon component draws. The body is trusted markup — it is a
 // constant in this file — and the component writes it raw.
@@ -51,11 +59,7 @@ func Resolve(name string) (Glyph, bool) {
 	if !known {
 		canonical, body = Fallback, bodies[Fallback]
 	}
-	source, license := "github.com/phosphor-icons/core", "MIT"
-	if canonical == "sun" || canonical == "moon" {
-		source, license = "github.com/septagon-oss/platformkit/ui/icon", "Apache-2.0"
-	}
-	return Glyph{Name: canonical, Body: body, Source: source, License: license}, known
+	return Glyph{Name: canonical, Body: body, Source: Source, License: License}, known
 }
 
 // Names is every glyph this set draws, sorted. The gallery renders them all, so
@@ -99,11 +103,8 @@ var bodies = map[string]string{
 	"caret-left":  caret("90"),
 	"caret-right": caret("270"),
 
-	// Two glyphs this set draws that Phosphor's regular weight is not the
-	// source of: the theme toggle's pair, built from primitives rather than
-	// vendored, because they are a circle with rays and a crescent.
-	"sun":  `<circle cx="128" cy="128" r="52"/><path d="M128,36a8,8,0,0,1-8-8V16a8,8,0,0,1,16,0V28A8,8,0,0,1,128,36Zm0,184a8,8,0,0,0-8,8v12a8,8,0,0,0,16,0V228A8,8,0,0,0,128,220ZM228,120H216a8,8,0,0,0,0,16h12a8,8,0,0,0,0-16ZM40,128a8,8,0,0,0-8-8H20a8,8,0,0,0,0,16H32A8,8,0,0,0,40,128ZM60.4,49.1A8,8,0,0,0,49.1,60.4l8.5,8.5A8,8,0,0,0,68.9,57.6ZM187.1,187.1a8,8,0,0,0-11.3,11.3l8.5,8.5a8,8,0,0,0,11.3-11.3ZM195.6,49.1l-8.5,8.5a8,8,0,0,0,11.3,11.3l8.5-8.5A8,8,0,0,0,195.6,49.1ZM57.6,187.1l-8.5,8.5a8,8,0,0,0,11.3,11.3l8.5-8.5A8,8,0,0,0,57.6,187.1Z"/>`,
-	"moon": `<path d="M224,152a96,96,0,0,1-120-120,8,8,0,0,0-10-10A104,104,0,1,0,234,162,8,8,0,0,0,224,152ZM128,216A88,88,0,0,1,86.7,50.5,104.06,104.06,0,0,0,205.5,169.3,88.05,88.05,0,0,1,128,216Z"/>`,
+	"sun":  `<path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z"/>`,
+	"moon": `<path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/>`,
 
 	"arrow-right":         `<path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/>`,
 	"calendar":            `<path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM72,48v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24V80H48V48ZM208,208H48V96H208V208Zm-96-88v64a8,8,0,0,1-16,0V132.94l-4.42,2.22a8,8,0,0,1-7.16-14.32l16-8A8,8,0,0,1,112,120Zm59.16,30.45L152,176h16a8,8,0,0,1,0,16H136a8,8,0,0,1-6.4-12.8l28.78-38.37A8,8,0,1,0,145.07,132a8,8,0,1,1-13.85-8A24,24,0,0,1,176,136,23.76,23.76,0,0,1,171.16,150.45Z"/>`,
