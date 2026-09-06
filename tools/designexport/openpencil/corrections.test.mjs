@@ -27,3 +27,19 @@ test('unrelated modules are not rewritten even when their contents resemble the 
   assert.equal(correctSource('/app/my-node-change2.js', 'function serializeTextOverrides() {}'), null)
   assert.equal(correctSource('/app/not-@open-pencil/fig/dist/node-change2.js', ''), null)
 })
+
+test('actual FIG export retains outlines from the SDK bundled font', async () => {
+  const { SceneGraph } = await import('@open-pencil/scene-graph')
+  const { fontManager } = await import('@open-pencil/core/text')
+  const { exportFigFile, parseFigFile } = await import('@open-pencil/core/io/formats/fig')
+  assert.ok(await fontManager.loadLocalFont('Inter', 'Regular'))
+  const graph = new SceneGraph()
+  graph.createNode('TEXT', graph.getPages()[0].id, {
+    text: 'Ax', fontFamily: 'Inter', fontWeight: 400, fontSize: 24, width: 50, height: 30,
+  })
+  const bytes = await exportFigFile(graph)
+  const reopened = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+  const text = [...reopened.getAllNodes()].find(node => node.type === 'TEXT')
+  assert.equal(text.figmaDerivedTextGlyphs.length, 2)
+  assert.ok(text.figmaDerivedTextGlyphs.every(glyph => glyph.commandsBlob.length > 0))
+})

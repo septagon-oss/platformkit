@@ -35,6 +35,12 @@ export const corrections = Object.freeze({
     sha256: 'a02c896a0f808fd3ccb24ca6a8c09975ca7ef06e2555bc6313b54091e37e8c8d',
     transform: correctGridRecompute,
   },
+  '@open-pencil/core/dist/text/opentype.js': {
+    sha256: '4b95e351041faff7ab0fac48e78a09abcc82fb0d57e1e7d560bc2aef675cf8c4',
+    transform: (source, replace) => replace(source,
+      'import * as OpenTypeSync from "opentype.js";',
+      'import OpenTypeSync from "opentype.js";'),
+  },
   '@open-pencil/core/dist/tools/calc.js': {
     sha256: '35d6fd205094a3e26f5098b98833c92ffe96a2defdb377208576f58c6e71b67d',
     transform(source, replace) {

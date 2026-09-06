@@ -5,9 +5,10 @@ This directory owns the native boundary of the existing
 typed examples and stylesheet remain the source of truth. There is no second
 component registry, page language or client-specific library here.
 
-The implemented boundary is a tokens-and-icons FIG generator, a pinned SDK
-correction layer and native conformance tests. Component examples, pages and
-flows are not converted yet. This tooling neither builds nor deploys the editor;
+The implemented boundary is a tokens-and-icons FIG generator, supplied-font
+validation, browser observations and a pinned SDK correction layer with
+conformance tests. Component examples, pages and flows are not converted yet.
+This tooling neither builds nor deploys the editor;
 a passing native test is not a production release.
 
 ## Generate the foundation
@@ -66,13 +67,79 @@ They do not open your documents or connect to an editor. Foundation tests compar
 native variable values, master links, provenance and rendered icon pixels across
 two successive FIG round trips. CanvasKit renders every light/dark icon in memory
 without requiring a GPU. This verifies native raster persistence, not browser
-interaction, installed-font shaping or comparison with an independent SVG renderer.
+interaction or comparison with an independent SVG renderer. Separate supplied-font
+tests exercise actual shaping within the boundary described below.
 CI and the tagged-tree workflow run the same command. `make check` remains the
 Go and repository-policy gate; this suite is an additional native boundary.
 
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release
 gate that should be made green by removing assertions.
+
+## Observe component inputs
+
+[captureExample](browser/capture.mjs) accepts a caller's Playwright Chromium
+browser, the existing Go snapshot, one exact example ID and optional mode,
+viewport and supplied fonts. It returns source identity, computed layout and
+paint observations, text regions and the faces Chromium used for each region. It
+does not construct native components or assert that those observations can all
+be represented faithfully in a FIG file.
+
+Each observation uses a disposable, unauthenticated document with the exported
+HTML and CSS. External resources and executable content are refused; image
+assets must already be supplied as data URLs. Application controllers do not
+run. Two viewport cases and both themes are checked against independently
+rendered source HTML; this is not an application-wide responsive or accessibility
+audit. Install Chromium, then run the local browser checks:
+
+```sh
+npx playwright install --with-deps chromium
+npm run test:browser
+```
+
+The first command downloads a browser and may install system dependencies.
+CI and the tagged-tree workflow run these checks in addition to the native
+suite and the reference application's `make e2e` journeys.
+
+The Button constructor marks its actual `label` text with paired
+`<!--pk-text:label-->` comments. They preserve escaping and layout, including
+empty labels beside icons. Content-slot replacement and icon-only rendering
+omit the region. Capture records exact markers rather than guessing from visible
+strings. Typed ownership, native property binding and named-slot replacement
+remain the converter's responsibility; a balanced marker is not readiness proof.
+
+Paint observations probe the existing root color variables with two distinct
+values. This distinguishes tested direct aliases and mixed paints from unrelated,
+equal-colored literals. `directCandidate` names an observed alias candidate,
+not a binding guarantee. These are observed dependencies, not a general CSS
+expression parser or proof for arbitrary functions and locally overridden themes.
+They must not be used to advertise universal token-binding support.
+
+## Supply exact font faces
+
+[fonts.mjs](fonts.mjs) accepts caller-owned static TTF, OTF or WOFF files as
+`{ family, weight, style, bytes, sha256 }`. `validateFonts` verifies copied bytes
+against their digest and internal face metadata without registering a font.
+`loadFonts` additionally accepts required `{ family, weight, style, text }` values,
+checks exact faces and glyph coverage with OpenType and CanvasKit, then registers
+the supplied bytes in the existing SDK font manager. It does not resolve CSS
+fallback stacks or download fonts. WOFF2 and variable fonts are refused until
+both the shaping and FIG-outline paths support them.
+
+The locked IBM Plex Sans test dependency supplies real 400 and 600 Latin faces.
+Tests verify their byte identities, native shaping, Chromium's actual custom
+face selection, and unchanged native pixels through two saves with those same
+fonts loaded. The source-checked OpenType import correction prevents the SDK
+from silently omitting derived glyph outlines in Node.
+
+A FIG contains editable font references and derived outlines, not the font
+files themselves. The SDK's font-free outline fallback is not shaping-equivalent
+for kerning and ligatures. The live application and editor still need the same
+licensed font files installed or hosted; these fixtures do not establish that
+deployment. A process cannot replace an already loaded family/style with
+different bytes because the SDK caches FIG font digests by that identity.
+Use a fresh process for a different font revision. Fixture provenance and the
+complete OFL notice are recorded in [NOTICE](../../../NOTICE).
 
 ## Understand the correction boundary
 
@@ -108,11 +175,14 @@ rehydrates children in master order.
 
 ## Release blockers
 
-The browser build still needs these corrections, actual font tests, independent
+The browser build still needs these corrections, supplied-font integration, independent
 SVG visual-fidelity comparison, responsive and accessibility checks, and save/reopen
 in the interactive editor. Typed component conversion and edited-document
 source-freshness verification are unfinished. Product prototypes need runtime-state mappings and governed
 end-to-end persistence tests in their owning product repository.
+Native component sizing still needs independent evidence for border insets,
+browser/native text rounding and whitespace-only flex participation during edits.
+Correct font loading alone does not resolve those layout differences.
 Programmatic batches with an unrelated master update already queued before a
 property edit need further lifecycle work: wait for that preceding update to
 settle before using the verified edit/history boundary. The current correction

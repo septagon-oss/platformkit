@@ -134,5 +134,11 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
+      - name: Native browser observations
+        working-directory: tools/designexport/openpencil
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
+
       - name: make e2e
         run: make e2e

@@ -119,6 +119,10 @@ The native foundation generator reads the current Go export and produces native
 token variables and linked icon components, with provenance on ordinary frames
 and masters. It does not yet translate typed component examples, page composition
 or product flows. See its guide for the supported SVG and token boundary.
+Browser observations reuse the exported HTML and CSS rather than reimplementing
+Go components. Source-owned text comments identify exact property regions without
+adding layout elements. Observations and supplied-font checks are converter inputs,
+not proof of native component editing or slot replacement.
 Native tooling and tests have their own reviewed source budgets, separate from
 the application's browser controllers.
 
