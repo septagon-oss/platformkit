@@ -24,6 +24,12 @@ constructor. Application composition is the place that connects them.
 Shared code belongs in `kit/` only when it is runtime infrastructure rather
 than a business rule.
 
+The import and tenancy source checks are shared tooling owned here. A
+consumer runs the scripts from its resolved foundation dependency, supplies
+its repository directory, and names its composed module dependencies for the
+import check. It does not copy the checking algorithms. `make check` exercises
+their cross-repository refusals using temporary source fixtures.
+
 ## Follow a request
 
 The router in [kit/httpx](kit/httpx/) resolves the request context and declared

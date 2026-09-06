@@ -20,14 +20,25 @@
 # claim, and it is the one worth having.
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# A consumer supplies its repository; the exemption belongs to the foundation
+# module identity, not to any directory a consumer happens to call kit/db.
+foundation="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+root="$(cd "${1:-$foundation}" && pwd)"
+foundation_module="$(sed -n 's/^module[[:space:]]*//p' "$foundation/go.mod")"
+target_module="$(sed -n 's/^module[[:space:]]*//p' "$root/go.mod")"
+[ -n "$target_module" ] || { echo "gucs: missing module declaration" >&2; exit 2; }
 cd "$root"
+git rev-parse --show-toplevel >/dev/null
+paths=('*.go')
+if [ "$target_module" = "$foundation_module" ]; then
+    paths+=(':(exclude,glob)kit/db/*.go')
+fi
 
 hits=""
 # git ls-files sees new files too, the same way tools/locbudget does. A file it
 # still tracks but the working tree has deleted is skipped, which is the state
 # between a `rm` and its commit.
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
 	[ -f "$file" ] || continue
 	if found="$(grep -Hn -e "set_config('platformkit\." -e "SET LOCAL platformkit\." "$file")"; then
 		hits="$hits$found"$'\n'
@@ -35,7 +46,7 @@ while IFS= read -r file; do
 # The exclusion is kit/db's own files and not its subdirectories: kit/db/dbtest
 # opens owner connections for tests and has no more business writing a tenancy
 # setting than any other package.
-done < <(git ls-files -c -o --exclude-standard -- '*.go' ':(exclude,glob)kit/db/*.go')
+done < <(git ls-files -z -c -o --exclude-standard -- "${paths[@]}")
 
 if [ -n "$hits" ]; then
 	printf '%s' "$hits" >&2
@@ -45,4 +56,4 @@ if [ -n "$hits" ]; then
 	exit 1
 fi
 
-echo "gucs: only kit/db writes the tenancy settings"
+echo "gucs: only the foundation kit/db writes the tenancy settings"

@@ -69,6 +69,7 @@ fmt-check: ## Fail when any file is not gofmt'd
 # first, so it goes last; it costs milliseconds and needs nothing built, so
 # where it goes does not matter.
 check: build vet fmt-check test check-loc check-packages check-gucs ## Everything a pull request must pass
+	bash scripts/check_architecture_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package
