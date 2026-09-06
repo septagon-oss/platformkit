@@ -105,6 +105,10 @@ adapter tooling, not another component catalog. Its version- and source-checked
 SDK corrections operate on build/process inputs without modifying an installed
 editor. Node conformance is a separate CI and tagged-tree gate; the correction
 must also be integrated and verified in a browser build before editor release.
+The native foundation generator reads the current Go export and produces native
+token variables and linked icon components, with provenance on ordinary frames
+and masters. It does not yet translate typed component examples, page composition
+or product flows. See its guide for the supported SVG and token boundary.
 Native tooling and tests have their own reviewed source budgets, separate from
 the application's browser controllers.
 

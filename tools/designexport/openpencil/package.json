@@ -4,13 +4,16 @@
   "type": "module",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
+    "generate": "node ./generate.mjs",
     "test": "node --import ./register.mjs --test *.test.mjs",
     "test:stock": "node --test native.test.mjs"
   },
   "dependencies": {
     "@open-pencil/core": "0.14.0",
     "@open-pencil/fig": "0.14.0",
-    "@open-pencil/scene-graph": "0.14.0"
+    "@open-pencil/scene-graph": "0.14.0",
+    "@xmldom/xmldom": "0.9.12",
+    "svgpath": "2.6.0"
   },
   "overrides": {
     "@open-pencil/core": {

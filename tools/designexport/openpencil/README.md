@@ -5,9 +5,50 @@ This directory owns the native boundary of the existing
 typed examples and stylesheet remain the source of truth. There is no second
 component registry, page language or client-specific library here.
 
-The implemented increment is a pinned SDK correction layer and native
-conformance suite. It does not yet convert the export to a library, build the
-editor or deploy anything. A passing native test is not a production release.
+The implemented boundary is a tokens-and-icons FIG generator, a pinned SDK
+correction layer and native conformance tests. Component examples, pages and
+flows are not converted yet. This tooling neither builds nor deploys the editor;
+a passing native test is not a production release.
+
+## Generate the foundation
+
+After installing the dependencies below, run from this directory:
+
+```sh
+npm run generate -- /tmp/platformkit-foundation.fig
+```
+
+The command runs the existing Go export from this checkout, creates native
+variables and linked icon components, and checks that the resulting FIG reopens
+before creating the output. Use an absolute `.fig` path whose parent already
+exists outside the workspace. Existing files and symlinks are never overwritten;
+choose a new name for another export. Publication and deployment are separate
+operations. The output is a generated snapshot, not a place to make source edits.
+
+Open the file in OpenPencil and inspect the Foundation variable collection and
+the Icon masters, light and dark frames. Core currently supplies 22 color
+variables, three font-family strings, 27 icon masters and 54 linked preview
+instances. Each preview inherits its frame's native variable mode. Font-family
+strings preserve the CSS fallback stacks; they are not installed fonts, a
+typography scale or native text styles. There are no page prototypes in this file.
+
+[foundation.mjs](foundation.mjs) also accepts a snapshot from a product's existing
+`ui.Export` call. It does not register another palette or icon catalog. Token
+names and canonical icon names retain source identity; native file-local GUIDs
+may change on import. Source hash, scope and attribution travel on the Foundation
+frame, and each master carries its glyph provenance. These records describe
+origin, not native component behavior or proof that an edited document is fresh.
+The CLI obtains fresh source itself; the in-process API trusts its caller's
+producer hash rather than attempting a second implementation of Go JSON hashing.
+
+Supported inputs are the existing light/dark token contract, literal hexadecimal
+colors, font-family strings and the canonical path/circle SVG glyphs with group
+transforms and supported solid paints. Unsupported tokens, elements or attributes
+fail explicitly. Nested SVG viewports, invisible shapes and transformed strokes
+are rejected until their native fidelity is implemented and tested. Separate SVG
+paths remain separate native vectors so mode
+bindings also control multi-path icons. This is a fidelity check for trusted Go
+exports, not an arbitrary SVG-upload sanitizer or a universal Figma converter.
 
 ## Run the native checks
 
@@ -19,8 +60,13 @@ npm ci --ignore-scripts
 npm test
 ```
 
-The tests create disposable scene graphs and FIG buffers in memory. They do
-not open your documents, connect to an editor or write generated design files.
+The tests create disposable scene graphs and FIG buffers in memory; CLI cases
+write only to automatically removed temporary directories outside the workspace.
+They do not open your documents or connect to an editor. Foundation tests compare
+native variable values, master links, provenance and rendered icon pixels across
+two successive FIG round trips. CanvasKit renders every light/dark icon in memory
+without requiring a GPU. This verifies native raster persistence, not browser
+interaction, installed-font shaping or comparison with an independent SVG renderer.
 CI and the tagged-tree workflow run the same command. `make check` remains the
 Go and repository-policy gate; this suite is an additional native boundary.
 
@@ -62,10 +108,10 @@ rehydrates children in master order.
 
 ## Release blockers
 
-The browser build still needs these corrections, actual font/CanvasKit tests,
-SVG vector fidelity, responsive and accessibility checks, and save/reopen in
-the interactive editor. The snapshot converter and source-freshness gate are
-unfinished. Product prototypes need actual runtime-state mappings and governed
+The browser build still needs these corrections, actual font tests, independent
+SVG visual-fidelity comparison, responsive and accessibility checks, and save/reopen
+in the interactive editor. Typed component conversion and edited-document
+source-freshness verification are unfinished. Product prototypes need runtime-state mappings and governed
 end-to-end persistence tests in their owning product repository.
 Programmatic batches with an unrelated master update already queued before a
 property edit need further lifecycle work: wait for that preceding update to
