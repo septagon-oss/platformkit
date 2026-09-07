@@ -364,8 +364,15 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           await page.keyboard.press('Escape')
           await page.getByRole('button', { name: 'Font settings', exact: true }).click()
           const panel = page.locator('[data-test-id="font-settings-panel"]')
+          // Online providers can already say Enabled before local access is
+          // granted. Check the named rows, never either status interchangeably.
+          const localFonts = panel.getByText('Local fonts', { exact: true }).locator('..')
+          const onlineFonts = panel.getByText('Online fonts', { exact: true }).locator('..')
+          await expect(onlineFonts.getByText('Enabled', { exact: true })).toBeVisible()
+          await expect(localFonts.getByText('Enabled', { exact: true })).toHaveCount(0)
           await panel.getByRole('button', { name: 'Allow', exact: true }).click()
-          await panel.getByText('Enabled', { exact: true }).waitFor()
+          await expect(localFonts.getByText('Enabled', { exact: true })).toBeVisible()
+          await expect(panel.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
           await page.keyboard.press('Escape')
           const blobs = await page.evaluate(async () => Promise.all((await window.queryLocalFonts()).map(async font =>
             [...new Uint8Array(await (await font.blob()).arrayBuffer())])))
