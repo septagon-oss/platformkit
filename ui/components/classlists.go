@@ -87,7 +87,7 @@ var (
 	clButtonBase = style.New().
 			Display(style.DisplayInlineFlex).Items(style.ItemsCenter).Justify(style.JustifyCenter).
 			Gap(style.S2).FontWeight(style.FontSemibold).
-			Rounded(style.RadiusMD).Border(style.Border1).
+			Rounded(style.RadiusMD).Border(style.Border1).BorderStyle(style.BorderSolid).
 			Cursor(style.CursorPointer).
 			Transition(style.TransitionColors).
 			On(style.StateDisabled, func(c style.ClassList) style.ClassList {

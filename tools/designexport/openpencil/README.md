@@ -11,8 +11,8 @@ SDK correction layer. Pages and flows are not converted yet; this is not a
 complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts all 107 gallery examples.
-Native construction accepts 15: ten Buttons, bare/invalid Input, Form and two Text
-examples; the coverage test reports 92 refusals. These are measured guards, not proof of
+Native construction accepts 16: eleven Buttons, bare/invalid Input, Form and two Text
+examples; the coverage test reports 91 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
 ## Generate a design document
@@ -173,9 +173,9 @@ adapter API, not the unfinished shared provider interface or a library publisher
 
 The text-row capability supports one explicitly bound, nonempty text region in a
 centered, unconstrained, nonwrapping horizontal flex container, optionally with
-named slots containing one canonical SVG each. Construction
-preserves observed solid paints, corner radii and padding including transparent
-border insets. Observed direct token aliases become native bindings only when
+named slots containing one canonical SVG each. Rows and composed frames share
+one planner for solid fills, uniform solid borders, radii and padding, including
+transparent border insets. Observed direct token aliases become native bindings when
 the selected collection's identities and values match every source theme.
 Literal paints remain unbound; ambiguous, stale and derived paints are refused.
 This uses capture's measured alias evidence, not a general CSS equivalence proof.
@@ -194,8 +194,8 @@ viewport. The existing auto-size operation supplies measured bounds, including
 genuine zero advance and clearing; failed measurement rolls back the edit and
 history. Empty controls provide no glyph evidence. Caret, selection scrolling and
 other interactive input behavior are outside this static conversion.
-The Form checks cover both themes at 320px and 1280px, then nested Input and
-Button edits, undo/redo, sibling isolation, two saves and Go proposal reprojection.
+Form layout covers both themes at 320px and 1280px. Input and Button edits, including
+the secondary variant, pass history, isolation, two saves and source reprojection.
 Text binds `content` to native wrapping text inside its observed block content box.
 Both themes pass line-break/advance checks at 320px and 1280px, property history and
 two saves; the editor test edits and downloads the 320px paragraph. Reopened direct
@@ -342,13 +342,13 @@ the editor without publishing. From this directory, set the test image's URL:
 PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18089 node --import ./register.mjs --test editor/*.test.mjs
 ```
 
-The [editor check](editor/replacement.test.mjs) refuses stale builds and tests icon
-swaps and generated Form/Button properties through history and two downloaded saves.
-Fresh contexts verify links, proposals and unchanged masters, siblings and placement positions.
-Font settings grants access to process-only OTF fixtures; file digests prove the
-loaded bytes. CI explicitly treats its isolated HTTP origin as secure. Saving loads
-unopened pages without replaying edits. Tree navigation no longer creates canvas nudges; native OS
-pickers, hardware GPUs and a full accessibility audit remain unverified.
+The [editor check](editor/replacement.test.mjs) refuses stale builds and tests generated
+Form/Button/Text properties and icon swaps through history and two downloaded saves.
+Fresh contexts check links, proposals, masters, siblings and placement positions.
+Font settings loads process-only OTF fixtures with verified digests. Source comparisons
+reuse the generation browser; full Chromium runs the editor. CI treats its isolated
+HTTP origin as secure. Saves load unopened pages without replay; tree navigation causes
+no canvas nudges. OS pickers, hardware GPUs and full accessibility remain unverified.
 No document, WebGPU assets or product fonts are packaged; PWA registration is disabled.
 
 Native properties and FIG override paths retain links through reflow and undo;

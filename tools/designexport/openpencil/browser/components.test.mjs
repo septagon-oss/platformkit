@@ -90,8 +90,11 @@ test('native source proposals reproject through Go after two FIG saves', async (
   assert.deepEqual(snapshot, beforeSource)
 })
 
-test('real source Button becomes a linked editable component with fractional native HUG geometry', async () => {
-  const snapshot = source(), before = structuredClone(snapshot)
+for (const [variant, backgroundName, foregroundName, padding] of [
+  ['primary', '--pk-color-accent-default', '--pk-color-accent-on', [17, 9]],
+  ['secondary', '--pk-color-surface-primary', '--pk-color-text-primary', [13, 7]],
+]) test(`real source ${variant} Button retains linked paints, editable properties and fractional HUG geometry`, async () => {
+  const id = `pk-ui.component.button/${variant}`, snapshot = source('Save', id), before = structuredClone(snapshot)
   for (const mode of ['light', 'dark']) {
     let graph = buildFoundation(snapshot).graph
     const page = graph.addPage('Component conformance')
@@ -100,8 +103,8 @@ test('real source Button becomes a linked editable component with fractional nat
     const observation = await observe(snapshot, mode)
     const oldMeasurer = getTextMeasurer()
     let { master, properties } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, collection.id)
-    const background = [...graph.variables.values()].find(item => item.name === '--pk-color-accent-default')
-    const foreground = [...graph.variables.values()].find(item => item.name === '--pk-color-accent-on')
+    const background = [...graph.variables.values()].find(item => item.name === backgroundName)
+    const foreground = [...graph.variables.values()].find(item => item.name === foregroundName)
     assert.equal(master.boundVariables['fills/0/color'], background.id)
     assert.equal(graph.getChildren(master.id)[0].boundVariables['fills/0/color'], foreground.id)
     assert.deepEqual(graph.resolveColorVariableForNode(master.id, background.id), parseColor(observation.roots[0].style['background-color']))
@@ -111,11 +114,17 @@ test('real source Button becomes a linked editable component with fractional nat
     assert.equal(property.defaultValue, 'Save')
     close(master.width, observation.roots[0].bounds.width, 'source/master width')
     close(master.height, observation.roots[0].bounds.height, 'source/master height')
-    assert.equal(master.paddingLeft, 17, 'includes the transparent CSS border inset')
-    assert.equal(master.paddingTop, 9)
+    assert.deepEqual([master.paddingLeft, master.paddingTop], padding, 'CSS border space contributes once to native padding')
+    assert.equal(master.strokes.length, variant === 'secondary' ? 1 : 0)
+    if (variant === 'secondary') {
+      assert.deepEqual([master.strokes[0].weight, master.strokes[0].align], [1, 'INSIDE'])
+      const borderId = master.boundVariables['strokes/0/color']
+      assert.equal(graph.variables.get(borderId).name, '--pk-color-border-default')
+      assert.deepEqual(graph.resolveColorVariableForNode(master.id, borderId), parseColor(observation.roots[0].style['border-top-color']))
+    }
     const provenance = JSON.parse(master.pluginData.find(item => item.key === 'platformkit.source').value)
     assert.equal(provenance.sha256, snapshot.sha256)
-    assert.equal(provenance.exampleId, primary)
+    assert.equal(provenance.exampleId, id)
     assert.equal(provenance.componentId, 'pk-ui.component.button')
     assert.deepEqual(provenance.environment, observation.environment)
     assert.equal(provenance.environment.fontHinting, 'none')
@@ -123,7 +132,7 @@ test('real source Button becomes a linked editable component with fractional nat
     let edited = graph.createInstance(master.id, page.id, { name: 'Edited native proof', x: 200 })
     let sibling = graph.createInstance(master.id, page.id, { name: 'Untouched native proof', x: 500 })
     for (const label of ['Create album', 'Retry saving']) {
-      const expected = (await observe(source(label), mode)).roots[0]
+      const expected = (await observe(source(label, id), mode)).roots[0]
       const actions = createEditor({ graph })
       actions.setCanvasKit(ck, renderer)
       const before = structuredClone([edited, ...graph.getChildren(edited.id)])
@@ -138,6 +147,11 @@ test('real source Button becomes a linked editable component with fractional nat
       const variable = graph.variables.get(master.boundVariables['fills/0/color'])
       const modeId = graph.getNodeVariableModeId(master.id, variable.collectionId)
       graph.addVariable({ ...variable, valuesByMode: { ...variable.valuesByMode, [modeId]: expectedPaint } })
+      const expectedBorder = parseColor(label === 'Create album' ? '#abcdef' : '#456789')
+      if (variant === 'secondary') {
+        const border = graph.variables.get(master.boundVariables['strokes/0/color'])
+        graph.addVariable({ ...border, valuesByMode: { ...border.valuesByMode, [modeId]: expectedBorder } })
+      }
       const encoded = await exportFigFile(graph)
       graph = await parseFigFile(encoded.slice().buffer, { populate: 'all' })
       const find = name => {
@@ -162,8 +176,12 @@ test('real source Button becomes a linked editable component with fractional nat
       for (const node of [master, sibling, edited]) {
         const backgroundId = node.boundVariables['fills/0/color']
         const foregroundId = graph.getChildren(node.id)[0].boundVariables['fills/0/color']
-        assert.equal(graph.variables.get(backgroundId).name, '--pk-color-accent-default')
-        assert.equal(graph.variables.get(foregroundId).name, '--pk-color-accent-on')
+        assert.equal(graph.variables.get(backgroundId).name, backgroundName)
+        assert.equal(graph.variables.get(foregroundId).name, foregroundName)
+        if (variant === 'secondary') {
+          assert.deepEqual([node.strokes[0].weight, node.strokes[0].align], [1, 'INSIDE'])
+          assert.equal(graph.variables.get(node.boundVariables['strokes/0/color']).name, '--pk-color-border-default')
+        }
         const resolved = graph.resolveColorVariableForNode(node.id, backgroundId)
         for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(resolved[channel] - expectedPaint[channel]) < 1e-6,
           `${mode}/${label}/${node.name}/${channel}: ${resolved[channel]} != ${expectedPaint[channel]}; mode ${graph.getNodeVariableModeId(node.id, graph.variables.get(backgroundId).collectionId)}`)
@@ -179,6 +197,13 @@ test('real source Button becomes a linked editable component with fractional nat
         const pixel = canvas.readPixels(3, 18, { width: 1, height: 1, alphaType: ck.AlphaType.Unpremul,
           colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB })
         assert.deepEqual([...pixel], ['r', 'g', 'b', 'a'].map(channel => Math.round(expectedPaint[channel] * 255)))
+        if (variant === 'secondary') {
+          for (const [x, y] of [[0, 15], [20, 0]]) {
+            const border = canvas.readPixels(x, y, { width: 1, height: 1, alphaType: ck.AlphaType.Unpremul,
+              colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB })
+            assert.deepEqual([...border], ['r', 'g', 'b', 'a'].map(channel => Math.round(expectedBorder[channel] * 255)))
+          }
+        }
       } finally { draw.destroy() }
     }
   }
@@ -326,6 +351,81 @@ test('source icon slots become linked editable native composition through mixed 
         }
       }
     }
+  }
+})
+
+test('literal solid borders use observed width and paint instead of a component-specific preset', async () => {
+  const snapshot = source('Save', 'pk-ui.component.button/secondary')
+  snapshot.css += '\nbutton[data-component="button"] { border: 3px solid rgb(17, 34, 51); border-radius: 0; }'
+  const observation = await observe(snapshot), built = buildFoundation(snapshot), page = built.graph.addPage('Literal border')
+  let graph = built.graph
+  const { master } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, built.collection.id)
+  graph.createInstance(master.id, page.id, { name: 'Literal bordered instance', x: 200 })
+  for (let save = 0; save < 3; save++) {
+    const instance = [...graph.getAllNodes()].find(node => node.name === 'Literal bordered instance')
+    assert.deepEqual([instance.paddingLeft, instance.paddingTop], [15, 9])
+    assert.equal(instance.strokes.length, 1)
+    assert.deepEqual([instance.strokes[0].weight, instance.strokes[0].align], [3, 'INSIDE'])
+    assert.equal(instance.boundVariables['strokes/0/color'], undefined, 'literal strokes never invent a token binding')
+    close(instance.width, observation.roots[0].bounds.width, 'literal border width')
+    close(instance.height, observation.roots[0].bounds.height, 'literal border height')
+    const surface = ck.MakeSurface(100, 60), draw = new SkiaRenderer(ck, surface)
+    try {
+      await draw.loadFonts()
+      const canvas = surface.getCanvas()
+      canvas.clear(ck.TRANSPARENT)
+      canvas.translate(-instance.x, -instance.y)
+      draw.renderSceneToCanvas(canvas, graph, instance.parentId)
+      surface.flush()
+      for (const [x, y] of [[0, 0], [2, 15], [20, 2]]) {
+        const pixel = canvas.readPixels(x, y, { width: 1, height: 1, alphaType: ck.AlphaType.Unpremul,
+          colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB })
+        assert.deepEqual([...pixel], [17, 34, 51, 255])
+      }
+    } finally { draw.destroy() }
+    if (save < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  }
+})
+
+test('text-row borders reject unsupported styles and inconsistent aliases without partial graph changes', async () => {
+  const snapshot = source('Save', 'pk-ui.component.button/secondary'), observation = await observe(snapshot)
+  for (const change of [
+    root => { root.style['border-top-style'] = 'dashed' },
+    root => { root.style['border-left-width'] = '2px' },
+    root => { root.style['border-right-color'] = 'rgb(1, 2, 3)' },
+    root => { root.paintSources['border-left-color'] = { tokens: [], directCandidate: null } },
+    root => { root.paintSources['border-top-color'].directCandidate = null },
+  ]) {
+    const input = structuredClone(observation), { graph, collection } = buildFoundation(snapshot)
+    change(input.roots[0])
+    const page = graph.addPage('Refused border'), before = structuredClone({ nodes: [...graph.getAllNodes()], variables: [...graph.variables] })
+    const hook = getTextMeasurer()
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, input, faces, renderer, collection.id), /border|paint/)
+    assert.deepEqual({ nodes: [...graph.getAllNodes()], variables: [...graph.variables] }, before)
+    assert.equal(getTextMeasurer(), hook)
+  }
+})
+
+test('secondary Button source retains its accessible name, focus indicator and keyboard activation', async () => {
+  const snapshot = source('Save', 'pk-ui.component.button/secondary')
+  for (const mode of ['light', 'dark']) {
+    const page = await browser.newPage({ colorScheme: mode, reducedMotion: 'reduce' })
+    try {
+      await page.setContent(`<html data-theme="${mode}"><head><style>${snapshot.css}</style></head><body>${snapshot.examples[0].html}</body></html>`)
+      const button = page.getByRole('button', { name: 'Save', exact: true })
+      assert.equal(await button.count(), 1)
+      assert.deepEqual(await button.evaluate(node => [node.tagName, node.getAttribute('role'), node.getAttribute('aria-hidden')]), ['BUTTON', null, null])
+      assert.match(await button.ariaSnapshot(), /button "Save"/)
+      await button.evaluate(node => { node.dataset.activations = '0'; node.addEventListener('click', () => node.dataset.activations++) })
+      const initialShadow = await button.evaluate(node => getComputedStyle(node).boxShadow)
+      await page.keyboard.press('Tab')
+      assert.ok(await button.evaluate(node => document.activeElement === node && node.matches(':focus-visible')))
+      const focusedShadow = await button.evaluate(node => getComputedStyle(node).boxShadow)
+      assert.notEqual(focusedShadow, 'none')
+      assert.notEqual(focusedShadow, initialShadow, 'source focus indicator is present; contrast is a separate audit')
+      for (const key of ['Enter', 'Space']) await page.keyboard.press(key)
+      assert.equal(await button.getAttribute('data-activations'), '2')
+    } finally { await page.close() }
   }
 })
 
@@ -591,8 +691,8 @@ test('real source Form becomes linked nested components with native fill and end
       for (const [key, value] of Object.entries(bounds)) close(node[key], value, `nested ${key}`)
     }
     const cancel = nativeFormChild(built.graph, actions, ['cancel']), create = nativeFormChild(built.graph, actions, ['create'])
-    close(cancel.x, width - 161.09375, 'end-aligned Cancel x')
-    close(cancel.y, 9, 'centered Cancel y')
+    close(cancel.x, width - 163.09375, 'end-aligned Cancel x includes both solid border insets')
+    close(cancel.y, 8, 'centered Cancel y')
     close(create.x, width - 77, 'end-aligned Create x')
     close(create.y, 8, 'centered Create y')
     const input = result.components.find(item => item.path.at(-1) === 'title')

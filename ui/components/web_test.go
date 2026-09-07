@@ -111,6 +111,18 @@ func TestIconExposesResolvedIdentityWithoutReplacingRequestedName(t *testing.T) 
 	}
 }
 
+func TestButtonDeclaresSolidBorderForActionAndLinkVariants(t *testing.T) {
+	t.Parallel()
+	for _, variant := range []string{"primary", "secondary", "outline", "ghost", "link"} {
+		for _, href := range []string{"", "/albums"} {
+			rendered := renderNodeToString(t, Button(ButtonProps{Label: "Albums", Variant: variant, Href: href}))
+			if !strings.Contains(rendered, " border-solid ") {
+				t.Errorf("%s href=%q inherits the user agent's border style: %s", variant, href, rendered)
+			}
+		}
+	}
+}
+
 func TestButtonOwnsNativeLinkSlotsAndStateContract(t *testing.T) {
 	t.Parallel()
 

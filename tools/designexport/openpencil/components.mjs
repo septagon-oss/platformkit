@@ -65,6 +65,51 @@ function observedPaint(graph, collection, snapshot, observation, root, property)
   return { fills: [fill], boundVariables: { 'fills/0/color': variable.id } }
 }
 
+// Read-only presentation planning is shared by text rows and composed frames.
+// Layout-specific constraints remain with the owning construction path.
+function planPresentation(node, paintFor) {
+  const style = node.style
+  requirePlainText(style)
+  requireComponent(['static', 'relative'].includes(style.position) && style.visibility === 'visible' &&
+    style.transform === 'none' && style.filter === 'none' && style['background-image'] === 'none' &&
+    style['box-shadow'] === 'none' && style['animation-name'] === 'none', 'positioning, filters, effects or motion require further conversion')
+  requireComponent(['none', 'hidden'].includes(style['outline-style']) || pixels(style['outline-width']) === 0 ||
+    color(style['outline-color']).a === 0, 'visible outlines require further conversion')
+  requireComponent(['top', 'right', 'bottom', 'left'].every(side => pixels(style[`margin-${side}`]) === 0),
+    'external margins require further layout conversion')
+  requireComponent(style['text-transform'] === 'none' && style['text-decoration-line'] === 'none' &&
+    style['font-feature-settings'] === 'normal' && style['font-variation-settings'] === 'normal' &&
+    style['font-stretch'] === '100%', 'text transformations require further conversion')
+  const sides = ['top', 'right', 'bottom', 'left']
+  const borders = sides.map(side => ({ width: pixels(style[`border-${side}-width`]),
+    style: style[`border-${side}-style`], color: style[`border-${side}-color`] }))
+  const visible = borders.some(border => border.width > 0 && color(border.color).a > 0)
+  const strokes = visible ? paintFor(node, 'border-top-color') : null
+  if (visible) {
+    requireComponent(borders.every(border => border.style === 'solid' && border.width === borders[0].width &&
+      sameColor(color(border.color), color(borders[0].color))), 'uniform solid borders required')
+    for (const side of sides.slice(1)) requireComponent(JSON.stringify(paintFor(node, `border-${side}-color`)) ===
+      JSON.stringify(strokes), 'border aliases must match on every side')
+  }
+  // Native layout ignores strokesIncludedInLayout. Account for used CSS border
+  // space exactly once in the padding, even when the border is transparent.
+  const insets = Object.fromEntries(sides.map((side, index) => [
+    `padding${side[0].toUpperCase()}${side.slice(1)}`, pixels(style[`padding-${side}`]) + borders[index].width,
+  ]))
+  const background = paintFor(node, 'background-color')
+  return {
+    ...background, ...insets, opacity: Number(style.opacity),
+    independentCorners: true,
+    topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
+    bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
+    ...(strokes ? {
+      strokes: strokes.fills.map(fill => ({ ...fill, weight: borders[0].width, align: 'INSIDE' })),
+      boundVariables: { ...background.boundVariables, ...Object.fromEntries(Object.entries(strokes.boundVariables)
+        .map(([field, value]) => [field.replace('fills/', 'strokes/'), value])) },
+    } : {}),
+  }
+}
+
 // Construct one observed text row with explicit named SVG slots. The caller
 // supplies exact foundation handles; source names never locate native layers.
 export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets = []) {
@@ -91,18 +136,10 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
 
 async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = []) {
   const style = root.style
-  requirePlainText(style)
-  const visibleOutline = !['none', 'hidden'].includes(style['outline-style']) &&
-    pixels(style['outline-width']) > 0 && color(style['outline-color']).a > 0
-  requireComponent(!visibleOutline && style.filter === 'none', 'visible outlines and filters require further native conversion')
+  const presentation = planPresentation(root, (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))
   requireComponent(['inline-flex', 'flex'].includes(style.display) && style['flex-direction'] === 'row' &&
     style['flex-wrap'] === 'nowrap' && style['justify-content'] === 'center' && style['align-items'] === 'center',
   'centered, nonwrapping row layout required')
-  requireComponent(['static', 'relative'].includes(style.position) && style.transform === 'none' &&
-    style.visibility === 'visible' && style['background-image'] === 'none' && style['box-shadow'] === 'none' &&
-    style['animation-name'] === 'none', 'positioning, effects or motion require further native conversion')
-  requireComponent(['top', 'right', 'bottom', 'left'].every(side => pixels(style[`margin-${side}`]) === 0),
-    'external margins require a composing parent')
   requireComponent(root.sizing.width === 'auto' && root.sizing.height === 'auto' &&
     ['auto', '0px'].includes(root.sizing['min-width']) && ['auto', '0px'].includes(root.sizing['min-height']) &&
     root.sizing['max-width'] === 'none' && root.sizing['max-height'] === 'none', 'constrained sizing requires parent layout conversion')
@@ -122,9 +159,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
     return [region, planIcon(graph, assets[0], svg, targets[0].master, collection.id,
       (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))]
   }))
-  requireComponent(style['white-space'] === 'normal' && style['text-transform'] === 'none' &&
-    style['text-decoration-line'] === 'none' && style['font-feature-settings'] === 'normal' &&
-    style['font-variation-settings'] === 'normal' && style['font-stretch'] === '100%', 'text transformations require further conversion')
+  requireComponent(style['white-space'] === 'normal', 'text-row whitespace requires further conversion')
   const supplied = validateFonts(faces)
   const fontSize = pixels(style['font-size']), lineHeight = pixels(style['line-height'])
   requireComponent(fontSize > 0 && lineHeight > 0, 'positive text metrics required')
@@ -141,23 +176,11 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       item.style === face.style && item.sha256 === face.sha256), 'observed and supplied font bytes differ')
     return { region, face }
   })
-  const insets = Object.fromEntries(['Top', 'Right', 'Bottom', 'Left'].map(side => {
-    const key = side.toLowerCase(), border = pixels(style[`border-${key}-width`])
-    requireComponent(border === 0 || color(style[`border-${key}-color`]).a === 0,
-      'visible border styles require independent native paint fidelity')
-    // Native layout ignores strokesIncludedInLayout. Retain used CSS border
-    // space even when the border itself is transparent.
-    return [`padding${side}`, pixels(style[`padding-${key}`]) + border]
-  }))
   const masterProps = {
     name: example.name || example.id, width: root.bounds.width, height: root.bounds.height,
     layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG',
     primaryAxisAlign: 'CENTER', counterAxisAlign: 'CENTER', layoutWrap: 'NO_WRAP',
-    itemSpacing: pixels(style['column-gap']), counterAxisSpacing: pixels(style['row-gap']), ...insets,
-    ...observedPaint(graph, collection, snapshot, observation, root, 'background-color'), opacity: Number(style.opacity),
-    independentCorners: true,
-    topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
-    bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
+    itemSpacing: pixels(style['column-gap']), counterAxisSpacing: pixels(style['row-gap']), ...presentation,
     pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
       schema: snapshot.schema, sha256: snapshot.sha256, exampleId: example.id, componentId: example.componentId,
       mode: observation.mode, scope: icons.size ? 'text-and-icon-component-observed-aliases' : 'text-component-observed-aliases',
@@ -246,47 +269,6 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
   const paintFor = (node, property) => observedPaint(graph, collection, snapshot, observation, node, property)
   const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1 / 64
 
-  function presentation(node) {
-    const style = node.style
-    requirePlainText(style)
-    requireComponent(style && ['static', 'relative'].includes(style.position) && style.visibility === 'visible' &&
-      style.transform === 'none' && style.filter === 'none' && style['background-image'] === 'none' &&
-      style['box-shadow'] === 'none' && style['animation-name'] === 'none', 'composition effects or motion require further conversion')
-    requireComponent(['none', 'hidden'].includes(style['outline-style']) || pixels(style['outline-width']) === 0 ||
-      color(style['outline-color']).a === 0, 'composition outlines require further conversion')
-    requireComponent(['top', 'right', 'bottom', 'left'].every(side => pixels(style[`margin-${side}`]) === 0),
-      'composition margins require further layout conversion')
-    requireComponent(style['text-transform'] === 'none' && style['text-decoration-line'] === 'none' &&
-      style['font-feature-settings'] === 'normal' && style['font-variation-settings'] === 'normal' &&
-      style['font-stretch'] === '100%', 'composition text transformations require further conversion')
-    const sides = ['top', 'right', 'bottom', 'left']
-    const borders = sides.map(side => ({ width: pixels(style[`border-${side}-width`]),
-      style: style[`border-${side}-style`], color: style[`border-${side}-color`] }))
-    const visible = borders.some(border => border.width > 0 && color(border.color).a > 0)
-    const strokes = visible ? paintFor(node, 'border-top-color') : null
-    if (visible) {
-      requireComponent(borders.every(border => border.style === 'solid' && border.width === borders[0].width &&
-        sameColor(color(border.color), color(borders[0].color))), 'composition requires uniform solid borders')
-      for (const side of sides.slice(1)) requireComponent(JSON.stringify(paintFor(node, `border-${side}-color`)) ===
-        JSON.stringify(strokes), 'composition border aliases must match on every side')
-    }
-    const insets = Object.fromEntries(sides.map((side, index) => [
-      `padding${side[0].toUpperCase()}${side.slice(1)}`, pixels(style[`padding-${side}`]) + borders[index].width,
-    ]))
-    const background = paintFor(node, 'background-color')
-    return {
-      ...background, ...insets, opacity: Number(style.opacity),
-      independentCorners: true,
-      topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
-      bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
-      ...(strokes ? {
-        strokes: strokes.fills.map(fill => ({ ...fill, weight: borders[0].width, align: 'INSIDE' })),
-        boundVariables: { ...background.boundVariables, ...Object.fromEntries(Object.entries(strokes.boundVariables)
-          .map(([field, value]) => [field.replace('fills/', 'strokes/'), value])) },
-      } : {}),
-    }
-  }
-
   function text(region, node, { control = false, wrapping = false } = {}) {
     const style = node.style, value = control ? region.value : region.text
     requireComponent(typeof value === 'string' && !/[\r\n\t]/.test(value), 'composition requires single-line text')
@@ -325,7 +307,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
   }
 
   function inline(node) {
-    const native = presentation(node)
+    const native = planPresentation(node, paintFor)
     requireComponent(['block', 'inline'].includes(node.style.display) &&
       Object.entries(native).filter(([key]) => key.startsWith('padding')).every(([, value]) => value === 0) &&
       !native.strokes && native.fills.every(fill => fill.color.a === 0) && native.opacity === 1,
@@ -369,7 +351,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       requireComponent(node.children.every(child => child.kind === 'text'), 'nested SVG slots require explicit native construction handles')
       return { kind: 'component', occurrence, observation: node, textRow: true }
     }
-    const native = presentation(node), style = node.style
+    const native = planPresentation(node, paintFor), style = node.style
     requireComponent(['auto', '100%'].includes(node.sizing.width) && node.sizing.height === 'auto' &&
       ['auto', '0px'].includes(node.sizing['min-width']) && ['auto', '0px'].includes(node.sizing['min-height']) &&
       node.sizing['max-width'] === 'none' && node.sizing['max-height'] === 'none', 'composition constrained sizing requires further conversion')

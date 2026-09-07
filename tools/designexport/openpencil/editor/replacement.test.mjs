@@ -308,16 +308,16 @@ for (const depth of [1, 2]) test(`nested property picker retains native ownershi
   } finally { await browser.close() }
 })
 
-test('generated Form, Button and wrapping Text support local fonts, property edits and two worker saves', { timeout: 120000 }, async () => {
+test('generated Form, Buttons and wrapping Text support local fonts, property edits and two worker saves', { timeout: 120000 }, async () => {
   await verifyBuild()
   const hash = bytes => createHash('sha256').update(bytes).digest('hex')
   const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
     cwd: new URL('../../../../', import.meta.url), encoding: 'utf8',
   }))
   const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
-  const paragraph = 'pk-ui.component.text/muted'
+  const paragraph = 'pk-ui.component.text/muted', secondary = 'pk-ui.component.button/secondary'
   const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-fonts-'))
-  let browser, renderer
+  let browser, comparisonBrowser, renderer
   try {
     // Chromium Local Font Access cannot read WOFF blobs. Re-encode fixtures as
     // static OTF without changing their legacy names; use these exact bytes at
@@ -331,17 +331,19 @@ test('generated Form, Button and wrapping Text support local fonts, property edi
     }
     const config = join(temporary, 'fonts.conf')
     await writeFile(config, `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>${temporary}</dir><cachedir>${temporary}/cache</cachedir></fontconfig>`, { flag: 'wx' })
-    browser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
+    comparisonBrowser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const ck = await initCanvasKit()
     renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
-    const built = await buildComponentDocument(source, { examples: [form, button, paragraph], fonts, browser, renderer, viewport: { width: 320, height: 900 } })
-    // Generation retains its declared headless-shell comparison profile;
-    // editing uses full Chromium, including its CI secure-origin support.
-    await browser.close()
+    const built = await buildComponentDocument(source, { examples: [form, button, paragraph, secondary], fonts,
+      browser: comparisonBrowser, renderer, viewport: { width: 320, height: 900 } })
+    // Generation and reprojection share one declared measurement environment.
+    // Full Chromium supplies editor Local Font Access and worker interaction,
+    // not a substitute browser profile for source text-width comparisons.
     browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const { graph, placements, selections } = built
     graph.updateNode(selections[1].instance.id, { name: 'Editable button' })
     graph.updateNode(selections[2].instance.id, { name: 'Editable paragraph' })
+    graph.updateNode(selections[3].instance.id, { name: 'Editable bordered button' })
     graph.createInstance(selections[0].master.id, placements.id, { name: 'Untouched Form', x: 500, y: 48 })
     let buffer = Buffer.from(await exportFigFile(graph))
     const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
@@ -378,6 +380,7 @@ test('generated Form, Button and wrapping Text support local fonts, property edi
           [inputName, 'value', values[cycle], '', values[cycle - 1]],
           ['Editable button', 'label', labels[cycle], 'Add item', labels[cycle - 1]],
           ['Editable paragraph', 'content', contents[cycle], 'Plain body copy.', contents[cycle - 1]],
+          ['Editable bordered button', 'label', labels[cycle], 'Cancel', labels[cycle - 1]],
         ]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           const control = page.getByRole('textbox', { name: field, exact: true })
@@ -404,7 +407,7 @@ test('generated Form, Button and wrapping Text support local fonts, property edi
               'download identifies the exact bytes actually loaded by the editor, not only available system faces')
           }
           const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
-          for (const id of [form, button, paragraph]) {
+          for (const id of [form, button, paragraph, secondary]) {
             const before = sourceNode(baseline, [id]), after = sourceNode(reopened, [id])
             const oldParent = baseline.getNode(before.parentId), newParent = reopened.getNode(after.parentId)
             assert.deepEqual([after.x, after.y, newParent.x, newParent.y], [before.x, before.y, oldParent.x, oldParent.y],
@@ -414,6 +417,7 @@ test('generated Form, Button and wrapping Text support local fonts, property edi
           for (const [path, props] of [
             [[form, 'title'], { value: values[cycle] }], [[button], { label: labels[cycle] }],
             [[paragraph], { content: contents[cycle] }],
+            [[secondary], { label: labels[cycle] }],
           ]) {
             const result = extractSourceProps(reopened, sourceNode(reopened, path), source)
             if (path.length === 2 && cycle === 1) assert.equal(result.status, 'no-supported-changes')
@@ -423,11 +427,17 @@ test('generated Form, Button and wrapping Text support local fonts, property edi
                 cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(result.proposal),
               }))
               assert.notEqual(projected.sha256, source.sha256)
-              if (path[0] === paragraph) {
-                const observed = await captureExample(browser, projected, paragraph, { fonts, viewport: { width: 320, height: 900 } })
+              if ([paragraph, secondary].includes(path[0])) {
+                const observed = await captureExample(comparisonBrowser, projected, path[0], { fonts, viewport: { width: 320, height: 900 } })
+                const selected = selections.find(item => item.observation.exampleId === path[0])
+                assert.deepEqual(observed.environment, selected.observation.environment, 'source comparison profile must not change after editing')
                 const placed = sourceNode(reopened, path), expected = observed.roots[0].bounds
                 for (const field of ['width', 'height']) assert.ok(Math.abs(placed[field] - expected[field]) <= 1 / 64,
-                  `worker-saved paragraph ${field}: ${placed[field]} versus ${expected[field]}`)
+                  `worker-saved ${path[0]} ${field}: ${placed[field]} versus ${expected[field]}`)
+                if (path[0] === secondary) {
+                  assert.deepEqual([placed.strokes[0].weight, placed.strokes[0].align], [1, 'INSIDE'])
+                  assert.equal(reopened.variables.get(placed.boundVariables['strokes/0/color']).name, '--pk-color-border-default')
+                }
               }
             }
           }
@@ -439,7 +449,9 @@ test('generated Form, Button and wrapping Text support local fonts, property edi
     }
   } finally {
     try { renderer?.destroy() } finally {
-      try { await browser?.close() } finally { await rm(temporary, { recursive: true, force: true }) }
+      try { await browser?.close() } finally {
+        try { await comparisonBrowser?.close() } finally { await rm(temporary, { recursive: true, force: true }) }
+      }
     }
   }
 })
