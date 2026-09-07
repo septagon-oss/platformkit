@@ -1041,6 +1041,14 @@ func labelWithText(p LabelProps, text g.Node) g.Node {
 // Heading levels remain owned by Heading so document hierarchy cannot be
 // smuggled through an untyped tag string.
 func Text(p TextProps) g.Node {
+	return textWithContent(p, g.Group{
+		g.Raw("<!--pk-text:content-->"), g.Text(p.Content), g.Raw("<!--/pk-text:content-->"),
+	})
+}
+
+// Composing constructors can annotate their own property without replacing
+// Text's semantic element, attributes or styling.
+func textWithContent(p TextProps, content g.Node) g.Node {
 	element := normalizeTextElement(p.Element)
 	size := normalizeTextSize(p.Size)
 	align := normalizeTextAlign(p.Align)
@@ -1090,7 +1098,7 @@ func Text(p TextProps) g.Node {
 	if lines > 0 {
 		children = append(children, g.Attr("data-lines", strconv.Itoa(lines)))
 	}
-	children = append(children, g.Raw("<!--pk-text:content-->"), g.Text(p.Content), g.Raw("<!--/pk-text:content-->"))
+	children = append(children, content)
 	return g.El(element, children...)
 }
 
@@ -1152,6 +1160,10 @@ func normalizeTextTransform(transform string) string {
 // Heading renders HeadingProps at the given level (clamped 1..6) in the
 // design system's display face.
 func Heading(p HeadingProps) g.Node {
+	return headingWithText(p, g.Text(p.Text))
+}
+
+func headingWithText(p HeadingProps, text g.Node) g.Node {
 	level := p.Level
 	if level < 1 || level > 6 {
 		level = 2
@@ -1165,7 +1177,7 @@ func Heading(p HeadingProps) g.Node {
 	if p.Anchor != "" {
 		children = append(children, h.ID(p.Anchor))
 	}
-	children = append(children, classes(cl.Compile(), p.Class), g.Text(p.Text))
+	children = append(children, classes(cl.Compile(), p.Class), text)
 	switch level {
 	case 1:
 		return h.H1(children...)

@@ -212,6 +212,47 @@ func TestTextContentRegionPreservesSemanticElementAndEscaping(t *testing.T) {
 	}
 }
 
+func TestToolbarTextRegionsBelongToToolbarProps(t *testing.T) {
+	for _, value := range []string{"", "Act", `A & <tag>"'<!--/pk-text:Title-->`} {
+		action := c.ExampleOf(c.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Act"}, c.Button)
+		original := c.ExampleWithChildren(c.ExampleInfo{ID: "toolbar", ComponentID: "toolbar"},
+			c.ToolbarProps{Title: value, Subtitle: value}, []g.Node{action.Node}, c.Toolbar)
+		description := describeExample(t, original)
+		var escaped strings.Builder
+		if err := g.Text(value).Render(&escaped); err != nil {
+			t.Fatal(err)
+		}
+		want := 1
+		if value == "" {
+			want = 0
+		}
+		for _, field := range []string{"Title", "Subtitle"} {
+			open, close := "<!--pk-text:"+field+"-->", "<!--/pk-text:"+field+"-->"
+			if strings.Count(description.HTML, open) != want || strings.Count(description.HTML, close) != want ||
+				(want == 1 && !strings.Contains(description.HTML, open+escaped.String()+close)) {
+				t.Fatalf("Toolbar must own exactly its rendered %s: %s", field, description.HTML)
+			}
+		}
+		if strings.Contains(description.HTML, "<!--pk-text:content-->") || strings.Contains(description.HTML, "<!--pk-text:text-->") ||
+			strings.Count(description.HTML, "<h1 ") != want || strings.Count(description.HTML, "<p ") != want {
+			t.Fatalf("Toolbar copy lost its native elements or borrowed an atom's property: %s", description.HTML)
+		}
+		if len(description.Children) != 1 || description.Children[0].Description.ID != "action" || description.Children[0].Span == nil {
+			t.Fatal("Toolbar annotation lost the observed action occurrence")
+		}
+		updated, err := original.WithProps(json.RawMessage(`{"Title":"Changed","Subtitle":"Revised"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		changed := describeExample(t, updated)
+		if !strings.Contains(changed.HTML, "<!--pk-text:Title-->Changed<!--/pk-text:Title-->") ||
+			!strings.Contains(changed.HTML, "<!--pk-text:Subtitle-->Revised<!--/pk-text:Subtitle-->") ||
+			changed.Children[0].Description.HTML != description.Children[0].Description.HTML || describeExample(t, original).HTML != description.HTML {
+			t.Fatal("Toolbar projection lost property ownership or changed the action or original")
+		}
+	}
+}
+
 func TestInputValueRegionIsLimitedToTextControls(t *testing.T) {
 	for _, typ := range []string{"", "text", " TEXT ", "email", "password", "number", "tel", "url", "search", "date", "time", "datetime-local", "month", "week", "color", "hidden", "file"} {
 		t.Run(typ, func(t *testing.T) {
