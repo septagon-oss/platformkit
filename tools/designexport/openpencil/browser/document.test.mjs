@@ -9,10 +9,11 @@ import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { populateLazyFigImportRoots } from '@open-pencil/core/kiwi'
-import { getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
+import { computeLayout, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { buildComponentDocument, verifyComponentDocument } from '../document.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
+import { captureExample } from './capture.mjs'
 
 const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
 const examples = [form, button], viewport = { width: 320, height: 900 }
@@ -209,6 +210,53 @@ test('document refuses invalid or unsupported requested selections and fonts wit
     error => error.message.includes(unsupported))
   assert.deepEqual(snapshot, before)
   assert.equal(getTextMeasurer(), previous)
+})
+
+for (const mode of ['light', 'dark']) test(`generated Form replacement agrees with Go projection through two saves: ${mode}`, async () => {
+  const primary = 'pk-ui.component.button/primary', path = [form, 'actions', 'create']
+  const proposal = { baseSHA256: snapshot.sha256, path, replacementPath: [primary] }
+  const projected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--replacement'], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(proposal),
+  }))
+  const observed = await captureExample(browser, projected, form, { fonts, viewport, mode })
+  const sourceActions = observed.roots[0].children[1]
+  const built = await buildComponentDocument(snapshot, options({ examples: [form, primary], mode }))
+  let graph = built.graph
+  const root = placed(graph, form), actions = nested(graph, root, 'actions'), target = nested(graph, actions, 'create')
+  const cancel = nested(graph, actions, 'cancel'), initialID = target.id, initialOrigin = structuredClone(origin(target))
+  const subtree = node => [node, ...graph.getChildren(node.id).flatMap(subtree)]
+  const untouched = [...graph.getAllNodes()].filter(node => node.type === 'COMPONENT')
+  const mastersBefore = structuredClone(untouched.map(subtree)), cancelBefore = structuredClone(subtree(cancel))
+  const editor = createEditor({ graph })
+  editor.setCanvasKit(ck, renderer)
+  try {
+    graph.swapInstanceComponent(target.id, built.selections.find(item => item.exampleId === primary).master.id)
+    graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeLayout(graph, root.id)))
+    await Promise.resolve()
+    assert.equal(target.id, initialID)
+    assert.deepEqual(origin(target), initialOrigin, 'destination retains its local source identity')
+    assert.deepEqual(untouched.map(subtree), mastersBefore)
+    // End alignment moves Cancel when needed; its content and styling stay intact.
+    const currentCancel = structuredClone(subtree(cancel))
+    for (const node of currentCancel) {
+      const before = cancelBefore.find(item => item.id === node.id)
+      assert.deepEqual({ ...node, x: before.x, y: before.y }, before)
+    }
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const currentActions = nested(graph, placed(graph, form), 'actions')
+      for (const child of sourceActions.children) {
+        const native = nested(graph, currentActions, child.source.path.at(-1))
+        for (const field of ['width', 'height']) assert.ok(Math.abs(native[field] - child.bounds[field]) <= 1 / 64, `${field}, save ${cycle}`)
+        for (const axis of ['x', 'y']) assert.ok(Math.abs(native[axis] - (child.bounds[axis] - sourceActions.bounds[axis])) <= 1 / 64,
+          `${child.source.path.at(-1)} ${axis}: ${native[axis]} versus ${child.bounds[axis] - sourceActions.bounds[axis]}, save ${cycle}`)
+      }
+      const current = nested(graph, currentActions, 'create'), master = chain(graph, current, 'componentId').at(-1)
+      assert.equal(origin(master).exampleId, primary)
+      assert.equal(graph.getChildren(current.id)[0].text, 'Save')
+      assert.deepEqual(origin(current), initialOrigin)
+      if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    }
+  } finally { editor.replaceGraph(new (graph.constructor)()) }
 })
 
 test('document checks construction-time correspondence across two saves and refuses complete property loss', async () => {

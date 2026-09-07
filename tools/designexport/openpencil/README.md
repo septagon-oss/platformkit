@@ -256,23 +256,23 @@ Native creation, updates and replacement retain FIG's authored `uniformScaleFact
 Flat, solid-painted vector masters scale from FIG-representable canonical geometry,
 including strokes, without detaching or cumulative resizing. Tests cover 20px and
 16px instances, composition, master updates, factor edits and clearing.
-Page-placed property owners pass repeated icon swaps, undo/redo and two saves
-without changing siblings or masters; file references and pixels have independent checks.
-Nested property owners are unsupported: swaps can change the document before
-the first save fails. Undo also fails and loses its history entry in current probes.
-Do not use nested component swaps on documents you need to preserve.
-Locally edited descendants are refused before mutation; subtree history is
-unfinished. Stroke caps and joins survive serialization;
-conflicting styles, unsupported scaled masters and nonrepresentable geometry are refused.
-For flat vector replacements, consistent source-occurrence color-variable mappings
-also survive history and two saves. Correspondence uses native variable identities,
-not token names or vector positions; ambiguous, partial or missing roles are refused.
-Literal-only vectors retain their existing inheritance. Swapped bindings become
-explicit native overrides: token value changes remain live, but later source-role
-reassignment does not automatically retarget those overrides.
-This does not establish scaling for text, effects, dashed vectors, arbitrary
-nested masters or editor drag handles. The source-conversion checks above cover
-only their stated icon-slot subset, not generic nested component replacement.
+Page-placed owners, including two nested scopes, pass actual browser icon swaps,
+undo/redo and two worker saves without changing siblings or masters. Unscaled
+fixtures retain dimensions and exact slot GUIDs; containing-master updates preserve
+replacement inputs. Failed history preflight retains its entry without graph events.
+Locally edited descendants remain refused; exact subtree/layout history is unfinished.
+The generated Form's direct swap, followed by caller-run layout, matches Go replacement
+geometry in both themes through two saves. This does not implement native replacement
+proposal extraction, source persistence or a complete shared replacement interface.
+
+Stroke caps and joins survive serialization; conflicting styles and nonrepresentable
+geometry are refused. Flat vector replacements retain consistent source-occurrence
+color-variable mappings through history and two saves. Correspondence uses native
+variable identities, not names or vector positions; ambiguous, partial or missing
+roles are refused. Literal-only vectors retain their inheritance. Swapped bindings
+remain live native overrides, but later source-role reassignment does not retarget them.
+These checks do not establish scaling for text, effects, dashed vectors, arbitrary
+nested masters or editor drag handles. Source icon-slot conversion retains its stated limits.
 
 [Synchronization](sync-correction.mjs) plans and validates a projected result before
 applying changes through native graph APIs. Planning allocates no native IDs and

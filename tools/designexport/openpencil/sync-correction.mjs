@@ -17,14 +17,7 @@ function syncSourceOccurrence(nodes, target, visiting = new Set()) {
   }
   const sourceParent = syncSourceOccurrence(nodes, parent, next)
   if (!sourceParent) return nodes.get(target.componentId)
-  let owner = parent
-  const ancestry = new Set()
-  while (owner && owner.type !== 'INSTANCE') {
-    if (ancestry.has(owner.id)) throw new Error('Cyclic native sync ownership')
-    ancestry.add(owner.id)
-    owner = nodes.get(owner.parentId)
-  }
-  const overrides = owner?.overrides ?? {}
+  const overrides = ancestryOverrides(syncReadView(nodes), parent)
   if (Object.hasOwn(overrides, `${target.id}:componentId`)) return nodes.get(target.componentId)
   return sourceChild(syncReadView(nodes), sourceParent, target, overrides)
 }
@@ -83,15 +76,6 @@ function syncProperties(source, target, keys, overrides, prefix = '') {
   return { ...target, ...structuredClone(changes) }
 }
 
-function syncNestedOverrides(target, inherited) {
-  if (target.type !== 'INSTANCE') return inherited
-  // Native edits belong to their nearest instance. Qualify its root fields
-  // before descending; explicit outer-instance paths retain precedence.
-  const own = Object.fromEntries(Object.entries(target.overrides).map(([key, value]) =>
-    [key.includes(':') ? key : `${target.id}:${key}`, value]))
-  return { ...own, ...inherited }
-}
-
 function syncRemapOverrides(overrides, identities, copiedSource = false) {
   return Object.fromEntries(Object.entries(overrides).map(([key, value]) => {
     const separator = key.lastIndexOf(':')
@@ -104,13 +88,21 @@ function syncRemapOverrides(overrides, identities, copiedSource = false) {
   }))
 }
 
-function syncPaintRoles(nodes, target) {
+function syncReplacementOccurrence(nodes, target) {
   const view = syncReadView(nodes), parent = nodes.get(target.parentId)
-  if (!parent || ['CANVAS', 'COMPONENT', 'COMPONENT_SET'].includes(parent.type)) return new Map()
+  if (!parent || ['CANVAS', 'COMPONENT', 'COMPONENT_SET'].includes(parent.type)) return null
   const sourceParent = syncSourceOccurrence(nodes, parent)
-  if (!sourceParent) return new Map()
-  const owner = chain(view, parent, 'parentId').find(node => node.type === 'INSTANCE')
-  const occurrence = sourceChild(view, sourceParent, target, owner?.overrides ?? {})
+  if (!sourceParent) return null
+  const ancestry = chain(view, parent, 'parentId')
+  const owner = ancestry.find(node => node.type === 'INSTANCE')
+  const overrides = ancestryOverrides(view, parent)
+  return { owner, occurrence: sourceChild(view, sourceParent, target, overrides) }
+}
+
+function syncPaintRoles(nodes, target) {
+  const view = syncReadView(nodes)
+  const occurrence = syncReplacementOccurrence(nodes, target)?.occurrence
+  if (!occurrence) return new Map()
   if (occurrence.type !== 'INSTANCE') return new Map()
   const canonical = chain(view, occurrence, 'componentId').at(-1)
   const pairs = sourceChildren(view, canonical, occurrence, occurrence.overrides)
@@ -177,6 +169,7 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
   }
   let serial = 0
   const originalScales = new Map(replacement ? uniformScalePlan(syncReadView(previousNodes), replacement)?.updates ?? [] : [])
+  const replacementOccurrence = replacement && syncReplacementOccurrence(previousNodes, replacement)
   const paintRoles = replacement ? syncPaintRoles(previousNodes, replacement) : new Map()
   function temporaryId() {
     let id
@@ -241,14 +234,18 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     for (const child of plan.children) {
       const id = plan.matches.get(child.id) ?? clone(child.id, targetId)
       const current = nodes.get(id)
-      const childOverrides = syncNestedOverrides(current, overrides)
+      const childOverrides = scopedOverrides(current, overrides)
+      if (Object.hasOwn(childOverrides, `${id}:componentId`)) {
+        // The containing slot owns identity/order, not the replacement's
+        // inputs. Its new master propagates through the native instance index.
+        order.push(id)
+        continue
+      }
       const keys = [...INSTANCE_SYNC_PROPS, ...SYNC_CHILD_PROPS]
       if (child.type === 'VECTOR') keys.push('x', 'y', 'vectorNetwork', 'fillGeometry', 'strokeGeometry')
       nodes.set(id, syncProperties(child, current, keys, childOverrides, `${id}:`))
       if (current.type === 'INSTANCE') affected.add(id)
-      if (!Object.hasOwn(childOverrides, `${id}:componentId`)) {
-        children(child.id, id, childOverrides, new Set(ancestors).add(pair))
-      }
+      children(child.id, id, childOverrides, new Set(ancestors).add(pair))
       order.push(id)
     }
     nodes.set(targetId, { ...nodes.get(targetId), childIds: [...order, ...plan.local] })
@@ -270,9 +267,10 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     if (reachable.has(sourceId)) instance(sourceId)
     const target = nodes.get(id), source = nodes.get(sourceId)
     if (!target || !source) throw new Error('Missing projected native sync instance')
-    nodes.set(id, syncProperties(source, target, INSTANCE_SYNC_PROPS, target.overrides))
+    const overrides = ancestryOverrides(syncReadView(nodes), target)
+    nodes.set(id, syncProperties(source, target, INSTANCE_SYNC_PROPS, overrides, `${id}:`))
     affected.add(id)
-    children(sourceId, id, target.overrides)
+    children(sourceId, id, overrides)
     active.delete(id)
     completed.add(id)
   }
@@ -285,6 +283,13 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     nodes.set(id, { ...node, overrides })
   }
   if (replacement) syncApplyPaintRoles(nodes, nodes.get(replacementId), paintRoles)
+  if (replacementOccurrence?.owner) {
+    const owner = nodes.get(replacementOccurrence.owner.id)
+    nodes.set(owner.id, { ...owner, overrides: { ...owner.overrides,
+      [`${replacementId}:sourceComponentId`]: replacementOccurrence.occurrence.id,
+      [`${replacementId}:componentId`]: componentId,
+    } })
+  }
   for (const [id, changes] of planDerivedInstanceScales(nodes, previousNodes, affected)) {
     if (!nodes.has(id)) throw new Error('Derived scale targets a missing projected node')
     nodes.set(id, { ...nodes.get(id), ...structuredClone(changes) })
@@ -371,8 +376,8 @@ export function correctSyncGraph(source, replace) {
   const syncStart = source.indexOf('function syncInstances(')
   const syncEnd = source.indexOf('function detachInstance(', syncStart)
   if (swapStart < 0 || syncStart < swapStart || syncEnd < 0) throw new Error('Native sync instance anchor changed')
-  const helpers = [syncReadView, syncSourceOccurrence, syncReconciliation, syncProperties, syncNestedOverrides, syncRemapOverrides,
-    syncPaintRoles, syncRoleBindings, syncApplyPaintRoles,
+  const helpers = [syncReadView, syncSourceOccurrence, syncReconciliation, syncProperties, syncRemapOverrides,
+    syncReplacementOccurrence, syncPaintRoles, syncRoleBindings, syncApplyPaintRoles,
     planNativeSync, applyNativeSync, syncInstances, swapInstanceComponent].map(fn => fn.toString()).join('\n')
   return replace(source, source.slice(swapStart, syncEnd),
     `${lineageHelpers}\nconst SYNC_CHILD_PROPS = ${fieldList};\n${helpers}\n`)

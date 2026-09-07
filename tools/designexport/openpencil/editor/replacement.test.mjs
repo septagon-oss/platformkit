@@ -16,6 +16,7 @@ import { parseFigBuffer } from '@open-pencil/fig'
 import { buildFoundation } from '../foundation.mjs'
 import { buildComponentDocument } from '../document.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
+import { chain } from '../exporter-correction.mjs'
 
 const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL)
 assert.ok(endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', 'openpencil'].includes(endpoint.hostname),
@@ -80,12 +81,18 @@ function geometry(graph, node) {
   }
 }
 
-async function verifyDownload(bytes, untouched, trailing, replacementGeometry) {
+function nestedPropertyOwner(graph, depth) {
+  let owner = named(graph, 'Edited instance')
+  for (let level = 0; level < depth; level++) owner = graph.getChildren(owner.id)[0]
+  return owner
+}
+
+async function verifyDownload(bytes, untouched, trailing, replacementGeometry, depth = 0) {
   const graph = await parseFigFile(figBuffer(bytes), { populate: 'all' })
   for (const [name, expected] of untouched) assert.deepEqual(geometry(graph, named(graph, name)), expected, name)
-  const owner = named(graph, 'Edited instance'), children = graph.getChildren(owner.id)
+  const owner = nestedPropertyOwner(graph, depth), children = graph.getChildren(owner.id)
   assert.equal(owner.type, 'INSTANCE')
-  assert.equal(graph.getNode(owner.componentId)?.name, 'Replacement owner')
+  assert.equal(chain(graph, owner, 'componentId').at(-1).name, 'Replacement owner')
   assert.equal(children.length, 2)
   assert.deepEqual(geometry(graph, children[1]), trailing)
   assert.deepEqual(geometry(graph, children[0]), replacementGeometry, 'replacement vector geometry and paints')
@@ -100,14 +107,23 @@ async function verifyDownload(bytes, untouched, trailing, replacementGeometry) {
   const rawEdited = changes.find(node => node.name === 'Edited instance')
   assert.equal(rawOwner.componentPropDefs.length, 2)
   for (const definition of rawOwner.componentPropDefs) assert.deepEqual(definition.initialValue.guidValue, source.guid)
-  assert.deepEqual(rawEdited.componentPropAssignments, [{ defID: { sessionID: 91, localID: 1 },
+  const assignments = depth ? rawEdited.symbolData.symbolOverrides.find(override =>
+    override.guidPath.guids.length === depth && override.componentPropAssignments?.length)?.componentPropAssignments : rawEdited.componentPropAssignments
+  assert.deepEqual(assignments, [{ defID: { sessionID: 91, localID: 1 },
     value: { guidValue: replacement.guid } }])
   const occurrence = changes.find(node => node.type === 'INSTANCE' &&
     JSON.stringify(node.parentIndex.guid) === JSON.stringify(rawOwner.guid) &&
     node.componentPropRefs.some(ref => ref.defID.sessionID === 91 && ref.defID.localID === 1))
   const swaps = rawEdited.symbolData.symbolOverrides.filter(override => override.overriddenSymbolID)
   assert.equal(swaps.length, 1)
-  assert.deepEqual(swaps[0].guidPath.guids, [occurrence.guid])
+  const path = []
+  for (let level = depth; level > 0; level--) {
+    const wrapper = changes.find(node => node.type === 'SYMBOL' && node.name === `Wrapper ${level}`)
+    const child = changes.find(node => node.type === 'INSTANCE' &&
+      JSON.stringify(node.parentIndex.guid) === JSON.stringify(wrapper.guid))
+    path.push(child.guid)
+  }
+  assert.deepEqual(swaps[0].guidPath.guids, [...path, occurrence.guid])
   assert.deepEqual(swaps[0].overriddenSymbolID, replacement.guid)
 }
 
@@ -218,6 +234,73 @@ test('browser file-input replacement survives public editing, history and two do
           assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)), 'real browser export worker executed')
         }
         assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)), 'real browser parse worker executed')
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
+for (const depth of [1, 2]) test(`nested property picker retains native ownership, history and two worker saves: depth=${depth}`, { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8',
+  }))
+  const graph = buildFoundation(source).graph, pageNode = graph.addPage('Nested replacement')
+  const plus = masterOf(graph, 'plus')
+  const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Replacement owner', width: 64, height: 32,
+    componentPropertyDefinitions: [
+      { id: '91:1', name: 'Leading icon', type: 'INSTANCE_SWAP', defaultValue: plus.id },
+      { id: '91:2', name: 'Trailing icon', type: 'INSTANCE_SWAP', defaultValue: plus.id },
+    ] })
+  for (const [propertyId, size, x] of [['91:1', 20, 0], ['91:2', 16, 32]]) {
+    graph.createInstance(plus.id, master.id, { uniformScaleFactor: size / 24, x,
+      componentPropertyReferences: [{ propertyId, field: 'INSTANCE_SWAP' }] })
+  }
+  let outer = master
+  for (let level = 1; level <= depth; level++) {
+    const wrapper = graph.createNode('COMPONENT', pageNode.id, { name: `Wrapper ${level}`, width: 64, height: 32 })
+    graph.createInstance(outer.id, wrapper.id, { name: `Nested ${level}` })
+    outer = wrapper
+  }
+  graph.createInstance(outer.id, pageNode.id, { name: 'Edited instance', x: 150, y: 20 })
+  graph.createInstance(outer.id, pageNode.id, { name: 'Untouched sibling', x: 300, y: 20 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = [...baseline.getAllNodes()].filter(node => node.type === 'COMPONENT' || node.name === 'Untouched sibling')
+    .map(node => [node.name, geometry(baseline, node)])
+  const trailing = geometry(baseline, baseline.getChildren(nestedPropertyOwner(baseline, depth).id)[1])
+  const reference = baseline.createInstance(masterOf(baseline, 'x').id, named(baseline, 'Nested replacement').id, { uniformScaleFactor: 20 / 24 })
+  const expected = geometry(baseline, reference)
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `nested-${depth}-${cycle}.fig`)
+        await page.getByRole('button', { name: 'Nested replacement', exact: true }).click()
+        await page.getByRole('treeitem', { name: /^Edited instance / }).click()
+        for (let level = depth; level > 0; level--) {
+          await page.keyboard.press('ArrowRight')
+          await page.getByRole('treeitem', { name: `Nested ${level} Lock Hide`, exact: true }).click()
+        }
+        const control = page.getByRole('combobox', { name: 'Leading icon', exact: true })
+        await control.getByText(cycle ? 'x' : 'plus', { exact: true }).waitFor()
+        if (cycle === 0) {
+          await control.click()
+          await page.getByRole('option', { name: 'x', exact: true }).click()
+          await control.getByText('x', { exact: true }).waitFor()
+          await page.keyboard.press('Control+z')
+          await control.getByText('plus', { exact: true }).waitFor()
+          await page.keyboard.press('Control+Shift+z')
+          await control.getByText('x', { exact: true }).waitFor()
+        }
+        assert.equal((await page.getByRole('combobox', { name: 'Trailing icon', exact: true }).textContent()).trim(), 'plus')
+        if (cycle < 2) {
+          buffer = await saveDocument(page, errors, workers)
+          await verifyDownload(buffer, untouched, trailing, expected, depth)
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
         assert.deepEqual(errors, [])
       } finally { await context.close() }
     }

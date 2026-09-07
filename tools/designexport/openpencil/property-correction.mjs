@@ -118,6 +118,10 @@ export function correctEditorCreation(source, replace) {
 // must match exactly once before any substituted module is allowed to load.
 export function correctPropertyActions(source, replaceOnce) {
   source = 'import { textAutoResizeChanges } from "../text/auto-resize.js";\n' + source
+  source = replaceOnce(source, 'function targetValue(target) {', 'function targetValue(ctx, target) {')
+  source = replaceOnce(source, 'return target.source.componentId ?? target.node.componentId ?? "";',
+    'return chain(ctx.graph, target.node, "componentId").at(-1)?.id ?? "";')
+  source = replaceOnce(source, ': targetValue(target);', ': targetValue(ctx, target);')
   // Validate and replace the native target before publishing its assignment.
   // A refused replacement must leave both the graph and property value intact.
   source = replaceOnce(source,
@@ -201,6 +205,21 @@ export function correctPropertyActions(source, replaceOnce) {
       '\t\t\t\t}\n' +
       '\t\t\t\tconst live = ctx.graph.getNode(instanceId);',
   )
+}
+
+export function correctUndoHistory(source, replace) {
+  // Failed preflight must not consume history. This preserves entries, not
+  // transactional rollback for arbitrary callbacks that mutate before throwing.
+  for (const [method, stack] of [['inverse', 'undoStack'], ['forward', 'redoStack']]) {
+    source = replace(source, `\t\tif (!entry) return null;\n\t\tentry.${method}();`, `\t\tif (!entry) return null;
+    try {
+      entry.${method}();
+    } catch (error) {
+      this.${stack}.push(entry);
+      throw error;
+    }`)
+  }
+  return source
 }
 
 // Absolute property targets do not participate in Yoga text measurement. The

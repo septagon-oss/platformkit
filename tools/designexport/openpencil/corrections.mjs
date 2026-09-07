@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { correctExporter, correctPropertyTarget, correctInstanceImporter } from './exporter-correction.mjs'
-import { correctPropertyActions, correctComponentSync, correctEditorCreation, correctTextAutoResize } from './property-correction.mjs'
+import { correctPropertyActions, correctComponentSync, correctEditorCreation, correctTextAutoResize, correctUndoHistory } from './property-correction.mjs'
 import { correctLayout, correctGridRecompute } from './layout-correction.mjs'
 import { correctScaleDefaults, correctScaleGraph, correctScaleNodeChange, correctScaleImport } from './scaling-correction.mjs'
 import { correctSyncGraph } from './sync-correction.mjs'
@@ -74,7 +74,7 @@ export const corrections = Object.freeze({
           this.deletedNodeParents.set(id, node.parentId);
         }
         this.nodes.delete(id);`)
-      return correctSyncGraph(correctScaleGraph(source, replace), replace)
+      return correctUndoHistory(correctSyncGraph(correctScaleGraph(source, replace), replace), replace)
     },
   },
   '@open-pencil/scene-graph/dist/chunks/copy.js': {

@@ -19,7 +19,16 @@ function sourceChild(graph, source, child, overrides) {
   const direct = chain(graph, graph.getNode(sourceId), 'componentId')
     .find(node => node.parentId === source.id && source.childIds.includes(node.id))
   if (direct) return direct
-  if (explicit !== undefined) throw new Error('Invalid explicit native source identity')
+  if (explicit !== undefined) {
+    // An inner property names its canonical slot, while a containing instance
+    // can synchronize through a cloned occurrence of that same slot.
+    const declared = graph.getNode(explicit)
+    const owns = chain(graph, source, 'componentId').some(node => node.id === declared.parentId)
+    const matches = owns ? source.childIds.map(id => graph.getNode(id)).filter(node =>
+      node && chain(graph, node, 'componentId').some(link => link.id === explicit)) : []
+    if (matches.length === 1) return matches[0]
+    throw new Error('Invalid explicit native source identity')
+  }
   // Import can flatten nested INSTANCE.componentId, while descendants still
   // link through the exact original nested instance. Project those witnesses.
   const matches = new Set()
@@ -58,7 +67,20 @@ export function sourceChildren(graph, source, instance, overrides) {
   return result
 }
 
-export const lineageHelpers = [chain, sourceChild, sourceChildren].map(fn => fn.toString()).join('\n')
+function scopedOverrides(target, inherited) {
+  if (target.type !== 'INSTANCE') return inherited
+  // Qualify root fields before descending. Outer occurrence overrides take
+  // precedence over inherited values of an inner instance.
+  const own = Object.fromEntries(Object.entries(target.overrides).map(([key, value]) =>
+    [key.includes(':') ? key : `${target.id}:${key}`, value]))
+  return { ...own, ...inherited }
+}
+
+function ancestryOverrides(graph, target) {
+  return chain(graph, target, 'parentId').reverse().reduce((values, node) => scopedOverrides(node, values), {})
+}
+
+export const lineageHelpers = [chain, sourceChild, sourceChildren, scopedOverrides, ancestryOverrides].map(fn => fn.toString()).join('\n')
 
 const exporterHelpers = String.raw`
 function nativeOverridePath(context, instance, target, counter) {
@@ -67,10 +89,12 @@ function nativeOverridePath(context, instance, target, counter) {
   if (boundary < 1) throw new Error('Native override target is not an instance descendant');
   let source = context.graph.getNode(resolveInstanceComponentId(context, instance.componentId));
   let parent = instance;
+  let overrides = {};
   const guids = [];
   for (const child of ancestry.slice(0, boundary).reverse()) {
     if (!source) throw new Error('Missing native override source');
-    const linked = sourceChildren(context.graph, source, parent, instance.overrides).get(child.id);
+    overrides = scopedOverrides(parent, overrides);
+    const linked = sourceChildren(context.graph, source, parent, overrides).get(child.id);
     if (!linked) throw new Error('Missing native override correspondence');
     const guid = getOrCreateNodeGuid(context, linked.id, counter);
     if (!guid) throw new Error('Missing native override GUID');
@@ -104,20 +128,24 @@ function nativeComponentGuid(context, value, counter) {
 
 function serializeNestedReferences(context, instance, counter) {
   const result = [];
-  const pending = [...instance.childIds];
+  const pending = instance.childIds.map(id => ({ id, overrides: scopedOverrides(instance, {}) }));
   const seen = new Set();
   while (pending.length) {
-    const id = pending.pop();
+    const { id, overrides } = pending.pop();
     if (seen.has(id)) throw new Error('Cyclic native reference subtree');
     seen.add(id);
     const child = context.graph.getNode(id);
     if (!child) throw new Error('Missing native reference child');
-    pending.push(...child.childIds);
-    const swapped = Object.hasOwn(instance.overrides, id + ':componentId');
+    const nested = scopedOverrides(child, overrides);
+    pending.push(...child.childIds.map(id => ({ id, overrides: nested })));
+    const swapped = Object.hasOwn(overrides, id + ':componentId');
     if (!child.componentPropertyReferences.length && !swapped) continue;
     result.push({
       guidPath: nativeOverridePath(context, instance, child, counter),
-      ...(swapped ? { overriddenSymbolID: nativeComponentGuid(context, resolveInstanceComponentId(context, child.componentId), counter) } : {}),
+      ...(swapped ? {
+        overriddenSymbolID: nativeComponentGuid(context, resolveInstanceComponentId(context, child.componentId), counter),
+        size: { x: child.width, y: child.height }
+      } : {}),
       componentPropRefs: child.componentPropertyReferences.map(ref => ({
         defID: nativePropertyGuid(ref.propertyId),
         componentPropNodeField: componentPropertyNodeField(ref.field)
@@ -305,6 +333,25 @@ function mergeTextOverrides(symbolOverrides, overrides) {
 }
 
 export function correctInstanceImporter(source, replace) {
+  source = lineageHelpers + '\n' + source
+  source = replace(source,
+    'if (!srcNode || !tgtNode || srcNode.type !== tgtNode.type) continue;',
+    'if (!srcNode || !tgtNode || srcNode.type !== tgtNode.type || isFieldProtected(protections, tgtNode.id, "structure")) continue;')
+  source = replace(source,
+    'if (srcNode.type === "INSTANCE" && srcNode.componentId !== tgtNode.componentId) {',
+    'if (srcNode.type === "INSTANCE" && chain(graph, srcNode, "componentId").at(-1).id !== chain(graph, tgtNode, "componentId").at(-1).id) {')
+  source = replaceSection(source, 'function buildSizeOverriddenCloneUpdates(', 'function buildCloneUpdates(', String.raw`
+function buildSizeOverriddenCloneUpdates(source, clone) {
+  if (clone.type !== 'INSTANCE' || !source.figmaDerivedLayout) return {};
+  // A placed occurrence's explicit derived position wins over the reusable
+  // template. A size-only override still inherits unspecified coordinates.
+  const layout = { ...source.figmaDerivedLayout, ...clone.figmaDerivedLayout };
+  return {
+    ...(layout.x === undefined ? {} : { x: layout.x }),
+    ...(layout.y === undefined ? {} : { y: layout.y }),
+    figmaDerivedLayout: layout
+  };
+}`)
   source = 'import { extractComponentPropertyAssignments } from "./node-change2.js";\n' + source
   // Lazy population may read linked sources on other pages, but must write
   // only the requested subtree. Loaded-page paint and placement edits win.
@@ -403,8 +450,10 @@ function propertyTarget(ctx, instance, propertyId) {
   }
   let sourceParent = component;
   let node = instance;
+  let overrides = ancestryOverrides(ctx.graph, instance);
   for (const source of match.path) {
-    const mapping = sourceChildren(ctx.graph, sourceParent, node, instance.overrides);
+    overrides = scopedOverrides(node, overrides);
+    const mapping = sourceChildren(ctx.graph, sourceParent, node, overrides);
     const targets = [...mapping].filter(([, linked]) => linked.id === source.id);
     if (targets.length !== 1) throw new Error('Ambiguous or missing native property correspondence');
     node = ctx.graph.getNode(targets[0][0]);
