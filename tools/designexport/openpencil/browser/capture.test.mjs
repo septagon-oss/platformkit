@@ -158,7 +158,8 @@ test('capture observes actual text-control values and exact fonts without invent
 
 test('capture retains text presentation that native construction must not silently discard', async () => {
   const snapshot = projection('pk-ui.component.input/bare', { value: 'Audit' })
-  snapshot.css += '\ninput { text-indent: 20px; text-shadow: 4px 0 red; word-spacing: 3px; writing-mode: vertical-rl; direction: rtl; }'
+  snapshot.css += '\nbody { font-synthesis: none; }'
+  snapshot.css += '\ninput { text-indent: 20px; text-shadow: 4px 0 red; word-spacing: 3px; writing-mode: vertical-rl; direction: rtl; font-synthesis-weight: auto; }'
   const result = await captureExample(browser, snapshot, snapshot.examples[0].id, { fonts: faces })
   const { style } = observed(result.roots).find(node => node.control)
   assert.equal(style['text-indent'], '20px')
@@ -166,6 +167,8 @@ test('capture retains text presentation that native construction must not silent
   assert.equal(style['word-spacing'], '3px')
   assert.equal(style['writing-mode'], 'vertical-rl')
   assert.equal(style.direction, 'rtl')
+  assert.equal(style['font-synthesis-weight'], 'auto', 'the control overrides its inherited weight synthesis')
+  assert.equal(style['font-synthesis-style'], 'none', 'style synthesis remains disabled by inheritance')
 })
 
 // Independent DOM measurements remove the source annotations entirely.
@@ -222,6 +225,8 @@ test('browser capture preserves real Button layout, text regions and source iden
     assert.equal(result.environment.fontHinting, 'default')
     assert.equal(result.roots.length, 1)
     const button = result.roots[0]
+    assert.equal(button.style['font-synthesis-weight'], 'auto')
+    assert.equal(button.style['font-synthesis-style'], 'auto')
     assert.equal(button.kind, 'element')
     assert.equal(button.tag, 'button')
     assert.equal(button.component, 'button')

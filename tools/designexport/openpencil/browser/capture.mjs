@@ -102,6 +102,7 @@ export async function captureExample(browser, snapshot, exampleId, {
         'flex-direction', 'flex-wrap', 'flex-grow', 'flex-shrink', 'flex-basis',
         'justify-content', 'align-items', 'align-self', 'align-content', 'order', 'row-gap', 'column-gap',
         'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
+        'font-synthesis-weight', 'font-synthesis-style',
         'font-feature-settings', 'font-variation-settings', 'line-height', 'letter-spacing',
         'white-space', 'text-align', 'text-transform', 'text-decoration-line',
         'text-indent', 'text-shadow', 'word-spacing', 'writing-mode', 'direction',
