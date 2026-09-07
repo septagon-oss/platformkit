@@ -163,8 +163,25 @@ constructed nodes and restores the caller's measurement hook.
 binding source strings to native `TEXT` properties and the supported single-icon
 occurrences to `INSTANCE_SWAP`. This restricted projection does not redefine Go
 content slots as single replacements. Native definitions and references drive behavior.
-Provenance records the source invocation, font identities, viewport and observed
-environment; it is not an authentication or edited-document freshness check.
+Provenance records the source invocation, font identities, viewport, observed
+environment and a versioned native-property-ID to source-field map. Native display
+names can change without changing that map; provenance is not authentication.
+
+[associateSourceInstance](source-changes.mjs) explicitly associates the exact
+instance returned by `graph.createInstance` with one root source occurrence.
+Preview siblings stay unmapped; copied correspondence is refused as ambiguous.
+`extractSourceProps` reads that association against the caller's canonical
+snapshot and returns a provider-neutral `{baseSHA256, path, props}` proposal.
+Only mapped, unconstrained string properties are supported. Native definitions,
+lineage, baseline values and assignments must agree with the source and rendered
+text. Extraction does not mutate the graph or snapshot. `no-supported-changes`
+means only that the bound strings are unchanged, not that the document is equal.
+Missing, malformed, stale and unsupported correspondence have explicit results.
+Validate proposals through [ui.ProjectProps](../../../ui/proposal.go), or Core's
+`go run ./tools/designexport --proposal` with proposal JSON on stdin. It reuses Go
+constructors and returns a candidate snapshot without editing files. Root string
+extraction is not nested native composition, slot replacement, scene equivalence
+or a source persistence service. The foundation generator remains unchanged.
 
 Browser tests compare the actual Go Button, including 16px leading and 20px trailing
 icons, in both themes with supplied IBM Plex Sans 600 and explicit

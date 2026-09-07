@@ -21,11 +21,7 @@ func main() {
 }
 
 func run(args []string, input io.Reader, output io.Writer) error {
-	examples, err := projectExamples(args, input)
-	if err != nil {
-		return err
-	}
-	snapshot, err := ui.Export(design.Default(), examples)
+	snapshot, err := projectSnapshot(args, input)
 	if err != nil {
 		return err
 	}
@@ -35,6 +31,26 @@ func run(args []string, input io.Reader, output io.Writer) error {
 		return fmt.Errorf("designexport: write snapshot: %w", err)
 	}
 	return nil
+}
+
+func projectSnapshot(args []string, input io.Reader) (ui.DesignExport, error) {
+	if slices.Equal(args, []string{"--proposal"}) {
+		body, err := readPropsInput(input)
+		if err != nil {
+			return ui.DesignExport{}, err
+		}
+		var proposal ui.PropsProposal
+		if err := json.Unmarshal(body, &proposal); err != nil {
+			return ui.DesignExport{}, fmt.Errorf("designexport: read proposal: %w", err)
+		}
+		_, snapshot, err := ui.ProjectProps(design.Default(), components.Gallery(), proposal)
+		return snapshot, err
+	}
+	examples, err := projectExamples(args, input)
+	if err != nil {
+		return ui.DesignExport{}, err
+	}
+	return ui.Export(design.Default(), examples)
 }
 
 const maxPropsBytes = 1 << 20
@@ -47,7 +63,7 @@ func projectExamples(args []string, input io.Reader) ([]components.Example, erro
 		return examples, nil
 	}
 	if (len(args) != 2 && len(args) != 3) || args[0] != "--example" || args[1] == "" || (len(args) == 3 && args[2] != "--props") {
-		return nil, fmt.Errorf("designexport: usage: designexport [--example ID [--props]]; --props reads one JSON object from stdin")
+		return nil, fmt.Errorf("designexport: usage: designexport [--example ID [--props] | --proposal]; --props and --proposal read one JSON object from stdin")
 	}
 	index := slices.IndexFunc(examples, func(example components.Example) bool { return example.ID == args[1] })
 	if index < 0 {
@@ -55,12 +71,9 @@ func projectExamples(args []string, input io.Reader) ([]components.Example, erro
 	}
 	example := examples[index]
 	if len(args) == 3 {
-		patch, err := io.ReadAll(io.LimitReader(input, maxPropsBytes+1))
+		patch, err := readPropsInput(input)
 		if err != nil {
-			return nil, fmt.Errorf("designexport: read props: %w", err)
-		}
-		if len(patch) > maxPropsBytes {
-			return nil, fmt.Errorf("designexport: props exceed %d bytes", maxPropsBytes)
+			return nil, err
 		}
 		example, err = example.WithProps(patch)
 		if err != nil {
@@ -68,4 +81,15 @@ func projectExamples(args []string, input io.Reader) ([]components.Example, erro
 		}
 	}
 	return []components.Example{example}, nil
+}
+
+func readPropsInput(input io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(input, maxPropsBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("designexport: read input: %w", err)
+	}
+	if len(body) > maxPropsBytes {
+		return nil, fmt.Errorf("designexport: input exceeds %d bytes", maxPropsBytes)
+	}
+	return body, nil
 }

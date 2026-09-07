@@ -132,6 +132,20 @@ The export CLI can select an existing example and apply `Example.WithProps`
 before calling `ui.Export`. This supplies source-owned rendered variations for
 adapter comparison without reconstructing component behavior in another language.
 
+[ui.ProjectProps](ui/proposal.go) accepts one provider-neutral property proposal:
+the base export hash, exact occurrence ID segments and the existing typed patch.
+It exports the current source, checks freshness, rebuilds the owning input chain
+through `WithPropsAt` and `WithSlot`, then validates the candidate export. Nested
+targets must be directly owned and observed before and after; opaque ancestors
+and observed retained-old-capture aliases are refused. Ownership checks cannot
+certify arbitrary HTML composed through opaque callbacks or separate buffers.
+The lower-level `WithPropsAt` edits declared inputs and never renders, including
+currently suppressed children.
+Conditional projection runs trusted constructors twice; it neither saves source
+nor supplies authentication, effect rollback or persistent compare-and-swap.
+A caller that persists changes owns its atomic revision check. Native IDs and
+provider SDK types do not enter this operation; slot compatibility remains separate.
+
 [tools/designexport/openpencil](tools/designexport/openpencil/) owns native
 adapter tooling, not another component catalog. Its version- and source-checked
 SDK corrections operate on build/process inputs without modifying an installed
@@ -146,9 +160,10 @@ Go components. Source-owned text comments identify exact property regions withou
 adding layout elements. Observations and supplied-font checks are converter inputs,
 not proof of native component editing or slot replacement. Experimental native
 construction binds one observed text region and explicitly supplied single-SVG
-slot occurrences to native properties. This is a restricted OpenPencil capability,
-not the common provider interface. Its guide distinguishes tested geometry and
-persistence from the unfinished component library and product prototype.
+slot occurrences to native properties. Its restricted source-proposal adapter
+currently reads mapped root string properties, not arbitrary scene edits or slots.
+Its guide distinguishes tested geometry and persistence from the unfinished
+component library and product prototype.
 Native tooling and tests have their own reviewed source budgets, separate from
 the application's browser controllers.
 

@@ -315,7 +315,8 @@ func exampleObject(raw []byte) (map[string]json.RawMessage, error) {
 
 func decodeExampleValue(raw []byte, typ reflect.Type) (reflect.Value, error) {
 	out := reflect.New(typ).Elem()
-	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+	raw = bytes.TrimSpace(raw)
+	if bytes.Equal(raw, []byte("null")) {
 		switch typ.Kind() {
 		case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Interface:
 			return out, nil
@@ -388,6 +389,19 @@ func decodeExampleValue(raw []byte, typ reflect.Type) (reflect.Value, error) {
 			out.Index(i).Set(value)
 		}
 		return out, nil
+	}
+	// Arbitrary JSON containers use the same strict recursive paths as typed
+	// maps and slices; the standard interface decoder silently merges keys.
+	if typ.Kind() == reflect.Interface && typ.NumMethod() == 0 && len(raw) > 0 && (raw[0] == '{' || raw[0] == '[') {
+		container := reflect.TypeFor[map[string]any]()
+		if raw[0] == '[' {
+			container = reflect.TypeFor[[]any]()
+		}
+		value, err := decodeExampleValue(raw, container)
+		if err == nil {
+			out.Set(value)
+		}
+		return out, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()

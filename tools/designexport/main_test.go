@@ -156,3 +156,61 @@ func TestExportRejectsInvalidPropsWithoutOutput(t *testing.T) {
 		t.Fatalf("read-only helper accepted property edits or emitted partial output: %v", err)
 	}
 }
+
+func TestExportProjectsRevisionCheckedSourceProposal(t *testing.T) {
+	full, original := exportedSnapshot(t, nil, new(failingReader))
+	for _, path := range [][]string{
+		{"pk-ui.component.button/primary"},
+		{"pk-ui.component.form/default", "actions", "create"},
+	} {
+		body, err := json.Marshal(map[string]any{
+			"baseSHA256": full.SHA256, "path": path, "props": map[string]string{"label": "Create & keep"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		projected, _ := exportedSnapshot(t, []string{"--proposal"}, bytes.NewReader(body))
+		if len(projected.Examples) != len(full.Examples) || projected.SHA256 == full.SHA256 {
+			t.Fatal("proposal did not return the full changed snapshot")
+		}
+		root := slices.IndexFunc(projected.Examples, func(e components.ExampleDescription) bool { return e.ID == path[0] })
+		if root < 0 || !strings.Contains(projected.Examples[root].HTML, "Create &amp; keep") {
+			t.Fatal("source constructor did not render the proposed edit")
+		}
+		for index, example := range full.Examples {
+			if index != root && !reflect.DeepEqual(example, projected.Examples[index]) {
+				t.Fatalf("proposal changed unrelated example %q", example.ID)
+			}
+		}
+		if err := run([]string{"--proposal"}, bytes.NewReader(body), failingWriter{}); !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("proposal lost output failure: %v", err)
+		}
+	}
+	_, again := exportedSnapshot(t, nil, new(failingReader))
+	if !bytes.Equal(original, again) {
+		t.Fatal("conditional projection persisted a source change")
+	}
+}
+
+func TestExportRejectsInvalidProposalWithoutOutput(t *testing.T) {
+	full, _ := exportedSnapshot(t, nil, new(failingReader))
+	valid := `{"baseSHA256":"` + full.SHA256 + `","path":["pk-ui.component.button/primary"],"props":{"label":"Changed"}}`
+	for _, body := range []string{
+		"", "null", "[]", "{}", valid + " {}", valid + strings.Repeat(" ", 1<<20),
+		strings.Replace(valid, "baseSHA256", "BaseSHA256", 1),
+		strings.Replace(valid, full.SHA256, strings.Repeat("0", 64), 1),
+		strings.Replace(valid, "\"path\":", "\"nativeId\":", 1),
+		strings.Replace(valid, `"props":`, `"path":["other"],"props":`, 1),
+		strings.Replace(valid, `"label":"Changed"`, `"label":12`, 1),
+		strings.Replace(valid, "button/primary", "missing", 1),
+	} {
+		var output bytes.Buffer
+		if err := run([]string{"--proposal"}, strings.NewReader(body), &output); err == nil || output.Len() != 0 {
+			t.Fatalf("invalid proposal (%d bytes) emitted output: %v", len(body), err)
+		}
+	}
+	var output bytes.Buffer
+	if err := run([]string{"--proposal"}, new(failingReader), &output); !errors.Is(err, io.ErrUnexpectedEOF) || output.Len() != 0 {
+		t.Fatalf("proposal lost reader failure: %v", err)
+	}
+}

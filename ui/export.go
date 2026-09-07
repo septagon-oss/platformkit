@@ -15,7 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/icon"
 )
 
-// DesignExport is a flat snapshot of already-bound Go examples, not a language
+// DesignExport is a snapshot of captured Go invocations and observed children, not a language
 // for constructing pages. An editor adapter consumes it; the application never
 // executes it. PropsEditable and slot support describe the Go example API, not
 // native editor support, accessibility approval or production readiness.

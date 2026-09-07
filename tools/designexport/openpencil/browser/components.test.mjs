@@ -13,6 +13,7 @@ import { getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { parseFigBuffer } from '@open-pencil/fig'
 import { buildFoundation } from '../foundation.mjs'
 import { materializeComponent } from '../components.mjs'
+import { associateSourceInstance, extractSourceProps } from '../source-changes.mjs'
 import { captureExample } from './capture.mjs'
 
 const primary = 'pk-ui.component.button/primary'
@@ -47,6 +48,46 @@ function colorCollection(graph) {
   assert.equal(graph.variableCollections.size, 1, 'fixture has one explicit foundation collection')
   return [...graph.variableCollections.keys()][0]
 }
+
+test('native source proposals reproject through Go after two FIG saves', async () => {
+  const run = (args, input) => JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+    input: input === undefined ? undefined : JSON.stringify(input),
+  }))
+  const snapshot = run([]), beforeSource = structuredClone(snapshot)
+  let graph = buildFoundation(snapshot).graph
+  const page = graph.addPage('Source reprojection')
+  const observation = await captureExample(browser, snapshot, primary, { fonts: faces })
+  let { master, properties } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, colorCollection(graph))
+  let instance = graph.createInstance(master.id, page.id, { name: 'Editable source occurrence', x: 250 })
+  const sibling = graph.createInstance(master.id, page.id, { name: 'Unmapped source preview', x: 500 })
+  associateSourceInstance(graph, instance, snapshot, [primary])
+  assert.equal(extractSourceProps(graph, sibling, snapshot).code, 'missing-binding')
+  for (const label of ['Create album', 'Retry saving']) {
+    graph.updateNode(master.id, { componentPropertyDefinitions: properties.map(item => ({ ...item, name: 'Renamed in the editor' })) })
+    const actions = createEditor({ graph })
+    actions.setCanvasKit(ck, renderer)
+    actions.setInstanceComponentProperty(instance.id, properties[0].id, label)
+    const bytes = await exportFigFile(graph)
+    graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    instance = [...graph.getAllNodes()].find(node => node.type === 'INSTANCE' && node.pluginData.some(item =>
+      item.pluginId === 'platformkit' && item.key === 'platformkit.source'))
+    master = graph.getNode(instance.componentId)
+    const before = structuredClone([...graph.getAllNodes()]), result = extractSourceProps(graph, instance, snapshot)
+    assert.equal(result.status, 'proposal')
+    assert.deepEqual(result.proposal, { baseSHA256: snapshot.sha256, path: [primary], props: { label } })
+    const projected = run(['--proposal'], result.proposal)
+    assert.notEqual(projected.sha256, snapshot.sha256)
+    assert.equal(projected.examples.length, snapshot.examples.length)
+    assert.equal(projected.examples.find(example => example.id === primary).props.label, label)
+    assert.deepEqual(projected.examples.filter(example => example.id !== primary), snapshot.examples.filter(example => example.id !== primary))
+    const observed = await captureExample(browser, projected, primary, { fonts: faces })
+    close(instance.width, observed.roots[0].bounds.width, 'native edit/source reprojection width')
+    close(instance.height, observed.roots[0].bounds.height, 'native edit/source reprojection height')
+    assert.deepEqual([...graph.getAllNodes()], before, 'extraction and Go reprojection are read-only for the native document')
+  }
+  assert.deepEqual(snapshot, beforeSource)
+})
 
 test('real source Button becomes a linked editable component with fractional native HUG geometry', async () => {
   const snapshot = source(), before = structuredClone(snapshot)
@@ -161,6 +202,7 @@ test('source icon slots become linked editable native composition through mixed 
       assert.equal(slotProperty.defaultValue, built.icons.get('plus').id)
       let edited = graph.createInstance(master.id, page.id, { name: 'Edited source composition', x: 250 })
       let sibling = graph.createInstance(master.id, page.id, { name: 'Untouched source composition', x: 600 })
+      associateSourceInstance(graph, edited, snapshot, [exampleId])
       const target = node => graph.getChildren(node.id).find(child => child.componentPropertyReferences.some(ref => ref.propertyId === slotProperty.id))
       const check = (node, expected, glyph) => {
         close(node.width, expected.bounds.width, 'composed width')
@@ -181,6 +223,8 @@ test('source icon slots become linked editable native composition through mixed 
       actions.setCanvasKit(ck, renderer)
       let labelValue = 'Create album', changed = await observe(source(labelValue, exampleId), mode)
       actions.setInstanceComponentProperty(edited.id, labelProperty.id, labelValue)
+      assert.deepEqual(extractSourceProps(graph, edited, snapshot).proposal,
+        { baseSHA256: snapshot.sha256, path: [exampleId], props: { label: labelValue } })
       actions.setInstanceComponentProperty(edited.id, slotProperty.id, built.icons.get('x').id)
       await Promise.resolve()
       check(edited, changed.roots[0], 'x')
@@ -193,6 +237,7 @@ test('source icon slots become linked editable native composition through mixed 
       await Promise.resolve()
       check(edited, changed.roots[0], 'x')
       for (let cycle = 0; cycle < 3; cycle++) {
+        assert.equal(extractSourceProps(graph, edited, snapshot).status, 'unsupported', 'slot changes are not silently dropped from a proposal')
         check(edited, changed.roots[0], 'x')
         check(sibling, observation.roots[0], 'plus')
         check(master, observation.roots[0], 'plus')

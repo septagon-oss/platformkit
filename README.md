@@ -123,6 +123,20 @@ reads standard input. This changes only the in-memory invocation; it does not
 edit source, create a runtime resource, execute an interaction or deploy anything.
 Trusted Go slots still use `WithSlot`; they are not a JSON page language.
 
+For an editor-proposed change, supply the full current export hash and exact
+source occurrence IDs. This local example requires `jq`:
+
+```sh
+go run ./tools/designexport |
+  jq '{baseSHA256: .sha256, path: ["pk-ui.component.form/default", "actions", "create"], props: {label: "Create"}}' |
+  go run ./tools/designexport --proposal
+```
+
+The command validates the revision and source ownership and returns the full
+changed snapshot on stdout; it saves nothing. A selected-example projection is
+not the full base. Products call [ui.ProjectProps](ui/proposal.go) with their own
+palette, examples and stylesheet. Unknown or repeated request fields are refused.
+
 [OpenPencil tooling](tools/designexport/openpencil/README.md) converts tokens and
 icons into native FIG variables and linked icon components. It also owns the
 pinned SDK corrections, native conformance tests and generic browser build.

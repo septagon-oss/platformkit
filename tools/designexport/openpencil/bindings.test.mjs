@@ -4,7 +4,9 @@ import { test } from 'node:test'
 import { SceneGraph, generateId } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { parseFigBuffer } from '@open-pencil/fig'
 import { bindComponentProperties } from './bindings.mjs'
+import { associateSourceInstance, extractSourceProps } from './source-changes.mjs'
 
 const snapshot = JSON.parse(execFileSync('go', [
   'run', './tools/designexport', '--example', 'pk-ui.component.button/primary',
@@ -19,6 +21,156 @@ function fixture(value = 'Save') {
   const region = { kind: 'text', property: 'label', text: value }
   return { graph, master, lookalike, targets: [{ region, nativeNode }] }
 }
+
+function sourceMetadata(node) {
+  const entries = node.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
+  assert.equal(entries.length, 1)
+  return JSON.parse(entries[0].value)
+}
+
+function mappedFixture(second = false) {
+  const input = fixture(), canonical = structuredClone(snapshot), source = canonical.examples[0]
+  if (second) {
+    source.props.caption = 'Save'
+    source.schema.properties.caption = { type: 'string' }
+    input.targets.push({ region: { kind: 'text', property: 'caption', text: 'Save' }, nativeNode: input.lookalike })
+  }
+  input.graph.updateNode(input.master.id, { pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+    schema: canonical.schema, sha256: canonical.sha256, exampleId: source.id, componentId: source.componentId, props: source.props,
+  }) }] })
+  const definitions = bindComponentProperties(input.graph, input.master, source, input.targets)
+  const instance = input.graph.createInstance(input.master.id, input.graph.getPages()[0].id, { name: 'Mapped instance' })
+  const sibling = input.graph.createInstance(input.master.id, input.graph.getPages()[0].id, { name: 'Unmapped preview' })
+  associateSourceInstance(input.graph, instance, canonical, [source.id])
+  return { ...input, snapshot: canonical, instance, sibling, definitions }
+}
+
+function changeMetadata(node, change) {
+  const entry = node.pluginData.find(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
+  const value = JSON.parse(entry.value)
+  change(value)
+  entry.value = JSON.stringify(value)
+}
+
+test('source changes use persisted correspondence through duplicate display names and two FIG saves', async () => {
+  const input = mappedFixture(true), beforeSource = structuredClone(input.snapshot)
+  let { graph, master, instance } = input
+  const path = [example.id]
+  for (const value of ['Create album', '']) {
+    graph.updateNode(master.id, { componentPropertyDefinitions: input.definitions.map(item => ({ ...item, name: 'Same display name' })) })
+    for (const node of graph.getChildren(instance.id)) graph.updateNode(node.id, { name: 'Same layer name' })
+    graph.reorderChild(graph.getChildren(instance.id)[0].id, instance.id, 1)
+    const actions = createEditor({ graph })
+    actions.setInstanceComponentProperty(instance.id, input.definitions[1].id, value)
+    const before = structuredClone([...graph.getAllNodes()])
+    const expected = { baseSHA256: input.snapshot.sha256, path, props: { caption: value } }
+    assert.deepEqual(extractSourceProps(graph, instance, input.snapshot).proposal, expected)
+    assert.deepEqual([...graph.getAllNodes()], before, 'extraction does not update native state')
+    const bytes = await exportFigFile(graph)
+    const raw = parseFigBuffer(bytes.slice().buffer).nodeChanges
+    const records = raw.flatMap(node => (node.pluginData ?? []).filter(item =>
+      item.pluginID === 'platformkit' && item.key === 'platformkit.source').map(item => JSON.parse(item.value)))
+    assert.equal(records.filter(record => record.path?.[0] === example.id).length, 1, 'one persisted source occurrence')
+    assert.deepEqual(records.find(record => record.textBindings)?.textBindings,
+      input.definitions.map(item => ({ id: item.id, property: item.name })), 'raw FIG retains the original source field names')
+    graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    instance = [...graph.getAllNodes()].find(node => node.type === 'INSTANCE' && node.pluginData.some(item =>
+      item.pluginId === 'platformkit' && item.key === 'platformkit.source'))
+    master = graph.getNode(instance.componentId)
+    const reopened = structuredClone([...graph.getAllNodes()])
+    assert.deepEqual(extractSourceProps(graph, instance, input.snapshot).proposal, expected)
+    assert.deepEqual([...graph.getAllNodes()], reopened)
+    assert.equal(graph.getChildren(instance.id).find(node => node.componentPropertyReferences[0]?.propertyId === input.definitions[0].id).text, 'Save')
+  }
+  assert.deepEqual(input.snapshot, beforeSource)
+})
+
+test('source extraction reports only supported property changes and association is explicit', () => {
+  const input = mappedFixture(), { graph, instance, sibling } = input
+  const before = structuredClone([...graph.getAllNodes()])
+  assert.equal(associateSourceInstance(graph, instance, input.snapshot, [example.id]), instance)
+  assert.deepEqual([...graph.getAllNodes()], before, 'repeating the same association is a no-op')
+  graph.updateNode(instance.id, { x: 987, name: 'Unrelated native scene edit' })
+  assert.deepEqual(extractSourceProps(graph, instance, input.snapshot), {
+    status: 'no-supported-changes', capability: 'root-string-props', properties: ['label'],
+  })
+  assert.equal(extractSourceProps(graph, sibling, input.snapshot).code, 'missing-binding')
+  const rejected = structuredClone([...graph.getAllNodes()])
+  assert.throws(() => associateSourceInstance(graph, sibling, input.snapshot, [example.id]), /Multiple native instances/)
+  assert.deepEqual([...graph.getAllNodes()], rejected)
+})
+
+test('source extraction refuses invalid correspondence without changing source or graph', async t => {
+  const cases = [
+    ['missing association', input => { input.instance.pluginData = [] }, 'missing-binding'],
+    ['unrelated metadata', input => { input.instance.pluginData[0].pluginId = 'another-plugin' }, 'missing-binding'],
+    ['duplicate provenance', input => { input.instance.pluginData.push({ ...input.instance.pluginData[0] }) }, 'invalid-provenance'],
+    ['invalid JSON', input => { input.instance.pluginData[0].value = '{' }, 'invalid-provenance'],
+    ['nonobject JSON', input => { input.instance.pluginData[0].value = '[]' }, 'invalid-provenance'],
+    ['invalid master JSON', input => { input.master.pluginData[0].value = '{' }, 'invalid-provenance'],
+    ['missing path', input => changeMetadata(input.instance, value => { delete value.path }), 'invalid-path'],
+    ['string path', input => changeMetadata(input.instance, value => { value.path = example.id }), 'invalid-path'],
+    ['unknown path', input => changeMetadata(input.instance, value => { value.path = ['missing'] }), 'invalid-path'],
+    ['nested path', input => changeMetadata(input.instance, value => { value.path.push('nested') }), 'unsupported-scope'],
+    ['wrong occurrence interface', input => changeMetadata(input.instance, value => { value.componentId = 'another' }), 'invalid-provenance'],
+    ['wrong master interface', input => changeMetadata(input.master, value => { value.componentId = 'another' }), 'invalid-binding'],
+    ['stale occurrence', input => changeMetadata(input.instance, value => { value.sha256 = '0'.repeat(64) }), 'stale-base'],
+    ['stale master', input => changeMetadata(input.master, value => { value.sha256 = '0'.repeat(64) }), 'stale-base'],
+    ['wrong baseline props', input => changeMetadata(input.master, value => { value.props.label = 'Changed' }), 'invalid-binding'],
+    ['missing map', input => changeMetadata(input.master, value => { delete value.textBindings }), 'invalid-provenance'],
+    ['unknown map version', input => changeMetadata(input.master, value => { value.bindingVersion = 2 }), 'invalid-provenance'],
+    ['duplicate map', input => changeMetadata(input.master, value => { value.textBindings.push(value.textBindings[0]) }), 'invalid-binding'],
+    ['wrong case', input => changeMetadata(input.master, value => { value.textBindings[0].property = 'Label' }), 'invalid-binding'],
+    ['constrained string', input => { input.snapshot.examples[0].schema.properties.label.enum = ['Save'] }, 'unsupported-scope'],
+    ['unsupported source', input => { input.snapshot.examples[0].propsEditable = false }, 'unsupported-scope'],
+    ['missing definition', input => { input.master.componentPropertyDefinitions = [] }, 'invalid-binding'],
+    ['malformed definitions', input => { input.master.componentPropertyDefinitions = null }, 'invalid-binding'],
+    ['malformed references', input => { input.graph.getChildren(input.instance.id)[1].componentPropertyReferences = null }, 'invalid-binding'],
+    ['malformed variables', input => { input.graph.getChildren(input.instance.id)[1].boundVariables = null }, 'invalid-binding'],
+    ['native text binding', input => { input.graph.getChildren(input.instance.id)[1].boundVariables.text = 'variable' }, 'unsupported-scope'],
+    ['wrong value type', input => { input.instance.componentPropertyAssignments[input.definitions[0].id] = false }, 'inconsistent-native-value'],
+    ['direct text override', input => { input.graph.getChildren(input.instance.id)[1].text = 'Unassigned edit' }, 'inconsistent-native-value'],
+    ['foreign assignment', input => { input.instance.componentPropertyAssignments.foreign = 'Other' }, 'unsupported-scope'],
+    ['broken lineage', input => { input.graph.getChildren(input.instance.id)[1].componentId = input.lookalike.id }, 'invalid-binding'],
+    ['copied correspondence', input => { input.sibling.pluginData = structuredClone(input.instance.pluginData) }, 'ambiguous-occurrence'],
+    ['detached copy correspondence', input => {
+      input.sibling.type = 'FRAME'
+      input.sibling.pluginData = structuredClone(input.instance.pluginData)
+    }, 'ambiguous-occurrence'],
+    ['duplicate target reference', input => {
+      input.graph.getChildren(input.instance.id)[0].componentPropertyReferences = [{ propertyId: input.definitions[0].id, field: 'TEXT' }]
+    }, 'invalid-binding'],
+  ]
+  for (const [name, change, code] of cases) await t.test(name, () => {
+    const input = mappedFixture()
+    change(input)
+    const beforeGraph = structuredClone([...input.graph.getAllNodes()]), beforeSource = structuredClone(input.snapshot)
+    const result = extractSourceProps(input.graph, input.instance, input.snapshot)
+    assert.equal(result.code, code)
+    assert.equal(result.status, code === 'stale-base' ? 'stale' : ['missing-binding', 'unsupported-scope'].includes(code) ? 'unsupported' : 'invalid')
+    assert.equal(result.proposal, undefined)
+    assert.deepEqual([...input.graph.getAllNodes()], beforeGraph)
+    assert.deepEqual(input.snapshot, beforeSource)
+  })
+})
+
+test('source property provenance survives native renaming and two FIG saves', async () => {
+  let { graph, master, targets } = fixture()
+  graph.updateNode(master.id, { pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+    schema: snapshot.schema, sha256: snapshot.sha256, exampleId: example.id, componentId: example.componentId, props: example.props,
+  }) }] })
+  const [definition] = bindComponentProperties(graph, master, example, targets)
+  for (const name of ['Renamed display label', 'Another editor label']) {
+    graph.updateNode(master.id, { componentPropertyDefinitions: [{ ...definition, name }] })
+    const bytes = await exportFigFile(graph)
+    graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    master = [...graph.getAllNodes()].find(node => node.type === 'COMPONENT')
+    const metadata = sourceMetadata(master)
+    assert.equal(metadata.bindingVersion, 1)
+    assert.deepEqual(metadata.textBindings, [{ id: definition.id, property: 'label' }])
+    assert.equal(master.componentPropertyDefinitions[0].name, name)
+  }
+})
 
 test('source property binding uses the exact constructed text handle through edits and two FIG saves', async () => {
   let { graph, master, lookalike, targets } = fixture()
@@ -136,6 +288,10 @@ test('binding retains exact empty, whitespace and escaped labels from fresh Go p
 
 test('binding preflights all identities, types, values and ownership without mutating rejected input', () => {
   const cases = [
+    ...['null', '{', '{"bindingVersion":1}'].map(value => input => {
+      input.master.pluginData = [{ pluginId: 'platformkit', key: 'platformkit.source', value }]
+    }),
+    input => { input.master.pluginData = [1, 2].map(() => ({ pluginId: 'platformkit', key: 'platformkit.source', value: '{}' })) },
     input => { input.example.propsEditable = false },
     input => { input.example.schema.properties.label.type = 'boolean' },
     input => { input.example.schema.properties.label = { $ref: '#/$defs/text' } },
