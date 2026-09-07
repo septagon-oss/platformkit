@@ -72,11 +72,20 @@ func mount(t *testing.T, oidc auth.OIDC) (chi.Router, *db.Conn, contracts.Auth) 
 // cannot name is a pool it cannot watch.
 func mountOn(t *testing.T, conn *db.Conn, oidc auth.OIDC) (chi.Router, *db.Conn, contracts.Auth) {
 	t.Helper()
+	return mountConfigured(t, conn, oidc, false)
+}
+
+func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration bool) (chi.Router, *db.Conn, contracts.Auth) {
+	t.Helper()
 	mailbox, notices = &authtest.Mailbox{}, &authtest.Notices{}
 	users, userModule := user.Module(user.Deps{})
+	var registrar contracts.RegistrationUsers
+	if registration {
+		registrar = users
+	}
 	svc, authModule := auth.Module(auth.Deps{
 		Users: users, Notify: notices, Mailer: mailbox, Hosts: authtest.Host(host),
-		OIDC: oidc, PublicHost: host,
+		OIDC: oidc, PublicHost: host, Registration: registrar,
 	})
 	subs = authModule.Subscriptions
 	seed(t, conn, acme)

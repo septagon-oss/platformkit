@@ -35,6 +35,11 @@ type Deps struct {
 	// uses.
 	Users contracts.Users
 
+	// Registration opts this composition into public member signup. A nil
+	// capability mounts no registration route or subscriber. Mailer and Hosts
+	// must be configured before registration requests can be accepted.
+	Registration contracts.RegistrationUsers
+
 	// Notify is how somebody is told, inside the application, that a link was
 	// sent. It never carries the link: the notice points at /auth/reset and the
 	// secret is in the mail and nowhere else. A composition that wires none
@@ -81,7 +86,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure,
 	})
 	cookies := internal.NewCookies(secure)
-	return svc, module.Module{
+	manifest := module.Module{
 		Name:        "auth",
 		Permissions: permissions,
 		Events:      contracts.Events,
@@ -124,12 +129,19 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			// roles name a permission nothing defines any more.
 			svc.Declare(api.Permissions())
 			internal.RegisterRoutes(api, svc, cookies)
+			if deps.Registration != nil {
+				internal.RegisterRegistrationRoutes(api, svc)
+			}
 			if deps.OIDC.Issuer != "" {
 				internal.RegisterOIDCRoutes(api, svc, deps.Users,
 					internal.NewProvider(deps.OIDC, cookies, secure))
 			}
 		},
 	}
+	if deps.Registration != nil {
+		manifest.Subscriptions = append(manifest.Subscriptions, internal.RegistrationSubscription(svc, deps.Registration))
+	}
+	return svc, manifest
 }
 
 // permissions is what the manifest declares: one, guarding the two roles

@@ -20,6 +20,14 @@ and auth construction. Applications validate custom initial grants through
 [auth contracts](modules/auth/contracts/roles.go) against their composed
 permissions; auth owns the role writes and preserves existing grants on retry.
 
+Public account creation is opt-in through `auth.Deps.Registration`. It requires
+tenant host lookup and email delivery. The public endpoint queues a request;
+auth's worker creates an invited member and the existing password-link flow
+verifies mailbox access. Callers cannot choose roles. Retries preserve existing
+accounts, including inactive accounts, and the shared mail-request limit bounds
+signup and password recovery together. Compositions without this dependency
+mount no registration endpoint.
+
 A module has three parts. `contracts/` defines its entities, public service,
 events, permissions and conformance suite. `internal/` contains its
 implementation. `module.go` declares the constructor and manifest.
@@ -166,9 +174,12 @@ Browser observations reuse the exported HTML and CSS rather than reimplementing
 Go components. Source-owned text comments identify exact property regions without
 adding layout elements. Observations and supplied-font checks are converter inputs,
 not proof of native component editing or slot replacement. Experimental native
-construction binds one observed text region and explicitly supplied single-SVG
-slot occurrences to native properties. Its restricted source-proposal adapter
-currently reads mapped root string properties, not arbitrary scene edits or slots.
+construction binds observed text, literal text controls and explicitly supplied
+single-SVG slots. Nested composition consumes verified occurrence roots and
+declared ownership, with linked masters rather than flattened source components.
+Its restricted source-proposal adapter reads mapped root or nested strings;
+one associated placement supplies the absolute path, and children retain relative
+identities. Arbitrary scene edits and semantic slot replacement remain separate.
 Its guide distinguishes tested geometry and persistence from the unfinished
 component library and product prototype.
 Native tooling and tests have their own reviewed source budgets, separate from
