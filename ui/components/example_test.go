@@ -234,8 +234,9 @@ func TestToolbarTextRegionsBelongToToolbarProps(t *testing.T) {
 			}
 		}
 		if strings.Contains(description.HTML, "<!--pk-text:content-->") || strings.Contains(description.HTML, "<!--pk-text:text-->") ||
+			strings.Contains(description.HTML, `data-component="text"`) ||
 			strings.Count(description.HTML, "<h1 ") != want || strings.Count(description.HTML, "<p ") != want {
-			t.Fatalf("Toolbar copy lost its native elements or borrowed an atom's property: %s", description.HTML)
+			t.Fatalf("Toolbar copy lost its native elements or borrowed an atom's identity or property: %s", description.HTML)
 		}
 		if len(description.Children) != 1 || description.Children[0].Description.ID != "action" || description.Children[0].Span == nil {
 			t.Fatal("Toolbar annotation lost the observed action occurrence")

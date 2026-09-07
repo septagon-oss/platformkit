@@ -1043,12 +1043,12 @@ func labelWithText(p LabelProps, text g.Node) g.Node {
 func Text(p TextProps) g.Node {
 	return textWithContent(p, g.Group{
 		g.Raw("<!--pk-text:content-->"), g.Text(p.Content), g.Raw("<!--/pk-text:content-->"),
-	})
+	}, g.Attr("data-component", "text"))
 }
 
 // Composing constructors can annotate their own property without replacing
-// Text's semantic element, attributes or styling.
-func textWithContent(p TextProps, content g.Node) g.Node {
+// Text's semantics or styling. Only the public constructor marks a Text boundary.
+func textWithContent(p TextProps, content g.Node, attrs ...g.Node) g.Node {
 	element := normalizeTextElement(p.Element)
 	size := normalizeTextSize(p.Size)
 	align := normalizeTextAlign(p.Align)
@@ -1085,10 +1085,9 @@ func textWithContent(p TextProps, content g.Node) g.Node {
 		cl = cl.Merge(clTextNoWrap)
 	}
 	var children []g.Node
-	children = append(children, baseAttrs(p.ComponentProps)...)
+	children = append(children, baseAttrs(p.ComponentProps, attrs...)...)
 	children = append(children,
 		classes(cl.Compile(), p.Class),
-		g.Attr("data-component", "text"),
 		g.Attr("data-element", element),
 		g.Attr("data-size", size),
 		g.Attr("data-align", align),
