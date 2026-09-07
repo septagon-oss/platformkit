@@ -41,7 +41,7 @@
       "exclude_suffixes": [
         "_test.go"
       ],
-      "max": 11900
+      "max": 12100
     },
     {
       "name": "apps",
@@ -80,7 +80,7 @@
       "exclude_dir_suffixes": [
         "test"
       ],
-      "max": 32400
+      "max": 32500
     },
     {
       "name": "go_testsupport",
@@ -100,7 +100,7 @@
       "suffixes": [
         "_test.go"
       ],
-      "max": 21300
+      "max": 21700
     },
     {
       "name": "js",
@@ -130,7 +130,7 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 3000
+      "max": 4100
     },
     {
       "name": "design_tooling_test",
@@ -142,14 +142,14 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 4200
+      "max": 5500
     },
     {
       "name": "markdown",
       "suffixes": [
         ".md"
       ],
-      "max": 1900
+      "max": 1960
     }
   ]
 }
