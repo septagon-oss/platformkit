@@ -466,6 +466,17 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 	if strings.Contains(dashboard, "gallery.css") {
 		t.Error("an ordinary page downloads the gallery's stylesheet")
 	}
+	// It is offered where the design system is somebody's business, and not in
+	// every customer's sidebar.
+	_, customer, _ := call(t, router, http.MethodGet, "/admin", "")
+	if strings.Contains(customer, "/admin/_gallery") {
+		t.Error("a customer's administrator is offered the installation's component gallery")
+	}
+	_, operator, _ := callAt(t, router, operatorHost, http.MethodGet, "/admin", "")
+	if !strings.Contains(operator, "/admin/_gallery") {
+		t.Error("the operator's own tenant is not offered the gallery")
+	}
+
 	// And it is documentation and not a wall of specimens: the id the design
 	// export names a component by, and a property the component takes but this
 	// example did not set, which is the half a specimen cannot show.

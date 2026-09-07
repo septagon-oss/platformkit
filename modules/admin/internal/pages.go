@@ -251,7 +251,11 @@ func gallery(only string) page.View {
 		body = append(body,
 			components.Card(components.CardProps{Title: example.Name}),
 			h.Div(g.Attr("data-gallery-example", example.Name),
-				g.If(example.Group == "Overlay", g.Attr("data-gallery-overlay", "")), example.Node),
+				// Only the specimens that actually fill their container are
+				// given one to fill: a close button in the Overlay group is
+				// still a button, and twenty rems of nothing around it is a
+				// worse page, not a more consistent one.
+				g.If(overlay(example.ID), g.Attr("data-gallery-overlay", "")), example.Node),
 			components.Documentation(example))
 	}
 	subtitle := "Every component this application renders, once each, with the properties it takes."
@@ -291,6 +295,12 @@ func groupLink(label, group, only string) g.Node {
 		return components.Badge(components.BadgeProps{Label: label, Variant: "outline"})
 	}
 	return components.Link(components.LinkProps{Label: label, Href: at})
+}
+
+// overlay is an example that renders over its whole container rather than
+// taking the size of its own content.
+func overlay(id string) bool {
+	return strings.HasPrefix(id, "pk-ui.component.modal/") && !strings.HasSuffix(id, "-button")
 }
 
 // anchor is a group's name as a fragment: lower case, one word.

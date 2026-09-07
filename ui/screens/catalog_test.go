@@ -46,9 +46,17 @@ func TestCatalogGolden(t *testing.T) {
 			Collection:  true, Auth: httpx.Permission("note:write"),
 		},
 	}
+	// A singleton: one row per tenant, at the path itself. A shell that could
+	// not tell it from a collection would draw a list with a New button on it
+	// and no route to serve either.
+	settings := resource()
+	settings.Entity, settings.Path, settings.Singleton = "setting", "/api/v1/note/settings", true
+	settings.Schema.Entity, settings.Schema.Path = "setting", "/api/v1/note/settings"
+	settings.Immutable = nil
 	catalog := screens.Catalog{Resources: []screens.Entry{
 		screens.Describe1(notes, true),
 		screens.Describe1(tags, false),
+		screens.Describe1(settings, true),
 	}}
 	got, err := json.MarshalIndent(catalog, "", "  ")
 	if err != nil {
@@ -72,7 +80,7 @@ func TestCatalogGolden(t *testing.T) {
 	if err := json.Unmarshal(got, &back); err != nil {
 		t.Fatal(err)
 	}
-	if len(back.Resources) != 2 || back.Resources[0].Fields[0].Name != "id" || !back.Resources[0].Fields[0].ReadOnly {
+	if len(back.Resources) != 3 || back.Resources[0].Fields[0].Name != "id" || !back.Resources[0].Fields[0].ReadOnly {
 		t.Fatalf("the catalog does not round-trip: %+v", back)
 	}
 	if !back.Resources[0].Writable || back.Resources[1].Writable {
@@ -90,6 +98,9 @@ func TestCatalogGolden(t *testing.T) {
 	}
 	if len(back.Resources[1].Commands) != 0 {
 		t.Fatal("a resource with no commands carries none")
+	}
+	if back.Resources[0].Singleton || !back.Resources[2].Singleton {
+		t.Fatal("singleton did not survive the trip")
 	}
 	if _, has := jsonKeys(t, got)["readable"]; has {
 		t.Fatal("the document carries a readable flag; an unreadable resource is omitted instead")

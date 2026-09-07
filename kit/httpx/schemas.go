@@ -57,6 +57,12 @@ type Resource struct {
 	// Commands are the lifecycle routes beyond the five, filled in by
 	// Resources from what AddCommand recorded.
 	Commands []Command
+	// Singleton says a tenant has exactly one of these and it has no id in its
+	// path: the API is a GET and a PUT on Path itself, with no list, no create
+	// and no delete. A shell that did not know would render a collection whose
+	// list is one row, offering doors — New, Delete — that no route serves.
+	// See rest.Singleton.
+	Singleton bool
 
 	List   func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error)
 	Get    func(ctx context.Context, id uuid.UUID) (map[string]any, error)

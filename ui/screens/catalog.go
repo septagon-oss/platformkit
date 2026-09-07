@@ -26,6 +26,9 @@ type Entry struct {
 	// lifecycle routes the resource carries. A command the caller may not call
 	// is absent for the same reason an unreadable resource is.
 	Commands []Command `json:"commands,omitempty"`
+	// Singleton says a tenant has one of these, at Path itself: a screen for
+	// it is the record and its form, and never a list with a New button on it.
+	Singleton bool `json:"singleton,omitempty"`
 }
 
 // Command is one lifecycle route as a shell sees it. It carries no permission
@@ -65,7 +68,7 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // write it". It is the pure half of Describe, and what the golden test builds
 // from without an authorizer.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	e := Entry{Schema: r.Schema, Immutable: r.Immutable, Writable: writable}
+	e := Entry{Schema: r.Schema, Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton}
 	for _, c := range r.Commands {
 		e.Commands = append(e.Commands, Command{
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
