@@ -215,6 +215,38 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
+		"the trail is filtered by the row an event is about": func(t *testing.T, f Fixture) {
+			// The three shapes a payload names its row with, and one that
+			// names a different row. A generated write carries the row itself;
+			// a command carries its own argument, under a name of its own.
+			row := uuid.New()
+			for _, payload := range []string{
+				`{"id":"` + row.String() + `","title":"Buy milk"}`,
+				`{"taskId":"` + row.String() + `","to":"somebody"}`,
+				`{"changes":[{"record":{"id":"` + row.String() + `"}}]}`,
+				`{"id":"` + uuid.NewString() + `"}`,
+			} {
+				ev := event("task.task.changed", ada, noon)
+				ev.Payload = json.RawMessage(payload)
+				if err := f.Service.Record(f.Ctx, f.Tx, ev); err != nil {
+					t.Fatalf("Record: %v", err)
+				}
+			}
+			rows, total, err := f.Service.List(f.Ctx, f.Tx, contracts.Query{Record: row})
+			if err != nil {
+				t.Fatalf("List by record: %v", err)
+			}
+			if total != 3 || len(rows) != 3 {
+				t.Errorf("the trail of one row = %d rows (total %d), want the three that name it", len(rows), total)
+			}
+			// And it composes with the page, which is what a screen reading a
+			// long trail a page at a time depends on.
+			if rows, total, err = f.Service.List(f.Ctx, f.Tx, contracts.Query{Record: row, Limit: 2}); err != nil ||
+				len(rows) != 2 || total != 3 {
+				t.Errorf("a page of one row's trail = %d rows of %d, %v", len(rows), total, err)
+			}
+		},
+
 		"an unknown id is not found": func(t *testing.T, f Fixture) {
 			if _, err := f.Service.Get(f.Ctx, f.Tx, uuid.New()); !errors.Is(err, crud.ErrNotFound) {
 				t.Errorf("Get of a row nobody has = %v, want ErrNotFound", err)

@@ -2,6 +2,7 @@ package audittest
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"sync"
 
@@ -63,6 +64,7 @@ func (f *Fake) List(_ context.Context, _ db.Tx[db.Tenant], q contracts.Query) ([
 		switch {
 		case q.Name != "" && row.Name != q.Name:
 		case q.Actor != uuid.Nil && (row.Actor == nil || *row.Actor != q.Actor):
+		case q.Record != uuid.Nil && !mentions(row.Payload, q.Record.String()):
 		case !q.Since.IsZero() && row.OccurredAt.Before(q.Since):
 		case !q.Until.IsZero() && !row.OccurredAt.Before(q.Until):
 		default:
@@ -75,6 +77,32 @@ func (f *Fake) List(_ context.Context, _ db.Tx[db.Tenant], q contracts.Query) ([
 		kept = kept[:limit]
 	}
 	return slices.Clone(kept), total, nil
+}
+
+// mentions is the fake's jsonb_path_exists: the id anywhere in the payload, at
+// any depth and inside an array. A payload that is not JSON mentions nothing.
+func mentions(payload json.RawMessage, id string) bool {
+	var doc any
+	if json.Unmarshal(payload, &doc) != nil {
+		return false
+	}
+	var seen func(any) bool
+	seen = func(v any) bool {
+		switch t := v.(type) {
+		case string:
+			return t == id
+		case []any:
+			return slices.ContainsFunc(t, seen)
+		case map[string]any:
+			for _, each := range t {
+				if seen(each) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return seen(doc)
 }
 
 // Get mirrors internal.Service.Get.

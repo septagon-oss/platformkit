@@ -73,6 +73,19 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query
 		if q.Actor != uuid.Nil {
 			g = g.Where("actor = ?", q.Actor)
 		}
+		// The row's id anywhere in the payload, at any depth and inside an
+		// array, which is what makes this filter independent of how the module
+		// that published the event named the row. It is a scan of the tenant's
+		// trail: there is no index for "this value appears somewhere", and
+		// retention is what keeps the table a size that can be read.
+		//
+		// The path is a parameter rather than a literal because it contains a
+		// question mark — every jsonpath predicate does — and a driver looking
+		// for placeholders in the statement would count it as one.
+		if q.Record != uuid.Nil {
+			g = g.Where("jsonb_path_exists(payload, ?::jsonpath, jsonb_build_object('v', ?::text))",
+				`$.** ? (@ == $v)`, q.Record.String())
+		}
 		if !q.Since.IsZero() {
 			g = g.Where("occurred_at >= ?", q.Since)
 		}
