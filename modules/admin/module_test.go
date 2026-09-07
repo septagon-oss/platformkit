@@ -140,6 +140,11 @@ var plans = rest.Spec[*Plan]{
 	Read: "plan:read", Write: "plan:write", OperatorWrite: true,
 }
 
+// publishBody is the argument of the note command that takes one.
+type publishBody struct {
+	At string `json:"at,omitempty" doc:"When it goes out"`
+}
+
 var spec = rest.Spec[*Note]{
 	Module: "notes", Entity: "note", Path: "/api/v1/notes/notes",
 	Read: "note:read", Write: "note:write", SoftDelete: true,
@@ -174,7 +179,22 @@ func mountAs(t *testing.T, authorize httpx.Authorizer) chi.Router {
 			{Label: "Notes", Path: "/admin/notes/notes", Permission: "note:read"},
 			{Label: "Secrets", Path: "/admin/notes/secrets", Permission: "secret:read"},
 		},
-		Routes: func(api *httpx.API) { spec.Mount(api) },
+		Routes: func(api *httpx.API) {
+			spec.Mount(api)
+			// Two commands, so the catalog test can say which of them each
+			// caller is told about: one guarded by the Spec's write
+			// permission, one a command declares for itself.
+			rest.Command(api, spec, "publish", "Publish a note", "Makes it visible.", nil,
+				func(_ context.Context, _ db.Tx[db.Tenant], _ uuid.UUID, in publishBody) (*Note, error) {
+					return &Note{Title: in.At}, nil
+				}, rest.CommandOptions{})
+			// The verb is not one of the five: an operation id is unique, so a
+			// command called "read" would collide with the row route at mount.
+			rest.Command(api, spec, "mark-read", "Mark as read", "For the reader, not the writer.", nil,
+				func(context.Context, db.Tx[db.Tenant], uuid.UUID, struct{}) (*Note, error) {
+					return &Note{}, nil
+				}, rest.CommandOptions{Auth: httpx.SignedIn()})
+		},
 	}
 	// The second module is the installation's own data: every tenant reads the
 	// catalogue and only the operator writes it.
@@ -746,6 +766,11 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 		Writable             bool
 		Immutable            []string
 		Fields               []struct{ Name, Type string }
+		Commands             []struct {
+			Verb, Summary string
+			Collection    bool
+			Fields        []struct{ Name, Type string }
+		}
 	}
 	read := func(t *testing.T, router http.Handler, at string) []entry {
 		t.Helper()
@@ -785,6 +810,29 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 		t.Errorf("the schema does not lead with the id: %+v", note.Fields)
 	}
 
+	// The commands are the doors beyond the five, and the catalog carries the
+	// ones this caller may open: both, for an administrator, each with the
+	// shape of its argument.
+	verbs := func(e *entry) []string {
+		var out []string
+		for _, c := range e.Commands {
+			out = append(out, c.Verb)
+		}
+		return out
+	}
+	if got := verbs(note); len(got) != 2 || got[0] != "publish" || got[1] != "mark-read" {
+		t.Errorf("the administrator's commands = %v", got)
+	}
+	if f := note.Commands[0].Fields; len(f) != 1 || f[0].Name != "at" || f[0].Type != "string" {
+		t.Errorf("publish's argument = %+v", f)
+	}
+	if len(note.Commands[1].Fields) != 0 {
+		t.Errorf("a command that takes no argument carries no fields: %+v", note.Commands[1].Fields)
+	}
+	if plan.Commands != nil {
+		t.Errorf("a resource with no commands carries none: %+v", plan.Commands)
+	}
+
 	// At the operator's own tenant the plan is writable.
 	if plan := find(read(t, mount(t), operatorHost), "plan"); plan == nil || !plan.Writable {
 		t.Errorf("the operator's catalog = %+v", plan)
@@ -795,6 +843,12 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 	only := read(t, mountAs(t, member{"note:read": true}), host)
 	if n := find(only, "note"); n == nil || n.Writable {
 		t.Errorf("a read-only member's note = %+v", n)
+	}
+	// And is told about the command that asks only for a signed-in caller, and
+	// not about the one that asks for the write permission they lack: a
+	// catalog that promised it would be a door the API refuses.
+	if got := verbs(find(only, "note")); len(got) != 1 || got[0] != "mark-read" {
+		t.Errorf("a read-only member's commands = %v", got)
 	}
 	if find(only, "plan") != nil {
 		t.Error("a member who may not read plans is told they exist")

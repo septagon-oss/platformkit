@@ -54,6 +54,9 @@ type Resource struct {
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
 	Schema    crud.Schema
+	// Commands are the lifecycle routes beyond the five, filled in by
+	// Resources from what AddCommand recorded.
+	Commands []Command
 
 	List   func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error)
 	Get    func(ctx context.Context, id uuid.UUID) (map[string]any, error)
@@ -66,6 +69,53 @@ type Resource struct {
 	// in: a Resource built anywhere else is unguarded until it is registered,
 	// and registering is the only way anything can obtain one.
 	may func(ctx context.Context, g tenancy.Grant) error
+}
+
+// Command is one lifecycle route on a resource, as kit/rest.Command mounted
+// it: a rule about the state a row is in, with an event of its own, which is
+// what a generic form cannot express. Verb is the last path segment — POST
+// {Path}/{id}/{Verb}, or {Path}/{Verb} when Collection — Summary and
+// Description are the API document's own, Auth is who may call it (not always
+// the resource's write permission), and Fields is the shape of its argument,
+// derived from the request body the way an entity's is derived from T.
+type Command struct {
+	Verb                 string
+	Summary, Description string
+	Collection           bool
+	Auth                 Auth
+	Fields               []crud.Field
+}
+
+// CommandsFor is the commands this caller may call. One they may not is left
+// out rather than shown disabled, for the reason an unreadable resource is
+// left out: what somebody may not do, they are not told about.
+//
+// Each is answered the way the request middleware answers it — public admits
+// everybody, signed-in a recognised caller, a permission the Authorizer's
+// question — so the catalog cannot promise a door the API would refuse. An
+// undeclared Auth admits nobody, as at the route.
+func (r Resource) CommandsFor(ctx context.Context) []Command {
+	var out []Command
+	for _, c := range r.Commands {
+		if r.mayUse(ctx, c.Auth) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (r Resource) mayUse(ctx context.Context, a Auth) bool {
+	if r.may == nil || !a.Declared() {
+		return false
+	}
+	switch a.kind {
+	case kindPublic:
+		return true
+	case kindSignedIn:
+		return recognised(ctx)
+	}
+	g, asks := a.grant()
+	return asks && r.allowed(ctx, g)
 }
 
 // Readable reports whether the caller in ctx holds this resource's Read
@@ -176,8 +226,7 @@ func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 	if !hasTenant {
 		return problem.New(http.StatusForbidden, "AUTH_NO_TENANT: this is tenant work and the host resolved to none")
 	}
-	p, hasPrincipal := tenancy.PrincipalFrom(ctx)
-	if !hasPrincipal || p.UserID == uuid.Nil {
+	if !recognised(ctx) {
 		return problem.New(http.StatusForbidden, "AUTH_ANONYMOUS: this requires a signed-in caller")
 	}
 	// The operator check comes before the Authorizer, exactly as it does in the
@@ -199,13 +248,42 @@ func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 	return nil
 }
 
-// Resources is every registered resource, in mount order. modules/admin reads
-// it in Routes, which is why the shell is composed last: a module that mounts
-// after it registers a resource no screen was generated for.
+// recognised is a caller this installation knows, in a tenant it resolved: the
+// question asked before the Authorizer, and the whole of what SignedIn wants.
+func recognised(ctx context.Context) bool {
+	if _, hasTenant := tenancy.FromContext(ctx); !hasTenant {
+		return false
+	}
+	p, hasPrincipal := tenancy.PrincipalFrom(ctx)
+	return hasPrincipal && p.UserID != uuid.Nil
+}
+
+// AddCommand records a command on the resource of module and entity. kit/rest
+// calls it from Command, beside the route, so a catalog and its API cannot
+// disagree about which doors exist. It does not look the resource up: a module
+// registers its commands in a call of its own, which may run before or after
+// the Spec — a test mounts them without it — so Resources joins the two.
+func (a *API) AddCommand(module, entity string, c Command) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.commands == nil {
+		a.commands = map[string][]Command{}
+	}
+	a.commands[module+"/"+entity] = append(a.commands[module+"/"+entity], c)
+}
+
+// Resources is every registered resource, in mount order, each carrying the
+// commands recorded for it. modules/admin reads it in Routes, which is why the
+// shell is composed last: a module that mounts after it registers a resource no
+// screen was generated for.
 func (a *API) Resources() []Resource {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return append([]Resource(nil), a.resources...)
+	out := append([]Resource(nil), a.resources...)
+	for i := range out {
+		out[i].Commands = a.commands[out[i].Module+"/"+out[i].Entity]
+	}
+	return out
 }
 
 // SignInExtension is where an operation names the form an anonymous caller

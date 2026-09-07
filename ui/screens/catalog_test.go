@@ -3,11 +3,20 @@ package screens_test
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
+
+// publishBody is the argument of the golden file's row command, and the reason
+// it has one: a command with an argument is a form, and a shell has to be told
+// its shape the way it is told an entity's.
+type publishBody struct {
+	At string `json:"at,omitempty" doc:"When it goes out; now if left empty"`
+}
 
 // The golden file is the seam a native shell reads. It is committed here and
 // copied verbatim into platformkit-mobile/testdata, whose parser test reads it;
@@ -20,8 +29,25 @@ func TestCatalogGolden(t *testing.T) {
 	tags.Entity, tags.Path = "tag", "/api/v1/note/tags"
 	tags.Schema.Entity, tags.Schema.Path = "tag", "/api/v1/note/tags"
 	tags.Immutable = nil
+	// One command about a row and one about the collection, one with an
+	// argument and one without: the four shapes a shell has to render, in the
+	// document the shell parses.
+	notes := resource()
+	notes.Commands = []httpx.Command{
+		{
+			Verb: "publish", Summary: "Publish a note",
+			Description: "Makes the note visible. Publishing a published note changes nothing.",
+			Auth:        httpx.Permission("note:write"),
+			Fields:      crud.FieldsOf(reflect.TypeFor[publishBody]()),
+		},
+		{
+			Verb: "archive", Summary: "Archive every resolved note",
+			Description: "Takes what is finished out of the way.",
+			Collection:  true, Auth: httpx.Permission("note:write"),
+		},
+	}
 	catalog := screens.Catalog{Resources: []screens.Entry{
-		screens.Describe1(resource(), true),
+		screens.Describe1(notes, true),
 		screens.Describe1(tags, false),
 	}}
 	got, err := json.MarshalIndent(catalog, "", "  ")
@@ -54,6 +80,16 @@ func TestCatalogGolden(t *testing.T) {
 	}
 	if got := back.Resources[0].Immutable; len(got) != 1 || got[0] != "status" {
 		t.Fatalf("immutable = %v", got)
+	}
+	cmds := back.Resources[0].Commands
+	if len(cmds) != 2 || cmds[0].Verb != "publish" || !cmds[1].Collection {
+		t.Fatalf("the commands did not survive the trip: %+v", cmds)
+	}
+	if len(cmds[0].Fields) != 1 || cmds[0].Fields[0].Name != "at" || len(cmds[1].Fields) != 0 {
+		t.Fatalf("a command's argument did not survive the trip: %+v", cmds[0].Fields)
+	}
+	if len(back.Resources[1].Commands) != 0 {
+		t.Fatal("a resource with no commands carries none")
 	}
 	if _, has := jsonKeys(t, got)["readable"]; has {
 		t.Fatal("the document carries a readable flag; an unreadable resource is omitted instead")

@@ -22,6 +22,25 @@ type Entry struct {
 	crud.Schema
 	Immutable []string `json:"immutable,omitempty"`
 	Writable  bool     `json:"writable"`
+	// Commands are the doors this caller may open beyond the five: the
+	// lifecycle routes the resource carries. A command the caller may not call
+	// is absent for the same reason an unreadable resource is.
+	Commands []Command `json:"commands,omitempty"`
+}
+
+// Command is one lifecycle route as a shell sees it. It carries no permission
+// for the same reason Entry carries no readable flag: the document is what this
+// caller may do, not a description of the API's guards.
+//
+// The path is not carried either, because it is derived the way every other
+// path here is: POST {Path}/{id}/{verb}, or {Path}/{verb} when Collection. A
+// shell that had to be told would be a shell that could be told wrong.
+type Command struct {
+	Verb        string       `json:"verb"`
+	Summary     string       `json:"summary,omitempty"`
+	Description string       `json:"description,omitempty"`
+	Collection  bool         `json:"collection,omitempty"`
+	Fields      []crud.Field `json:"fields,omitempty"`
 }
 
 // Describe is the catalog for this caller: the readable resources, in the
@@ -34,6 +53,9 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 		if !r.Readable(ctx) {
 			continue
 		}
+		// r is this loop's copy, so narrowing its commands to the ones this
+		// caller may call leaves Describe1 the pure function it is.
+		r.Commands = r.CommandsFor(ctx)
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
 	}
 	return out
@@ -43,5 +65,12 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // write it". It is the pure half of Describe, and what the golden test builds
 // from without an authorizer.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	return Entry{Schema: r.Schema, Immutable: r.Immutable, Writable: writable}
+	e := Entry{Schema: r.Schema, Immutable: r.Immutable, Writable: writable}
+	for _, c := range r.Commands {
+		e.Commands = append(e.Commands, Command{
+			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
+			Collection: c.Collection, Fields: c.Fields,
+		})
+	}
+	return e
 }

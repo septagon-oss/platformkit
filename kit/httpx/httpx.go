@@ -204,6 +204,9 @@ type API struct {
 	// resources are the entities kit/rest has mounted, for the screens that
 	// are generated from them rather than written. See schemas.go.
 	resources []Resource
+	// commands are the lifecycle routes on those entities, by "module/entity",
+	// kept beside them because the two are registered separately. See AddCommand.
+	commands map[string][]Command
 }
 
 // errorShape guards the one package-global huma reads per request.

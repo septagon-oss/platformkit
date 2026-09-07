@@ -58,7 +58,27 @@
       "immutable": [
         "status"
       ],
-      "writable": true
+      "writable": true,
+      "commands": [
+        {
+          "verb": "publish",
+          "summary": "Publish a note",
+          "description": "Makes the note visible. Publishing a published note changes nothing.",
+          "fields": [
+            {
+              "name": "at",
+              "type": "string",
+              "doc": "When it goes out; now if left empty"
+            }
+          ]
+        },
+        {
+          "verb": "archive",
+          "summary": "Archive every resolved note",
+          "description": "Takes what is finished out of the way.",
+          "collection": true
+        }
+      ]
     },
     {
       "module": "note",
