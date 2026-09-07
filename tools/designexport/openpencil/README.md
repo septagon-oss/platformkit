@@ -183,25 +183,25 @@ Construction requires successful native text measurement and refuses outer
 geometry differences larger than 1/64 CSS pixel. Rejection removes the newly
 constructed nodes and restores the caller's measurement hook.
 
-Nested construction adds observed vertical stretch/fill and end-aligned rows,
-single-line label fragments, text controls and uniform solid borders. It builds
-separate linked masters for each source invocation, preserving different baselines
-even when Cancel and Create share the Button interface. The real Form is the
-vertical proof: Input and actions, with Cancel and Create inside actions. This
-does not model submission or make the native drawing an interactive web form.
-Text values use an unwrapped, auto-width native text node inside a fixed clipping
-viewport. The existing auto-size operation supplies measured bounds, including
-genuine zero advance and clearing; failed measurement rolls back the edit and
-history. Empty controls provide no glyph evidence. Caret, selection scrolling and
-other interactive input behavior are outside this static conversion.
-Form layout covers both themes at 320px and 1280px. Input and Button edits, including
-the secondary variant, pass history, isolation, two saves and source reprojection.
-Text binds `content` to native wrapping text inside its observed block content box.
-Both themes pass line-break/advance checks at 320px and 1280px, property history and
-two saves; the editor test edits and downloads the 320px paragraph. Reopened direct
-wrapping-text instances also pass caller-run width reflow and two saves. This does
-not establish arbitrary container-resize history. The invalid Input's error copy
-persists, but only its label/value have property bindings. Run `npm run test:browser`.
+Nested construction uses vertical stretch/fill, aligned rows, inline labels and
+text controls. Each invocation has its own linked master, so Cancel and Create
+retain distinct baselines despite sharing the Button interface. Form covers Input
+and both actions in light/dark at 320px and 1280px: property history, isolation,
+two saves and source reprojection pass; submission is not modeled.
+Native input values are unwrapped auto-width text in a fixed clipping viewport.
+Zero advance and clearing are measured; failures roll back the edit and history.
+Empty controls have no glyph evidence; caret/selection scrolling is not modeled.
+Invalid Input preserves its error copy but binds only label/value.
+Text binds `content` inside its wrapping block. Light/dark 320px and 1280px checks
+cover line breaks/advances, property history and two saves. The editor test edits
+and downloads the 320px paragraph. Reopened direct Text instances also pass width
+reflow; arbitrary container-resize history remains unverified.
+Captured horizontal Flex rows can wrap linked children in source order with source
+gaps and start/center/end alignment. The constructor-based fixture passes width
+reflow at 320/390/1280px, label edits, full undo/redo, master and sibling isolation
+and two saves in both themes. Reverse/column wrapping, child reordering and other
+line alignments remain refused. This row fixture has not yet been driven through
+the browser editor. Run `npm run test:browser`.
 
 [bindComponentProperties](bindings.mjs) preflights exact constructed handles before
 binding source strings to native `TEXT` properties and the supported single-icon
@@ -236,17 +236,17 @@ Extraction changes neither graph nor snapshot. Refusals include status, code and
 explanation; `no-supported-changes` refers only to the selected capability, not
 whole-scene equivalence. Persistent revision checks remain the caller's responsibility.
 
-Browser tests compare the actual Go Button, including 16px leading and 20px trailing
-icons, in both themes with supplied IBM Plex Sans 600 and explicit
-`--font-render-hinting=none`. Label edits, icon swaps, undo/redo and two FIG round
-trips retain native links and match source dimensions and icon placement within
-1/64 pixel. Fresh native derived-layout records preserve sibling positions after
-text grows; edits after reopening must still reflow. The precision correction preserves CanvasKit's
-shaped advances; it does not reproduce every platform's font hinting. These are
-line-box and persistence checks, not glyph-baseline/pixel equivalence or a native
-accessibility audit. Separate assertions change palette values and verify native
-painted pixels after each save. Page-mode serialization and imported instance
-index corrections keep the native mode and live links from silently disappearing.
+Browser comparisons use Go Button with 16px leading and 20px trailing icons in both
+themes, IBM Plex Sans 600 and `--font-render-hinting=none`. Label edits, icon swaps,
+undo/redo and two saves retain links and match dimensions and icon placement within
+1/64 pixel. Fresh derived-layout records retain sibling positions after text grows.
+CanvasKit's shaped advances remain unchanged; source text-row layout applies
+[Chromium's intrinsic-box rounding](https://raw.githubusercontent.com/chromium/chromium/782af9cb30a53f54487e5d2e44738645a8ec457c/third_party/blink/renderer/platform/fonts/shaping/shape_result.h)
+before positioning siblings. Ordinary native text keeps its own layout behavior.
+These checks do not establish every platform's hinting, glyph-baseline/pixel
+equivalence or native accessibility. Separate palette tests verify painted pixels
+after each save; page-mode serialization and imported-instance indexing retain
+native modes and live links.
 
 Icon composition verifies canonical flat path/circle geometry, attributes and
 observed paints; grouped, transformed or potentially clipped SVGs are refused.
@@ -374,7 +374,7 @@ Font deployment, SVG fidelity, responsive/accessibility and source conversion re
 incomplete. Product prototypes need runtime-state mappings
 and governed end-to-end persistence tests in their owning product repository.
 Native sizing still needs evidence beyond the declared comparison cases, including
-wrapping and whitespace-only flex participation during edits. Correct font loading
+overflowing and whitespace-only flex labels during edits. Correct font loading
 alone does not resolve those layout differences.
 Programmatic batches with an unrelated master update already queued before a
 property edit need further lifecycle work: wait for that preceding update to

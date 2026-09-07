@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -11,6 +14,8 @@ import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { populateLazyFigImportRoots } from '@open-pencil/core/kiwi'
 import { computeLayout, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { buildComponentDocument, verifyComponentDocument } from '../document.mjs'
+import { buildFoundation } from '../foundation.mjs'
+import { materializeComponent } from '../components.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { extractSourceProps, extractSourceReplacement } from '../source-changes.mjs'
 import { captureExample } from './capture.mjs'
@@ -78,6 +83,136 @@ function vertical(nodes) {
     y += node.height + 48
   }
 }
+
+async function wrappingSource(t) {
+  const directory = await mkdtemp(join(tmpdir(), 'platformkit-wrapping-source-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const file = join(directory, 'main.go')
+  await writeFile(file, `package main
+import (
+  "encoding/json"
+  "os"
+  g "maragu.dev/gomponents"
+  "github.com/septagon-oss/platformkit/design"
+  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/components"
+)
+func main() {
+  var input struct { Props components.FlexProps; Label string }
+  if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
+  var children []g.Node
+  for _, item := range []struct{ id, label string }{
+    {"cancel", "Return to library"}, {"save", input.Label}, {"preview", "Preview changes"},
+  } {
+    children = append(children, components.ExampleWithSlots(components.ExampleInfo{
+      ID: item.id, ComponentID: "pk-ui.component.button",
+    }, components.ButtonProps{Label: item.label, Variant: "secondary"},
+      components.ButtonSlots{}, components.ButtonWithSlots).Node)
+  }
+  example := components.ExampleWithChildren(components.ExampleInfo{
+    ID: "fixture/actions", ComponentID: "pk-ui.component.flex",
+  }, input.Props, children, components.Flex)
+  snapshot, err := ui.Export(design.Default(), []components.Example{example})
+  if err != nil { panic(err) }
+  if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
+}
+`, { flag: 'wx' })
+  return (props, label = 'Save album') => JSON.parse(execFileSync('go', ['run', file], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify({ props, label }),
+  }))
+}
+
+test('unsupported wrap direction, line alignment and child order reject atomically', async t => {
+  const source = await wrappingSource(t), snapshot = source({ wrap: true, gap: '4' }), id = 'fixture/actions'
+  const observation = await captureExample(browser, snapshot, id, { fonts, viewport })
+  for (const change of [
+    root => { root.style['flex-direction'] = 'column' },
+    root => { root.style['flex-direction'] = 'row-reverse' },
+    root => { root.style['flex-wrap'] = 'wrap-reverse' },
+    root => { root.style['align-content'] = 'center' },
+    root => { root.children[0].style.order = '1' },
+    root => { delete root.children[0].style.order },
+  ]) {
+    const altered = structuredClone(observation)
+    change(altered.roots[0])
+    const { graph, collection } = buildFoundation(snapshot), page = graph.addPage('Refused wrap')
+    const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, altered, fonts, renderer, collection.id), /wrap/)
+    assert.deepEqual([...graph.getAllNodes()], before)
+    assert.equal(getTextMeasurer(), previous)
+  }
+})
+
+test('wrapping source rows keep linked actions, reflow and property history across two saves', async t => {
+  const source = await wrappingSource(t), id = 'fixture/actions'
+  function assertRow(graph, root, observed, stage) {
+    assert.equal(root.layoutWrap, 'WRAP')
+    for (const field of ['width', 'height']) assert.ok(Math.abs(root[field] - observed.bounds[field]) <= 1 / 64,
+      `${stage} root ${field}: ${root[field]} versus ${observed.bounds[field]}`)
+    for (const child of observed.children) {
+      const native = nested(graph, root, child.source.path.at(-1))
+      assert.equal(native.type, 'INSTANCE')
+      for (const field of ['x', 'y', 'width', 'height']) {
+        const offset = ['x', 'y'].includes(field) ? observed.bounds[field] : 0
+        assert.ok(Math.abs(native[field] - (child.bounds[field] - offset)) <= 1 / 64,
+          `${stage} ${child.source.path.at(-1)} ${field}: ${native[field]} versus ${child.bounds[field] - offset}`)
+      }
+    }
+  }
+  for (const mode of ['light', 'dark']) for (const justify of ['start', 'center', 'end']) {
+    const props = { wrap: true, gap: '4', align: 'center', justify }
+    const snapshot = source(props), built = await buildComponentDocument(snapshot, options({ examples: [id], mode }))
+    let { graph } = built
+    graph.createInstance(chain(graph, placed(graph, id), 'componentId').at(-1).id, built.placements.id,
+      { name: 'Untouched row preview', x: 400, y: 400 })
+    for (const width of [320, 1280, 390]) {
+      const instance = placed(graph, id), master = chain(graph, instance, 'componentId').at(-1)
+      const originalMaster = structuredClone(master)
+      const previous = getTextMeasurer()
+      try {
+        setTextMeasurer((node, maxWidth) => renderer.measureTextNode(node, maxWidth))
+        graph.updateNode(instance.id, { width })
+        graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeLayout(graph, instance.id)))
+      } finally { setTextMeasurer(previous) }
+      const baseline = await captureExample(browser, snapshot, id, { fonts, mode, viewport: { width, height: 900 } })
+      assertRow(graph, instance, baseline.roots[0], `${mode}/${justify}/${width} before any text edit`)
+      const untouched = structuredClone([...graph.getAllNodes()].filter(node =>
+        !chain(graph, node, 'parentId').some(parent => parent.id === instance.id) &&
+        !chain(graph, instance, 'parentId').some(parent => parent.id === node.id)))
+      const editor = createEditor({ graph })
+      editor.setCanvasKit(ck, renderer)
+      const save = nested(graph, instance, 'save'), binding = property(graph, save, 'label')
+      const before = structuredClone([...graph.getAllNodes()])
+      editor.setInstanceComponentProperty(save.id, binding, 'Save a revised album')
+      await Promise.resolve()
+      const edited = structuredClone([...graph.getAllNodes()])
+      editor.undoAction()
+      await Promise.resolve()
+      assert.deepEqual([...graph.getAllNodes()], before, 'undo restores the entire graph')
+      editor.redoAction()
+      await Promise.resolve()
+      assert.deepEqual([...graph.getAllNodes()], edited, 'redo restores the entire graph')
+      for (const node of untouched) assert.deepEqual(graph.getNode(node.id), node, `untouched master or sibling: ${node.name}`)
+      const expected = await captureExample(browser, source(props, 'Save a revised album'), id, { fonts, mode, viewport: { width, height: 900 } })
+      for (let cycle = 0; cycle < 3; cycle++) {
+        const root = placed(graph, id)
+        assertRow(graph, root, expected.roots[0], `${mode}/${justify}/${width} after save ${cycle}`)
+        const target = nested(graph, root, 'save')
+        assert.deepEqual(extractSourceProps(graph, target, snapshot).proposal,
+          { baseSHA256: snapshot.sha256, path: [id, 'save'], props: { label: 'Save a revised album' } })
+        if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+      }
+      const reopened = placed(graph, id), reopenedMaster = chain(graph, reopened, 'componentId').at(-1)
+      assert.deepEqual([reopenedMaster.width, reopenedMaster.height], [originalMaster.width, originalMaster.height])
+      assert.equal(graph.getChildren(nested(graph, reopenedMaster, 'save').id)[0].text, 'Save album')
+      const reset = createEditor({ graph })
+      reset.setCanvasKit(ck, renderer)
+      const target = nested(graph, reopened, 'save')
+      reset.setInstanceComponentProperty(target.id, property(graph, target, 'label'), 'Save album')
+      await Promise.resolve()
+    }
+  }
+})
 
 test('document packages exact selections, foundation handles and ordered nonoverlapping source masters', async () => {
   const before = structuredClone(snapshot), beforeFonts = fonts.map(face => ({ ...face, bytes: Buffer.from(face.bytes) }))

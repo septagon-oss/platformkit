@@ -390,8 +390,12 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     } else if (['block', 'inline'].includes(style.display)) {
       plan = inline(node)
     } else {
+      const wrapping = style['flex-wrap'] === 'wrap'
       requireComponent(['flex', 'inline-flex'].includes(style.display) && ['row', 'column'].includes(style['flex-direction']) &&
-        style['flex-wrap'] === 'nowrap', 'composition requires nonwrapping flex layout')
+        (style['flex-wrap'] === 'nowrap' || wrapping && style['flex-direction'] === 'row'),
+      'composition requires nonwrapping flex or forward-wrapping row layout')
+      requireComponent(!wrapping || ['normal', 'stretch', 'flex-start'].includes(style['align-content']),
+        'wrapping row content alignment requires further conversion')
       const justify = { normal: 'MIN', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['justify-content']]
       const align = { normal: 'STRETCH', stretch: 'STRETCH', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['align-items']]
       requireComponent(justify && align, 'composition alignment requires further conversion')
@@ -400,7 +404,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         name: node.tag, width: node.bounds.width, height: node.bounds.height,
         layoutMode: vertical ? 'VERTICAL' : 'HORIZONTAL',
         primaryAxisSizing: vertical ? 'HUG' : 'FIXED', counterAxisSizing: vertical ? 'FIXED' : 'HUG',
-        primaryAxisAlign: justify, counterAxisAlign: align, layoutWrap: 'NO_WRAP',
+        primaryAxisAlign: justify, counterAxisAlign: align, layoutWrap: wrapping ? 'WRAP' : 'NO_WRAP',
         itemSpacing: pixels(style[vertical ? 'row-gap' : 'column-gap']),
         counterAxisSpacing: pixels(style[vertical ? 'column-gap' : 'row-gap']), ...native,
       } }
@@ -408,6 +412,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         const childStyle = child.observation.style
         requireComponent(childStyle['flex-grow'] === '0' && childStyle['flex-shrink'] === '1' &&
           childStyle['flex-basis'] === 'auto' && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
+        requireComponent(!wrapping || childStyle.order === '0', 'wrapping rows require source child order')
         if (vertical && align === 'STRETCH') child.placement = {
           layoutAlignSelf: 'STRETCH', [child.native?.layoutMode === 'VERTICAL' ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL',
         }

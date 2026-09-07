@@ -8,6 +8,7 @@ import { SceneGraph } from '@open-pencil/scene-graph'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
+import { computeLayout, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { fontManager, missingGlyphCharacters } from '@open-pencil/core/text'
 import { loadFonts, validateFonts } from './fonts.mjs'
 import { resolveLocalFont } from './font-correction.mjs'
@@ -182,7 +183,10 @@ for (const [text, maxWidth, expectedWidth, expectedHeight] of [
   assert.ok(surface)
   const renderer = new SkiaRenderer(ck, surface)
   const graph = new SceneGraph()
-  const node = graph.createNode('TEXT', graph.getPages()[0].id, {
+  const row = graph.createNode('COMPONENT', graph.getPages()[0].id, {
+    layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG',
+  })
+  const node = graph.createNode('TEXT', row.id, {
     text, fontFamily: family, fontWeight: 600, fontSize: 14, lineHeight: 20,
     width: 500, height: 100, textAutoResize: 'NONE',
   })
@@ -203,6 +207,21 @@ for (const [text, maxWidth, expectedWidth, expectedHeight] of [
           'real ligature shaping combines characters, not a manual sum of glyph advances')
       }
       assert.deepEqual(renderer.measureTextNode(node, maxWidth), expected)
+      if (maxWidth === undefined) {
+        const previous = getTextMeasurer()
+        try {
+          setTextMeasurer((node, width) => renderer.measureTextNode(node, width))
+          graph.updateNode(node.id, { textAutoResize: 'WIDTH_AND_HEIGHT' })
+          for (const scope of [null, 'source-composition-observed-aliases', 'text-component-observed-aliases']) {
+            graph.updateNode(row.id, { pluginData: scope === null ? [] : [{ pluginId: 'platformkit', key: 'platformkit.source',
+              value: JSON.stringify({ schema: 'platformkit.design-export.v1', scope }) }] })
+            computeLayout(graph, row.id)
+            assert.equal(node.width, scope === 'text-component-observed-aliases' ? Math.ceil(expected.width * 64) / 64 : expected.width,
+              'only a source text row receives intrinsic inline-box rounding')
+            assert.deepEqual(renderer.measureTextNode(node), expected, 'layout never changes shaping')
+          }
+        } finally { setTextMeasurer(previous) }
+      }
     } finally { paragraph.delete() }
   } finally { renderer.destroy() }
 })

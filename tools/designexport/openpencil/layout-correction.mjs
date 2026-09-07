@@ -1,6 +1,33 @@
+import { fileURLToPath } from 'node:url'
+
 // Layout owns temporary Yoga objects and grid sizing modes. Release/restore
 // them at that boundary even when measurement or nested layout throws.
 export function correctLayout(source, replace) {
+  const lineage = fileURLToPath(new URL('./exporter-correction.mjs', import.meta.url))
+  source = `import { chain } from ${JSON.stringify(lineage)};\n` + source
+  source = replace(source, 'function configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis = false) {', String.raw`
+function sourceTextRow(graph, parent) {
+  if (parent.layoutMode !== "HORIZONTAL" || parent.primaryAxisSizing !== "HUG" ||
+      parent.counterAxisSizing !== "HUG" || parent.layoutWrap !== "NO_WRAP") return false;
+  let master;
+  try { master = chain(graph, parent, "componentId").at(-1); } catch { return false; }
+  const entries = master.pluginData.filter(item => item.pluginId === "platformkit" && item.key === "platformkit.source");
+  if (entries.length !== 1) return false;
+  let source;
+  try { source = JSON.parse(entries[0].value); } catch { return false; }
+  return source?.schema === "platformkit.design-export.v1" &&
+    ["text-component-observed-aliases", "text-and-icon-component-observed-aliases"].includes(source.scope);
+}
+
+function configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis = false, graph) {`)
+  source = replace(source, 'configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis);',
+    'configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis, graph);')
+  source = replace(source, 'const result = getTextMeasurer()?.(child, maxW) ?? estimateTextSize(child, maxW);', String.raw`
+      const measured = getTextMeasurer()?.(child, maxW) ?? estimateTextSize(child, maxW);
+      // Chromium's intrinsic inline box rounds up to a 1/64 CSS-pixel layout
+      // unit. Do this once per source text row, not per glyph or accumulated
+      // position. Ordinary native text and renderer shaping stay untouched.
+      const result = sourceTextRow(graph, parent) ? { ...measured, width: Math.ceil(measured.width * 64) / 64 } : measured;`)
   source = replace(source, 'function computeLayoutInternal(graph, frameId) {', String.raw`
 function resizedWrappingFrame(graph, frame) {
   if (frame?.source.format !== "fig" || !frame.source.editedFields.includes("width") ||
