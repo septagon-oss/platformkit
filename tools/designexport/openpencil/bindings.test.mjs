@@ -361,12 +361,19 @@ test('source extraction refuses invalid correspondence without changing source o
     ['stale master', input => changeMetadata(input.master, value => { value.sha256 = '0'.repeat(64) }), 'stale-base'],
     ['wrong baseline props', input => changeMetadata(input.master, value => { value.props.label = 'Changed' }), 'invalid-binding'],
     ['missing map', input => changeMetadata(input.master, value => { delete value.textBindings }), 'invalid-provenance'],
+    ['removed map with retained native definition', input => changeMetadata(input.master, value => { value.textBindings = [] }), 'invalid-binding'],
     ['unknown map version', input => changeMetadata(input.master, value => { value.bindingVersion = 2 }), 'invalid-provenance'],
     ['duplicate map', input => changeMetadata(input.master, value => { value.textBindings.push(value.textBindings[0]) }), 'invalid-binding'],
     ['wrong case', input => changeMetadata(input.master, value => { value.textBindings[0].property = 'Label' }), 'invalid-binding'],
     ['constrained string', input => { input.snapshot.examples[0].schema.properties.label.enum = ['Save'] }, 'unsupported-scope'],
     ['unsupported source', input => { input.snapshot.examples[0].propsEditable = false }, 'unsupported-scope'],
     ['missing definition', input => { input.master.componentPropertyDefinitions = [] }, 'invalid-binding'],
+    ['unmapped native definition', input => {
+      input.master.componentPropertyDefinitions.push({ ...input.definitions[0], id: generateId(), name: 'Unmapped' })
+    }, 'invalid-binding'],
+    ['duplicated native definition', input => {
+      input.master.componentPropertyDefinitions.push({ ...input.definitions[0] })
+    }, 'invalid-binding'],
     ['malformed definitions', input => { input.master.componentPropertyDefinitions = null }, 'invalid-binding'],
     ['malformed references', input => { input.graph.getChildren(input.instance.id)[1].componentPropertyReferences = null }, 'invalid-binding'],
     ['malformed variables', input => { input.graph.getChildren(input.instance.id)[1].boundVariables = null }, 'invalid-binding'],

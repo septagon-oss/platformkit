@@ -53,6 +53,7 @@ const { build, loadConfigFromFile } = await import(pathToFileURL(upstreamRequire
 const { config } = await loadConfigFromFile({ command: 'build', mode: 'production' }, configFile)
 
 const seen = new Set()
+let correctedNudgeKeys = false
 function nativeBoundary() {
   return {
     name: 'platformkit-native-boundary', enforce: 'pre',
@@ -90,6 +91,18 @@ function nativeBoundary() {
       return result === null ? null : { code: result, map: null }
     },
     transform(source, id) {
+      if (id === join(upstream, 'src/app/shell/keyboard/nudging.ts')) {
+        if (sha256(source) !== '164f12035c8949b4780e95622950ac0503c778ffcd977e09d61b233fb5f04ae7') {
+          throw new Error('Browser nudge keyboard source changed')
+        }
+        // Tree arrows belong to navigation, including keys that the tree does
+        // not cancel at its edges. Never turn those keys into canvas history.
+        correctedNudgeKeys = true
+        return { code: replaceOnce(source,
+          'if (isEditing(e) || store.state.editingTextId) return',
+          `if (e.defaultPrevented || isEditing(e) || store.state.editingTextId) return
+    if (e.composedPath().some(target => target instanceof Element && target.getAttribute('role') === 'tree')) return`), map: null }
+      }
       if (id !== join(upstream, 'src/main.ts')) return null
       if (sha256(source) !== 'ba0318dd65f3cbadaa406d01655b7190c5e1cfc55c5e92b33335d0fd1e5b8bbc') {
         throw new Error('Browser entry source changed')
@@ -119,6 +132,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 } })
 
 // Missing transforms are a build failure, not a silently less-correct editor.
+if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

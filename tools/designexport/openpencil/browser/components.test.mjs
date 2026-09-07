@@ -14,6 +14,7 @@ import { parseFigBuffer } from '@open-pencil/fig'
 import { buildFoundation } from '../foundation.mjs'
 import { materializeComponent } from '../components.mjs'
 import { associateSourceInstance, extractSourceProps } from '../source-changes.mjs'
+import { chain } from '../exporter-correction.mjs'
 import { captureExample } from './capture.mjs'
 
 const primary = 'pk-ui.component.button/primary'
@@ -254,7 +255,7 @@ test('source icon slots become linked editable native composition through mixed 
         close(node.height, expected.bounds.height, 'composed height')
         const icon = target(node), svg = expected.children.find(child => child.kind === 'slot').children[0]
         assert.equal(icon.type, 'INSTANCE')
-        assert.equal(graph.getNode(icon.componentId).name, glyph)
+        assert.equal(chain(graph, icon, 'componentId').at(-1).name, glyph)
         close(icon.x, svg.bounds.x - expected.bounds.x, 'slot x')
         close(icon.y, svg.bounds.y - expected.bounds.y, 'slot y')
         close(icon.width, size, 'slot width')

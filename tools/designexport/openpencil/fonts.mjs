@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import OpenType from 'opentype.js'
 import { fontManager, weightToStyle } from '@open-pencil/core/text'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
+import { fontMetadata } from './font-correction.mjs'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 
@@ -13,10 +14,6 @@ function faceKey(face) {
     throw new Error('Font requires one family, an exact 100–900 face weight and normal or italic style')
   }
   return `${face.family}|${weightToStyle(face.weight, face.style === 'italic')}`
-}
-
-function fontNames(font, field) {
-  return [...new Set(Object.values(font.names).flatMap(platform => Object.values(platform[field] ?? {})))]
 }
 
 // Caller-owned static font files, not a font catalog or a CSS fallback resolver.
@@ -38,24 +35,9 @@ export function validateFonts(faces) {
       throw new Error(`Unsupported font format: ${key}; static TTF, OTF or WOFF required, not WOFF2`)
     }
     const font = OpenType.parse(bytes.buffer)
-    if (font.tables.fvar) throw new Error(`Variable font faces are not supported: ${key}`)
-    const preferred = fontNames(font, 'preferredFamily')
-    const families = preferred.length ? preferred : fontNames(font, 'fontFamily')
-    const sdkStyle = weightToStyle(face.weight, face.style === 'italic')
-    // Static WOFF name tables may include the weight in the legacy family
-    // (IBM Plex Sans SemiBold), without a separate typographic-family entry.
-    if (!families.includes(face.family) && !families.includes(`${face.family} ${sdkStyle}`)) {
-      throw new Error(`Font family does not match its name table: ${key}`)
-    }
-    const italic = !!(font.tables.os2?.fsSelection & 1)
-    if (font.tables.os2?.usWeightClass !== face.weight || italic !== (face.style === 'italic')) {
-      throw new Error(`Font weight or italic face does not match its metadata: ${key}`)
-    }
-    const names = fontNames(font, 'postScriptName')
-    if (names.length !== 1) throw new Error(`Font needs one unambiguous PostScript name: ${key}`)
     return {
       family: face.family, weight: face.weight, style: face.style, bytes, sha256: face.sha256,
-      postscriptName: names[0], internalFamily: fontNames(font, 'fontFamily')[0],
+      ...fontMetadata(font, face),
     }
   })
 }

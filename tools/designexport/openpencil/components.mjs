@@ -150,7 +150,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
     return [`padding${side}`, pixels(style[`padding-${key}`]) + border]
   }))
   const masterProps = {
-    name: example.name, width: root.bounds.width, height: root.bounds.height,
+    name: example.name || example.id, width: root.bounds.width, height: root.bounds.height,
     layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG',
     primaryAxisAlign: 'CENTER', counterAxisAlign: 'CENTER', layoutWrap: 'NO_WRAP',
     itemSpacing: pixels(style['column-gap']), counterAxisSpacing: pixels(style['row-gap']), ...insets,
@@ -178,7 +178,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       const icon = icons.get(region)
       let nativeNode
       if (icon) {
-        nativeNode = graph.createInstance(icon.master.id, master.id, { uniformScaleFactor: icon.scale })
+        nativeNode = graph.createInstance(icon.master.id, master.id, { name: region.name, uniformScaleFactor: icon.scale })
         for (const { sourceNode, field, variableId } of icon.paints) {
           const children = graph.getChildren(nativeNode.id).filter(child => child.componentId === sourceNode.id)
           requireComponent(children.length === 1, 'one exact native vector occurrence required')
@@ -442,7 +442,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       return result.master
     }
     const master = graph.createNode('COMPONENT', parentId, {
-      ...current.native, name: description.name, pluginData: provenance(description),
+      ...current.native, name: description.name || description.id, pluginData: provenance(description),
     })
     created.push(master.id)
     const targets = []
@@ -456,7 +456,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
     if (current.kind === 'component') {
       const definition = await component(current)
       const node = graph.createInstance(definition.id, parent.id, {
-        ...current.placement,
+        ...current.placement, name: current.occurrence.description.name || current.occurrence.description.id,
         pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
           localId: current.occurrence.description.id, slot: current.occurrence.slot,
         }) }],

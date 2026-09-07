@@ -1,0 +1,245 @@
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { after, afterEach, before, test } from 'node:test'
+import { chromium } from 'playwright'
+import { SkiaRenderer } from '@open-pencil/core/canvas'
+import { createEditor } from '@open-pencil/core/editor'
+import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
+import { populateLazyFigImportRoots } from '@open-pencil/core/kiwi'
+import { getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
+import { buildComponentDocument, verifyComponentDocument } from '../document.mjs'
+import { chain } from '../exporter-correction.mjs'
+import { extractSourceProps } from '../source-changes.mjs'
+
+const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
+const examples = [form, button], viewport = { width: 320, height: 900 }
+const fonts = [400, 500, 600].map(weight => {
+  const bytes = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
+  return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
+})
+const originalMeasurer = getTextMeasurer()
+let browser, ck, renderer, snapshot
+
+function source(proposal) {
+  return JSON.parse(execFileSync('go', ['run', './tools/designexport', ...(proposal ? ['--proposal'] : [])], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+    input: proposal ? JSON.stringify(proposal) : undefined,
+  }))
+}
+
+before(async () => {
+  snapshot = source()
+  browser = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
+  ck = await initCanvasKit()
+  renderer = new SkiaRenderer(ck, ck.MakeSurface(1280, 900))
+})
+after(async () => { renderer?.destroy(); setTextMeasurer(originalMeasurer); await browser?.close() })
+afterEach(() => assert.equal(browser.contexts().length, 0))
+
+function options(extra = {}) {
+  return { examples, fonts, viewport, browser, renderer, ...extra }
+}
+
+function origin(node, key = 'platformkit.source') {
+  const entries = node.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === key)
+  assert.ok(entries.length <= 1, 'no duplicate provenance')
+  return entries.length ? JSON.parse(entries[0].value) : null
+}
+
+function placed(graph, exampleId) {
+  const matches = [...graph.getAllNodes()].filter(node => JSON.stringify(origin(node)?.path) === JSON.stringify([exampleId]))
+  assert.equal(matches.length, 1, 'one exact associated source root across the entire document')
+  return matches[0]
+}
+
+function nested(graph, root, localId) {
+  const matches = graph.getChildren(root.id).filter(node => origin(node)?.localId === localId)
+  assert.equal(matches.length, 1)
+  return matches[0]
+}
+
+function property(graph, instance, field) {
+  const master = chain(graph, instance, 'componentId').at(-1)
+  const bindings = origin(master).textBindings.filter(item => item.property === field)
+  assert.equal(bindings.length, 1, 'exact source binding, independent of mutable native names')
+  return bindings[0].id
+}
+
+function vertical(nodes) {
+  let y = 48
+  for (const node of nodes) {
+    assert.equal(node.x, 48)
+    assert.equal(node.y, y)
+    assert.ok(node.width > 0 && node.height > 0)
+    y += node.height + 48
+  }
+}
+
+test('document packages exact selections, foundation handles and ordered nonoverlapping source masters', async () => {
+  const before = structuredClone(snapshot), beforeFonts = fonts.map(face => ({ ...face, bytes: Buffer.from(face.bytes) }))
+  for (const mode of ['light', 'dark']) {
+    const selected = mode === 'light' ? examples : examples.toReversed()
+    const previous = getTextMeasurer(), built = await buildComponentDocument(snapshot, options({ examples: selected, mode }))
+    const { graph, collection, definitions, placements, selections } = built
+    assert.equal(getTextMeasurer(), previous)
+    assert.notEqual(definitions.id, placements.id)
+    assert.equal(graph.getPages().length, 3)
+    assert.equal(graph.variables.size, 25)
+    assert.equal(built.icons.size, 27)
+    assert.deepEqual(selections.map(item => item.exampleId), selected)
+    const components = selections.flatMap(item => item.components)
+    assert.equal(components.length, 6, 'Form has five occurrence-specific masters; Button has one')
+    assert.deepEqual(components.map(item => item.path).toSorted(), [
+      [button], [form], [form, 'actions'], [form, 'actions', 'cancel'], [form, 'actions', 'create'], [form, 'title'],
+    ].toSorted())
+    assert.equal([...graph.getAllNodes()].filter(node => node.type === 'COMPONENT').length, 33)
+    vertical(components.map(item => item.master))
+    vertical(selections.map(item => item.instance))
+    const modeId = collection.modes.find(item => item.name === mode).modeId
+    for (const page of [definitions, placements]) assert.equal(graph.getNodeVariableModeId(page.id, collection.id), modeId)
+    for (const item of components) {
+      assert.equal(item.master.parentId, definitions.id)
+      assert.equal(graph.getNode(item.master.id), item.master)
+      assert.equal(origin(item.master).sha256, snapshot.sha256)
+      assert.equal(origin(item.master).mode, mode)
+      assert.deepEqual(origin(item.master).viewport, viewport)
+      assert.deepEqual(origin(item.master).fontFaces.map(face => face.sha256), fonts.map(face => face.sha256))
+      assert.ok(!Object.hasOwn(origin(item.master), 'path'), 'reusable masters never claim an absolute occurrence')
+      assert.deepEqual(item.master.componentPropertyDefinitions, item.properties)
+    }
+    for (const item of selections) {
+      assert.equal(item.observation.sourceSHA, snapshot.sha256)
+      assert.equal(item.instance.parentId, placements.id)
+      assert.equal(graph.getNode(item.instance.componentId), item.master)
+      assert.equal(placed(graph, item.exampleId), item.instance)
+      assert.equal(extractSourceProps(graph, item.instance, snapshot).status, 'no-supported-changes')
+    }
+    assert.doesNotThrow(() => verifyComponentDocument(graph, snapshot, selected))
+    const selectedButton = selections.find(item => item.exampleId === button)
+    const asset = graph.getChildren(selectedButton.instance.id).find(node => node.type === 'INSTANCE')
+    assert.equal(chain(graph, asset, 'componentId').at(-1), built.icons.get('plus'))
+    assert.equal(graph.variables.get(selectedButton.master.boundVariables['fills/0/color']).name, '--pk-color-accent-default')
+  }
+  assert.deepEqual(snapshot, before)
+  assert.deepEqual(fonts, beforeFonts)
+})
+
+for (const populate of ['all', 'first-page']) test(`packaged instances remain editable and reusable through two saves without changing source masters or siblings: ${populate}`, async () => {
+  const built = await buildComponentDocument(snapshot, options()), beforeSource = structuredClone(snapshot)
+  let graph = built.graph
+  const baseline = built.selections.flatMap(item => item.components).map(item => ({
+    path: item.path, x: item.master.x, y: item.master.y, props: structuredClone(origin(item.master).props),
+  }))
+  const originalButtonLabel = snapshot.examples.find(item => item.id === button).props.label
+  if (populate === 'first-page') graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate })
+  for (let round = 0; round < 3; round++) {
+    const root = placed(graph, form), selectedButton = placed(graph, button)
+    if (populate === 'first-page') {
+      populateLazyFigImportRoots(graph, [chain(graph, root, 'parentId').find(node => node.type === 'CANVAS').id])
+    }
+    const field = nested(graph, root, 'title'), valueID = property(graph, field, 'value')
+    const labelID = property(graph, selectedButton, 'label')
+    if (round > 0) {
+      assert.equal(extractSourceProps(graph, field, snapshot).proposal.props.value, `Packaged input after save ${round - 1}`)
+      assert.equal(extractSourceProps(graph, selectedButton, snapshot).proposal.props.label, `Packaged action ${round - 1}`)
+      const collection = [...graph.variableCollections.values()][0]
+      assert.equal(collection.modes.find(item => item.modeId === graph.getNodeVariableModeId(root.id, collection.id)).name, 'light')
+    }
+    const actions = createEditor({ graph })
+    actions.setCanvasKit(ck, renderer)
+    const sibling = graph.createInstance(root.componentId, root.parentId, { x: 500, y: 48 })
+    assert.equal(extractSourceProps(graph, sibling, snapshot).code, 'missing-binding')
+    const siblingBefore = structuredClone([...graph.getAllNodes()].filter(node => chain(graph, node, 'parentId').includes(sibling)))
+    const value = `Packaged input after save ${round}`, label = `Packaged action ${round}`
+    const previous = field.componentPropertyAssignments[valueID] ?? ''
+    actions.setInstanceComponentProperty(field.id, valueID, value)
+    actions.undoAction()
+    assert.equal(field.componentPropertyAssignments[valueID] ?? '', previous)
+    actions.redoAction()
+    actions.setInstanceComponentProperty(selectedButton.id, labelID, label)
+    const beforeGraph = structuredClone([...graph.getAllNodes()])
+    const proposal = extractSourceProps(graph, field, snapshot).proposal
+    assert.deepEqual(proposal, { baseSHA256: snapshot.sha256, path: [form, 'title'], props: { value } })
+    assert.deepEqual(extractSourceProps(graph, selectedButton, snapshot).proposal.props, { label })
+    assert.throws(() => verifyComponentDocument(graph, snapshot, examples), /proposal/)
+    const projected = source(proposal)
+    assert.equal(extractSourceProps(graph, root, projected).code, 'stale-base')
+    assert.deepEqual(projected.examples.filter(item => item.id !== form), snapshot.examples.filter(item => item.id !== form))
+    assert.deepEqual([...graph.getAllNodes()], beforeGraph, 'source checking is read-only')
+    assert.deepEqual([...graph.getAllNodes()].filter(node => chain(graph, node, 'parentId').includes(sibling)), siblingBefore)
+    for (const expected of baseline) {
+      let occurrence = placed(graph, expected.path[0])
+      for (const id of expected.path.slice(1)) occurrence = nested(graph, occurrence, id)
+      const master = chain(graph, occurrence, 'componentId').at(-1)
+      assert.deepEqual(origin(master).props, expected.props)
+      assert.deepEqual([master.x, master.y], [expected.x, expected.y])
+    }
+    const buttonMaster = chain(graph, selectedButton, 'componentId').at(-1)
+    assert.equal(buttonMaster.componentPropertyDefinitions.find(item => item.id === labelID).defaultValue, originalButtonLabel)
+    assert.equal(graph.getChildren(selectedButton.id).filter(node => node.type === 'INSTANCE').length, 1)
+    if (round < 2) {
+      const bytes = await exportFigFile(graph)
+      assert.deepEqual([...graph.getAllNodes()], beforeGraph, 'saving never replays imported state into the edited graph')
+      graph = await parseFigFile(bytes.slice().buffer, { populate })
+    }
+  }
+  assert.deepEqual(snapshot, beforeSource)
+})
+
+test('document refuses invalid or unsupported requested selections and fonts without returning a filtered library', async () => {
+  const before = structuredClone(snapshot), previous = getTextMeasurer()
+  const invalid = [
+    { examples: [] }, { examples: [form, form] }, { examples: ['missing-example'] },
+    { examples: [null] }, { examples: form }, { examples: [` ${form}`] },
+    { mode: 'unknown' }, { viewport: { width: 0, height: 900 } },
+    { fonts: [] }, { fonts: fonts.filter(face => face.weight !== 400) },
+    { fonts: [{ ...fonts[0], sha256: '0'.repeat(64) }] },
+  ]
+  for (const change of invalid) {
+    await assert.rejects(buildComponentDocument(snapshot, options(change)))
+    assert.deepEqual(snapshot, before)
+    assert.equal(browser.contexts().length, 0)
+    assert.equal(getTextMeasurer(), previous)
+  }
+  const unsupported = 'pk-ui.component.badge/default'
+  await assert.rejects(buildComponentDocument(snapshot, options({ examples: [form, unsupported] })),
+    error => error.message.includes(unsupported))
+  assert.deepEqual(snapshot, before)
+  assert.equal(getTextMeasurer(), previous)
+})
+
+test('document checks construction-time correspondence across two saves and refuses complete property loss', async () => {
+  const built = await buildComponentDocument(snapshot, options()), beforeSource = structuredClone(snapshot)
+  let graph = built.graph
+  const expected = verifyComponentDocument(graph, snapshot, examples), beforeExpected = structuredClone(expected)
+  assert.equal(expected.length, 6, 'structural Form and actions retain their empty bindings alongside text owners')
+  for (let save = 0; save < 2; save++) {
+    graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    const before = structuredClone([...graph.getAllNodes()])
+    assert.deepEqual(verifyComponentDocument(graph, snapshot, examples, expected), expected)
+    assert.deepEqual([...graph.getAllNodes()], before, 'successful verification is read-only')
+  }
+  const instance = placed(graph, button), master = chain(graph, instance, 'componentId').at(-1)
+  const id = property(graph, instance, 'label'), metadata = origin(master)
+  metadata.textBindings = metadata.textBindings.filter(binding => binding.id !== id)
+  graph.updateNode(master.id, {
+    componentPropertyDefinitions: master.componentPropertyDefinitions.filter(definition => definition.id !== id),
+    pluginData: master.pluginData.map(entry => entry.pluginId === 'platformkit' && entry.key === 'platformkit.source'
+      ? { ...entry, value: JSON.stringify(metadata) } : entry),
+  })
+  for (const node of graph.getAllNodes()) {
+    if (node.componentPropertyReferences.some(reference => reference.propertyId === id)) {
+      graph.updateNode(node.id, { componentPropertyReferences: node.componentPropertyReferences.filter(reference => reference.propertyId !== id) })
+    }
+  }
+  assert.equal(extractSourceProps(graph, instance, snapshot).status, 'no-supported-changes')
+  assert.doesNotThrow(() => verifyComponentDocument(graph, snapshot, examples), 'self-consistency cannot prove a lost capability survived')
+  const before = structuredClone([...graph.getAllNodes()])
+  assert.throws(() => verifyComponentDocument(graph, snapshot, examples, expected), /correspondence changed/)
+  assert.deepEqual([...graph.getAllNodes()], before, 'rejection does not repair the damaged graph')
+  assert.deepEqual(expected, beforeExpected)
+  assert.deepEqual(snapshot, beforeSource)
+})

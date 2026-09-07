@@ -164,12 +164,12 @@ provider SDK types do not enter this operation; slot compatibility remains separ
 [tools/designexport/openpencil](tools/designexport/openpencil/) owns native
 adapter tooling, not another component catalog. Its version- and source-checked
 SDK corrections operate on build/process inputs without modifying an installed
-editor. Node conformance is a separate CI and tagged-tree gate; the correction
-must also be integrated and verified in a browser build before editor release.
-The native foundation generator reads the current Go export and produces native
-token variables and linked icon components, with provenance on ordinary frames
-and masters. It does not yet translate typed component examples, page composition
-or product flows. See its guide for the supported SVG and token boundary.
+editor. Native conformance runs separately from Go checks; a correction also
+needs verification in the browser build before editor release.
+The generator reads the current Go export and produces native token variables
+and linked icon components. Explicit example selections add supported linked
+components and editable placements; one unsupported selection rejects the document.
+Its guide owns conversion limits and font prerequisites; product flows remain unfinished.
 Browser observations reuse the exported HTML and CSS rather than reimplementing
 Go components. Source-owned text comments identify exact property regions without
 adding layout elements. Observations and supplied-font checks are converter inputs,

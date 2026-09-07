@@ -159,6 +159,9 @@ function readProps(graph, instance, snapshot, example) {
       isDeepStrictEqual(source.componentPropertyReferences, reference) && isDeepStrictEqual(target.componentPropertyReferences, reference),
       'invalid-binding', 'Native asset correspondence differs from the source slot binding')
   }
+  requireSource(master.componentPropertyDefinitions.length === ids.size &&
+    master.componentPropertyDefinitions.every(definition => ids.has(definition.id)),
+  'invalid-binding', 'Native definitions exceed the source property bindings')
   return { example, master, slots, props: Object.fromEntries(changes), properties: [...fields] }
 }
 

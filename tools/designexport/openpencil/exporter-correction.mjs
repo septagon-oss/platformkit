@@ -306,6 +306,13 @@ function mergeTextOverrides(symbolOverrides, overrides) {
 
 export function correctInstanceImporter(source, replace) {
   source = 'import { extractComponentPropertyAssignments } from "./node-change2.js";\n' + source
+  // Lazy population may read linked sources on other pages, but must write
+  // only the requested subtree. Loaded-page paint and placement edits win.
+  source = replace(source,
+    'propagateResolvedFills(graph, /* @__PURE__ */ new Set([...ctx.kiwiPropertyNodes, ...overriddenNodes]));',
+    'propagateResolvedFills(graph, new Set([...ctx.kiwiPropertyNodes, ...overriddenNodes]), [...overrideCandidates(graph, ctx.activeNodeIds)]);')
+  source = replace(source, 'propagateResolvedChildPlacementClones(graph);',
+    'propagateResolvedChildPlacementClones(graph, instancePlacementPairs(graph).filter(pair => !ctx.activeNodeIds || ctx.activeNodeIds.has(pair.childId)));')
   source = replace(source, '\tdelete fields.componentPropAssignments;', '')
   source = replace(source, 'function convertOverrideToProps(ov) {\n  const updates = {};',
     `function convertOverrideToProps(ov) {\n  const updates = {};

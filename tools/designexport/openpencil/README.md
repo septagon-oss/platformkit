@@ -5,50 +5,55 @@ This directory owns the native boundary of the existing
 typed examples and stylesheet remain the source of truth. There is no second
 component registry, page language or client-specific library here.
 
-The implemented boundary is a tokens-and-icons FIG generator, supplied-font
-validation, browser observations, experimental text and nested component construction
-and a pinned SDK correction layer with conformance tests. The generator does not
-include these experimental components; pages and flows are not converted yet.
+The generator packages tokens, icons and explicitly selected experimental native
+components, using supplied-font validation, browser observations and a pinned
+SDK correction layer. Pages and flows are not converted yet; this is not a
+complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts all 107 gallery examples.
 Native construction accepts 12: ten Button variants,
 bare Input and Form; it explicitly refuses 95. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
-## Generate the foundation
+## Generate a design document
 
-After installing the dependencies below, run from this directory:
+Install the dependencies below, then run from this directory for tokens and icons:
 
 ```sh
 npm run generate -- /tmp/platformkit-foundation.fig
 ```
 
-The command runs the existing Go export from this checkout, creates native
-variables and linked icon components, and checks that the resulting FIG reopens
-before creating the output. Use an absolute `.fig` path whose parent already
-exists outside the workspace. Existing files and symlinks are never overwritten;
-choose a new name for another export. Publication and deployment are separate
-operations. The output is a generated snapshot, not a place to make source edits.
+The command runs one fresh Go export from this checkout. Use an absolute `.fig`
+path with an existing parent outside the workspace. Existing files and symlinks
+are never overwritten; choose a new name for each export. Publication, deployment
+and applying source proposals are separate operations.
 
-Open the file in OpenPencil and inspect the Foundation variable collection and
-the Icon masters, light and dark frames. Core currently supplies 22 color
-variables, three font-family strings, 27 icon masters and 54 linked preview
-instances. Each preview inherits its frame's native variable mode. Font-family
-strings preserve the CSS fallback stacks; they are not installed fonts, a
-typography scale or native text styles. There are no page prototypes in this file.
+To include components, install Chromium as described below and append repeated
+`--example ID` selections and `--font FAMILY WEIGHT STYLE /absolute/font.woff`
+arguments. Quote family names containing spaces; supply every required static face
+with its actual family, weight and style. No brand font is selected implicitly.
+For example, `--example pk-ui.component.form/default` selects the linked Form.
+Optional `--mode light|dark` and `--viewport WIDTHxHEIGHT` choose one observation
+profile; defaults are light and 1280×900. Every requested example must pass or no
+file is created. Construction and source correspondence are checked across two
+saves. Ordered layout is repeatable; native IDs and FIG bytes are not.
 
-[foundation.mjs](foundation.mjs) also accepts a snapshot from a product's existing
-`ui.Export` call and returns `{ graph, collection, icons }`. The collection and
-icon-name map contain the exact native construction handles for later adapter
-composition, not another palette or icon catalog. Token
-names and canonical icon names retain source identity; native file-local GUIDs
-may change on import. Source hash, scope and attribution travel on the Foundation
-frame, and each master carries its glyph provenance. These records describe
-origin, not native component behavior or proof that an edited document is fresh.
-The CLI obtains fresh source itself; the in-process API trusts its caller's
-producer hash rather than attempting a second implementation of Go JSON hashing.
-`prepareIcon` validates SVG into caller-owned native properties and paint fields
-without creating nodes; the generator consumes that same preparation.
+Open the FIG and inspect Foundation: 22 colors, three CSS font-family strings,
+27 icon masters and 54 mode-bound light/dark previews. These strings are not
+installed fonts or native text styles. Component definitions and Editable source
+instances occupy separate pages; edit the latter's native properties. Each root
+has one source correspondence, not duplicate theme or responsive claims. FIG
+retains font identities and glyph outlines, not font files: editing requires the
+same fonts separately in the editor. No page prototypes are included.
+
+[buildComponentDocument](document.mjs) accepts one existing `ui.Export` snapshot,
+explicit `examples`, `fonts`, `mode`, `viewport`, and caller-owned `browser` and
+`renderer`. It returns foundation handles plus definition/placement frames and
+exact selection handles. [buildFoundation](foundation.mjs) supplies the shared
+`{ graph, collection, icons }`; `prepareIcon` validates glyphs without creating nodes.
+These compose the existing source, not another catalog. Source hash, scope and
+attribution remain on the Foundation frame and masters. In-process APIs trust
+the caller's producer hash; origin records do not prove an edited file is fresh.
 
 Supported inputs are the existing light/dark token contract, literal hexadecimal
 colors, font-family strings and the canonical path/circle SVG glyphs with group
@@ -299,11 +304,11 @@ the supplied bytes in the existing SDK font manager. It does not resolve CSS
 fallback stacks or download fonts. WOFF2 and variable fonts are refused until
 both the shaping and FIG-outline paths support them.
 
-The locked IBM Plex Sans test dependency supplies real 400, 500 and 600 Latin faces.
-Tests verify their byte identities, native shaping, Chromium's actual custom
-face selection, and unchanged native pixels through two saves with those same
-fonts loaded. The source-checked OpenType import correction prevents the SDK
-from silently omitting derived glyph outlines in Node.
+The locked IBM Plex Sans fixtures cover 400/500/600 Latin faces: exact bytes,
+native shaping, Chromium face selection and pixels across two saves.
+The OpenType correction retains Node outlines. The browser's local-font fallback
+checks binary family/weight/style metadata when legacy display names fail SDK
+lookup; unreadable, mismatched or ambiguous candidates do not select a face.
 
 A FIG contains editable font references and derived outlines, not the font
 files themselves. The SDK's font-free outline fallback is not shaping-equivalent
@@ -332,12 +337,12 @@ the editor without publishing. From this directory, set the test image's URL:
 PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18089 node --import ./register.mjs --test editor/*.test.mjs
 ```
 
-The [editor check](editor/replacement.test.mjs) refuses stale build inputs before
-opening disposable documents. It uses the real property picker, keyboard history,
-parse/export workers and two downloaded FIG saves in fresh browser contexts.
-Source-owned icon color bindings, master/sibling geometry, fallback paints, links
-and occurrence references are checked.
-Chromium uses software WebGL and its file-input/download fallback; native OS
+The [editor check](editor/replacement.test.mjs) refuses stale builds and tests icon
+swaps and generated Form/Button properties through history and two downloaded saves.
+Fresh contexts verify links, proposals and unchanged masters, siblings and placement positions.
+Font settings grants access to process-only OTF fixtures; file digests prove the
+loaded bytes. CI explicitly treats its isolated HTTP origin as secure. Saving loads
+unopened pages without replaying edits. Tree navigation no longer creates canvas nudges; native OS
 pickers, hardware GPUs and a full accessibility audit remain unverified.
 No document, WebGPU assets or product fonts are packaged; PWA registration is disabled.
 
@@ -360,8 +365,8 @@ rehydrates children in master order.
 
 The pinned app's full workspace audit still fails. Adapter pins replace the observed
 affected browser imports; build tools, copied assets and complete notices still need review.
-Supplied fonts, SVG fidelity, responsive/accessibility, interactive editing, typed conversion
-and source freshness remain incomplete. Product prototypes need runtime-state mappings
+Font deployment, SVG fidelity, responsive/accessibility and source conversion remain
+incomplete. Product prototypes need runtime-state mappings
 and governed end-to-end persistence tests in their owning product repository.
 Native sizing still needs evidence beyond the declared comparison cases, including
 wrapping and whitespace-only flex participation during edits. Correct font loading
@@ -401,8 +406,8 @@ Both published ESM and CommonJS builds are exercised. The supplied PNG callback
 tests the image boundary, not browser rasterization or PowerPoint visual fidelity.
 
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
-or editor release. CI and the tagged-tree release workflow enforce this gate
-after the locked install and before the native tests. The adapter's npm-locked tree currently passes with zero reported
+or editor release. Active CI enforces this gate after the locked install and
+before the native tests. The adapter's npm-locked tree currently passes with zero reported
 vulnerabilities; this is not a general security certification. Do not use
 `npm audit fix --force` to downgrade the SDK or bypass its source checks.
 The import-boundary test verifies that narrower native editing/FIG imports do

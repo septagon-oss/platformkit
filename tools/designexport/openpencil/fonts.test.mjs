@@ -10,6 +10,7 @@ import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { fontManager, missingGlyphCharacters } from '@open-pencil/core/text'
 import { loadFonts, validateFonts } from './fonts.mjs'
+import { resolveLocalFont } from './font-correction.mjs'
 
 const require = createRequire(import.meta.url)
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -21,6 +22,19 @@ const faces = [400, 600].map(weight => {
   return { family, weight, style: 'normal', bytes, sha256: hash(bytes) }
 })
 const requirements = faces.map(({ family, weight, style }) => ({ family, weight, style, text: sample }))
+
+test('legacy local families resolve only through exact binary metadata, never reported display style', async () => {
+  const face = faces[1], request = { family, weight: 600, style: 'normal' }
+  const candidate = { family: `${family} SemiBold`, style: 'Regular', blob: async () => new Blob([face.bytes]) }
+  assert.equal(hash(new Uint8Array(await resolveLocalFont([candidate], request))), face.sha256)
+  for (const [fonts, requested] of [
+    [[], request], [[candidate, candidate], request], [[candidate], { ...request, weight: 400 }],
+    [[candidate], { ...request, style: 'italic' }], [[{ ...candidate, family: 'Unrelated' }], request],
+    [[{ ...candidate, blob: async () => new Blob([faces[0].bytes]) }], request],
+    [[{ ...candidate, blob: async () => new Blob(['not a font']) }], request],
+    [[{ ...candidate, blob: async () => { throw new Error('Unreadable local font') } }], request],
+  ]) assert.equal(await resolveLocalFont(fonts, requested), null)
+})
 
 test('font validation keeps exact supplied bytes and face identities without loading native fonts', () => {
   assert.deepEqual(faces.map(face => face.sha256), [

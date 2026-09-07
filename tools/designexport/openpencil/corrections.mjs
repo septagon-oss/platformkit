@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import { correctExporter, correctPropertyTarget, correctInstanceImporter } from './exporter-correction.mjs'
 import { correctPropertyActions, correctComponentSync, correctEditorCreation, correctTextAutoResize } from './property-correction.mjs'
 import { correctLayout, correctGridRecompute } from './layout-correction.mjs'
@@ -42,6 +43,14 @@ export const corrections = Object.freeze({
       return replace(source, 'if (remapped) node.componentId = remapped;',
         'if (remapped) graph.preserveSourceMetadataDuring(() => graph.updateNode(node.id, { componentId: remapped }));')
     },
+  },
+  '@open-pencil/core/dist/kiwi/fig/lazy-import.js': {
+    sha256: 'c7b8543c4ecd4b6e81f75b0da5ba7bef2b7efccc5f91a1d591ea2ee7ed05782e',
+    // Completing an export must not replay imported state over edited pages.
+    // Reuse the same pending-root filter as an ordinary page switch.
+    transform: (source, replace) => replace(source,
+      'if (graph.getPages(true).map((page) => page.id).every((id) => context.populatedRootIds.has(id))) return false;\n\tapplyPopulation(graph, context);\n\treturn true;',
+      'return populateRoots(graph, context, graph.getPages(true).map((page) => page.id));'),
   },
   '@open-pencil/fig/dist/instance-overrides.js': {
     sha256: '5efd3f221660fbbed3d60879f187cb946e391bc1556f80213961d4804b027eb0',
@@ -107,6 +116,20 @@ export const corrections = Object.freeze({
     transform: (source, replace) => replace(source,
       'import * as OpenTypeSync from "opentype.js";',
       'import OpenTypeSync from "opentype.js";'),
+  },
+  '@open-pencil/core/dist/text/fonts.js': {
+    sha256: '6b6eb38301b35005f764634b453b221e95523445814c1819bfb7cd8efaeaeca5',
+    transform(source, replace) {
+      const helper = fileURLToPath(new URL('./font-correction.mjs', import.meta.url))
+      source = `import { resolveLocalFont } from ${JSON.stringify(helper)};\nimport { parseFontStyle } from "./face.js";\n` + source
+      return replace(source, 'const match = chooseLocalFontMatch(await window.queryLocalFonts(), family, style);\n\t\t\tif (!match) return null;',
+        `const fonts = await window.queryLocalFonts();
+        const match = chooseLocalFontMatch(fonts, family, style);
+        if (!match) {
+          const requested = parseFontStyle(style);
+          return resolveLocalFont(fonts, { family, weight: requested.weight, style: requested.italic ? 'italic' : 'normal' });
+        }`)
+    },
   },
   '@open-pencil/core/dist/canvas/text/index.js': {
     sha256: 'ebabf318ffdc67ffac0f90519c5681a81e0b02dbdb0552cded05b2ec0ee87a05',

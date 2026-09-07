@@ -4,6 +4,7 @@ import { SceneGraph, generateId } from '@open-pencil/scene-graph'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { populateLazyFigImportRoots } from '@open-pencil/core/kiwi'
 
 const color = (r, g, b) => ({ r: r / 255, g: g / 255, b: b / 255, a: 1 })
 const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name === name)
@@ -130,8 +131,15 @@ test('nested fill and stroke variable overrides retain native pixels through two
   }
 })
 
-for (const field of ['fills', 'strokes']) for (const cleared of [false, true]) test(`literal ${field}, cleared=${cleared}, survive unbind, two FIG saves and sync`, async () => {
+for (const populate of ['all', 'first-page'])
+for (const field of ['fills', 'strokes']) for (const cleared of [false, true])
+test(`literal ${field}, cleared=${cleared}, populate=${populate}, survive unbind, two FIG saves and sync`, async () => {
   let graph = fixture()
+  graph.createInstance(named(graph, 'Control').id, graph.addPage('Unvisited').id)
+  if (populate === 'first-page') graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate })
+  const populateEdited = () => populateLazyFigImportRoots(graph,
+    graph.getPages().filter(page => page.name === 'light' || page.name === 'dark').map(page => page.id))
+  populateEdited()
   modify(graph)
   const literal = { r: 1, g: 0, b: 0, a: 1 }
   const other = field === 'fills' ? 'strokes' : 'fills'
@@ -161,6 +169,9 @@ for (const field of ['fills', 'strokes']) for (const cleared of [false, true]) t
     }
     const canonical = graph.getChildren(named(graph, 'Glyph').id)[0]
     for (const slot of ['fills', 'strokes']) assert.equal(canonical.boundVariables[`${slot}/0/color`], variable(graph, 'Ink').id)
-    if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    if (cycle < 2) {
+      graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate })
+      populateEdited()
+    }
   }
 })
