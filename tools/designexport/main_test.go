@@ -214,3 +214,43 @@ func TestExportRejectsInvalidProposalWithoutOutput(t *testing.T) {
 		t.Fatalf("proposal lost reader failure: %v", err)
 	}
 }
+
+func TestExportProjectsSourceReplacementWithoutPersisting(t *testing.T) {
+	base, original := exportedSnapshot(t, nil, new(failingReader))
+	body, err := json.Marshal(ui.ReplacementProposal{BaseSHA256: base.SHA256,
+		Path:            []string{"pk-ui.component.form/default", "actions", "create"},
+		ReplacementPath: []string{"pk-ui.component.button/primary"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected, _ := exportedSnapshot(t, []string{"--replacement"}, bytes.NewReader(body))
+	root := slices.IndexFunc(projected.Examples, func(e components.ExampleDescription) bool { return e.ID == "pk-ui.component.form/default" })
+	if root < 0 || !strings.Contains(projected.Examples[root].HTML, "Save") || projected.SHA256 == base.SHA256 {
+		t.Fatal("replacement did not render the selected source invocation")
+	}
+	for index, example := range base.Examples {
+		if index != root && !reflect.DeepEqual(example, projected.Examples[index]) {
+			t.Fatalf("replacement changed unrelated root %s", example.ID)
+		}
+	}
+	for _, invalid := range []string{"null", string(body) + "{}", string(body) + strings.Repeat(" ", 1<<20),
+		strings.Replace(string(body), base.SHA256, "stale", 1),
+		strings.Replace(string(body), "replacementPath", "nativeId", 1),
+		strings.Replace(string(body), "button/primary", "text/muted", 1)} {
+		var output bytes.Buffer
+		if err := run([]string{"--replacement"}, strings.NewReader(invalid), &output); err == nil || output.Len() != 0 {
+			t.Fatalf("refused replacement emitted output: %v", err)
+		}
+	}
+	if err := run([]string{"--replacement"}, bytes.NewReader(body), failingWriter{}); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("replacement lost output error: %v", err)
+	}
+	var output bytes.Buffer
+	if err := run([]string{"--replacement"}, new(failingReader), &output); !errors.Is(err, io.ErrUnexpectedEOF) || output.Len() != 0 {
+		t.Fatalf("replacement lost input error: %v", err)
+	}
+	_, again := exportedSnapshot(t, nil, new(failingReader))
+	if !bytes.Equal(original, again) {
+		t.Fatal("replacement persisted a source change")
+	}
+}

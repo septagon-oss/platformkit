@@ -99,10 +99,7 @@ hash lets a consumer detect whether its source snapshot has changed.
 [ui.Export](ui/export.go) accepts a palette, explicitly bound examples and
 optional stylesheet additions. A product uses that same API with its own
 `design.Pair`, examples and `ui.Extra` values; it does not register a second
-component catalog. Example identities are assigned in
-[gallery.go](ui/components/gallery.go) and outlive changes to labels and
-grouping; the `pk-ui.component.` prefix is a namespace, not a reference to
-another repository.
+component catalog. Core's stable IDs are assigned in [gallery.go](ui/components/gallery.go).
 
 To inspect one existing invocation, pass its exact exported example ID. Add
 `--props` to read a property patch from standard input:
@@ -134,8 +131,13 @@ go run ./tools/designexport |
 
 The command validates the revision and source ownership and returns the full
 changed snapshot on stdout; it saves nothing. A selected-example projection is
-not the full base. Products call [ui.ProjectProps](ui/proposal.go) with their own
-palette, examples and stylesheet. Unknown or repeated request fields are refused.
+not the full base. For replacement, use `--replacement` and replace the `jq`
+field `props: {label: "Create"}` with
+`replacementPath: ["pk-ui.component.button/primary"]`. Both interfaces must agree;
+its complete inputs and renderer replace the target's, retaining destination
+metadata. Products use [ui.ProjectProps](ui/proposal.go) or
+[ui.ProjectReplacement](ui/replacement.go) with their own palette, examples and
+stylesheet. Unknown or repeated fields are refused; native editing is not certified.
 
 [OpenPencil tooling](tools/designexport/openpencil/README.md) converts tokens and
 icons into native FIG variables and linked icon components. It also owns the

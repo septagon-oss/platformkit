@@ -34,10 +34,18 @@ func run(args []string, input io.Reader, output io.Writer) error {
 }
 
 func projectSnapshot(args []string, input io.Reader) (ui.DesignExport, error) {
-	if slices.Equal(args, []string{"--proposal"}) {
-		body, err := readPropsInput(input)
+	if len(args) == 1 && (args[0] == "--proposal" || args[0] == "--replacement") {
+		body, err := readInput(input)
 		if err != nil {
 			return ui.DesignExport{}, err
+		}
+		if args[0] == "--replacement" {
+			var proposal ui.ReplacementProposal
+			if err := json.Unmarshal(body, &proposal); err != nil {
+				return ui.DesignExport{}, fmt.Errorf("designexport: read replacement: %w", err)
+			}
+			_, snapshot, err := ui.ProjectReplacement(design.Default(), components.Gallery(), proposal)
+			return snapshot, err
 		}
 		var proposal ui.PropsProposal
 		if err := json.Unmarshal(body, &proposal); err != nil {
@@ -53,7 +61,7 @@ func projectSnapshot(args []string, input io.Reader) (ui.DesignExport, error) {
 	return ui.Export(design.Default(), examples)
 }
 
-const maxPropsBytes = 1 << 20
+const maxInputBytes = 1 << 20
 
 // The CLI selects an existing invocation, then delegates property semantics and
 // rendering to that invocation. It never constructs nodes from JSON or edits Go.
@@ -63,7 +71,7 @@ func projectExamples(args []string, input io.Reader) ([]components.Example, erro
 		return examples, nil
 	}
 	if (len(args) != 2 && len(args) != 3) || args[0] != "--example" || args[1] == "" || (len(args) == 3 && args[2] != "--props") {
-		return nil, fmt.Errorf("designexport: usage: designexport [--example ID [--props] | --proposal]; --props and --proposal read one JSON object from stdin")
+		return nil, fmt.Errorf("designexport: usage: designexport [--example ID [--props] | --proposal | --replacement]; edit flags read one JSON object from stdin")
 	}
 	index := slices.IndexFunc(examples, func(example components.Example) bool { return example.ID == args[1] })
 	if index < 0 {
@@ -71,7 +79,7 @@ func projectExamples(args []string, input io.Reader) ([]components.Example, erro
 	}
 	example := examples[index]
 	if len(args) == 3 {
-		patch, err := readPropsInput(input)
+		patch, err := readInput(input)
 		if err != nil {
 			return nil, err
 		}
@@ -83,13 +91,13 @@ func projectExamples(args []string, input io.Reader) ([]components.Example, erro
 	return []components.Example{example}, nil
 }
 
-func readPropsInput(input io.Reader) ([]byte, error) {
-	body, err := io.ReadAll(io.LimitReader(input, maxPropsBytes+1))
+func readInput(input io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(input, maxInputBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("designexport: read input: %w", err)
 	}
-	if len(body) > maxPropsBytes {
-		return nil, fmt.Errorf("designexport: input exceeds %d bytes", maxPropsBytes)
+	if len(body) > maxInputBytes {
+		return nil, fmt.Errorf("designexport: input exceeds %d bytes", maxInputBytes)
 	}
 	return body, nil
 }

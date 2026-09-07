@@ -72,23 +72,17 @@ func Export(theme design.Pair, examples []components.Example, extra ...Extra) (D
 		Examples: []components.ExampleDescription{},
 	}
 	type componentContract struct {
-		exampleID string
-		editable  bool
-		schema    string
-		slots     []components.SlotDescription
+		exampleID   string
+		description components.ExampleDescription
 	}
 	seen := make(map[string]bool, len(examples))
 	contracts := make(map[string]componentContract)
 	var checkContract func(components.ExampleDescription, []string) error
 	checkContract = func(description components.ExampleDescription, parent []string) error {
 		path := append(slices.Clone(parent), description.ID)
-		// Named slots form an interface independently of Go declaration order,
-		// rendered content or the properties of this particular invocation.
-		slots := slices.Clone(description.Slots)
-		slices.SortFunc(slots, func(a, b components.SlotDescription) int { return cmp.Compare(a.Name, b.Name) })
-		contract := componentContract{fmt.Sprintf("%q", path), description.PropsEditable, string(description.Schema), slots}
+		contract := componentContract{fmt.Sprintf("%q", path), description}
 		if previous, exists := contracts[description.ComponentID]; exists &&
-			(previous.editable != contract.editable || previous.schema != contract.schema || !slices.Equal(previous.slots, contract.slots)) {
+			!previous.description.SameInterface(description) {
 			return fmt.Errorf("design export: conflicting component contracts for %q between occurrences %s and %s", description.ComponentID, previous.exampleID, contract.exampleID)
 		}
 		contracts[description.ComponentID] = contract

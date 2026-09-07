@@ -128,8 +128,8 @@ example content do not change that interface. Navigation tabs, panel tabs and mo
 helpers retain distinct contract identities even when grouped together in the
 gallery. Alert and EmptyState expose their existing typed slot constructors to
 consumers, so their gallery examples do not require private rendering adapters.
-Replacing a captured node or changing its identity invalidates typed projection
-and edits. These source checks are not a complete cross-editor replacement contract.
+Replacing a public captured node or changing its identity invalidates typed
+projection and edits; a proposal must resolve the original source capture.
 Omittable concrete string fields advertise `default: ""` when omission means
 their definite Go zero value. Required strings, pointers and fields promoted
 through optional pointers do not gain that default. Serialized Props retain
@@ -140,26 +140,24 @@ and stylesheet into a content-addressed snapshot. Products supply their own
 bound examples and reuse that boundary. An OpenPencil adapter must translate
 the snapshot and separately prove native editing, sizing and save/reopen
 behavior; the snapshot itself is neither another registry nor a JSON runtime
-engine for constructing pages. Example identities are strings assigned in
-gallery.go; the `pk-ui.component.` prefix is a namespace, not a reference to
-another repository.
-The export CLI can select an existing example and apply `Example.WithProps`
-before calling `ui.Export`. This supplies source-owned rendered variations for
-adapter comparison without reconstructing component behavior in another language.
+engine for constructing pages. Products own their source identities; Core's
+`pk-ui.component.` prefix is a namespace, not a repository reference.
 
-[ui.ProjectProps](ui/proposal.go) accepts one provider-neutral property proposal:
-the base export hash, exact occurrence ID segments and the existing typed patch.
-It exports the current source, checks freshness, rebuilds the owning input chain
-through `WithPropsAt` and `WithSlot`, then validates the candidate export. Nested
-targets must be directly owned and observed before and after; opaque ancestors
-and observed retained-old-capture aliases are refused. Ownership checks cannot
-certify arbitrary HTML composed through opaque callbacks or separate buffers.
-The lower-level `WithPropsAt` edits declared inputs and never renders, including
-currently suppressed children.
+[ui.ProjectProps](ui/proposal.go) and [ui.ProjectReplacement](ui/replacement.go)
+accept the base export hash and exact occurrence ID segments. Properties use a
+typed patch; replacement selects another root or nested source occurrence from
+that base. `SameInterface` shares export's component identity, schema and slot
+comparison. Replacement keeps destination metadata and copies all source inputs
+and its renderer, without merging overrides. Overlapping paths read immutable
+base inputs; self-replacement is permitted. `At`, `WithPropsAt` and
+`WithReplacementAt` share non-rendering traversal, rebuilding only owning slots.
+Projection requires observed, directly owned source and target occurrences and
+revalidates the destination after rendering. Opaque ancestors and retained-old
+capture aliases are refused; opaque callbacks and buffers cannot be certified.
 Conditional projection runs trusted constructors twice; it neither saves source
 nor supplies authentication, effect rollback or persistent compare-and-swap.
 A caller that persists changes owns its atomic revision check. Native IDs and
-provider SDK types do not enter this operation; slot compatibility remains separate.
+provider SDK types do not enter this operation; native replacement fidelity is separate.
 
 [tools/designexport/openpencil](tools/designexport/openpencil/) owns native
 adapter tooling, not another component catalog. Its version- and source-checked
