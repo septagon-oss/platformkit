@@ -49,7 +49,7 @@ func (f *Fake) Invite(_ context.Context, _ db.Tx[db.Tenant], email, displayName 
 	defer f.mu.Unlock()
 	for _, existing := range f.users {
 		if strings.EqualFold(existing.Email, u.Email) {
-			return nil, fmt.Errorf("%w: users_tenant_email", crud.ErrConflict)
+			return nil, &crud.UniqueConflict{Constraint: "users_tenant_email"}
 		}
 	}
 	u.ID, u.CreatedAt, u.UpdatedAt = uuid.New(), db.Now(), db.Now()

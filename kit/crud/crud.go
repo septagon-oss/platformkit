@@ -54,9 +54,19 @@ var (
 	// ErrInvalid is the entity's own Validate, or a query naming a field that
 	// does not exist.
 	ErrInvalid = errors.New("crud: invalid")
-	// ErrConflict is a unique constraint the write contradicts.
+	// ErrConflict is a write that contradicts existing data or business state.
 	ErrConflict = errors.New("crud: conflict")
 )
+
+// UniqueConflict identifies a duplicate value without confusing it with a
+// business-state refusal. Constraint is for diagnostics, not a public field name
+// or message. Callers can still match ErrConflict with errors.Is.
+type UniqueConflict struct {
+	Constraint string
+}
+
+func (e *UniqueConflict) Error() string { return ErrConflict.Error() + ": " + e.Constraint }
+func (e *UniqueConflict) Unwrap() error { return ErrConflict }
 
 // Base is embedded by every tenant-owned entity. The kernel sets TenantID from
 // the transaction's scope; a module never assigns it, and never sees it in
@@ -368,12 +378,12 @@ func FieldNamed(fields []Field, name string) (Field, bool) {
 // of this function, which was a second opinion about what a 409 means waiting
 // to drift.
 func Classify(err error) error {
-	var pg *pgconn.PgError
+	pg, isPostgres := errors.AsType[*pgconn.PgError](err)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return ErrNotFound
-	case errors.As(err, &pg) && pg.Code == "23505":
-		return fmt.Errorf("%w: %s", ErrConflict, pg.ConstraintName)
+	case isPostgres && pg.Code == "23505":
+		return &UniqueConflict{Constraint: pg.ConstraintName}
 	}
 	return err
 }

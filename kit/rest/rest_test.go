@@ -229,6 +229,7 @@ func TestTheRoutesRefuseWithAProblem(t *testing.T) {
 	}{
 		{"a title the entity refuses", http.MethodPost, "/api/tasks", `{"title":"   "}`, http.StatusUnprocessableEntity},
 		{"a title already taken", http.MethodPost, "/api/tasks", `{"title":"only one"}`, http.StatusConflict},
+		{"an edit to a title already taken", http.MethodPatch, "/api/tasks/%s", `{"title":"only one"}`, http.StatusConflict},
 		{"a field that does not exist", http.MethodPatch, "/api/tasks/%s", `{"nonesuch":1}`, http.StatusUnprocessableEntity},
 		{"a field the server owns", http.MethodPatch, "/api/tasks/%s", `{"createdAt":"2020-01-01T00:00:00Z"}`, http.StatusUnprocessableEntity},
 		{"a filter on nothing", http.MethodGet, "/api/tasks?filter=nonesuch:1", "", http.StatusUnprocessableEntity},
@@ -248,6 +249,12 @@ func TestTheRoutesRefuseWithAProblem(t *testing.T) {
 			}
 			if ct := "problem"; !strings.Contains(body, ct) && !strings.Contains(body, `"status":`) {
 				t.Errorf("%s answered %s, which is not a problem document", tt.what, body)
+			}
+			if tt.want == http.StatusConflict {
+				var p struct{ Detail string }
+				if err := json.Unmarshal([]byte(body), &p); err != nil || p.Detail != uniqueConflictDetail {
+					t.Errorf("duplicate HTTP detail = %q, %v; want %q", p.Detail, err, uniqueConflictDetail)
+				}
 			}
 		})
 	}

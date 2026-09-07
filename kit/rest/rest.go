@@ -476,6 +476,9 @@ func Fault(err error) error {
 	case errors.Is(err, crud.ErrInvalid):
 		return problem.New(http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, crud.ErrConflict):
+		if _, unique := errors.AsType[*crud.UniqueConflict](err); unique {
+			return problem.Conflict("A record already uses one of these values. Change the duplicate value and try again.")
+		}
 		return problem.Conflict(err.Error())
 	default:
 		return err

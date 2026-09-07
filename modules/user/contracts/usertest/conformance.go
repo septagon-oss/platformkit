@@ -77,6 +77,9 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if !errors.Is(err, crud.ErrConflict) {
 				t.Errorf("a second invitation to the same address = %v, want ErrConflict", err)
 			}
+			if _, ok := errors.AsType[*crud.UniqueConflict](err); !ok {
+				t.Errorf("the duplicate address lost its unique conflict identity: %v", err)
+			}
 		},
 
 		"invite refuses something that is not an address": func(t *testing.T, f Fixture) {

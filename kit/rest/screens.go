@@ -277,8 +277,8 @@ func invalid(field, why string) error {
 
 // FieldErrors reads a problem back into the fields it is about, so a form marks
 // the control rather than only shouting above it, and returns the whole message
-// as well. kit/problem's Errors carry "field: message"; a Detail that names a
-// field is matched too, because kit/crud's own messages are prose that names it.
+// as well. kit/problem's Errors carry "field: message"; a validation Detail that
+// names a field is matched too, because kit/crud's validation messages are prose.
 //
 // The Detail match is on the field's name as a word of its own. It used to be a
 // substring, so a message about "subtitle" marked "title" — the wrong control,
@@ -297,9 +297,13 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 		}
 	}
 	detail := strings.TrimPrefix(p.Detail, "crud: invalid: ")
-	for _, f := range fields {
-		if _, taken := out[f.Name]; !taken && mentions(detail, f.Name) {
-			out[f.Name] = detail
+	// Only validation prose can infer a field. A conflict can mention a value
+	// or title without identifying the control that needs changing.
+	if p.Status == http.StatusUnprocessableEntity {
+		for _, f := range fields {
+			if _, taken := out[f.Name]; !taken && mentions(detail, f.Name) {
+				out[f.Name] = detail
+			}
 		}
 	}
 	return out, detail

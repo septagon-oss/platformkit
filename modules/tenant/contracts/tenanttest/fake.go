@@ -64,12 +64,12 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 	for _, t := range f.tenants {
 		if t.Slug == slug {
 			f.mu.Unlock()
-			return nil, fmt.Errorf("%w: tenants_slug", crud.ErrConflict)
+			return nil, &crud.UniqueConflict{Constraint: "tenants_slug"}
 		}
 	}
 	if _, taken := f.hosts[host]; taken {
 		f.mu.Unlock()
-		return nil, fmt.Errorf("%w: tenant_hosts_pkey", crud.ErrConflict)
+		return nil, &crud.UniqueConflict{Constraint: "tenant_hosts_pkey"}
 	}
 	at := db.Now()
 	t := contracts.Tenant{
@@ -107,7 +107,7 @@ func (f *Fake) AddHost(_ context.Context, _ db.Tx[db.System], id uuid.UUID, host
 	if owner, taken := f.hosts[host]; taken {
 		if owner != id {
 			f.mu.Unlock()
-			return nil, fmt.Errorf("%w: tenant_hosts_pkey", crud.ErrConflict)
+			return nil, &crud.UniqueConflict{Constraint: "tenant_hosts_pkey"}
 		}
 		// A host the tenant already answers at. Promoting it is a change and
 		// adding it again is not, so only the first says anything.

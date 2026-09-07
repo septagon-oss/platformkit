@@ -119,8 +119,12 @@ func cases() map[string]func(*testing.T, Fixture) {
 				t.Fatalf("Create: %v", err)
 			}
 			same := contracts.NewTenant{Slug: "acme", Name: "Someone Else", Host: "other.example.com"}
-			if _, err := f.Service.Create(f.Ctx, f.Tx, same); !errors.Is(err, crud.ErrConflict) {
+			_, err := f.Service.Create(f.Ctx, f.Tx, same)
+			if !errors.Is(err, crud.ErrConflict) {
 				t.Errorf("a second tenant with the same slug = %v, want ErrConflict", err)
+			}
+			if _, ok := errors.AsType[*crud.UniqueConflict](err); !ok {
+				t.Errorf("the duplicate slug lost its unique conflict identity: %v", err)
 			}
 		},
 
@@ -129,8 +133,12 @@ func cases() map[string]func(*testing.T, Fixture) {
 				t.Fatalf("Create: %v", err)
 			}
 			host := contracts.NewTenant{Slug: "globex", Name: "Globex", Host: "acme.example.com"}
-			if _, err := f.Service.Create(f.Ctx, f.Tx, host); !errors.Is(err, crud.ErrConflict) {
+			_, err := f.Service.Create(f.Ctx, f.Tx, host)
+			if !errors.Is(err, crud.ErrConflict) {
 				t.Errorf("a second tenant at the same host = %v, want ErrConflict", err)
+			}
+			if _, ok := errors.AsType[*crud.UniqueConflict](err); !ok {
+				t.Errorf("the duplicate host lost its unique conflict identity: %v", err)
 			}
 		},
 

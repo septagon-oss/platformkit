@@ -3,11 +3,14 @@ package crud_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -219,6 +222,28 @@ func TestValidateRefusesTheWrite(t *testing.T) {
 	})
 }
 
+func TestClassifyPreservesTheUniqueConflictKind(t *testing.T) {
+	pg := &pgconn.PgError{Code: "23505", ConstraintName: "internal_title_key", Detail: "private row values"}
+	for _, err := range []error{pg, fmt.Errorf("insert: %w", pg)} {
+		got := crud.Classify(err)
+		unique, ok := errors.AsType[*crud.UniqueConflict](got)
+		if !ok || unique.Constraint != pg.ConstraintName || !errors.Is(got, crud.ErrConflict) {
+			t.Fatalf("Classify(%v) = %v; want a typed unique conflict", err, got)
+		}
+		if got.Error() != "crud: conflict: internal_title_key" {
+			t.Errorf("diagnostics = %q", got)
+		}
+	}
+	for _, err := range []error{nil, errors.New("offline"), &pgconn.PgError{Code: "23503"}, &crud.UniqueConflict{Constraint: "already_classified"}} {
+		if !errors.Is(crud.Classify(err), err) {
+			t.Errorf("Classify changed an unrelated or classified error: %v", err)
+		}
+	}
+	if !errors.Is(crud.Classify(fmt.Errorf("read: %w", gorm.ErrRecordNotFound)), crud.ErrNotFound) {
+		t.Error("a wrapped missing row lost its classification")
+	}
+}
+
 // TestUniqueViolationIsAConflict, and not a 500.
 func TestUniqueViolationIsAConflict(t *testing.T) {
 	conn := setup(t)
@@ -231,6 +256,9 @@ func TestUniqueViolationIsAConflict(t *testing.T) {
 		err := crud.Create(ctx, tx, &Task{Title: "once"})
 		if !errors.Is(err, crud.ErrConflict) {
 			t.Errorf("Create of a duplicate = %v, want ErrConflict", err)
+		}
+		if unique, ok := errors.AsType[*crud.UniqueConflict](err); !ok || unique.Constraint != "crud_tasks_tenant_id_title_key" {
+			t.Errorf("the real database lost the unique constraint identity: %v", err)
 		}
 	})
 }

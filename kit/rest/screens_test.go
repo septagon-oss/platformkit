@@ -298,10 +298,49 @@ func TestFieldErrorsMatchesAFieldNameAndNotASubstringOfOne(t *testing.T) {
 	if errs["status"] != "is not one of open, done" || len(errs) != 1 {
 		t.Errorf("errs = %v", errs)
 	}
+	p.Status = http.StatusConflict
+	errs, _ = rest.FieldErrors(p, fields)
+	if errs["status"] != "is not one of open, done" || len(errs) != 1 {
+		t.Errorf("a conflict discarded its explicit field errors: %v", errs)
+	}
 
 	// An error that is not a problem is still a message a form can print.
 	if _, detail := rest.FieldErrors(errors.New("the database went away"), fields); detail != "the database went away" {
 		t.Errorf("a plain error came back as %q", detail)
+	}
+}
+
+const uniqueConflictDetail = "A record already uses one of these values. Change the duplicate value and try again."
+
+func TestFaultKeepsUniqueAndBusinessConflictsDistinct(t *testing.T) {
+	unique := &crud.UniqueConflict{Constraint: "internal_title_key"}
+	for _, tt := range []struct {
+		err    error
+		status int
+		detail string
+		fields int
+	}{
+		{unique, http.StatusConflict, uniqueConflictDetail, 0},
+		{fmt.Errorf("private context: %w", unique), http.StatusConflict, uniqueConflictDetail, 0},
+		{fmt.Errorf("%w: the title cannot change until unpublished", crud.ErrConflict), http.StatusConflict, "crud: conflict: the title cannot change until unpublished", 0},
+		{crud.ErrConflict, http.StatusConflict, "crud: conflict", 0},
+		{fmt.Errorf("%w: title is required", crud.ErrInvalid), http.StatusUnprocessableEntity, "crud: invalid: title is required", 1},
+		{fmt.Errorf("read: %w", crud.ErrNotFound), http.StatusNotFound, "no such row, or none this tenant may see", 0},
+	} {
+		got := rest.Fault(tt.err)
+		p, ok := errors.AsType[*problem.Problem](got)
+		if !ok || p.Status != tt.status || p.Detail != tt.detail {
+			t.Fatalf("Fault(%v) = %v; want %d %q", tt.err, got, tt.status, tt.detail)
+		}
+		fields, detail := rest.FieldErrors(got, []crud.Field{{Name: "title"}, {Name: "value"}})
+		if len(fields) != tt.fields || detail != strings.TrimPrefix(tt.detail, "crud: invalid: ") {
+			t.Errorf("form feedback = %v, %q; want %d field errors and the same detail", fields, detail, tt.fields)
+		}
+	}
+	for _, err := range []error{nil, errors.New("offline")} {
+		if !errors.Is(rest.Fault(err), err) {
+			t.Errorf("Fault changed an unclassified error: %v", err)
+		}
 	}
 }
 
