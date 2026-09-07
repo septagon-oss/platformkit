@@ -466,6 +466,14 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 	if strings.Contains(dashboard, "gallery.css") {
 		t.Error("an ordinary page downloads the gallery's stylesheet")
 	}
+	// And it is documentation and not a wall of specimens: the id the design
+	// export names a component by, and a property the component takes but this
+	// example did not set, which is the half a specimen cannot show.
+	for _, want := range []string{"pk-ui.component.badge/outline", "removeLabel", "#group-status"} {
+		if !strings.Contains(gallery, want) {
+			t.Errorf("the gallery does not say %q", want)
+		}
+	}
 }
 
 // member is an Authorizer that answers yes to exactly the permissions it holds,

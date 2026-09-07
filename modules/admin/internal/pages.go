@@ -207,32 +207,57 @@ func checks(ctx context.Context) []result {
 	return []result{{name: c.Name(), err: c.Check(db.Detached(ctx))}}
 }
 
-// gallery renders every component once, with its props, from the package's own
-// exported list. It is not a fixture: ui/components' tests render the same list
-// to prove every class it emits has a rule, so this page and that test cannot
-// disagree about what exists. It is the one page that links the second
-// stylesheet: the components below are the ones no other screen renders, so
-// their rules are not in app.css and every other page is that much smaller.
+// gallery renders every component once, from the package's own exported list,
+// with what a person needs in order to ask for one: the id the design export
+// names it by, every property its Props type takes, and the value this example
+// gave each. It is not a fixture: ui/components' tests render the same list to
+// prove every class it emits has a rule, so this page and that test cannot
+// disagree about what exists, and components.Documentation reads the same
+// schema ui.Export publishes, so the page cannot describe a property the
+// component does not take.
+//
+// It is the one page that links the second stylesheet: the components below are
+// the ones no other screen renders, so their rules are not in app.css and every
+// other page is that much smaller.
 func gallery() page.View {
 	var body []g.Node
 	group := ""
 	for _, example := range components.Gallery() {
 		if example.Group != group {
 			group = example.Group
-			body = append(body, components.Heading(components.HeadingProps{Text: group, Level: 2}))
+			body = append(body, components.Heading(components.HeadingProps{
+				Text: group, Level: 2, Anchor: anchor(group)}))
 		}
-		body = append(body, components.Card(components.CardProps{Title: example.Name}),
-			h.Div(g.Attr("data-gallery-example", example.Name), example.Node))
+		body = append(body,
+			components.Card(components.CardProps{Title: example.Name}),
+			h.Div(g.Attr("data-gallery-example", example.Name), example.Node),
+			components.Documentation(example))
 	}
 	return page.View{
 		Title: "Components",
 		Head:  []g.Node{h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.Gallery().Fingerprint))},
 		Body: []g.Node{
-			components.Toolbar(components.ToolbarProps{
-				Title: "Components", Subtitle: "Every component this application renders, once each."}),
+			components.Toolbar(components.ToolbarProps{Title: "Components",
+				Subtitle: "Every component this application renders, once each, with the properties it takes."}),
+			groupLinks(),
 			components.Stack(components.StackProps{Gap: "6"}, body...),
 		},
 	}
+}
+
+// groupLinks is the way down a page a hundred specimens long. The groups are
+// the gallery's own, so a new one appears here without a second edit.
+func groupLinks() g.Node {
+	var links []g.Node
+	for _, group := range components.GalleryGroups() {
+		links = append(links, components.Link(components.LinkProps{Label: group, Href: "#" + anchor(group)}))
+	}
+	return components.Flex(components.FlexProps{Direction: "row", Wrap: true, Gap: "3"}, links...)
+}
+
+// anchor is a group's name as a fragment: lower case, one word.
+func anchor(group string) string {
+	return "group-" + strings.ToLower(strings.ReplaceAll(group, " ", "-"))
 }
 
 // tenants is the switcher: every tenant of this installation and the host each

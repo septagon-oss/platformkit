@@ -15,6 +15,10 @@ package components
 // Adding a component means adding a line here. That is the ratchet.
 
 import (
+	"cmp"
+	"encoding/json"
+	"maps"
+	"slices"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -290,4 +294,100 @@ func Gallery() []Example {
 		// which renders every real screen and checks each class against the
 		// stylesheet.
 	}
+}
+
+// GalleryGroups is the groups the examples fall into, in order, so a page a
+// hundred specimens long can be jumped through. Derived from the list above, so
+// a new group needs no second edit.
+func GalleryGroups() []string {
+	var out []string
+	for _, example := range Gallery() {
+		if len(out) == 0 || out[len(out)-1] != example.Group {
+			out = append(out, example.Group)
+		}
+	}
+	return out
+}
+
+// Documentation is what a person needs in order to use the component beside it:
+// the id the design export names it by, every property its Props type takes with
+// the value this example gave it, and the slots something else can be put into.
+//
+// It is projected from the same Example the specimen is rendered from — the
+// schema and the props are the ones ui.Export publishes — so a page cannot
+// describe a component this package does not have, or a property it does not
+// take. That is the reason it exists: a wall of specimens says what a badge
+// looks like and nothing about how to ask for one.
+func Documentation(e Example) g.Node {
+	described, err := e.Describe()
+	if err != nil {
+		return Text(TextProps{Content: "Cannot be described: " + err.Error(), Size: "sm", Color: "muted"})
+	}
+	facts := []g.Node{Text(TextProps{Content: described.ID, Element: "code", Size: "xs", Color: "muted"})}
+	switch rows := propertyRows(described); {
+	case !described.PropsEditable:
+		facts = append(facts, Text(TextProps{Size: "sm", Color: "muted",
+			Content: "No typed properties: " + cmp.Or(described.Reason, "captured as a rendered node")}))
+	case len(rows) > 0:
+		facts = append(facts, Table(TableProps{Compact: true, Rows: rows, Columns: []TableColumn{
+			{Key: "name", Label: "Property", Primary: true},
+			{Key: "type", Label: "Type"},
+			{Key: "value", Label: "This example"},
+		}}))
+	}
+	var named []string
+	for _, slot := range described.Slots {
+		// A slot the editors cannot fill is left out: naming it would be an
+		// offer this package does not make.
+		if slot.Supported {
+			named = append(named, slot.Name)
+		}
+	}
+	if len(named) > 0 {
+		facts = append(facts, Text(TextProps{
+			Content: "Slots: " + strings.Join(named, ", "), Size: "sm", Color: "muted"}))
+	}
+	return Stack(StackProps{Gap: "2"}, facts...)
+}
+
+// propertyRows is every property the component takes, the required ones first
+// and then alphabetically, each with what this example gave it. A property left
+// out is shown empty rather than omitted: what a component will accept is the
+// half of this page a specimen cannot show. A value is written as a person
+// would type it — a string without its quotes, anything else as JSON.
+func propertyRows(d ExampleDescription) []TableRow {
+	var schema struct {
+		Properties map[string]struct {
+			Type string `json:"type"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	}
+	var given map[string]json.RawMessage
+	if json.Unmarshal(d.Schema, &schema) != nil {
+		return nil
+	}
+	_ = json.Unmarshal(d.Props, &given)
+	names := slices.Sorted(maps.Keys(schema.Properties))
+	rank := func(name string) int {
+		if slices.Contains(schema.Required, name) {
+			return 0
+		}
+		return 1
+	}
+	slices.SortStableFunc(names, func(a, b string) int { return rank(a) - rank(b) })
+	rows := make([]TableRow, 0, len(names))
+	for _, name := range names {
+		kind := schema.Properties[name].Type
+		if rank(name) == 0 {
+			kind += ", required"
+		}
+		value := ""
+		if raw := given[name]; len(raw) > 0 {
+			if value = string(raw); json.Unmarshal(raw, &value) != nil {
+				value = string(raw)
+			}
+		}
+		rows = append(rows, TableRow{ID: name, Cells: map[string]any{"name": name, "type": kind, "value": value}})
+	}
+	return rows
 }
