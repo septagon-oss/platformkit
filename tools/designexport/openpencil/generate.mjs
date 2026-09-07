@@ -12,11 +12,17 @@ const [{ exportFigFile, parseFigFile }, { buildFoundation }] = await Promise.all
 ])
 
 function options(args) {
-  const usage = 'Usage: npm run generate -- /absolute/path/outside-workspace/document.fig [--example ID ... --font FAMILY WEIGHT STYLE /absolute/font.woff ...] [--mode light|dark] [--viewport WIDTHxHEIGHT]'
+  const usage = 'Usage: npm run generate -- /absolute/path/outside-workspace/document.fig [--snapshot-stdin] [--example ID ... --font FAMILY WEIGHT STYLE /absolute/font.woff ...] [--mode light|dark] [--viewport WIDTHxHEIGHT]'
   if (!args.length || !isAbsolute(args[0]) || extname(args[0]) !== '.fig') throw new Error(usage)
   const result = { examples: [], faces: [] }, seen = new Set()
   for (let index = 1; index < args.length;) {
     const flag = args[index++]
+    if (flag === '--snapshot-stdin') {
+      if (seen.has(flag)) throw new Error(`Repeated option: ${flag}`)
+      seen.add(flag)
+      result.snapshotStdin = true
+      continue
+    }
     if (!['--example', '--font', '--mode', '--viewport'].includes(flag)) throw new Error(usage)
     const count = flag === '--font' ? 4 : 1, values = args.slice(index, index + count)
     if (values.length !== count || values.some(value => !value || value.startsWith('--'))) throw new Error(usage)
@@ -40,9 +46,24 @@ function options(args) {
       }
     }
   }
-  if (!result.examples.length && args.length !== 1) throw new Error('Component options require --example selections')
+  if (!result.examples.length && (result.faces.length || result.mode || result.viewport)) throw new Error('Component options require --example selections')
   if (result.examples.length && !result.faces.length) throw new Error('Component selections require caller-supplied --font faces')
   return result
+}
+
+async function readSnapshot(input) {
+  const chunks = [], limit = 32 * 1024 * 1024
+  let size = 0
+  for await (const chunk of input) {
+    size += chunk.length
+    if (size > limit) throw new Error(`Design snapshot exceeds ${limit} bytes`)
+    chunks.push(chunk)
+  }
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)))
+  } catch {
+    throw new Error('Expected one UTF-8 JSON design-export snapshot on stdin')
+  }
 }
 
 async function documentBytes(snapshot, selection) {
@@ -88,7 +109,7 @@ async function generate(args) {
   if (within !== '..' && !within.startsWith(`..${sep}`) && !isAbsolute(within)) {
     throw new Error('Generated documents must be outside the workspace, including symlink destinations')
   }
-  const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
+  const snapshot = selection.snapshotStdin ? await readSnapshot(process.stdin) : JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
     cwd: repository, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120_000,
   }))
   // Reopen and validate before any output is staged or published.
@@ -105,7 +126,8 @@ async function generate(args) {
   const scope = selection.examples.length
     ? `tokens, icons and ${selection.examples.length} selected source compositions; not a complete library or prototype. Fonts must be supplied separately in the editor.`
     : 'tokens and icons; not a component library or prototype.'
-  console.log(`Created ${destination}\nSource SHA256: ${snapshot.sha256}\nScope: ${scope}`)
+  const producer = selection.snapshotStdin ? 'caller-supplied snapshot; source freshness is not verified' : 'fresh Core export from this checkout'
+  console.log(`Created ${destination}\nSource SHA256: ${snapshot.sha256}\nInput: ${producer}\nScope: ${scope}`)
 }
 
 try {

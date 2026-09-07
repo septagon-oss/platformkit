@@ -244,3 +244,26 @@ test('CLI reads fresh source from any cwd and refuses unsafe or nonexclusive out
     await assert.rejects(readFile(destination), { code: 'ENOENT' })
   }
 })
+
+test('CLI consumes a supplied snapshot without Go and refuses invalid stdin before creating output', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'platformkit-snapshot-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const output = join(directory, 'foundation.fig')
+  const run = (input, extra = []) => spawnSync(process.execPath, [cli, output, '--snapshot-stdin', ...extra], {
+    cwd: directory, encoding: 'utf8', input, env: { ...process.env, PATH: directory }, timeout: 30_000,
+  })
+  for (const input of ['', '{}', 'null', JSON.stringify(snapshot) + '\n{}',
+    Buffer.from([0x22, 0xff, 0x22]), ' '.repeat(32 * 1024 * 1024 + 1)]) {
+    const refused = run(input)
+    assert.notEqual(refused.status, 0, 'invalid supplied input must not fall back to Core')
+    await assert.rejects(readFile(output), { code: 'ENOENT' })
+  }
+  assert.notEqual(run(JSON.stringify(snapshot), ['--snapshot-stdin']).status, 0)
+  const generated = run(JSON.stringify(snapshot))
+  assert.equal(generated.status, 0, generated.stderr)
+  assert.match(generated.stdout, /caller-supplied snapshot; source freshness is not verified/)
+  const original = await readFile(output)
+  checkGraph(await parseFigFile(Uint8Array.from(original).buffer, { populate: 'all' }))
+  assert.notEqual(run(JSON.stringify(snapshot)).status, 0)
+  assert.deepEqual(await readFile(output), original, 'stdin mode retains no-clobber output')
+})

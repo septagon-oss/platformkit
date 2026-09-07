@@ -23,10 +23,12 @@ Install the dependencies below, then run from this directory for tokens and icon
 npm run generate -- /tmp/platformkit-foundation.fig
 ```
 
-The command runs one fresh Go export from this checkout. Use an absolute `.fig`
-path with an existing parent outside the workspace. Existing files and symlinks
-are never overwritten; choose a new name for each export. Publication, deployment
-and applying source proposals are separate operations.
+By default, the command runs a fresh Go export from this checkout. To use another
+producer, pipe one UTF-8 `ui.Export` JSON snapshot into `--snapshot-stdin` (32 MiB
+maximum); Go is not invoked and invalid input never falls back to Core. Supplied
+hashes do not verify freshness against current source. Use an absolute `.fig` path
+with an existing parent outside the workspace; files and symlinks are never overwritten.
+Publication, deployment and applying source proposals are separate operations.
 
 To include components, install Chromium as described below and append repeated
 `--example ID` selections and `--font FAMILY WEIGHT STYLE /absolute/font.woff`
@@ -51,8 +53,6 @@ explicit `examples`, `fonts`, `mode`, `viewport`, and caller-owned `browser` and
 `renderer`. It returns foundation handles plus definition/placement frames and
 exact selection handles. [buildFoundation](foundation.mjs) supplies the shared
 `{ graph, collection, icons }`; `prepareIcon` validates glyphs without creating nodes.
-Source hash, scope and attribution remain on the Foundation frame and masters. In-process APIs trust
-the caller's producer hash; origin records do not prove an edited file is fresh.
 
 Supported inputs are the existing light/dark token contract, literal hexadecimal
 colors, font-family strings and the canonical path/circle SVG glyphs with group

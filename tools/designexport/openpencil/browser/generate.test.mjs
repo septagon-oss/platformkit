@@ -14,8 +14,8 @@ const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], { 
 const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
 const fontPath = weight => fileURLToPath(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
 const fontArgs = weights => weights.flatMap(weight => ['--font', 'IBM Plex Sans', String(weight), 'normal', fontPath(weight)])
-const run = (directory, args) => spawnSync(process.execPath, [cli, ...args], {
-  cwd: directory, encoding: 'utf8', timeout: 120_000, maxBuffer: 4 * 1024 * 1024,
+const run = (directory, args, input) => spawnSync(process.execPath, [cli, ...args], {
+  cwd: directory, encoding: 'utf8', input, timeout: 120_000, maxBuffer: 4 * 1024 * 1024,
 })
 
 async function fixture(t) {
@@ -40,6 +40,27 @@ function masterOf(graph, node) {
   assert.equal(node?.type, 'COMPONENT', 'every placed occurrence links to a real native master')
   return node
 }
+
+test('CLI packages supplied source properties instead of silently regenerating the Core gallery', async t => {
+  const directory = await fixture(t), exampleId = 'pk-ui.component.button/secondary'
+  const supplied = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', exampleId, '--props'], {
+    cwd: repo, encoding: 'utf8', input: JSON.stringify({ label: 'Publish album draft' }),
+  }))
+  const output = join(directory, 'supplied.fig')
+  const generated = run(directory, [output, '--snapshot-stdin', '--example', exampleId, ...fontArgs([600])], JSON.stringify(supplied))
+  assert.equal(generated.status, 0, generated.stderr)
+  const graph = await parseFigFile(Uint8Array.from(await readFile(output)).buffer, { populate: 'all' })
+  const placed = [...graph.getAllNodes()].filter(node => node.type === 'INSTANCE' && origin(node)?.path)
+  assert.equal(placed.length, 1)
+  assert.deepEqual(origin(placed[0]).path, [exampleId])
+  assert.equal(origin(placed[0]).sha256, supplied.sha256)
+  assert.notEqual(supplied.sha256, source.sha256)
+  assert.equal(graph.getChildren(placed[0].id)[0].text, 'Publish album draft')
+  assert.equal(extractSourceProps(graph, placed[0], supplied).status, 'no-supported-changes')
+  const missing = join(directory, 'missing.fig')
+  assert.notEqual(run(directory, [missing, '--snapshot-stdin', '--example', form, ...fontArgs([600])], JSON.stringify(supplied)).status, 0)
+  await assert.rejects(readFile(missing), { code: 'ENOENT' })
+})
 
 test('CLI packages exact selected native examples from fresh source, including nested Form and linked icon', async t => {
   const directory = await fixture(t)
