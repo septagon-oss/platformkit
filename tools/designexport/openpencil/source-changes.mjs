@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 import { isSourceTextProperty, sourceTextValue } from './bindings.mjs'
-import { chain, sourceChildren } from './exporter-correction.mjs'
+import { chain, sourceChildren, ancestryOverrides } from './exporter-correction.mjs'
 
 const sourceEntry = item => item?.pluginId === 'platformkit' && item.key === 'platformkit.source'
 const object = value => value !== null && typeof value === 'object' &&
@@ -75,6 +75,19 @@ function sourceRoot(snapshot, path) {
   const examples = snapshot.examples.filter(example => example?.id === path[0])
   requireSource(examples.length === 1, 'invalid-path', 'Source path must identify exactly one root')
   return examples[0]
+}
+
+function sourceAt(snapshot, path) {
+  requireSource(Array.isArray(path) && path.length > 0 && path.every(id => typeof id === 'string' && id !== ''),
+    'invalid-path', 'Definition path must contain exact source invocation identities')
+  let example = sourceRoot(snapshot, path.slice(0, 1))
+  for (const id of path.slice(1)) {
+    requireSource(Array.isArray(example.children), 'invalid-path', 'Definition source lacks composition records')
+    const matches = example.children.filter(child => child?.description?.id === id)
+    requireSource(matches.length === 1, 'invalid-path', 'Definition path must identify exactly one source child')
+    example = matches[0].description
+  }
+  return example
 }
 
 function readProps(graph, instance, snapshot, example) {
@@ -173,7 +186,7 @@ function mappedNode(graph, sourceRoot, instanceRoot, sourceTarget) {
     requireSource(end > 0, 'invalid-binding', 'Native target must be inside its owning master')
     let source = sourceRoot, instance = instanceRoot
     for (const child of ancestry.slice(0, end).reverse()) {
-      const mapping = sourceChildren(graph, source, instance, instanceRoot.overrides)
+      const mapping = sourceChildren(graph, source, instance, ancestryOverrides(graph, instance))
       const matches = [...mapping].filter(([, linked]) => linked === child)
       requireSource(matches.length === 1, 'invalid-binding', 'One exact linked native occurrence is required')
       source = child
@@ -206,8 +219,9 @@ function nestedTemplates(graph, master) {
   return result
 }
 
-function visitSource(graph, instance, snapshot, example, path, visit, active = new Set()) {
+function visitSource(graph, instance, snapshot, example, path, visit, { active = new Set(), replacement } = {}) {
   requireSource(!active.has(instance.id), 'invalid-binding', 'Cyclic source placement')
+  if (replacement?.instance === instance) example = replacement.example
   const next = new Set(active).add(instance.id), result = readProps(graph, instance, snapshot, example)
   visit(instance, path, result)
   requireSource(Array.isArray(example.children) && Array.isArray(example.opaqueSlots), 'invalid-source', 'Source composition records are required')
@@ -236,7 +250,7 @@ function visitSource(graph, instance, snapshot, example, path, visit, active = n
     requireSource(Object.keys(baseline.props).length === 0, 'invalid-binding', 'Nested template values differ from the source baseline')
     requireSource(isDeepStrictEqual(metadata(placed), local), 'invalid-provenance', 'Placed relative correspondence differs from its template')
     used.add(node.id)
-    visitSource(graph, placed, snapshot, child, [...path, child.id], visit, next)
+    visitSource(graph, placed, snapshot, child, [...path, child.id], visit, { active: next, replacement })
   }
   requireSource(used.size === templates.length, 'invalid-binding', 'Native relative templates exceed the source composition')
 }
@@ -256,6 +270,15 @@ function placementRoot(graph, instance) {
     node = parent
   }
   return root
+}
+
+function associatedSource(graph, root, snapshot) {
+  const origin = metadata(root), example = sourceRoot(snapshot, origin.path)
+  requireSource(origin.schema === snapshot.schema && origin.componentId === example.componentId,
+    'invalid-provenance', 'Occurrence interface differs from the canonical source')
+  requireSource(origin.sha256 === snapshot.sha256, 'stale-base', 'Occurrence source revision differs from the supplied snapshot', 'stale')
+  uniqueOccurrence(graph, root, origin.path)
+  return { origin, example }
 }
 
 // Call explicitly after graph.createInstance. Originating from a master does
@@ -279,12 +302,9 @@ export function associateSourceInstance(graph, instance, snapshot, path) {
 export function extractSourceProps(graph, instance, snapshot) {
   let capability = 'root-string-props'
   try {
-    const root = placementRoot(graph, instance), origin = metadata(root), example = sourceRoot(snapshot, origin.path)
+    const root = placementRoot(graph, instance)
     if (root !== instance) capability = 'nested-string-props'
-    requireSource(origin.schema === snapshot.schema && origin.componentId === example.componentId,
-      'invalid-provenance', 'Occurrence interface differs from the canonical source')
-    requireSource(origin.sha256 === snapshot.sha256, 'stale-base', 'Occurrence source revision differs from the supplied snapshot', 'stale')
-    uniqueOccurrence(graph, root, origin.path)
+    const { origin, example } = associatedSource(graph, root, snapshot)
     let selected
     visitSource(graph, root, snapshot, example, origin.path, (node, path, result) => {
       if (node === instance) selected = { ...result, path }
@@ -293,6 +313,38 @@ export function extractSourceProps(graph, instance, snapshot) {
     const { props, properties, path } = selected
     if (!Object.keys(props).length) return { status: 'no-supported-changes', capability, properties }
     return { status: 'proposal', capability, properties, proposal: { baseSHA256: snapshot.sha256, path, props } }
+  } catch (error) {
+    if (!(error instanceof SourceRefusal)) throw error
+    return { status: error.status, capability, code: error.code, message: error.message }
+  }
+}
+
+// Extract intent only. Go's ProjectReplacement owns compatibility, observed
+// source ownership and current revision checks. A proposal is not acceptance,
+// whole-scene equivalence, a source write or an atomic revision reservation.
+export function extractSourceReplacement(graph, instance, snapshot) {
+  const capability = 'source-component-replacement'
+  try {
+    const root = placementRoot(graph, instance), { origin, example } = associatedSource(graph, root, snapshot)
+    const master = nativeLineage(() => chain(graph, instance, 'componentId').at(-1))
+    requireSource(master?.type === 'COMPONENT', 'invalid-binding', 'Replacement must link to an exact native master')
+    const definition = metadata(master)
+    requireSource(Object.hasOwn(definition, 'definitionPath'), 'missing-definition-path',
+      'Regenerate the definition with an exact source path; names and local IDs cannot locate it', 'unsupported')
+    const replacementExample = sourceAt(snapshot, definition.definitionPath)
+    let selectedPath
+    visitSource(graph, root, snapshot, example, origin.path, (node, path, result) => {
+      if (node === instance) selectedPath = path
+      if (selectedPath && selectedPath.every((id, index) => path[index] === id)) {
+        requireSource(Object.keys(result.props).length === 0, 'mixed-replacement-edits',
+          'A replacement copies complete source inputs; additional native property edits require separate projection', 'unsupported')
+      }
+    }, { replacement: { instance, example: replacementExample } })
+    requireSource(selectedPath, 'missing-binding', 'Selected instance has no source correspondence inside the associated root', 'unsupported')
+    if (isDeepStrictEqual(selectedPath, definition.definitionPath)) return { status: 'no-supported-changes', capability }
+    return { status: 'proposal', capability, proposal: {
+      baseSHA256: snapshot.sha256, path: [...selectedPath], replacementPath: [...definition.definitionPath],
+    } }
   } catch (error) {
     if (!(error instanceof SourceRefusal)) throw error
     return { status: error.status, capability, code: error.code, message: error.message }

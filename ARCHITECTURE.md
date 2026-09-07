@@ -175,11 +175,7 @@ not proof of native component editing or slot replacement. Experimental native
 construction binds observed text, literal text controls and explicitly supplied
 single-SVG slots. Nested composition consumes verified occurrence roots and
 declared ownership, with linked masters rather than flattened source components.
-Its restricted source-proposal adapter reads mapped root or nested strings;
-one associated placement supplies the absolute path, and children retain relative
-identities. Arbitrary scene edits and semantic slot replacement remain separate.
-Its guide distinguishes tested geometry and persistence from the unfinished
-component library and product prototype.
+The [adapter guide](tools/designexport/openpencil/README.md) defines supported proposals and fidelity limits.
 Native tooling and tests have their own reviewed source budgets, separate from
 the application's browser controllers.
 

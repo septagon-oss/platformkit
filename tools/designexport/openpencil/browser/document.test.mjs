@@ -12,7 +12,7 @@ import { populateLazyFigImportRoots } from '@open-pencil/core/kiwi'
 import { computeLayout, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { buildComponentDocument, verifyComponentDocument } from '../document.mjs'
 import { chain } from '../exporter-correction.mjs'
-import { extractSourceProps } from '../source-changes.mjs'
+import { extractSourceProps, extractSourceReplacement } from '../source-changes.mjs'
 import { captureExample } from './capture.mjs'
 
 const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
@@ -109,6 +109,7 @@ test('document packages exact selections, foundation handles and ordered nonover
       assert.deepEqual(origin(item.master).viewport, viewport)
       assert.deepEqual(origin(item.master).fontFaces.map(face => face.sha256), fonts.map(face => face.sha256))
       assert.ok(!Object.hasOwn(origin(item.master), 'path'), 'reusable masters never claim an absolute occurrence')
+      assert.deepEqual(origin(item.master).definitionPath, item.path, 'definitions identify their exact source capture, not a placement')
       assert.deepEqual(item.master.componentPropertyDefinitions, item.properties)
     }
     for (const item of selections) {
@@ -254,9 +255,30 @@ for (const mode of ['light', 'dark']) test(`generated Form replacement agrees wi
       assert.equal(origin(master).exampleId, primary)
       assert.equal(graph.getChildren(current.id)[0].text, 'Save')
       assert.deepEqual(origin(current), initialOrigin)
+      const extracted = extractSourceReplacement(graph, current, snapshot)
+      assert.deepEqual(extracted.proposal, proposal, JSON.stringify(extracted))
+      const reprojected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--replacement'], {
+        cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(extracted.proposal),
+      }))
+      assert.deepEqual(reprojected, projected, 'the extracted provider-neutral proposal reaches the owning Go operation')
       if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
     }
   } finally { editor.replaceGraph(new (graph.constructor)()) }
+})
+
+test('source projection, not native replacement, decides cross-interface compatibility', async () => {
+  const built = await buildComponentDocument(snapshot, options({ examples: [form] }))
+  const { graph } = built, root = placed(graph, form), actions = nested(graph, root, 'actions')
+  const target = nested(graph, actions, 'create')
+  const replacement = built.selections[0].components.find(item => JSON.stringify(item.path) === JSON.stringify([form, 'title']))
+  graph.swapInstanceComponent(target.id, replacement.master.id)
+  const result = extractSourceReplacement(graph, target, snapshot)
+  assert.deepEqual(result.proposal, { baseSHA256: snapshot.sha256, path: [form, 'actions', 'create'], replacementPath: [form, 'title'] })
+  const before = structuredClone([...graph.getAllNodes()])
+  assert.throws(() => execFileSync('go', ['run', './tools/designexport', '--replacement'], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(result.proposal), stdio: ['pipe', 'pipe', 'pipe'],
+  }), error => error.status === 1 && error.stdout === '' && /different source interface/.test(error.stderr))
+  assert.deepEqual([...graph.getAllNodes()], before, 'rejected source projection does not undo or mutate an editor document')
 })
 
 test('document checks construction-time correspondence across two saves and refuses complete property loss', async () => {

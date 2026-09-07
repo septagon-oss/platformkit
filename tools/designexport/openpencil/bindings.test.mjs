@@ -6,7 +6,7 @@ import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { parseFigBuffer } from '@open-pencil/fig'
 import { bindComponentProperties, isSourceTextProperty, sourceTextValue } from './bindings.mjs'
-import { associateSourceInstance, extractSourceProps } from './source-changes.mjs'
+import { associateSourceInstance, extractSourceProps, extractSourceReplacement } from './source-changes.mjs'
 
 const snapshot = JSON.parse(execFileSync('go', [
   'run', './tools/designexport', '--example', 'pk-ui.component.button/primary',
@@ -76,6 +76,122 @@ function nestedFixture() {
   return { ...input, snapshot: canonical, root, owner, childTemplate, instance, sibling, definitions,
     nested: graph.getChildren(instance.id)[0] }
 }
+
+function replacementFixture(rootTarget = false, nestedSource = false) {
+  const input = rootTarget ? mappedFixture() : nestedFixture()
+  const { graph, snapshot: canonical } = input
+  const originalPath = rootTarget ? [canonical.examples[0].id] : [input.root.id, 'button/local']
+  if (!rootTarget) associateSourceInstance(graph, input.instance, canonical, [input.root.id])
+  changeMetadata(input.master, value => { value.definitionPath = originalPath })
+  const replacement = { ...structuredClone(example), id: 'button/local', props: { ...example.props, label: 'Publish' } }
+  let replacementPath
+  if (nestedSource) {
+    const container = { id: 'choices/root', children: ['left', 'right'].map(id => ({ description: {
+      id, children: [{ description: id === 'right' ? replacement : { ...structuredClone(replacement), props: { ...replacement.props, label: 'Wrong branch' } } }],
+    } })) }
+    canonical.examples.push(container)
+    replacementPath = ['choices/root', 'right', replacement.id]
+  } else {
+    replacement.id = 'button/alternative'
+    canonical.examples.push(replacement)
+    replacementPath = [replacement.id]
+  }
+  const master = graph.createNode('COMPONENT', graph.getPages()[0].id, { name: 'Unrelated display name', width: 100, height: 40,
+    pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+      schema: canonical.schema, sha256: canonical.sha256, exampleId: replacement.id, componentId: replacement.componentId,
+      props: replacement.props, definitionPath: replacementPath,
+    }) }] })
+  const text = graph.createNode('TEXT', master.id, { text: 'Publish', width: 70, height: 20 })
+  const definitions = bindComponentProperties(graph, master, replacement, [{ nativeNode: text,
+    region: { kind: 'text', property: 'label', text: 'Publish' } }])
+  return { ...input, target: rootTarget ? input.instance : input.nested, replacementMaster: master,
+    replacement, replacementPath, originalPath, replacementDefinitions: definitions }
+}
+
+for (const root of [false, true]) for (const nestedSource of [false, true]) {
+  test(`source replacement reports exact destination and definition paths through two saves: root=${root}, nestedSource=${nestedSource}`, async () => {
+    const input = replacementFixture(root, nestedSource)
+    let { graph, target } = input
+    assert.equal(extractSourceReplacement(graph, target, input.snapshot).status, 'no-supported-changes')
+    graph.swapInstanceComponent(target.id, input.replacementMaster.id)
+    for (let round = 0; round < 3; round++) {
+      const before = structuredClone([...graph.getAllNodes()]), source = structuredClone(input.snapshot)
+      const extracted = extractSourceReplacement(graph, target, input.snapshot)
+      assert.deepEqual(extracted, { status: 'proposal', capability: 'source-component-replacement', proposal: {
+        baseSHA256: input.snapshot.sha256, path: input.originalPath, replacementPath: input.replacementPath,
+      } })
+      assert.deepEqual([...graph.getAllNodes()], before)
+      assert.deepEqual(input.snapshot, source)
+      extracted.proposal.path.push('caller-owned')
+      extracted.proposal.replacementPath.push('caller-owned')
+      assert.deepEqual(extractSourceReplacement(graph, target, input.snapshot).proposal.replacementPath, input.replacementPath)
+      if (round < 2) {
+        graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+        const placed = [...graph.getAllNodes()].find(node => node.pluginData.some(item =>
+          item.key === 'platformkit.source' && JSON.stringify(JSON.parse(item.value).path) === JSON.stringify(input.originalPath.slice(0, 1))))
+        target = root ? placed : graph.getChildren(placed.id)[0]
+      }
+    }
+  })
+}
+
+test('source replacement refuses ambiguous, stale, missing and mixed correspondence without writes', async t => {
+  const cases = [
+    ['missing definition path', input => changeMetadata(input.replacementMaster, value => { delete value.definitionPath }), 'missing-definition-path'],
+    ['invalid definition path', input => changeMetadata(input.replacementMaster, value => { value.definitionPath = 'button/alternative' }), 'invalid-path'],
+    ['unknown definition', input => changeMetadata(input.replacementMaster, value => { value.definitionPath = ['unknown'] }), 'invalid-path'],
+    ['wrong branch', input => changeMetadata(input.replacementMaster, value => { value.definitionPath[1] = 'left' }), 'invalid-binding'],
+    ['stale master', input => changeMetadata(input.replacementMaster, value => { value.sha256 = '0'.repeat(64) }), 'stale-base'],
+    ['stale placement', input => changeMetadata(input.instance, value => { value.sha256 = '0'.repeat(64) }), 'stale-base'],
+    ['duplicate source root', input => { input.snapshot.examples.push(structuredClone(input.snapshot.examples.at(-1))) }, 'invalid-path'],
+    ['duplicate nested identity', input => { input.snapshot.examples.at(-1).children.push(structuredClone(input.snapshot.examples.at(-1).children[1])) }, 'invalid-path'],
+    ['copied placement', input => { input.graph.cloneTree(input.instance.id, input.instance.parentId) }, 'ambiguous-occurrence'],
+    ['edited replacement string', input => { createEditor({ graph: input.graph }).setInstanceComponentProperty(input.target.id, input.replacementDefinitions[0].id, 'Combined edit') }, 'mixed-replacement-edits'],
+    ['unsupported assignment', input => { input.target.componentPropertyAssignments.foreign = 'Unmapped edit' }, 'unsupported-scope'],
+  ]
+  for (const [name, change, code] of cases) await t.test(name, () => {
+    const input = replacementFixture(false, true)
+    input.graph.swapInstanceComponent(input.target.id, input.replacementMaster.id)
+    change(input)
+    const graphBefore = structuredClone([...input.graph.getAllNodes()]), sourceBefore = structuredClone(input.snapshot)
+    const result = extractSourceReplacement(input.graph, input.target, input.snapshot)
+    assert.equal(result.code, code, JSON.stringify(result))
+    assert.ok(!Object.hasOwn(result, 'proposal'))
+    assert.deepEqual([...input.graph.getAllNodes()], graphBefore)
+    assert.deepEqual(input.snapshot, sourceBefore)
+  })
+})
+
+test('source replacement rejects bound-string edits throughout a replacement composition, not unrelated siblings', async () => {
+  const input = nestedFixture(), { graph, snapshot: canonical, root, owner, instance } = input
+  associateSourceInstance(graph, instance, canonical, [root.id])
+  const replacement = structuredClone(root)
+  replacement.id = 'form/alternative'
+  canonical.examples.push(replacement)
+  const master = graph.cloneTree(owner.id, owner.parentId)
+  changeMetadata(master, value => {
+    value.exampleId = replacement.id
+    value.definitionPath = [replacement.id]
+  })
+  graph.swapInstanceComponent(instance.id, master.id)
+  const proposal = { baseSHA256: canonical.sha256, path: [root.id], replacementPath: [replacement.id] }
+  assert.deepEqual(extractSourceReplacement(graph, instance, canonical).proposal, proposal)
+  const editor = createEditor({ graph })
+  editor.setInstanceComponentProperty(graph.getChildren(input.sibling.id)[0].id, input.definitions[0].id, 'Preview edit')
+  assert.deepEqual(extractSourceReplacement(graph, instance, canonical).proposal, proposal)
+  editor.setInstanceComponentProperty(graph.getChildren(instance.id)[0].id, input.definitions[0].id, 'Nested edit')
+  let reopened = graph
+  for (let round = 0; round < 3; round++) {
+    const target = [...reopened.getAllNodes()].find(node => node.type === 'INSTANCE' &&
+      node.pluginData.some(item => item.key === 'platformkit.source' && JSON.parse(item.value).path?.[0] === root.id))
+    const before = structuredClone([...reopened.getAllNodes()])
+    const result = extractSourceReplacement(reopened, target, canonical)
+    assert.equal(result.code, 'mixed-replacement-edits', JSON.stringify(result))
+    assert.ok(!Object.hasOwn(result, 'proposal'))
+    assert.deepEqual([...reopened.getAllNodes()], before)
+    if (round < 2) reopened = await parseFigFile((await exportFigFile(reopened)).slice().buffer, { populate: 'all' })
+  }
+})
 
 test('native nested property definitions resolve the canonical master before the first save', () => {
   const input = nestedFixture(), editor = createEditor({ graph: input.graph })

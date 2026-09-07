@@ -76,7 +76,7 @@ function scopedOverrides(target, inherited) {
   return { ...own, ...inherited }
 }
 
-function ancestryOverrides(graph, target) {
+export function ancestryOverrides(graph, target) {
   return chain(graph, target, 'parentId').reverse().reduce((values, node) => scopedOverrides(node, values), {})
 }
 

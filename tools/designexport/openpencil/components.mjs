@@ -85,11 +85,11 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
   if (root.source && root.children.some(child => child.kind === 'element')) {
     return materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root)
   }
-  const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, iconTargets)
+  const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, [example.id], iconTargets)
   return { ...result, components: [{ path: [example.id], ...result }] }
 }
 
-async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, iconTargets = []) {
+async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = []) {
   const style = root.style
   requirePlainText(style)
   const visibleOutline = !['none', 'hidden'].includes(style['outline-style']) &&
@@ -162,7 +162,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       schema: snapshot.schema, sha256: snapshot.sha256, exampleId: example.id, componentId: example.componentId,
       mode: observation.mode, scope: icons.size ? 'text-and-icon-component-observed-aliases' : 'text-component-observed-aliases',
       environment: observation.environment, viewport: observation.viewport,
-      fontFaces: observation.fontFaces, props: example.props,
+      fontFaces: observation.fontFaces, props: example.props, definitionPath,
     }) }],
   }
   const textPaint = observedPaint(graph, collection, snapshot, observation, root, 'color')
@@ -426,23 +426,23 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
 async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root) {
   const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root)
   const components = [], created = [], geometry = []
-  function provenance(description) {
+  function provenance(description, definitionPath) {
     return [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
       schema: snapshot.schema, sha256: snapshot.sha256, exampleId: description.id, componentId: description.componentId,
       mode: observation.mode, scope: 'source-composition-observed-aliases', props: description.props,
-      environment: observation.environment, viewport: observation.viewport, fontFaces: observation.fontFaces,
+      environment: observation.environment, viewport: observation.viewport, fontFaces: observation.fontFaces, definitionPath,
     }) }]
   }
   async function component(current) {
     const { description, path } = current.occurrence
     if (current.textRow) {
-      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation)
+      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path)
       created.push(result.master.id)
       components.push({ path, ...result })
       return result.master
     }
     const master = graph.createNode('COMPONENT', parentId, {
-      ...current.native, name: description.name || description.id, pluginData: provenance(description),
+      ...current.native, name: description.name || description.id, pluginData: provenance(description, path),
     })
     created.push(master.id)
     const targets = []

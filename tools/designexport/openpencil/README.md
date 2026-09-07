@@ -213,23 +213,28 @@ names can change without changing that map; provenance is not authentication.
 Explicit slot-property maps distinguish icon assets from nested source components;
 asset instances do not acquire string-proposal ownership by being inside a slot.
 
-[associateSourceInstance](source-changes.mjs) explicitly associates the exact
-instance returned by `graph.createInstance` with one root source occurrence.
-Preview siblings stay unmapped; copied correspondence is refused as ambiguous.
-Reusable child templates carry only relative local IDs and declared slots, not
-absolute placement paths. Association validates the complete mapped subtree;
-`extractSourceProps` accepts an exact root or nested instance and derives its
-path through native lineage, including after FIG import. It checks the canonical
-snapshot and returns a provider-neutral `{baseSHA256, path, props}` proposal.
-Only mapped, unconstrained string properties are supported. Native definitions,
-lineage, baseline values and assignments must agree with the source and rendered
-text. Extraction does not mutate the graph or snapshot. `no-supported-changes`
-means only that the bound strings are unchanged, not that the document is equal.
-Missing, malformed, stale and unsupported correspondence have explicit results.
-Validate proposals through [ui.ProjectProps](../../../ui/proposal.go), or Core's
-`go run ./tools/designexport --proposal` with proposal JSON on stdin. It reuses Go
-constructors and returns a candidate snapshot without editing files. String
-extraction is not semantic slot replacement, scene equivalence or source persistence.
+[associateSourceInstance](source-changes.mjs) maps an exact `graph.createInstance`
+result to one source root after validating its subtree. Previews stay unmapped;
+copied correspondence is refused. Child templates carry relative IDs and slots,
+not absolute placement paths. Masters identify their source with `definitionPath`;
+older definitions without it require regeneration for replacement extraction.
+Both extractors take an exact instance and canonical snapshot, deriving its
+destination path through persisted native lineage. `extractSourceProps` returns
+`{baseSHA256, path, props}` for mapped, unconstrained strings. Native definitions,
+bindings, baselines, assignments and rendered text must agree. Validate the result
+with [ui.ProjectProps](../../../ui/proposal.go).
+
+After a native swap, `extractSourceReplacement` returns
+`{baseSHA256, path, replacementPath}`, identifying root or nested source occurrences.
+It refuses ambiguous, stale or missing correspondence and additional bound-string
+edits inside the replacement subtree. This is intent, not acceptance:
+[ui.ProjectReplacement](../../../ui/replacement.go) owns interface compatibility,
+observed source ownership and freshness checks; the adapter does not duplicate them.
+Run Core's `go run ./tools/designexport --proposal` or `--replacement` with the
+matching JSON on stdin; it returns a candidate snapshot without saving source.
+Extraction changes neither graph nor snapshot. Refusals include status, code and
+explanation; `no-supported-changes` refers only to the selected capability, not
+whole-scene equivalence. Persistent revision checks remain the caller's responsibility.
 
 Browser tests compare the actual Go Button, including 16px leading and 20px trailing
 icons, in both themes with supplied IBM Plex Sans 600 and explicit
@@ -261,9 +266,8 @@ undo/redo and two worker saves without changing siblings or masters. Unscaled
 fixtures retain dimensions and exact slot GUIDs; containing-master updates preserve
 replacement inputs. Failed history preflight retains its entry without graph events.
 Locally edited descendants remain refused; exact subtree/layout history is unfinished.
-The generated Form's direct swap, followed by caller-run layout, matches Go replacement
-geometry in both themes through two saves. This does not implement native replacement
-proposal extraction, source persistence or a complete shared replacement interface.
+The generated Form's direct swap and extracted proposal, with caller-run layout,
+match Go replacement geometry in both themes through two saves.
 
 Stroke caps and joins survive serialization; conflicting styles and nonrepresentable
 geometry are refused. Flat vector replacements retain consistent source-occurrence
