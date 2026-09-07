@@ -505,3 +505,431 @@ test('paint binding refuses ambiguous, stale or derived inputs before graph muta
     assert.deepEqual({ nodes: [...graph.getAllNodes()], variables: [...graph.variables] }, before)
   }
 })
+
+const formId = 'pk-ui.component.form/default'
+
+function formSource(proposal) {
+  return JSON.parse(execFileSync('go', ['run', './tools/designexport', ...(proposal ? ['--proposal'] : [])], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+    input: proposal ? JSON.stringify(proposal) : undefined,
+  }))
+}
+
+function suppliedFormFaces() {
+  return [400, 500, 600].map(weight => {
+    const bytes = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
+    return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
+  })
+}
+
+function formNodes(graph, root) {
+  return [root, ...graph.getChildren(root.id).flatMap(child => formNodes(graph, child))]
+}
+
+function sourceRecord(node) {
+  const records = node.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
+  assert.equal(records.length, 1)
+  return JSON.parse(records[0].value)
+}
+
+function nativeFormChild(graph, root, path) {
+  return path.reduce((parent, localId) => {
+    const children = graph.getChildren(parent.id).filter(node => node.type === 'INSTANCE' && sourceRecord(node).localId === localId)
+    assert.equal(children.length, 1, `one native source occurrence ${localId}`)
+    return children[0]
+  }, root)
+}
+
+function sourceFormChild(snapshot, path) {
+  return path.reduce((parent, id) => parent.children.find(child => child.description.id === id).description,
+    snapshot.examples.find(example => example.id === formId))
+}
+
+function boundFormText(graph, root, propertyId) {
+  const matches = formNodes(graph, root).filter(node => node.componentPropertyReferences.some(ref => ref.propertyId === propertyId))
+  assert.equal(matches.length, 1, 'one exact property target')
+  assert.equal(matches[0].type, 'TEXT')
+  return matches[0]
+}
+
+async function formPixels(graph, instance) {
+  const surface = ck.MakeSurface(instance.width, instance.height), draw = new SkiaRenderer(ck, surface)
+  const previous = getTextMeasurer()
+  try {
+    await draw.loadFonts()
+    const canvas = surface.getCanvas()
+    canvas.clear(ck.TRANSPARENT)
+    canvas.translate(-instance.x, -instance.y)
+    draw.renderSceneToCanvas(canvas, graph, instance.parentId)
+    surface.flush()
+    return canvas.readPixels(0, 0, { width: instance.width, height: instance.height,
+      alphaType: ck.AlphaType.Unpremul, colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB })
+  } finally { draw.destroy(); setTextMeasurer(previous) }
+}
+
+test('real source Form becomes linked nested components with native fill and end alignment', async () => {
+  const snapshot = formSource(), before = structuredClone(snapshot), formFaces = suppliedFormFaces()
+  for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+    const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces, mode, viewport: { width, height: 900 } })
+    const built = buildFoundation(snapshot), page = built.graph.addPage('Source Form')
+    built.graph.updateNode(page.id, { variableModes: { [built.collection.id]: built.collection.modes.find(item => item.name === mode).modeId } })
+    const result = await materializeComponent(built.graph, page.id, snapshot, observation, formFaces, renderer, built.collection.id)
+    assert.deepEqual(result.components.map(component => component.path).toSorted(), [
+      [formId], [formId, 'actions'], [formId, 'actions', 'cancel'], [formId, 'actions', 'create'], [formId, 'title'],
+    ])
+    assert.equal(result.master.type, 'COMPONENT')
+    assert.deepEqual(result.properties, [], 'nonvisual Form transport properties are not invented as native text')
+    close(result.master.width, width, 'source Form width')
+    close(result.master.height, 126, 'source Form height')
+    const field = nativeFormChild(built.graph, result.master, ['title'])
+    const actions = nativeFormChild(built.graph, result.master, ['actions'])
+    assert.equal(field.counterAxisSizing, 'FILL')
+    assert.equal(actions.primaryAxisSizing, 'FILL')
+    assert.equal(actions.primaryAxisAlign, 'MAX')
+    for (const [node, bounds] of [[field, { width, height: 64, x: 0, y: 0 }], [actions, { width, height: 46, x: 0, y: 80 }]]) {
+      for (const [key, value] of Object.entries(bounds)) close(node[key], value, `nested ${key}`)
+    }
+    const cancel = nativeFormChild(built.graph, actions, ['cancel']), create = nativeFormChild(built.graph, actions, ['create'])
+    close(cancel.x, width - 161.09375, 'end-aligned Cancel x')
+    close(cancel.y, 9, 'centered Cancel y')
+    close(create.x, width - 77, 'end-aligned Create x')
+    close(create.y, 8, 'centered Create y')
+    const input = result.components.find(item => item.path.at(-1) === 'title')
+    assert.deepEqual(input.properties.map(property => [property.name, property.defaultValue]), [['label', 'Title'], ['value', '']])
+    const control = formNodes(built.graph, input.master).find(node => node.strokes.length > 0)
+    assert.equal(control.strokes.length, 1)
+    assert.equal(control.strokes[0].weight, 1)
+    assert.equal(control.strokes[0].align, 'INSIDE')
+    assert.equal(built.graph.variables.get(control.boundVariables['strokes/0/color']).name, '--pk-color-border-default')
+    for (const item of result.components) {
+      const source = sourceFormChild(snapshot, item.path.slice(1)), provenance = sourceRecord(item.master)
+      assert.equal(provenance.componentId, source.componentId)
+      assert.equal(provenance.exampleId, source.id)
+      assert.equal(provenance.sha256, snapshot.sha256)
+      assert.deepEqual(provenance.props, source.props)
+      assert.ok(!Object.hasOwn(provenance, 'path'), 'definitions never claim a placed root address')
+    }
+  }
+  assert.deepEqual(snapshot, before)
+})
+
+test('real nested Input properties survive native history and two saves into source projection', async () => {
+  const snapshot = formSource(), before = structuredClone(snapshot), formFaces = suppliedFormFaces()
+  const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces })
+  const built = buildFoundation(snapshot), page = built.graph.addPage('Source Form')
+  const result = await materializeComponent(built.graph, page.id, snapshot, observation, formFaces, renderer, built.collection.id)
+  let graph = built.graph, master = result.master
+  let edited = graph.createInstance(master.id, page.id, { name: 'Edited source Form', y: 200 })
+  let sibling = graph.createInstance(master.id, page.id, { name: 'Untouched source Form', y: 400 })
+  associateSourceInstance(graph, edited, snapshot, [formId])
+  const definitions = result.components.find(item => item.path.at(-1) === 'title').properties
+  const label = definitions.find(item => item.name === 'label'), value = definitions.find(item => item.name === 'value')
+  const props = { label: 'Delivery title', value: 'Collect samples' }
+  for (let round = 0; round < 3; round++) {
+    const actions = createEditor({ graph })
+    actions.setCanvasKit(ck, renderer)
+    const field = nativeFormChild(graph, edited, ['title'])
+    if (round === 0) {
+      actions.setInstanceComponentProperty(field.id, label.id, props.label)
+      actions.setInstanceComponentProperty(field.id, value.id, props.value)
+      await Promise.resolve()
+      actions.undoAction()
+      actions.undoAction()
+      await Promise.resolve()
+      assert.equal(boundFormText(graph, field, label.id).text, 'Title')
+      assert.equal(boundFormText(graph, field, value.id).text, '')
+      actions.redoAction()
+      actions.redoAction()
+      await Promise.resolve()
+    } else {
+      props.value = `Collect samples after save ${round}`
+      actions.setInstanceComponentProperty(field.id, value.id, props.value)
+      await Promise.resolve()
+    }
+    assert.equal(boundFormText(graph, field, label.id).text, props.label)
+    assert.equal(boundFormText(graph, field, value.id).text, props.value)
+    const beforeGraph = structuredClone([...graph.getAllNodes()])
+    const extracted = extractSourceProps(graph, field, snapshot)
+    assert.equal(extracted.status, 'proposal')
+    assert.deepEqual(extracted.proposal, { baseSHA256: snapshot.sha256, path: [formId, 'title'], props })
+    assert.deepEqual([...graph.getAllNodes()], beforeGraph, 'extraction never modifies the native document')
+    const projected = formSource(extracted.proposal), originalInput = sourceFormChild(snapshot, ['title'])
+    assert.deepEqual(sourceFormChild(projected, ['title']).props, { ...originalInput.props, ...props })
+    assert.deepEqual(sourceFormChild(projected, []).props, sourceFormChild(snapshot, []).props, 'Form action and accessibility transport retained')
+    assert.deepEqual(sourceFormChild(projected, ['actions']), sourceFormChild(snapshot, ['actions']))
+    assert.deepEqual(projected.examples.filter(example => example.id !== formId), snapshot.examples.filter(example => example.id !== formId))
+    const captured = await captureExample(browser, projected, formId, { fonts: formFaces })
+    close(edited.width, captured.roots[0].bounds.width, 'edited Form width')
+    close(edited.height, captured.roots[0].bounds.height, 'edited Form height')
+    for (const untouched of [master, sibling]) {
+      const input = nativeFormChild(graph, untouched, ['title'])
+      assert.equal(boundFormText(graph, input, label.id).text, 'Title')
+      assert.equal(boundFormText(graph, input, value.id).text, '')
+    }
+    if (round < 2) {
+      const bytes = await exportFigFile(graph), raw = parseFigBuffer(bytes.slice().buffer)
+      assert.ok(raw.nodeChanges.some(node => node.name === 'Edited source Form'), 'independent file parser sees the placed Form')
+      graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+      edited = [...graph.getAllNodes()].find(node => node.name === 'Edited source Form')
+      sibling = [...graph.getAllNodes()].find(node => node.name === 'Untouched source Form')
+      master = graph.getNode(edited.componentId)
+    }
+  }
+  assert.deepEqual(snapshot, before)
+})
+
+test('real nested Form actions retain end alignment and source transport through history and two saves', async () => {
+  const snapshot = formSource(), formFaces = suppliedFormFaces()
+  for (const localId of ['cancel', 'create']) {
+    const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces, viewport: { width: 320, height: 900 } })
+    const built = buildFoundation(snapshot), page = built.graph.addPage('Source actions')
+    const result = await materializeComponent(built.graph, page.id, snapshot, observation, formFaces, renderer, built.collection.id)
+    let graph = built.graph, master = result.master
+    let edited = graph.createInstance(master.id, page.id, { name: 'Edited nested actions', y: 200 })
+    let sibling = graph.createInstance(master.id, page.id, { name: 'Untouched nested actions', y: 400 })
+    associateSourceInstance(graph, edited, snapshot, [formId])
+    const property = result.components.find(item => item.path.at(-1) === localId).properties[0]
+    const path = ['actions', localId], initial = sourceFormChild(snapshot, path).props.label
+    for (let round = 0; round < 3; round++) {
+      const actions = createEditor({ graph })
+      actions.setCanvasKit(ck, renderer)
+      const target = nativeFormChild(graph, edited, path), label = `${localId === 'cancel' ? 'Go back' : 'Create delivery'} ${round}`
+      actions.setInstanceComponentProperty(target.id, property.id, label)
+      await Promise.resolve()
+      if (round === 0) {
+        actions.undoAction()
+        await Promise.resolve()
+        assert.equal(boundFormText(graph, target, property.id).text, initial)
+        actions.redoAction()
+        await Promise.resolve()
+      }
+      const extracted = extractSourceProps(graph, target, snapshot)
+      assert.equal(extracted.status, 'proposal')
+      assert.deepEqual(extracted.proposal, { baseSHA256: snapshot.sha256, path: [formId, ...path], props: { label } })
+      const projected = formSource(extracted.proposal), sourceButton = sourceFormChild(snapshot, path)
+      assert.deepEqual(sourceFormChild(projected, path).props, { ...sourceButton.props, label }, 'href or submit type retained')
+      assert.deepEqual(sourceFormChild(projected, ['title']), sourceFormChild(snapshot, ['title']))
+      assert.deepEqual(sourceFormChild(projected, []).props, sourceFormChild(snapshot, []).props)
+      const captured = await captureExample(browser, projected, formId, { fonts: formFaces, viewport: { width: 320, height: 900 } })
+      const sourceActions = captured.roots[0].children[1]
+      const nativeActions = nativeFormChild(graph, edited, ['actions'])
+      for (const child of sourceActions.children) {
+        const native = nativeFormChild(graph, nativeActions, [child.source.path.at(-1)])
+        for (const axis of ['x', 'y']) close(native[axis], child.bounds[axis] - sourceActions.bounds[axis], `edited action ${axis}`)
+        for (const axis of ['width', 'height']) close(native[axis], child.bounds[axis], `edited action ${axis}`)
+      }
+      for (const unchanged of [master, sibling]) assert.equal(boundFormText(graph,
+        nativeFormChild(graph, unchanged, path), property.id).text, initial)
+      if (round < 2) {
+        const bytes = await exportFigFile(graph)
+        graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+        edited = [...graph.getAllNodes()].find(node => node.name === 'Edited nested actions')
+        sibling = [...graph.getAllNodes()].find(node => node.name === 'Untouched nested actions')
+        master = graph.getNode(edited.componentId)
+      }
+    }
+  }
+})
+
+test('source composition refuses incomplete ownership, unsupported layout and invalid controls atomically', async () => {
+  const snapshot = formSource(), formFaces = suppliedFormFaces()
+  const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces })
+  const cases = [
+    input => { delete input.root.source },
+    input => { input.root.children[0].source.componentId = 'wrong-interface' },
+    input => { input.root.children[0].source.path = [formId, 'missing'] },
+    input => { input.root.children[0].source.slot = 'Missing' },
+    input => { delete input.root.children[0].source },
+    input => { input.root.children.push(structuredClone(input.root.children[0])) },
+    input => { input.root.children.pop() },
+    input => { input.example.opaqueSlots.push('Children') },
+    input => { input.example.slots[0].trustedOnly = false },
+    input => { delete input.example.children[0].span },
+    input => { input.control.control.type = 'password' },
+    input => { input.control.control.placeholder = 'Title placeholder' },
+    input => { input.control.control.value = 'Not the source value' },
+    input => { input.control.control.property = 'unknown' },
+    input => { input.control.control.fonts = [{ isCustomFont: true, postScriptName: 'IBMPlexSans-Regular' }] },
+    input => { input.control.style['border-top-style'] = 'inset' },
+    input => { input.control.style['border-left-width'] = '2px' },
+    input => { input.control.sizing.width = 'calc(100% - 4px)' },
+    input => { input.control.style['text-align'] = 'right' },
+    input => { input.root.style.display = 'grid' },
+    input => { input.root.style['flex-wrap'] = 'wrap' },
+    input => { input.root.children[0].style['flex-grow'] = '1' },
+    input => { input.root.children[0].children[0].children[0].bounds.x += 10 },
+    input => { input.control.bounds.y += 10 },
+    input => { input.observation.fontFaces = [] },
+    input => { input.faces = input.faces.filter(face => face.weight !== 400) },
+    input => { input.renderer = { loadFonts: async () => {}, measureTextNode: () => null } },
+  ]
+  for (const [index, mutate] of cases.entries()) {
+    const copy = structuredClone(snapshot), captured = structuredClone(observation), built = buildFoundation(copy)
+    const input = { snapshot: copy, observation: captured, root: captured.roots[0],
+      example: copy.examples.find(example => example.id === formId), control: captured.roots[0].children[0].children[1],
+      faces: formFaces, renderer }
+    mutate(input)
+    const page = built.graph.addPage('Rejected composition'), before = structuredClone([...built.graph.getAllNodes()])
+    const beforeInput = structuredClone({ source: copy, observation: captured }), hook = getTextMeasurer()
+    await assert.rejects(materializeComponent(built.graph, page.id, copy, captured, input.faces, input.renderer, built.collection.id),
+      undefined, `case ${index} must refuse`)
+    assert.deepEqual([...built.graph.getAllNodes()], before, `case ${index} left partial definitions`)
+    assert.deepEqual({ source: copy, observation: captured }, beforeInput)
+    assert.equal(getTextMeasurer(), hook)
+  }
+})
+
+test('native text refuses real source indentation, shadow, spacing and writing-direction changes', async () => {
+  const formFaces = suppliedFormFaces()
+  for (const rule of ['text-indent:20px', 'text-shadow:4px 0 red', 'word-spacing:4px', 'writing-mode:vertical-rl', 'direction:rtl']) {
+    for (const [id, selector, fonts] of [[formId, 'input', formFaces], [primary, '[data-component="button"]', faces]]) {
+      const snapshot = formSource()
+      snapshot.css += `\n${selector} { ${rule}; }`
+      const captured = await captureExample(browser, snapshot, id, { fonts }), built = buildFoundation(snapshot)
+      const page = built.graph.addPage('Rejected text styling'), before = structuredClone([...built.graph.getAllNodes()])
+      await assert.rejects(materializeComponent(built.graph, page.id, snapshot, captured, fonts, renderer, built.collection.id),
+        /text shadows|indentation|word spacing|writing direction/)
+      assert.deepEqual([...built.graph.getAllNodes()], before)
+    }
+  }
+})
+
+test('native Input values remain unwrapped with accurate text bounds through history and two saves', async () => {
+  const snapshot = formSource(), formFaces = suppliedFormFaces()
+  const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces, viewport: { width: 320, height: 900 } })
+  const built = buildFoundation(snapshot), page = built.graph.addPage('Single-line control')
+  const result = await materializeComponent(built.graph, page.id, snapshot, observation, formFaces, renderer, built.collection.id)
+  let graph = built.graph, instance = graph.createInstance(result.master.id, page.id, { name: 'Single-line source Form', y: 200 })
+  associateSourceInstance(graph, instance, snapshot, [formId])
+  const property = result.components.find(item => item.path.at(-1) === 'title').properties.find(item => item.name === 'value')
+  const value = 'This is a long single line value with several words and another complete sentence to exceed the field width.'
+  const emptyPixels = await formPixels(graph, instance)
+  let longPixels
+  for (let round = 0; round < 3; round++) {
+    if (round > 0) assert.deepEqual(await formPixels(graph, instance), longPixels, 'reopened native pixels retained before any new edit')
+    const actions = createEditor({ graph })
+    actions.setCanvasKit(ck, renderer)
+    const input = nativeFormChild(graph, instance, ['title']), text = boundFormText(graph, input, property.id)
+    actions.setInstanceComponentProperty(input.id, property.id, value)
+    await Promise.resolve()
+    const measured = renderer.measureTextNode(text), viewport = graph.getNode(text.parentId)
+    assert.equal(text.textAutoResize, 'WIDTH_AND_HEIGHT')
+    assert.equal(text.layoutPositioning, 'ABSOLUTE')
+    assert.equal(viewport.clipsContent, true)
+    assert.equal(viewport.height, 20)
+    assert.ok(measured.width > viewport.width, 'fixture overflows the real single-line content width')
+    assert.equal(measured.height, 20, 'native paragraph remains one line')
+    close(text.width, measured.width, 'native editable text bounds track the actual full advance')
+    assert.equal(text.height, 20)
+    longPixels = await formPixels(graph, instance)
+    assert.notDeepEqual(longPixels, emptyPixels, 'the overflowing native value visibly renders')
+    const proposal = extractSourceProps(graph, input, snapshot).proposal
+    assert.deepEqual(proposal, { baseSHA256: snapshot.sha256, path: [formId, 'title'], props: { value } })
+    assert.equal(sourceFormChild(formSource(proposal), ['title']).props.value, value)
+    actions.setInstanceComponentProperty(input.id, property.id, '')
+    await Promise.resolve()
+    assert.equal(text.text, '')
+    assert.equal(text.width, 0, 'clearing restores empty intrinsic width, not the previous long selection')
+    assert.deepEqual(await formPixels(graph, instance), emptyPixels, 'clear removes the rendered glyphs')
+    actions.undoAction()
+    await Promise.resolve()
+    assert.equal(text.text, value)
+    close(text.width, measured.width, 'undo restores exact long-text geometry')
+    actions.redoAction()
+    await Promise.resolve()
+    assert.equal(text.text, '')
+    assert.equal(text.width, 0)
+    actions.undoAction()
+    await Promise.resolve()
+    if (round < 2) {
+      const bytes = await exportFigFile(graph)
+      graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+      instance = [...graph.getAllNodes()].find(node => node.name === 'Single-line source Form')
+    }
+  }
+  const actions = createEditor({ graph })
+  actions.setCanvasKit(ck, renderer)
+  actions.setInstanceComponentProperty(nativeFormChild(graph, instance, ['title']).id, property.id, '')
+  const bytes = await exportFigFile(graph)
+  graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+  instance = [...graph.getAllNodes()].find(node => node.name === 'Single-line source Form')
+  const input = nativeFormChild(graph, instance, ['title']), cleared = boundFormText(graph, input, property.id)
+  assert.equal(cleared.text, '')
+  assert.equal(cleared.width, 0)
+  assert.equal(input.componentPropertyAssignments[property.id], '')
+  assert.equal(extractSourceProps(graph, input, snapshot).status, 'no-supported-changes')
+  assert.deepEqual(await formPixels(graph, instance), emptyPixels)
+  const reopened = createEditor({ graph })
+  reopened.setCanvasKit(ck, renderer)
+  reopened.setInstanceComponentProperty(input.id, property.id, value)
+  close(cleared.width, renderer.measureTextNode(cleared).width, 'editing recovers after a saved empty value')
+})
+
+test('source-populated and zero-advance Input values initialize through the owning native auto-size path', async () => {
+  const base = formSource(), formFaces = suppliedFormFaces()
+  for (const value of ['Populated source value', '\u0301']) {
+    const snapshot = formSource({ baseSHA256: base.sha256, path: [formId, 'title'], props: { value } })
+    const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces, viewport: { width: 320, height: 900 } })
+    const control = observation.roots[0].children[0].children[1].control
+    assert.equal(control.value, value)
+    assert.equal(control.fonts.length, 1, 'populated controls have actual glyph evidence')
+    const built = buildFoundation(snapshot), page = built.graph.addPage('Populated source Form')
+    const result = await materializeComponent(built.graph, page.id, snapshot, observation, formFaces, renderer, built.collection.id)
+    const input = result.components.find(item => item.path.at(-1) === 'title')
+    const property = input.properties.find(item => item.name === 'value'), target = boundFormText(built.graph, input.master, property.id)
+    const measured = renderer.measureTextNode(target)
+    close(target.width, measured.width, 'initial native value advance')
+    assert.equal(target.height, 20)
+    assert.equal(target.text, value)
+    if (value === '\u0301') assert.equal(target.width, 0, 'real combining glyph may have zero advance')
+    const instance = built.graph.createInstance(result.master.id, page.id, { y: 200 })
+    associateSourceInstance(built.graph, instance, snapshot, [formId])
+    const actions = createEditor({ graph: built.graph })
+    actions.setCanvasKit(ck, renderer)
+    const nested = nativeFormChild(built.graph, instance, ['title'])
+    actions.setInstanceComponentProperty(nested.id, property.id, 'Longer source value')
+    actions.setInstanceComponentProperty(nested.id, property.id, value)
+    close(boundFormText(built.graph, nested, property.id).width, measured.width, 'native setter restores genuine zero advance too')
+  }
+})
+
+test('absolute native property measurement failures roll back graph, source caches and history', async () => {
+  const snapshot = formSource(), formFaces = suppliedFormFaces()
+  const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces })
+  for (const failure of [null, { width: NaN, height: 20 }, { width: -1, height: 20 },
+    { width: Infinity, height: 20 }, { width: 10, height: 0 }, { width: 10, height: NaN }, new Error('Measurement failed')]) {
+    const built = buildFoundation(snapshot), page = built.graph.addPage('Refused native value')
+    const result = await materializeComponent(built.graph, page.id, snapshot, observation, formFaces, renderer, built.collection.id)
+    const instance = built.graph.createInstance(result.master.id, page.id), input = nativeFormChild(built.graph, instance, ['title'])
+    const property = result.components.find(item => item.path.at(-1) === 'title').properties.find(item => item.name === 'value')
+    const actions = createEditor({ graph: built.graph })
+    actions.setCanvasKit(ck, renderer)
+    const before = structuredClone([...built.graph.getAllNodes()]), previous = getTextMeasurer()
+    let calls = 0
+    const broken = () => { calls++; if (failure instanceof Error) throw failure; return failure }
+    try {
+      setTextMeasurer(broken)
+      assert.throws(() => actions.setInstanceComponentProperty(input.id, property.id, 'Nonempty value'), /measurement|Measurement/)
+      await Promise.resolve()
+      assert.equal(calls, 1, 'one actual measurement, no fallback or repeated shaping')
+      assert.equal(getTextMeasurer(), broken, 'property action never replaces the caller measurement hook')
+      assert.deepEqual([...built.graph.getAllNodes()], before)
+      assert.equal(actions.undo.canUndo, false)
+    } finally { setTextMeasurer(previous) }
+  }
+})
+
+test('strict absolute auto-size preserves ordinary native helper fallback and zero-width behavior', async () => {
+  const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
+  const node = { type: 'TEXT', text: 'Previous', textAutoResize: 'WIDTH_AND_HEIGHT',
+    fontFamily: 'IBM Plex Sans', fontWeight: 400, fontSize: 14, lineHeight: 20, width: 900, height: 20 }
+  const previous = getTextMeasurer()
+  try {
+    setTextMeasurer(() => null)
+    assert.ok(textAutoResizeChanges(node, { text: 'Next' }).width > 0, 'ordinary native helper retains its prior estimate fallback')
+    assert.throws(() => textAutoResizeChanges(node, { text: 'Next' }, true), /Actual native text measurement/)
+    setTextMeasurer(() => ({ width: 0, height: 20 }))
+    assert.ok(!Object.hasOwn(textAutoResizeChanges(node, { text: '' }), 'width'), 'ordinary zero-width behavior is unchanged')
+    assert.equal(textAutoResizeChanges(node, { text: '' }, true).width, 0)
+  } finally { setTextMeasurer(previous) }
+})

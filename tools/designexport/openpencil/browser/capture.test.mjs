@@ -35,6 +35,139 @@ function observed(nodes) {
   return nodes.flatMap(node => [node, ...observed(node.children ?? [])])
 }
 
+function occurrenceFixture() {
+  const snapshot = structuredClone(source), example = snapshot.examples.find(item => item.id === primary)
+  const html = '<span>Same</span>', prefix = '<div>João 🧩 '
+  example.html = `${prefix}${html}${html}</div>`
+  const start = Buffer.byteLength(prefix), size = Buffer.byteLength(html)
+  example.children = ['first/🧩', 'second-->'].map((id, index) => ({
+    description: { id, componentId: 'fixture.same', html, children: [] }, slot: 'children',
+    span: { start: start + index * size, end: start + (index + 1) * size },
+  })).reverse()
+  return { snapshot, example }
+}
+
+test('capture maps source byte spans to exact nested elements without name or order matching', async () => {
+  const { snapshot } = occurrenceFixture(), before = structuredClone(snapshot)
+  const capture = await captureExample(browser, snapshot, primary)
+  const owned = observed(capture.roots).filter(node => node.source)
+  assert.deepEqual(owned.map(node => node.source), [
+    { path: [primary], componentId: 'pk-ui.component.button' },
+    { path: [primary, 'first/🧩'], componentId: 'fixture.same', slot: 'children' },
+    { path: [primary, 'second-->'], componentId: 'fixture.same', slot: 'children' },
+  ])
+  assert.deepEqual(owned.slice(1).map(node => node.children[0].text), ['Same', 'Same'])
+  assert.deepEqual(capture.roots[0].bounds, (await originalLayout(snapshot, primary, 'light')).bounds)
+  assert.deepEqual(snapshot, before)
+  const form = 'pk-ui.component.form/default'
+  const real = await captureExample(browser, source, form)
+  assert.deepEqual(observed(real.roots).filter(node => node.source).map(node => node.source.path), [
+    [form], [form, 'title'], [form, 'actions'], [form, 'actions', 'cancel'], [form, 'actions', 'create'],
+  ])
+})
+
+test('capture refuses invalid, overlapping, ambiguous or parser-moved occurrence spans', async () => {
+  for (const mutate of [
+    example => { example.children[0].span.start++ },
+    example => { example.children[0].span.end = Infinity },
+    example => { example.children[0].span = { ...example.children[1].span } },
+    example => { example.children[0].description.id = example.children[1].description.id },
+    example => { example.html += '<!--pk-capture:0-->' },
+    example => {
+      example.children = [{ description: { id: 'transparent', componentId: 'fixture', html: example.html, children: [] },
+        span: { start: 0, end: Buffer.byteLength(example.html) } }]
+    },
+    example => {
+      const html = '<span>Broken</span></p>'
+      example.html = `<p>${html}`
+      example.children = [{ description: { id: 'moved', componentId: 'fixture', html, children: [] },
+        span: { start: 3, end: Buffer.byteLength(example.html) } }]
+    },
+  ]) {
+    const { snapshot, example } = occurrenceFixture()
+    mutate(example)
+    await assert.rejects(captureExample(browser, snapshot, primary), /occurrence|capture marker/i)
+    assert.equal(browser.contexts().length, 0)
+  }
+})
+
+test('capture does not invent single-element ownership for fragments or unobserved children', async () => {
+  const { snapshot, example } = occurrenceFixture()
+  delete example.children[0].span
+  let result = await captureExample(browser, snapshot, primary)
+  assert.equal(observed(result.roots).filter(node => node.source).length, 2)
+  example.html = '<span>One</span><span>Two</span>'
+  example.children = []
+  result = await captureExample(browser, snapshot, primary)
+  assert.equal(result.roots.length, 2)
+  assert.ok(result.roots.every(node => !node.source))
+  for (const prefix of [' ', '\u00a0']) {
+    example.html = `${prefix}<span>One</span>`
+    snapshot.css += '\nbody { white-space: pre; }'
+    result = await captureExample(browser, snapshot, primary)
+    assert.ok(result.roots.every(node => !node.source), 'even whitespace may paint outside the candidate element')
+  }
+})
+
+test('capture preserves adjacent source text nodes and refuses instrumentation that changes HTML parsing', async () => {
+  const { snapshot, example } = occurrenceFixture()
+  example.html = '<div>Before child after</div>'
+  example.children = [{ description: { id: 'text', componentId: 'fixture', html: 'child', children: [] }, span: { start: 12, end: 17 } }]
+  const result = await captureExample(browser, snapshot, primary)
+  assert.equal(result.roots[0].children.length, 1)
+  assert.equal(result.roots[0].children[0].text, 'Before child after')
+  // A real invocation can emit '&' and its parent the rest of an entity.
+  // Instrumenting inside that boundary must not turn '&' into '&amp;'.
+  example.html = '<div>&amp;</div>'
+  example.children[0].description.html = '&'
+  example.children[0].span = { start: 5, end: 6 }
+  await assert.rejects(captureExample(browser, snapshot, primary), /occurrence.*parsing/i)
+})
+
+test('capture observes actual text-control values and exact fonts without inventing DOM text', async () => {
+  for (const value of ['', 'João Ação 123', '<b> & "']) {
+    const snapshot = projection('pk-ui.component.input/bare', { value })
+    const result = await captureExample(browser, snapshot, snapshot.examples[0].id, { fonts: faces })
+    const input = observed(result.roots).find(node => node.tag === 'input')
+    assert.deepEqual(input.children, [])
+    assert.deepEqual(Object.keys(input.control).toSorted(), ['fonts', 'kind', 'placeholder', 'property', 'type', 'value'])
+    assert.deepEqual({ ...input.control, fonts: [] }, { kind: 'control', property: 'value', type: 'text', value, placeholder: '', fonts: [] })
+    if (value === '') assert.deepEqual(input.control.fonts, [])
+    else {
+      assert.equal(input.control.fonts.length, 1)
+      assert.equal(input.control.fonts[0].postScriptName, 'IBMPlexSans-Regular')
+      assert.equal(input.control.fonts[0].isCustomFont, true)
+      assert.ok(input.control.fonts[0].glyphCount > 0)
+    }
+  }
+  const placeholder = projection('pk-ui.component.input/bare', { placeholder: 'Not a value' })
+  placeholder.css += '\ninput::placeholder { font-weight: 600; }'
+  const paint = observed((await captureExample(browser, placeholder, placeholder.examples[0].id, { fonts: faces })).roots).find(node => node.control).control
+  assert.equal(paint.value, '')
+  assert.equal(paint.placeholder, 'Not a value')
+  assert.equal(paint.fonts[0].postScriptName, 'IBMPlexSans-SemiBold', 'these glyphs belong to the placeholder, not an invented value')
+  const { snapshot, example } = occurrenceFixture()
+  example.children = []
+  example.html = '<input type="text" data-pk-value="value" value="line&#10;break">'
+  assert.equal((await captureExample(browser, snapshot, primary)).roots[0].control.value, 'linebreak', 'observe browser normalization; binding must reject mismatched source')
+  for (const html of ['<input type="text" value="unmarked">', '<input type="password" value="private">']) {
+    example.html = html
+    assert.equal((await captureExample(browser, snapshot, primary)).roots[0].control, undefined)
+  }
+})
+
+test('capture retains text presentation that native construction must not silently discard', async () => {
+  const snapshot = projection('pk-ui.component.input/bare', { value: 'Audit' })
+  snapshot.css += '\ninput { text-indent: 20px; text-shadow: 4px 0 red; word-spacing: 3px; writing-mode: vertical-rl; direction: rtl; }'
+  const result = await captureExample(browser, snapshot, snapshot.examples[0].id, { fonts: faces })
+  const { style } = observed(result.roots).find(node => node.control)
+  assert.equal(style['text-indent'], '20px')
+  assert.equal(style['text-shadow'], 'rgb(255, 0, 0) 4px 0px 0px')
+  assert.equal(style['word-spacing'], '3px')
+  assert.equal(style['writing-mode'], 'vertical-rl')
+  assert.equal(style.direction, 'rtl')
+})
+
 // Independent DOM measurements remove the source annotations entirely.
 // No capture traversal or layout helper is reused.
 async function originalLayout(snapshot, id, mode, size = viewport, fonts = []) {

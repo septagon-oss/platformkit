@@ -5,7 +5,7 @@ import { SceneGraph, generateId } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { parseFigBuffer } from '@open-pencil/fig'
-import { bindComponentProperties } from './bindings.mjs'
+import { bindComponentProperties, isSourceTextProperty, sourceTextValue } from './bindings.mjs'
 import { associateSourceInstance, extractSourceProps } from './source-changes.mjs'
 
 const snapshot = JSON.parse(execFileSync('go', [
@@ -51,6 +51,249 @@ function changeMetadata(node, change) {
   change(value)
   entry.value = JSON.stringify(value)
 }
+
+function nestedFixture() {
+  const canonical = structuredClone(snapshot), child = canonical.examples[0]
+  child.id = 'button/local'
+  const root = { ...structuredClone(child), id: 'form/root', componentId: 'fixture.form', props: {},
+    schema: { type: 'object', properties: {} }, slots: [{ name: 'children', supported: true, trustedOnly: true,
+      multiple: true, goType: '[]gomponents.Node' }], opaqueSlots: [],
+    children: [{ description: child, slot: 'children', span: { start: 0, end: child.html.length } }] }
+  canonical.examples = [root]
+  const input = fixture(), { graph } = input
+  const provenance = source => [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+    schema: canonical.schema, sha256: canonical.sha256, exampleId: source.id, componentId: source.componentId, props: source.props,
+  }) }]
+  graph.updateNode(input.master.id, { pluginData: provenance(child) })
+  const definitions = bindComponentProperties(graph, input.master, child, input.targets)
+  const owner = graph.createNode('COMPONENT', graph.getPages()[0].id, { name: 'Owner', pluginData: provenance(root) })
+  const childTemplate = graph.createInstance(input.master.id, owner.id, { pluginData: [{
+    pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({ localId: child.id, slot: 'children' }),
+  }] })
+  bindComponentProperties(graph, owner, root, [])
+  const instance = graph.createInstance(owner.id, graph.getPages()[0].id, { name: 'Placed owner' })
+  const sibling = graph.createInstance(owner.id, graph.getPages()[0].id, { name: 'Preview owner' })
+  return { ...input, snapshot: canonical, root, owner, childTemplate, instance, sibling, definitions,
+    nested: graph.getChildren(instance.id)[0] }
+}
+
+test('native nested property definitions resolve the canonical master before the first save', () => {
+  const input = nestedFixture(), editor = createEditor({ graph: input.graph })
+  assert.deepEqual(editor.getInstanceComponentPropertyDefinitions(input.nested.id), input.definitions)
+  editor.setInstanceComponentProperty(input.nested.id, input.definitions[0].id, 'Edited nested')
+  assert.equal(input.graph.getChildren(input.nested.id)[1].text, 'Edited nested')
+  assert.deepEqual(input.childTemplate.componentPropertyDefinitions, [], 'templates do not duplicate master definitions')
+  assert.equal(input.graph.getChildren(input.master.id)[1].text, 'Save')
+  assert.equal(input.graph.getChildren(input.graph.getChildren(input.sibling.id)[0].id)[1].text, 'Save')
+  editor.undoAction()
+  assert.equal(input.graph.getChildren(input.nested.id)[1].text, 'Save')
+  editor.redoAction()
+  assert.equal(input.graph.getChildren(input.nested.id)[1].text, 'Edited nested')
+})
+
+test('nested source correspondence derives from one explicit root across two FIG saves', async () => {
+  const input = nestedFixture()
+  let { graph, instance, nested } = input
+  associateSourceInstance(graph, instance, input.snapshot, [input.root.id])
+  for (const label of ['Nested edit', 'Second edit']) {
+    createEditor({ graph }).setInstanceComponentProperty(nested.id, input.definitions[0].id, label)
+    const before = structuredClone([...graph.getAllNodes()])
+    const expected = { baseSHA256: input.snapshot.sha256, path: [input.root.id, 'button/local'], props: { label } }
+    const extracted = extractSourceProps(graph, nested, input.snapshot)
+    assert.deepEqual(extracted.proposal, expected, JSON.stringify(extracted))
+    assert.deepEqual([...graph.getAllNodes()], before)
+    const bytes = await exportFigFile(graph)
+    graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    instance = [...graph.getAllNodes()].find(node => node.name === 'Placed owner')
+    nested = graph.getChildren(instance.id)[0]
+    const reopened = extractSourceProps(graph, nested, input.snapshot)
+    assert.deepEqual(reopened.proposal, expected, JSON.stringify({ reopened, assignments: nested.componentPropertyAssignments,
+      texts: graph.getChildren(nested.id).map(node => node.text) }))
+    assert.deepEqual(sourceMetadata(nested), { localId: 'button/local', slot: 'children' })
+    const claims = [...graph.getAllNodes()].filter(node => node.pluginData.some(item =>
+      item.pluginId === 'platformkit' && item.key === 'platformkit.source' && JSON.parse(item.value).path))
+    assert.deepEqual(claims.map(node => node.id), [instance.id])
+  }
+})
+
+test('outer native text overrides retain precedence over nested property assignments through two FIG saves', async () => {
+  const input = nestedFixture()
+  let { graph, instance, nested } = input
+  createEditor({ graph }).setInstanceComponentProperty(nested.id, input.definitions[0].id, 'Inner')
+  const target = graph.getChildren(nested.id)[1]
+  graph.updateNode(target.id, { text: 'Outer' })
+  graph.updateNode(instance.id, { overrides: { [`${target.id}:text`]: 'Outer' } })
+  for (let iteration = 0; iteration < 2; iteration++) {
+    const before = structuredClone([...graph.getAllNodes()]), bytes = await exportFigFile(graph)
+    assert.deepEqual([...graph.getAllNodes()], before)
+    graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    instance = [...graph.getAllNodes()].find(node => node.name === 'Placed owner')
+    nested = graph.getChildren(instance.id)[0]
+    assert.equal(graph.getChildren(nested.id)[1].text, 'Outer')
+    assert.equal(nested.componentPropertyAssignments[input.definitions[0].id], 'Inner')
+  }
+})
+
+test('nested source association preflights every descendant before adding an absolute root claim', async t => {
+  const cases = [
+    ['opaque ancestor', input => { input.root.opaqueSlots = ['children'] }, 'unsupported-scope'],
+    ['unobserved child', input => { delete input.root.children[0].span }, 'unsupported-scope'],
+    ['invalid span', input => { input.root.children[0].span.start = -1 }, 'unsupported-scope'],
+    ['unsupported slot', input => { input.root.slots[0].supported = false }, 'unsupported-scope'],
+    ['slot type', input => { input.root.slots[0].goType = 'string' }, 'unsupported-scope'],
+    ['untrusted slot', input => { input.root.slots[0].trustedOnly = false }, 'unsupported-scope'],
+    ['duplicate source ID', input => { input.root.children.push(structuredClone(input.root.children[0])) }, 'invalid-source'],
+    ['missing source records', input => { input.root.children = null }, 'invalid-source'],
+    ['malformed source slots', input => { input.root.slots = {} }, 'invalid-source'],
+    ['missing template identity', input => { input.childTemplate.pluginData = [] }, 'invalid-binding'],
+    ['wrong local identity', input => changeMetadata(input.childTemplate, value => { value.localId = 'other' }), 'invalid-binding'],
+    ['wrong slot case', input => changeMetadata(input.childTemplate, value => { value.slot = 'Children' }), 'invalid-binding'],
+    ['absolute template claim', input => changeMetadata(input.childTemplate, value => { value.path = ['other'] }), 'invalid-provenance'],
+    ['copied template', input => { input.graph.cloneTree(input.childTemplate.id, input.owner.id) }, 'invalid-binding'],
+    ['copied native child', input => { input.graph.cloneTree(input.nested.id, input.instance.id) }, 'invalid-binding'],
+    ['wrong placed local identity', input => changeMetadata(input.nested, value => { value.localId = 'other' }), 'invalid-provenance'],
+    ['detached child', input => { input.graph.detachInstance(input.nested.id) }, 'invalid-binding'],
+    ['missing master', input => { input.nested.componentId = 'missing' }, 'invalid-binding'],
+    ['cyclic master', input => { input.nested.componentId = input.nested.id }, 'invalid-binding'],
+    ['stale nested master', input => changeMetadata(input.master, value => { value.sha256 = '0'.repeat(64) }), 'stale-base'],
+    ['edited template baseline', input => { input.graph.getChildren(input.childTemplate.id)[1].text = 'Other' }, 'inconsistent-native-value'],
+    ['unsupported nested assignment', input => { input.nested.componentPropertyAssignments.foreign = 'Other' }, 'unsupported-scope'],
+  ]
+  for (const [name, change, code] of cases) await t.test(name, () => {
+    const input = nestedFixture()
+    change(input)
+    const before = structuredClone([...input.graph.getAllNodes()]), source = structuredClone(input.snapshot)
+    assert.throws(() => associateSourceInstance(input.graph, input.instance, input.snapshot, [input.root.id]),
+      error => error.code === code, name)
+    assert.deepEqual([...input.graph.getAllNodes()], before, 'no partial root or descendant correspondence')
+    assert.deepEqual(input.snapshot, source)
+  })
+})
+
+test('nested source selection is scoped by linked ownership, not names, order, or repeated branch-local IDs', async () => {
+  const input = nestedFixture(), { graph, root, snapshot: canonical } = input
+  // Distinct branches reuse the leaf master and the same child-local ID.
+  const outerSource = { ...structuredClone(root), id: 'page/root', componentId: 'fixture.page', children: ['left', 'right'].map(id => ({
+    description: { ...structuredClone(root), id }, slot: 'children', span: { start: 0, end: root.html.length },
+  })) }
+  canonical.examples = [outerSource]
+  const outer = graph.createNode('COMPONENT', graph.getPages()[0].id, { pluginData: [{
+    pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({ schema: canonical.schema,
+      sha256: canonical.sha256, exampleId: outerSource.id, componentId: outerSource.componentId, props: outerSource.props }),
+  }] })
+  // Branch identity belongs to its occurrence, not the reused master origin.
+  for (const occurrence of outerSource.children) {
+    const branch = graph.cloneTree(input.owner.id, graph.getPages()[0].id)
+    changeMetadata(branch, value => { value.exampleId = occurrence.description.id })
+    graph.createInstance(branch.id, outer.id, { pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source',
+      value: JSON.stringify({ localId: occurrence.description.id, slot: 'children' }) }] })
+  }
+  bindComponentProperties(graph, outer, outerSource, [])
+  let placed = graph.createInstance(outer.id, graph.getPages()[0].id, { name: 'Two branch owner' })
+  const preview = graph.createInstance(outer.id, graph.getPages()[0].id)
+  associateSourceInstance(graph, placed, canonical, [outerSource.id])
+  assert.equal(extractSourceProps(graph, graph.getChildren(preview.id)[0], canonical).code, 'missing-binding')
+  const branch = graph.getChildren(placed.id)[1], selected = graph.getChildren(branch.id)[0]
+  graph.reorderChild(branch.id, placed.id, 0)
+  for (const node of graph.getAllNodes()) graph.updateNode(node.id, { name: 'Identical display name' })
+  createEditor({ graph }).setInstanceComponentProperty(selected.id, input.definitions[0].id, 'Only right')
+  const expected = { baseSHA256: canonical.sha256, path: ['page/root', 'right', 'button/local'], props: { label: 'Only right' } }
+  assert.deepEqual(extractSourceProps(graph, selected, canonical).proposal, expected)
+  for (let iteration = 0, current = graph; iteration < 2; iteration++) {
+    const bytes = await exportFigFile(current)
+    current = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    placed = [...current.getAllNodes()].find(node => node.pluginData.some(item =>
+      item.pluginId === 'platformkit' && item.key === 'platformkit.source' && JSON.parse(item.value).path))
+    const right = current.getChildren(placed.id).find(node => sourceMetadata(node).localId === 'right')
+    const selected = current.getChildren(right.id)[0], actual = extractSourceProps(current, selected, canonical)
+    assert.deepEqual(actual.proposal, expected, JSON.stringify(actual))
+    const left = current.getChildren(placed.id).find(node => sourceMetadata(node).localId === 'left')
+    assert.equal(extractSourceProps(current, current.getChildren(left.id)[0], canonical).status, 'no-supported-changes')
+  }
+})
+
+test('source string defaults are explicit empty values and native controls bind their actual value', () => {
+  const source = structuredClone(example)
+  source.schema.properties.value = { type: 'string', default: '' }
+  assert.equal(Object.hasOwn(source.props, 'value'), false)
+  assert.equal(isSourceTextProperty(source, 'value'), true)
+  assert.equal(sourceTextValue(source, 'value'), '')
+  const input = fixture(''), { graph, master } = input
+  input.targets[0].region = { kind: 'control', property: 'value', value: '', type: 'text' }
+  const [definition] = bindComponentProperties(graph, master, source, input.targets)
+  assert.equal(definition.defaultValue, '')
+  assert.equal(definition.name, 'value')
+  assert.equal(Object.hasOwn(source.props, 'value'), false, 'default observation never rewrites source props')
+  for (const change of [
+    source => { delete source.schema.properties.value.default },
+    source => { source.schema.properties.value.default = 'guessed' },
+    source => { source.schema.required.push('value') },
+    source => { source.schema.required = 1 },
+    source => { source.schema.properties.value.anyOf = [{ type: 'null' }] },
+    source => { source.props.value = null },
+    source => { source.props.value = 1 },
+  ]) {
+    const altered = structuredClone(source)
+    change(altered)
+    assert.equal(isSourceTextProperty(altered, 'value'), false)
+    assert.equal(sourceTextValue(altered, 'value'), undefined)
+  }
+  for (const [type, value] of [['password', ''], ['file', ''], ['text', 'placeholder is not value'], ['text', '\n']]) {
+    const rejected = fixture(''), before = structuredClone([...rejected.graph.getAllNodes()])
+    rejected.targets[0].region = { kind: 'control', property: 'value', value, type }
+    assert.throws(() => bindComponentProperties(rejected.graph, rejected.master, source, rejected.targets))
+    assert.deepEqual([...rejected.graph.getAllNodes()], before)
+  }
+  const placeholder = fixture('')
+  placeholder.targets[0].region = { kind: 'control', property: 'value', value: '', type: 'text', placeholder: 'Hint' }
+  assert.throws(() => bindComponentProperties(placeholder.graph, placeholder.master, source, placeholder.targets), /literal text/)
+})
+
+test('source-bound icon slots retain root text proposals without claiming nested asset edits', async () => {
+  const canonical = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', 'pk-ui.component.button/with-icon'],
+    { cwd: new URL('../../../', import.meta.url), encoding: 'utf8' })), source = canonical.examples[0]
+  const input = fixture(source.props.label), { master, targets } = input
+  let { graph } = input
+  const glyph = graph.createNode('COMPONENT', graph.getPages()[0].id, { name: 'Asset master' })
+  graph.createNode('VECTOR', glyph.id)
+  targets.push({ region: { kind: 'slot', name: 'IconEnd', children: [{ kind: 'element', tag: 'svg' }] },
+    nativeNode: graph.createInstance(glyph.id, master.id) })
+  graph.updateNode(master.id, { pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+    schema: canonical.schema, sha256: canonical.sha256, exampleId: source.id, componentId: source.componentId, props: source.props,
+  }) }] })
+  const [text, slot] = bindComponentProperties(graph, master, source, targets)
+  assert.deepEqual(sourceMetadata(master).slotBindings, [{ id: slot.id, slot: 'IconEnd' }])
+  let instance = graph.createInstance(master.id, graph.getPages()[0].id, { name: 'Icon slot owner' })
+  associateSourceInstance(graph, instance, canonical, [source.id])
+  createEditor({ graph }).setInstanceComponentProperty(instance.id, text.id, 'Updated text')
+  const expected = { baseSHA256: canonical.sha256, path: [source.id], props: { label: 'Updated text' } }
+  for (let iteration = 0; iteration < 2; iteration++) {
+    const bytes = await exportFigFile(graph)
+    graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    instance = [...graph.getAllNodes()].find(node => node.name === 'Icon slot owner')
+    const result = extractSourceProps(graph, instance, canonical)
+    assert.deepEqual(result.proposal, expected, JSON.stringify(result))
+    const asset = graph.getChildren(instance.id).find(node => node.type === 'INSTANCE')
+    assert.equal(extractSourceProps(graph, asset, canonical).code, 'missing-binding')
+  }
+  const owner = graph.getNode(instance.componentId), metadataEntry = owner.pluginData.find(item => item.key === 'platformkit.source')
+  const original = metadataEntry.value
+  for (const change of [
+    value => { delete value.slotBindings },
+    value => { value.slotBindings = null },
+    value => { value.slotBindings.push({ ...value.slotBindings[0] }) },
+    value => { value.slotBindings[0].slot = 'IconStart' },
+    value => { value.slotBindings[0].id = text.id },
+  ]) {
+    changeMetadata(owner, change)
+    const before = structuredClone([...graph.getAllNodes()])
+    assert.equal(extractSourceProps(graph, instance, canonical).status, 'invalid')
+    assert.deepEqual([...graph.getAllNodes()], before)
+    metadataEntry.value = original
+  }
+  instance.componentPropertyAssignments[slot.id] = graph.getChildren(instance.id).find(node => node.type === 'INSTANCE').componentId
+  assert.equal(extractSourceProps(graph, instance, canonical).code, 'unsupported-scope', 'even a same-asset assignment is not a string proposal')
+})
 
 test('source changes use persisted correspondence through duplicate display names and two FIG saves', async () => {
   const input = mappedFixture(true), beforeSource = structuredClone(input.snapshot)

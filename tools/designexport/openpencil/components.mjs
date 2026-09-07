@@ -4,6 +4,9 @@ import { bindComponentProperties } from './bindings.mjs'
 import { loadFonts, validateFonts } from './fonts.mjs'
 import { planIcon } from './icon-composition.mjs'
 
+// The exact owning helper is version/source-pinned by the adapter correction.
+const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
+
 function requireComponent(condition, message) {
   if (!condition) throw new Error(`Native component: ${message}`)
 }
@@ -19,6 +22,12 @@ function color(value) {
 }
 
 const paint = value => ({ type: 'SOLID', color: color(value), opacity: 1, visible: true })
+
+function requirePlainText(style) {
+  requireComponent(style['text-shadow'] === 'none' && style['text-indent'] === '0px' &&
+    ['normal', '0px'].includes(style['word-spacing']) && style['writing-mode'] === 'horizontal-tb' && style.direction === 'ltr',
+  'text shadows, indentation, word spacing or writing direction require further conversion')
+}
 
 function sameColor(a, b, tolerance = 1e-6) {
   return a && b && ['r', 'g', 'b', 'a'].every(channel => Number.isFinite(a[channel]) &&
@@ -72,7 +81,17 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
   requireComponent(modes.length === 1 && graph.getNodeVariableModeId(parentId, collection.id) === modes[0].modeId,
     'definition parent variable mode must match the observation')
   requireComponent(observation.roots.length === 1 && observation.roots[0].kind === 'element', 'one component root required')
-  const root = observation.roots[0], style = root.style
+  const root = observation.roots[0]
+  if (root.source && root.children.some(child => child.kind === 'element')) {
+    return materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root)
+  }
+  const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, iconTargets)
+  return { ...result, components: [{ path: [example.id], ...result }] }
+}
+
+async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, iconTargets = []) {
+  const style = root.style
+  requirePlainText(style)
   const visibleOutline = !['none', 'hidden'].includes(style['outline-style']) &&
     pixels(style['outline-width']) > 0 && color(style['outline-color']).a > 0
   requireComponent(!visibleOutline && style.filter === 'none', 'visible outlines and filters require further native conversion')
@@ -199,6 +218,298 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
     return { master, properties }
   } catch (error) {
     if (master) graph.deleteNode(master.id)
+    throw error
+  }
+}
+
+// This is an export-local native construction plan, not a component registry or
+// another renderer. Every boundary comes from a captured source occurrence and
+// every supported layout/paint comes from that occurrence's browser observation.
+function planComposition(graph, snapshot, observation, faces, collection, example, root) {
+  const supplied = validateFonts(faces), requirements = [], occurrences = new Map(), seen = new Set()
+  function describe(description, path, slot) {
+    const key = JSON.stringify(path)
+    requireComponent(!occurrences.has(key), 'duplicate source occurrence path')
+    requireComponent(description.propsEditable && !(description.opaqueSlots?.length), 'typed, nonopaque source composition required')
+    occurrences.set(key, { description, path, slot })
+    for (const child of description.children ?? []) {
+      const declarations = description.slots?.filter(declaration => declaration.name === child.slot) ?? []
+      const declaration = declarations[0]
+      requireComponent(declarations.length === 1 && declaration.supported === true && declaration.trustedOnly === true && child.span &&
+        Number.isSafeInteger(child.span.start) && Number.isSafeInteger(child.span.end) && child.span.start >= 0 && child.span.end >= child.span.start &&
+        (declaration.goType === 'gomponents.Node' && declaration.multiple === false ||
+          declaration.goType === '[]gomponents.Node' && declaration.multiple === true), 'composition needs observed, supported source slots')
+      describe(child.description, [...path, child.description.id], child.slot)
+    }
+  }
+  describe(example, [example.id])
+  const paintFor = (node, property) => observedPaint(graph, collection, snapshot, observation, node, property)
+  const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1 / 64
+
+  function presentation(node) {
+    const style = node.style
+    requirePlainText(style)
+    requireComponent(style && ['static', 'relative'].includes(style.position) && style.visibility === 'visible' &&
+      style.transform === 'none' && style.filter === 'none' && style['background-image'] === 'none' &&
+      style['box-shadow'] === 'none' && style['animation-name'] === 'none', 'composition effects or motion require further conversion')
+    requireComponent(['none', 'hidden'].includes(style['outline-style']) || pixels(style['outline-width']) === 0 ||
+      color(style['outline-color']).a === 0, 'composition outlines require further conversion')
+    requireComponent(['top', 'right', 'bottom', 'left'].every(side => pixels(style[`margin-${side}`]) === 0),
+      'composition margins require further layout conversion')
+    requireComponent(style['text-transform'] === 'none' && style['text-decoration-line'] === 'none' &&
+      style['font-feature-settings'] === 'normal' && style['font-variation-settings'] === 'normal' &&
+      style['font-stretch'] === '100%', 'composition text transformations require further conversion')
+    const sides = ['top', 'right', 'bottom', 'left']
+    const borders = sides.map(side => ({ width: pixels(style[`border-${side}-width`]),
+      style: style[`border-${side}-style`], color: style[`border-${side}-color`] }))
+    const visible = borders.some(border => border.width > 0 && color(border.color).a > 0)
+    const strokes = visible ? paintFor(node, 'border-top-color') : null
+    if (visible) {
+      requireComponent(borders.every(border => border.style === 'solid' && border.width === borders[0].width &&
+        sameColor(color(border.color), color(borders[0].color))), 'composition requires uniform solid borders')
+      for (const side of sides.slice(1)) requireComponent(JSON.stringify(paintFor(node, `border-${side}-color`)) ===
+        JSON.stringify(strokes), 'composition border aliases must match on every side')
+    }
+    const insets = Object.fromEntries(sides.map((side, index) => [
+      `padding${side[0].toUpperCase()}${side.slice(1)}`, pixels(style[`padding-${side}`]) + borders[index].width,
+    ]))
+    const background = paintFor(node, 'background-color')
+    return {
+      ...background, ...insets, opacity: Number(style.opacity),
+      independentCorners: true,
+      topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
+      bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
+      ...(strokes ? {
+        strokes: strokes.fills.map(fill => ({ ...fill, weight: borders[0].width, align: 'INSIDE' })),
+        boundVariables: { ...background.boundVariables, ...Object.fromEntries(Object.entries(strokes.boundVariables)
+          .map(([field, value]) => [field.replace('fills/', 'strokes/'), value])) },
+      } : {}),
+    }
+  }
+
+  function text(region, node, control = false) {
+    const style = node.style, value = control ? region.value : region.text
+    requireComponent(typeof value === 'string' && !/[\r\n\t]/.test(value), 'composition requires single-line text')
+    if (!control) requireComponent(region.rects?.length === 1 && region.bounds.height > 0,
+      'composition text needs one observed line')
+    const observed = region.fonts
+    requireComponent(Array.isArray(observed), 'composition text requires actual font evidence')
+    const weight = Number(style['font-weight'])
+    let matching
+    if (control && value === '') {
+      requireComponent(observed.length === 0, 'empty control must not invent glyph evidence')
+      const firstFamily = style['font-family'].split(',')[0].trim().replace(/^(["'])(.*)\1$/, '$2')
+      matching = supplied.filter(face => face.family === firstFamily && face.weight === weight && face.style === style['font-style'])
+    } else {
+      requireComponent(observed.length === 1 && observed[0].isCustomFont, 'composition text requires one supplied actual face')
+      matching = supplied.filter(face => face.postscriptName === observed[0].postScriptName &&
+        face.weight === weight && face.style === style['font-style'])
+    }
+    requireComponent(matching.length === 1, 'composition text face is missing or synthesized')
+    const face = matching[0]
+    requireComponent(observation.fontFaces.some(item => item.family === face.family && item.weight === face.weight &&
+      item.style === face.style && item.sha256 === face.sha256), 'composition observed and supplied fonts differ')
+    const lineHeight = pixels(style['line-height']), fontSize = pixels(style['font-size'])
+    requireComponent(lineHeight > 0 && fontSize > 0, 'composition text requires positive font metrics')
+    requirements.push({ family: face.family, weight: face.weight, style: face.style, text: value })
+    return { kind: 'text', region, observation: control ? null : region, control, native: {
+      name: region.property ?? 'Source text', text: value, width: control ? 0 : region.bounds.width, height: lineHeight,
+      fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic', fontSize, lineHeight,
+      letterSpacing: style['letter-spacing'] === 'normal' ? 0 : pixels(style['letter-spacing']),
+      textAutoResize: 'WIDTH_AND_HEIGHT',
+      ...(control ? { layoutPositioning: 'ABSOLUTE', x: 0, y: 0 } : {}),
+      ...paintFor(node, 'color'),
+    } }
+  }
+
+  function inline(node) {
+    const native = presentation(node)
+    requireComponent(['block', 'inline'].includes(node.style.display) &&
+      Object.entries(native).filter(([key]) => key.startsWith('padding')).every(([, value]) => value === 0) &&
+      !native.strokes && native.fills.every(fill => fill.color.a === 0) && native.opacity === 1,
+    'inline fragments need undecorated single-line presentation')
+    const children = node.children.flatMap(child => {
+      if (child.kind === 'text') return [text(child, node)]
+      requireComponent(child.kind === 'element' && !child.source && child.style.display === 'inline',
+        'inline composition cannot flatten a source component or non-inline child')
+      return inline(child).children
+    })
+    requireComponent(children.length > 0 && children.every(child => near(child.native.height, children[0].native.height)),
+      'inline fragments require one shared line height')
+    let next = node.bounds.x
+    for (const child of children) {
+      requireComponent(near(child.observation.bounds.x, next), 'inline fragments require contiguous observed advances')
+      next += child.observation.bounds.width
+    }
+    return { kind: 'frame', observation: node, inline: true, children, native: {
+      name: node.tag, width: node.bounds.width, height: children[0].native.height,
+      layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'HUG',
+      primaryAxisAlign: 'MIN', counterAxisAlign: 'CENTER', itemSpacing: 0, ...native,
+    } }
+  }
+
+  function element(node, owner, isRoot = false) {
+    requireComponent(node?.kind === 'element', 'composition requires explicit element roots')
+    let occurrence
+    if (node.source) {
+      occurrence = occurrences.get(JSON.stringify(node.source.path))
+      requireComponent(occurrence && occurrence.description.componentId === node.source.componentId &&
+        occurrence.slot === node.source.slot && !seen.has(JSON.stringify(occurrence.path)), 'composition source correspondence is invalid or repeated')
+      if (owner) requireComponent(JSON.stringify(occurrence.path.slice(0, -1)) === JSON.stringify(owner.path),
+        'composition source child belongs to another owner')
+      seen.add(JSON.stringify(occurrence.path))
+      owner = occurrence
+    }
+    requireComponent(owner && (!isRoot || occurrence), 'composition requires exact source root ownership')
+    requireComponent(!node.component || occurrence, 'composition cannot flatten an uncaptured component boundary')
+    if (occurrence && node.children.every(child => ['text', 'slot'].includes(child.kind))) {
+      requireComponent(node.children.every(child => child.kind === 'text'), 'nested SVG slots require explicit native construction handles')
+      return { kind: 'component', occurrence, observation: node, textRow: true }
+    }
+    const native = presentation(node), style = node.style
+    requireComponent(['auto', '100%'].includes(node.sizing.width) && node.sizing.height === 'auto' &&
+      ['auto', '0px'].includes(node.sizing['min-width']) && ['auto', '0px'].includes(node.sizing['min-height']) &&
+      node.sizing['max-width'] === 'none' && node.sizing['max-height'] === 'none', 'composition constrained sizing requires further conversion')
+    let plan
+    if (node.control) {
+      requireComponent(node.tag === 'input' && node.control.kind === 'control' && node.control.type === 'text' &&
+        node.control.property === 'value' && node.children.length === 0, 'one explicitly bound native text control required')
+      requireComponent(node.control.placeholder === '', 'control placeholder layout and paint require further conversion')
+      requireComponent(style['text-align'] === 'start' || style['text-align'] === 'left', 'control text alignment requires further conversion')
+      const value = text(node.control, node, true)
+      // A browser text input has a fixed one-line content viewport, not a
+      // wrapping paragraph. Its actual value remains an editable native TEXT.
+      const viewport = { kind: 'frame', children: [value], native: {
+        name: 'Input content viewport', width: node.bounds.width - native.paddingLeft - native.paddingRight,
+        height: value.native.lineHeight, layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
+        clipsContent: true, fills: [],
+      } }
+      plan = { kind: 'frame', observation: node, children: [viewport], native: {
+        name: 'Source input', width: node.bounds.width, height: value.native.lineHeight + native.paddingTop + native.paddingBottom,
+        layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
+        primaryAxisAlign: 'MIN', counterAxisAlign: 'CENTER', clipsContent: true, ...native,
+      } }
+    } else if (['block', 'inline'].includes(style.display)) {
+      plan = inline(node)
+    } else {
+      requireComponent(['flex', 'inline-flex'].includes(style.display) && ['row', 'column'].includes(style['flex-direction']) &&
+        style['flex-wrap'] === 'nowrap', 'composition requires nonwrapping flex layout')
+      const justify = { normal: 'MIN', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['justify-content']]
+      const align = { normal: 'STRETCH', stretch: 'STRETCH', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['align-items']]
+      requireComponent(justify && align, 'composition alignment requires further conversion')
+      const vertical = style['flex-direction'] === 'column'
+      plan = { kind: 'frame', observation: node, children: node.children.map(child => element(child, owner)), native: {
+        name: node.tag, width: node.bounds.width, height: node.bounds.height,
+        layoutMode: vertical ? 'VERTICAL' : 'HORIZONTAL',
+        primaryAxisSizing: vertical ? 'HUG' : 'FIXED', counterAxisSizing: vertical ? 'FIXED' : 'HUG',
+        primaryAxisAlign: justify, counterAxisAlign: align, layoutWrap: 'NO_WRAP',
+        itemSpacing: pixels(style[vertical ? 'row-gap' : 'column-gap']),
+        counterAxisSpacing: pixels(style[vertical ? 'column-gap' : 'row-gap']), ...native,
+      } }
+      for (const child of plan.children) {
+        const childStyle = child.observation.style
+        requireComponent(childStyle['flex-grow'] === '0' && childStyle['flex-shrink'] === '1' &&
+          childStyle['flex-basis'] === 'auto' && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
+        if (vertical && align === 'STRETCH') child.placement = {
+          layoutAlignSelf: 'STRETCH', [child.native?.layoutMode === 'VERTICAL' ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL',
+        }
+      }
+    }
+    if (occurrence) return { ...plan, kind: 'component', occurrence }
+    return plan
+  }
+  const plan = element(root, null, true)
+  requireComponent(seen.size === occurrences.size, 'composition has unobserved source children')
+  return { plan, requirements }
+}
+
+async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root) {
+  const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root)
+  const components = [], created = [], geometry = []
+  function provenance(description) {
+    return [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+      schema: snapshot.schema, sha256: snapshot.sha256, exampleId: description.id, componentId: description.componentId,
+      mode: observation.mode, scope: 'source-composition-observed-aliases', props: description.props,
+      environment: observation.environment, viewport: observation.viewport, fontFaces: observation.fontFaces,
+    }) }]
+  }
+  async function component(current) {
+    const { description, path } = current.occurrence
+    if (current.textRow) {
+      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation)
+      created.push(result.master.id)
+      components.push({ path, ...result })
+      return result.master
+    }
+    const master = graph.createNode('COMPONENT', parentId, {
+      ...current.native, name: description.name, pluginData: provenance(description),
+    })
+    created.push(master.id)
+    const targets = []
+    for (const child of current.children) await construct(child, master, targets, current)
+    const properties = bindComponentProperties(graph, master, description, targets)
+    components.push({ path, master, properties })
+    geometry.push({ plan: current, node: master })
+    return master
+  }
+  async function construct(current, parent, targets, parentPlan) {
+    if (current.kind === 'component') {
+      const definition = await component(current)
+      const node = graph.createInstance(definition.id, parent.id, {
+        ...current.placement,
+        pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+          localId: current.occurrence.description.id, slot: current.occurrence.slot,
+        }) }],
+      })
+      geometry.push({ plan: current, node, parentPlan })
+      return node
+    }
+    const node = graph.createNode(current.kind === 'text' ? 'TEXT' : 'FRAME', parent.id, { ...current.native, ...current.placement })
+    if (current.control) {
+      const previous = getTextMeasurer()
+      try {
+        setTextMeasurer((node, maxWidth) => renderer.measureTextNode(node, maxWidth))
+        graph.updateNode(node.id, textAutoResizeChanges(node, { text: node.text }, true))
+        requireComponent(Math.abs(node.height - node.lineHeight) <= 1 / 64, 'control requires one unwrapped native line')
+      } finally { setTextMeasurer(previous) }
+    }
+    if (current.kind === 'text' && current.region.property) targets.push({ region: current.region, nativeNode: node })
+    geometry.push({ plan: current, node, parentPlan })
+    for (const child of current.children ?? []) await construct(child, node, targets, current)
+    return node
+  }
+  try {
+    await loadFonts(faces, requirements)
+    await renderer.loadFonts()
+    const master = await component(plan)
+    const previousMeasurer = getTextMeasurer()
+    try {
+      setTextMeasurer((node, maxWidth) => {
+        const measured = renderer.measureTextNode(node, maxWidth)
+        requireComponent(measured && Number.isFinite(measured.width) && measured.width >= 0 &&
+          Number.isFinite(measured.height) && measured.height > 0, 'composition requires working native text measurement')
+        return measured
+      })
+      for (const item of components) computeAllLayouts(graph, item.master.id)
+      computeAllLayouts(graph, master.id)
+    } finally { setTextMeasurer(previousMeasurer) }
+    for (const { plan: current, node, parentPlan } of geometry) {
+      if (!current.observation) continue
+      const expected = current.observation.bounds
+      const height = current.kind === 'text' || current.inline ? current.native.height : expected.height
+      requireComponent(Math.abs(node.width - expected.width) <= 1 / 64 && Math.abs(node.height - height) <= 1 / 64,
+        `composition native geometry differs from source ${current.observation.tag ?? 'text'}`)
+      if (parentPlan) {
+        const parentBounds = parentPlan.observation.bounds
+        const lineInset = current.kind === 'text' ? (height - expected.height) / 2 : 0
+        requireComponent(Math.abs(node.x - (expected.x - parentBounds.x)) <= 1 / 64 &&
+          Math.abs(node.y - (expected.y - parentBounds.y - lineInset)) <= 1 / 64,
+        'composition native placement differs from the source parent')
+      }
+    }
+    return { master, properties: components.find(item => item.master === master).properties, components }
+  } catch (error) {
+    for (const id of created.toReversed()) if (graph.getNode(id)) graph.deleteNode(id)
     throw error
   }
 }

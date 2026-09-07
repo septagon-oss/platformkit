@@ -1,5 +1,5 @@
 // Pinned SDK corrections: native paths use existing source lineage, never order.
-function chain(graph, first, field) {
+export function chain(graph, first, field) {
   const result = []
   const seen = new Set()
   for (let node = first; node; node = node[field] ? graph.getNode(node[field]) : null) {
@@ -44,7 +44,7 @@ function sourceChild(graph, source, child, overrides) {
   return graph.getNode([...matches][0])
 }
 
-function sourceChildren(graph, source, instance, overrides) {
+export function sourceChildren(graph, source, instance, overrides) {
   const result = new Map()
   const identities = new Set()
   for (const id of instance.childIds) {
@@ -127,19 +127,45 @@ function serializeNestedReferences(context, instance, counter) {
   return result;
 }
 
+function serializePropertyAssignments(context, node, counter) {
+  return Object.entries(node.componentPropertyAssignments).map(([propertyId, value]) => {
+    const definition = context.componentPropertyDefinitionsById.get(propertyId);
+    if (!definition) throw new Error('Missing native component property definition: ' + propertyId);
+    return { defID: nativePropertyGuid(propertyId), value: componentPropertyValue(definition.type, value, context, counter) };
+  });
+}
+
 function serializeTextOverrides(context, instance, counter) {
   const result = [];
-  for (const [key, value] of Object.entries(instance.overrides)) {
-    if (!key.endsWith(':text')) continue;
-    const target = context.graph.getNode(key.slice(0, -5));
-    if (typeof value !== 'string' || !target || target.type !== 'TEXT') {
-      throw new Error('Invalid native text override');
+  const pending = [instance], seen = new Set(), owners = [];
+  while (pending.length) {
+    const owner = pending.pop();
+    if (seen.has(owner.id)) throw new Error('Cyclic native property override subtree');
+    seen.add(owner.id);
+    for (const id of owner.childIds) {
+      const child = context.graph.getNode(id);
+      if (!child || child.parentId !== owner.id) throw new Error('Missing native property override child');
+      pending.push(child);
     }
-    result.push({
-      guidPath: nativeOverridePath(context, instance, target, counter),
-      textData: { characters: value },
-      size: { x: target.width, y: target.height }
+    if (owner.type === 'INSTANCE') owners.push(owner);
+  }
+  // More distant instance scopes override inherited nested values. The merge
+  // uses the last value for each exact native path, so emit outer owners last.
+  for (const owner of owners.reverse()) {
+    const assignments = serializePropertyAssignments(context, owner, counter);
+    if (owner !== instance && assignments.length) result.push({
+      guidPath: nativeOverridePath(context, instance, owner, counter), componentPropAssignments: assignments
     });
+    for (const [key, value] of Object.entries(owner.overrides)) {
+      if (!key.endsWith(':text')) continue;
+      const target = context.graph.getNode(key.slice(0, -5));
+      if (typeof value !== 'string' || target?.type !== 'TEXT' ||
+          !chain(context.graph, target, 'parentId').includes(owner)) throw new Error('Invalid native text override');
+      result.push({
+        guidPath: nativeOverridePath(context, instance, target, counter),
+        textData: { characters: value }, size: { x: target.width, y: target.height }
+      });
+    }
   }
   return result;
 }
@@ -270,18 +296,20 @@ function mergeTextOverrides(symbolOverrides, overrides) {
     ['function applyComponentMetadata(context, node, nc)', 'function applyComponentMetadata(context, node, nc, localIdCounter)'],
     ['applyComponentMetadata(context, node, nc);', 'applyComponentMetadata(context, node, nc, localIdCounter);'],
     ['componentPropertyValue(def.type, def.defaultValue, context.graph)', 'componentPropertyValue(def.type, def.defaultValue, context, localIdCounter)'],
-    ['componentPropertyValue(definition.type, value, context.graph)', 'componentPropertyValue(definition.type, value, context, localIdCounter)'],
     ['const id = parseGuidOrNull(def.id);', 'const id = nativePropertyGuid(def.id);'],
     ['const defID = parseGuidOrNull(ref.propertyId);', 'const defID = nativePropertyGuid(ref.propertyId);'],
-    ['const defID = parseGuidOrNull(propertyId);', 'const defID = nativePropertyGuid(propertyId);'],
   ]) source = replaceOnce(source, before, after)
-  return replaceOnce(source,
-    'const definition = context.componentPropertyDefinitionsById.get(propertyId);',
-    'const definition = context.componentPropertyDefinitionsById.get(propertyId);\n' +
-    '\t\tif (!definition) throw new Error("Missing native component property definition: " + propertyId);')
+  return replaceSection(source, 'const componentPropAssignments = Object.entries(',
+    '\tif (shouldSerializeRawBackedField(node, "componentPropAssignments",',
+    'const componentPropAssignments = serializePropertyAssignments(context, node, localIdCounter);')
 }
 
-export function correctPaintImporter(source, replace) {
+export function correctInstanceImporter(source, replace) {
+  source = 'import { extractComponentPropertyAssignments } from "./node-change2.js";\n' + source
+  source = replace(source, '\tdelete fields.componentPropAssignments;', '')
+  source = replace(source, 'function convertOverrideToProps(ov) {\n  const updates = {};',
+    `function convertOverrideToProps(ov) {\n  const updates = {};
+  if (ov.componentPropAssignments) updates.componentPropertyAssignments = extractComponentPropertyAssignments(ov);`)
   source = replace(source, 'overriddenNodes.add(targetId);', String.raw`
     if (patch.swapComponentId) {
       const key = guidToString(guids.at(-1));
@@ -339,7 +367,10 @@ export function correctPaintImporter(source, replace) {
         ctx.graph.updateNode(paintOwner.id, { overrides: paintOverrides }));`)
 }
 
-export function correctPropertyTarget(source) {
+export function correctPropertyTarget(source, replace) {
+  source = replace(source, 'const component = ctx.graph.getNode(instance.componentId);',
+    `const component = chain(ctx.graph, instance, 'componentId').at(-1);
+  if (component?.type !== 'COMPONENT') throw new Error('Missing native component definition owner');`)
   return replaceSection(source, 'function findPropertyPath(', 'function swapTargetId(',
     lineageHelpers + '\n' + String.raw`
 function propertyTarget(ctx, instance, propertyId) {

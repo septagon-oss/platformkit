@@ -11,11 +11,19 @@ function plainObject(value) {
 
 export function isSourceTextProperty(example, property) {
   const properties = example?.schema?.properties, props = example?.props
-  if (!plainObject(properties) || !plainObject(props) || !Object.hasOwn(properties, property) ||
-      !Object.hasOwn(props, property) || typeof props[property] !== 'string') return false
+  if (!plainObject(properties) || !plainObject(props) || !Object.hasOwn(properties, property)) return false
   const schema = properties[property]
   return plainObject(schema) && Object.hasOwn(schema, 'type') && schema.type === 'string' &&
-    Object.keys(schema).every(key => ['type', 'title', 'description'].includes(key))
+    (example.schema.required === undefined || Array.isArray(example.schema.required)) &&
+    Object.keys(schema).every(key => ['type', 'title', 'description', 'default'].includes(key)) &&
+    (!Object.hasOwn(schema, 'default') || schema.default === '') &&
+    (Object.hasOwn(props, property) ? typeof props[property] === 'string' :
+      Object.hasOwn(schema, 'default') && !example.schema.required?.includes(property))
+}
+
+export function sourceTextValue(example, property) {
+  if (!isSourceTextProperty(example, property)) return undefined
+  return Object.hasOwn(example.props, property) ? example.props[property] : example.schema.properties[property].default
 }
 
 // Construction handles supplied by the converter, not a lookup by node name,
@@ -28,25 +36,29 @@ export function bindComponentProperties(graph, master, example, targets) {
   requireBinding(example?.propsEditable === true && plainObject(example.schema) && Object.hasOwn(example.schema, 'type') &&
     example.schema.type === 'object', 'typed source example required')
   requireBinding(plainObject(example.schema.properties) && plainObject(example.props), 'source property schemas and values must be plain objects')
-  requireBinding(Array.isArray(targets) && targets.length > 0, 'explicit property targets required')
+  requireBinding(Array.isArray(targets), 'explicit property targets required')
   const records = master.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
   requireBinding(records.length <= 1, 'duplicate source provenance')
   const provenance = records.length ? JSON.parse(records[0].value) : {}
   requireBinding(plainObject(provenance) && !Object.hasOwn(provenance, 'textBindings') &&
-    !Object.hasOwn(provenance, 'bindingVersion'), 'fresh source binding provenance required')
+    !Object.hasOwn(provenance, 'slotBindings') && !Object.hasOwn(provenance, 'bindingVersion'), 'fresh source binding provenance required')
   const properties = new Set(), nodes = new Set(), planned = []
   for (const target of targets) {
     const { region, nativeNode } = target ?? {}
-    requireBinding(plainObject(region) && Object.hasOwn(region, 'kind') && ['text', 'slot'].includes(region.kind),
+    requireBinding(plainObject(region) && Object.hasOwn(region, 'kind') && ['text', 'control', 'slot'].includes(region.kind),
       'known source property region required')
-    const key = region.kind === 'text' ? 'property' : 'name', property = region[key]
+    const key = region.kind === 'slot' ? 'name' : 'property', property = region[key]
     requireBinding(Object.hasOwn(region, key) && typeof property === 'string' && property !== '', 'own source property name required')
     requireBinding(nativeNode && graph.getNode(nativeNode.id) === nativeNode, 'canonical native property target required')
-    if (region.kind === 'text') {
+    if (region.kind !== 'slot') {
       requireBinding(isSourceTextProperty(example, property), 'unconstrained source string property required')
-      requireBinding(typeof example.props[property] === 'string' && region.text === example.props[property], 'observed text differs from source value')
-      requireBinding(nativeNode.type === 'TEXT' && nativeNode.text === region.text, 'canonical native text must retain the observed value')
-      planned.push({ name: property, type: 'TEXT', defaultValue: example.props[property] })
+      const value = sourceTextValue(example, property), observed = region.kind === 'text' ? region.text : region.value
+      requireBinding(region.kind !== 'control' || Object.hasOwn(region, 'type') && region.type === 'text' &&
+        (region.placeholder === undefined || region.placeholder === ''),
+        'only literal text controls are supported')
+      requireBinding(observed === value, 'observed text differs from source value')
+      requireBinding(nativeNode.type === 'TEXT' && nativeNode.text === observed, 'canonical native text must retain the observed value')
+      planned.push({ name: property, type: 'TEXT', defaultValue: value })
     } else {
       requireBinding(Array.isArray(example.slots), 'source slot declarations required')
       const declarations = example.slots.filter(slot => slot?.name === property), declaration = declarations[0]
@@ -88,11 +100,12 @@ export function bindComponentProperties(graph, master, example, targets) {
   // Only construction establishes this correspondence. Native display names
   // can subsequently change; binding alone does not invent a source address.
   const textBindings = definitions.filter(item => item.type === 'TEXT').map(item => ({ id: item.id, property: item.name }))
+  const slotBindings = definitions.filter(item => item.type === 'INSTANCE_SWAP').map(item => ({ id: item.id, slot: item.name }))
   graph.updateNode(master.id, {
     componentPropertyDefinitions: structuredClone(definitions),
     pluginData: [...master.pluginData.filter(item => !records.includes(item)), {
       pluginId: 'platformkit', key: 'platformkit.source',
-      value: JSON.stringify({ ...provenance, bindingVersion: 1, textBindings }),
+      value: JSON.stringify({ ...provenance, bindingVersion: 1, textBindings, slotBindings }),
     }],
   })
   for (const [index, { nativeNode }] of targets.entries()) {

@@ -6,12 +6,13 @@ typed examples and stylesheet remain the source of truth. There is no second
 component registry, page language or client-specific library here.
 
 The implemented boundary is a tokens-and-icons FIG generator, supplied-font
-validation, browser observations, experimental single-text component construction
+validation, browser observations, experimental text and nested component construction
 and a pinned SDK correction layer with conformance tests. The generator does not
 include these experimental components; pages and flows are not converted yet.
-With an IBM Plex Sans 600 fixture at 1280×900 in light mode, capture accepts all
-107 gallery examples; native construction accepts 10, all Button variants, and
-explicitly refuses 97. These are measured construction guards, not proof of
+With IBM Plex Sans 400/500/600, headless Chromium (`--font-render-hinting=none`),
+light mode and a 1280×900 viewport, capture accepts all 107 gallery examples.
+Native construction accepts 12: ten Button variants,
+bare Input and Form; it explicitly refuses 95. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
 ## Generate the foundation
@@ -87,7 +88,7 @@ gate that should be made green by removing assertions.
 [captureExample](browser/capture.mjs) accepts a caller's Playwright Chromium
 browser, the existing Go snapshot, one exact example ID and optional mode,
 viewport and supplied fonts. It returns source identity, computed layout and
-paint observations, text regions and the faces Chromium used for each region. It
+paint observations, text regions, native text controls and Chromium's font evidence. It
 does not construct native components or assert that those observations can all
 be represented faithfully in a FIG file.
 
@@ -112,10 +113,12 @@ npm run test:browser
 The first command downloads a browser and may install system dependencies.
 CI runs these checks alongside the native suite and `make e2e`.
 
-The Button constructor marks its actual `label` text with paired
+The Button and Input constructors mark their actual `label` text with paired
 `<!--pk-text:label-->` comments. They preserve escaping and layout, including
-empty labels beside icons. Content-slot replacement and icon-only rendering
-omit the region. Capture records exact markers rather than guessing from visible
+empty Button labels beside icons. Input omits an empty label; its required
+asterisk remains outside the editable region. Standalone Label marks `text`.
+Button content-slot replacement and icon-only rendering omit the label region.
+Capture records exact markers rather than guessing from visible
 strings. Typed ownership, native property binding and named-slot replacement
 remain the converter's responsibility; a balanced marker is not readiness proof.
 Rendered Button slots also carry paired `pk-slot:IconStart`, `pk-slot:IconEnd`
@@ -124,8 +127,20 @@ empty or nested content, without inventing layout boxes. Missing markers mean
 that branch supplied no rendered slot, not that the source lacks a declaration.
 Malformed or crossed boundaries are refused. The existing example declarations
 remain authoritative; nested slot names alone do not establish component ownership.
-The source snapshot now retains captured child occurrences; this browser/native
-adapter does not yet consume that nested ownership contract.
+Capture checks source child byte spans against their exact UTF-8 output, then
+uses temporary numeric boundaries to identify single DOM roots. It removes those
+boundaries and verifies that HTML parsing stayed unchanged before observing.
+Each identified element carries its exact source path, component identity and
+declared slot; names and sibling positions never establish correspondence.
+Empty, multi-root and text-plus-element fragments receive no single-root claim.
+Missing spans remain unobserved; crossed, ambiguous or parser-altering boundaries
+are refused rather than repaired into guessed ownership.
+Canonical text Inputs carry `data-pk-value="value"`. Their control observation
+retains actual type, value, placeholder and exact control-element font evidence,
+not a fabricated DOM text region. An empty control without a placeholder has no
+observed glyphs; a visible placeholder can supply its own fonts. Native binding
+must check the typed source value, including explicit omitted-string defaults,
+and refuse unsupported placeholder behavior or browser-normalized mismatches.
 Icons separately expose their requested name and source-resolved
 `data-pk-icon-canonical` identity. Capture retains both, including aliases and
 fallbacks; an adapter must still verify the canonical asset and its provenance.
@@ -147,11 +162,12 @@ definition-parent ID, its source snapshot and observation, exact supplied font
 faces, a live Skia renderer, and an explicit native color-collection ID. The
 optional final argument supplies `{ region, master }` pairs for exact observed
 slot regions and native icon masters. The parent's effective native mode must
-match the observation. The result contains a master and property definitions;
+match the observation. The result contains a master, its property definitions and
+`components` entries with exact source paths, masters and property handles;
 create linked instances through the existing graph API. This is an OpenPencil
 adapter API, not the unfinished shared provider interface or a library publisher.
 
-The current supported input is one explicitly bound, nonempty text region in a
+The text-row capability supports one explicitly bound, nonempty text region in a
 centered, unconstrained, nonwrapping horizontal flex container, optionally with
 named slots containing one canonical SVG each. Construction
 preserves observed solid paints, corner radii and padding including transparent
@@ -163,6 +179,25 @@ Construction requires successful native text measurement and refuses outer
 geometry differences larger than 1/64 CSS pixel. Rejection removes the newly
 constructed nodes and restores the caller's measurement hook.
 
+Nested construction adds observed vertical stretch/fill and end-aligned rows,
+single-line label fragments, text controls and uniform solid borders. It builds
+separate linked masters for each source invocation, preserving different baselines
+even when Cancel and Create share the Button interface. The real Form is the
+vertical proof: Input and actions, with Cancel and Create inside actions. This
+does not model submission or make the native drawing an interactive web form.
+Text values use an unwrapped, auto-width native text node inside a fixed clipping
+viewport. The existing auto-size operation supplies measured bounds, including
+genuine zero advance and clearing; failed measurement rolls back the edit and
+history. Empty controls provide no glyph evidence. Caret, selection scrolling and
+other interactive input behavior are outside this static conversion.
+The Form checks cover both themes at 320px and 1280px, then nested Input and
+Button edits, undo/redo, sibling isolation, two saves and Go proposal reprojection.
+Run the focused local proof from this directory after the prerequisites above:
+
+```sh
+node --import ./register.mjs --test --test-name-pattern='Form|Input|composition' browser/components.test.mjs
+```
+
 [bindComponentProperties](bindings.mjs) preflights exact constructed handles before
 binding source strings to native `TEXT` properties and the supported single-icon
 occurrences to `INSTANCE_SWAP`. This restricted projection does not redefine Go
@@ -170,11 +205,16 @@ content slots as single replacements. Native definitions and references drive be
 Provenance records the source invocation, font identities, viewport, observed
 environment and a versioned native-property-ID to source-field map. Native display
 names can change without changing that map; provenance is not authentication.
+Explicit slot-property maps distinguish icon assets from nested source components;
+asset instances do not acquire string-proposal ownership by being inside a slot.
 
 [associateSourceInstance](source-changes.mjs) explicitly associates the exact
 instance returned by `graph.createInstance` with one root source occurrence.
 Preview siblings stay unmapped; copied correspondence is refused as ambiguous.
-`extractSourceProps` reads that association against the caller's canonical
+Reusable child templates carry only relative local IDs and declared slots, not
+absolute placement paths. Association validates the complete mapped subtree;
+`extractSourceProps` accepts an exact root or nested instance and derives its
+path through native lineage, including after FIG import. It checks the canonical
 snapshot and returns a provider-neutral `{baseSHA256, path, props}` proposal.
 Only mapped, unconstrained string properties are supported. Native definitions,
 lineage, baseline values and assignments must agree with the source and rendered
@@ -183,8 +223,8 @@ means only that the bound strings are unchanged, not that the document is equal.
 Missing, malformed, stale and unsupported correspondence have explicit results.
 Validate proposals through [ui.ProjectProps](../../../ui/proposal.go), or Core's
 `go run ./tools/designexport --proposal` with proposal JSON on stdin. It reuses Go
-constructors and returns a candidate snapshot without editing files. Root string
-extraction is not nested native composition, slot replacement, scene equivalence
+constructors and returns a candidate snapshot without editing files. String
+extraction is not semantic slot replacement, scene equivalence
 or a source persistence service. The foundation generator remains unchanged.
 
 Browser tests compare the actual Go Button, including 16px leading and 20px trailing
@@ -201,10 +241,11 @@ index corrections keep the native mode and live links from silently disappearing
 
 Icon composition verifies canonical flat path/circle geometry, attributes and
 observed paints; grouped, transformed or potentially clipped SVGs are refused.
-Empty/multiple or arbitrary nested slot content, visible borders/outlines, filters,
-wrapping, constrained widths and empty or collapsed-whitespace inputs remain
-unsupported. Native text properties still accept empty values; preserving
-their identity does not prove whitespace-only flex layout after an edit. Do not
+Arbitrary nested content, nonuniform or nonsolid borders, outlines, filters,
+wrapping and unimplemented sizing constraints remain unsupported. Text controls
+support empty values; empty or collapsed-whitespace flex labels need separate
+participation semantics. Native text properties still accept them, so preserving
+their identity alone does not prove the resulting source layout. Do not
 treat this development boundary as a complete editable component library.
 
 Native creation, updates and replacement retain FIG's authored `uniformScaleFactor`.
@@ -258,7 +299,7 @@ the supplied bytes in the existing SDK font manager. It does not resolve CSS
 fallback stacks or download fonts. WOFF2 and variable fonts are refused until
 both the shaping and FIG-outline paths support them.
 
-The locked IBM Plex Sans test dependency supplies real 400 and 600 Latin faces.
+The locked IBM Plex Sans test dependency supplies real 400, 500 and 600 Latin faces.
 Tests verify their byte identities, native shaping, Chromium's actual custom
 face selection, and unchanged native pixels through two saves with those same
 fonts loaded. The source-checked OpenType import correction prevents the SDK
@@ -308,7 +349,7 @@ settle. Property operations pause synchronization only while computing/restoring
 captured geometry; authored parent resizing still propagates master dimensions.
 Failed measurement restores grid sizing modes and frees the built Yoga trees.
 
-Text-property guarantees cover single placed targets and exact layout undo/redo.
+Text-property guarantees cover placed root or nested targets and exact layout undo/redo.
 Master-owned edits, variants and arbitrary imports remain unverified; identity
 must be unambiguous. These tests are not a universal replacement contract.
 The reordered-instance tests prove that labels retain the correct identity;
@@ -322,10 +363,9 @@ affected browser imports; build tools, copied assets and complete notices still 
 Supplied fonts, SVG fidelity, responsive/accessibility, interactive editing, typed conversion
 and source freshness remain incomplete. Product prototypes need runtime-state mappings
 and governed end-to-end persistence tests in their owning product repository.
-Native component sizing still needs evidence beyond the declared single-text
-comparison environment, including visible borders, wrapping and whitespace-only
-flex participation during edits. Correct font loading alone does not resolve
-those layout differences.
+Native sizing still needs evidence beyond the declared comparison cases, including
+wrapping and whitespace-only flex participation during edits. Correct font loading
+alone does not resolve those layout differences.
 Programmatic batches with an unrelated master update already queued before a
 property edit need further lifecycle work: wait for that preceding update to
 settle before using the verified edit/history boundary. The current correction

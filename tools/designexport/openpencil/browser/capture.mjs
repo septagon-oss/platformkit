@@ -1,4 +1,5 @@
 import { validateFonts } from '../fonts.mjs'
+import { indexCaptureSources, prepareCaptureSource } from './capture-source.mjs'
 
 // Observe the existing Go HTML and CSS in a disposable, unauthenticated browser
 // document. This is static adapter input, not a second component renderer or a
@@ -17,6 +18,7 @@ export async function captureExample(browser, snapshot, exampleId, {
   }
   const faces = validateFonts(fonts)
   const example = examples[0]
+  const prepared = prepareCaptureSource(example)
   const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', serviceWorkers: 'block' })
   try {
     const requests = []
@@ -79,12 +81,13 @@ export async function captureExample(browser, snapshot, exampleId, {
       } finally { clearTimeout(settlingTimer) }
       if (violations.length) throw new Error(`Capture refused resources blocked by CSP: ${violations.join(', ')}`)
     }, {
-      css: snapshot.css, html: example.html, mode,
+      css: snapshot.css, html: prepared.html, mode,
       fonts: faces.map(face => ({ family: face.family, weight: face.weight, style: face.style, bytes: [...face.bytes] })),
     })
+    await page.evaluate(indexCaptureSources, { occurrences: prepared.occurrences, html: example.html })
     const roots = await page.evaluate(colorTokens => {
-      // Only exact text-node handles cross into CDP font inspection. Element
-      // font queries include descendants and cannot identify a direct region.
+      // Exact text nodes and native text controls cross into CDP inspection.
+      // Other element queries aggregate descendants and cannot identify regions.
       globalThis.__platformkitCaptureTextNodes = []
       const elements = []
       const properties = [
@@ -101,6 +104,7 @@ export async function captureExample(browser, snapshot, exampleId, {
         'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
         'font-feature-settings', 'font-variation-settings', 'line-height', 'letter-spacing',
         'white-space', 'text-align', 'text-transform', 'text-decoration-line',
+        'text-indent', 'text-shadow', 'word-spacing', 'writing-mode', 'direction',
         'overflow-x', 'overflow-y', 'outline-style', 'outline-width', 'outline-color',
         'animation-name', 'animation-duration', 'filter',
       ]
@@ -188,6 +192,19 @@ export async function captureExample(browser, snapshot, exampleId, {
           sizing: Object.fromEntries(['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height']
             .map(key => [key, typed.get(key)?.toString() ?? ''])),
           children: [],
+        }
+        const source = globalThis.__platformkitCaptureSources.get(node)
+        if (source) out.source = source
+        if (node.hasAttribute('data-pk-value')) {
+          const property = node.getAttribute('data-pk-value')
+          if (!(node instanceof HTMLInputElement) || !/^[A-Za-z][A-Za-z0-9]*$/.test(property)) {
+            throw new Error('Invalid text-control property marker')
+          }
+          if (node.type !== 'text') throw new Error('Capture only supports marked text controls')
+          // CDP observes painted control content: with an empty value, glyphs
+          // may belong to its placeholder. Preserve that distinction explicitly.
+          out.control = { kind: 'control', property, type: node.type, value: node.value, placeholder: node.placeholder,
+            fontObservationIds: [globalThis.__platformkitCaptureTextNodes.push(node) - 1] }
         }
         for (const pseudo of ['::before', '::after']) {
           const content = getComputedStyle(node, pseudo).content
@@ -283,6 +300,7 @@ export async function captureExample(browser, snapshot, exampleId, {
       await session.send('DOM.getDocument')
       async function inspect(nodes) {
         for (const node of nodes) {
+          if (node.control) await inspect([node.control])
           if (node.children) {
             await inspect(node.children)
             continue

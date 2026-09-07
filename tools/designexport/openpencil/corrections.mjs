@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { correctExporter, correctPropertyTarget, correctPaintImporter } from './exporter-correction.mjs'
-import { correctPropertyActions, correctComponentSync, correctEditorCreation } from './property-correction.mjs'
+import { correctExporter, correctPropertyTarget, correctInstanceImporter } from './exporter-correction.mjs'
+import { correctPropertyActions, correctComponentSync, correctEditorCreation, correctTextAutoResize } from './property-correction.mjs'
 import { correctLayout, correctGridRecompute } from './layout-correction.mjs'
 import { correctScaleDefaults, correctScaleGraph, correctScaleNodeChange, correctScaleImport } from './scaling-correction.mjs'
 import { correctSyncGraph } from './sync-correction.mjs'
@@ -12,7 +12,7 @@ export const corrections = Object.freeze({
   '@open-pencil/fig/dist/node-change2.js': {
     sha256: 'bdbb599d70a5cf92300c67c385ee0d269550d4eea9c637f608d85fa321e63ee7',
     transform: (source, replace) => correctScaleNodeChange(correctExporter(source, replace), replace) +
-      '\nexport { serializeVariableModes };\n',
+      '\nexport { serializeVariableModes, extractComponentPropertyAssignments };\n',
   },
   '@open-pencil/fig/dist/node-change.js': {
     sha256: 'c468a330820b16cbe552b70d7090b30a014477b6b4e3b5149cc8d2584cc8abba',
@@ -45,7 +45,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/fig/dist/instance-overrides.js': {
     sha256: '5efd3f221660fbbed3d60879f187cb946e391bc1556f80213961d4804b027eb0',
-    transform: (source, replace) => correctScaleImport(correctPaintImporter(correctImporter(source, replace), replace), replace),
+    transform: (source, replace) => correctScaleImport(correctInstanceImporter(correctImporter(source, replace), replace), replace),
   },
   '@open-pencil/scene-graph/dist/types.js': {
     sha256: '79dcc003679545dae0cfeadfdbb68dc10c6e92b85468d344ac89a14cbbdfe8e6',
@@ -75,6 +75,10 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/editor/components/properties.js': {
     sha256: '7bc49a01f5148053123559f7e4a523317a7ea61339429607dd2fd338243ed123',
     transform: (source, replace) => correctPropertyActions(correctPropertyTarget(source, replace), replace),
+  },
+  '@open-pencil/core/dist/editor/text/auto-resize.js': {
+    sha256: '9cab5aafe825afa0d7f959536b8fe61da620a535051f6b4bee5ae31e74b0fc1a',
+    transform: correctTextAutoResize,
   },
   '@open-pencil/core/dist/editor/component-sync.js': {
     sha256: '7381406b1455668e57afa48c313e89e4041e11592d9634a074d1de6da512a001',

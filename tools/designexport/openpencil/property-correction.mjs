@@ -78,6 +78,9 @@ function restorePropertyHistory(ctx, state) {
 function refreshPropertyLayout(ctx, target) {
   if (target?.field !== "TEXT") return;
   ctx.withoutComponentSync(() => {
+    if (target.node.layoutPositioning === "ABSOLUTE" && target.node.textAutoResize === "WIDTH_AND_HEIGHT") {
+      ctx.graph.updateNode(target.node.id, textAutoResizeChanges(target.node, { text: target.node.text }, true));
+    }
     for (let node = target.node; node && node.type !== "CANVAS"; node = node.parentId ? ctx.graph.getNode(node.parentId) : null) {
       ctx.graph.updateNode(node.id, { figmaDerivedLayout: null });
     }
@@ -114,6 +117,7 @@ export function correctEditorCreation(source, replace) {
 // Hash/version guards belong to corrections.mjs. Every structural anchor here
 // must match exactly once before any substituted module is allowed to load.
 export function correctPropertyActions(source, replaceOnce) {
+  source = 'import { textAutoResizeChanges } from "../text/auto-resize.js";\n' + source
   // Validate and replace the native target before publishing its assignment.
   // A refused replacement must leave both the graph and property value intact.
   source = replaceOnce(source,
@@ -197,4 +201,24 @@ export function correctPropertyActions(source, replaceOnce) {
       '\t\t\t\t}\n' +
       '\t\t\t\tconst live = ctx.graph.getNode(instanceId);',
   )
+}
+
+// Absolute property targets do not participate in Yoga text measurement. The
+// owning auto-size operation supplies their bounds once, inside normal history.
+// Its ordinary callers retain the upstream estimate fallback and zero handling.
+export function correctTextAutoResize(source, replace) {
+  source = replace(source, 'function textAutoResizeChanges(node, changes) {',
+    'function textAutoResizeChanges(node, changes, requireNative = false) {')
+  source = replace(source,
+    '\tconst measured = getTextMeasurer()?.(next, maxWidth) ?? estimateTextSize(next, maxWidth);', String.raw`
+  const actual = getTextMeasurer()?.(next, maxWidth);
+  if (requireNative && next.text !== "" && !actual) throw new Error("Actual native text measurement required");
+  const measured = actual ?? estimateTextSize(next, maxWidth);
+  if (requireNative && (!Number.isFinite(measured.width) || measured.width < 0 ||
+      !Number.isFinite(measured.height) || measured.height <= 0)) {
+    throw new Error("Valid native text measurement required");
+  }`)
+  return replace(source,
+    'hasTextAutoWidthChange(changes) && measured.width > 0)',
+    'hasTextAutoWidthChange(changes) && (requireNative ? measured.width >= 0 : measured.width > 0))')
 }
