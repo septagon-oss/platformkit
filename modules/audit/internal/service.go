@@ -4,10 +4,12 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -47,10 +49,15 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	if ev.Actor != uuid.Nil {
 		actor = ev.Actor
 	}
+	// The ids the payload mentions are lifted out here, once, so that reading
+	// one row's trail is an index lookup rather than a scan of the tenant's.
+	// See migrations/000023 and List.
 	err := tx.DB().Exec("INSERT INTO "+table+
-		" (tenant_id, occurred_at, name, actor, event_id, payload) VALUES (?, ?, ?, ?, ?, ?::jsonb)"+
+		" (tenant_id, occurred_at, name, actor, event_id, payload, records)"+
+		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?)"+
 		" ON CONFLICT (tenant_id, event_id) DO NOTHING",
-		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload)).Error
+		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload),
+		pq.Array(mentioned(ev.Payload))).Error
 	if err != nil {
 		return fmt.Errorf("audit: record %s: %w", ev.Name, err)
 	}
@@ -73,18 +80,13 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query
 		if q.Actor != uuid.Nil {
 			g = g.Where("actor = ?", q.Actor)
 		}
-		// The row's id anywhere in the payload, at any depth and inside an
-		// array, which is what makes this filter independent of how the module
-		// that published the event named the row. It is a scan of the tenant's
-		// trail: there is no index for "this value appears somewhere", and
-		// retention is what keeps the table a size that can be read.
-		//
-		// The path is a parameter rather than a literal because it contains a
-		// question mark — every jsonpath predicate does — and a driver looking
-		// for placeholders in the statement would count it as one.
+		// The row's id anywhere in the payload, which is what makes this filter
+		// independent of how the module that published the event named the row.
+		// It reads the array Record lifted the ids into rather than searching
+		// the payload, because no jsonb index can answer a recursive match and
+		// the search was a sequential scan of the tenant's whole trail.
 		if q.Record != uuid.Nil {
-			g = g.Where("jsonb_path_exists(payload, ?::jsonpath, jsonb_build_object('v', ?::text))",
-				`$.** ? (@ == $v)`, q.Record.String())
+			g = g.Where("records @> ?", pq.Array([]uuid.UUID{q.Record}))
 		}
 		if !q.Since.IsZero() {
 			g = g.Where("occurred_at >= ?", q.Since)
@@ -109,6 +111,41 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query
 		return nil, 0, fmt.Errorf("audit: read the trail: %w", err)
 	}
 	return rows, total, nil
+}
+
+// mentioned is every uuid the payload names, at any depth and inside an array.
+// It is the same rule the search it replaces used, computed once at write time:
+// a payload names its row differently depending on who published it, so what an
+// event is about is the set of ids it mentions.
+func mentioned(payload []byte) []uuid.UUID {
+	var doc any
+	if len(payload) == 0 || json.Unmarshal(payload, &doc) != nil {
+		return nil
+	}
+	seen := map[uuid.UUID]bool{}
+	var walk func(any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case string:
+			if id, err := uuid.Parse(t); err == nil {
+				seen[id] = true
+			}
+		case []any:
+			for _, each := range t {
+				walk(each)
+			}
+		case map[string]any:
+			for _, each := range t {
+				walk(each)
+			}
+		}
+	}
+	walk(doc)
+	out := make([]uuid.UUID, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	return out
 }
 
 // Get is one row of this tenant's trail. A row another tenant owns is not

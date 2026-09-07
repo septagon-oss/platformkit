@@ -79,8 +79,9 @@ func (f *Fake) List(_ context.Context, _ db.Tx[db.Tenant], q contracts.Query) ([
 	return slices.Clone(kept), total, nil
 }
 
-// mentions is the fake's jsonb_path_exists: the id anywhere in the payload, at
-// any depth and inside an array. A payload that is not JSON mentions nothing.
+// mentions is the fake's half of internal.mentioned: the id anywhere in the
+// payload, at any depth and inside an array. A payload that is not JSON
+// mentions nothing.
 func mentions(payload json.RawMessage, id string) bool {
 	var doc any
 	if json.Unmarshal(payload, &doc) != nil {
