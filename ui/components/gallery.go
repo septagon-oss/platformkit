@@ -251,10 +251,10 @@ func Gallery() []Example {
 		ExampleWithSlots(info("pk-ui.component.modal/default", "Overlay", "Modal"), ModalProps{ComponentProps: ComponentProps{ID: "confirm-modal"},
 			Title: "Archive", Description: "This action cannot be undone.",
 			Body: "Review the affected records.", Footer: "Confirm or cancel.", Size: "small", Open: true}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/medium", "Overlay", "Modal / medium"), ModalProps{Title: "Edit record", Size: "medium"}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/large", "Overlay", "Modal / large"), ModalProps{Title: "Large review", Size: "large"}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/xl", "Overlay", "Modal / xl"), ModalProps{Title: "Wide review", Size: "xl"}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/undismissable", "Overlay", "Modal / undismissable"), ModalProps{AriaLabel: "Required decision", Size: "full",
+		ExampleWithSlots(info("pk-ui.component.modal/medium", "Overlay", "Modal / medium"), ModalProps{Title: "Edit record", Size: "medium", Open: true}, ModalSlots{}, ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/large", "Overlay", "Modal / large"), ModalProps{Title: "Large review", Size: "large", Open: true}, ModalSlots{}, ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/xl", "Overlay", "Modal / xl"), ModalProps{Title: "Wide review", Size: "xl", Open: true}, ModalSlots{}, ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/undismissable", "Overlay", "Modal / undismissable"), ModalProps{AriaLabel: "Required decision", Size: "full", Open: true,
 			Closable: new(false), CloseOnOverlay: new(false), CloseOnEscape: new(false), ShowClose: new(false), ShowOverlay: new(false), Centered: new(false)}, ModalSlots{}, ModalWithSlots),
 		ExampleWithSlots(info("pk-ui.component.modal/deferred", "Overlay", "Modal / deferred"), ModalProps{ComponentProps: ComponentProps{ID: "server-modal"},
 			AriaLabel: "Server dialog", Deferred: true, OpenOnSwap: true}, ModalSlots{}, ModalWithSlots),
@@ -356,11 +356,19 @@ func Documentation(e Example) g.Node {
 // half of this page a specimen cannot show. A value is written as a person
 // would type it — a string without its quotes, anything else as JSON.
 func propertyRows(d ExampleDescription) []TableRow {
-	var schema struct {
-		Properties map[string]struct {
+	// A property that may be left unset is spelled anyOf[type, null] — a *bool
+	// is how this package says "true, false, or the component's own default" —
+	// so the type is read from either shape or the column would be blank for
+	// exactly the properties whose absence means something.
+	type propertyType struct {
+		Type  string `json:"type"`
+		AnyOf []struct {
 			Type string `json:"type"`
-		} `json:"properties"`
-		Required []string `json:"required"`
+		} `json:"anyOf"`
+	}
+	var schema struct {
+		Properties map[string]propertyType `json:"properties"`
+		Required   []string                `json:"required"`
 	}
 	var given map[string]json.RawMessage
 	if json.Unmarshal(d.Schema, &schema) != nil {
@@ -377,7 +385,13 @@ func propertyRows(d ExampleDescription) []TableRow {
 	slices.SortStableFunc(names, func(a, b string) int { return rank(a) - rank(b) })
 	rows := make([]TableRow, 0, len(names))
 	for _, name := range names {
-		kind := schema.Properties[name].Type
+		property := schema.Properties[name]
+		kind := property.Type
+		for _, one := range property.AnyOf {
+			if kind == "" && one.Type != "null" {
+				kind = one.Type + ", or the default"
+			}
+		}
 		if rank(name) == 0 {
 			kind += ", required"
 		}

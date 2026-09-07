@@ -2,7 +2,9 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -49,8 +51,8 @@ func (p pages) mount(api *httpx.API) {
 		})
 
 	page.Serve(api, p.shell, page.Route{ID: "admin-gallery", Method: http.MethodGet, Path: galleryPath, Summary: "The component gallery"},
-		httpx.SignedIn(), func(context.Context, page.Request, *page.Empty) (page.View, error) {
-			return gallery(), nil
+		httpx.SignedIn(), func(_ context.Context, _ page.Request, in *galleryInput) (page.View, error) {
+			return gallery(in.Group), nil
 		})
 
 	// The switcher lives at the path the tenant module's nav entry already
@@ -207,6 +209,12 @@ func checks(ctx context.Context) []result {
 	return []result{{name: c.Name(), err: c.Check(db.Detached(ctx))}}
 }
 
+// galleryInput is which group to show. Empty is all of them, which is the page
+// the class-closure test reads.
+type galleryInput struct {
+	Group string `query:"group" doc:"Only this group of components"`
+}
+
 // gallery renders every component once, from the package's own exported list,
 // with what a person needs in order to ask for one: the id the design export
 // names it by, every property its Props type takes, and the value this example
@@ -219,10 +227,15 @@ func checks(ctx context.Context) []result {
 // It is the one page that links the second stylesheet: the components below are
 // the ones no other screen renders, so their rules are not in app.css and every
 // other page is that much smaller.
-func gallery() page.View {
+func gallery(only string) page.View {
 	var body []g.Node
 	group := ""
+	shown := 0
 	for _, example := range components.Gallery() {
+		if only != "" && example.Group != only {
+			continue
+		}
+		shown++
 		if example.Group != group {
 			group = example.Group
 			body = append(body, components.Heading(components.HeadingProps{
@@ -230,29 +243,47 @@ func gallery() page.View {
 		}
 		body = append(body,
 			components.Card(components.CardProps{Title: example.Name}),
-			h.Div(g.Attr("data-gallery-example", example.Name), example.Node),
+			h.Div(g.Attr("data-gallery-example", example.Name),
+				g.If(example.Group == "Overlay", g.Attr("data-gallery-overlay", "")), example.Node),
 			components.Documentation(example))
+	}
+	subtitle := "Every component this application renders, once each, with the properties it takes."
+	if only != "" {
+		subtitle = fmt.Sprintf("%d of them, in %s.", shown, only)
 	}
 	return page.View{
 		Title: "Components",
 		Head:  []g.Node{h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.Gallery().Fingerprint))},
 		Body: []g.Node{
-			components.Toolbar(components.ToolbarProps{Title: "Components",
-				Subtitle: "Every component this application renders, once each, with the properties it takes."}),
-			groupLinks(),
+			components.Toolbar(components.ToolbarProps{Title: "Components", Subtitle: subtitle}),
+			groupLinks(only),
 			components.Stack(components.StackProps{Gap: "6"}, body...),
 		},
 	}
 }
 
-// groupLinks is the way down a page a hundred specimens long. The groups are
-// the gallery's own, so a new one appears here without a second edit.
-func groupLinks() g.Node {
-	var links []g.Node
+// groupLinks narrows the page to one group, which is how a page a hundred
+// specimens long is read: nobody scrolls it looking for a badge. The groups are
+// the gallery's own, so a new one appears here without a second edit, and the
+// unfiltered page stays reachable because it is the one the class-closure test
+// reads.
+func groupLinks(only string) g.Node {
+	links := []g.Node{groupLink("All", "", only)}
 	for _, group := range components.GalleryGroups() {
-		links = append(links, components.Link(components.LinkProps{Label: group, Href: "#" + anchor(group)}))
+		links = append(links, groupLink(group, group, only))
 	}
 	return components.Flex(components.FlexProps{Direction: "row", Wrap: true, Gap: "3"}, links...)
+}
+
+func groupLink(label, group, only string) g.Node {
+	at := galleryPath
+	if group != "" {
+		at += "?group=" + url.QueryEscape(group)
+	}
+	if group == only {
+		return components.Badge(components.BadgeProps{Label: label, Variant: "outline"})
+	}
+	return components.Link(components.LinkProps{Label: label, Href: at})
 }
 
 // anchor is a group's name as a fragment: lower case, one word.

@@ -125,8 +125,32 @@ var Gallery = sync.OnceValue(func() Sheet {
 	if err != nil {
 		panic("ui: the gallery declares a class the style engine cannot render: " + err.Error())
 	}
-	return fingerprinted(css.NewSheet().Merge(rules))
+	return fingerprinted(css.NewSheet().Merge(rules).Merge(specimens()))
 })
+
+// specimens frames each example so an overlay is shown rather than presented.
+// A modal renders `position: fixed; inset: 0`, which is right everywhere except
+// here: on a page a hundred components long, one of them covering the viewport
+// is the page gone. A transform makes the frame the containing block for fixed
+// descendants — the rule CSS has for exactly this — so a modal fills its own
+// card and the rest of the page stays reachable.
+//
+// The selectors are the attributes the gallery page puts on a specimen. They
+// are written by hand rather than composed from the utility alphabet because
+// they are about the page and not about a component: no component asks to be
+// contained.
+func specimens() *css.Sheet {
+	s := css.NewSheet()
+	s.Select("[data-gallery-example]",
+		css.Decl("position", css.Literal("relative")),
+		css.Decl("transform", css.Literal("translateZ(0)")),
+		css.Decl("overflow", css.Literal("hidden")),
+		css.Decl("border-radius", css.Literal("0.5rem")))
+	// An overlay has no size of its own: it fills what contains it, and what
+	// contains it is now this.
+	s.Select("[data-gallery-overlay]", css.Decl("min-height", css.Literal("20rem")))
+	return s
+}
 
 // Assets is the tree a shell serves under its asset prefix: app.css is the
 // sheet it composed, gallery.css is Gallery, js/ is Controllers, and then any

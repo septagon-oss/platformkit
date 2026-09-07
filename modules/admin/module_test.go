@@ -469,10 +469,16 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 	// And it is documentation and not a wall of specimens: the id the design
 	// export names a component by, and a property the component takes but this
 	// example did not set, which is the half a specimen cannot show.
-	for _, want := range []string{"pk-ui.component.badge/outline", "removeLabel", "#group-status"} {
+	for _, want := range []string{"pk-ui.component.badge/outline", "removeLabel", "_gallery?group=Status"} {
 		if !strings.Contains(gallery, want) {
 			t.Errorf("the gallery does not say %q", want)
 		}
+	}
+	// And it narrows: one group is that group and not the other nine, so a
+	// person looking for a badge is not handed a hundred components.
+	_, one, _ := call(t, router, http.MethodGet, "/admin/_gallery?group=Status", "")
+	if !strings.Contains(one, "pk-ui.component.badge/outline") || strings.Contains(one, "pk-ui.component.modal/default") {
+		t.Error("the gallery does not narrow to one group")
 	}
 }
 
