@@ -229,8 +229,7 @@ Missing, malformed, stale and unsupported correspondence have explicit results.
 Validate proposals through [ui.ProjectProps](../../../ui/proposal.go), or Core's
 `go run ./tools/designexport --proposal` with proposal JSON on stdin. It reuses Go
 constructors and returns a candidate snapshot without editing files. String
-extraction is not semantic slot replacement, scene equivalence
-or a source persistence service. The foundation generator remains unchanged.
+extraction is not semantic slot replacement, scene equivalence or source persistence.
 
 Browser tests compare the actual Go Button, including 16px leading and 20px trailing
 icons, in both themes with supplied IBM Plex Sans 600 and explicit
@@ -257,11 +256,13 @@ Native creation, updates and replacement retain FIG's authored `uniformScaleFact
 Flat, solid-painted vector masters scale from FIG-representable canonical geometry,
 including strokes, without detaching or cumulative resizing. Tests cover 20px and
 16px instances, composition, master updates, factor edits and clearing.
-Direct swaps retain geometry and links; placed-instance `INSTANCE_SWAP` tests cover
-repeated slots, undo/redo and two saves without changing siblings or masters.
-File-level references and strict rendered pixels are checked independently of the
-importer. Replacing locally edited descendants is refused before mutation because
-subtree history is unfinished. Stroke caps and joins survive serialization;
+Page-placed property owners pass repeated icon swaps, undo/redo and two saves
+without changing siblings or masters; file references and pixels have independent checks.
+Nested property owners are unsupported: swaps can change the document before
+the first save fails. Undo also fails and loses its history entry in current probes.
+Do not use nested component swaps on documents you need to preserve.
+Locally edited descendants are refused before mutation; subtree history is
+unfinished. Stroke caps and joins survive serialization;
 conflicting styles, unsupported scaled masters and nonrepresentable geometry are refused.
 For flat vector replacements, consistent source-occurrence color-variable mappings
 also survive history and two saves. Correspondence uses native variable identities,
