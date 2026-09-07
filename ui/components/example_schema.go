@@ -137,10 +137,15 @@ func (b exampleSchemaBuilder) build(typ reflect.Type, definition bool) (map[stri
 		properties := map[string]any{}
 		var required []string
 		for _, field := range fields {
-			properties[field.name], err = b.build(field.typ, false)
+			property, err := b.build(field.typ, false)
 			if err != nil {
 				return nil, fmt.Errorf("property %q: %w", field.name, err)
 			}
+			// A definite omitted string is its Go zero, not a renderer default.
+			if (field.omit || field.zero) && !field.optional && field.typ.Kind() == reflect.String && property["type"] == "string" {
+				property["default"] = ""
+			}
+			properties[field.name] = property
 			if !field.omit && !field.zero && !field.optional {
 				required = append(required, field.name)
 			}

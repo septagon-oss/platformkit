@@ -122,6 +122,10 @@ gallery. Alert and EmptyState expose their existing typed slot constructors to
 consumers, so their gallery examples do not require private rendering adapters.
 Replacing a captured node or changing its identity invalidates typed projection
 and edits. These source checks are not a complete cross-editor replacement contract.
+Omittable concrete string fields advertise `default: ""` when omission means
+their definite Go zero value. Required strings, pointers and fields promoted
+through optional pointers do not gain that default. Serialized Props retain
+their existing omission behavior; these defaults do not describe renderer fallbacks.
 
 [ui.Export](ui/export.go) projects those examples with their palette, glyphs
 and stylesheet into a content-addressed snapshot. Products supply their own

@@ -451,6 +451,9 @@ func inputFieldWithSlots(
 	}
 	input = append(input, attrPairs(p.Attrs)...)
 	input = append(input, htmxAttrs(p.HTMXProps)...)
+	if typ == "text" {
+		input = append(input, g.Attr("data-pk-value", "value"))
+	}
 	// A file input takes no value: no browser lets a page choose a file for
 	// somebody, and one that carried a value attribute would be a control the
 	// form submits nothing for.
@@ -524,7 +527,9 @@ func inputFieldWithSlots(
 	}
 	field := []g.Node{h.Class(fieldClass.Compile()), g.Attr("data-component", componentName)}
 	if p.Label != "" {
-		field = append(field, Label(LabelProps{Text: p.Label, For: id, Required: p.Required}))
+		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
+			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
+		}))
 	}
 	control := h.Input(input...)
 	if len(iconStart) > 0 || len(iconEnd) > 0 {
@@ -1017,7 +1022,13 @@ func Checkbox(p CheckboxProps) g.Node {
 // Label renders LabelProps; required fields carry a visible marker the
 // screen reader skips (the input's required attribute carries the semantics).
 func Label(p LabelProps) g.Node {
-	children := []g.Node{h.For(p.For), classes(clLabel.Compile(), p.Class), g.Text(p.Text)}
+	return labelWithText(p, g.Group{
+		g.Raw("<!--pk-text:text-->"), g.Text(p.Text), g.Raw("<!--/pk-text:text-->"),
+	})
+}
+
+func labelWithText(p LabelProps, text g.Node) g.Node {
+	children := []g.Node{h.For(p.For), classes(clLabel.Compile(), p.Class), text}
 	if p.Required {
 		children = append(children, h.Span(
 			h.Class(clRequired.Compile()), g.Attr("aria-hidden", "true"), g.Text(" *"),

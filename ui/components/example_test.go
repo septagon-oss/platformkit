@@ -141,6 +141,158 @@ func TestButtonReplacedLabelHasNoTextRegion(t *testing.T) {
 	}
 }
 
+func TestInputAndLabelTextRegionsPreserveNativeSemantics(t *testing.T) {
+	for _, tc := range []struct{ name, value, escaped string }{
+		{"empty", "", ""},
+		{"escaped", `Title & <tag>"'<!--/pk-text:label-->`, `Title &amp; &lt;tag&gt;&#34;&#39;&lt;!--/pk-text:label--&gt;`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			props := c.InputProps{
+				ComponentProps: c.ComponentProps{ID: "title-field", Attrs: map[string]string{"data-local": "kept"}},
+				HTMXProps:      c.HTMXProps{Post: "/validate", Target: "#result"},
+				Name:           "title", Label: tc.value, Value: tc.value, Required: true,
+				Error: "Check this title", HelpText: "Public title", Autocomplete: "off",
+			}
+			before, err := json.Marshal(props)
+			if err != nil {
+				t.Fatal(err)
+			}
+			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Input))
+			if tc.value == "" {
+				if strings.Contains(description.HTML, "pk-text:label") || strings.Contains(description.HTML, "<label") {
+					t.Fatal("absent Input label was advertised as rendered text")
+				}
+			} else {
+				region := "<!--pk-text:label-->" + tc.escaped + "<!--/pk-text:label-->"
+				if strings.Count(description.HTML, "<!--pk-text:label-->") != 1 || !strings.Contains(description.HTML, region+"<span") {
+					t.Fatalf("Input label must own exactly its escaped text, excluding required marker: %s", description.HTML)
+				}
+				if strings.Contains(description.HTML, "pk-text:text") || !strings.Contains(description.HTML, `for="title-field"`) {
+					t.Fatal("Input label lost source-property ownership or native association")
+				}
+			}
+			for _, attribute := range []string{`id="title-field"`, `name="title"`, `required`, `aria-invalid="true"`, `aria-describedby="title-field-error title-field-help"`, `hx-post="/validate"`, `hx-target="#result"`, `autocomplete="off"`, `data-local="kept"`, `border-solid`} {
+				if !strings.Contains(description.HTML, attribute) {
+					t.Errorf("Input annotation lost %s", attribute)
+				}
+			}
+			label := describeExample(t, c.ExampleOf(exampleInfo, c.LabelProps{Text: tc.value, For: "title-field", Required: true}, c.Label))
+			if !strings.Contains(label.HTML, "<!--pk-text:text-->"+tc.escaped+"<!--/pk-text:text--><span") || !strings.Contains(label.HTML, `aria-hidden="true"> *</span>`) {
+				t.Fatalf("Label property region changed text or required semantics: %s", label.HTML)
+			}
+			after, err := json.Marshal(props)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("rendering mutated caller props: %v", err)
+			}
+		})
+	}
+}
+
+func TestInputValueRegionIsLimitedToTextControls(t *testing.T) {
+	for _, typ := range []string{"", "text", " TEXT ", "email", "password", "number", "tel", "url", "search", "date", "time", "datetime-local", "month", "week", "color", "hidden", "file"} {
+		t.Run(typ, func(t *testing.T) {
+			for _, value := range []string{"", `A & <tag>"'`} {
+				description := describeExample(t, c.ExampleOf(exampleInfo, c.InputProps{Name: "title", Type: typ, Value: value}, c.Input))
+				want := typ == "" || strings.EqualFold(strings.TrimSpace(typ), "text")
+				if count := strings.Count(description.HTML, `data-pk-value="value"`); count != 0 && !want || count != 1 && want {
+					t.Fatalf("type %q value %q has %d value markers", typ, value, count)
+				}
+				if value != "" && typ != "file" && !strings.Contains(description.HTML, `value="A &amp; &lt;tag&gt;&#34;&#39;"`) {
+					t.Fatal("annotation changed native value escaping")
+				}
+				if typ == "file" && strings.Contains(description.HTML, `value=`) {
+					t.Fatal("file input carries a value")
+				}
+			}
+		})
+	}
+	original := c.ExampleOf(exampleInfo, c.InputProps{Name: "title"}, c.Input)
+	filled, err := original.WithProps(json.RawMessage(`{"value":"New title"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := filled.WithProps(json.RawMessage(`{"value":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := describeExample(t, original)
+	if !strings.Contains(describeExample(t, filled).HTML, `value="New title"`) || string(initial.Props) != `{"name":"title"}` || describeExample(t, cleared).HTML != initial.HTML {
+		t.Fatal("setting and clearing a value changed omission semantics or original input")
+	}
+}
+
+func TestInputFamilyDeclaresSolidBorders(t *testing.T) {
+	for _, node := range []g.Node{
+		c.Input(c.InputProps{Name: "field", Required: true}),
+		c.Select(c.SelectProps{Name: "field", Required: true}),
+		c.Textarea(c.TextareaProps{Name: "field", Required: true}),
+	} {
+		var html strings.Builder
+		if err := node.Render(&html); err != nil {
+			t.Fatal(err)
+		}
+		for _, attribute := range []string{`border-solid`, `name="field"`, `required`} {
+			if !strings.Contains(html.String(), attribute) {
+				t.Errorf("input-family control lost %s: %s", attribute, html.String())
+			}
+		}
+	}
+}
+
+func TestExampleStringDefaultsDescribeOnlyDefiniteOmittedZeros(t *testing.T) {
+	type namedString string
+	type EmbeddedStrings struct {
+		Promoted string `json:"promoted,omitempty"`
+	}
+	type OptionalStrings struct {
+		Optional string `json:"optional,omitempty"`
+	}
+	type props struct {
+		EmbeddedStrings
+		*OptionalStrings
+		Empty    string      `json:"empty,omitempty"`
+		Zero     string      `json:"zero,omitzero"`
+		Named    namedString `json:"named,omitempty"`
+		Required string      `json:"required"`
+		Pointer  *string     `json:"pointer,omitempty"`
+		Number   json.Number `json:"number,omitempty"`
+	}
+	original := c.ExampleOf(exampleInfo, props{Number: "1"}, func(props) g.Node { return g.Text("unchanged") })
+	description := describeExample(t, original)
+	var schema struct{ Properties map[string]map[string]any }
+	if err := json.Unmarshal(description.Schema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"empty", "zero", "named", "promoted"} {
+		property := schema.Properties[name]
+		if value, ok := property["default"]; !ok || value != "" || property["type"] != "string" {
+			t.Errorf("%s lacks its concrete omitted string zero: %+v", name, property)
+		}
+	}
+	for _, name := range []string{"required", "pointer", "optional", "number"} {
+		if _, ok := schema.Properties[name]["default"]; ok {
+			t.Errorf("%s advertises an unsupported default", name)
+		}
+	}
+	if string(description.Props) != `{"number":1,"required":""}` {
+		t.Fatalf("schema defaults materialized absent props: %s", description.Props)
+	}
+	updated, err := original.WithProps(json.RawMessage(`{"empty":"filled","optional":"present","pointer":"set"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(describeExample(t, updated).Schema) != string(description.Schema) || string(describeExample(t, original).Props) != string(description.Props) {
+		t.Fatal("defaults depend on instance values or mutated the original")
+	}
+	input := describeExample(t, c.ExampleOf(exampleInfo, c.InputProps{Name: "title"}, c.Input))
+	if err := json.Unmarshal(input.Schema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.Properties["value"]["default"] != "" || strings.Contains(string(input.Props), `"value"`) {
+		t.Fatal("empty Input value needs schema evidence without changing props omission")
+	}
+}
+
 func TestButtonSlotRegionsFollowTheRenderedComposition(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

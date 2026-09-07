@@ -244,6 +244,7 @@ var (
 	clInput         = style.New().
 			Display(style.DisplayBlock).Width(style.SFull).
 			Rounded(style.RadiusMD).Border(style.Border1).
+			BorderStyle(style.BorderSolid).
 			Bg(style.SurfacePrimary).TextColor(style.FgPrimary).
 			On(style.StatePlaceholder, func(c style.ClassList) style.ClassList { return c.TextColor(style.FgPlaceholder) }).
 			On(style.StateDisabled, func(c style.ClassList) style.ClassList {
