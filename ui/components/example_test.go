@@ -188,6 +188,30 @@ func TestInputAndLabelTextRegionsPreserveNativeSemantics(t *testing.T) {
 	}
 }
 
+func TestTextContentRegionPreservesSemanticElementAndEscaping(t *testing.T) {
+	for _, value := range []string{"", "Album description", `A & <tag>"'<!--/pk-text:content-->`} {
+		for _, element := range []string{"p", "div", "strong", "h1"} {
+			props := c.TextProps{Content: value, Element: element}
+			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Text))
+			var escaped strings.Builder
+			if err := g.Text(value).Render(&escaped); err != nil {
+				t.Fatal(err)
+			}
+			region := "<!--pk-text:content-->" + escaped.String() + "<!--/pk-text:content-->"
+			if strings.Count(description.HTML, "<!--pk-text:content-->") != 1 || !strings.Contains(description.HTML, region) {
+				t.Fatalf("Text must bind exactly its escaped content: %s", description.HTML)
+			}
+			wantElement := element
+			if element == "h1" {
+				wantElement = "p"
+			}
+			if !strings.HasPrefix(description.HTML, "<"+wantElement+" ") || !strings.HasSuffix(description.HTML, "</"+wantElement+">") {
+				t.Fatalf("Text annotation changed semantic element: %s", description.HTML)
+			}
+		}
+	}
+}
+
 func TestInputValueRegionIsLimitedToTextControls(t *testing.T) {
 	for _, typ := range []string{"", "text", " TEXT ", "email", "password", "number", "tel", "url", "search", "date", "time", "datetime-local", "month", "week", "color", "hidden", "file"} {
 		t.Run(typ, func(t *testing.T) {

@@ -82,7 +82,7 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
     'definition parent variable mode must match the observation')
   requireComponent(observation.roots.length === 1 && observation.roots[0].kind === 'element', 'one component root required')
   const root = observation.roots[0]
-  if (root.source && root.children.some(child => child.kind === 'element')) {
+  if (root.source && (root.style.display === 'block' || root.children.some(child => child.kind === 'element'))) {
     return materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root)
   }
   const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, [example.id], iconTargets)
@@ -287,11 +287,13 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     }
   }
 
-  function text(region, node, control = false) {
+  function text(region, node, { control = false, wrapping = false } = {}) {
     const style = node.style, value = control ? region.value : region.text
     requireComponent(typeof value === 'string' && !/[\r\n\t]/.test(value), 'composition requires single-line text')
-    if (!control) requireComponent(region.rects?.length === 1 && region.bounds.height > 0,
-      'composition text needs one observed line')
+    if (wrapping) requireComponent(value !== '' && value === value.replace(/[\t\n\r\f ]+/g, ' ').replace(/^ | $/g, ''),
+      'text blocks need nonempty text without collapsed whitespace')
+    if (!control) requireComponent(region.rects?.length > 0 && (wrapping || region.rects.length === 1) && region.bounds.height > 0,
+      'composition text needs observed lines')
     const observed = region.fonts
     requireComponent(Array.isArray(observed), 'composition text requires actual font evidence')
     const weight = Number(style['font-weight'])
@@ -312,11 +314,11 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     const lineHeight = pixels(style['line-height']), fontSize = pixels(style['font-size'])
     requireComponent(lineHeight > 0 && fontSize > 0, 'composition text requires positive font metrics')
     requirements.push({ family: face.family, weight: face.weight, style: face.style, text: value })
-    return { kind: 'text', region, observation: control ? null : region, control, native: {
+    return { kind: 'text', region, observation: control ? null : region, control, wrapping, native: {
       name: region.property ?? 'Source text', text: value, width: control ? 0 : region.bounds.width, height: lineHeight,
       fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic', fontSize, lineHeight,
       letterSpacing: style['letter-spacing'] === 'normal' ? 0 : pixels(style['letter-spacing']),
-      textAutoResize: 'WIDTH_AND_HEIGHT',
+      textAutoResize: wrapping ? 'HEIGHT' : 'WIDTH_AND_HEIGHT',
       ...(control ? { layoutPositioning: 'ABSOLUTE', x: 0, y: 0 } : {}),
       ...paintFor(node, 'color'),
     } }
@@ -362,7 +364,8 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     }
     requireComponent(owner && (!isRoot || occurrence), 'composition requires exact source root ownership')
     requireComponent(!node.component || occurrence, 'composition cannot flatten an uncaptured component boundary')
-    if (occurrence && node.children.every(child => ['text', 'slot'].includes(child.kind))) {
+    if (occurrence && ['flex', 'inline-flex'].includes(node.style.display) &&
+      node.children.every(child => ['text', 'slot'].includes(child.kind))) {
       requireComponent(node.children.every(child => child.kind === 'text'), 'nested SVG slots require explicit native construction handles')
       return { kind: 'component', occurrence, observation: node, textRow: true }
     }
@@ -376,7 +379,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         node.control.property === 'value' && node.children.length === 0, 'one explicitly bound native text control required')
       requireComponent(node.control.placeholder === '', 'control placeholder layout and paint require further conversion')
       requireComponent(style['text-align'] === 'start' || style['text-align'] === 'left', 'control text alignment requires further conversion')
-      const value = text(node.control, node, true)
+      const value = text(node.control, node, { control: true })
       // A browser text input has a fixed one-line content viewport, not a
       // wrapping paragraph. Its actual value remains an editable native TEXT.
       const viewport = { kind: 'frame', children: [value], native: {
@@ -388,6 +391,19 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         name: 'Source input', width: node.bounds.width, height: value.native.lineHeight + native.paddingTop + native.paddingBottom,
         layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
         primaryAxisAlign: 'MIN', counterAxisAlign: 'CENTER', clipsContent: true, ...native,
+      } }
+    } else if (style.display === 'block' && node.children.length === 1 && node.children[0].kind === 'text') {
+      requireComponent(style['white-space'] === 'normal' && ['start', 'left'].includes(style['text-align']) &&
+        style['overflow-x'] === 'visible' && style['overflow-y'] === 'visible',
+      'text blocks require normal wrapping, left alignment and visible overflow')
+      const value = text(node.children[0], node, { wrapping: true })
+      value.native.width = node.bounds.width - native.paddingLeft - native.paddingRight
+      value.native.height = node.bounds.height - native.paddingTop - native.paddingBottom
+      value.native.layoutAlignSelf = 'STRETCH'
+      plan = { kind: 'frame', observation: node, children: [value], native: {
+        name: node.tag, width: node.bounds.width, height: node.bounds.height,
+        layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
+        primaryAxisAlign: 'MIN', counterAxisAlign: 'STRETCH', ...native,
       } }
     } else if (['block', 'inline'].includes(style.display)) {
       plan = inline(node)
@@ -497,13 +513,17 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       if (!current.observation) continue
       const expected = current.observation.bounds
       const height = current.kind === 'text' || current.inline ? current.native.height : expected.height
-      requireComponent(Math.abs(node.width - expected.width) <= 1 / 64 && Math.abs(node.height - height) <= 1 / 64,
+      const width = current.wrapping ? current.native.width : expected.width
+      requireComponent(Math.abs(node.width - width) <= 1 / 64 && Math.abs(node.height - height) <= 1 / 64,
         `composition native geometry differs from source ${current.observation.tag ?? 'text'}`)
       if (parentPlan) {
         const parentBounds = parentPlan.observation.bounds
+        // Wrapping TEXT owns the CSS content box, not Range's font rectangle.
+        // The latter can have asymmetric leading and cannot locate a line box.
         const lineInset = current.kind === 'text' ? (height - expected.height) / 2 : 0
-        requireComponent(Math.abs(node.x - (expected.x - parentBounds.x)) <= 1 / 64 &&
-          Math.abs(node.y - (expected.y - parentBounds.y - lineInset)) <= 1 / 64,
+        const x = current.wrapping ? parentPlan.native.paddingLeft : expected.x - parentBounds.x
+        const y = current.wrapping ? parentPlan.native.paddingTop : expected.y - parentBounds.y - lineInset
+        requireComponent(Math.abs(node.x - x) <= 1 / 64 && Math.abs(node.y - y) <= 1 / 64,
         'composition native placement differs from the source parent')
       }
     }

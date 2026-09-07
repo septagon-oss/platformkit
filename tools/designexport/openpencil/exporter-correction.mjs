@@ -333,6 +333,23 @@ function mergeTextOverrides(symbolOverrides, overrides) {
 }
 
 export function correctInstanceImporter(source, replace) {
+  source = String.raw`
+function sourceTextLayout(source, target) {
+  const width = target.figmaDerivedLayout?.width ?? source.width;
+  const height = target.figmaDerivedLayout?.height ?? source.height;
+  return { width, height, figmaDerivedTextGlyphs:
+    width === source.width && height === source.height && source.figmaDerivedTextGlyphs
+      ? markCopySource(source.figmaDerivedTextGlyphs, structuredClone(source.figmaDerivedTextGlyphs)) : undefined };
+}
+` + source
+  source = replace(source, '\t\tprops.width = source.width;\n\t\tprops.height = source.height;',
+    '\t\tObject.assign(props, sourceTextLayout(source, child));')
+  source = replace(source, '\t\tprops.figmaDerivedTextGlyphs = source.figmaDerivedTextGlyphs ? structuredClone(source.figmaDerivedTextGlyphs) : void 0;\n', '')
+  source = replace(source, '\t\tgraph.updateNode(node.id, {\n\t\t\twidth: source.width,\n\t\t\theight: source.height,',
+    '\t\tgraph.updateNode(node.id, {\n\t\t\t...sourceTextLayout(source, node),')
+  source = replace(source,
+    '\t\t\tstyleRuns: copyStyleRuns(source.styleRuns),\n\t\t\tfigmaDerivedTextGlyphs: source.figmaDerivedTextGlyphs ? markCopySource(source.figmaDerivedTextGlyphs, structuredClone(source.figmaDerivedTextGlyphs)) : void 0',
+    '\t\t\tstyleRuns: copyStyleRuns(source.styleRuns)')
   source = lineageHelpers + '\n' + source
   source = replace(source,
     'if (!srcNode || !tgtNode || srcNode.type !== tgtNode.type) continue;',

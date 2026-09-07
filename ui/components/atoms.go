@@ -1090,7 +1090,7 @@ func Text(p TextProps) g.Node {
 	if lines > 0 {
 		children = append(children, g.Attr("data-lines", strconv.Itoa(lines)))
 	}
-	children = append(children, g.Text(p.Content))
+	children = append(children, g.Raw("<!--pk-text:content-->"), g.Text(p.Content), g.Raw("<!--/pk-text:content-->"))
 	return g.El(element, children...)
 }
 

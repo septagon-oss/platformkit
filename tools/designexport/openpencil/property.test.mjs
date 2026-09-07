@@ -45,6 +45,41 @@ function snapshot(graph) {
   return structuredClone([...graph.getAllNodes()])
 }
 
+test('resized wrapping layout invalidates only dependent caches and restores them on measurement failure', () => {
+  const graph = new SceneGraph(), page = graph.getPages()[0]
+  const master = graph.createNode('COMPONENT', page.id, { width: 100, height: 40, layoutMode: 'VERTICAL',
+    primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED', counterAxisAlign: 'STRETCH' })
+  graph.createNode('TEXT', master.id, { text: 'Wrapped source', width: 100, height: 40, textAutoResize: 'HEIGHT', layoutAlignSelf: 'STRETCH' })
+  const instance = graph.createInstance(master.id, page.id), text = graph.getChildren(instance.id)[0]
+  graph.createInstance(master.id, page.id, { name: 'Unrelated preview' })
+  const absolute = graph.createNode('FRAME', instance.id, { layoutPositioning: 'ABSOLUTE', width: 11, height: 12,
+    figmaDerivedLayout: { width: 11, height: 12, x: 3, y: 4 } })
+  instance.source = { ...instance.source, format: 'fig', editedFields: ['width'] }
+  instance.width = 200
+  instance.figmaDerivedLayout = { width: 100, height: 40 }
+  text.figmaDerivedLayout = { width: 100, height: 40 }
+  instance.source.editedFields = []
+  const imported = snapshot(graph)
+  computeAllLayouts(graph, instance.id)
+  assert.deepEqual(snapshot(graph), imported, 'unmodified import retains its saved layout')
+  instance.source.editedFields = ['width']
+  const before = snapshot(graph), previous = getTextMeasurer()
+  try {
+    setTextMeasurer(() => { throw new Error('Measurement unavailable') })
+    assert.throws(() => computeAllLayouts(graph, instance.id), /Measurement unavailable/)
+    assert.deepEqual(snapshot(graph), before, 'failed measurement restores the previous cache without authored metadata changes')
+    setTextMeasurer((node, maxWidth) => ({ width: maxWidth, height: 20 }))
+    computeAllLayouts(graph, instance.id)
+    assert.deepEqual([instance.width, instance.height, text.width, text.height], [200, 20, 200, 20])
+    assert.equal(instance.figmaDerivedLayout, null)
+    assert.equal(text.figmaDerivedLayout, null)
+    assert.deepEqual(absolute, before.find(node => node.id === absolute.id))
+    assert.deepEqual(snapshot(graph).filter(node => ![instance.id, text.id].includes(node.id)),
+      before.filter(node => ![instance.id, text.id].includes(node.id)))
+    assert.deepEqual(instance.source.editedFields, ['width'])
+  } finally { setTextMeasurer(previous) }
+})
+
 test('property history restores sibling layout, source metadata and text caches without replacing nodes', async () => {
   const { graph, instance, label, sibling } = fixture()
   const actions = createEditor({ graph })

@@ -17,6 +17,7 @@ import { buildFoundation } from '../foundation.mjs'
 import { buildComponentDocument } from '../document.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
+import { captureExample } from '../browser/capture.mjs'
 
 const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL)
 assert.ok(endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', 'openpencil'].includes(endpoint.hostname),
@@ -307,13 +308,14 @@ for (const depth of [1, 2]) test(`nested property picker retains native ownershi
   } finally { await browser.close() }
 })
 
-test('generated Form and Button support real local fonts, property edits and two worker saves', { timeout: 120000 }, async () => {
+test('generated Form, Button and wrapping Text support local fonts, property edits and two worker saves', { timeout: 120000 }, async () => {
   await verifyBuild()
   const hash = bytes => createHash('sha256').update(bytes).digest('hex')
   const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
     cwd: new URL('../../../../', import.meta.url), encoding: 'utf8',
   }))
   const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
+  const paragraph = 'pk-ui.component.text/muted'
   const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-fonts-'))
   let browser, renderer
   try {
@@ -332,13 +334,14 @@ test('generated Form and Button support real local fonts, property edits and two
     browser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const ck = await initCanvasKit()
     renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
-    const built = await buildComponentDocument(source, { examples: [form, button], fonts, browser, renderer, viewport: { width: 320, height: 900 } })
+    const built = await buildComponentDocument(source, { examples: [form, button, paragraph], fonts, browser, renderer, viewport: { width: 320, height: 900 } })
     // Generation retains its declared headless-shell comparison profile;
     // editing uses full Chromium, including its CI secure-origin support.
     await browser.close()
     browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const { graph, placements, selections } = built
     graph.updateNode(selections[1].instance.id, { name: 'Editable button' })
+    graph.updateNode(selections[2].instance.id, { name: 'Editable paragraph' })
     graph.createInstance(selections[0].master.id, placements.id, { name: 'Untouched Form', x: 500, y: 48 })
     let buffer = Buffer.from(await exportFigFile(graph))
     const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
@@ -347,6 +350,7 @@ test('generated Form and Button support real local fonts, property edits and two
     const untouched = [...baseline.getAllNodes()].filter(node => node.type === 'COMPONENT' || node.name === 'Untouched Form')
       .map(node => [node.name, geometry(baseline, node)])
     const values = ['WAVY affinity album title '.repeat(6), ''], labels = ['Create affinity album', 'Return to album']
+    const contents = ['Remember the people, places and small details. '.repeat(5).trim(), 'An album description.']
     for (let cycle = 0; cycle < 3; cycle++) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['local-fonts'] })
       try {
@@ -370,10 +374,14 @@ test('generated Form and Button support real local fonts, property edits and two
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           await page.keyboard.press('ArrowRight')
         }
-        for (const [name, field, value] of [[inputName, 'value', values[cycle]], ['Editable button', 'label', labels[cycle]]]) {
+        for (const [name, field, value, initial, previousValue] of [
+          [inputName, 'value', values[cycle], '', values[cycle - 1]],
+          ['Editable button', 'label', labels[cycle], 'Add item', labels[cycle - 1]],
+          ['Editable paragraph', 'content', contents[cycle], 'Plain body copy.', contents[cycle - 1]],
+        ]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           const control = page.getByRole('textbox', { name: field, exact: true })
-          const previous = field === 'value' ? (cycle ? values[cycle - 1] : '') : (cycle ? labels[cycle - 1] : 'Add item')
+          const previous = cycle ? previousValue : initial
           await expect(control).toHaveValue(previous)
           if (cycle === 2) continue
           await control.fill(value)
@@ -396,14 +404,17 @@ test('generated Form and Button support real local fonts, property edits and two
               'download identifies the exact bytes actually loaded by the editor, not only available system faces')
           }
           const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
-          for (const id of [form, button]) {
+          for (const id of [form, button, paragraph]) {
             const before = sourceNode(baseline, [id]), after = sourceNode(reopened, [id])
             const oldParent = baseline.getNode(before.parentId), newParent = reopened.getNode(after.parentId)
             assert.deepEqual([after.x, after.y, newParent.x, newParent.y], [before.x, before.y, oldParent.x, oldParent.y],
               'layer-tree navigation must not move source placements or their board')
           }
           for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
-          for (const [path, props] of [[[form, 'title'], { value: values[cycle] }], [[button], { label: labels[cycle] }]]) {
+          for (const [path, props] of [
+            [[form, 'title'], { value: values[cycle] }], [[button], { label: labels[cycle] }],
+            [[paragraph], { content: contents[cycle] }],
+          ]) {
             const result = extractSourceProps(reopened, sourceNode(reopened, path), source)
             if (path.length === 2 && cycle === 1) assert.equal(result.status, 'no-supported-changes')
             else {
@@ -412,6 +423,12 @@ test('generated Form and Button support real local fonts, property edits and two
                 cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(result.proposal),
               }))
               assert.notEqual(projected.sha256, source.sha256)
+              if (path[0] === paragraph) {
+                const observed = await captureExample(browser, projected, paragraph, { fonts, viewport: { width: 320, height: 900 } })
+                const placed = sourceNode(reopened, path), expected = observed.roots[0].bounds
+                for (const field of ['width', 'height']) assert.ok(Math.abs(placed[field] - expected[field]) <= 1 / 64,
+                  `worker-saved paragraph ${field}: ${placed[field]} versus ${expected[field]}`)
+              }
             }
           }
           assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))

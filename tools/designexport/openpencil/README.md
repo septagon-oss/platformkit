@@ -9,10 +9,10 @@ The generator packages tokens, icons and explicitly selected experimental native
 components, using supplied-font validation, browser observations and a pinned
 SDK correction layer. Pages and flows are not converted yet; this is not a
 complete published component library or the finished shared provider interface.
-With IBM Plex Sans 400/500/600, headless Chromium (`--font-render-hinting=none`),
+With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts all 107 gallery examples.
-Native construction accepts 12: ten Button variants,
-bare Input and Form; it explicitly refuses 95. These are measured guards, not proof of
+Native construction accepts 15: ten Buttons, bare/invalid Input, Form and two Text
+examples; the coverage test reports 92 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
 ## Generate a design document
@@ -51,8 +51,7 @@ explicit `examples`, `fonts`, `mode`, `viewport`, and caller-owned `browser` and
 `renderer`. It returns foundation handles plus definition/placement frames and
 exact selection handles. [buildFoundation](foundation.mjs) supplies the shared
 `{ graph, collection, icons }`; `prepareIcon` validates glyphs without creating nodes.
-These compose the existing source, not another catalog. Source hash, scope and
-attribution remain on the Foundation frame and masters. In-process APIs trust
+Source hash, scope and attribution remain on the Foundation frame and masters. In-process APIs trust
 the caller's producer hash; origin records do not prove an edited file is fresh.
 
 Supported inputs are the existing light/dark token contract, literal hexadecimal
@@ -197,11 +196,12 @@ history. Empty controls provide no glyph evidence. Caret, selection scrolling an
 other interactive input behavior are outside this static conversion.
 The Form checks cover both themes at 320px and 1280px, then nested Input and
 Button edits, undo/redo, sibling isolation, two saves and Go proposal reprojection.
-Run the focused local proof from this directory after the prerequisites above:
-
-```sh
-node --import ./register.mjs --test --test-name-pattern='Form|Input|composition' browser/components.test.mjs
-```
+Text binds `content` to native wrapping text inside its observed block content box.
+Both themes pass line-break/advance checks at 320px and 1280px, property history and
+two saves; the editor test edits and downloads the 320px paragraph. Reopened direct
+wrapping-text instances also pass caller-run width reflow and two saves. This does
+not establish arbitrary container-resize history. The invalid Input's error copy
+persists, but only its label/value have property bindings. Run `npm run test:browser`.
 
 [bindComponentProperties](bindings.mjs) preflights exact constructed handles before
 binding source strings to native `TEXT` properties and the supported single-icon
@@ -243,19 +243,19 @@ trips retain native links and match source dimensions and icon placement within
 1/64 pixel. Fresh native derived-layout records preserve sibling positions after
 text grows; edits after reopening must still reflow. The precision correction preserves CanvasKit's
 shaped advances; it does not reproduce every platform's font hinting. These are
-geometry and persistence checks, not an accessibility audit or a complete source
-pixel comparison. Separate assertions change palette values and verify native
+line-box and persistence checks, not glyph-baseline/pixel equivalence or a native
+accessibility audit. Separate assertions change palette values and verify native
 painted pixels after each save. Page-mode serialization and imported instance
 index corrections keep the native mode and live links from silently disappearing.
 
 Icon composition verifies canonical flat path/circle geometry, attributes and
 observed paints; grouped, transformed or potentially clipped SVGs are refused.
 Arbitrary nested content, nonuniform or nonsolid borders, outlines, filters,
-wrapping and unimplemented sizing constraints remain unsupported. Text controls
-support empty values; empty or collapsed-whitespace flex labels need separate
-participation semantics. Native text properties still accept them, so preserving
-their identity alone does not prove the resulting source layout. Do not
-treat this development boundary as a complete editable component library.
+truncation and unimplemented sizing constraints remain unsupported. Text controls
+support empty values; text blocks and flex labels still need empty/collapsed-space
+participation semantics. Native properties accept those edits, but the converter
+refuses such initial text blocks; property identity is not source-layout fidelity.
+This development boundary is not a complete editable component library.
 
 Native creation, updates and replacement retain FIG's authored `uniformScaleFactor`.
 Flat, solid-painted vector masters scale from FIG-representable canonical geometry,
