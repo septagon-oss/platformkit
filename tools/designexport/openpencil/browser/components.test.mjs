@@ -184,6 +184,51 @@ test('real source Button becomes a linked editable component with fractional nat
   assert.deepEqual(snapshot, before)
 })
 
+test('native glyph swaps agree with nested source property edits without changing icon size or tone', async () => {
+  const run = (args, input) => JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+    input: input === undefined ? undefined : JSON.stringify(input),
+  }))
+  const snapshot = run([]), before = structuredClone(snapshot)
+  for (const id of ['pk-ui.component.button/with-icon', 'pk-ui.component.button/with-leading-icon']) {
+    const example = snapshot.examples.find(item => item.id === id), child = example.children[0]
+    assert.deepEqual([child.description.id, child.description.componentId], ['icon', 'pk-ui.component.icon'])
+    const projected = run(['--proposal'], { baseSHA256: snapshot.sha256, path: [id, child.description.id], props: { name: 'x' } })
+    const changed = projected.examples.find(item => item.id === id)
+    assert.deepEqual(changed.props, example.props, 'the containing Button properties remain unchanged')
+    assert.deepEqual(changed.children[0].description.props, { ...child.description.props, name: 'x' })
+    assert.deepEqual(projected.examples.filter(item => item.id !== id), snapshot.examples.filter(item => item.id !== id))
+    for (const mode of ['light', 'dark']) {
+      let { graph, collection, icons } = buildFoundation(snapshot)
+      const page = graph.addPage('Nested source icon proof')
+      graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
+      const observation = await captureExample(browser, snapshot, id, { mode, fonts: faces })
+      const region = observation.roots[0].children.find(item => item.kind === 'slot')
+      const { master, properties } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, collection.id,
+        [{ region, master: icons.get('plus') }])
+      let instance = graph.createInstance(master.id, page.id)
+      const property = properties.find(item => item.type === 'INSTANCE_SWAP')
+      const actions = createEditor({ graph })
+      actions.setCanvasKit(ck, renderer)
+      actions.setInstanceComponentProperty(instance.id, property.id, icons.get('x').id)
+      const expected = await captureExample(browser, projected, id, { mode, fonts: faces })
+      const svg = expected.roots[0].children.find(item => item.kind === 'slot').children[0]
+      assert.equal(svg.icon.canonicalName, 'x', 'comparison is against the newly rendered source glyph')
+      for (let save = 0; save < 2; save++) {
+        const bytes = await exportFigFile(graph)
+        graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+        instance = [...graph.getAllNodes()].find(node => node.type === 'INSTANCE' && node.componentPropertyAssignments[property.id])
+        const native = graph.getChildren(instance.id).find(node => node.componentPropertyReferences.some(ref => ref.propertyId === property.id))
+        assert.equal(JSON.parse(graph.getNode(native.componentId).pluginData.find(item => item.key === 'platformkit.icon').value).name, 'x')
+        for (const field of ['width', 'height']) close(instance[field], expected.roots[0].bounds[field], `reopened Button ${field}`)
+        for (const field of ['width', 'height', 'x', 'y']) close(native[field],
+          svg.bounds[field] - (['x', 'y'].includes(field) ? expected.roots[0].bounds[field] : 0), `reopened icon ${field}`)
+      }
+    }
+  }
+  assert.deepEqual(snapshot, before)
+})
+
 test('source icon slots become linked editable native composition through mixed history and two saves', async () => {
   for (const [id, slotName, size] of [['with-icon', 'IconEnd', 20], ['with-leading-icon', 'IconStart', 16]]) {
     for (const mode of ['light', 'dark']) {

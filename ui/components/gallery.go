@@ -68,16 +68,22 @@ func Gallery() []Example {
 		ExampleWithSlots(info("pk-ui.component.button/disabled-link", "Action", "Button / disabled link"),
 			ButtonProps{ComponentProps: ComponentProps{Disabled: true}, HTMXProps: HTMXProps{Get: "/admin", Boost: true}, Label: "Unavailable", Href: "/admin"}, ButtonSlots{}, ButtonWithSlots),
 		ExampleWithSlots(info("pk-ui.component.button/with-icon", "Action", "Button / with icon"),
-			ButtonProps{Label: "Iconed", Variant: "primary", Tone: "neutral", Size: "md"}, ButtonSlots{IconEnd: []g.Node{Icon(IconProps{Name: "plus", Size: "md", Tone: "neutral"})}}, ButtonWithSlots),
+			ButtonProps{Label: "Iconed", Variant: "primary", Tone: "neutral", Size: "md"}, ButtonSlots{IconEnd: []g.Node{
+				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, IconProps{Name: "plus", Size: "md", Tone: "neutral"}, Icon).Node,
+			}}, ButtonWithSlots),
 		ExampleWithSlots(info("pk-ui.component.button/with-leading-icon", "Action", "Button / leading icon"),
-			ButtonProps{Label: "Add item", Variant: "primary", Tone: "neutral", Size: "md"}, ButtonSlots{IconStart: []g.Node{Icon(IconProps{Name: "plus", Size: "sm", Tone: "neutral"})}}, ButtonWithSlots),
+			ButtonProps{Label: "Add item", Variant: "primary", Tone: "neutral", Size: "md"}, ButtonSlots{IconStart: []g.Node{
+				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, IconProps{Name: "plus", Size: "sm", Tone: "neutral"}, Icon).Node,
+			}}, ButtonWithSlots),
 
 		ExampleWithSlots(info("pk-ui.component.badge/default", "Status", "Badge / default"), BadgeProps{Label: "Default"}, BadgeSlots{}, BadgeWithSlots),
 		ExampleWithSlots(info("pk-ui.component.badge/brand-dot", "Status", "Badge / brand dot"),
 			BadgeProps{Label: "New", Variant: "primary", Tone: "brand", Dot: true}, BadgeSlots{}, BadgeWithSlots),
 		ExampleWithSlots(info("pk-ui.component.badge/success", "Status", "Badge / success"), BadgeProps{Label: "OK", Tone: "success"}, BadgeSlots{}, BadgeWithSlots),
 		ExampleWithSlots(info("pk-ui.component.badge/warning", "Status", "Badge / warning"),
-			BadgeProps{Label: "Careful", Tone: "warning"}, BadgeSlots{IconStart: []g.Node{Icon(IconProps{Name: "warning", Size: "sm", Tone: "warning"})}}, BadgeWithSlots),
+			BadgeProps{Label: "Careful", Tone: "warning"}, BadgeSlots{IconStart: []g.Node{
+				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, IconProps{Name: "warning", Size: "sm", Tone: "warning"}, Icon).Node,
+			}}, BadgeWithSlots),
 		ExampleWithSlots(info("pk-ui.component.badge/danger", "Status", "Badge / danger"), BadgeProps{Label: "Bad", Tone: "danger"}, BadgeSlots{}, BadgeWithSlots),
 		ExampleWithSlots(info("pk-ui.component.badge/info", "Status", "Badge / info"), BadgeProps{Label: "FYI", Tone: "info"}, BadgeSlots{}, BadgeWithSlots),
 		ExampleWithSlots(info("pk-ui.component.badge/secondary", "Status", "Badge / secondary"), BadgeProps{Label: "Two", Variant: "secondary"}, BadgeSlots{}, BadgeWithSlots),
@@ -86,7 +92,9 @@ func Gallery() []Example {
 
 		ExampleWithSlots(info("pk-ui.component.alert/success", "Status", "Alert / success"), AlertProps{Title: "Saved", Message: "All good.", Tone: "success"}, AlertSlots{}, AlertWithSlots),
 		ExampleWithSlots(info("pk-ui.component.alert/warning", "Status", "Alert / warning"), AlertProps{Message: "Careful now.", Tone: "warning"},
-			AlertSlots{IconStart: []g.Node{Icon(IconProps{Name: "warning", Size: "md", Tone: "warning"})}}, AlertWithSlots),
+			AlertSlots{IconStart: []g.Node{
+				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, IconProps{Name: "warning", Size: "md", Tone: "warning"}, Icon).Node,
+			}}, AlertWithSlots),
 		ExampleWithSlots(info("pk-ui.component.alert/danger", "Status", "Alert / danger"), AlertProps{Message: "That failed.", Tone: "danger"}, AlertSlots{}, AlertWithSlots),
 		ExampleWithSlots(info("pk-ui.component.alert/info", "Status", "Alert / info"), AlertProps{Message: "Heads up.", Tone: "info"}, AlertSlots{}, AlertWithSlots),
 		ExampleWithSlots(info("pk-ui.component.alert/compact", "Status", "Alert / compact"), AlertProps{Message: "Compact.", Tone: "info", Compact: true}, AlertSlots{}, AlertWithSlots),
@@ -107,7 +115,9 @@ func Gallery() []Example {
 
 		ExampleWithSlots(info("pk-ui.component.emptystate/default", "Status", "EmptyState"),
 			EmptyStateProps{Title: "No tenants yet", Description: "Create the first tenant to get started.", Bordered: true},
-			EmptyStateSlots{Actions: []g.Node{Link(LinkProps{Label: "New tenant", Href: "/admin/tenants/new"})}}, EmptyStateWithSlots),
+			EmptyStateSlots{Actions: []g.Node{
+				ExampleOf(ExampleInfo{ID: "action", ComponentID: "pk-ui.component.link"}, LinkProps{Label: "New tenant", Href: "/admin/tenants/new"}, Link).Node,
+			}}, EmptyStateWithSlots),
 		ExampleWithSlots(info("pk-ui.component.emptystate/compact", "Status", "EmptyState / compact"), EmptyStateProps{Title: "Empty", Compact: true}, EmptyStateSlots{}, EmptyStateWithSlots),
 
 		ExampleOf(info("pk-ui.component.label/default", "Form", "Label"), LabelProps{Text: "Standalone", For: "x", Required: true}, Label),
@@ -257,7 +267,10 @@ func Gallery() []Example {
 
 		ExamplePreview(info("pk-ui.component.skiplink/default", "Frame", "SkipLink"), SkipLink("content", "Skip to content"), "SkipLink accepts strings rather than a typed properties contract."),
 		ExampleWithChildren(info("pk-ui.component.toolbar/default", "Frame", "Toolbar"),
-			ToolbarProps{Title: "Tasks", Subtitle: "12 records"}, []g.Node{Button(ButtonProps{Label: "New task", Href: "/admin/task/tasks/new"})}, Toolbar),
+			ToolbarProps{Title: "Tasks", Subtitle: "12 records"}, []g.Node{
+				ExampleWithSlots(ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
+					ButtonProps{Label: "New task", Href: "/admin/task/tasks/new"}, ButtonSlots{}, ButtonWithSlots).Node,
+			}, Toolbar),
 		ExampleWithChildren(info("pk-ui.component.form/default", "Frame", "Form"),
 			FormProps{Action: "/admin/task/tasks", Label: "New task"}, []g.Node{
 				ExampleOf(ExampleInfo{ID: "title", ComponentID: "pk-ui.component.input"},

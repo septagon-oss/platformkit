@@ -106,7 +106,10 @@ supported `Node` or `[]Node` slot replacements produce another bound example;
 slot nodes are trusted Go capabilities, not user-supplied markup. Callbacks
 and compound slot data are described but are not portable replacement inputs.
 Nested identities are local to their enclosing occurrence, not array positions
-or labels. Export retains declared slot ownership and byte spans from one
+or labels. The gallery's explicitly composed icons and actions retain these
+identities too; changing an icon's glyph is a nested property edit, retaining
+its size and tone, not proof of arbitrary component substitution.
+Export retains declared slot ownership and byte spans from one
 synchronous rendering. A missing span means unobserved, not absent: opaque nodes
 can buffer or duplicate output. `OpaqueSlots` identifies unbound slot inputs;
 these records do not certify complete composition through arbitrary Go wrappers.

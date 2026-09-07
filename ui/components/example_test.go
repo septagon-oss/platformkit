@@ -367,9 +367,24 @@ func TestExamplePreviewAndRenderFailure(t *testing.T) {
 }
 
 func TestEveryGalleryExampleHasAnAccurateDescription(t *testing.T) {
+	children := map[string][3]string{
+		"pk-ui.component.button/with-icon":         {"icon", "IconEnd", "pk-ui.component.icon"},
+		"pk-ui.component.button/with-leading-icon": {"icon", "IconStart", "pk-ui.component.icon"},
+		"pk-ui.component.badge/warning":            {"icon", "IconStart", "pk-ui.component.icon"},
+		"pk-ui.component.alert/warning":            {"icon", "IconStart", "pk-ui.component.icon"},
+		"pk-ui.component.emptystate/default":       {"action", "Actions", "pk-ui.component.link"},
+		"pk-ui.component.toolbar/default":          {"action", "children", "pk-ui.component.button"},
+	}
 	for _, example := range c.Gallery() {
 		t.Run(example.ID, func(t *testing.T) {
 			description := describeExample(t, example)
+			if want, ok := children[example.ID]; ok {
+				if len(description.Children) != 1 ||
+					[3]string{description.Children[0].Description.ID, description.Children[0].Slot, description.Children[0].Description.ComponentID} != want {
+					t.Fatalf("lost the explicitly composed gallery child: %+v", description.Children)
+				}
+				checkCompositionSpan(t, description, description.Children[0])
+			}
 			if description.HTML == "" || (!description.PropsEditable && description.Reason == "") {
 				t.Fatalf("incomplete description: %+v", description)
 			}
