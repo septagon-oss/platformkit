@@ -67,6 +67,7 @@ test('CLI packages exact selected native examples from fresh source, including n
   for (const selection of [
     { name: 'default', ids: [button], weights: [600], options: [], mode: 'light', viewport: { width: 1280, height: 900 } },
     { name: 'composed', ids: [form, button], weights: [400, 500, 600], options: ['--mode', 'dark', '--viewport', '640x480'], mode: 'dark', viewport: { width: 640, height: 480 } },
+    { name: 'matched-weight', ids: [form, button], weights: [400, 600], options: [], mode: 'light', viewport: { width: 1280, height: 900 } },
   ]) {
     const output = join(directory, `${selection.name}.fig`)
     const args = [output, ...selection.ids.flatMap(id => ['--example', id]), ...selection.options, ...fontArgs(selection.weights)]
@@ -129,7 +130,8 @@ test('selected generation refuses invalid requests completely and preserves syml
     [...valid, '--example', form],
     ['--example', 'pk-ui.component.input/email', ...fontArgs([400, 500, 600])],
     ['--example', button, '--example', 'pk-ui.component.input/email', ...fontArgs([400, 500, 600])],
-    ['--example', form, ...fontArgs([400, 600])],
+    ['--example', form, ...fontArgs([400, 500])],
+    ['--example', form, ...fontArgs([500, 600])],
     ['--example', form],
     ['--mode', 'dark'],
     ['--viewport', '320x480'],

@@ -29,6 +29,23 @@ function requirePlainText(style) {
   'text shadows, indentation, word spacing or writing direction require further conversion')
 }
 
+// CSS requests select a face; they do not rename its binary weight. For static
+// custom faces, this Chromium revision synthesizes bold only when the selected
+// weight is below 600 and the request is at least 600. Keep that inference scoped
+// to the verified browser; explicit synthesis refusal needs no engine inference.
+// chromium@782af9cb: core/css/css_segmented_font_face.cc, GetFontData.
+function matchesTextFace(face, observed, style, environment) {
+  if (face.postscriptName !== observed.postScriptName || face.style !== style['font-style']) return false
+  const weight = Number(style['font-weight'])
+  if (!Number.isFinite(weight) || weight < 1 || weight > 1000) return false
+  if (face.weight === weight) return true
+  const synthesis = style['font-synthesis-weight']
+  if (synthesis === 'none') return true
+  if (synthesis !== 'auto' || environment?.protocol !== '1.3' ||
+      !/^(?:Headless)?Chrome\/151\.0\.7922\.34$/.test(environment?.browser ?? '')) return false
+  return face.weight >= 600 || weight < 600
+}
+
 function sameColor(a, b, tolerance = 1e-6) {
   return a && b && ['r', 'g', 'b', 'a'].every(channel => Number.isFinite(a[channel]) &&
     Number.isFinite(b[channel]) && Math.abs(a[channel] - b[channel]) <= tolerance)
@@ -168,8 +185,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
     requireComponent(region.text !== '' && region.text === region.text.replace(/[\t\n\r\f ]+/g, ' ').replace(/^ | $/g, '') &&
       region.rects.length === 1, 'empty, collapsed-whitespace or multiline text needs additional layout semantics')
     requireComponent(region.fonts.length === 1 && region.fonts[0].isCustomFont, 'one actual supplied face per text region required')
-    const matches = supplied.filter(face => face.postscriptName === region.fonts[0].postScriptName &&
-      face.weight === Number(style['font-weight']) && face.style === style['font-style'])
+    const matches = supplied.filter(face => matchesTextFace(face, region.fonts[0], style, observation.environment))
     requireComponent(matches.length === 1, 'actual text face is missing or synthesized')
     const face = matches[0]
     requireComponent(observation.fontFaces.some(item => item.family === face.family && item.weight === face.weight &&
@@ -286,8 +302,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       matching = supplied.filter(face => face.family === firstFamily && face.weight === weight && face.style === style['font-style'])
     } else {
       requireComponent(observed.length === 1 && observed[0].isCustomFont, 'composition text requires one supplied actual face')
-      matching = supplied.filter(face => face.postscriptName === observed[0].postScriptName &&
-        face.weight === weight && face.style === style['font-style'])
+      matching = supplied.filter(face => matchesTextFace(face, observed[0], style, observation.environment))
     }
     requireComponent(matching.length === 1, 'composition text face is missing or synthesized')
     const face = matching[0]
