@@ -136,7 +136,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Authenticate: c.auth.Authenticate,
+		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
 		Role: app.All, Transport: events.Memory(), Log: quiet(),
 	})
 
@@ -179,6 +179,35 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// the administrator just created is in the trail, with the administrator as
 	// its actor. Nothing registered that: the task module emitted an event and
 	// the kernel put the caller on the envelope.
+	// The trail is a plan feature in this product — modules.go prices it, the
+	// audit module only declares that it has one — so a tenant that has bought
+	// nothing is told to buy something rather than told it may not look. 402
+	// and not 403: "ask your administrator" and "upgrade" are different
+	// sentences and only one of them is true here.
+	if code, body = do(t, cfg, admin, http.MethodGet, acmeHost, auditPath, ""); code != http.StatusPaymentRequired ||
+		!strings.Contains(body, "PLAN_EXCLUDES") {
+		t.Fatalf("the trail with no subscription = %d %s, want 402", code, body)
+	}
+
+	// Billing: a plan, and the tenant on it. The first period is a trial —
+	// this application serves it before it asks for anything — and the
+	// subscription is a singleton, so there is one to read and no list. The
+	// plan includes the trail, which is what makes the reads below possible.
+	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, plansPath,
+		`{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","interval":"month","active":true,"features":["audit-trail"]}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s = %d %s, want 201", plansPath, code, body)
+	}
+	planID := field(t, body, "id")
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, subPath+"/subscribe", `{"planId":"`+planID+`"}`); code != http.StatusOK ||
+		!strings.Contains(body, `"status":"trial"`) {
+		t.Fatalf("subscribe = %d %s, want 200 and a trial", code, body)
+	}
+	if code, body = do(t, cfg, admin, http.MethodGet, acmeHost, subPath, ""); code != http.StatusOK ||
+		!strings.Contains(body, planID) {
+		t.Errorf("GET %s = %d %s, want the subscription", subPath, code, body)
+	}
+
 	me := field(t, whoami(t, cfg, admin), "userId")
 	created := waitForAudit(t, cfg, admin, taskcontracts.EventCreated)
 	if created["actor"] != me {
@@ -214,26 +243,9 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	}
 
 	// The four modules a product is made of, one round trip each, as the
-	// administrator the bootstrap created.
+	// administrator the bootstrap created. Billing went first, above, because
+	// the trail this test already read is something its plan includes.
 	//
-	// Billing: a plan, and the tenant on it. The first period is a trial —
-	// this application serves it before it asks for anything — and the
-	// subscription is a singleton, so there is one to read and no list.
-	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, plansPath,
-		`{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","interval":"month","active":true}`)
-	if code != http.StatusCreated {
-		t.Fatalf("POST %s = %d %s, want 201", plansPath, code, body)
-	}
-	planID := field(t, body, "id")
-	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, subPath+"/subscribe", `{"planId":"`+planID+`"}`); code != http.StatusOK ||
-		!strings.Contains(body, `"status":"trial"`) {
-		t.Fatalf("subscribe = %d %s, want 200 and a trial", code, body)
-	}
-	if code, body = do(t, cfg, admin, http.MethodGet, acmeHost, subPath, ""); code != http.StatusOK ||
-		!strings.Contains(body, planID) {
-		t.Errorf("GET %s = %d %s, want the subscription", subPath, code, body)
-	}
-
 	// Content: written, published, and then read at the same host by a caller
 	// with no session at all — which is what publishing means. The script in
 	// the body is not in the page: the renderer leaves raw HTML out and the
@@ -500,7 +512,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
-		Authorize: c.auth, Authenticate: c.auth.Authenticate, Log: quiet(),
+		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
 	})
 	for _, m := range c.modules {
 		if m.Routes != nil {
@@ -631,7 +643,7 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 		Tenants: tenantcontracts.Active{Service: c.tenants}, SweepEvery: 200 * time.Millisecond,
 	})}
 	start(t, cfg, mods, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Authenticate: c.auth.Authenticate,
+		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
 		Role: app.Worker, Transport: events.Memory(), Log: quiet(),
 	})
 
@@ -987,7 +999,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Authenticate: c.auth.Authenticate,
+		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
 		Role: app.All, Transport: events.Memory(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)

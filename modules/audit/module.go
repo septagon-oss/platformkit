@@ -51,6 +51,13 @@ type Deps struct {
 	// compliance obligation, and a module that chose one would be choosing
 	// somebody else's. config.Audit is where it comes from.
 	RetentionDays int
+
+	// Feature is the plan feature the trail belongs to, or empty when this
+	// installation gives it to everybody. It is a dependency and not a constant
+	// for the same reason RetentionDays is: which features a product sells is
+	// the composition's decision, and a module that chose one would be pricing
+	// somebody else's product. See httpx.Auth.Needing.
+	Feature string
 }
 
 // retentionDays is the default, and config.DefaultRetentionDays is the same
@@ -82,6 +89,6 @@ func Module(deps Deps) module.Module {
 		// this one is audited by having emitted an event and by nothing else.
 		SubscribeAll:  true,
 		Subscriptions: []events.Subscription{{Module: "audit", Handler: svc.Record}},
-		Routes:        func(api *httpx.API) { internal.RegisterRoutes(api, svc) },
+		Routes:        func(api *httpx.API) { internal.RegisterRoutes(api, svc, deps.Feature) },
 	}
 }

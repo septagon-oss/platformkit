@@ -101,16 +101,18 @@ var permissions = []module.Permission{
 	{Key: contracts.PermissionBillingCatalog, Operator: true},
 }
 
-// Module is the manifest. The implementation is constructed here, in one line,
-// and handed to the two places that use it.
-func Module(deps Deps) module.Module {
+// Module is the manifest, and the plan answer beside it, as user's and
+// notification's modules return their services: the kernel asks this module
+// what a tenant's plan includes, for the operations whose declaration names a
+// feature, and this is where an application is handed something to answer with.
+func Module(deps Deps) (httpx.Entitler, module.Module) {
 	if deps.Payments == nil {
 		// A wiring mistake fails where it is written rather than as a nil
 		// dereference in the worker at two in the morning.
 		panic("billing.Module: Deps.Payments is required; wire billing.Manual() when there is no payment processor")
 	}
 	svc := internal.NewService()
-	return module.Module{
+	return svc, module.Module{
 		Name:        "billing",
 		Permissions: permissions,
 		Events:      contracts.Events,

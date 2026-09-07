@@ -32,7 +32,13 @@ var (
 // resource with three operations turned off — it is a different thing, and
 // saying so here is cheaper than a Spec with three holes in it. Both answer
 // through kit/rest's mapping, so a 404 means what it means everywhere.
-func RegisterRoutes(api *httpx.API, svc contracts.Service) {
+func RegisterRoutes(api *httpx.API, svc contracts.Service, feature string) {
+	// Both routes read the same thing, so both are gated by the same feature.
+	// An empty one leaves the declaration exactly as it was.
+	read := httpx.Permission(contracts.PermissionAuditRead)
+	if feature != "" {
+		read = read.Needing(feature)
+	}
 	httpx.Register(api, huma.Operation{
 		OperationID: "audit-event-list",
 		Method:      http.MethodGet,
@@ -42,7 +48,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 			"Filterable by name, by the user who caused it, by the row it is about, and by when it happened.",
 		Tags:   []string{"audit"},
 		Errors: faults,
-	}, httpx.Permission(contracts.PermissionAuditRead),
+	}, read,
 		func(ctx context.Context, in *listInput) (*rest.Page[*contracts.Event], error) {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -69,7 +75,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		Summary:     "Read one audit event",
 		Tags:        []string{"audit"},
 		Errors:      faults,
-	}, httpx.Permission(contracts.PermissionAuditRead),
+	}, read,
 		func(ctx context.Context, in *idInput) (*rest.Item[*contracts.Event], error) {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {

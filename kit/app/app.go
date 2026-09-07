@@ -53,8 +53,14 @@ const (
 // who is calling, and what they may do — plus the role, the event transport,
 // the tenant list the periodic jobs walk, and where to log.
 type Options struct {
-	Tenants      httpx.TenantLoader
-	Authorize    httpx.Authorizer
+	Tenants   httpx.TenantLoader
+	Authorize httpx.Authorizer
+	// Entitle answers what a tenant's plan includes, for the operations whose
+	// declaration names a feature. It is optional: an application that sells
+	// nothing declares no feature and is never asked. One that does declare a
+	// feature and leaves this nil fails to start, which is httpx's check and
+	// not this one.
+	Entitle      httpx.Entitler
 	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error)
 	Log          *slog.Logger
 
@@ -226,6 +232,7 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		Tenants:      a.opts.Tenants,
 		Conn:         conn,
 		Authorize:    a.opts.Authorize,
+		Entitle:      a.opts.Entitle,
 		Authenticate: a.opts.Authenticate,
 		Log:          a.log,
 		// The ceiling on the one route that reads its own request. Every other

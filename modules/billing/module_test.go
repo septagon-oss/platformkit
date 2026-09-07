@@ -67,7 +67,8 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	billing.Module(billing.Deps{Payments: billing.Manual()}).Routes(api)
+	_, mounted := billing.Module(billing.Deps{Payments: billing.Manual()})
+	mounted.Routes(api)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -203,7 +204,8 @@ func TestAModuleWithNoPaymentProviderDoesNotCompose(t *testing.T) {
 			t.Errorf("Module with no provider panicked with %v; it names the one to wire", r)
 		}
 	}()
-	billing.Module(billing.Deps{})
+	_, mounted := billing.Module(billing.Deps{})
+	_ = mounted
 }
 
 func field(t *testing.T, body, name string) string {
@@ -363,6 +365,21 @@ func TestAPlanIsWrittenInsideItsBounds(t *testing.T) {
 		plan := contracts.Plan{Code: "pro-monthly", Name: "Pro", Currency: code, PriceCents: 2900, Active: true}
 		if err := plan.Validate(t.Context()); err != nil {
 			t.Errorf("a plan priced in %s: %v", code, err)
+		}
+	}
+}
+
+// TestWhichStatusesAreServed is the rule an entitlement rests on: what a plan
+// includes is only included while the subscription is one the tenant is
+// entitled to. Past due is deliberately one of them.
+func TestWhichStatusesAreServed(t *testing.T) {
+	t.Parallel()
+	for status, want := range map[string]bool{
+		contracts.StatusTrial: true, contracts.StatusActive: true,
+		contracts.StatusPastDue: true, contracts.StatusCancelled: false, "": false,
+	} {
+		if got := contracts.Serving(status); got != want {
+			t.Errorf("Serving(%q) = %v, want %v", status, got, want)
 		}
 	}
 }
