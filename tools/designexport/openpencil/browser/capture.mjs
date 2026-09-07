@@ -91,7 +91,7 @@ export async function captureExample(browser, snapshot, exampleId, {
       globalThis.__platformkitCaptureTextNodes = []
       const elements = []
       const properties = [
-        'display', 'visibility', 'opacity', 'position', 'transform', 'box-sizing',
+        'display', 'visibility', 'opacity', 'position', 'transform', 'box-sizing', 'float', 'clear', 'column-count', 'column-width',
         'color', 'background-color', 'background-image', 'box-shadow',
         'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
         'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',

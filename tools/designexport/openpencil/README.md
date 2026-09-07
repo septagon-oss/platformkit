@@ -183,11 +183,11 @@ Construction requires successful native text measurement and refuses outer
 geometry differences larger than 1/64 CSS pixel. Rejection removes the newly
 constructed nodes and restores the caller's measurement hook.
 
-Nested construction uses vertical stretch/fill, aligned rows, inline labels and
-text controls. Each invocation has its own linked master, so Cancel and Create
-retain distinct baselines despite sharing the Button interface. Form covers Input
-and both actions in light/dark at 320px and 1280px: property history, isolation,
-two saves and source reprojection pass; submission is not modeled.
+Nested construction includes block flow with uniform nonnegative collapsed margins
+(no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
+Linked Form and block Go fixtures cover both themes at 320/1280px, property history,
+isolation and two saves, including fractional line widths and restored fill sizing.
+Nonwrapping intrinsic rows and submission are not modeled.
 Native input values are unwrapped auto-width text in a fixed clipping viewport.
 Zero advance and clearing are measured; failures roll back the edit and history.
 Empty controls have no glyph evidence; caret/selection scrolling is not modeled.
@@ -196,12 +196,12 @@ Text binds `content` inside its wrapping block. Light/dark 320px and 1280px chec
 cover line breaks/advances, property history and two saves. The editor test edits
 and downloads the 320px paragraph. Reopened direct Text instances also pass width
 reflow; arbitrary container-resize history remains unverified.
-Captured horizontal Flex rows can wrap linked children in source order with source
-gaps and start/center/end alignment. The constructor-based fixture passes width
-reflow at 320/390/1280px, label edits, full undo/redo, master and sibling isolation
-and two saves in both themes. Reverse/column wrapping, child reordering and other
-line alignments remain refused. This row fixture has not yet been driven through
-the browser editor. Run `npm run test:browser`.
+Captured horizontal Flex rows wrap linked children with CSS minimum gaps and
+start/center/end/space-between alignment. Constructor-based checks cover both themes,
+320/390/1280px reflow, label history, isolation and two saves. A separate linked-box
+editor fixture verifies keyboard resizing, history and two downloads; fixed-size
+ownership survives synchronization while HUG dimensions reflow. Reverse/column
+wrapping, reordering and other line alignments remain refused. Run `npm run test:browser`.
 
 [bindComponentProperties](bindings.mjs) preflights exact constructed handles before
 binding source strings to native `TEXT` properties and the supported single-icon

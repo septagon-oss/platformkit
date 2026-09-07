@@ -159,7 +159,7 @@ test('wrapping source rows keep linked actions, reflow and property history acro
       }
     }
   }
-  for (const mode of ['light', 'dark']) for (const justify of ['start', 'center', 'end']) {
+  for (const mode of ['light', 'dark']) for (const justify of ['start', 'center', 'end', 'between']) {
     const props = { wrap: true, gap: '4', align: 'center', justify }
     const snapshot = source(props), built = await buildComponentDocument(snapshot, options({ examples: [id], mode }))
     let { graph } = built

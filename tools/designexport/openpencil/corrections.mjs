@@ -133,11 +133,17 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/canvas/text/index.js': {
     sha256: 'ebabf318ffdc67ffac0f90519c5681a81e0b02dbdb0552cded05b2ec0ee87a05',
-    // Layout consumes shaped advances, not raster pixel bounds. Preserve the
-    // paragraph's precision without changing shaping or readiness checks.
-    transform: (source, replace) => replace(source,
-      'width: Math.ceil(width),\n\t\theight: Math.ceil(height)',
-      'width,\n\t\theight'),
+    transform(source, replace) {
+      const helper = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
+      source = `import { ownSourceLayoutScope } from ${JSON.stringify(helper)};\n` + source
+      // Source paragraph line breaks use fractional CSS widths. CanvasKit's
+      // rounding hack changes those widths; native documents keep their default.
+      source = replace(source, 'const paraStyle = new ck.ParagraphStyle({',
+        'const paraStyle = new ck.ParagraphStyle({\n' +
+        '\t\tapplyRoundingHack: ownSourceLayoutScope(node) !== "source-composition-layout",')
+      // Layout consumes shaped advances, not raster pixel bounds.
+      return replace(source, 'width: Math.ceil(width),\n\t\theight: Math.ceil(height)', 'width,\n\t\theight')
+    },
   },
   '@open-pencil/core/dist/tools/calc.js': {
     sha256: '35d6fd205094a3e26f5098b98833c92ffe96a2defdb377208576f58c6e71b67d',

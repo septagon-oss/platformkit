@@ -67,7 +67,7 @@ function observedPaint(graph, collection, snapshot, observation, root, property)
 
 // Read-only presentation planning is shared by text rows and composed frames.
 // Layout-specific constraints remain with the owning construction path.
-function planPresentation(node, paintFor) {
+function planPresentation(node, paintFor, blockMargins = false) {
   const style = node.style
   requirePlainText(style)
   requireComponent(['static', 'relative'].includes(style.position) && style.visibility === 'visible' &&
@@ -75,7 +75,7 @@ function planPresentation(node, paintFor) {
     style['box-shadow'] === 'none' && style['animation-name'] === 'none', 'positioning, filters, effects or motion require further conversion')
   requireComponent(['none', 'hidden'].includes(style['outline-style']) || pixels(style['outline-width']) === 0 ||
     color(style['outline-color']).a === 0, 'visible outlines require further conversion')
-  requireComponent(['top', 'right', 'bottom', 'left'].every(side => pixels(style[`margin-${side}`]) === 0),
+  requireComponent((blockMargins ? ['right', 'left'] : ['top', 'right', 'bottom', 'left']).every(side => pixels(style[`margin-${side}`]) === 0),
     'external margins require further layout conversion')
   requireComponent(style['text-transform'] === 'none' && style['text-decoration-line'] === 'none' &&
     style['font-feature-settings'] === 'normal' && style['font-variation-settings'] === 'normal' &&
@@ -332,7 +332,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     } }
   }
 
-  function element(node, owner, isRoot = false) {
+  function element(node, owner, isRoot = false, blockMargins = false) {
     requireComponent(node?.kind === 'element', 'composition requires explicit element roots')
     let occurrence
     if (node.source) {
@@ -351,7 +351,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       requireComponent(node.children.every(child => child.kind === 'text'), 'nested SVG slots require explicit native construction handles')
       return { kind: 'component', occurrence, observation: node, textRow: true }
     }
-    const native = planPresentation(node, paintFor), style = node.style
+    const native = planPresentation(node, paintFor, blockMargins), style = node.style
     requireComponent(['auto', '100%'].includes(node.sizing.width) && node.sizing.height === 'auto' &&
       ['auto', '0px'].includes(node.sizing['min-width']) && ['auto', '0px'].includes(node.sizing['min-height']) &&
       node.sizing['max-width'] === 'none' && node.sizing['max-height'] === 'none', 'composition constrained sizing requires further conversion')
@@ -387,6 +387,25 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
         primaryAxisAlign: 'MIN', counterAxisAlign: 'STRETCH', ...native,
       } }
+    } else if (style.display === 'block' && node.children.some(child => child.kind === 'element' && child.style.display === 'block')) {
+      requireComponent(node.children.every(child => child.kind === 'element' && child.style.display === 'block' && child.bounds.height > 0),
+        'block flow requires nonempty block children without mixed inline content')
+      requireComponent([node, ...node.children].every(item => item.style.float === 'none' && item.style.clear === 'none' &&
+        item.style.position === 'static' && ['auto', '1'].includes(item.style['column-count']) && item.style['column-width'] === 'auto'),
+      'block flow requires ordinary unfragmented layout without floats or clearance')
+      const margins = node.children.map(child => [pixels(child.style['margin-top']), pixels(child.style['margin-bottom'])])
+      requireComponent(margins[0][0] === 0 && margins.at(-1)[1] === 0, 'outer block margins require parent-collapse conversion')
+      const gaps = margins.slice(1).map(([top], index) => Math.max(top, margins[index][1]))
+      requireComponent(gaps.every(gap => gap === gaps[0]), 'nonuniform block margins require individual native spacing')
+      const children = node.children.map(child => element(child, owner, false, true))
+      for (const child of children) child.placement = {
+        layoutAlignSelf: 'STRETCH', [child.native.layoutMode === 'VERTICAL' ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL',
+      }
+      plan = { kind: 'frame', blockFlow: true, observation: node, children, native: {
+        name: node.tag, width: node.bounds.width, height: node.bounds.height,
+        layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
+        primaryAxisAlign: 'MIN', counterAxisAlign: 'STRETCH', itemSpacing: gaps[0] ?? 0, ...native,
+      } }
     } else if (['block', 'inline'].includes(style.display)) {
       plan = inline(node)
     } else {
@@ -396,7 +415,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       'composition requires nonwrapping flex or forward-wrapping row layout')
       requireComponent(!wrapping || ['normal', 'stretch', 'flex-start'].includes(style['align-content']),
         'wrapping row content alignment requires further conversion')
-      const justify = { normal: 'MIN', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['justify-content']]
+      const justify = { normal: 'MIN', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER', 'space-between': 'SPACE_BETWEEN' }[style['justify-content']]
       const align = { normal: 'STRETCH', stretch: 'STRETCH', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['align-items']]
       requireComponent(justify && align, 'composition alignment requires further conversion')
       const vertical = style['flex-direction'] === 'column'
@@ -410,6 +429,11 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       } }
       for (const child of plan.children) {
         const childStyle = child.observation.style
+        if (!vertical && child.blockFlow) {
+          requireComponent(wrapping && child.observation.sizing.width === 'auto',
+            'intrinsic blocks require automatic width in a wrapping row')
+          child.placement = { counterAxisSizing: 'HUG' }
+        }
         requireComponent(childStyle['flex-grow'] === '0' && childStyle['flex-shrink'] === '1' &&
           childStyle['flex-basis'] === 'auto' && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
         requireComponent(!wrapping || childStyle.order === '0', 'wrapping rows require source child order')
@@ -467,7 +491,12 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       geometry.push({ plan: current, node, parentPlan })
       return node
     }
-    const node = graph.createNode(current.kind === 'text' ? 'TEXT' : 'FRAME', parent.id, { ...current.native, ...current.placement })
+    const pluginData = current.blockFlow || current.wrapping || ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
+      pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+        schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
+      }),
+    }] : []
+    const node = graph.createNode(current.kind === 'text' ? 'TEXT' : 'FRAME', parent.id, { ...current.native, ...current.placement, pluginData })
     if (current.control) {
       const previous = getTextMeasurer()
       try {
@@ -502,7 +531,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       const height = current.kind === 'text' || current.inline ? current.native.height : expected.height
       const width = current.wrapping ? current.native.width : expected.width
       requireComponent(Math.abs(node.width - width) <= 1 / 64 && Math.abs(node.height - height) <= 1 / 64,
-        `composition native geometry differs from source ${current.observation.tag ?? 'text'}`)
+        `composition native geometry differs from source ${current.observation.tag ?? 'text'}: ${node.width}×${node.height}, expected ${width}×${height}`)
       if (parentPlan) {
         const parentBounds = parentPlan.observation.bounds
         // Wrapping TEXT owns the CSS content box, not Range's font rectangle.

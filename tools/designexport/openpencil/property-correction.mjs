@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 // Injected into the pinned browser-compatible property action module. These
 // helpers retain node identity; they never replace a page or rebuild a tree.
 const helpers = String.raw`
@@ -84,6 +86,16 @@ function refreshPropertyLayout(ctx, target) {
     for (let node = target.node; node && node.type !== "CANVAS"; node = node.parentId ? ctx.graph.getNode(node.parentId) : null) {
       ctx.graph.updateNode(node.id, { figmaDerivedLayout: null });
     }
+    if (ownSourceLayoutScope(target.node) === "source-composition-layout") {
+      // Intrinsic paragraph edits can resize the entire containing row. Saved
+      // sibling line boxes are derived too; history already owns this scope.
+      ctx.graph.preserveSourceMetadataDuring(() => {
+        for (const id of propertyHistoryScope(ctx, target)) {
+          const node = ctx.graph.getNode(id);
+          if (node.visible && node.layoutPositioning !== "ABSOLUTE") ctx.graph.updateNode(id, { figmaDerivedLayout: null });
+        }
+      });
+    }
     ctx.runLayoutForNode(target.node.id);
   });
 }
@@ -117,7 +129,9 @@ export function correctEditorCreation(source, replace) {
 // Hash/version guards belong to corrections.mjs. Every structural anchor here
 // must match exactly once before any substituted module is allowed to load.
 export function correctPropertyActions(source, replaceOnce) {
-  source = 'import { textAutoResizeChanges } from "../text/auto-resize.js";\n' + source
+  const helper = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
+  source = `import { ownSourceLayoutScope } from ${JSON.stringify(helper)};\n` +
+    'import { textAutoResizeChanges } from "../text/auto-resize.js";\n' + source
   source = replaceOnce(source, 'function targetValue(target) {', 'function targetValue(ctx, target) {')
   source = replaceOnce(source, 'return target.source.componentId ?? target.node.componentId ?? "";',
     'return chain(ctx.graph, target.node, "componentId").at(-1)?.id ?? "";')

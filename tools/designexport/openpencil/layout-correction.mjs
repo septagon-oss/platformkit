@@ -1,27 +1,104 @@
 import { fileURLToPath } from 'node:url'
+import { chain } from './exporter-correction.mjs'
+
+export function sourceLayoutScope(graph, node) {
+  let master
+  try { master = chain(graph, node, 'componentId').at(-1) } catch { return }
+  return ownSourceLayoutScope(master)
+}
+
+export function ownSourceLayoutScope(node) {
+  if (!Array.isArray(node?.pluginData)) return
+  const entries = node.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
+  if (entries.length !== 1) return
+  let source
+  try { source = JSON.parse(entries[0].value) } catch { return }
+  return source?.schema === 'platformkit.design-export.v1' ? source.scope : undefined
+}
+
+export function sourceCompositionLayout(graph, node) {
+  return ['source-composition-observed-aliases', 'source-composition-layout'].includes(sourceLayoutScope(graph, node))
+}
+
+export function editedSourceLayout(graph, frame) {
+  return frame?.source.format === 'fig' && sourceCompositionLayout(graph, frame) &&
+    ['width', 'height', 'layoutMode', 'layoutWrap', 'itemSpacing', 'counterAxisSpacing',
+      'primaryAxisAlign', 'counterAxisAlign', 'primaryAxisSizing', 'counterAxisSizing',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].some(field => frame.source.editedFields.includes(field) ||
+        Object.hasOwn(frame.overrides, field) || Object.hasOwn(frame.overrides, `${frame.id}:${field}`))
+}
 
 // Layout owns temporary Yoga objects and grid sizing modes. Release/restore
 // them at that boundary even when measurement or nested layout throws.
 export function correctLayout(source, replace) {
-  const lineage = fileURLToPath(new URL('./exporter-correction.mjs', import.meta.url))
-  source = `import { chain } from ${JSON.stringify(lineage)};\n` + source
+  source = `import { sourceLayoutScope, sourceCompositionLayout, editedSourceLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
+  // A child laid out independently still uses its parent-resolved fill size.
+  // Parent layout remains responsible for assigning that size on the next pass.
+  for (const axis of ['primary', 'counter']) source = replace(source, `if (frame.${axis}AxisSizing === "FIXED")`,
+    `if (frame.${axis}AxisSizing === "FIXED" || frame.${axis}AxisSizing === "FILL" && sourceCompositionLayout(graph, frame))`)
   source = replace(source, 'function configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis = false) {', String.raw`
 function sourceTextRow(graph, parent) {
-  if (parent.layoutMode !== "HORIZONTAL" || parent.primaryAxisSizing !== "HUG" ||
-      parent.counterAxisSizing !== "HUG" || parent.layoutWrap !== "NO_WRAP") return false;
-  let master;
-  try { master = chain(graph, parent, "componentId").at(-1); } catch { return false; }
-  const entries = master.pluginData.filter(item => item.pluginId === "platformkit" && item.key === "platformkit.source");
-  if (entries.length !== 1) return false;
-  let source;
-  try { source = JSON.parse(entries[0].value); } catch { return false; }
-  return source?.schema === "platformkit.design-export.v1" &&
-    ["text-component-observed-aliases", "text-and-icon-component-observed-aliases"].includes(source.scope);
+  return parent.layoutMode === "HORIZONTAL" && parent.primaryAxisSizing === "HUG" &&
+    parent.counterAxisSizing === "HUG" && parent.layoutWrap === "NO_WRAP" &&
+    ["text-component-observed-aliases", "text-and-icon-component-observed-aliases"].includes(sourceLayoutScope(graph, parent));
+}
+
+function primaryItemGap(graph, node) {
+  // CSS gap remains a minimum when free space is distributed, including the
+  // decision to start a new line. Unmarked native frames keep their own rule.
+  return node.primaryAxisAlign === "SPACE_BETWEEN" && !sourceCompositionLayout(graph, node) ? 0 : node.itemSpacing;
+}
+
+function intrinsicSourceWidth(graph, node) {
+  for (let current = node; current; current = graph.getNode(current.parentId)) {
+    if (!sourceCompositionLayout(graph, current)) return false;
+    const sizing = current.layoutMode === "HORIZONTAL" ? current.primaryAxisSizing : current.counterAxisSizing;
+    if (sizing !== "FILL") return sizing === "HUG";
+  }
+  return false;
 }
 
 function configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis = false, graph) {`)
+  source = replace(source, 'function configureFlexContainer(yogaNode, node, direction) {',
+    'function configureFlexContainer(yogaNode, node, direction, graph) {')
+  source = replace(source, 'configureFlexContainer(root, frame, direction);', 'configureFlexContainer(root, frame, direction, graph);')
+  source = replace(source, 'configureFlexContainer(yogaChild, child, direction);', 'configureFlexContainer(yogaChild, child, direction, graph);')
+  source = replace(source, 'const primaryGap = node.primaryAxisAlign === "SPACE_BETWEEN" ? 0 : node.itemSpacing;',
+    'const primaryGap = primaryItemGap(graph, node);')
+  source = replace(source, 'function sizesFitParent(parent, childCount, sizes, axis) {',
+    'function sizesFitParent(parent, childCount, sizes, axis, graph) {')
+  source = replace(source, 'const gap = parent.primaryAxisAlign === "SPACE_BETWEEN" ? 0 : parent.itemSpacing * Math.max(0, childCount - 1);',
+    'const gap = primaryItemGap(graph, parent) * Math.max(0, childCount - 1);')
+  source = replace(source, 'return sizesFitParent(parent, children.length, sizes, axis) && child.figmaDerivedLayout?.[axis] !== void 0;',
+    'return sizesFitParent(parent, children.length, sizes, axis, graph) && child.figmaDerivedLayout?.[axis] !== void 0;')
+  source = replace(source, 'return sizesFitParent(parent, children.length, sizes, axis);',
+    'return sizesFitParent(parent, children.length, sizes, axis, graph);')
   source = replace(source, 'configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis);',
     'configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis, graph);')
+  source = replace(source, 'const fillsWidth = !isRow && stretchesCross;', String.raw`
+    const fillsWidth = !isRow && stretchesCross;
+    if (fillsWidth && intrinsicSourceWidth(graph, parent)) {
+      // A source block contributes max-content width before the flex row gives
+      // it a used width. Its previous line box cannot supply that intrinsic size.
+      let intrinsic;
+      yogaChild.setMeasureFunc((width, widthMode) => {
+        if (intrinsic === undefined) {
+          const natural = getTextMeasurer()?.({ ...child, textAutoResize: "WIDTH_AND_HEIGHT" });
+          if (!natural || !Number.isFinite(natural.width) || natural.width <= 0) throw new Error("Intrinsic source text requires actual measurement");
+          intrinsic = Math.ceil(natural.width * 64) / 64;
+        }
+        const used = widthMode === MeasureMode.Undefined ? intrinsic :
+          widthMode === MeasureMode.Exactly ? width : Math.min(width, intrinsic);
+        const key = widthMode + ":" + used;
+        if (cache.has(key)) return cache.get(key);
+        const measured = getTextMeasurer()?.(child, used);
+        if (!measured || !Number.isFinite(measured.height) || measured.height <= 0) throw new Error("Intrinsic source text requires actual measurement");
+        const result = { width: used, height: measured.height };
+        cache.set(key, result);
+        return result;
+      });
+      return;
+    }`)
   source = replace(source, 'const result = getTextMeasurer()?.(child, maxW) ?? estimateTextSize(child, maxW);', String.raw`
       const measured = getTextMeasurer()?.(child, maxW) ?? estimateTextSize(child, maxW);
       // Chromium's intrinsic inline box rounds up to a 1/64 CSS-pixel layout
@@ -39,9 +116,9 @@ function resizedWrappingFrame(graph, frame) {
 
 function computeLayoutInternal(graph, frameId) {
   const frame = graph.getNode(frameId);
-  if (!resizedWrappingFrame(graph, frame)) return computeLayoutMeasured(graph, frameId);
-  // An authored width invalidates the saved line boxes, not reusable masters
-  // or unrelated descendants. Other imported layout keeps its existing guards.
+  if (!resizedWrappingFrame(graph, frame) && !editedSourceLayout(graph, frame)) return computeLayoutMeasured(graph, frameId);
+  // Authored layout edits invalidate the affected saved boxes, not reusable
+  // masters or unrelated descendants. Other imported layout keeps its guards.
   const cached = [frame, ...graph.getChildren(frameId)].filter(node =>
     node === frame || node.visible && node.layoutPositioning !== "ABSOLUTE")
     .map(node => [node.id, node.figmaDerivedLayout]);
@@ -59,7 +136,8 @@ function computeLayoutInternal(graph, frameId) {
 }
 
 function computeLayoutMeasured(graph, frameId) {`)
-  source = replace(source, '!preservesImportedInstanceLayout(node)', '(!preservesImportedInstanceLayout(node) || resizedWrappingFrame(graph, node))')
+  source = replace(source, '!preservesImportedInstanceLayout(node)',
+    '(!preservesImportedInstanceLayout(node) || resizedWrappingFrame(graph, node) || editedSourceLayout(graph, node))')
   return replace(source,
     '\tyogaRoot.calculateLayout(void 0, void 0, yogaDirection);\n' +
     '\tapplyYogaLayout(graph, frame, yogaRoot, computeLayoutInternal);\n' +
@@ -74,6 +152,15 @@ function computeLayoutMeasured(graph, frameId) {`)
 }
 
 export function correctGridRecompute(source, replace) {
+  source = `import { editedSourceLayout, sourceCompositionLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
+  source = replace(source, 'function preservesImportedHugCrossSize(graph, frame, axis) {',
+    'function preservesImportedHugCrossSize(graph, frame, axis) {\n' +
+    '\tif (sourceCompositionLayout(graph, frame) && !frame.figmaDerivedLayout) return false;')
+  source = replace(source, 'if (preservesImportedInstanceInternals(child)) continue;',
+    'if (preservesImportedInstanceInternals(child) && !(sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout)) continue;')
+  source = replace(source,
+    'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId);',
+    'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId) && !editedSourceLayout(graph, graph.getNode(child.parentId));')
   return replace(source,
     '\tcomputeLayout(graph, child.id);\n' +
     '\tconst restore = {};\n' +

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 // Pinned SDK corrections: native paths use existing source lineage, never order.
 export function chain(graph, first, field) {
   const result = []
@@ -83,6 +85,20 @@ export function ancestryOverrides(graph, target) {
 export const lineageHelpers = [chain, sourceChild, sourceChildren, scopedOverrides, ancestryOverrides].map(fn => fn.toString()).join('\n')
 
 const exporterHelpers = String.raw`
+function serializeRootSizing(node, symbolID) {
+  const size = {};
+  for (const [field, axis] of [["width", "x"], ["height", "y"]]) {
+    const sizing = (field === "width") === (node.layoutMode === "HORIZONTAL") ? node.primaryAxisSizing : node.counterAxisSizing;
+    const explicit = Object.hasOwn(node.overrides, field) || Object.hasOwn(node.overrides, node.id + ":" + field);
+    const editedFixed = node.source.format === "fig" && node.source.editedFields.includes(field) &&
+      (node.layoutMode === "NONE" || sizing === "FIXED");
+    if (explicit || editedFixed) size[axis] = node[field];
+  }
+  // Kiwi's Vector requires both coordinates. HUG axes remain derived on import;
+  // the pair records native size, not a second sizing or provenance language.
+  return Object.keys(size).length ? [{ guidPath: { guids: [symbolID] }, size: { x: node.width, y: node.height } }] : [];
+}
+
 function nativeOverridePath(context, instance, target, counter) {
   const ancestry = chain(context.graph, target, 'parentId');
   const boundary = ancestry.findIndex(node => node.id === instance.id);
@@ -276,6 +292,13 @@ function replaceSection(source, start, end, replacement) {
 }
 
 export function correctExporter(source, replaceOnce) {
+  // FIG import coalesces duplicate plugin keys. Never let a save silently turn
+  // ambiguous source ownership into a single apparently valid declaration.
+  source = replaceOnce(source, 'function mergePluginData(pluginData) {', String.raw`
+function mergePluginData(pluginData) {
+  if (pluginData.filter(entry => entry.pluginId === "platformkit" && entry.key === "platformkit.source").length > 1) {
+    throw new Error("Ambiguous duplicate source provenance");
+  }`)
   source = replaceSection(source, 'function serializeTextOverrides(', 'function overridePathKey(',
     lineageHelpers + '\n' + exporterHelpers)
   source = replaceSection(source, 'function mergeTextOverrides(', '/**\n* Fields that are ALWAYS', String.raw`
@@ -290,6 +313,10 @@ function mergeTextOverrides(symbolOverrides, overrides) {
   symbolOverrides.splice(0, symbolOverrides.length, ...merged.values());
 }
 `)
+  source = replaceOnce(source,
+    'if (symbolOverrides.length > 0) symbolData.symbolOverrides = symbolOverrides;',
+    'mergeTextOverrides(symbolOverrides, serializeRootSizing(node, symbolID));\n' +
+    '\t\tif (symbolOverrides.length > 0) symbolData.symbolOverrides = symbolOverrides;')
   source = replaceOnce(source,
     'mergeTextOverrides(symbolOverrides, serializeTextOverrides(context, node, localIdCounter));',
     'mergeTextOverrides(symbolOverrides, serializeNestedReferences(context, node, localIdCounter));\n' +
@@ -333,6 +360,30 @@ function mergeTextOverrides(symbolOverrides, overrides) {
 }
 
 export function correctInstanceImporter(source, replace) {
+  const layout = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
+  source = `import { sourceCompositionLayout } from ${JSON.stringify(layout)};\n` + source
+  source = replace(source, '\tapplyGeneratedFreeformStretch(ctx);', String.raw`
+  // FIG carries cross-axis fill as child stretch, not a third stack-sizing
+  // enum. Restore the source composition's sizing after parent links resolve.
+  for (const node of overrideCandidates(graph, ctx.activeNodeIds)) {
+    const parent = graph.getNode(node.parentId);
+    if (node.layoutAlignSelf !== "STRETCH" || node.layoutPositioning === "ABSOLUTE" ||
+        !["HORIZONTAL", "VERTICAL"].includes(node.layoutMode) || !["HORIZONTAL", "VERTICAL"].includes(parent?.layoutMode) ||
+        !sourceCompositionLayout(graph, node) || !sourceCompositionLayout(graph, parent)) continue;
+    const field = node.layoutMode === parent.layoutMode ? "counterAxisSizing" : "primaryAxisSizing";
+    graph.preserveSourceMetadataDuring(() => graph.updateNode(node.id, { [field]: "FILL" }));
+  }
+` + '\tapplyGeneratedFreeformStretch(ctx);')
+  source = replace(source, 'preserveInstanceRootBounds(nc.size !== void 0, nodeId, targetId, patch);', String.raw`
+      if (targetId === nodeId && ov.size) {
+        const node = ctx.graph.getNode(nodeId), overrides = { ...node.overrides };
+        for (const [field, axis] of [["width", "x"], ["height", "y"]]) {
+          const sizing = (field === "width") === (node.layoutMode === "HORIZONTAL") ? node.primaryAxisSizing : node.counterAxisSizing;
+          if (ov.size[axis] != null && (node.layoutMode === "NONE" || sizing === "FIXED")) overrides[field] = true;
+        }
+        ctx.graph.preserveSourceMetadataDuring(() => ctx.graph.updateNode(nodeId, { overrides }));
+      }
+      preserveInstanceRootBounds(nc.size !== void 0, nodeId, targetId, patch);`)
   source = String.raw`
 function sourceTextLayout(source, target) {
   const width = target.figmaDerivedLayout?.width ?? source.width;

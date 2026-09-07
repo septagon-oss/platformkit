@@ -10,6 +10,8 @@ import OpenType from 'opentype.js'
 import { chromium } from 'playwright'
 import { expect } from 'playwright/test'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
+import { SceneGraph } from '@open-pencil/scene-graph'
+import { computeLayout } from '@open-pencil/core/layout'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { parseFigBuffer } from '@open-pencil/fig'
@@ -142,6 +144,75 @@ async function verifyBuild() {
     assert.equal(createHash('sha256').update(readFileSync(new URL(path, import.meta.url))).digest('hex'), digest, name)
   }
 }
+
+test('source minimum-gap wrapping survives keyboard width edits, history and two editor saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), pageNode = graph.getPages()[0]
+  const item = graph.createNode('COMPONENT', pageNode.id, { name: 'Reusable item', width: 100, height: 32 })
+  const row = graph.createNode('COMPONENT', pageNode.id, {
+    name: 'Source row', width: 331, height: 80, layoutMode: 'HORIZONTAL', layoutWrap: 'WRAP',
+    primaryAxisAlign: 'SPACE_BETWEEN', counterAxisAlign: 'MIN', primaryAxisSizing: 'FIXED', counterAxisSizing: 'HUG',
+    itemSpacing: 16, counterAxisSpacing: 16, pluginData: [{
+      pluginId: 'platformkit', key: 'platformkit.source',
+      value: JSON.stringify({ schema: 'platformkit.design-export.v1', scope: 'source-composition-observed-aliases' }),
+    }],
+  })
+  for (let index = 0; index < 3; index++) graph.createInstance(item.id, row.id, { name: `Item ${index}` })
+  computeLayout(graph, row.id)
+  graph.createInstance(row.id, pageNode.id, { name: 'Edited row', x: 20, y: 120 })
+  graph.createInstance(row.id, pageNode.id, { name: 'Untouched row', x: 500, y: 120 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Reusable item', 'Source row', 'Untouched row'].map(name => [name, geometry(baseline, named(baseline, name))])
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `minimum-gap-${cycle}.fig`)
+        await page.getByRole('treeitem', { name: 'Edited row Lock Hide', exact: true }).click()
+        const width = page.getByRole('spinbutton', { name: 'Width', exact: true })
+        const height = page.getByRole('spinbutton', { name: 'Height', exact: true })
+        const previous = cycle === 1 ? 332 : 331, next = cycle === 0 ? 332 : 331
+        await expect(width).toHaveAttribute('aria-valuenow', String(previous))
+        await expect(height).toHaveAttribute('aria-valuenow', previous === 331 ? '80' : '32')
+        if (cycle === 2) {
+          assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+          assert.deepEqual(errors, [])
+          continue
+        }
+        const borderBefore = await width.evaluate(node => getComputedStyle(node).borderColor)
+        for (let step = 0; step < 60 && !await width.evaluate(node => node === document.activeElement); step++) {
+          await page.keyboard.press('Tab')
+        }
+        assert.ok(await width.evaluate(node => node === document.activeElement), 'Tab reaches the named width control')
+        assert.ok(await width.evaluate(node => node.matches(':focus-visible')))
+        assert.notEqual(await width.evaluate(node => getComputedStyle(node).borderColor), borderBefore, 'keyboard focus has a visible border change')
+        await page.keyboard.press(cycle === 0 ? 'ArrowUp' : 'ArrowDown')
+        await expect(width).toHaveAttribute('aria-valuenow', String(next))
+        await expect(height).toHaveAttribute('aria-valuenow', next === 331 ? '80' : '32')
+        await page.getByRole('treeitem', { name: 'Edited row Lock Hide', exact: true }).click()
+        await page.keyboard.press('Control+z')
+        await expect(width).toHaveAttribute('aria-valuenow', String(previous))
+        await expect(height).toHaveAttribute('aria-valuenow', previous === 331 ? '80' : '32')
+        await page.keyboard.press('Control+Shift+z')
+        await expect(width).toHaveAttribute('aria-valuenow', String(next))
+        await expect(height).toHaveAttribute('aria-valuenow', next === 331 ? '80' : '32')
+        buffer = await saveDocument(page, errors, workers)
+        const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' }), edited = named(reopened, 'Edited row')
+        assert.deepEqual([edited.x, edited.y, edited.width, edited.height], [20, 120, next, next === 331 ? 80 : 32])
+        assert.deepEqual(reopened.getChildren(edited.id).map(node => [node.x, node.y, node.width, node.height]),
+          next === 331 ? [[0, 0, 100, 32], [231, 0, 100, 32], [0, 48, 100, 32]] :
+            [[0, 0, 100, 32], [116, 0, 100, 32], [232, 0, 100, 32]])
+        for (const child of reopened.getChildren(edited.id)) assert.equal(chain(reopened, child, 'componentId').at(-1).name, 'Reusable item')
+        for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
+        assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
 
 test('browser file-input replacement survives public editing, history and two downloaded FIG saves', { timeout: 120000 }, async () => {
   await verifyBuild()
