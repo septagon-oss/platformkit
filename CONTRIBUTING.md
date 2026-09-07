@@ -44,13 +44,42 @@ an installation's applied migration history.
 
 ## Verify at the relevant boundary
 
-Use development PostgreSQL and NATS services, never production credentials.
-`make up` starts the local Compose dependencies; inspect
-`docker compose ps` first and retain any selected port overrides.
+Use the Go version in [go.mod](go.mod), Make and Docker with Compose.
+From the repository root, start the development PostgreSQL and NATS services:
+
+```sh
+docker compose ps
+make up
+make check
+```
+
+Set `PLATFORMKIT_PG_PORT` and `PLATFORMKIT_NATS_PORT` if the default ports are
+in use, retaining those values for every command. Never use production test
+credentials: tests create and remove database schemas. `make down` deletes the
+Compose volumes as well as stopping services; it is not a test step.
+For application development, `go run ./apps/platformkit start --addr 127.0.0.1:8080`
+uses the [local setup](README.md#try-it-locally) with its own database.
+`make run` instead uses `config.yaml`, copied from `config.example.yaml` when absent.
+
 `make check` runs build, vet, formatting, real-service tests, source and
 package budgets, imports and tenant-setting checks.
 `make e2e` adds browser journeys. Both pass before pushing; `make check`
 passes before committing.
+
+Browser checks also require Node, npm, `psql`, `curl` and Playwright Chromium.
+Install the browser dependencies once, then run with the same service ports:
+
+```sh
+npm --prefix e2e ci
+npm --prefix e2e run install:browsers
+make e2e
+```
+
+Browser installation may require permission to install system packages.
+The [test script](scripts/e2e.sh) creates and removes its own database, uploads
+and temporary browser artifacts. Concurrent runs need distinct
+`PLATFORMKIT_E2E_PORT` values. [Makefile](Makefile) owns the command definitions;
+[RELEASE.md](RELEASE.md) describes the separate publication procedure.
 
 For a behavior change, demonstrate the failing case and its correction.
 For a refactor, retain the independent behavior tests and explain what
@@ -58,10 +87,10 @@ became easier to follow, test or change. Exercise rollback and concurrency
 when transactional behavior changes. A missing service or skipped browser
 run is an unverified gate, not a successful one.
 
-For documentation, check that links resolve, paths exist and commands match
-their definitions. Keep README focused on use, architecture on boundaries,
-this guide on contribution policy, and AGENTS on task navigation. Update
-one canonical explanation rather than reproducing it in every file.
+For documentation, check links, paths and command definitions. Keep README
+customer-facing: purpose, prerequisites, first use and next steps. Verification
+belongs here, tooling instructions beside their owner, architecture in
+ARCHITECTURE and agent navigation in AGENTS. Maintain one canonical explanation.
 Label intent, historical context and verified behavior distinctly.
 
 ## Keep budgets honest

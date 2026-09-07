@@ -1,200 +1,92 @@
 # PlatformKit
 
-PlatformKit is a Go foundation for composing multi-tenant SaaS applications.
-It brings together a runtime, reference business modules, typed web components
-and an operator interface generated from resource schemas. Applications choose
-modules through explicit Go dependency structs and supply their own capabilities
-where the product needs them.
+PlatformKit is a Go foundation for building multi-tenant SaaS applications.
+Compose business modules, generate administration screens from resource schemas,
+and build custom workflows with typed web components.
 
-Start with the application below. Read [Architecture](ARCHITECTURE.md) to locate
-an implementation, [Contributing](CONTRIBUTING.md) to change it, and
-[AGENTS.md](AGENTS.md) when working with a coding agent.
+The foundation includes tenant isolation, authentication, permissions, events,
+background jobs and audit trails. Reference modules add users, notifications,
+billing, content, files, sites and tasks. Your application chooses the modules
+and connects their dependencies explicitly in Go.
 
-## Run the reference application
+## Try it locally
 
-One command, with Go installed and nothing else:
-
-```sh
-go run github.com/septagon-oss/platformkit/apps/platformkit@main start
-```
-
-`@main` names the branch because the last tagged release, v1.0.0, predates
-`start`; once a later version is tagged, `@latest` works too.
-
-`start` runs its own PostgreSQL 16 — downloaded once into your user cache,
-its data under `./data` — creates the application role, migrates, bootstraps
-the first tenant and administrator when there is none, and serves on `:8080`.
-The generated administrator password is printed once; keep it private. A second
-`start` in the same directory finds the tenant and serves it again.
-
-Open [the local sign-in page](http://platformkit.localhost:8080/admin/login).
-The request host selects the tenant, so use `platformkit.localhost`, not an
-arbitrary host alias. The component gallery is at `/admin/_gallery`.
-`--data` and `--addr` move the data directory and the listening address.
-
-From a checkout, the development loop is the Compose stack and `run`:
+Install the Go version declared in [go.mod](go.mod), then run this command from
+a directory where you want to keep the application's data. The first start
+needs internet access to download dependencies and PostgreSQL:
 
 ```sh
-make up     # PostgreSQL and NATS, waiting for both
-make run    # the application on config.yaml, created from config.example.yaml when missing
+go run github.com/septagon-oss/platformkit/apps/platformkit@main start --addr 127.0.0.1:8080
 ```
 
-`run` is what a deployment uses too: a `config.yaml` of its own and a database
-of its own. Set `PLATFORMKIT_PG_PORT` and `PLATFORMKIT_NATS_PORT` when running
-the Compose stack and the tests beside another one, and check
-`docker compose ps` before starting a second stack. The example configuration
-is for local development, not a production deployment.
+This starts the reference application from `main`, with its own PostgreSQL 16
+database and an initial tenant. No separate database or message broker is needed.
+The HTTP server listens only on your machine.
 
-## Compose a product
+Open [the sign-in page](http://platformkit.localhost:8080/admin/login) and use
+`admin@platformkit.localhost` with the password printed in your terminal.
+Keep that password: it is shown only when the administrator is first created.
+After signing in, explore the administration screens and the
+[component gallery](http://platformkit.localhost:8080/admin/_gallery).
 
-[modules/task](modules/task/) shows a capability's shape: `contracts/` owns
-its public behavior and conformance tests, `internal/` implements it, and
-`module.go` accepts dependencies and returns a manifest. The reference
-application lists its constructors in
-[apps/platformkit/modules.go](apps/platformkit/modules.go).
+Use `platformkit.localhost` in your browser because the host identifies the
+tenant. Stop with Ctrl+C; starting again from the same directory reuses your
+database and uploads under `./data`. Use `--data` to choose another data directory
+or `--addr` to change the listening address and port.
 
-A module may depend on another module's `contracts/`, never its implementation
-or constructor. Supply the dependency in the application's composition.
-Compilation checks its type; composition and behavior tests check that it is
-present and does what the consumer needs.
+This is a local evaluation setup, not a production configuration. For a deployed
+application, pin a reviewed module version and supply your own configuration,
+database and service credentials. [config.example.yaml](config.example.yaml)
+describes the available settings; its defaults are for local development.
 
-The reference modules cover tenants, users, authentication, audit,
-notifications, billing, content, files, sites, tasks and administration. The
-built-in billing provider records charges but does not move money. A real
-payment processor is a separate implementation of the public contract.
+## Build your application
 
-A downstream application pins this Go module by version and composes it with
-its own modules. This repository does not need access to private catalog or
-client repositories to build.
+Use PlatformKit as a versioned Go dependency and compose it with your own modules.
+[The reference application](apps/platformkit/modules.go) shows how to connect
+module constructors and their typed dependencies. Start with
+[the task module](modules/task/) when adding a capability: its public contracts
+describe the behavior, while its implementation stays behind that boundary.
+
+External services connect through the contracts their consumers require. For
+example, the included billing provider records charges but does not transfer
+money; connect a payment processor when your product needs to collect payments.
+Email delivery likewise requires an SMTP configuration.
+
+[Architecture](ARCHITECTURE.md) explains composition, tenant isolation,
+authorization and migrations in more detail.
 
 ## Build a screen
 
-[design](design/) owns the theme values and typography.
-[ui/icon](ui/icon/) owns icons, [ui/components](ui/components/) owns typed
-components, and [ui/style](ui/style/) resolves their declared classes.
-[ui.Compose](ui/ui.go) combines the shared stylesheet with a consumer's
-declarations. [ui/page](ui/page/) represents documents and serves them through
-one router adapter; [ui/screens](ui/screens/) renders resource-based screens.
+Use [resource-based screens](ui/screens/) for record management, and compose
+[typed components](ui/components/) into [pages](ui/page/) for custom workflows.
+Components use semantic design tokens, so a [theme](design/) can change colors
+and typography without changing the page's structure.
 
-Use the generated screens for record management. Compose a custom page for
-a workflow that needs its own interaction, and test the resulting journey.
-A client palette is a `design.Pair`; components continue to use semantic roles.
-There is no separate CSS build or JavaScript application framework.
+The web interface is server-rendered, with HTMX for interactions.
+[ui.Compose](ui/ui.go) produces the stylesheet from shared components and your
+own declarations; there is no separate CSS build step.
 
-To inspect the Core design contract without starting the application, run:
-
-```sh
-go run ./tools/designexport
-```
-
-The command writes a JSON snapshot to standard output: example and component
-identities, typed property values and schemas, named slot support, rendered
-HTML, the matching CSS, theme tokens and SVG glyphs with source and license
-information.
-Captured children additionally retain local identities, declared ownership and
-same-render byte spans; opaque inputs and unobserved children remain explicit.
-Font values are system fallback stacks; no font files are embedded. A content
-hash lets a consumer detect whether its source snapshot has changed.
-
-[ui.Export](ui/export.go) accepts a palette, explicitly bound examples and
-optional stylesheet additions. A product uses that same API with its own
-`design.Pair`, examples and `ui.Extra` values; it does not register a second
-component catalog. Core's stable IDs are assigned in [gallery.go](ui/components/gallery.go).
-
-To inspect one existing invocation, pass its exact exported example ID. Add
-`--props` to read a property patch from standard input:
-
-```sh
-go run ./tools/designexport --example pk-ui.component.button/primary
-printf '%s\n' '{"label":"Create album","loading":true}' |
-  go run ./tools/designexport --example pk-ui.component.button/primary --props
-```
-
-The result uses the same snapshot schema with one example and the complete
-stylesheet, themes and icons. Its hash addresses that projection. The patch
-passes through [Example.WithProps](ui/components/example.go): exact public field
-names and types, no duplicate keys, unknown fields, internal transport properties
-or trailing JSON. Input is limited to 1 MiB. Helpers without typed properties
-can be selected but cannot be patched. Without `--props`, the command never
-reads standard input. This changes only the in-memory invocation; it does not
-edit source, create a runtime resource, execute an interaction or deploy anything.
-Trusted Go slots still use `WithSlot`; they are not a JSON page language.
-
-For an editor-proposed change, supply the full current export hash and exact
-source occurrence IDs. This local example requires `jq`:
-
-```sh
-go run ./tools/designexport |
-  jq '{baseSHA256: .sha256, path: ["pk-ui.component.form/default", "actions", "create"], props: {label: "Create"}}' |
-  go run ./tools/designexport --proposal
-```
-
-The command validates the revision and source ownership and returns the full
-changed snapshot on stdout; it saves nothing. A selected-example projection is
-not the full base. For replacement, use `--replacement` and replace the `jq`
-field `props: {label: "Create"}` with
-`replacementPath: ["pk-ui.component.button/primary"]`. Both interfaces must agree;
-its complete inputs and renderer replace the target's, retaining destination
-metadata. Products use [ui.ProjectProps](ui/proposal.go) or
-[ui.ProjectReplacement](ui/replacement.go) with their own palette, examples and
-stylesheet. Unknown or repeated fields are refused; native editing is not certified.
-
-[OpenPencil tooling](tools/designexport/openpencil/README.md) converts tokens and
-icons into native FIG variables and linked icon components. It also owns the
-pinned SDK corrections, native conformance tests and generic browser build.
-The snapshot itself is not an editable library or prototype. Component, page
-and flow conversion and a verified hosted release remain unfinished. Follow the
-tooling guide for generation, supported inputs and release blockers.
+[Design tooling](tools/designexport/README.md) provides source snapshots and
+experimental editor integration. It is not yet a complete editable design library
+or a page-and-flow prototyping solution.
 
 ## Use the HTTP API
 
-Sessions use cookies. The reference application's login endpoint is
-`POST /api/v1/auth/login`; authenticated resource routes live under
-`/api/v1/<module>/<entities>`. Send the configured tenant host with every
-request. The application rejects undeclared authorization requirements at boot.
+Sign in through `POST /api/v1/auth/login` and retain the session cookie for
+authenticated requests. Resource routes live under `/api/v1/<module>/<entities>`;
+send requests to the configured tenant host.
 
-`GET /health` and `GET /ready` report process and dependency readiness.
-`GET /api/v1/admin/resources` describes registered resources for another
-authorized shell. OpenAPI is available at `/openapi.json` when
-`server.docs` is enabled. See [config.example.yaml](config.example.yaml) and
-the owning module's routes for the exact configuration and access contract.
+The local evaluation exposes [interactive API documentation](http://platformkit.localhost:8080/docs).
+For a configured application, `/docs` and `/openapi.json` are available when
+`server.docs` is enabled; they are public endpoints, so enable them deliberately.
+`GET /api/v1/admin/resources` describes the resources available to an authorized
+shell. `GET /health` and `GET /ready` report process and dependency readiness.
 
-## Verify a change
+## Contributing and project information
 
-From this repository, use the local test services and run:
+[Contributing](CONTRIBUTING.md) covers working from a checkout, test setup and
+review requirements; [AGENTS.md](AGENTS.md) guides coding agents.
 
-```sh
-make check
-```
-
-`make check` builds, vets and formats-checks Go, runs real-service tests, and
-checks source budgets, package budgets, imports and tenant-setting ownership.
-`make e2e` runs browser journeys and also needs Node, npm, `psql`, `curl`
-and Playwright-managed Chromium. Install the browser dependencies once before
-the first run:
-
-```sh
-npm --prefix e2e ci
-npm --prefix e2e run install:browsers
-```
-
-The browser setup may require permission to install operating-system packages.
-The test script creates a unique database on the configured development server
-and removes only that database when it exits. Uploads and browser artifacts use
-the run's temporary directory. Run `make e2e` with the same dependency-port
-settings; concurrent runs also need distinct `PLATFORMKIT_E2E_PORT` values.
-Both checks run in CI. See [Makefile](Makefile) for the current targets and
-[Contributing](CONTRIBUTING.md) for focused checks and review requirements.
-
-Tests create and remove their own database schemas. Use development test
-services, never production credentials. `make down` removes the local Compose
-volumes as well as stopping services; it is a data deletion, not a test step.
-
-## Release and support
-
-[RELEASE.md](RELEASE.md) describes the reviewed tag and image workflow.
-A successful build is not evidence of a deployed service; verify the image
-digest and the receiving environment separately.
-[CHANGELOG.md](CHANGELOG.md) records versioned changes,
-[SECURITY.md](SECURITY.md) explains private vulnerability reporting, and
-[LICENSE](LICENSE) and [NOTICE](NOTICE) record licensing and provenance.
+See the [changelog](CHANGELOG.md) for versioned changes and
+[security policy](SECURITY.md) for private vulnerability reporting.
+[LICENSE](LICENSE) and [NOTICE](NOTICE) contain licensing and attribution.

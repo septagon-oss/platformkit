@@ -1,7 +1,7 @@
 # OpenPencil adapter tooling
 
 This directory owns the native boundary of the existing
-[design export](../../../README.md#build-a-screen). The Go tokens, glyphs,
+[design export](../README.md). The Go tokens, glyphs,
 typed examples and stylesheet remain the source of truth. There is no second
 component registry, page language or client-specific library here.
 
