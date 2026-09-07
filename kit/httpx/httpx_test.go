@@ -1095,3 +1095,27 @@ func TestAFeatureNothingCanAnswerDoesNotStart(t *testing.T) {
 		t.Fatalf("ValidateDeclarations = %v, want a refusal naming the feature", err)
 	}
 }
+
+// TestAPublicRouteIsStillAskedAboutThePlan is the hole the adversarial pass on
+// this found: the public branch returned before the feature was ever
+// considered, so Public().Needing(...) was a declaration the kernel silently
+// ignored. A public operation asks nothing about the caller and may still ask
+// about the tenant — a public site that is part of a paid plan is exactly that.
+func TestAPublicRouteIsStillAskedAboutThePlan(t *testing.T) {
+	api, router, f := setup(t)
+	httpx.Register(api, huma.Operation{
+		OperationID: "read-site", Method: http.MethodGet, Path: "/site",
+	}, httpx.Public().Needing("public-site"), ok)
+
+	f.includes, f.wanted = false, ""
+	if res := get(t, router, "/site"); res.Code != http.StatusPaymentRequired {
+		t.Errorf("a public route on a plan that excludes it got %d %s, want 402", res.Code, res.Body)
+	}
+	if f.wanted != "public-site" {
+		t.Errorf("the kernel asked about %q; a public declaration was not checked at all", f.wanted)
+	}
+	f.includes = true
+	if res := get(t, router, "/site"); res.Code != http.StatusOK {
+		t.Errorf("a public route on a plan that includes it got %d %s", res.Code, res.Body)
+	}
+}

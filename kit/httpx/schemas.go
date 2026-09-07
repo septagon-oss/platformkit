@@ -96,8 +96,17 @@ type Command struct {
 // undeclared Auth admits nobody, as at the route.
 func (r Resource) CommandsFor(ctx context.Context) []Command {
 	var out []Command
+	// One answer per distinct declaration, not per command: the commands of a
+	// resource mostly share its write permission, and the Authorizer reads the
+	// roles table every time it is asked.
+	asked := map[Auth]bool{}
 	for _, c := range r.Commands {
-		if r.mayUse(ctx, c.Auth) {
+		may, seen := asked[c.Auth]
+		if !seen {
+			may = r.mayUse(ctx, c.Auth)
+			asked[c.Auth] = may
+		}
+		if may {
 			out = append(out, c)
 		}
 	}

@@ -830,6 +830,22 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 	if auth.kind == kindPublic {
+		// A public operation asks nothing about the caller and may still ask
+		// about the tenant: a public site that is part of a paid plan is a
+		// public route with a feature on it. The tenant is resolved before this
+		// middleware runs, except on a host that resolves to none — and a host
+		// with no tenant has no plan, so there is nothing that could include
+		// the feature.
+		if auth.feature != "" {
+			t, hasTenant := tenancy.FromContext(ctx.Context())
+			if !hasTenant {
+				_ = huma.WriteErr(a.api, ctx, http.StatusNotFound, "no site is served at this host")
+				return
+			}
+			if !a.entitled(ctx, t, auth) {
+				return
+			}
+		}
 		next(ctx)
 		return
 	}
@@ -913,6 +929,16 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 func (a *API) entitled(ctx huma.Context, t tenancy.Tenant, auth Auth) bool {
 	if auth.feature == "" {
 		return true
+	}
+	if a.opts.Entitle == nil {
+		// Defense in depth, like the undeclared branch above: ValidateDeclarations
+		// refuses this composition, so reaching here means the gate did not run.
+		// Closed rather than open, and an outage rather than a denial, because
+		// the fault is the application's and not the caller's.
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: an operation declares a feature and nothing answers it",
+			"feature", auth.feature, "path", ctx.URL().Path)
+		_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
+		return false
 	}
 	included, err := a.opts.Entitle.Includes(ctx.Context(), t, auth.feature)
 	if err != nil {

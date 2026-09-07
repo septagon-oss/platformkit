@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -228,6 +229,12 @@ type galleryInput struct {
 // the ones no other screen renders, so their rules are not in app.css and every
 // other page is that much smaller.
 func gallery(only string) page.View {
+	// A group nobody has is no filter at all. Without this the page echoes
+	// whatever was in the query string back as "0 of them, in <that>", which is
+	// an attacker's sentence on somebody else's screen even once it is escaped.
+	if only != "" && !slices.Contains(components.GalleryGroups(), only) {
+		only = ""
+	}
 	var body []g.Node
 	group := ""
 	shown := 0
