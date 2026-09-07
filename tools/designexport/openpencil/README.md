@@ -185,9 +185,9 @@ constructed nodes and restores the caller's measurement hook.
 
 Nested construction includes block flow with uniform nonnegative collapsed margins
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
-Linked Form and block Go fixtures cover both themes at 320/1280px, property history,
-isolation and two saves, including fractional line widths and restored fill sizing.
-Nonwrapping intrinsic rows and submission are not modeled.
+Linked Form, block and body-font Toolbar fixtures cover both themes at 320/1280px,
+history, isolation and two saves. Private copy keeps its owner's properties.
+Nonwrapping intrinsic rows and submission are not modeled; default display-font fidelity is unverified.
 Native input values are unwrapped auto-width text in a fixed clipping viewport.
 Zero advance and clearing are measured; failures roll back the edit and history.
 Empty controls have no glyph evidence; caret/selection scrolling is not modeled.

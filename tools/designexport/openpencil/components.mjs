@@ -229,6 +229,9 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
           name: region.property, text: region.text, width: region.bounds.width, height: lineHeight,
           fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
           fontSize, lineHeight, letterSpacing, textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
+          pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+            schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
+          }) }],
         })
       }
       targets.push({ region, nativeNode })
@@ -397,7 +400,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       value.native.width = node.bounds.width - native.paddingLeft - native.paddingRight
       value.native.height = node.bounds.height - native.paddingTop - native.paddingBottom
       value.native.layoutAlignSelf = 'STRETCH'
-      plan = { kind: 'frame', observation: node, children: [value], native: {
+      plan = { kind: 'frame', textBlock: true, observation: node, children: [value], native: {
         name: node.tag, width: node.bounds.width, height: node.bounds.height,
         layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
         primaryAxisAlign: 'MIN', counterAxisAlign: 'STRETCH', ...native,
@@ -506,7 +509,8 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       geometry.push({ plan: current, node, parentPlan })
       return node
     }
-    const pluginData = current.blockFlow || current.wrapping || ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
+    // Private text boxes need the same fill/intrinsic measurement path as linked Text masters.
+    const pluginData = current.blockFlow || current.textBlock || current.wrapping || ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
       pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
         schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
       }),
