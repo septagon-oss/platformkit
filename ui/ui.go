@@ -228,11 +228,13 @@ func base() *css.Sheet {
 	s.Select("img, svg", css.Decl("display", css.Literal("block")), css.Decl("max-width", css.Literal("100%")))
 	s.Select("dialog::backdrop", css.Decl("background", css.Literal("rgb(0 0 0 / 0.45)")))
 	s.Media("(prefers-reduced-motion: reduce)", func(inner *css.Sheet) {
+		// Override ordinary utility and consumer rules while retaining completion
+		// events for code waiting on animationend or transitionend.
 		inner.Select("*, *::before, *::after",
-			css.Decl("animation-duration", css.Literal("0.01ms")),
-			css.Decl("animation-iteration-count", css.Literal("1")),
-			css.Decl("transition-duration", css.Literal("0.01ms")),
-			css.Decl("scroll-behavior", css.Literal("auto")))
+			css.Decl("animation-duration", css.Literal("0.01ms !important")),
+			css.Decl("animation-iteration-count", css.Literal("1 !important")),
+			css.Decl("transition-duration", css.Literal("0.01ms !important")),
+			css.Decl("scroll-behavior", css.Literal("auto !important")))
 	})
 	return s
 }

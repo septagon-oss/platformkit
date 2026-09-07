@@ -463,3 +463,91 @@ test('browser capture retains font evidence for a zero-advance combining glyph',
     postScriptName, isCustomFont, glyphCount,
   })), [{ postScriptName: 'IBMPlexSans-Regular', isCustomFont: true, glyphCount: 1 }])
 })
+
+test('source reduced-motion fallback wins later consumer specificity without changing normal motion', async () => {
+  const spinner = source.examples.find(example => example.id === 'pk-ui.component.spinner/brand').html
+  const skeleton = source.examples.find(example => example.id === 'pk-ui.component.skeleton/block').html
+  const consumer = `#consumer .motion, #consumer .motion::before, #consumer .motion::after {
+    animation: pk-spin 3s linear infinite; transition: opacity 4s; scroll-behavior: smooth;
+  }`
+  for (const reducedMotion of ['reduce', 'no-preference']) {
+    const context = await browser.newContext({ reducedMotion })
+    try {
+      const page = await context.newPage()
+      await page.setContent(`<!doctype html><html><head><style>${source.css}</style><style>${consumer}</style></head>
+        <body><section id="source">${spinner}${skeleton}</section><section id="consumer"><span class="motion">Consumer</span></section></body></html>`)
+      const computed = await page.evaluate(() => {
+        const values = style => [style.animationDuration, style.animationIterationCount, style.transitionDuration, style.scrollBehavior]
+        const target = document.querySelector('#consumer .motion')
+        return {
+          reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+          source: [...document.querySelectorAll('#source .animate-spin, #source .animate-pulse')]
+            .map(node => values(getComputedStyle(node)).slice(0, 2)),
+          consumer: [null, '::before', '::after'].map(pseudo => values(getComputedStyle(target, pseudo))),
+        }
+      })
+      const reduced = reducedMotion === 'reduce'
+      assert.equal(computed.reduced, reduced)
+      assert.deepEqual(computed.source, reduced ? [['1e-05s', '1'], ['1e-05s', '1']] : [['1s', 'infinite'], ['2s', 'infinite']])
+      const expected = reduced ? ['1e-05s', '1', '1e-05s', 'auto'] : ['3s', 'infinite', '4s', 'smooth']
+      assert.deepEqual(computed.consumer, [expected, expected, expected])
+    } finally { await context.close() }
+  }
+})
+
+test('source reduced-motion fallback preserves animation and transition completion events', async () => {
+  const context = await browser.newContext({ reducedMotion: 'reduce' })
+  try {
+    const page = await context.newPage()
+    await page.setContent(`<!doctype html><html><head><style>${source.css}</style><style>
+      #events { animation: pk-spin 3s linear infinite; transition: opacity 4s; }
+    </style></head><body></body></html>`)
+    const events = await page.evaluate(async () => {
+      const target = document.createElement('span')
+      target.id = 'events'
+      target.textContent = 'Completion event fixture'
+      let timer
+      const completed = Promise.all(['animationend', 'transitionend'].map(type => new Promise(resolve => {
+        target.addEventListener(type, event => resolve({ type: event.type, target: event.target.id }), { once: true })
+      })))
+      document.body.append(target)
+      try {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        target.style.opacity = '0.5'
+        return await Promise.race([
+          completed,
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Source completion events did not fire')), 1000) }),
+        ])
+      } finally { clearTimeout(timer) }
+    })
+    assert.deepEqual(events, [{ type: 'animationend', target: 'events' }, { type: 'transitionend', target: 'events' }])
+  } finally { await context.close() }
+})
+
+test('browser capture settles all real loading indicators through source reduced-motion styles', async () => {
+  const beforeSource = structuredClone(source)
+  for (const suffix of [
+    'button/loading', 'skeleton/block', 'skeleton/block-lg', 'skeleton/block-sm', 'skeleton/circle', 'skeleton/text',
+    'spinner/brand', 'spinner/labelled', 'spinner/success', 'tableskeleton/table', 'tableskeleton/table-compact',
+  ]) {
+    const exampleId = `pk-ui.component.${suffix}`
+    const result = await captureExample(browser, source, exampleId)
+    assert.equal(result.exampleId, exampleId)
+    const animated = observed(result.roots).filter(node => node.kind === 'element' && node.style['animation-name'] !== 'none')
+    assert.ok(animated.length > 0, `${exampleId} retained its authored animation rather than capture removing it`)
+    assert.ok(animated.every(node => node.style['animation-duration'] === '1e-05s'), exampleId)
+    assert.equal(browser.contexts().length, 0)
+  }
+  assert.deepEqual(source, beforeSource)
+})
+
+test('browser capture still refuses explicit infinite or paused animations under reduced motion', async () => {
+  for (const animation of ['pk-spin 1s linear infinite', 'pk-spin 1s linear 1 paused']) {
+    const snapshot = structuredClone(source)
+    snapshot.css += `\n[data-component="button"] { animation: ${animation} !important; }`
+    const beforeSnapshot = structuredClone(snapshot)
+    await assert.rejects(captureExample(browser, snapshot, primary), /requires finite, running source animations to settle/)
+    assert.deepEqual(snapshot, beforeSnapshot)
+    assert.equal(browser.contexts().length, 0)
+  }
+})

@@ -9,6 +9,10 @@ The implemented boundary is a tokens-and-icons FIG generator, supplied-font
 validation, browser observations, experimental single-text component construction
 and a pinned SDK correction layer with conformance tests. The generator does not
 include these experimental components; pages and flows are not converted yet.
+With an IBM Plex Sans 600 fixture at 1280×900 in light mode, capture accepts all
+107 gallery examples; native construction accepts 10, all Button variants, and
+explicitly refuses 97. These are measured construction guards, not proof of
+complete typography, visual, interaction or provider support.
 
 ## Generate the foundation
 
