@@ -153,6 +153,10 @@ test('derived native colors follow keyboard palette edits and survive two browse
   const derived = graph.createVariable('Secondary', 'COLOR', collection.id, { cssColor: {
     value: 'color-mix(in srgb, var(--ink) 75%, #fff)', customProperties: { '--ink': { aliasId: ink.id } },
   } })
+  const outside = graph.createCollection('Outside')
+  graph.createVariable('Outside dependency', 'COLOR', outside.id, { cssColor: {
+    value: 'var(--secondary)', customProperties: { '--secondary': { aliasId: derived.id } },
+  } })
   const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Token master', width: 40, height: 40,
     fills: [{ type: 'SOLID', color: { r: .25, g: .25, b: .25, a: 1 }, visible: true, opacity: 1 }] })
   graph.bindVariable(master.id, 'fills/0/color', derived.id)
@@ -177,6 +181,40 @@ test('derived native colors follow keyboard palette edits and survive two browse
         await dialog.waitFor()
         const secondary = dialog.getByRole('row').filter({ hasText: 'Secondary' })
         await expect(secondary).toContainText(cycle === 0 ? 'Derived #404040' : 'Derived #414040')
+        const removeInk = dialog.getByRole('button', { name: 'Delete Ink', exact: true })
+        await tabTo(removeInk)
+        for (const forcedColors of ['none', 'active']) {
+          await page.emulateMedia({ forcedColors })
+          const indicator = await removeInk.evaluate(node => {
+            const css = getComputedStyle(node), box = node.getBoundingClientRect()
+            return { outline: css.outlineStyle, width: parseFloat(css.outlineWidth), opacity: css.opacity,
+              targetWidth: box.width, targetHeight: box.height }
+          })
+          assert.equal(indicator.outline, 'auto')
+          assert.ok(indicator.width > 0)
+          assert.equal(indicator.opacity, '1')
+          assert.ok(indicator.targetWidth >= 24 && indicator.targetHeight >= 24)
+        }
+        await page.emulateMedia({ forcedColors: 'none' })
+        await expect(dialog.getByRole('status')).toHaveText('')
+        await page.keyboard.press('Space')
+        await expect(dialog.getByRole('status')).toContainText('Variables unchanged.')
+        await expect(removeInk).toBeFocused()
+        await expect(secondary).toContainText(cycle === 0 ? 'Derived #404040' : 'Derived #414040')
+        await tabTo(dialog.getByRole('button', { name: 'Dismiss variable message', exact: true }))
+        await page.keyboard.press('Enter')
+        await expect(dialog.getByRole('status')).toHaveText('')
+        await expect(dialog.getByRole('button', { name: 'Collection actions', exact: true })).toBeFocused()
+        await page.keyboard.press('Space')
+        await page.keyboard.press('End')
+        await expect(page.getByRole('menuitem', { name: 'Delete collection', exact: true })).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(dialog.getByRole('status')).toContainText('Variables unchanged.')
+        await expect(dialog.getByRole('tab', { name: 'Palette', exact: true })).toHaveAttribute('aria-selected', 'true')
+        await expect(secondary).toContainText(cycle === 0 ? 'Derived #404040' : 'Derived #414040')
+        await tabTo(dialog.getByRole('button', { name: 'Dismiss variable message', exact: true }))
+        await page.keyboard.press('Enter')
+        await expect(dialog.getByRole('status')).toHaveText('')
         if (cycle === 0) {
           const picker = dialog.getByRole('row').filter({ hasText: 'Ink' }).getByRole('button', { name: 'Edit color', exact: true })
           await tabTo(picker)
@@ -201,6 +239,8 @@ test('derived native colors follow keyboard palette edits and survive two browse
         buffer = await saveDocument(page, errors, workers)
         assert.ok(workers.some(path => /\/export-worker-.*\.js$/.test(path)))
         const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+        assert.deepEqual([...reopened.variableCollections.values()].map(item => item.name).sort(), ['Outside', 'Palette'])
+        assert.equal(reopened.variables.size, 3)
         const next = [...reopened.variables.values()].find(variable => variable.name === 'Secondary')
         assert.equal(Object.values(next.valuesByMode)[0].cssColor.value, Object.values(derived.valuesByMode)[0].cssColor.value)
         const value = reopened.resolveVariable(next.id)

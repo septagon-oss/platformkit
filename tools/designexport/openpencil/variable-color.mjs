@@ -81,9 +81,39 @@ export function restoreCSSColors(node, type, valuesByMode) {
 }
 
 export function validateCSSColors(graph) {
+  const modes = new Set([...graph.variableCollections.values()].flatMap(collection => collection.modes.map(mode => mode.modeId)))
   for (const variable of graph.variables.values()) for (const [mode, value] of Object.entries(variable.valuesByMode)) {
     if (!record(value) || !('cssColor' in value)) continue
     if (!graph.variableCollections.get(variable.collectionId)?.modes.some(item => item.modeId === mode)) reject('unknown native mode')
-    graph.resolveVariable(variable.id, mode)
+    // A different collection's mode can select this formula's fallback while
+    // still selecting a different input value. Check those native contexts too.
+    for (const requestedMode of modes) graph.resolveVariable(variable.id, requestedMode)
   }
+}
+
+// Validation sees an ephemeral variable map, never temporarily invalid live
+// state. Native resolution remains the only dependency/mode implementation.
+function validateCandidate(graph, variables) {
+  const candidate = Object.create(graph)
+  candidate.variables = variables
+  validateCSSColors(candidate)
+}
+
+export function setNativeVariableValue(graph, variable, modeId, value, present = true) {
+  if (present && !graph.variableCollections.get(variable.collectionId)?.modes.some(mode => mode.modeId === modeId)) {
+    reject('unknown native mode')
+  }
+  const valuesByMode = { ...variable.valuesByMode }
+  if (present) valuesByMode[modeId] = structuredClone(value)
+  else delete valuesByMode[modeId]
+  const variables = new Map(graph.variables)
+  variables.set(variable.id, { ...variable, valuesByMode })
+  validateCandidate(graph, variables)
+  variable.valuesByMode = valuesByMode
+}
+
+export function validateCSSColorRemoval(graph, ids) {
+  const variables = new Map(graph.variables)
+  for (const id of ids) variables.delete(id)
+  validateCandidate(graph, variables)
 }

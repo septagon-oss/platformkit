@@ -104,7 +104,45 @@ function nativeBoundary() {
           `const value = variable.valuesByMode[mode.modeId]
       if (value && typeof value === 'object' && 'cssColor' in value) {
         return h('span', { class: 'font-mono text-xs text-muted' }, options.formatModeValue(variable, mode.modeId))
-      }`],
+      }`,
+          "'flex size-5 cursor-pointer items-center justify-center rounded border-none bg-transparent text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-surface'",
+          "'flex size-6 cursor-pointer items-center justify-center rounded border-none bg-transparent text-muted hover:text-surface'",
+          'onClick: () => options.removeVariable(row.original.id)',
+          "'aria-label': 'Delete ' + row.original.name,\n          onClick: () => options.removeVariable(row.original.id)"],
+        'packages/vue/src/variables/use.ts': ['75e76700f882d4dc6b80615977363b9a061a08067a0cc61fffb4472234b81f47',
+          "import type { Variable }", "import type { Variable, VariableValue }",
+          "  const searchTerm = ref('')",
+          `  const searchTerm = ref('')
+  const variableError = ref('')
+  function checkedVariableAction(action: () => void) {
+    try { action() } catch (error) {
+      if (!(error instanceof Error) || !/^(Native CSS color|CSS color expression):/.test(error.message)) throw error
+      variableError.value = 'Variables unchanged. This change would break a colour dependency. ' +
+        'Update the dependent colours before removing or replacing their input. ' + error.message
+    }
+  }`,
+          '    ...variableActions',
+          `    ...variableActions,
+    variableError,
+    dismissVariableError: () => { variableError.value = '' },
+    removeVariable: (id: string) => checkedVariableAction(() => variableActions.removeVariable(id)),
+    removeCollection: (id: string) => checkedVariableAction(() => collectionActions.removeCollection(id)),
+    updateVariableValue: (id: string, modeId: string, value: VariableValue) =>
+      checkedVariableAction(() => variableActions.updateVariableValue(id, modeId, value))`],
+        'src/components/variables/VariablesDialog.vue': ['d8f09a9aefffceb59356cddf38208ad6e25976ebf2e641f08c1eeff6c2657cbe',
+          "const collectionInput = templateRef<HTMLInputElement>('collectionInput')",
+          "const collectionMenu = templateRef<HTMLButtonElement>('collectionMenu')\nconst collectionInput = templateRef<HTMLInputElement>('collectionInput')",
+          '    <DialogTitle class="sr-only">{{ dialogs.localVariables }}</DialogTitle>',
+          `    <DialogTitle class="sr-only">{{ dialogs.localVariables }}</DialogTitle>
+    <div class="shrink-0 px-4">
+      <p role="status" class="text-xs text-surface">{{ ctx.variableError.value }}</p>
+      <button v-if="ctx.variableError.value" class="my-2 rounded px-2 py-1 text-xs text-surface"
+        @click="ctx.dismissVariableError(); collectionMenu?.focus()">Dismiss variable message</button>
+    </div>`,
+          'data-test-id="variables-collection-menu"', 'data-test-id="variables-collection-menu" ref="collectionMenu" aria-label="Collection actions"',
+          'data-test-id="variables-add-collection"', 'data-test-id="variables-add-collection" :aria-label="dialogs.createCollection"',
+          'data-test-id="variables-search-input"', 'data-test-id="variables-search-input" :aria-label="dialogs.search"',
+          'data-test-id="variables-add-mode"', 'data-test-id="variables-add-mode" :aria-label="dialogs.addMode"'],
         'src/app/shell/keyboard/registry.ts': ['5df738b1929c454d61c3665d8794ed0488cf8f712ae3211b5eeeaeedbca51cd0',
           'hasOpenDismissableLayer() ||',
           `((event.key === 'Enter' || event.code === 'Space') && event.composedPath().some(target =>
@@ -115,10 +153,15 @@ function nativeBoundary() {
           `if (event.code !== 'Space' || event.defaultPrevented || event.composedPath().some(target =>
       target instanceof Element && target.matches('button, a[href], [role="button"], [role="dialog"]'))) return`],
       }
-      for (const [path, [digest, before, after]] of Object.entries(controlCorrections)) if (id === join(upstream, path)) {
+      for (const [path, [digest, ...edits]] of Object.entries(controlCorrections)) if (id === join(upstream, path)) {
         if (sha256(source) !== digest) throw new Error('Editor control source changed: ' + path)
         correctedControls.add(path)
-        return { code: replaceOnce(source, before, after), map: null }
+        for (let index = 0; index < edits.length; index += 2) source = replaceOnce(source, edits[index], edits[index + 1])
+        if (path.endsWith('/VariablesDialog.vue')) source += `
+<style scoped>
+:deep(button:focus-visible) { outline: revert; outline-offset: 2px; }
+</style>\n`
+        return { code: source, map: null }
       }
       if (id === join(upstream, 'src/app/shell/keyboard/nudging.ts')) {
         if (sha256(source) !== '164f12035c8949b4780e95622950ac0503c778ffcd977e09d61b233fb5f04ae7') {
@@ -162,7 +205,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 4) throw new Error('Browser omitted a variable or keyboard control correction')
+if (correctedControls.size !== 6) throw new Error('Browser omitted a variable or keyboard control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

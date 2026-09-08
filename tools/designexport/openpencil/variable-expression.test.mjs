@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { SceneGraph } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
+import { FigmaAPI } from '@open-pencil/core/figma-api'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
@@ -123,6 +124,138 @@ test('native expressions distinguish repeated dependencies from cycles and refus
   close(graph.resolveVariable(derived.id, mode), rgba(0, 0, 0, 0))
   value.cssColor.value = 'color-mix(in oklab, var(--ink), #fff)'
   assert.throws(() => graph.resolveVariable(derived.id, mode), /sRGB/)
+})
+
+test('invalid native value edits preserve variables, nodes, render events and redo history', async () => {
+  let graph = fixture()
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const editor = createEditor({ graph }), api = new FigmaAPI(graph)
+    const ink = named(graph, 'Ink'), derived = named(graph, 'Secondary')
+    const mode = graph.variableCollections.get(ink.collectionId).defaultModeId
+    const wrongType = graph.createVariable('Not a COLOR', 'STRING', ink.collectionId, rgba(1, 0, 1))
+    editor.updateVariableValue(ink.id, mode, rgba(0, 1, 0))
+    editor.undoAction()
+    const before = structuredClone({ variables: [...graph.variables], nodes: [...graph.nodes] })
+    let renders = 0, updates = 0
+    editor.onEditorEvent('render:requested', () => renders++)
+    graph.emitter.on('node:updated', () => updates++)
+    for (const edit of [
+      value => editor.updateVariableValue(ink.id, mode, value),
+      value => api.setVariableValue(ink.id, mode, value),
+    ]) for (const value of ['red', rgba(NaN, 0, 0), rgba(0, 0, 0, 2),
+      { aliasId: derived.id }, { aliasId: 'missing-input' }, { aliasId: wrongType.id }]) {
+      assert.throws(() => edit(value), /CSS color/)
+      assert.deepEqual({ variables: [...graph.variables], nodes: [...graph.nodes] }, before)
+      assert.equal(renders, 0)
+      assert.equal(updates, 0)
+      close(resolved(graph, 'light'), rgba(.25, .25, .25))
+    }
+    for (const edit of [
+      () => editor.updateVariableValue(derived.id, mode, { cssColor: null }),
+      () => api.setVariableValue(derived.id, mode, { cssColor: null }),
+      () => editor.updateVariableValue(derived.id, 'unknown-mode', derived.valuesByMode[mode]),
+    ]) assert.throws(edit, /CSS color/)
+    assert.deepEqual({ variables: [...graph.variables], nodes: [...graph.nodes] }, before)
+    assert.equal(renders, 0)
+    editor.redoAction()
+    close(resolved(graph, 'light'), rgba(.25, 1, .25))
+    editor.undoAction()
+    graph.removeVariable(wrongType.id)
+    if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  }
+})
+
+test('dependency deletion refuses before unbinding instances or partially removing a collection', async () => {
+  let graph = fixture()
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const ink = named(graph, 'Ink'), derived = named(graph, 'Secondary')
+    const collection = graph.variableCollections.get(ink.collectionId), editor = createEditor({ graph })
+    // A separate collection depends on the palette, making whole-palette removal invalid.
+    const outside = graph.createCollection('Outside')
+    graph.createVariable('Outside expression', 'COLOR', outside.id, {
+      cssColor: { value: 'var(--source)', customProperties: { '--source': { aliasId: derived.id } } },
+    })
+    const api = new FigmaAPI(graph)
+    editor.renameVariable(ink.id, 'Renamed')
+    editor.undoAction()
+    const before = structuredClone({ variables: [...graph.variables], collections: [...graph.variableCollections],
+      nodes: [...graph.nodes], active: [...graph.activeMode] })
+    let updates = 0
+    graph.emitter.on('node:updated', () => updates++)
+    for (const remove of [
+      () => graph.removeVariable(ink.id), () => editor.removeVariable(ink.id), () => api.deleteVariable(ink.id),
+      () => graph.removeCollection(collection.id), () => editor.removeCollection(collection.id),
+      () => api.deleteVariableCollection(collection.id),
+    ]) {
+      assert.throws(remove, /CSS color/)
+      assert.deepEqual({ variables: [...graph.variables], collections: [...graph.variableCollections],
+        nodes: [...graph.nodes], active: [...graph.activeMode] }, before)
+      assert.equal(updates, 0)
+    }
+    editor.redoAction()
+    assert.equal(ink.name, 'Renamed', 'failed deletion preserves redo')
+    editor.undoAction()
+    graph.removeCollection(outside.id)
+    if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  }
+})
+
+test('a collection containing its complete formula closure can be removed in one operation', () => {
+  const graph = fixture(), collection = [...graph.variableCollections.values()][0]
+  graph.removeCollection(collection.id)
+  assert.equal(graph.variables.size, 0)
+  assert.equal(graph.variableCollections.size, 0)
+  assert.equal(graph.activeMode.size, 0)
+  assert.ok([...graph.nodes.values()].every(node => Object.keys(node.boundVariables).length === 0))
+})
+
+test('native value preflight checks cross-collection fallback modes and isolates caller input', () => {
+  const graph = new SceneGraph(), inputs = graph.createCollection('Inputs'), roles = graph.createCollection('Roles')
+  graph.addMode(inputs.id, 'alternate', 'Alternate')
+  const ink = graph.createVariable('Ink', 'COLOR', inputs.id, rgba(0, 0, 0))
+  const alias = graph.createVariable('Alias', 'COLOR', inputs.id, { aliasId: ink.id })
+  const derived = graph.createVariable('Role', 'COLOR', roles.id, {
+    cssColor: { value: 'var(--ink)', customProperties: { '--ink': { aliasId: alias.id } } },
+  })
+  const api = new FigmaAPI(graph), before = structuredClone([...graph.variables])
+  assert.throws(() => api.setVariableValue(ink.id, 'alternate', 'invalid foreign fallback'), /CSS color/)
+  assert.throws(() => graph.removeVariable(ink.id), /CSS color/, 'transitive aliases also retain their inputs')
+  assert.deepEqual([...graph.variables], before)
+  const value = rgba(1, 0, 0)
+  api.setVariableValue(ink.id, 'alternate', value)
+  value.r = 0
+  close(graph.resolveVariable(derived.id, 'alternate'), rgba(1, 0, 0))
+  close(graph.resolveVariable(derived.id, roles.defaultModeId), rgba(0, 0, 0))
+})
+
+test('a stale formula redo refuses without consuming history and can be retried after repair', () => {
+  const graph = fixture(), derived = named(graph, 'Secondary'), editor = createEditor({ graph })
+  const collection = graph.variableCollections.get(derived.collectionId), mode = collection.defaultModeId
+  const alternate = graph.createVariable('Alternate', 'COLOR', collection.id, rgba(0, 1, 0))
+  editor.updateVariableValue(derived.id, mode, {
+    cssColor: { value: 'var(--alternate)', customProperties: { '--alternate': { aliasId: alternate.id } } },
+  })
+  editor.undoAction()
+  new FigmaAPI(graph).deleteVariable(alternate.id)
+  const before = structuredClone([...graph.variables]), history = editor.undo.redoStack.slice()
+  assert.throws(() => editor.redoAction(), /CSS color/)
+  assert.deepEqual([...graph.variables], before)
+  assert.deepEqual(editor.undo.redoStack, history)
+  close(resolved(graph, 'light'), rgba(.25, .25, .25))
+  graph.addVariable(alternate)
+  editor.redoAction()
+  close(resolved(graph, 'light'), rgba(0, 1, 0))
+  editor.undoAction()
+  close(resolved(graph, 'light'), rgba(.25, .25, .25))
+})
+
+test('native value history restores an absent mode property rather than assigning undefined', () => {
+  const graph = fixture(), ink = named(graph, 'Ink'), editor = createEditor({ graph })
+  delete ink.valuesByMode['night-mode']
+  editor.updateVariableValue(ink.id, 'night-mode', rgba(0, 1, 0))
+  editor.undoAction()
+  assert.equal(Object.hasOwn(ink.valuesByMode, 'night-mode'), false)
+  close(resolved(graph, 'dark'), rgba(0, 0, .25))
 })
 
 test('FIG expression metadata refuses changed fallbacks, malformed records and stale mode identities', async () => {

@@ -72,19 +72,35 @@ export const corrections = Object.freeze({
   '@open-pencil/scene-graph/dist/types.js': {
     sha256: '79dcc003679545dae0cfeadfdbb68dc10c6e92b85468d344ac89a14cbbdfe8e6',
     transform(source, replace) {
-      source = `import { resolveCSSColor } from ${colorHelper};\n` + source
+      source = `import { resolveCSSColor, validateCSSColorRemoval } from ${colorHelper};\n` + source
+      source = replace(source, 'function removeVariable(graph, id) {',
+        `function removeVariable(graph, id) {
+          if (!graph.variables.has(id)) return;
+          validateCSSColorRemoval(graph, [id]);
+          removeVariableUnchecked(graph, id);
+        }
+        function removeVariableUnchecked(graph, id) {`)
+      source = replace(source,
+        'if (collection) for (const varId of Array.from(collection.variableIds)) removeVariable(graph, varId);',
+        `if (collection) {
+          validateCSSColorRemoval(graph, collection.variableIds);
+          for (const varId of Array.from(collection.variableIds)) removeVariableUnchecked(graph, varId);
+        }`)
       source = replace(source, 'function resolveVariable(graph, variableId, modeId, visited) {',
-        'function resolveVariable(graph, variableId, modeId, visited, work = { remaining: 4096 }) {\n' +
+        'function resolveVariable(graph, variableId, modeId, visited, work = { remaining: 4096 }, requiredType) {\n' +
         '\tif (visited?.size > 64 || --work.remaining < 0) throw new Error("Native CSS color: variable resolution limit");')
+      source = replace(source, 'if (!variable) return void 0;\n\tconst collection = graph.variableCollections.get(variable.collectionId);',
+        'if (!variable || requiredType && variable.type !== requiredType) return void 0;\n' +
+        '\tconst collection = graph.variableCollections.get(variable.collectionId);')
       source = replace(source, 'if (value && typeof value === "object" && "aliasId" in value) {',
         `if (value && typeof value === "object" && "cssColor" in value) {
           if (variable.type !== "COLOR") throw new Error("Native CSS color: COLOR variable required");
           return resolveCSSColor(value.cssColor, id => graph.variables.get(id)?.type === "COLOR" ?
-            resolveVariable(graph, id, preferredModeId, new Set([...(visited ?? []), variableId]), work) : undefined);
+            resolveVariable(graph, id, preferredModeId, new Set([...(visited ?? []), variableId]), work, "COLOR") : undefined);
         }
         if (value && typeof value === "object" && "aliasId" in value) {`)
       source = replace(source, 'return resolveVariable(graph, value.aliasId, preferredModeId, seen);',
-        'return resolveVariable(graph, value.aliasId, preferredModeId, seen, work);')
+        'return resolveVariable(graph, value.aliasId, preferredModeId, seen, work, requiredType);')
       // Retain deletion ownership for deferred synchronization after the node
       // has left the graph. Existing one-argument listeners remain compatible.
       source = replace(source, 'this.emitter.emit("node:deleted", id);',
@@ -110,6 +126,27 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/editor/components/properties.js': {
     sha256: '7bc49a01f5148053123559f7e4a523317a7ea61339429607dd2fd338243ed123',
     transform: (source, replace) => correctPropertyActions(correctPropertyTarget(source, replace), replace),
+  },
+  '@open-pencil/core/dist/editor/variables.js': {
+    sha256: '95e406a14d6bf2f1057b09f31b8bf01b560d8a2dfc83cdd0fe62063e10923f47',
+    transform(source, replace) {
+      source = `import { setNativeVariableValue } from ${colorHelper};\n` + source
+      source = replace(source, 'const prevValue = structuredClone(variable.valuesByMode[modeId]);',
+        'const prevPresent = Object.hasOwn(variable.valuesByMode, modeId);\n' +
+        '\t\tconst prevValue = structuredClone(variable.valuesByMode[modeId]);')
+      source = replace(source, 'variable.valuesByMode[modeId] = newValue;',
+        'setNativeVariableValue(ctx.graph, variable, modeId, newValue);')
+      source = replace(source, 'if (v) v.valuesByMode[modeId] = structuredClone(newValue);',
+        'if (v) setNativeVariableValue(ctx.graph, v, modeId, newValue);')
+      return replace(source, 'if (v) v.valuesByMode[modeId] = structuredClone(prevValue);',
+        'if (v) setNativeVariableValue(ctx.graph, v, modeId, prevValue, prevPresent);')
+    },
+  },
+  '@open-pencil/core/dist/figma-api/index.js': {
+    sha256: '81ad3ed7376c9866dad1d3ec3778d00129b3eb24cc63db827b8a9f3cf17198b6',
+    transform: (source, replace) => `import { setNativeVariableValue } from ${colorHelper};\n` +
+      replace(source, 'variable.valuesByMode[modeId] = value;',
+        'setNativeVariableValue(this.graph, variable, modeId, value);'),
   },
   '@open-pencil/core/dist/editor/text/auto-resize.js': {
     sha256: '9cab5aafe825afa0d7f959536b8fe61da620a535051f6b4bee5ae31e74b0fc1a',

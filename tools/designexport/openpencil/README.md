@@ -83,6 +83,16 @@ Palette edits, modes and history retain formulas in versioned FIG plugin data al
 resolved COLOR fallbacks. Changed external fallbacks, missing inputs and cycles refuse.
 This is adapter-specific persistence, not formula support in other editors or source conversion.
 
+Native editor value edits (including undo/redo) and the automation API's value setter
+validate a candidate variable map before writing. Variable and collection deletion
+validate the remaining formulas before unbinding nodes; a collection's complete
+internal dependency closure can be removed together. Cross-collection mode fallbacks,
+refused edits, retained redo entries and two FIG saves have independent native tests.
+The variables dialog keeps a refused operation's explanation until dismissed and
+retains keyboard focus. Deletion buttons have names and remain visible without hover.
+This does not certify successful deletion's undo restoration, mode-changing operations,
+raw graph mutation or unrestricted formula creation; those remain separate safety work.
+
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release
 gate that should be made green by removing assertions.
