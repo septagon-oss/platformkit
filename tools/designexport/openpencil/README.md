@@ -225,7 +225,8 @@ Nonwrapping intrinsic rows and submission are not modeled; default display-font 
 Native input values are unwrapped auto-width text in a fixed clipping viewport.
 Zero advance and clearing are measured; failures roll back the edit and history.
 Empty controls have no glyph evidence; caret/selection scrolling is not modeled.
-Invalid Input preserves its error copy but binds only label/value.
+Single-line required labels retain inline-marker placement through edits and two saves.
+Error/help copy is retained; only label/value bind, and multiline labels remain unverified.
 Text binds `content` inside its wrapping block. Light/dark 320px and 1280px checks
 cover line breaks/advances, property history and two saves. The editor test edits
 and downloads the 320px paragraph. Reopened direct Text instances also pass width

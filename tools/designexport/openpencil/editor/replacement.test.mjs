@@ -594,6 +594,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
     const untouched = [...baseline.getAllNodes()].filter(node => node.type === 'COMPONENT' || node.name === 'Untouched Form')
       .map(node => [node.name, geometry(baseline, node)])
     const values = ['WAVY affinity album title '.repeat(6), ''], labels = ['Create affinity album', 'Return to album']
+    const fieldLabels = ['Album title', 'Name']
     const contents = ['Remember the people, places and small details. '.repeat(5).trim(), 'An album description.']
     for (let cycle = 0; cycle < 3; cycle++) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['local-fonts'] })
@@ -627,6 +628,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
         }
         for (const [name, field, value, initial, previousValue] of [
           [inputName, 'value', values[cycle], '', values[cycle - 1]],
+          [inputName, 'label', fieldLabels[cycle], 'Title', fieldLabels[cycle - 1]],
           ['Editable button', 'label', labels[cycle], 'Add item', labels[cycle - 1]],
           ['Editable paragraph', 'content', contents[cycle], 'Plain body copy.', contents[cycle - 1]],
           ['Editable bordered button', 'label', labels[cycle], 'Cancel', labels[cycle - 1]],
@@ -709,29 +711,41 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           }
           for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
           for (const [path, props] of [
-            [[form, 'title'], { value: values[cycle] }], [[button], { label: labels[cycle] }],
+            [[form, 'title'], { ...(cycle === 0 ? { value: values[cycle] } : {}), label: fieldLabels[cycle] }],
+            [[button], { label: labels[cycle] }],
             [[paragraph], { content: contents[cycle] }],
             [[secondary], { label: labels[cycle] }],
           ]) {
             const result = extractSourceProps(reopened, sourceNode(reopened, path), source)
-            if (path.length === 2 && cycle === 1) assert.equal(result.status, 'no-supported-changes')
-            else {
-              assert.deepEqual(result.proposal, { baseSHA256: source.sha256, path, props })
-              const projected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--proposal'], {
-                cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(result.proposal),
-              }))
-              assert.notEqual(projected.sha256, source.sha256)
-              if ([paragraph, secondary].includes(path[0])) {
-                const observed = await captureExample(comparisonBrowser, projected, path[0], { fonts, viewport: { width: 320, height: 900 } })
-                const selected = selections.find(item => item.observation.exampleId === path[0])
-                assert.deepEqual(observed.environment, selected.observation.environment, 'source comparison profile must not change after editing')
-                const placed = sourceNode(reopened, path), expected = observed.roots[0].bounds
-                for (const field of ['width', 'height']) assert.ok(Math.abs(placed[field] - expected[field]) <= 1 / 64,
-                  `worker-saved ${path[0]} ${field}: ${placed[field]} versus ${expected[field]}`)
-                if (path[0] === secondary) {
-                  assert.deepEqual([placed.strokes[0].weight, placed.strokes[0].align], [1, 'INSIDE'])
-                  assert.equal(reopened.variables.get(placed.boundVariables['strokes/0/color']).name, '--pk-color-border-default')
-                }
+            assert.deepEqual(result.proposal, { baseSHA256: source.sha256, path, props })
+            const projected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--proposal'], {
+              cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(result.proposal),
+            }))
+            assert.notEqual(projected.sha256, source.sha256)
+            if (path.length === 2) {
+              const observed = await captureExample(comparisonBrowser, projected, form, { fonts, viewport: { width: 320, height: 900 } })
+              const label = observed.roots[0].children[0].children[0]
+              const nativeLabel = reopened.getChildren(sourceNode(reopened, path).id)[0]
+              const regions = label.children.flatMap(child => child.kind === 'text' ? [child] : child.children)
+              const runs = reopened.getChildren(nativeLabel.id)
+              assert.equal(runs.length, regions.length)
+              for (const [index, region] of regions.entries()) {
+                assert.equal(runs[index].text, region.text)
+                assert.ok(Math.abs(runs[index].x - (region.bounds.x - label.bounds.x)) <= 1 / 64,
+                  'required marker follows the edited label after a browser worker save')
+                assert.ok(Math.abs(runs[index].width - region.bounds.width) <= 1 / 64)
+              }
+            }
+            if ([paragraph, secondary].includes(path[0])) {
+              const observed = await captureExample(comparisonBrowser, projected, path[0], { fonts, viewport: { width: 320, height: 900 } })
+              const selected = selections.find(item => item.observation.exampleId === path[0])
+              assert.deepEqual(observed.environment, selected.observation.environment, 'source comparison profile must not change after editing')
+              const placed = sourceNode(reopened, path), expected = observed.roots[0].bounds
+              for (const field of ['width', 'height']) assert.ok(Math.abs(placed[field] - expected[field]) <= 1 / 64,
+                `worker-saved ${path[0]} ${field}: ${placed[field]} versus ${expected[field]}`)
+              if (path[0] === secondary) {
+                assert.deepEqual([placed.strokes[0].weight, placed.strokes[0].align], [1, 'INSIDE'])
+                assert.equal(reopened.variables.get(placed.boundVariables['strokes/0/color']).name, '--pk-color-border-default')
               }
             }
           }

@@ -529,8 +529,9 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       geometry.push({ plan: current, node, parentPlan })
       return node
     }
-    // Private text boxes need the same fill/intrinsic measurement path as linked Text masters.
-    const pluginData = current.blockFlow || current.textBlock || current.wrapping || ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
+    // Private paragraphs and inline runs share linked Text's source-owned layout.
+    const pluginData = current.blockFlow || current.textBlock || current.wrapping || current.inline || parentPlan?.inline ||
+      ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
       pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
         schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
       }),
