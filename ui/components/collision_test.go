@@ -23,6 +23,7 @@ import (
 func composedLists(t *testing.T) map[string]style.ClassList {
 	t.Helper()
 	out := map[string]style.ClassList{}
+	out["video/default"] = clVideo
 	for v := range clButtonVariant {
 		for s := range clButtonSize {
 			base := clButtonBase.Merge(clButtonVariant[v]).Merge(clButtonSize[s])

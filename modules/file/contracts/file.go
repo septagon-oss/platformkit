@@ -67,7 +67,7 @@ const (
 // nothing anyway.
 var renderable = []string{
 	"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
-	"application/pdf", "text/plain",
+	"application/pdf", "text/plain", "video/mp4", "video/webm", "text/vtt",
 }
 
 // Renderable reports whether a stored media type may be served inline. The
@@ -203,7 +203,20 @@ func Agrees(declared string, head []byte) error {
 	if err != nil {
 		return nil // Validate has the last word on the syntax
 	}
+	// WebVTT is UTF-8 text with a signature, not generic text/plain. Check the
+	// header only: the browser parses cues, and the editor verifies their timing.
+	if want == "text/vtt" {
+		header, _, _ := strings.Cut(strings.TrimPrefix(string(head), "\ufeff"), "\n")
+		header = strings.TrimSuffix(header, "\r")
+		if (header == "WEBVTT" || strings.HasPrefix(header, "WEBVTT ") || strings.HasPrefix(header, "WEBVTT\t")) && !strings.Contains(header, "-->") {
+			return nil
+		}
+		return fmt.Errorf("%w: captions need a WebVTT header", crud.ErrInvalid)
+	}
 	got, _, err := mime.ParseMediaType(http.DetectContentType(head))
+	if (want == "video/mp4" || want == "video/webm") && got != want {
+		return fmt.Errorf("%w: video bytes do not match %s", crud.ErrInvalid, want)
+	}
 	if err != nil || got == "application/octet-stream" || got == want {
 		return nil
 	}

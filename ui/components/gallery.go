@@ -34,6 +34,8 @@ func Gallery() []Example {
 		return ExampleInfo{ID: id, ComponentID: componentID, Group: group, Name: name}
 	}
 	return []Example{
+		ExampleOf(info("pk-ui.component.video/default", "Media", "Video / captions"), VideoProps{Label: "Recorded instruction", Sources: []VideoSource{{Src: "/example.mp4", Type: "video/mp4"}}, Tracks: []VideoTrack{{Src: "/example.vtt", Language: "en", Label: "English", Default: true}}}, Video),
+		ExampleOf(info("pk-ui.component.video/disabled", "Media", "Video / unavailable"), VideoProps{ComponentProps: ComponentProps{Disabled: true}, Label: "Recording unavailable"}, Video),
 		ExampleOf(info("pk-ui.component.heading/1", "Type", "Heading / 1"), HeadingProps{Text: "Page title", Level: 1}, Heading),
 		ExampleOf(info("pk-ui.component.heading/2", "Type", "Heading / 2"), HeadingProps{Text: "Section", Level: 2, Anchor: "section"}, Heading),
 		ExampleOf(info("pk-ui.component.heading/3", "Type", "Heading / 3"), HeadingProps{Text: "Sub", Level: 3}, Heading),

@@ -186,6 +186,14 @@ and describes the resource catalog at `/api/v1/admin/resources`.
 The admin module and downstream storefronts call these packages rather than
 maintaining separate document or stylesheet machinery.
 
+The shared [Video](ui/components/video.go) component uses native playback and
+caption controls without autoplay. A composing page supplies a nearby transcript
+and authorized media URLs. File consumers reuse
+[ContentResponse](modules/file/contracts/response.go) after checking access on
+every request; seekable storage supports byte ranges and HEAD without a second
+streaming implementation. Playback position and course completion belong to the
+consuming learning capability, not the shared player.
+
 Resource schemas drive record-management screens, field choices and value
 display. Product-specific interactions use explicitly composed pages and their
 own journey tests. Schemas are compiled Go values, not a runtime page builder.

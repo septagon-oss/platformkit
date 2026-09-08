@@ -19,6 +19,7 @@ func buttonLoadingIndicator(color style.Color) style.ClassList {
 }
 
 var (
+	clVideo = style.New().Display(style.DisplayBlock).Width(style.SFull).AspectVideo().ObjectContain().Bg(style.SurfaceSecondary).Merge(clFocusRing)
 
 	// The application frame. See shell.go: markup written outside this package
 	// would have no rules in the stylesheet, so the frame is a component too.
@@ -761,7 +762,7 @@ func ShellClassLists() []style.ClassList {
 		clCheckbox, clCheckboxRoot, clCheckboxRootDisabled,
 		clCheckboxInput, clCheckboxIndicator, clCheckboxIndicatorIdle,
 		clCheckboxIndicatorActive, clCheckboxCheckmark, clCheckboxBar, clCheckboxLabel,
-		clHeadingBase, clSpinner,
+		clHeadingBase, clSpinner, clVideo,
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clStack, clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clDetailList, clDetailHeader, clDetailTitle, clDetailDescription,
