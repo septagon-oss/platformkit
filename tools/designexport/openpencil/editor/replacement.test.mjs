@@ -645,6 +645,7 @@ test(`Core and schema-generated forms inherit native ${field} properties through
 import (
   "encoding/json"
   "os"
+  g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/kit/crud"
   "github.com/septagon-oss/platformkit/kit/httpx"
@@ -664,6 +665,12 @@ func main() {
   resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: crud.Fields[*Note]()}}
   form := screens.FormExample("fixture/generated-form", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note", nil, nil, "", true)
   examples := append(components.Gallery(), form)
+  state := components.ExampleOf(components.ExampleInfo{ID: "stage", ComponentID: "pk-ui.component.select"},
+    components.SelectProps{Name: "stage", Label: "Stage", Value: "draft", Required: true, Placeholder: "Choose a stage",
+      Options: []components.SelectOption{{Value: "draft", Label: "Draft"}, {Value: " ready,a ", Label: "Ready"}}}, components.Select)
+  choices := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/choice-form", ComponentID: "pk-ui.component.form"},
+    components.FormProps{Label: "Album state", Action: "/albums"}, []g.Node{state.Node}, components.Form)
+  examples = append(examples, choices)
   snapshot, err := ui.Export(design.Default(), examples)
   if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal) }
   if err != nil { panic(err) }
@@ -680,7 +687,10 @@ func main() {
   const nestedPath = [form, 'actions', 'create'], nestedChoices = ['', ...choices.slice(1)]
   for (const value of nestedChoices.slice(1)) variants.push({ exampleId: form, path: nestedPath, property: field,
     snapshot: project({ proposal: { baseSHA256: source.sha256, path: nestedPath, props: { [field]: value } } }) })
-  const generated = 'fixture/generated-form', examples = [form, button, paragraph, secondary, description, generated, family]
+  const choiceForm = 'fixture/choice-form', choicePath = [choiceForm, 'stage'], selectValues = ['draft', ' ready,a ', '']
+  for (const value of selectValues.slice(1)) variants.push({ exampleId: choiceForm, path: choicePath, property: 'value',
+    snapshot: project({ proposal: { baseSHA256: source.sha256, path: choicePath, props: { value } } }) })
+  const generated = 'fixture/generated-form', examples = [form, button, paragraph, secondary, description, generated, family, choiceForm]
   const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-fonts-'))
   let browser, comparisonBrowser, renderer
   try {
@@ -711,7 +721,8 @@ func main() {
     const derived = await materializeComponent(graph, built.definitions.id, derivedSource, observedRole, fonts, renderer, built.collection.id)
     graph.updateNode(derived.master.id, { name: 'Derived paragraph master', x: 800 })
     graph.createInstance(derived.master.id, placements.id, { name: 'Derived paragraph', x: 800, y: 48 })
-    graph.updateNode(selections.at(-1).instance.id, { name: 'Editable family', x: 800, y: 400 })
+    graph.updateNode(selections.find(item => item.exampleId === family).instance.id, { name: 'Editable family', x: 800, y: 400 })
+    graph.updateNode(sourceNode(graph, choicePath).id, { name: 'Editable choice' })
     graph.updateNode(sourceNode(graph, nestedPath).id, { name: 'Editable nested family' })
     graph.updateNode(sourceNode(graph, nestedPath.slice(0, -1)).id, { name: 'Editable Form actions' })
     const roleName = '--pk-role-fg-secondary', inputNameForRole = '--pk-color-text-primary'
@@ -764,7 +775,7 @@ func main() {
           assert.deepEqual(blobs.map(bytes => hash(Uint8Array.from(bytes))).sort(), fonts.map(face => face.sha256).sort())
         })
         await page.getByRole('button', { name: 'Editable source instances', exact: true }).click()
-        for (const name of ['Editable source instances', form, generated, 'Editable Form actions']) {
+        for (const name of ['Editable source instances', form, generated, 'Editable Form actions', choiceForm]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click({ timeout: 5000 }).catch(async cause => {
             throw new Error(JSON.stringify({ cycle, name, tree: await page.getByRole('treeitem').allTextContents() }), { cause })
           })
@@ -776,6 +787,7 @@ func main() {
           ['Editable button', 'label', labels[cycle], 'Add item', labels[cycle - 1]],
           ['Editable family', 'label', labels[cycle], 'Save', labels[cycle - 1]],
           ['Editable nested family', 'label', labels[cycle], 'Create', labels[cycle - 1]],
+          ['Editable choice', 'label', labels[cycle], 'Stage', labels[cycle - 1]],
           ['Editable paragraph', 'content', contents[cycle], 'Plain body copy.', contents[cycle - 1]],
           ['Editable bordered button', 'label', labels[cycle], 'Cancel', labels[cycle - 1]],
           ['Editable description', 'value', descriptions[cycle], '', descriptions[cycle - 1]],
@@ -802,9 +814,10 @@ func main() {
           await page.keyboard.press('Control+Shift+z')
           await expect(control).toHaveValue(value)
         }
-        for (const [name, values] of [['Editable family', choices], ['Editable nested family', nestedChoices]]) {
+        for (const [name, values, property = field] of [['Editable family', choices], ['Editable nested family', nestedChoices],
+          ['Editable choice', selectValues, 'value']]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
-          const propertyControl = page.getByRole('combobox', { name: field, exact: true })
+          const propertyControl = page.getByRole('combobox', { name: property, exact: true })
           const previousChoice = values[Math.min(cycle, 2)] || 'None'
           await expect(propertyControl).toHaveText(previousChoice)
           if (cycle < 2) {
@@ -818,11 +831,11 @@ func main() {
               await expect(page.getByRole('option').nth(index + 1)).toBeFocused()
             }
             await page.keyboard.press('Enter')
-            await expect(propertyControl).toHaveText(values[cycle + 1])
+            await expect(propertyControl).toHaveText(values[cycle + 1] || 'None')
             await page.keyboard.press('Control+z')
             await expect(propertyControl).toHaveText(previousChoice)
             await page.keyboard.press('Control+Shift+z')
-            await expect(propertyControl).toHaveText(values[cycle + 1])
+            await expect(propertyControl).toHaveText(values[cycle + 1] || 'None')
             await expect(page.getByRole('textbox', { name: 'label', exact: true })).toHaveValue(labels[cycle])
           }
         }
@@ -903,6 +916,7 @@ func main() {
             [[button], { label: labels[cycle] }],
             [[family], { [field]: choices[cycle + 1], label: labels[cycle] }],
             [nestedPath, { [field]: nestedChoices[cycle + 1], label: labels[cycle] }],
+            [choicePath, { value: selectValues[cycle + 1], label: labels[cycle] }],
             [[paragraph], { content: contents[cycle] }],
             [[secondary], { label: labels[cycle] }],
             [[description], { value: descriptions[cycle] }],
@@ -912,6 +926,15 @@ func main() {
             assert.deepEqual(result.proposal, { baseSHA256: source.sha256, path, props })
             const projected = project({ proposal: result.proposal })
             assert.notEqual(projected.sha256, source.sha256)
+            if (path[0] === choiceForm) {
+              const selected = sourceNode(reopened, choicePath), pending = [selected], descendants = []
+              while (pending.length) {
+                const node = pending.pop(); descendants.push(node); pending.push(...reopened.getChildren(node.id))
+              }
+              assert.ok(descendants.some(node => node.type === 'TEXT' && node.text === (cycle ? 'Choose a stage' : 'Ready')))
+              assert.equal(descendants.filter(node => node.type === 'INSTANCE' &&
+                chain(reopened, node, 'componentId').at(-1).pluginData.some(item => item.key === 'platformkit.icon')).length, 1)
+            }
             if ([description, generated].includes(path[0])) {
               const observed = await captureExample(comparisonBrowser, projected, path[0], { fonts, viewport: { width: 320, height: 900 } })
               const field = path[0] === generated ? observed.roots[0].children[1] : observed.roots[0]

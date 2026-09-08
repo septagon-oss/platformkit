@@ -588,9 +588,14 @@ func Select(p SelectProps) g.Node {
 	if id == "" && p.Name != "" {
 		id = "pk-select-" + p.Name
 	}
-	cl := clInput.Merge(clInputNormal).Merge(variantOr(clInputSize, "md", "md"))
+	single := !p.Multiple && p.VisibleRows <= 1
+	size := clInputSize["md"]
+	if single {
+		size = clSelectSize
+	}
+	cl := clInput.Merge(clInputNormal).Merge(size)
 	if p.Error != "" {
-		cl = clInput.Merge(clInputError).Merge(variantOr(clInputSize, "md", "md"))
+		cl = clInput.Merge(clInputError).Merge(size)
 	}
 
 	selectedValues := make(map[string]struct{}, len(p.Values)+1)
@@ -686,7 +691,12 @@ func Select(p SelectProps) g.Node {
 			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
 		}))
 	}
-	field = append(field, h.Select(sel...))
+	control := h.Select(sel...)
+	if single {
+		control = h.Div(h.Class(clSelectGrid.Compile()), control,
+			h.Div(h.Class(clSelectIndicator.Compile()), Icon(IconProps{Name: "chevron-down", Size: "sm"})))
+	}
+	field = append(field, control)
 	if p.Error != "" {
 		field = append(field, h.P(
 			h.ID(id+"-error"),

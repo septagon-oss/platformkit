@@ -9,6 +9,17 @@ const descendants = (graph, node) => [node, ...graph.getChildren(node.id).flatMa
 const state = graph => structuredClone({ nodes: [...graph.getAllNodes()], index: [...graph.instanceIndex],
   variables: [...graph.variables], collections: [...graph.variableCollections] })
 
+test('layout positions do not claim authorship while FIG size dirtiness and existing edits remain intact', () => {
+  const graph = new SceneGraph(), node = graph.createNode('FRAME', graph.getPages()[0].id)
+  graph.withLayoutMutations(() => graph.updateNode(node.id, { x: 10, y: 20, width: 100, height: 40 }))
+  assert.deepEqual(node.source.editedFields, ['width', 'height'])
+  graph.updateNode(node.id, { x: 12 })
+  assert.deepEqual(node.source.editedFields, ['width', 'height', 'x'])
+  graph.withLayoutMutations(() => graph.updateNode(node.id, { x: 14, y: 30 }))
+  assert.deepEqual(node.source.editedFields, ['width', 'height', 'x'], 'layout cannot erase a preexisting authored marker')
+  assert.deepEqual([node.x, node.y, node.width, node.height], [14, 30, 100, 40])
+})
+
 function path(graph, parentId, x = 1.25) {
   return graph.createNode('VECTOR', parentId, {
     name: 'Path', x, y: 2.5, width: 8.5, height: 10.25,

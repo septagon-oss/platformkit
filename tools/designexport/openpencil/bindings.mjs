@@ -197,14 +197,17 @@ export function bindComponentVariants(graph, owner, snapshot, exampleId, propert
         isSourceTextProperty(candidate, binding.property) && definition.defaultValue === sourceTextValue(candidate, binding.property),
       'one literal definition per source text property required')
       ids.add(binding.id); properties.add(binding.property)
-      const pending = [...graph.getChildren(master.id)], found = [], seen = new Set()
+      const pending = graph.getChildren(master.id).map(node => ({ node, boundary: false })), found = [], seen = new Set()
       while (pending.length) {
-        const node = pending.pop()
-        requireBinding(!seen.has(node.id) && !['COMPONENT', 'INSTANCE', 'COMPONENT_SET', 'CANVAS', 'DOCUMENT'].includes(node.type),
+        const item = pending.pop(), node = item.node, boundary = item.boundary || node.type === 'INSTANCE'
+        requireBinding(!seen.has(node.id) && !['COMPONENT', 'COMPONENT_SET', 'CANVAS', 'DOCUMENT'].includes(node.type),
           'variant text must retain one direct component boundary')
         seen.add(node.id)
-        if (node.componentPropertyReferences.some(ref => ref.propertyId === binding.id)) found.push(node)
-        pending.push(...graph.getChildren(node.id))
+        if (node.componentPropertyReferences.some(ref => ref.propertyId === binding.id)) {
+          requireBinding(!boundary, 'variant text must retain one direct component boundary')
+          found.push(node)
+        }
+        pending.push(...graph.getChildren(node.id).map(node => ({ node, boundary })))
       }
       requireBinding(found.length === 1 && found[0].type === 'TEXT' && found[0].text === definition.defaultValue &&
         isDeepStrictEqual(found[0].componentPropertyReferences, [{ propertyId: binding.id, field: 'TEXT' }]),

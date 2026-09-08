@@ -12,8 +12,8 @@ complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
 the two Video examples refuse because media capture is unsupported.
-Native construction accepts 19: eleven Buttons, three Inputs, Form, Grid, two Text
-examples and invalid Textarea; the coverage test reports 88 refusals. These are measured guards, not proof of
+Native construction accepts 21: eleven Buttons, three Inputs, two Selects, Form, Grid,
+two Text examples and invalid Textarea; the coverage test reports 86 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
 Consumers can configure `design.Theme.Typography` before `ui.Export`; empty roles
@@ -177,8 +177,15 @@ Select declares its existing `value`, `values` and `options` fields through
 option values separately from labels, selected options, disabled state and groups.
 An observed browser default is not a source assignment. Closed selects retain their
 browser display text and viewport; listboxes retain aggregate painted font evidence,
-not per-option layout. These observations do not enable native Select construction:
-typed choice edits, browser arrow paint and FIG persistence remain unverified.
+not per-option layout. Closed single Select composes a real native control with the
+shared grid and canonical chevron; the decoration ignores pointer events. Native
+construction uses that linked glyph and the observed display viewport. Stored `value`
+is a finite source-projected variant, never the visible option label's TEXT binding.
+Use `--variant` or `--variant-at` with `value` projections to make choices editable;
+without projections, only supported literal fields such as `label` are exposed.
+Exact and empty values, disabled/error states, nested Form ownership, keyboard focus,
+forced colors, history and two saves have bounded tests. Multiple/listbox selection,
+duplicate values, competing `values`, unmatched browser defaults and UA chrome refuse.
 Icons separately expose their requested name and source-resolved
 `data-pk-icon-canonical` identity. Capture retains both, including aliases and
 fallbacks; an adapter must still verify the canonical asset and its provenance.
@@ -276,7 +283,7 @@ This currently supports one unconstrained string on a nonopaque leaf component.
 Go Button tone and size projections verify shared-copy sizing, colour, history and
 two saves, including Form → FormActions → Button in both themes at 320/1280px.
 Ancestor HTML, sibling contracts and source byte spans must remain exact around the
-selected child. Catalog enumeration, composite variants and native Select conversion remain unfinished.
+selected child. Select value families use the same path. Catalog enumeration and composite variants remain unfinished.
 
 [associateSourceInstance](source-changes.mjs) maps an exact `graph.createInstance`
 result to one source root after validating its subtree. Previews stay unmapped;
@@ -356,8 +363,10 @@ ID. Switching retains each bound text node and its compatible layout ancestry,
 so local copy edits and their undo history survive reordered, differently named
 variant layers and FIG saves. Missing targets, duplicate definitions and ambiguous
 ancestry merges or depth changes refuse before writes. Unbound edited descendants
-still require subtree history; this is not general cross-component replacement or
-source Select conversion. Nested instances resolve variant values and switching
+still require subtree history; this is not general cross-component replacement.
+Private assets are compared with their owning source occurrence, including inherited
+scale and paint. Automatic layout positions do not claim authored edits; FIG retains
+size dirtiness. Nested instances resolve variant values and switching
 through the same canonical lineage as their shared text properties.
 Browser checks exercise label editing, keyboard variant
 switching, undo/redo and three worker saves without changing masters or siblings.
@@ -418,7 +427,7 @@ PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18089 node --import ./register.mjs -
 ```
 
 The [editor check](editor/replacement.test.mjs) refuses stale builds and tests generated
-Form/Button/Text properties and icon swaps through history and two downloaded saves.
+Form/Button/Text and nested Select properties and icon swaps through history and two downloaded saves.
 Generated secondary Text also retains its authored colour role through keyboard palette edits,
 undo/redo and worker saves; native tests cover both themes and translucent border pixels.
 Fresh contexts check links, proposals, masters, siblings and placement positions.
@@ -440,8 +449,8 @@ previous state and leave history retryable. Run
 `node --import ./register.mjs --test variant.test.mjs` for fresh/imported graphs,
 exact values and two-save checks. The editor check drives the shared choice control
 by keyboard, preserving empty and reserved-looking values through three worker saves;
-mixed selection is separate UI state, not a reserved source string. This is an SDK
-prerequisite, not source Select conversion; the source-family API above has narrower scope.
+mixed selection is separate UI state, not a reserved source string. The source-family
+API above has narrower scope than the underlying SDK choice controls.
 Variant switching and its history stage node changes and property layout before
 commit. Shared text inherits the selected master's typography, including line height;
 explicit occurrence overrides remain local. Tone and size families are checked through editor saves.

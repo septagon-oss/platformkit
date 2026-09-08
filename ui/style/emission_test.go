@@ -96,6 +96,28 @@ func TestAccordionRotationStateIsEnumerable(t *testing.T) {
 	}
 }
 
+func TestExplicitGridRowsAndSpans(t *testing.T) {
+	t.Parallel()
+	list := New().GridCols(2).GridRows(3).ColSpanFull().RowSpanFull()
+	if got, want := list.Compile(), "grid-cols-2 grid-rows-3 col-span-full row-span-full"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	sheet, err := Rules(strings.Fields(list.Compile())...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range []string{"grid-template-columns: repeat(2, minmax(0, 1fr))", "grid-template-rows: repeat(3, minmax(0, 1fr))", "grid-column: 1 / -1", "grid-row: 1 / -1"} {
+		if !strings.Contains(sheet.CSS(), declaration) {
+			t.Errorf("missing %q", declaration)
+		}
+	}
+	for _, rows := range []int{-1, 0} {
+		if !New().GridRows(rows).IsEmpty() {
+			t.Errorf("nonpositive row count %d must be omitted", rows)
+		}
+	}
+}
+
 func TestPrefixedRules(t *testing.T) {
 	t.Parallel()
 	sheet, err := Rules(
@@ -350,9 +372,11 @@ func baseClasses() []string {
 	}
 	for n := 1; n <= 12; n++ {
 		add(New().GridCols(n))
+		add(New().GridRows(n))
 		add(New().ColSpan(n))
 	}
 	add(New().ColSpanFull())
+	add(New().RowSpanFull())
 	for n := 1; n <= 10; n++ {
 		add(New().LineClamp(n))
 	}

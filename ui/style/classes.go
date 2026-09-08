@@ -442,6 +442,9 @@ func (cl ClassList) BreakAll() ClassList { return cl.append(classBreakAll) }
 // ("grid-cols-N"). Use together with Display(DisplayGrid).
 func (cl ClassList) GridCols(n int) ClassList { return cl.append(classGridCols(n)) }
 
+// GridRows applies a CSS grid template with N equally-sized explicit rows.
+func (cl ClassList) GridRows(n int) ClassList { return cl.append(classGridTracks("rows", n)) }
+
 // GapX / GapY set axis-specific flex/grid gaps (gap-x-*, gap-y-*).
 func (cl ClassList) GapX(s Spacing) ClassList { return cl.append(classGapX(s)) }
 func (cl ClassList) GapY(s Spacing) ClassList { return cl.append(classGapY(s)) }
@@ -502,6 +505,9 @@ func (cl ClassList) ColSpan(n int) ClassList { return cl.append(classColSpan(n))
 // the current grid regardless of column count. Distinct from ColSpan(N)
 // which takes a numeric count.
 func (cl ClassList) ColSpanFull() ClassList { return cl.append(classColSpanFull) }
+
+// RowSpanFull spans every explicitly declared row, independently of row count.
+func (cl ClassList) RowSpanFull() ClassList { return cl.append("row-span-full") }
 
 // OverscrollContain sets overscroll-behavior to contain (Tailwind's
 // "overscroll-contain"). Prevents scroll chaining out of a container.

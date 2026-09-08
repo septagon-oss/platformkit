@@ -54,15 +54,22 @@ export async function buildComponentDocument(snapshot, {
     return frame
   }
   const definitions = board('Component definitions'), placements = board('Editable source instances')
+  function iconTargets(observation) {
+    const visit = region => region.kind === 'slot' || region.tag === 'svg' ? [{ region,
+      master: icons.get((region.kind === 'slot' ? region.children[0] : region)?.icon?.canonicalName) }] :
+      (region.children ?? []).flatMap(visit)
+    return observation.roots.flatMap(visit)
+  }
   async function construct(projected, exampleId) {
     const observation = await captureExample(browser, projected, exampleId, { mode, viewport, fonts: faces })
-    const slots = observation.roots[0]?.children?.filter(child => child.kind === 'slot') ?? []
     // Resolve only explicit canonical glyph handles; the materializer owns
     // region, geometry, slot and source-interface validation for every state.
-    const targets = slots.map(region => ({ region, master: icons.get(region.children[0]?.icon?.canonicalName) }))
+    const targets = iconTargets(observation)
     const variants = []
-    for (const request of families.get(exampleId) ?? []) variants.push({ ...request,
-      observation: await captureExample(browser, request.snapshot, exampleId, { mode, viewport, fonts: faces }) })
+    for (const request of families.get(exampleId) ?? []) {
+      const observation = await captureExample(browser, request.snapshot, exampleId, { mode, viewport, fonts: faces })
+      variants.push({ ...request, observation, iconTargets: iconTargets(observation) })
+    }
     return { observation, ...await materializeComponent(graph, definitions.id, projected, observation, faces, renderer, collection.id, targets, { variants }) }
   }
   const selections = []

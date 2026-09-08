@@ -793,10 +793,14 @@ const (
 // classGridCols emits "grid-cols-N" for a CSS grid template. N must be
 // positive; 0 or negative → empty (the typed tables and All* enumerators flags it).
 func classGridCols(n int) string {
+	return classGridTracks("cols", n)
+}
+
+func classGridTracks(axis string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	return "grid-cols-" + itoa(n)
+	return "grid-" + axis + "-" + itoa(n)
 }
 
 // classNegTop / classNegRight / classNegBottom / classNegLeft emit

@@ -95,8 +95,10 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     }
     const { graph, collection, icons } = buildFoundation(snapshot), page = graph.addPage('Coverage')
     const before = structuredClone([...graph.getAllNodes()])
-    const slots = observation.roots[0]?.children?.filter(child => child.kind === 'slot') ?? []
-    const targets = slots.map(region => ({ region, master: icons.get(region.children[0]?.icon?.canonicalName) }))
+    const visit = region => region.kind === 'slot' || region.tag === 'svg' ? [{ region,
+      master: icons.get((region.kind === 'slot' ? region.children[0] : region)?.icon?.canonicalName) }] :
+      (region.children ?? []).flatMap(visit)
+    const targets = observation.roots.flatMap(visit)
     try {
       await materializeComponent(graph, page.id, snapshot, observation, fonts, renderer, collection.id, targets)
       accepted.push(example.id)
@@ -113,10 +115,11 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.button/secondary', 'pk-ui.component.button/success', 'pk-ui.component.button/warning', 'pk-ui.component.button/with-icon',
     'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form/default', 'pk-ui.component.grid/default',
     'pk-ui.component.input/bare', 'pk-ui.component.input/invalid', 'pk-ui.component.input/read-only',
+    'pk-ui.component.select/default', 'pk-ui.component.select/invalid',
     'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
     'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 88)
+  assert.equal(refused.length, 86)
   assert.deepEqual(captureRefused, ['pk-ui.component.video/default', 'pk-ui.component.video/disabled'])
   assert.equal(browser.contexts().length, 0)
 })

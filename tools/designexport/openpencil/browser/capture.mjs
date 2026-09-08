@@ -164,7 +164,7 @@ export async function captureExample(browser, snapshot, exampleId, {
       const elements = []
       const properties = [
         'display', 'visibility', 'opacity', 'position', 'transform', 'box-sizing', 'float', 'clear', 'column-count', 'column-width',
-        'color', 'background-color', 'background-image', 'box-shadow',
+        'color', 'background-color', 'background-image', 'box-shadow', 'appearance',
         'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
         'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
         'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',

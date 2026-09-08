@@ -342,13 +342,18 @@ func resolveParametric(class string) ([]decl, bool) {
 			}
 		}
 	}
-	if s := strings.TrimPrefix(class, "grid-cols-"); s != class {
-		if n, err := strconv.Atoi(s); err == nil && n >= 1 && n <= 12 {
-			return []decl{{"grid-template-columns", "repeat(" + s + ", minmax(0, 1fr))"}}, true
+	for _, axis := range []struct{ prefix, property string }{{"grid-cols-", "grid-template-columns"}, {"grid-rows-", "grid-template-rows"}} {
+		if s, ok := strings.CutPrefix(class, axis.prefix); ok {
+			if n, err := strconv.Atoi(s); err == nil && n >= 1 && n <= 12 {
+				return []decl{{axis.property, "repeat(" + s + ", minmax(0, 1fr))"}}, true
+			}
 		}
 	}
 	if class == "col-span-full" {
 		return []decl{{"grid-column", "1 / -1"}}, true
+	}
+	if class == "row-span-full" {
+		return []decl{{"grid-row", "1 / -1"}}, true
 	}
 	if s := strings.TrimPrefix(class, "col-span-"); s != class {
 		if n, err := strconv.Atoi(s); err == nil && n >= 1 && n <= 12 {

@@ -188,6 +188,26 @@ test('source variant construction refuses inconsistent projections and bindings 
   }
 })
 
+test('private instances do not own or conceal a containing family text binding', () => {
+  for (const forged of [false, true]) {
+    const { graph, owner, canonical, source, variants } = variantFixture()
+    const decoration = graph.createNode('COMPONENT', owner.parentId)
+    graph.createNode('TEXT', decoration.id, { text: 'Private label' })
+    for (const { master } of variants) {
+      const instance = graph.createInstance(decoration.id, master.id)
+      if (forged) graph.updateNode(graph.getChildren(instance.id)[0].id, {
+        componentPropertyReferences: [{ propertyId: master.componentPropertyDefinitions[0].id, field: 'TEXT' }],
+      })
+    }
+    const before = structuredClone([...graph.nodes])
+    const bind = () => bindings.bindComponentVariants(graph, owner, canonical, source.id, 'tone', variants)
+    if (forged) {
+      assert.throws(bind, /one direct component boundary/)
+      assert.deepEqual([...graph.nodes], before)
+    } else assert.deepEqual(bind().map(item => item.type), ['TEXT', 'VARIANT'])
+  }
+})
+
 test('source variant extraction rejects stale, missing and conflicting correspondence without proposals or mutations', () => {
   for (const mutate of [
     data => { changeMetadata(data.owner, origin => { origin.sha256 = 'f'.repeat(64) }) },

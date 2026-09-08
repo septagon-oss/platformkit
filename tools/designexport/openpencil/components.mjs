@@ -1,5 +1,5 @@
 import { computeAllLayouts, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
-import { bindComponentProperties, bindComponentVariants, sourceVariantContext } from './bindings.mjs'
+import { bindComponentProperties, bindComponentVariants, sourceVariantContext, sourceTextValue } from './bindings.mjs'
 import { loadFonts, validateFonts } from './fonts.mjs'
 import { planIcon } from './icon-composition.mjs'
 import { computedColor as color } from './computed-color.mjs'
@@ -11,6 +11,17 @@ const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resiz
 
 function requireComponent(condition, message) {
   if (!condition) throw new Error(`Native component: ${message}`)
+}
+
+function constructIcon(graph, parentId, icon, name, pending) {
+  const node = graph.createInstance(icon.master.id, parentId, { name, uniformScaleFactor: icon.scale })
+  for (const { sourceNode, field, variableId, expression } of icon.paints) {
+    const children = graph.getChildren(node.id).filter(child => child.componentId === sourceNode.id)
+    requireComponent(children.length === 1, 'one exact native vector occurrence required')
+    if (expression) pending.push({ node: children[0], bindings: { [field]: expression } })
+    else graph.bindVariable(children[0].id, field, variableId)
+  }
+  return node
 }
 
 function pixels(value) {
@@ -160,7 +171,7 @@ async function materializeOccurrence(graph, parentId, snapshot, observation, fac
       requireComponent(request.property === requests[0].property, 'one source property per variant family required')
       const existingVariables = new Set(graph.variables.keys())
       const built = await materializeOccurrence(graph, parentId, request.snapshot, request.observation, faces, renderer,
-        colorCollectionId, [], { path: definitionPath, placement: usedPlacement })
+        colorCollectionId, request.iconTargets ?? [], { path: definitionPath, placement: usedPlacement })
       variables.push(...[...graph.variables.keys()].filter(id => !existingVariables.has(id)))
       familyNodes.push(...built.components.map(item => item.master.id))
       projectedComponents.push(...built.components)
@@ -174,7 +185,7 @@ async function materializeOccurrence(graph, parentId, snapshot, observation, fac
   let result
   try {
     if (root.source && (root.style.display === 'block' || root.children.some(child => child.kind === 'element'))) {
-      result = await materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement)
+      result = await materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement, iconTargets)
     } else {
       result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, path, iconTargets, pending, placement)
       result = { ...result, components: [{ path, ...result }] }
@@ -262,14 +273,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       const icon = icons.get(region)
       let nativeNode
       if (icon) {
-        nativeNode = graph.createInstance(icon.master.id, master.id, { name: region.name, uniformScaleFactor: icon.scale })
-        for (const { sourceNode, field, variableId, expression } of icon.paints) {
-          const children = graph.getChildren(nativeNode.id).filter(child => child.componentId === sourceNode.id)
-          requireComponent(children.length === 1, 'one exact native vector occurrence required')
-          if (expression) {
-            pending.push({ node: children[0], bindings: { [field]: expression } })
-          } else graph.bindVariable(children[0].id, field, variableId)
-        }
+        nativeNode = constructIcon(graph, master.id, icon, region.name, pending)
       } else {
         const { face } = texts.find(text => text.region === region)
         nativeNode = createPaintedNode(graph, 'TEXT', master.id, {
@@ -318,7 +322,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
 // This is an export-local native construction plan, not a component registry or
 // another renderer. Every boundary comes from a captured source occurrence and
 // every supported layout/paint comes from that occurrence's browser observation.
-function planComposition(graph, snapshot, observation, faces, collection, example, root) {
+function planComposition(graph, snapshot, observation, faces, collection, example, root, iconTargets) {
   const supplied = validateFonts(faces), requirements = [], occurrences = new Map(), seen = new Set()
   function describe(description, path, slot) {
     const key = JSON.stringify(path)
@@ -415,9 +419,15 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     }
     requireComponent(owner && (!isRoot || occurrence), 'composition requires exact source root ownership')
     requireComponent(!node.component || occurrence, 'composition cannot flatten an uncaptured component boundary')
+    if (node.tag === 'svg' && !occurrence) {
+      const targets = iconTargets.filter(target => target.region === node)
+      const assets = snapshot.icons.filter(asset => asset.name === node.icon?.canonicalName)
+      requireComponent(targets.length === 1 && assets.length === 1, 'private SVG needs one explicit canonical construction handle')
+      return { kind: 'icon', observation: node,
+        icon: planIcon(graph, assets[0], node, targets[0].master, collection.id, paintFor) }
+    }
     if (occurrence && ['flex', 'inline-flex'].includes(node.style.display) &&
       node.children.every(child => ['text', 'slot'].includes(child.kind))) {
-      requireComponent(node.children.every(child => child.kind === 'text'), 'nested SVG slots require explicit native construction handles')
       return { kind: 'component', occurrence, observation: node, textRow: true }
     }
     const native = planPresentation(node, paintFor, blockMargins), style = node.style
@@ -426,17 +436,34 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       node.sizing['max-width'] === 'none' && node.sizing['max-height'] === 'none', 'composition constrained sizing requires further conversion')
     let plan
     if (node.control) {
-      const multiline = node.tag === 'textarea' && node.control.type === 'textarea'
-      requireComponent((multiline || node.tag === 'input' && node.control.type === 'text') && node.control.kind === 'control' &&
-        node.control.property === 'value' && node.children.length === 0, 'one explicitly bound native text control required')
-      requireComponent(node.control.placeholder === '', 'control placeholder layout and paint require further conversion')
+      const control = node.control, multiline = node.tag === 'textarea' && control.type === 'textarea'
+      const select = node.tag === 'select' && control.type === 'select-one' && control.size <= 1
+      requireComponent((select || (multiline || node.tag === 'input' && control.type === 'text') && control.property === 'value') &&
+        control.kind === 'control' && node.children.length === 0, 'one explicitly bound native text or closed choice control required')
+      requireComponent(select || control.placeholder === '', 'control placeholder layout and paint require further conversion')
       requireComponent(style['text-align'] === 'start' || style['text-align'] === 'left', 'control text alignment requires further conversion')
       requireComponent(!multiline || Number.isSafeInteger(node.control.rows) && node.control.rows > 0 &&
         ['', 'soft'].includes(node.control.wrap) && !node.control.controllers && !node.control.counter &&
         style['white-space'] === 'pre-wrap', 'textarea requires fixed rows, soft wrapping and no active controllers')
-      const value = text(node.control, node, { control: true, wrapping: multiline })
+      if (select) {
+        const fields = control.properties, selected = control.options.filter(option => option.selected)
+        requireComponent(style.appearance === 'none', 'choice chrome must be source-owned')
+        requireComponent(fields && new Set(Object.values(fields)).size === 3 &&
+          sourceTextValue(owner.description, fields.value) === control.value &&
+          (owner.description.props[fields.values] ?? []).length === 0 &&
+          new Set(control.options.map(option => option.value)).size === control.options.length &&
+          selected.length <= 1 && control.values.length === selected.length &&
+          (selected.length ? selected[0].value === control.value && control.values[0] === control.value &&
+            selected[0].label === control.content?.text : control.value === '' && control.content?.text === ''),
+        'choice requires an unambiguous exact source value and observed display label')
+      }
+      // A choice's visible label is private presentation, never its stored value.
+      const value = text(select ? { value: control.content.text, fonts: control.fonts } : control, node, { control: true, wrapping: multiline })
       const width = node.bounds.width - native.paddingLeft - native.paddingRight
       const height = value.native.lineHeight * (multiline ? node.control.rows : 1)
+      if (select) requireComponent(near(control.content.bounds.width, width) && near(control.content.bounds.height, height) &&
+        near(control.content.bounds.x, node.bounds.x + native.paddingLeft) &&
+        near(control.content.bounds.y, node.bounds.y + native.paddingTop), 'choice display viewport requires further conversion')
       if (multiline) {
         requireComponent(near(node.control.content?.bounds.width, width), 'textarea scrollbar or content width requires further conversion')
         value.native.width = width
@@ -511,13 +538,14 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       const align = { normal: 'STRETCH', stretch: 'STRETCH', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['align-items']]
       requireComponent(justify && align, 'composition alignment requires further conversion')
       const vertical = style['flex-direction'] === 'column'
+      const gap = axis => style[`${axis}-gap`] === 'normal' ? 0 : pixels(style[`${axis}-gap`])
       plan = { kind: 'frame', observation: node, children: node.children.map(child => element(child, owner)), native: {
         name: node.tag, width: node.bounds.width, height: node.bounds.height,
         layoutMode: vertical ? 'VERTICAL' : 'HORIZONTAL',
         primaryAxisSizing: vertical ? 'HUG' : 'FIXED', counterAxisSizing: vertical ? 'FIXED' : 'HUG',
         primaryAxisAlign: justify, counterAxisAlign: align, layoutWrap: wrapping ? 'WRAP' : 'NO_WRAP',
-        itemSpacing: pixels(style[vertical ? 'row-gap' : 'column-gap']),
-        counterAxisSpacing: pixels(style[vertical ? 'column-gap' : 'row-gap']), ...native,
+        itemSpacing: gap(vertical ? 'row' : 'column'),
+        counterAxisSpacing: gap(vertical ? 'column' : 'row'), ...native,
       } }
       for (const child of plan.children) {
         const childStyle = child.observation.style
@@ -526,7 +554,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
             'intrinsic blocks require automatic width in a wrapping row')
           child.placement = { counterAxisSizing: 'HUG' }
         }
-        requireComponent(childStyle['flex-grow'] === '0' && childStyle['flex-shrink'] === '1' &&
+        requireComponent(childStyle['flex-grow'] === '0' && childStyle['flex-shrink'] === (child.kind === 'icon' ? '0' : '1') &&
           childStyle['flex-basis'] === 'auto' && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
         requireComponent(!wrapping || childStyle.order === '0', 'wrapping rows require source child order')
         if (vertical && align === 'STRETCH') child.placement = {
@@ -542,8 +570,8 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
   return { plan, requirements }
 }
 
-async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement) {
-  const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root)
+async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement, iconTargets) {
+  const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root, iconTargets)
   plan.placement = placement
   const components = [], created = [], geometry = []
   function provenance(description, definitionPath) {
@@ -556,7 +584,8 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
   async function component(current) {
     const { description, path } = current.occurrence
     if (current.textRow) {
-      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path, [], pending, current.placement)
+      const targets = iconTargets.filter(target => current.observation.children.includes(target.region))
+      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path, targets, pending, current.placement)
       created.push(result.master.id)
       components.push({ path, ...result })
       await finish(result.master, path, current.placement)
@@ -575,6 +604,11 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
     return master
   }
   async function construct(current, parent, targets, parentPlan) {
+    if (current.kind === 'icon') {
+      const node = constructIcon(graph, parent.id, current.icon, current.observation.icon.canonicalName, pending)
+      geometry.push({ plan: current, node, parentPlan })
+      return node
+    }
     if (current.kind === 'component') {
       const definition = await component(current)
       const node = graph.createInstance(definition.id, parent.id, {

@@ -286,6 +286,12 @@ var (
 			PaddingRight(style.S3).PointerEvents(style.PointerNone)
 	clInputPadStart = style.New().PaddingLeft(style.S10)
 	clInputPadEnd   = style.New().PaddingRight(style.S10)
+	clSelectCell    = style.New().ColSpanFull().RowSpanFull()
+	clSelectGrid    = style.New().Display(style.DisplayGrid).GridCols(1).GridRows(1)
+	clSelectSize    = style.New().PaddingLeft(style.S3).PaddingRight(style.S10).
+			PaddingY(style.S2).FontSize(style.TextSM).AppearanceNone().Merge(clSelectCell)
+	clSelectIndicator = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
+				Justify(style.JustifyEnd).PaddingRight(style.S3).PointerEvents(style.PointerNone).Merge(clSelectCell)
 
 	// Modal is the governed centered-dialog / mobile-sheet overlay. The root
 	// also doubles as the empty HTMX swap target used by server-loaded forms.
@@ -757,6 +763,7 @@ func ShellClassLists() []style.ClassList {
 		clFieldWrap, clFieldWrapFull, clLabel, clHelp, clFieldErr, clRequired,
 		clInput, clInputNormal, clInputError, clInputReadOnly, clInputDisabled,
 		clInputIconWrap, clInputIconStart, clInputIconEnd, clInputPadStart, clInputPadEnd,
+		clSelectGrid, clSelectSize, clSelectIndicator,
 		clTextareaManual, clTextareaAuto, clTextareaFull, clTextareaMeta,
 		clTextareaSupporting, clTextareaCounter,
 		clCheckbox, clCheckboxRoot, clCheckboxRootDisabled,

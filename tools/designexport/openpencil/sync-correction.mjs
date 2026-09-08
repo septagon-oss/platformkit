@@ -234,6 +234,18 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
   const paintRoles = replacement ? syncPaintRoles(previousNodes, replacement) : new Map()
   const variantMatches = replacement ? syncVariantCorrespondence(previousNodes, replacement, component) : new Map()
   const retained = new Set(variantMatches.values())
+  const removalSources = new Map(replacement ? [[replacementId, chain(syncReadView(previousNodes), replacement, 'componentId').at(-1)]] : [])
+  function removalSource(node) {
+    if (!removalSources.has(node.id)) {
+      const view = syncReadView(previousNodes), parent = previousNodes.get(node.parentId)
+      if (!parent) throw new Error('Missing native removal source parent')
+      for (const [id, source] of sourceChildren(view, removalSource(parent), parent, ancestryOverrides(view, parent))) {
+        removalSources.set(id, source)
+      }
+    }
+    if (!removalSources.has(node.id)) throw new Error('Missing native removal source')
+    return removalSources.get(node.id)
+  }
   function temporaryId() {
     let id
     do { id = `native-sync:${serial++}` } while (nodes.has(id) || previousNodes.has(id))
@@ -244,18 +256,20 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     if (ancestors.has(id)) throw new Error('Cyclic native sync removal')
     const node = nodes.get(id)
     if (!node) throw new Error('Missing native sync removal target')
-    if (replacement) {
-      const parent = previousNodes.get(node.parentId)
-      sourceChildren(syncReadView(previousNodes), chain(syncReadView(previousNodes), parent, 'componentId').at(-1), parent, parent.overrides)
-    }
-    const canonical = replacement && chain(syncReadView(previousNodes), node, 'componentId').at(-1)
-    const expected = replacement && { ...canonical, ...originalScales.get(id), boundVariables: syncRoleBindings(canonical, paintRoles) }
+    // Compare with the owning occurrence, not the terminal asset: containing
+    // components can intentionally specialize their private icons and layout.
+    const source = replacement && removalSource(node)
+    const expected = replacement && { ...source, ...originalScales.get(id), boundVariables: syncRoleBindings(source, paintRoles) }
+    // Yoga and FIG round used dimensions to float32; a scaled 16px instance
+    // can otherwise differ from its source by less than one representable bit.
+    const unchanged = field => ['width', 'height'].includes(field) && Number.isFinite(Math.fround(node[field])) &&
+      Math.fround(node[field]) === Math.fround(expected[field]) || JSON.stringify(node[field]) === JSON.stringify(expected[field])
     const derivedPaint = field => paintRoles.size && ['fills', 'strokes', 'boundVariables'].includes(field) &&
       JSON.stringify(node[field]) === JSON.stringify(expected[field])
-    const edited = replacement && node.source.editedFields.some(field => JSON.stringify(node[field]) !== JSON.stringify(expected[field]))
+    const edited = replacement && node.source.editedFields.some(field => !unchanged(field))
     if (replacement && (edited || chain(syncReadView(previousNodes), replacement, 'parentId').some(owner =>
       Object.keys(owner.overrides).some(key => key.startsWith(`${id}:`) && !derivedPaint(key.slice(id.length + 1)))))) {
-      throw new Error('Native replacement of edited descendants requires subtree history')
+      throw new Error(`Native replacement of edited descendants requires subtree history: ${node.type} ${node.name}`)
     }
     for (const child of node.childIds) {
       if (nodes.get(child)?.parentId !== id) throw new Error('Invalid native sync removal child')
@@ -450,6 +464,11 @@ function swapInstanceComponent(graph, instanceId, componentId) {
 }
 
 export function correctSyncGraph(source, replace) {
+  // The SDK already distinguishes layout mutations from authored operations.
+  // Computed positions must not masquerade as local descendant edits. Keep
+  // preexisting edit markers and dimension dirtiness required by FIG sizing.
+  source = replace(source, 'if (this.sourceMetadataPreservationDepth === 0) markSourceFieldsEdited(node, Object.keys(changes));',
+    'if (this.sourceMetadataPreservationDepth === 0) markSourceFieldsEdited(node, Object.keys(changes).filter(key => !this.isApplyingLayout || !["x", "y"].includes(key)));')
   const start = source.indexOf('function syncChildren(')
   const end = source.indexOf('function copyInstanceComponentProps(', start)
   const original = source.slice(start, end)
