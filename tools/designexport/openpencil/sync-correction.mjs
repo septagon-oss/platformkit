@@ -379,7 +379,7 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
   return { nodes, created, removed, affected }
 }
 
-function applyNativeSync(graph, plan) {
+export function applyNativeSync(graph, plan) {
   if (!plan) return
   const actualIds = new Map()
   const idFor = id => actualIds.get(id) ?? id

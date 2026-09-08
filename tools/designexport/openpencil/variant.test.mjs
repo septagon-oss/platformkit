@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { isDeepStrictEqual } from 'node:util'
 import { SceneGraph } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
+import { getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 
 const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name === name)
@@ -45,6 +47,59 @@ function composedFixture(depth = 0) {
   }
   graph.updateNode(named(graph, 'Edited').id, { pluginData: [{ pluginId: 'fixture', key: 'source-path', value: 'unchanged occurrence' }] })
   return graph
+}
+
+for (const imported of [false, true]) for (const nested of [false, true]) for (const operation of ['switch', 'undo', 'redo']) {
+  test(`failed variant measurement retains state: imported=${imported}, nested=${nested}, operation=${operation}`, async () => {
+    let graph = composedFixture(2)
+    const original = getTextMeasurer()
+    for (const node of graph.getAllNodes()) {
+      if (node.type === 'TEXT' && node.componentPropertyReferences.length) {
+        graph.updateNode(node.id, { layoutPositioning: 'ABSOLUTE', textAutoResize: 'WIDTH_AND_HEIGHT' })
+      }
+    }
+    if (nested) {
+      const parent = graph.createNode('COMPONENT', graph.getPages()[0].id, { name: 'Wrapper master' })
+      graph.insertChildAt(named(graph, 'Edited').id, parent.id, 0)
+      graph.createInstance(parent.id, graph.getPages()[0].id, { name: 'Wrapper placement' })
+    }
+    if (imported) graph = await reopen(graph)
+    const placedInstance = () => nested ? graph.getChildren(named(graph, 'Wrapper placement').id)[0] : named(graph, 'Edited')
+    const actions = createEditor({ graph }), instance = placedInstance()
+    try {
+      setTextMeasurer(node => ({ width: node.text.length * 10, height: 20 }))
+      actions.setInstanceComponentProperty(instance.id, '30:3', 'My own label')
+      if (operation !== 'switch') actions.setInstanceComponentProperty(instance.id, '30:1', '')
+      if (operation === 'redo') actions.undoAction()
+      const apply = () => operation === 'switch' ? actions.setInstanceComponentProperty(instance.id, '30:1', '') : actions[`${operation}Action`]()
+      const before = structuredClone([...graph.nodes]), index = structuredClone(graph.instanceIndex)
+      const handles = new Map(graph.nodes), history = [actions.undo.canUndo, actions.undo.canRedo], events = []
+      const deletedParents = structuredClone(graph.deletedNodeParents)
+      const stops = ['node:created', 'node:updated', 'node:deleted', 'node:reordered'].map(event => graph.emitter.on(event, id => events.push(id)))
+      setTextMeasurer(() => { throw new Error('Variant measurement unavailable') })
+      try { assert.throws(apply, /Variant measurement unavailable/) }
+      finally { stops.forEach(stop => stop()) }
+      assert.ok(isDeepStrictEqual([...graph.nodes], before), 'failed switch must retain every node, override and source cache')
+      assert.deepEqual(graph.instanceIndex, index)
+      assert.deepEqual(graph.deletedNodeParents, deletedParents)
+      assert.deepEqual(events, [], 'failed measurement publishes no native mutations')
+      for (const [id, node] of handles) assert.equal(graph.getNode(id), node)
+      assert.deepEqual([actions.undo.canUndo, actions.undo.canRedo], history)
+      await new Promise(resolve => setTimeout(resolve, 0))
+      assert.ok(isDeepStrictEqual([...graph.nodes], before), 'deferred synchronization must not replay a refused switch')
+      setTextMeasurer(node => ({ width: node.text.length * 10, height: 20 }))
+      apply()
+      const expected = operation === 'undo' ? ' padded,a ' : ''
+      assert.equal(actions.getInstanceComponentPropertyValue(instance.id, { type: 'VARIANT', name: 'value' }), expected)
+      for (let cycle = 0; cycle < 2; cycle++) {
+        graph = await reopen(graph)
+        actions.replaceGraph(graph)
+        const placed = placedInstance()
+        assert.equal(actions.getInstanceComponentPropertyValue(placed.id, { type: 'VARIANT', name: 'value' }), expected)
+        assert.equal(actions.getInstanceComponentPropertyValue(placed.id, { id: '30:3', type: 'TEXT' }), 'My own label')
+      }
+    } finally { setTextMeasurer(original); actions.replaceGraph(new SceneGraph()) }
+  })
 }
 
 for (const imported of [false, true]) for (const depth of [0, 2]) {

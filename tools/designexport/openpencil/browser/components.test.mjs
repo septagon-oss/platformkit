@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { after, afterEach, before, test } from 'node:test'
+import { isDeepStrictEqual } from 'node:util'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { parseColor } from '@open-pencil/core/color'
@@ -128,6 +129,12 @@ test('real source variant families retain shared copy, native geometry and typed
       const label = definitions.find(item => item.type === 'TEXT'), tone = definitions.find(item => item.type === 'VARIANT')
       actions.setInstanceComponentProperty(instance.id, label.id, 'Publish album')
       for (const selected of ['info', 'danger']) {
+        const beforeFailure = structuredClone([...graph.nodes]), measure = getTextMeasurer()
+        setTextMeasurer(() => { throw new Error('Source variant measurement failure') })
+        try {
+          assert.throws(() => actions.setInstanceComponentProperty(instance.id, tone.id, selected), /Source variant measurement failure/)
+          assert.ok(isDeepStrictEqual([...graph.nodes], beforeFailure), 'failed source variant must leave the live document unchanged')
+        } finally { setTextMeasurer(measure) }
         actions.setInstanceComponentProperty(instance.id, tone.id, selected)
         const result = extractSourceProps(graph, instance, snapshot)
         assert.equal(result.status, 'proposal', JSON.stringify(result))

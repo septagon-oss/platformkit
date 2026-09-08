@@ -431,6 +431,10 @@ exact values and two-save checks. The editor check drives the shared choice cont
 by keyboard, preserving empty and reserved-looking values through three worker saves;
 mixed selection is separate UI state, not a reserved source string. This is an SDK
 prerequisite, not source Select conversion; the source-family API above has narrower scope.
+Variant switching and its history stage node changes and property layout before
+applying the existing synchronization plan. Synchronous measurement failures publish no native
+mutations and leave history retryable. Staging currently copies the node map;
+large-document latency and memory remain unverified, as do arbitrary commit-listener failures.
 Bound paints keep their authored fallback RGBA on import instead of acquiring default-mode
 palette colours as paint edits. Solid and dashed strokes multiply resolved alpha by opacity.
 Normal graph subscriptions and history are checked after deferred notifications

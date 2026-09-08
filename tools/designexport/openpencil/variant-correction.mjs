@@ -102,6 +102,8 @@ function changeVariantDefinition(ctx, componentSetId, propertyId, newName, remov
 
 export function correctVariantActions(source, replace) {
   source = 'import { isEqual } from "es-toolkit";\n' + source
+  source = replace(source, 'import { reapplyInstanceComponentProperties } from "./properties.js";',
+    'import { reapplyInstanceComponentProperties, projectComponentPropertyChange } from "./properties.js";')
   source = replace(source, 'function createVariantActions(ctx) {', chain.toString() + '\n' + helpers + '\nfunction createVariantActions(ctx) {')
   source = replace(source, 'const component = ctx.graph.getNode(instance.componentId);',
     'const component = chain(ctx.graph, instance, "componentId").at(-1);')
@@ -110,6 +112,17 @@ export function correctVariantActions(source, replace) {
   source = replace(source, 'ctx.graph.swapInstanceComponent(instanceId, prevComponentId);',
     'ctx.graph.swapInstanceComponent(instanceId, prevMasterId);\n' +
     '\t\t\t\tctx.graph.updateNode(instanceId, { componentId: prevComponentId });')
+  for (const indent of ['\t\t', '\t\t\t\t']) {
+    source = replace(source, `${indent}ctx.graph.swapInstanceComponent(instanceId, target.id);\n${indent}reapplyInstanceComponentProperties(ctx, instanceId);`,
+      `${indent}projectComponentPropertyChange(ctx, planned => {\n${indent}\tplanned.graph.swapInstanceComponent(instanceId, target.id);\n` +
+      `${indent}\treapplyInstanceComponentProperties(planned, instanceId);\n${indent}});`)
+  }
+  source = replace(source, '\t\t\t\tctx.graph.swapInstanceComponent(instanceId, prevMasterId);\n' +
+    '\t\t\t\tctx.graph.updateNode(instanceId, { componentId: prevComponentId });\n\t\t\t\treapplyInstanceComponentProperties(ctx, instanceId);',
+    '\t\t\t\tprojectComponentPropertyChange(ctx, planned => {\n' +
+    '\t\t\t\t\tplanned.graph.swapInstanceComponent(instanceId, prevMasterId);\n' +
+    '\t\t\t\t\tplanned.graph.updateNode(instanceId, { componentId: prevComponentId });\n' +
+    '\t\t\t\t\treapplyInstanceComponentProperties(planned, instanceId);\n\t\t\t\t});')
   for (const [name, next, argumentsList, callArguments] of [
     ['removePropertyDefinition', 'renamePropertyDefinition', 'componentSetId, propertyId', 'componentSetId, propertyId, undefined, true'],
     ['renamePropertyDefinition', 'collectVariantOptions', 'componentSetId, propertyId, newName', 'componentSetId, propertyId, newName'],
