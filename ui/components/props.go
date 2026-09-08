@@ -136,18 +136,21 @@ type InputProps struct {
 }
 
 // ---- contracts/atoms/select.go
-// SelectProps defines platform-agnostic properties for a native single-value
-// Select component. It mirrors InputProps where the concepts overlap so form
+// SelectProps defines platform-agnostic properties for native single or multiple
+// selection. It mirrors InputProps where the concepts overlap so form
 // builders can treat text-like and choice-like fields uniformly.
 type SelectProps struct {
 	ComponentProps
 	HTMXProps
 
-	Name        string         `json:"name"`
-	Label       string         `json:"label,omitempty"`
+	Name  string `json:"name"`
+	Label string `json:"label,omitempty"`
+	// Values are exact option identifiers, not display labels. Value's empty
+	// zero value leaves selection to the placeholder/browser; Values can name
+	// an explicit empty option, including in a multiple selection.
 	Value       string         `json:"value,omitempty"`
 	Values      []string       `json:"values,omitempty"`
-	Placeholder string         `json:"placeholder,omitempty"` // rendered as a disabled-free empty option
+	Placeholder string         `json:"placeholder,omitempty"` // a named, disabled empty option in single-selection mode
 	Options     []SelectOption `json:"options"`
 	Required    bool           `json:"required,omitempty"`
 	Multiple    bool           `json:"multiple,omitempty"`

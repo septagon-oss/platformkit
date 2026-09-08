@@ -511,6 +511,46 @@ test('browser capture records markers rather than inferring properties from look
   assert.equal(unknown.find(node => node.kind === 'text').property, 'unknown')
 })
 
+test('Select keeps its own copy binding and native single/multiple keyboard selection', async () => {
+  const id = 'pk-ui.component.select/default', label = 'State & <kind>'
+  for (const multiple of [false, true]) for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+    const snapshot = projection(id, { label, multiple, error: 'Check the selection.' })
+    const capture = await captureExample(browser, snapshot, id, { mode, viewport: { width, height: 900 } })
+    const regions = observed(capture.roots).filter(node => Object.hasOwn(node, 'property'))
+    assert.deepEqual(regions.map(node => [node.property, node.text]), [['label', label]])
+    const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme: mode })
+    try {
+      await page.setContent(`<html data-theme="${mode}"><style>${snapshot.css}</style><body>${snapshot.examples[0].html}</body></html>`)
+      const control = page.getByRole(multiple ? 'listbox' : 'combobox', { name: label, exact: false })
+      assert.equal(await control.inputValue(), 'post')
+      assert.equal(await control.getAttribute('aria-invalid'), 'true')
+      assert.deepEqual(await control.evaluate(node => node.getAttribute('aria-describedby').split(' ').map(id => document.getElementById(id).textContent)),
+        ['Check the selection.', 'What the entry renders as.'])
+      await page.locator('label[for="pk-select-kind"]').click()
+      assert.equal(await control.evaluate(node => node === document.activeElement), true)
+      if (multiple) { await control.press('Home'); await control.press('Shift+End') }
+      else await control.press('ArrowDown')
+      assert.deepEqual(await control.evaluate(node => [...node.selectedOptions].map(option => option.value)), multiple ? ['post', 'page'] : ['page'])
+      assert.equal(await control.evaluate(node => getComputedStyle(node).outlineStyle !== 'none'), true)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    } finally { await page.close() }
+  }
+})
+
+test('Select submits exact opaque values including an explicit empty multi-selection', async () => {
+  const options = [{ value: 'padded', label: 'Plain' }, { value: ' padded ', label: 'Padded' }, { value: '', label: 'Empty' }]
+  for (const [props, expected] of [[{ value: ' padded ' }, [' padded ']],
+    [{ multiple: true, value: '', values: ['', ' padded '] }, [' padded ', '']]]) {
+    const snapshot = projection('pk-ui.component.select/default', { ...props, options })
+    const page = await browser.newPage()
+    try {
+      await page.setContent(`<style>${snapshot.css}</style><form>${snapshot.examples[0].html}</form>`)
+      assert.deepEqual(await page.locator('select').evaluate(node => [...node.selectedOptions].map(option => option.value)), expected)
+      assert.deepEqual(await page.evaluate(() => new FormData(document.querySelector('form')).getAll('kind')), expected)
+    } finally { await page.close() }
+  }
+})
+
 test('browser capture retains source-owned canonical icon identities for aliases and fallback', async () => {
   for (const [name, canonicalName] of [['upload', 'upload-simple'], [' X_MARK ', 'x'], ['missing-glyph', 'question']]) {
     const snapshot = projection('pk-ui.component.icon/check', { name, tone: 'neutral' })

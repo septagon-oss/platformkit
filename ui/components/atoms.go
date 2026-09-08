@@ -595,13 +595,10 @@ func Select(p SelectProps) g.Node {
 
 	selectedValues := make(map[string]struct{}, len(p.Values)+1)
 	for _, value := range p.Values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			selectedValues[value] = struct{}{}
-		}
-	}
-	if value := strings.TrimSpace(p.Value); value != "" {
 		selectedValues[value] = struct{}{}
+	}
+	if p.Value != "" {
+		selectedValues[p.Value] = struct{}{}
 	}
 
 	var options []g.Node
@@ -682,7 +679,9 @@ func Select(p SelectProps) g.Node {
 		g.Attr("data-component", "select"),
 	}
 	if p.Label != "" {
-		field = append(field, Label(LabelProps{Text: p.Label, For: id, Required: p.Required}))
+		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
+			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
+		}))
 	}
 	field = append(field, h.Select(sel...))
 	if p.Error != "" {

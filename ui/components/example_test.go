@@ -809,3 +809,45 @@ func TestExampleNilEmbeddedPointerDoesNotRequireAbsentFields(t *testing.T) {
 		t.Fatalf("promoted field patch did not isolate pointer allocation: %v", err)
 	}
 }
+
+func TestSelectLabelKeepsItsOwningPropertyWhenReusingLabel(t *testing.T) {
+	example := c.ExampleOf(exampleInfo, c.SelectProps{Name: "state", Label: "State & <kind>", Required: true,
+		Value: "draft", Options: []c.SelectOption{{Value: "draft", Label: "Draft"}}}, c.Select)
+	before := describeExample(t, example)
+	if !strings.Contains(before.HTML, "<!--pk-text:label-->State &amp; &lt;kind&gt;<!--/pk-text:label-->") ||
+		strings.Contains(before.HTML, "<!--pk-text:text-->") {
+		t.Fatal("Select borrowed standalone Label's property identity instead of retaining label")
+	}
+	edited, err := example.WithProps(json.RawMessage(`{"label":"Lifecycle"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`for="pk-select-state"`, `id="pk-select-state"`, `required`,
+		`value="draft" selected`, "<!--pk-text:label-->Lifecycle<!--/pk-text:label-->"} {
+		if !strings.Contains(describeExample(t, edited).HTML, want) {
+			t.Fatalf("label edit lost %s", want)
+		}
+	}
+	if describeExample(t, example).HTML != before.HTML {
+		t.Fatal("label edit mutated the original Select")
+	}
+}
+
+func TestSelectPreservesExactChoiceValues(t *testing.T) {
+	options := []c.SelectOption{{Value: "padded", Label: "Plain"}, {Value: " padded ", Label: "Padded"}, {Value: "", Label: "Empty"}}
+	for _, multiple := range []bool{false, true} {
+		t.Run(fmt.Sprintf("multiple=%t", multiple), func(t *testing.T) {
+			props := c.SelectProps{Name: "choice", Value: " padded ", Required: true, Options: options, Multiple: multiple}
+			if multiple {
+				props.Value, props.Values = "", []string{"", " padded "}
+			}
+			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Select))
+			if !strings.Contains(description.HTML, `value=" padded " selected`) || strings.Contains(description.HTML, `value="padded" selected`) {
+				t.Fatal("Select changed the selected identifier by trimming it")
+			}
+			if multiple && !strings.Contains(description.HTML, `value="" selected`) {
+				t.Fatal("multiple selection discarded an explicitly selected empty identifier")
+			}
+		})
+	}
+}
