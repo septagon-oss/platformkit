@@ -255,6 +255,39 @@ func TestToolbarTextRegionsBelongToToolbarProps(t *testing.T) {
 	}
 }
 
+func TestCardTextRegionsFollowRenderedHeaderOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		slots c.CardSlots
+		count int
+	}{
+		{name: "plain", count: 1},
+		{name: "sectioned fallback", slots: c.CardSlots{Content: []g.Node{g.Text("Body")}}, count: 1},
+		{name: "caller header", slots: c.CardSlots{Header: []g.Node{g.Text("Custom")}}, count: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			example := c.ExampleWithSlots(c.ExampleInfo{ID: "card", ComponentID: "card"},
+				c.CardProps{Title: "A & <title>", Description: "A & <description>"}, tc.slots, c.CardWithSlots)
+			description := describeExample(t, example)
+			for _, field := range []string{"title", "description"} {
+				open, close := "<!--pk-text:"+field+"-->", "<!--/pk-text:"+field+"-->"
+				if strings.Count(description.HTML, open) != tc.count || strings.Count(description.HTML, close) != tc.count ||
+					(tc.count == 1 && !strings.Contains(description.HTML, open+"A &amp; &lt;"+field+"&gt;"+close)) {
+					t.Fatalf("Card must bind only its rendered %s: %s", field, description.HTML)
+				}
+			}
+			if strings.Contains(description.HTML, "pk-text:content") || strings.Contains(description.HTML, "pk-text:text") ||
+				strings.Count(description.HTML, "<p ") != tc.count*2 {
+				t.Fatalf("Card copy changed semantic elements or borrowed another contract: %s", description.HTML)
+			}
+		})
+	}
+	empty := c.ExampleWithSlots(c.ExampleInfo{ID: "empty", ComponentID: "card"}, c.CardProps{}, c.CardSlots{}, c.CardWithSlots)
+	if strings.Contains(describeExample(t, empty).HTML, "pk-text:") {
+		t.Fatal("Absent Card copy must not invent text regions")
+	}
+}
+
 func TestInputValueRegionIsLimitedToTextControls(t *testing.T) {
 	for _, typ := range []string{"", "text", " TEXT ", "email", "password", "number", "tel", "url", "search", "date", "time", "datetime-local", "month", "week", "color", "hidden", "file"} {
 		t.Run(typ, func(t *testing.T) {
