@@ -563,6 +563,10 @@ test('real secondary Text still refuses unsupported derived token relationships 
     assert.match(observation.roots[0].style.color, /^color\(srgb /)
     assert.deepEqual(observation.roots[0].paintSources.color, {
       tokens: ['--pk-color-surface-primary', '--pk-color-text-primary'], directCandidate: null,
+      expressionCandidate: {
+        customProperty: '--pk-role-fg-secondary',
+        value: 'color-mix(in srgb, var(--pk-color-text-primary) 78%, var(--pk-color-surface-primary))', customProperties: {},
+      },
     })
     const before = structuredClone([...built.graph.getAllNodes()]), hook = getTextMeasurer()
     await assert.rejects(materializeComponent(built.graph, page.id, snapshot, observation, faces, renderer, built.collection.id), /mixed or derived paint dependencies/)

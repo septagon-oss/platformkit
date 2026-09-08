@@ -385,6 +385,72 @@ test('paint capture observes alpha-only dependencies without turning them into l
   }
 })
 
+test('capture retains uniquely witnessed authored color expressions without a second role map', async () => {
+  const accent = '--pk-color-accent-default', surface = '--pk-color-surface-primary'
+  for (const mode of ['light', 'dark']) {
+    const badge = (await captureExample(browser, source, brandBadge, { mode })).roots[0]
+    assert.deepEqual(badge.paintSources['background-color'].expressionCandidate, {
+      customProperty: '--pk-role-surface-brand-soft',
+      value: `color-mix(in srgb, var(${accent}) 12%, var(${surface}))`, customProperties: {},
+    })
+    const snapshot = structuredClone(source)
+    const value = `color-mix(in srgb, var(${accent}) 27%, var(--product-paper))`
+    snapshot.css += `\n:root { --product-tint: ${value}; --product-paper: var(${surface}); }
+      [data-component="button"] { background-color: var(--product-tint); color: var(--product-tint); }`
+    const before = structuredClone(snapshot)
+    const root = (await captureExample(browser, snapshot, withIcon, { mode })).roots[0]
+    const paint = root.paintSources['background-color']
+    assert.deepEqual({ ...paint, tokens: paint.tokens.toSorted() }, {
+      tokens: [accent, surface].toSorted(), directCandidate: null,
+      expressionCandidate: { customProperty: '--product-tint', value, customProperties: { '--product-paper': `var(${surface})` } },
+    })
+    const original = await originalLayout(snapshot, withIcon, mode)
+    assert.deepEqual(root.bounds, original.bounds)
+    assert.equal(root.style['background-color'], original.backgroundColor)
+    const vector = observed(root.children).find(node => node.tag === 'path')
+    assert.deepEqual(vector.paintSources.fill.expressionCandidate, paint.expressionCandidate, 'currentColor retains the same authored relationship')
+    paint.expressionCandidate.customProperties['--product-paper'] = 'transparent'
+    assert.equal(root.paintSources.color.expressionCandidate.customProperties['--product-paper'], `var(${surface})`, 'paint records are caller-owned, not shared mutable definitions')
+    assert.equal(vector.paintSources.fill.expressionCandidate.customProperties['--product-paper'], `var(${surface})`)
+    assert.deepEqual(snapshot, before)
+    assert.deepEqual(Object.keys(badge.paintSources.color).toSorted(), ['directCandidate', 'tokens'], 'direct aliases keep their existing evidence')
+  }
+})
+
+test('expression capture leaves ambiguous, shadowed, unsupported and probe-mismatched definitions unclaimed', async () => {
+  const accent = '--pk-color-accent-default', surface = '--pk-color-surface-primary'
+  const value = `color-mix(in srgb, var(${accent}) 27%, var(${surface}))`
+  for (const mode of ['light', 'dark']) {
+    for (const extra of [
+      `:root { --product-tint: ${value}; }`,
+      `[data-component="button"] { --product-tint: ${value}; }`,
+      ':root { --product-alias: var(--product-tint); } [data-component="button"] { background-color: var(--product-alias); }',
+      `@media (min-width: 1px) { :root { --product-tint: color-mix(in srgb, var(${accent}) 80%, var(${surface})); } }`,
+    ]) {
+      const snapshot = structuredClone(source)
+      // Equal baseline tokens conceal different mix weights until a token is probed.
+      for (const theme of snapshot.themes) {
+        const paper = theme.tokens.find(token => token.name === surface).value
+        theme.tokens.find(token => token.name === accent).value = paper
+        snapshot.css += `\n:root[data-theme="${theme.mode}"] { ${accent}: ${paper}; }`
+      }
+      snapshot.css += `\n:root { --product-tint: ${value}; }
+        [data-component="button"] { background-color: var(--product-tint); } ${extra}`
+      const paint = (await captureExample(browser, snapshot, primary, { mode })).roots[0].paintSources['background-color']
+      assert.deepEqual(paint.tokens.toSorted(), [accent, surface].toSorted())
+      assert.equal(paint.directCandidate, null)
+      assert.equal(paint.expressionCandidate, undefined, extra)
+      assert.deepEqual(Object.keys(paint).toSorted(), ['directCandidate', 'tokens'], 'temporary probe records never escape capture')
+    }
+    const snapshot = structuredClone(source)
+    snapshot.css += `\n:root { --product-tint: color-mix(in oklab, var(${accent}), var(${surface})); }
+      [data-component="button"] { background-color: var(--product-tint); }`
+    const paint = (await captureExample(browser, snapshot, primary, { mode })).roots[0].paintSources['background-color']
+    assert.deepEqual(paint.tokens.toSorted(), [accent, surface].toSorted())
+    assert.equal(paint.expressionCandidate, undefined, 'unimplemented color spaces are not rewritten as sRGB')
+  }
+})
+
 test('browser capture follows source full-width layout at mobile and wide viewports', async () => {
   const label = 'Save in this viewport'
   const snapshot = projection(withIcon, { fullWidth: true, label })

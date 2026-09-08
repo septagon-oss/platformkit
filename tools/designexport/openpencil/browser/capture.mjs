@@ -1,5 +1,65 @@
 import { validateFonts } from '../fonts.mjs'
 import { indexCaptureSources, prepareCaptureSource } from './capture-source.mjs'
+import { resolveColorExpression } from '../color-expression.mjs'
+import { computedColor } from '../computed-color.mjs'
+
+// Exact 8-bit inputs keep mix math distinct from rounded CSSOM alpha text.
+const colorProbes = [
+  { value: '#123456', serialized: 'rgb(18, 52, 86)' },
+  { value: '#abcdef', serialized: 'rgb(171, 205, 239)' },
+  { value: '#12345640', serialized: 'rgba(18, 52, 86, 0.25)' },
+  { value: '#abcdefbf', serialized: 'rgba(171, 205, 239, 0.75)' },
+  { value: '#20406000', serialized: 'rgba(32, 64, 96, 0)' },
+]
+
+// Candidate declarations come from the supplied stylesheet, never a role map.
+// Only the existing CSS evaluator's subset can provide a comparison witness.
+function colorExpressionCandidates(declarations, tokens) {
+  const definitions = new Map(), palette = new Map(tokens.map(token => [token.name, token.value]))
+  if (palette.size !== tokens.length) return []
+  for (const [name, value] of declarations) definitions.set(name, definitions.has(name) ? null : value)
+  return [...definitions].filter(([name]) => !palette.has(name)).flatMap(([name, value]) => {
+    const references = new Map(), dependencies = new Set()
+    const resolve = (editedName, editedValue) => key => {
+      if (palette.has(key)) {
+        dependencies.add(key)
+        return key === editedName ? editedValue : palette.get(key)
+      }
+      const definition = definitions.get(key)
+      if (typeof definition === 'string') references.set(key, definition)
+      return definition
+    }
+    try {
+      const baseline = resolveColorExpression(value, resolve())
+      const tokens = [...dependencies].toSorted()
+      if (!tokens.length) return []
+      const colors = [baseline, ...tokens.flatMap(token => colorProbes.map(probe => resolveColorExpression(value, resolve(token, probe.value))))]
+      return [{ name, value, customProperties: Object.fromEntries(references), tokens, colors }]
+    } catch { return [] } // Unsupported or ambiguous CSS remains unclaimed.
+  })
+}
+
+function retainColorExpressions(nodes, expressions) {
+  for (const node of nodes) {
+    for (const [property, source] of Object.entries(node.paintSources ?? {})) {
+      const { responses, candidates } = source
+      delete source.responses
+      delete source.candidates
+      if (candidates?.length !== 1) continue
+      const expression = expressions.find(item => item.name === candidates[0])
+      if (JSON.stringify(source.tokens.toSorted()) !== JSON.stringify(expression.tokens)) continue
+      try {
+        const colors = [node.style[property], ...expression.tokens.flatMap(token => responses[token])].map(computedColor)
+        if (!colors.every((color, index) => ['r', 'g', 'b', 'a'].every(channel =>
+          Math.abs(color[channel] - expression.colors[index][channel]) <= 1e-6))) continue
+        source.expressionCandidate = {
+          customProperty: expression.name, value: expression.value, customProperties: structuredClone(expression.customProperties),
+        }
+      } catch { /* Unsupported computed colors provide no expression witness. */ }
+    }
+    if (node.children) retainColorExpressions(node.children, expressions)
+  }
+}
 
 // Observe the existing Go HTML and CSS in a disposable, unauthenticated browser
 // document. This is static adapter input, not a second component renderer or a
@@ -85,7 +145,12 @@ export async function captureExample(browser, snapshot, exampleId, {
       fonts: faces.map(face => ({ family: face.family, weight: face.weight, style: face.style, bytes: [...face.bytes] })),
     })
     await page.evaluate(indexCaptureSources, { occurrences: prepared.occurrences, html: example.html })
-    const roots = await page.evaluate(colorTokens => {
+    const colorTokens = snapshot.themes.find(theme => theme.mode === mode).tokens.filter(token => token.type === 'color')
+    const declarations = await page.evaluate(() => [...document.styleSheets].flatMap(sheet => [...sheet.cssRules])
+      .filter(rule => rule.selectorText === ':root').flatMap(rule => [...rule.style]
+        .filter(name => name.startsWith('--')).map(name => [name, rule.style.getPropertyValue(name).trim()])))
+    const expressions = colorExpressionCandidates(declarations, colorTokens)
+    const roots = await page.evaluate(({ colorTokens, probes, expressionNames }) => {
       // Exact text nodes and native text controls cross into CDP inspection.
       // Other element queries aggregate descendants and cannot identify regions.
       globalThis.__platformkitCaptureTextNodes = []
@@ -230,10 +295,6 @@ export async function captureExample(browser, snapshot, exampleId, {
       // tokens. Probe opacity too: opaque-only samples miss alpha dependencies.
       // Matching these samples suggests a direct binding, not equivalence for
       // arbitrary CSS expressions in every state.
-      const probes = [
-        'rgb(18, 52, 86)', 'rgb(171, 205, 239)',
-        'rgba(18, 52, 86, 0.25)', 'rgba(171, 205, 239, 0.75)', 'rgba(32, 64, 96, 0)',
-      ]
       const probeSheet = document.createElement('style')
       probeSheet.textContent = '* { transition: none !important; }'
       const root = document.documentElement
@@ -241,24 +302,42 @@ export async function captureExample(browser, snapshot, exampleId, {
       document.head.append(probeSheet)
       try {
         const baseline = values()
-        for (const token of colorTokens) {
+        const sample = token => {
           const before = root.style.getPropertyValue(token)
           const priority = root.style.getPropertyPriority(token)
-          const samples = probes.map(value => {
-            root.style.setProperty(token, value, 'important')
+          const samples = probes.map(probe => {
+            root.style.setProperty(token, probe.value, 'important')
             return values()
           })
           if (before) root.style.setProperty(token, before, priority)
           else root.style.removeProperty(token)
+          return samples
+        }
+        for (const token of colorTokens) {
+          const samples = sample(token)
           for (const [index] of elements.entries()) {
             for (const [paintIndex, paint] of paints.entries()) {
               const observed = samples.map(sample => sample[index][paintIndex])
               if (observed.every(value => value === baseline[index][paintIndex])) continue
               const source = sources[index][paint]
               source.tokens.push(token)
-              if (source.tokens.length === 1 && observed.every((value, index) => value === probes[index])) source.directCandidate = token
+              source.responses ??= {}
+              source.responses[token] = observed
+              if (source.tokens.length === 1 && observed.every((value, index) => value === probes[index].serialized)) source.directCandidate = token
               else source.directCandidate = null
             }
+          }
+        }
+        const targets = sources.flatMap((paintsByName, index) => paints.flatMap((paint, paintIndex) => {
+          const source = paintsByName[paint]
+          if (!source.tokens.length || source.directCandidate !== null) return []
+          source.candidates = []
+          return [{ index, paintIndex, source }]
+        }))
+        if (targets.length) for (const name of expressionNames) {
+          const samples = sample(name)
+          for (const { index, paintIndex, source } of targets) {
+            if (samples.every((values, probe) => values[index][paintIndex] === probes[probe].serialized)) source.candidates.push(name)
           }
         }
       } finally {
@@ -277,7 +356,8 @@ export async function captureExample(browser, snapshot, exampleId, {
       }
       annotate(roots)
       return roots
-    }, snapshot.themes.find(theme => theme.mode === mode).tokens.filter(token => token.type === 'color').map(token => token.name))
+    }, { colorTokens: colorTokens.map(token => token.name), probes: colorProbes, expressionNames: expressions.map(item => item.name) })
+    retainColorExpressions(roots, expressions)
     const session = await context.newCDPSession(page)
     let environment
     try {

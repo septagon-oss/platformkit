@@ -152,12 +152,12 @@ SVG observations retain ordered children, exact attributes and computed geometry
 fill/stroke dependencies and presentation, so canonical markup cannot conceal
 CSS changes to paths, paint or effects.
 
-Paint observations probe root color variables with opaque, partial and zero alpha.
-This distinguishes tested direct aliases and opacity-dependent paints from unrelated,
-equal-colored literals. `directCandidate` names an observed alias candidate,
-not a binding guarantee. These are observed dependencies, not a general CSS
-expression parser or proof for arbitrary functions and locally overridden themes.
-They must not be used to advertise universal token-binding support.
+Paint probes vary opaque, partial and zero alpha; `directCandidate` is not a binding guarantee.
+A unique unconditional `:root` definition may yield an `expressionCandidate` with
+authored CSS and referenced custom properties. The [color evaluator](color-expression.mjs) checks source values
+and every observed token probe; ambiguous, shadowed or mismatched candidates stay absent.
+These are scoped observations, not a general CSS parser or proof for arbitrary functions.
+Native expression binding and universal token support remain unfinished.
 
 ## Construct an experimental native component
 
