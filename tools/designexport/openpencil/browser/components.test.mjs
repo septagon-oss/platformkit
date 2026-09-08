@@ -210,6 +210,78 @@ for (const [variant, backgroundName, foregroundName, padding] of [
   assert.deepEqual(snapshot, before)
 })
 
+test('transparent direct tokens keep source precision, live mode edits, history and two saves', async () => {
+  const snapshot = source(), backgroundName = '--pk-color-accent-default', foregroundName = '--pk-color-accent-on'
+  const palettes = [['light', 128, 64], ['dark', 191, 0]]
+  for (const [mode, alpha, foregroundAlpha] of palettes) {
+    const values = [[backgroundName, `#204060${alpha.toString(16).padStart(2, '0')}`],
+      [foregroundName, `#604020${foregroundAlpha.toString(16).padStart(2, '0')}`]]
+    for (const [name, value] of values) snapshot.themes.find(theme => theme.mode === mode).tokens.find(token => token.name === name).value = value
+    snapshot.css += `\n:root[data-theme="${mode}"] { ${values.map(([name, value]) => `${name}: ${value};`).join(' ')} }`
+  }
+  const beforeSource = structuredClone(snapshot)
+  const expectColor = (actual, expected) => {
+    for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(actual[channel] - expected[channel]) <= 1e-6,
+      `${channel}: ${actual[channel]} must retain ${expected[channel]}`)
+  }
+  for (const [mode, alpha, foregroundAlpha] of palettes) {
+    const observation = await observe(snapshot, mode)
+    let { graph, collection } = buildFoundation(snapshot)
+    const page = graph.addPage('Transparent palette')
+    graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
+    const { master } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, collection.id)
+    graph.createInstance(master.id, page.id, { name: 'First transparent occurrence' })
+    graph.createInstance(master.id, page.id, { name: 'Second transparent occurrence', x: 200 })
+    let expected = { r: 32 / 255, g: 64 / 255, b: 96 / 255, a: alpha / 255 }
+    const foreground = { r: 96 / 255, g: 64 / 255, b: 32 / 255, a: foregroundAlpha / 255 }
+    expectColor(master.fills[0].color, expected)
+    expectColor(graph.getChildren(master.id)[0].fills[0].color, foreground)
+    for (const value of ['rgba(32, 64, 96, 0.49)',
+      `color(srgb ${32 / 255} ${64 / 255} ${96 / 255} / 0.5)`]) {
+      const altered = structuredClone(observation), before = structuredClone([...graph.getAllNodes()])
+      altered.roots[0].style['background-color'] = value
+      await assert.rejects(materializeComponent(graph, page.id, snapshot, altered, faces, renderer, collection.id),
+        /observed paint differs/, 'a different alpha byte or fractional modern alpha is not legacy serialization noise')
+      assert.deepEqual([...graph.getAllNodes()], before)
+    }
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const first = [...graph.getAllNodes()].find(node => node.name === 'First transparent occurrence')
+      const second = [...graph.getAllNodes()].find(node => node.name === 'Second transparent occurrence')
+      const definition = graph.getNode(first.componentId)
+      assert.equal(second.componentId, definition.id)
+      for (const root of [definition, first, second]) {
+        const text = graph.getChildren(root.id)[0]
+        assert.equal(text.text, 'Save', 'palette edits do not change source properties')
+        for (const [node, name, paint] of [[root, backgroundName, expected], [text, foregroundName, foreground]]) {
+          const id = node.boundVariables['fills/0/color']
+          assert.equal(graph.variables.get(id).name, name)
+          expectColor(graph.resolveColorVariableForNode(node.id, id), paint)
+          assert.equal(node.fills[0].opacity, 1, 'do not apply token alpha twice')
+        }
+      }
+      if (cycle === 2) break
+      const variable = graph.variables.get(first.boundVariables['fills/0/color'])
+      const modeId = graph.getNodeVariableModeId(first.id, variable.collectionId)
+      const actions = createEditor({ graph }), before = structuredClone(variable.valuesByMode)
+      const nodes = structuredClone([...graph.getAllNodes()])
+      const edited = { r: .2, g: .4, b: .6, a: cycle === 0 ? .123456 : 0 }
+      actions.updateVariableValue(variable.id, modeId, edited)
+      expectColor(graph.resolveColorVariableForNode(first.id, variable.id), edited)
+      actions.undoAction()
+      assert.deepEqual(variable.valuesByMode, before)
+      actions.redoAction()
+      expectColor(graph.resolveColorVariableForNode(first.id, variable.id), edited)
+      for (const [otherMode, value] of Object.entries(before)) {
+        if (otherMode !== modeId) assert.deepEqual(variable.valuesByMode[otherMode], value, 'other modes stay unchanged')
+      }
+      assert.deepEqual([...graph.getAllNodes()], nodes, 'palette history does not rewrite masters or either occurrence')
+      expected = edited
+      graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    }
+  }
+  assert.deepEqual(snapshot, beforeSource)
+})
+
 test('native glyph swaps agree with nested source property edits without changing icon size or tone', async () => {
   const run = (args, input) => JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
     cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
@@ -350,6 +422,49 @@ test('source icon slots become linked editable native composition through mixed 
           await Promise.resolve()
         }
       }
+    }
+  }
+})
+
+test('initially transparent token borders retain live strokes through mode edits, history and two saves', async () => {
+  const snapshot = source(), tokenName = '--pk-color-border-default'
+  for (const theme of snapshot.themes) {
+    theme.tokens.find(token => token.name === tokenName).value = '#abcdef00'
+    snapshot.css += `\n:root[data-theme="${theme.mode}"] { ${tokenName}: #abcdef00; }`
+  }
+  snapshot.css += `\n[data-component="button"] { border-color: var(${tokenName}); }`
+  for (const mode of ['light', 'dark']) {
+    const observation = await observe(snapshot, mode)
+    let { graph, collection } = buildFoundation(snapshot)
+    const page = graph.addPage('Initially transparent stroke')
+    graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
+    const { master } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, collection.id)
+    graph.createInstance(master.id, page.id, { name: 'Live stroke occurrence' })
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const instance = [...graph.getAllNodes()].find(node => node.name === 'Live stroke occurrence')
+      const definition = graph.getNode(instance.componentId)
+      for (const node of [definition, instance]) {
+        assert.equal(node.strokes.length, 1, 'a transparent token border must still have a native stroke')
+        const id = node.boundVariables['strokes/0/color']
+        assert.equal(graph.variables.get(id).name, tokenName)
+        assert.equal(node.strokes[0].opacity, 1)
+        assert.deepEqual([node.strokes[0].weight, node.strokes[0].align], [1, 'INSIDE'])
+        const color = graph.resolveColorVariableForNode(node.id, id)
+        assert.ok(Math.abs(color.a - (cycle === 0 ? 0 : cycle === 1 ? .6 : .2)) < 1e-6)
+        close(node.width, observation.roots[0].bounds.width, 'unchanged source width')
+      }
+      if (cycle === 2) break
+      const variable = graph.variables.get(instance.boundVariables['strokes/0/color'])
+      const modeId = graph.getNodeVariableModeId(instance.id, variable.collectionId)
+      const before = structuredClone(variable.valuesByMode), actions = createEditor({ graph })
+      actions.updateVariableValue(variable.id, modeId, { r: .4, g: .6, b: .8, a: cycle === 0 ? .6 : .2 })
+      actions.undoAction()
+      assert.deepEqual(variable.valuesByMode, before)
+      actions.redoAction()
+      for (const [otherMode, color] of Object.entries(before)) {
+        if (otherMode !== modeId) assert.deepEqual(variable.valuesByMode[otherMode], color)
+      }
+      graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
     }
   }
 })

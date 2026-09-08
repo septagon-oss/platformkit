@@ -174,10 +174,10 @@ adapter API, not the unfinished shared provider interface or a library publisher
 The text-row capability supports one explicitly bound, nonempty text region in a
 centered, unconstrained, nonwrapping horizontal flex container, optionally with
 named slots containing one canonical SVG each. Rows and composed frames share
-one planner for solid fills, uniform solid borders, radii and padding, including
-transparent border insets. Direct aliases bind only when collection identities and
-values match every theme; this is measured candidate evidence, not general CSS
-equivalence. Literal paints stay unbound; ambiguous, stale and derived paints are
+one planner for solid fills, uniform solid borders, radii and padding, retaining
+transparent token-bound strokes and border insets. Direct aliases require matching palettes in every theme
+and retain source RGBA through legacy CSS alpha rounding. This is candidate evidence,
+not general CSS equivalence. Literal paints stay unbound; ambiguous, stale and derived paints are
 refused. The [CSS color evaluator](color-expression.mjs) verifies authored sRGB
 mixes, not native expression bindings. Construction measures text and rejects
 geometry differences over 1/64 CSS pixel, removing created nodes and restoring

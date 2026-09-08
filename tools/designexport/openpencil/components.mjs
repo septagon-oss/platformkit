@@ -71,8 +71,13 @@ function observedPaint(graph, collection, snapshot, observation, root, property)
     requireComponent(sameColor(graph.resolveVariable(variable.id, modes[0].modeId), expected),
       'native color variable differs from the source palette')
     if (theme.mode === observation.mode) {
-      // Chromium serializes alpha to a limited decimal precision.
-      requireComponent(sameColor(fill.color, expected, 0.00051), 'observed paint differs from its source token')
+      // CSSOM legacy RGB can serialize 128/255 alpha as 0.5. Compare that
+      // channel's 8-bit value, not a loose tolerance on every color channel.
+      // Modern color(srgb) retains fractional alpha and must not be quantized.
+      const observed = /^rgba?\(/.test(root.style[property]) ?
+        { ...fill.color, a: Math.round(fill.color.a * 255) / 255 } : fill.color
+      requireComponent(sameColor(observed, expected), 'observed paint differs from its source token')
+      fill.color = expected
     }
   }
   return { fills: [fill], boundVariables: { 'fills/0/color': variable.id } }
@@ -96,12 +101,15 @@ function planPresentation(node, paintFor, blockMargins = false) {
   const sides = ['top', 'right', 'bottom', 'left']
   const borders = sides.map(side => ({ width: pixels(style[`border-${side}-width`]),
     style: style[`border-${side}-style`], color: style[`border-${side}-color`] }))
-  const visible = borders.some(border => border.width > 0 && color(border.color).a > 0)
-  const strokes = visible ? paintFor(node, 'border-top-color') : null
-  if (visible) {
+  const borderPaints = borders.map((border, index) => border.width > 0 ? paintFor(node, `border-${sides[index]}-color`) : null)
+  // A bound zero-alpha border can become visible after a palette edit.
+  const retained = borders.some((border, index) => border.width > 0 &&
+    (color(border.color).a > 0 || Object.keys(borderPaints[index].boundVariables).length > 0))
+  const strokes = retained ? borderPaints[0] : null
+  if (retained) {
     requireComponent(borders.every(border => border.style === 'solid' && border.width === borders[0].width &&
       sameColor(color(border.color), color(borders[0].color))), 'uniform solid borders required')
-    for (const side of sides.slice(1)) requireComponent(JSON.stringify(paintFor(node, `border-${side}-color`)) ===
+    for (const borderPaint of borderPaints.slice(1)) requireComponent(JSON.stringify(borderPaint) ===
       JSON.stringify(strokes), 'border aliases must match on every side')
   }
   // Native layout ignores strokesIncludedInLayout. Account for used CSS border
