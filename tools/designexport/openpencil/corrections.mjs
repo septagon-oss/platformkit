@@ -9,6 +9,7 @@ import { correctSyncGraph } from './sync-correction.mjs'
 // Source hashes pin the exact upstream implementation, not just its version
 // label. A dependency upgrade requires a new review and the conformance suite.
 export const sdkVersion = '0.14.0'
+const colorHelper = JSON.stringify(fileURLToPath(new URL('./variable-color.mjs', import.meta.url)))
 export const corrections = Object.freeze({
   '@open-pencil/fig/dist/node-change2.js': {
     sha256: 'bdbb599d70a5cf92300c67c385ee0d269550d4eea9c637f608d85fa321e63ee7',
@@ -22,6 +23,11 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/io/formats/fig/export.js': {
     sha256: '084acd6250329f95a0f3c92df1f863dab0e59fed559264eb4976c79ebee05d55',
     transform(source, replace) {
+      source = `import { serializeCSSColors } from ${colorHelper};\n` + source
+      source = replace(source, 'variableData: variableValueToKiwi(value, variable.type, varIdToGuid)',
+        'variableData: variableValueToKiwi(value?.cssColor ? graph.resolveVariable(variable.id, modeId) : value, variable.type, varIdToGuid)')
+      source = replace(source, 'if (variable.key) nc.key = variable.key;',
+        'nc.pluginData = serializeCSSColors(graph, variable, varIdToGuid, modeIdToGuid);\n\t\tif (variable.key) nc.key = variable.key;')
       // Pages take a separate export path; reuse the native mode serializer
       // after collection and mode GUIDs have been assigned, just like frames.
       source = 'import { serializeVariableModes } from "@open-pencil/fig/node-change";\n' + source
@@ -38,6 +44,10 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/kiwi/fig/import.js': {
     sha256: '7e16f0f993319eba097756e94dba7ae080f3104ba4e6359483ed653fc3c08d1d',
     transform(source, replace) {
+      source = `import { restoreCSSColors, validateCSSColors } from ${colorHelper};\n` + source
+      source = replace(source, '\n\t\t\tvaluesByMode,', '\n\t\t\tvaluesByMode: restoreCSSColors(nc, type, valuesByMode),')
+      source = replace(source, 'importVariableEntries(changeMap, parentMap, graph, assetRefs);',
+        'importVariableEntries(changeMap, parentMap, graph, assetRefs);\n\tvalidateCSSColors(graph);')
       source = replace(source, 'description: "",', 'description: typeof nc.description === "string" ? nc.description : "",')
       source = replace(source, 'function applyImportedCanvasMetadata(page, canvasNc) {',
         'function applyImportedCanvasMetadata(page, canvasNc) {\n\tpage.variableModes = nodeChangeToProps(canvasNc, []).variableModes;')
@@ -62,6 +72,19 @@ export const corrections = Object.freeze({
   '@open-pencil/scene-graph/dist/types.js': {
     sha256: '79dcc003679545dae0cfeadfdbb68dc10c6e92b85468d344ac89a14cbbdfe8e6',
     transform(source, replace) {
+      source = `import { resolveCSSColor } from ${colorHelper};\n` + source
+      source = replace(source, 'function resolveVariable(graph, variableId, modeId, visited) {',
+        'function resolveVariable(graph, variableId, modeId, visited, work = { remaining: 4096 }) {\n' +
+        '\tif (visited?.size > 64 || --work.remaining < 0) throw new Error("Native CSS color: variable resolution limit");')
+      source = replace(source, 'if (value && typeof value === "object" && "aliasId" in value) {',
+        `if (value && typeof value === "object" && "cssColor" in value) {
+          if (variable.type !== "COLOR") throw new Error("Native CSS color: COLOR variable required");
+          return resolveCSSColor(value.cssColor, id => graph.variables.get(id)?.type === "COLOR" ?
+            resolveVariable(graph, id, preferredModeId, new Set([...(visited ?? []), variableId]), work) : undefined);
+        }
+        if (value && typeof value === "object" && "aliasId" in value) {`)
+      source = replace(source, 'return resolveVariable(graph, value.aliasId, preferredModeId, seen);',
+        'return resolveVariable(graph, value.aliasId, preferredModeId, seen, work);')
       // Retain deletion ownership for deferred synchronization after the node
       // has left the graph. Existing one-argument listeners remain compatible.
       source = replace(source, 'this.emitter.emit("node:deleted", id);',
@@ -147,6 +170,13 @@ export const corrections = Object.freeze({
       // Layout consumes shaped advances, not raster pixel bounds.
       return replace(source, 'width: Math.ceil(width),\n\t\theight: Math.ceil(height)', 'width,\n\t\theight')
     },
+  },
+  '@open-pencil/core/dist/canvas/fills.js': {
+    sha256: '82f7ca84f5b854b9c5a317451dd28050dc74d686a10074d0826c9ba4fb982575',
+    // applyFill just installed the resolved solid color, including alpha.
+    // Paint opacity multiplies that alpha; it must not replace it.
+    transform: (source, replace) => replace(source, 'r.fillPaint.setAlphaf(fill.opacity);',
+      'r.fillPaint.setAlphaf(fill.opacity * (fill.type === "SOLID" ? r.fillPaint.getColor()[3] : 1));'),
   },
   '@open-pencil/core/dist/tools/calc.js': {
     sha256: '35d6fd205094a3e26f5098b98833c92ffe96a2defdb377208576f58c6e71b67d',

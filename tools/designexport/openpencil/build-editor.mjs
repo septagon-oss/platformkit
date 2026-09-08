@@ -54,6 +54,7 @@ const { config } = await loadConfigFromFile({ command: 'build', mode: 'productio
 
 const seen = new Set()
 let correctedNudgeKeys = false
+const correctedControls = new Set()
 function nativeBoundary() {
   return {
     name: 'platformkit-native-boundary', enforce: 'pre',
@@ -91,6 +92,34 @@ function nativeBoundary() {
       return result === null ? null : { code: result, map: null }
     },
     transform(source, id) {
+      const controlCorrections = {
+        'packages/vue/src/variables/helpers.ts': ['64956a42ec74f537186b528baf0379f2d2bd445c833df8bcf4e48fa0c90cec8e',
+          'const value = variable.valuesByMode[modeId]',
+          `const value = variable.valuesByMode[modeId]
+    if (value && typeof value === 'object' && 'cssColor' in value) {
+      return 'Derived #' + colorToHexRaw(editor.graph.resolveVariable(variable.id, modeId))
+    }`],
+        'packages/vue/src/variables/table/helpers.ts': ['50328f508e780665677e575098dd34ebf01e8e77973036d82d1351a54b736b52',
+          'const value = variable.valuesByMode[mode.modeId]',
+          `const value = variable.valuesByMode[mode.modeId]
+      if (value && typeof value === 'object' && 'cssColor' in value) {
+        return h('span', { class: 'font-mono text-xs text-muted' }, options.formatModeValue(variable, mode.modeId))
+      }`],
+        'src/app/shell/keyboard/registry.ts': ['5df738b1929c454d61c3665d8794ed0488cf8f712ae3211b5eeeaeedbca51cd0',
+          'hasOpenDismissableLayer() ||',
+          `((event.key === 'Enter' || event.code === 'Space') && event.composedPath().some(target =>
+      target instanceof Element && target.matches('button, a[href], [role="button"]'))) ||
+    hasOpenDismissableLayer() ||`],
+        'src/app/shell/keyboard/space-tool.ts': ['3583591ca4f6bdc6be33b7f68537f45e17f956006b21c1cca51a19da3e0a0be6',
+          "if (event.code !== 'Space') return",
+          `if (event.code !== 'Space' || event.defaultPrevented || event.composedPath().some(target =>
+      target instanceof Element && target.matches('button, a[href], [role="button"], [role="dialog"]'))) return`],
+      }
+      for (const [path, [digest, before, after]] of Object.entries(controlCorrections)) if (id === join(upstream, path)) {
+        if (sha256(source) !== digest) throw new Error('Editor control source changed: ' + path)
+        correctedControls.add(path)
+        return { code: replaceOnce(source, before, after), map: null }
+      }
       if (id === join(upstream, 'src/app/shell/keyboard/nudging.ts')) {
         if (sha256(source) !== '164f12035c8949b4780e95622950ac0503c778ffcd977e09d61b233fb5f04ae7') {
           throw new Error('Browser nudge keyboard source changed')
@@ -133,6 +162,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
+if (correctedControls.size !== 4) throw new Error('Browser omitted a variable or keyboard control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

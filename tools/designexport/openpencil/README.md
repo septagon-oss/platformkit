@@ -75,13 +75,13 @@ npm test
 
 The tests create disposable scene graphs and FIG buffers in memory; CLI cases
 write only to automatically removed temporary directories outside the workspace.
-They do not open your documents or connect to an editor. Native tests compare
-variable values and descriptions, master links, provenance and icon pixels across
-two successive FIG round trips. CanvasKit renders every light/dark icon in memory
-without requiring a GPU. This verifies native raster persistence, not browser
-interaction or comparison with an independent SVG renderer. Separate supplied-font
-tests exercise actual shaping within the boundary described below.
-This suite supplements `make check`'s Go and repository-policy gates.
+They do not open your documents or connect to an editor. Native checks supplement
+`make check`, covering variable descriptions, links, provenance and two FIG saves.
+CanvasKit verifies light/dark icon pixels without a GPU; supplied-font tests cover shaping.
+Experimental [color variables](variable-color.mjs) reuse authored CSS and native input IDs.
+Palette edits, modes and history retain formulas in versioned FIG plugin data alongside
+resolved COLOR fallbacks. Changed external fallbacks, missing inputs and cycles refuse.
+This is adapter-specific persistence, not formula support in other editors or source conversion.
 
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release
@@ -157,7 +157,7 @@ A unique unconditional `:root` definition may yield an `expressionCandidate` wit
 authored CSS and referenced custom properties. The [color evaluator](color-expression.mjs) checks source values
 and every observed token probe; ambiguous, shadowed or mismatched candidates stay absent.
 These are scoped observations, not a general CSS parser or proof for arbitrary functions.
-Native expression binding and universal token support remain unfinished.
+Construction still refuses expression candidates; universal token support remains unfinished.
 
 ## Construct an experimental native component
 
@@ -178,8 +178,8 @@ one planner for solid fills, uniform solid borders, radii and padding, retaining
 transparent token-bound strokes and border insets. Direct aliases require matching palettes in every theme
 and retain source RGBA through legacy CSS alpha rounding. This is candidate evidence,
 not general CSS equivalence. Literal paints stay unbound; ambiguous, stale and derived paints are
-refused. The [CSS color evaluator](color-expression.mjs) verifies authored sRGB
-mixes, not native expression bindings. Construction measures text and rejects
+refused. Experimental native formulas above do not yet authorize construction.
+Construction measures text and rejects
 geometry differences over 1/64 CSS pixel, removing created nodes and restoring
 the caller's measurement hook on rejection.
 

@@ -134,9 +134,9 @@ async function verifyBuild() {
   const provenance = await (await fetch(new URL('/platformkit-provenance.json', endpoint))).json()
   assert.equal(provenance.scope, 'generic-editor-without-packaged-design')
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
-    'Dockerfile', 'LICENSE', 'NOTICE', 'build-editor.mjs', 'corrections.mjs', 'exporter-correction.mjs', 'font-correction.mjs',
+    'Dockerfile', 'LICENSE', 'NOTICE', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'exporter-correction.mjs', 'font-correction.mjs',
     'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
-    'scaling-correction.mjs', 'sync-correction.mjs',
+    'scaling-correction.mjs', 'sync-correction.mjs', 'variable-color.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -144,6 +144,73 @@ async function verifyBuild() {
     assert.equal(createHash('sha256').update(readFileSync(new URL(path, import.meta.url))).digest('hex'), digest, name)
   }
 }
+
+test('derived native colors follow keyboard palette edits and survive two browser worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), collection = graph.createCollection('Palette'), pageNode = graph.getPages()[0]
+  graph.updateNode(pageNode.id, { name: 'Variable proof' })
+  const ink = graph.createVariable('Ink', 'COLOR', collection.id, { r: 0, g: 0, b: 0, a: 1 })
+  const derived = graph.createVariable('Secondary', 'COLOR', collection.id, { cssColor: {
+    value: 'color-mix(in srgb, var(--ink) 75%, #fff)', customProperties: { '--ink': { aliasId: ink.id } },
+  } })
+  const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Token master', width: 40, height: 40,
+    fills: [{ type: 'SOLID', color: { r: .25, g: .25, b: .25, a: 1 }, visible: true, opacity: 1 }] })
+  graph.bindVariable(master.id, 'fills/0/color', derived.id)
+  graph.createInstance(master.id, pageNode.id, { name: 'Token instance', x: 80 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `formula-${cycle}.fig`)
+        await page.getByRole('button', { name: 'Variable proof', exact: true }).waitFor()
+        const tabTo = async target => {
+          for (let step = 0; step < 80 && !await target.evaluate(node => node === document.activeElement); step++) {
+            await page.keyboard.press('Tab')
+          }
+          assert.ok(await target.evaluate(node => node === document.activeElement && node.matches(':focus-visible')))
+        }
+        await tabTo(page.getByRole('button', { name: 'Open variables', exact: true }))
+        await page.keyboard.press('Enter')
+        const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        await dialog.waitFor()
+        const secondary = dialog.getByRole('row').filter({ hasText: 'Secondary' })
+        await expect(secondary).toContainText(cycle === 0 ? 'Derived #404040' : 'Derived #414040')
+        if (cycle === 0) {
+          const picker = dialog.getByRole('row').filter({ hasText: 'Ink' }).getByRole('button', { name: 'Edit color', exact: true })
+          await tabTo(picker)
+          await page.keyboard.press('Enter')
+          const red = page.getByRole('spinbutton', { name: 'Red', exact: true })
+          await tabTo(red)
+          await page.keyboard.press('ArrowUp')
+          await expect(red).toHaveValue('1')
+          await page.keyboard.press('Escape')
+          await expect(secondary).toContainText('Derived #414040')
+        }
+        await page.keyboard.press('Escape')
+        if (cycle === 0) {
+          await page.keyboard.press('Control+z')
+          await tabTo(page.getByRole('button', { name: 'Open variables', exact: true }))
+          await page.keyboard.press('Space')
+          await expect(secondary).toContainText('Derived #404040')
+          await page.keyboard.press('Escape')
+          await page.keyboard.press('Control+Shift+z')
+        }
+        if (cycle === 2) { assert.deepEqual(errors, []); continue }
+        buffer = await saveDocument(page, errors, workers)
+        assert.ok(workers.some(path => /\/export-worker-.*\.js$/.test(path)))
+        const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+        const next = [...reopened.variables.values()].find(variable => variable.name === 'Secondary')
+        assert.equal(Object.values(next.valuesByMode)[0].cssColor.value, Object.values(derived.valuesByMode)[0].cssColor.value)
+        const value = reopened.resolveVariable(next.id)
+        assert.deepEqual(value, { r: .25 + .75 * Math.fround(1 / 255), g: .25, b: .25, a: 1 })
+        assert.equal(named(reopened, 'Token instance').componentId, named(reopened, 'Token master').id)
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
 
 test('source minimum-gap wrapping survives keyboard width edits, history and two editor saves', { timeout: 120000 }, async () => {
   await verifyBuild()
