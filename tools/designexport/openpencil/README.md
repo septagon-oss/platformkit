@@ -12,8 +12,8 @@ complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
 the two Video examples refuse because media capture is unsupported.
-Native construction accepts 17: eleven Buttons, bare/invalid Input, Form, Grid and two Text
-examples; the coverage test reports 90 refusals. These are measured guards, not proof of
+Native construction accepts 18: eleven Buttons, bare/invalid/read-only Input, Form, Grid and two Text
+examples; the coverage test reports 89 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
 Consumers can configure `design.Theme.Typography` before `ui.Export`; empty roles
@@ -215,6 +215,12 @@ Toolbar also composes with linked Text in named header/body slots backed by Stac
 nested copy edits resize the page body without changing the sibling's copy or size
 through two saves. Browser checks retain the heading and keyboard-focusable link.
 This synthetic page body has no navigation chrome, artwork or prototype transitions.
+Configured-font Card pages also compose Heading, Stack and Grid; title/description
+edits retain linked ownership and content-driven grid height after two saves.
+Single literal zero-spread box shadows retain native effects. Straight-edge samples
+match Chromium within one channel value for opaque, translucent and transparent
+cards in both themes at 320/1280px. Inset, multiple, spread and token-dependent
+shadows remain refusals; artwork, hover presentation and rounded-edge pixels are unverified.
 Nonwrapping intrinsic rows and submission are not modeled; default display-font fidelity is unverified.
 Native input values are unwrapped auto-width text in a fixed clipping viewport.
 Zero advance and clearing are measured; failures roll back the edit and history.

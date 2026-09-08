@@ -34,6 +34,19 @@ function requirePlainText(style) {
   'text shadows, indentation, word spacing or writing direction require further conversion')
 }
 
+function boxShadow(node) {
+  const value = node.style['box-shadow']
+  if (value === 'none') return []
+  const source = node.paintSources?.['box-shadow']
+  requireComponent(source?.tokens?.length === 0 && source.directCandidate === null && !source.expressionCandidate,
+    'shadow color dependencies require further native conversion')
+  const match = /^((?:rgba?|color)\([^)]*\)) (-?\d+(?:\.\d+)?px) (-?\d+(?:\.\d+)?px) (\d+(?:\.\d+)?px) 0px$/.exec(value)
+  requireComponent(match && node.style.display !== 'inline', 'one non-inset zero-spread box shadow required')
+  requireComponent(match.slice(2).every(value => Number.isFinite(Math.fround(Number.parseFloat(value)))), 'finite native shadow geometry required')
+  return [{ type: 'DROP_SHADOW', color: color(match[1]), offset: { x: Number.parseFloat(match[2]), y: Number.parseFloat(match[3]) },
+    radius: pixels(match[4]), spread: 0, visible: true, blendMode: 'NORMAL', showShadowBehindNode: false }]
+}
+
 // CSS requests select a face; they do not rename its binary weight. For static
 // custom faces, this Chromium revision synthesizes bold only when the selected
 // weight is below 600 and the request is at least 600. Keep that inference scoped
@@ -58,7 +71,7 @@ function planPresentation(node, paintFor, blockMargins = false) {
   requirePlainText(style)
   requireComponent(['static', 'relative'].includes(style.position) && style.visibility === 'visible' &&
     style.transform === 'none' && style.filter === 'none' && style['background-image'] === 'none' &&
-    style['box-shadow'] === 'none' && style['animation-name'] === 'none', 'positioning, filters, effects or motion require further conversion')
+    style['animation-name'] === 'none', 'positioning, filters, effects or motion require further conversion')
   requireComponent(['none', 'hidden'].includes(style['outline-style']) || pixels(style['outline-width']) === 0 ||
     color(style['outline-color']).a === 0, 'visible outlines require further conversion')
   requireComponent((blockMargins ? ['right', 'left'] : ['top', 'right', 'bottom', 'left']).every(side => pixels(style[`margin-${side}`]) === 0),
@@ -87,7 +100,7 @@ function planPresentation(node, paintFor, blockMargins = false) {
   ]))
   const background = paintFor(node, 'background-color')
   return {
-    ...background, ...insets, opacity: Number(style.opacity),
+    ...background, ...insets, opacity: Number(style.opacity), effects: boxShadow(node),
     independentCorners: true,
     topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
     bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
@@ -463,7 +476,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
           childStyle['flex-basis'] === 'auto' && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
         requireComponent(!wrapping || childStyle.order === '0', 'wrapping rows require source child order')
         if (vertical && align === 'STRETCH') child.placement = {
-          layoutAlignSelf: 'STRETCH', [child.native?.layoutMode === 'VERTICAL' ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL',
+          layoutAlignSelf: 'STRETCH', [child.textRow || child.native?.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL',
         }
       }
     }

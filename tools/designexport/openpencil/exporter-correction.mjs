@@ -373,9 +373,9 @@ export function correctInstanceImporter(source, replace) {
   for (const node of overrideCandidates(graph, ctx.activeNodeIds)) {
     const parent = graph.getNode(node.parentId);
     if (node.layoutAlignSelf !== "STRETCH" || node.layoutPositioning === "ABSOLUTE" ||
-        !["HORIZONTAL", "VERTICAL"].includes(node.layoutMode) || !["HORIZONTAL", "VERTICAL"].includes(parent?.layoutMode) ||
+        !["HORIZONTAL", "VERTICAL", "GRID"].includes(node.layoutMode) || !["HORIZONTAL", "VERTICAL"].includes(parent?.layoutMode) ||
         !sourceCompositionLayout(graph, node) || !sourceCompositionLayout(graph, parent)) continue;
-    const field = node.layoutMode === parent.layoutMode ? "counterAxisSizing" : "primaryAxisSizing";
+    const field = (node.layoutMode === "HORIZONTAL") === (parent.layoutMode === "HORIZONTAL") ? "counterAxisSizing" : "primaryAxisSizing";
     graph.preserveSourceMetadataDuring(() => graph.updateNode(node.id, { [field]: "FILL" }));
   }
 ` + '\tapplyGeneratedFreeformStretch(ctx);')

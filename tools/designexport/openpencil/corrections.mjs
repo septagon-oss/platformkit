@@ -238,6 +238,14 @@ export const corrections = Object.freeze({
       return source
     },
   },
+  '@open-pencil/core/dist/canvas/shadows.js': {
+    sha256: '9d44ef166ff3315a40d9b2594ac6e0785f450acb876040c7d808b24d66a80e84',
+    // Explicit false clips the shadow behind translucent fills too, not only
+    // unfilled nodes. https://developers.figma.com/docs/plugins/api/Effect/
+    transform: (source, replace) => replace(source,
+      'effect.showShadowBehindNode === false && !hasVisibleFill && !shadowShapeChild',
+      'effect.showShadowBehindNode === false && !shadowShapeChild'),
+  },
   '@open-pencil/core/dist/tools/calc.js': {
     sha256: '35d6fd205094a3e26f5098b98833c92ffe96a2defdb377208576f58c6e71b67d',
     transform(source, replace) {

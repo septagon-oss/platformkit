@@ -112,10 +112,10 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.button/ghost', 'pk-ui.component.button/info', 'pk-ui.component.button/primary',
     'pk-ui.component.button/secondary', 'pk-ui.component.button/success', 'pk-ui.component.button/warning', 'pk-ui.component.button/with-icon',
     'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form/default', 'pk-ui.component.grid/default',
-    'pk-ui.component.input/bare', 'pk-ui.component.input/invalid',
+    'pk-ui.component.input/bare', 'pk-ui.component.input/invalid', 'pk-ui.component.input/read-only',
     'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
   ])
-  assert.equal(refused.length, 90)
+  assert.equal(refused.length, 89)
   assert.deepEqual(captureRefused, ['pk-ui.component.video/default', 'pk-ui.component.video/disabled'])
   assert.equal(browser.contexts().length, 0)
 })

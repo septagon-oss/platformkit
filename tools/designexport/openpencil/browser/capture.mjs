@@ -294,7 +294,7 @@ export async function captureExample(browser, snapshot, exampleId, {
         return out
       }
       const roots = children(document.body)
-      const paints = ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color', 'fill', 'stroke']
+      const paints = ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color', 'fill', 'stroke', 'box-shadow']
       const values = () => elements.map(node => {
         const computed = getComputedStyle(node)
         return paints.map(paint => computed.getPropertyValue(paint))
