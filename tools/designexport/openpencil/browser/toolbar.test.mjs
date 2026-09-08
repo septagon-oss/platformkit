@@ -1,10 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { sourceFixture, suppliedFonts } from './fixtures.test.mjs'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -19,12 +14,10 @@ import { extractSourceProps } from '../source-changes.mjs'
 import { captureExample } from './capture.mjs'
 
 test('Toolbar owns its private copy while linked actions, edits and two saves retain source identity', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'platformkit-toolbar-source-'))
-  t.after(() => rm(directory, { recursive: true, force: true }))
-  const file = join(directory, 'main.go'), id = 'fixture/toolbar'
+  const id = 'fixture/toolbar'
   // Use a source-composed, licensed test font for headings. This is not proof
   // of the default display-font fallback stack or Collect's supplied Georgia.
-  await writeFile(file, `package main
+  const source = await sourceFixture(t, `package main
 import (
   "encoding/json"
   "os"
@@ -46,14 +39,8 @@ func main() {
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
-`, { flag: 'wx' })
-  const source = props => JSON.parse(execFileSync('go', ['run', file], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(props),
-  }))
-  const fonts = [400, 600].map(weight => {
-    const bytes = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
-    return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
-  })
+`)
+  const fonts = suppliedFonts([400, 600])
   const original = { Title: 'Album library', Subtitle: 'Keep every memory.' }, snapshot = source(original)
   const browser = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
   const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1280, 900)), previous = getTextMeasurer()

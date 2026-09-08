@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { sourceFixture, suppliedFonts } from './fixtures.test.mjs'
 import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -22,10 +18,7 @@ import { captureExample } from './capture.mjs'
 
 const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
 const examples = [form, button], viewport = { width: 320, height: 900 }
-const fonts = [400, 500, 600].map(weight => {
-  const bytes = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
-  return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
-})
+const fonts = suppliedFonts([400, 500, 600])
 const originalMeasurer = getTextMeasurer()
 let browser, ck, renderer, snapshot
 
@@ -85,10 +78,7 @@ function vertical(nodes) {
 }
 
 async function wrappingSource(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'platformkit-wrapping-source-'))
-  t.after(() => rm(directory, { recursive: true, force: true }))
-  const file = join(directory, 'main.go')
-  await writeFile(file, `package main
+  const run = await sourceFixture(t, `package main
 import (
   "encoding/json"
   "os"
@@ -116,10 +106,8 @@ func main() {
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
-`, { flag: 'wx' })
-  return (props, label = 'Save album') => JSON.parse(execFileSync('go', ['run', file], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify({ props, label }),
-  }))
+`)
+  return (props, label = 'Save album') => run({ props, label })
 }
 
 test('unsupported wrap direction, line alignment and child order reject atomically', async t => {

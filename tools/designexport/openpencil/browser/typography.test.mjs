@@ -1,10 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { sourceFixture, suppliedFonts } from './fixtures.test.mjs'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
@@ -18,10 +13,7 @@ import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 
 test('configured typography and Heading edits agree across source themes, responsive layout and two saves', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'platformkit-typography-'))
-  t.after(() => rm(directory, { recursive: true, force: true }))
-  const file = join(directory, 'main.go')
-  await writeFile(file, `package main
+  const source = await sourceFixture(t, `package main
 import (
   "encoding/json"
   "os"
@@ -44,11 +36,9 @@ func main() {
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
-`, { flag: 'wx' })
+`)
   const configured = { light: { display: '"Customer Display", serif', body: '"Customer Body", sans-serif' },
     dark: { display: '"Alternate Display", serif', body: '"Alternate Body", sans-serif', mono: '"Customer Mono", monospace' } }
-  const source = input => JSON.parse(execFileSync('go', ['run', file], { cwd: new URL('../../../../', import.meta.url),
-    encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, input: JSON.stringify(input) }))
   const snapshot = source(configured), previous = getTextMeasurer()
   let renderer
   const browser = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
@@ -76,8 +66,7 @@ func main() {
       }
       if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
     }
-    const bytes = readFileSync(new URL('../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff', import.meta.url))
-    const fonts = [{ family: 'IBM Plex Sans', weight: 600, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }]
+    const fonts = suppliedFonts([600])
     const ck = await initCanvasKit(); renderer = new SkiaRenderer(ck, ck.MakeSurface(1280, 900))
     const id = 'fixture/heading', typography = { display: '"IBM Plex Sans", sans-serif' }
     for (const level of [1, 2, 3, 4, 5]) for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
