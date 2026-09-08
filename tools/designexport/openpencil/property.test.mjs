@@ -173,26 +173,27 @@ test('subscribed editor keeps exact undo geometry after sibling component notifi
   assert.deepEqual(snapshot(graph), after, 'deferred component sync must not change the replayed edit')
 })
 
-test('late grid measurement failure restores temporary sizing modes and leaves no undo entry', async () => {
+test('grid measurement failure retains sizing modes and leaves no undo entry', async () => {
   const { graph, instance, master } = fixture({ layoutMode: 'GRID' })
   const actions = createEditor({ graph })
   const before = snapshot(graph)
   assert.equal(instance.primaryAxisSizing, 'HUG')
   assert.equal(instance.counterAxisSizing, 'HUG')
   setTextMeasurer(node => {
-    if (instance.primaryAxisSizing === 'FIXED') {
-      throw new Error('failure during grid child recompute')
+    assert.equal(instance.primaryAxisSizing, 'HUG', 'measurement never temporarily fixes authored sizing')
+    if (node.parentId === instance.id) {
+      throw new Error('failure during grid child measurement')
     }
     return { width: node.text.length * 10, height: 20 }
   })
   try {
     assert.throws(
       () => actions.setInstanceComponentProperty(instance.id, '80:1', 'Changed label'),
-      /failure during grid child recompute/,
+      /failure during grid child measurement/,
     )
     assert.equal(actions.undo.canUndo, false)
-    assert.equal(instance.primaryAxisSizing, 'HUG', 'rollback must restore the temporary primary sizing mode')
-    assert.equal(instance.counterAxisSizing, 'HUG', 'rollback must restore the temporary counter sizing mode')
+    assert.equal(instance.primaryAxisSizing, 'HUG', 'rollback retains primary sizing')
+    assert.equal(instance.counterAxisSizing, 'HUG', 'rollback retains counter sizing')
     assert.deepEqual(snapshot(graph), before)
     await Promise.resolve()
     assert.deepEqual(snapshot(graph), before, 'rollback must remain exact after subscribed notifications settle')
@@ -269,7 +270,7 @@ test('failed property measurement explicitly frees every allocated Yoga node', a
           return node
         }
         setTextMeasurer(node => {
-          if (layoutMode === 'HORIZONTAL' || instance.primaryAxisSizing === 'FIXED') {
+          if (node.parentId === instance.id) {
             throw new Error('measurement cleanup failure')
           }
           return { width: node.text.length * 10, height: 20 }
@@ -288,16 +289,17 @@ test('failed property measurement explicitly frees every allocated Yoga node', a
   }
 })
 
-test('grid layout restores its temporary sizing modes even without property rollback', () => {
+test('grid layout retains its sizing modes on measurement failure without property rollback', () => {
   const { graph, instance, row } = fixture({ layoutMode: 'GRID' })
   graph.updateNode(graph.getChildren(instance.id)[0].id, { figmaDerivedLayout: null })
   const originalMeasurer = getTextMeasurer()
   setTextMeasurer(node => {
-    if (instance.primaryAxisSizing === 'FIXED') throw new Error('grid recompute failed')
+    assert.equal(instance.primaryAxisSizing, 'HUG')
+    if (node.parentId === instance.id) throw new Error('grid measurement failed')
     return { width: node.text.length * 10, height: 20 }
   })
   try {
-    assert.throws(() => computeLayout(graph, row.id), /grid recompute failed/)
+    assert.throws(() => computeLayout(graph, row.id), /grid measurement failed/)
     assert.equal(instance.primaryAxisSizing, 'HUG')
     assert.equal(instance.counterAxisSizing, 'HUG')
   } finally {

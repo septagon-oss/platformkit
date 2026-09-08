@@ -379,7 +379,13 @@ palette colours as paint edits. Solid and dashed strokes multiply resolved alpha
 Normal graph subscriptions and history are checked after deferred notifications
 settle. Property operations pause synchronization only while computing/restoring
 captured geometry; authored parent resizing still propagates master dimensions.
-Failed measurement restores grid sizing modes and frees the built Yoga trees.
+Failed measurement leaves grid sizing modes unchanged and frees the built Yoga trees.
+Grid and flex now share recursive native measurement. Low-level tests cover HUG and
+fixed row heights, nested wrapping text, spans, padding, hidden/absolute children and
+explicit stretch. FR tracks retain their content minimum; shrinking below it needs
+an explicit minimum-size choice. This is not source Grid conversion or persistence proof:
+the current FIG path drops native grid layout, and the editor only offers fixed grid
+dimensions. Grid-bearing documents are not safe release artifacts yet.
 
 Text-property guarantees cover placed root or nested targets and exact layout undo/redo.
 Master-owned edits, variants and arbitrary imports remain unverified; identity

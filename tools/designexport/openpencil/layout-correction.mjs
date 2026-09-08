@@ -28,8 +28,8 @@ export function editedSourceLayout(graph, frame) {
         Object.hasOwn(frame.overrides, field) || Object.hasOwn(frame.overrides, `${frame.id}:${field}`))
 }
 
-// Layout owns temporary Yoga objects and grid sizing modes. Release/restore
-// them at that boundary even when measurement or nested layout throws.
+// Layout owns temporary Yoga objects. Release them at that boundary even when
+// measurement or nested layout throws.
 export function correctLayout(source, replace) {
   source = `import { sourceLayoutScope, sourceCompositionLayout, editedSourceLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   // A child laid out independently still uses its parent-resolved fill size.
@@ -151,29 +151,14 @@ function computeLayoutMeasured(graph, frameId) {`)
   }`)
 }
 
-export function correctGridRecompute(source, replace) {
+export function correctLayoutApply(source, replace) {
   source = `import { editedSourceLayout, sourceCompositionLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   source = replace(source, 'function preservesImportedHugCrossSize(graph, frame, axis) {',
     'function preservesImportedHugCrossSize(graph, frame, axis) {\n' +
     '\tif (sourceCompositionLayout(graph, frame) && !frame.figmaDerivedLayout) return false;')
   source = replace(source, 'if (preservesImportedInstanceInternals(child)) continue;',
     'if (preservesImportedInstanceInternals(child) && !(sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout)) continue;')
-  source = replace(source,
+  return replace(source,
     'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId);',
     'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId) && !editedSourceLayout(graph, graph.getNode(child.parentId));')
-  return replace(source,
-    '\tcomputeLayout(graph, child.id);\n' +
-    '\tconst restore = {};\n' +
-    '\tif (updates.primaryAxisSizing) restore.primaryAxisSizing = savedPrimary;\n' +
-    '\tif (updates.counterAxisSizing) restore.counterAxisSizing = savedCounter;\n' +
-    '\tif (Object.keys(restore).length > 0) graph.updateNode(child.id, restore);',
-    String.raw`
-  const restore = {};
-  if (updates.primaryAxisSizing) restore.primaryAxisSizing = savedPrimary;
-  if (updates.counterAxisSizing) restore.counterAxisSizing = savedCounter;
-  try {
-    computeLayout(graph, child.id);
-  } finally {
-    if (Object.keys(restore).length > 0) graph.updateNode(child.id, restore);
-  }`)
 }
