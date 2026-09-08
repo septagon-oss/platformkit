@@ -439,6 +439,13 @@ func TestTheLimiterCountsAnAddressWithoutStoringIt(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	router, _, _ := mountOn(t, conn, auth.OIDC{})
 	const email = "ada@acme.localhost"
+	const digest = "5778cc685df6140da25791b19cbb7b3e87b7466d3da7cd73afa0ae877c07cc4b"
+	want := []string{
+		"auth/account/" + digest,
+		"auth/sources/" + digest,
+		"auth/pair/" + digest + " 203.0.113.7",
+		"auth/source/203.0.113.7",
+	}
 	person(t, conn, email)
 
 	for range 3 {
@@ -461,14 +468,15 @@ func TestTheLimiterCountsAnAddressWithoutStoringIt(t *testing.T) {
 			t.Fatalf("scan a key: %v", err)
 		}
 		counted++
-		if strings.Contains(key, email) || strings.Contains(key, "ada") || strings.Contains(key, "@") {
-			t.Errorf("the counter key %q spells the address it counts", key)
+		scoped, ok := strings.CutPrefix(key, acme.ID.String()+"/")
+		if !ok || !slices.Contains(want, scoped) {
+			t.Errorf("counter key %q must contain only the tenant, purpose and hashed email or source IP", key)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("read the counters: %v", err)
 	}
-	if counted == 0 {
-		t.Fatal("nothing was counted, so nothing was proved about how it was counted")
+	if counted != len(want) {
+		t.Fatalf("counted %d keys, want all %d account and source counters", counted, len(want))
 	}
 }
