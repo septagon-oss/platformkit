@@ -292,6 +292,11 @@ function replaceSection(source, start, end, replacement) {
 }
 
 export function correctExporter(source, replaceOnce) {
+  // Native bindings resolve at render time. Import must not replace an authored
+  // fallback with the default-mode value and turn a binding-only edit into paint
+  // ownership; mode changes and subsequent glyph replacement need both intact.
+  source = replaceOnce(source, 'const resolved = resolveColorVar(paint);',
+    'const resolved = paint.color ? undefined : resolveColorVar(paint);')
   // FIG import coalesces duplicate plugin keys. Never let a save silently turn
   // ambiguous source ownership into a single apparently valid declaration.
   source = replaceOnce(source, 'function mergePluginData(pluginData) {', String.raw`

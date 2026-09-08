@@ -81,7 +81,7 @@ CanvasKit verifies light/dark icon pixels without a GPU; supplied-font tests cov
 Experimental [color variables](variable-color.mjs) reuse authored CSS and native input IDs.
 Palette edits, modes and history retain formulas in versioned FIG plugin data alongside
 resolved COLOR fallbacks. Changed external fallbacks, missing inputs and cycles refuse.
-This is adapter-specific persistence, not formula support in other editors or source conversion.
+This is adapter-specific persistence, not formula support in other editors or palette-to-source writeback.
 
 Native editor value edits (including undo/redo) and the automation API's value setter
 validate a candidate variable map before writing. Variable and collection deletion
@@ -166,8 +166,8 @@ Paint probes vary opaque, partial and zero alpha; `directCandidate` is not a bin
 A unique unconditional `:root` definition may yield an `expressionCandidate` with
 authored CSS and referenced custom properties. The [color evaluator](color-expression.mjs) checks source values
 and every observed token probe; ambiguous, shadowed or mismatched candidates stay absent.
+Inactive media and theme overrides also disqualify a definition or referenced alias.
 These are scoped observations, not a general CSS parser or proof for arbitrary functions.
-Construction still refuses expression candidates; universal token support remains unfinished.
 
 ## Construct an experimental native component
 
@@ -187,8 +187,15 @@ named slots containing one canonical SVG each. Rows and composed frames share
 one planner for solid fills, uniform solid borders, radii and padding, retaining
 transparent token-bound strokes and border insets. Direct aliases require matching palettes in every theme
 and retain source RGBA through legacy CSS alpha rounding. This is candidate evidence,
-not general CSS equivalence. Literal paints stay unbound; ambiguous, stale and derived paints are
-refused. Experimental native formulas above do not yet authorize construction.
+not general CSS equivalence. Literal paints stay unbound. Unambiguous authored expressions
+become COLOR variables in the existing foundation collection, keyed by their source CSS
+custom-property names and bound to native input IDs. Matching roles are reused; conflicting
+or edited roles refuse without being overwritten. Allocation follows successful construction
+and geometry checks, and failed construction removes its own nodes and variables.
+Supported text, fills, uniform borders and canonical SVG currentColor occurrences retain
+these formulas through palette edits, history and two saves. Glyph swaps preserve occurrence
+colour roles without changing canonical assets. Ambiguous, stale and unsupported expressions
+remain refusals; this does not add layout capabilities or certify arbitrary CSS.
 Construction measures text and rejects
 geometry differences over 1/64 CSS pixel, removing created nodes and restoring
 the caller's measurement hook on rejection.
@@ -354,6 +361,8 @@ PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18089 node --import ./register.mjs -
 
 The [editor check](editor/replacement.test.mjs) refuses stale builds and tests generated
 Form/Button/Text properties and icon swaps through history and two downloaded saves.
+Generated secondary Text also retains its authored colour role through keyboard palette edits,
+undo/redo and worker saves; native tests cover both themes and translucent border pixels.
 Fresh contexts check links, proposals, masters, siblings and placement positions.
 Font settings loads process-only OTF fixtures with verified digests. Source comparisons
 reuse the generation browser; full Chromium runs the editor. CI treats its isolated
@@ -364,6 +373,8 @@ No document, WebGPU assets or product fonts are packaged; PWA registration is di
 Native properties and FIG override paths retain links through reflow and undo;
 repeated saves merge overrides by path. Low-level property fixtures use a
 deterministic measurer, while component comparisons use the supplied real fonts.
+Bound paints keep their authored fallback RGBA on import instead of acquiring default-mode
+palette colours as paint edits. Solid and dashed strokes multiply resolved alpha by opacity.
 Normal graph subscriptions and history are checked after deferred notifications
 settle. Property operations pause synchronization only while computing/restoring
 captured geometry; authored parent resizing still propagates master dimensions.

@@ -332,3 +332,33 @@ test('native formula-bound instance pixels retain premultiplied light and dark c
     if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
   }
 })
+
+test('solid and dashed native strokes multiply resolved color alpha by paint opacity', async () => {
+  const ck = await initCanvasKit()
+  for (const type of ['RECTANGLE', 'SECTION', 'COMPONENT_SET']) for (const opacity of [1, .5]) {
+    const graph = new SceneGraph(), collection = graph.createCollection('Stroke palette')
+    const input = graph.createVariable('Ink', 'COLOR', collection.id, rgba(1, 0, 0, .5))
+    const derived = graph.createVariable('Tint', 'COLOR', collection.id, { cssColor: {
+      value: 'color-mix(in srgb, var(--ink) 50%, transparent)', customProperties: { '--ink': { aliasId: input.id } },
+    } })
+    const node = graph.createNode(type, graph.getPages()[0].id, { width: 40, height: 40, fills: [],
+      strokes: [{ color: rgba(0, 0, 1), weight: 4, align: 'INSIDE', opacity, visible: true,
+        ...(type === 'COMPONENT_SET' ? { dashPattern: [6, 4] } : {}) }] })
+    graph.bindVariable(node.id, 'strokes/0/color', derived.id)
+    const surface = ck.MakeSurface(40, 40), renderer = new SkiaRenderer(ck, surface)
+    try {
+      const canvas = surface.getCanvas()
+      canvas.clear(ck.TRANSPARENT)
+      renderer.renderSceneToCanvas(canvas, graph, node.parentId)
+      surface.flush()
+      const pixels = canvas.readPixels(0, 0, { width: 40, height: 40, alphaType: ck.AlphaType.Unpremul,
+        colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB })
+      const alpha = [...pixels].filter((_, index) => index % 4 === 3)
+      assert.ok(Math.abs(Math.max(...alpha) - 255 * .25 * opacity) <= 1, `${type}: stroke alpha ${Math.max(...alpha)}`)
+      assert.ok(alpha.some(value => value === 0), 'unpainted pixels stay transparent')
+      for (let index = 0; index < pixels.length; index += 4) if (pixels[index + 3]) {
+        assert.deepEqual([...pixels.slice(index, index + 3)], [255, 0, 0])
+      }
+    } finally { renderer.destroy() }
+  }
+})

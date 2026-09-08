@@ -426,6 +426,8 @@ test('expression capture leaves ambiguous, shadowed, unsupported and probe-misma
       `[data-component="button"] { --product-tint: ${value}; }`,
       ':root { --product-alias: var(--product-tint); } [data-component="button"] { background-color: var(--product-alias); }',
       `@media (min-width: 1px) { :root { --product-tint: color-mix(in srgb, var(${accent}) 80%, var(${surface})); } }`,
+      `@media (min-width: 99999px) { :root { --product-tint: ${value}; } }`,
+      `:root[data-theme="${mode === 'light' ? 'dark' : 'light'}"] { --product-tint: ${value}; }`,
     ]) {
       const snapshot = structuredClone(source)
       // Equal baseline tokens conceal different mix weights until a token is probed.

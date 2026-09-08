@@ -215,6 +215,18 @@ export const corrections = Object.freeze({
     transform: (source, replace) => replace(source, 'r.fillPaint.setAlphaf(fill.opacity);',
       'r.fillPaint.setAlphaf(fill.opacity * (fill.type === "SOLID" ? r.fillPaint.getColor()[3] : 1));'),
   },
+  '@open-pencil/core/dist/canvas/strokes.js': {
+    sha256: '8da58e7799f04db7dcf301b7033d4c113627e148e26f9c75b3533dfff1e7dc31',
+    transform(source, replace) {
+      // Both ordinary strokes and dashed rectangles with solid corners retain
+      // the resolved color alpha in addition to their own paint opacity.
+      for (const cap of ['r.ck.StrokeCap.Butt', 'getStrokeCapEntity(r, stroke.cap ?? node.strokeCap)']) {
+        source = replace(source, `r.strokePaint.setAlphaf(stroke.opacity);\n\tr.strokePaint.setStrokeCap(${cap});`,
+          `r.strokePaint.setAlphaf(stroke.opacity * color.a);\n\tr.strokePaint.setStrokeCap(${cap});`)
+      }
+      return source
+    },
+  },
   '@open-pencil/core/dist/tools/calc.js': {
     sha256: '35d6fd205094a3e26f5098b98833c92ffe96a2defdb377208576f58c6e71b67d',
     transform(source, replace) {

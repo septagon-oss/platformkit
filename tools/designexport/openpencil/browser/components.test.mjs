@@ -16,6 +16,7 @@ import { materializeComponent } from '../components.mjs'
 import { associateSourceInstance, extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from './capture.mjs'
+import { computedColor } from '../computed-color.mjs'
 
 const primary = 'pk-ui.component.button/primary'
 const bytes = readFileSync(new URL('../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff', import.meta.url))
@@ -552,13 +553,13 @@ test('computed sRGB literal fills and text retain alpha and precision through tw
   }
 })
 
-test('real secondary Text still refuses unsupported derived token relationships without freezing its paint', async () => {
+test('real secondary Text binds its authored role and follows palette edits through two FIG saves', async () => {
   const id = 'pk-ui.component.text/muted'
   const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', id, '--props'], {
     cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify({ color: 'secondary' }),
   }))
   for (const mode of ['light', 'dark']) {
-    const observation = await observe(snapshot, mode), built = buildFoundation(snapshot), page = built.graph.addPage('Refused derivation')
+    const observation = await observe(snapshot, mode), built = buildFoundation(snapshot), page = built.graph.addPage('Derived source')
     built.graph.updateNode(page.id, { variableModes: { [built.collection.id]: built.collection.modes.find(item => item.name === mode).modeId } })
     assert.match(observation.roots[0].style.color, /^color\(srgb /)
     assert.deepEqual(observation.roots[0].paintSources.color, {
@@ -568,9 +569,38 @@ test('real secondary Text still refuses unsupported derived token relationships 
         value: 'color-mix(in srgb, var(--pk-color-text-primary) 78%, var(--pk-color-surface-primary))', customProperties: {},
       },
     })
-    const before = structuredClone([...built.graph.getAllNodes()]), hook = getTextMeasurer()
-    await assert.rejects(materializeComponent(built.graph, page.id, snapshot, observation, faces, renderer, built.collection.id), /mixed or derived paint dependencies/)
-    assert.deepEqual([...built.graph.getAllNodes()], before)
+    let graph = built.graph
+    const hook = getTextMeasurer()
+    const { master } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, built.collection.id)
+    graph.createInstance(master.id, page.id, { name: 'Derived placement', x: 200 })
+    graph.createInstance(master.id, page.id, { name: 'Derived sibling', x: 400 })
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const instance = [...graph.nodes.values()].find(node => node.name === 'Derived placement')
+      const text = graph.getChildren(instance.id).find(node => node.type === 'TEXT')
+      const role = graph.variables.get(text.boundVariables['fills/0/color'])
+      assert.equal(role?.name, '--pk-role-fg-secondary')
+      const ink = [...graph.variables.values()].find(variable => variable.name === '--pk-color-text-primary')
+      const surface = [...graph.variables.values()].find(variable => variable.name === '--pk-color-surface-primary')
+      const collection = graph.variableCollections.get(ink.collectionId), selected = collection.modes.find(item => item.name === mode)
+      const other = collection.modes.find(item => item.name !== mode)
+      const beforeOther = graph.resolveVariable(role.id, other.modeId), nodes = structuredClone([...graph.nodes])
+      const expected = computedColor(observation.roots[0].style.color)
+      for (const channel of ['r', 'g', 'b', 'a']) close(graph.resolveVariable(role.id, selected.modeId)[channel], expected[channel], channel)
+      const actions = createEditor({ graph })
+      actions.updateVariableValue(ink.id, selected.modeId, { r: 1, g: 0, b: 0, a: .5 })
+      const paper = graph.resolveVariable(surface.id, selected.modeId), alpha = .78 * .5 + .22 * paper.a
+      const mixed = { r: (.39 + .22 * paper.r * paper.a) / alpha,
+        g: .22 * paper.g * paper.a / alpha, b: .22 * paper.b * paper.a / alpha, a: alpha }
+      for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(graph.resolveVariable(role.id, selected.modeId)[channel] - mixed[channel]) < 1e-6)
+      assert.deepEqual(graph.resolveVariable(role.id, other.modeId), beforeOther)
+      actions.undoAction()
+      actions.redoAction()
+      actions.undoAction()
+      assert.deepEqual([...graph.nodes], nodes, 'formula palette history leaves master and sibling structure unchanged')
+      assert.equal(instance.componentId, [...graph.nodes.values()].find(node => node.name === 'Derived sibling').componentId)
+      assert.equal(graph.getChildren(instance.componentId)[0].boundVariables['fills/0/color'], role.id)
+      if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    }
     assert.equal(getTextMeasurer(), hook)
   }
 })
@@ -588,6 +618,128 @@ test('native construction refuses an alpha-derived paint that looks literal in a
       /mixed or derived paint dependencies/, 'an editable palette must not leave a falsely literal fill behind')
     assert.deepEqual({ nodes: [...built.graph.getAllNodes()], variables: [...built.graph.variables] }, before)
     assert.equal(getTextMeasurer(), hook)
+  }
+})
+
+test('authored translucent fills and borders share one native role with source-correct pixels after two saves', async () => {
+  const snapshot = source(), name = '--product-tint', tokenName = '--pk-color-accent-default'
+  snapshot.css += `\n:root { ${name}: color-mix(in srgb, var(${tokenName}) 50%, transparent); }
+    [data-component="button"] { background-color: var(${name}); border: 2px solid var(${name}); border-radius: 0; }`
+  for (const mode of ['light', 'dark']) {
+    const observation = await observe(snapshot, mode)
+    let { graph, collection } = buildFoundation(snapshot)
+    const page = graph.addPage('Authored translucent paints')
+    graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
+    const first = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, collection.id)
+    const second = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, collection.id)
+    assert.equal(first.master.boundVariables['fills/0/color'], second.master.boundVariables['fills/0/color'])
+    graph.createInstance(first.master.id, page.id, { name: 'Translucent placement', x: 200 })
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const roles = [...graph.variables.values()].filter(variable => variable.name === name)
+      assert.equal(roles.length, 1, 'one shared authored role, not one variable per component or border side')
+      const instance = [...graph.nodes.values()].find(node => node.name === 'Translucent placement')
+      assert.equal(instance.boundVariables['fills/0/color'], roles[0].id)
+      assert.equal(instance.boundVariables['strokes/0/color'], roles[0].id)
+      const token = [...graph.variables.values()].find(variable => variable.name === tokenName)
+      collection = graph.variableCollections.get(token.collectionId)
+      const modeId = collection.modes.find(item => item.name === mode).modeId, editor = createEditor({ graph })
+      const before = structuredClone([...graph.nodes])
+      editor.updateVariableValue(token.id, modeId, { r: 1, g: 0, b: 0, a: .5 })
+      const surface = ck.MakeSurface(128, 64), draw = new SkiaRenderer(ck, surface)
+      try {
+        await draw.loadFonts()
+        const canvas = surface.getCanvas()
+        canvas.clear(ck.TRANSPARENT)
+        canvas.translate(-instance.x, -instance.y)
+        draw.renderSceneToCanvas(canvas, graph, instance.parentId)
+        surface.flush()
+        for (const [x, y, alpha] of [[4, 4, .25], [0, 15, 1 - .75 ** 2]]) {
+          const pixel = canvas.readPixels(x, y, { width: 1, height: 1, alphaType: ck.AlphaType.Unpremul,
+            colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB })
+          for (const [index, expected] of [255, 0, 0, alpha * 255].entries()) {
+            assert.ok(Math.abs(pixel[index] - expected) <= 1, `${mode}/${cycle} at ${x},${y}: ${pixel}, expected alpha ${alpha}`)
+          }
+        }
+      } finally { draw.destroy() }
+      editor.undoAction()
+      assert.deepEqual([...graph.nodes], before)
+      assert.ok([...graph.nodes.values()].every(node => !Object.hasOwn(node, 'expressionBindings')))
+      if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    }
+  }
+})
+
+test('derived paint refusals remove constructed nodes and never overwrite existing roles or retain variables', async () => {
+  const snapshot = source()
+  snapshot.css += '\n:root { --test-tint: color-mix(in srgb, var(--pk-color-accent-default) 50%, transparent); } [data-component="button"] { background-color: var(--test-tint); }'
+  const observation = await observe(snapshot)
+  for (const change of [
+    input => { input.observation.roots[0].bounds.width += 20 },
+    input => { input.observation.roots[0].paintSources['background-color'].expressionCandidate.value = '#abcdef' },
+    input => { input.observation.roots[0].paintSources['background-color'].expressionCandidate.customProperties['--pk-color-accent-default'] = '#123456' },
+    input => { input.graph.createVariable('--test-tint', 'COLOR', input.collection.id, parseColor('#123456')) },
+    input => { input.graph.createVariable('--test-tint', 'STRING', input.collection.id, 'not a color') },
+    input => { input.graph.bindVariable = () => { throw new Error('paint binding failure after allocation') } },
+    input => { input.graph.syncInstances = () => { throw new Error('paint synchronization failure after allocation') } },
+  ]) {
+    const { graph, collection } = buildFoundation(snapshot), page = graph.addPage('Refused derivation')
+    const input = { graph, collection, observation: structuredClone(observation) }
+    change(input)
+    const before = structuredClone({ nodes: [...graph.nodes], variables: [...graph.variables], collections: [...graph.variableCollections] })
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, input.observation, faces, renderer, collection.id), /geometry|paint/)
+    assert.deepEqual({ nodes: [...graph.nodes], variables: [...graph.variables], collections: [...graph.variableCollections] }, before)
+  }
+})
+
+test('source currentColor formulas bind icon occurrences without changing canonical assets and survive glyph swaps', async () => {
+  const id = 'pk-ui.component.button/with-icon', snapshot = source('Save', id), roleName = '--product-ink'
+  snapshot.css += `\n:root { ${roleName}: color-mix(in srgb, var(--pk-color-accent-default) 50%, transparent); }
+    [data-component="button"] { color: var(${roleName}); }`
+  for (const mode of ['light', 'dark']) {
+    const observation = await observe(snapshot, mode)
+    let { graph, collection, icons } = buildFoundation(snapshot)
+    const page = graph.addPage('Derived icon'), region = observation.roots[0].children.find(child => child.kind === 'slot')
+    graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
+    const assets = structuredClone([...icons.values()].flatMap(master => [master, ...graph.getChildren(master.id)]))
+    const { master, properties } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, collection.id,
+      [{ region, master: icons.get('plus') }])
+    assert.deepEqual([...icons.values()].flatMap(master => [master, ...graph.getChildren(master.id)]), assets)
+    graph.createInstance(master.id, page.id, { name: 'Derived icon placement', x: 200 })
+    graph.createInstance(master.id, page.id, { name: 'Derived icon sibling', x: 400 })
+    const swap = properties.find(property => property.type === 'INSTANCE_SWAP')
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const instance = [...graph.nodes.values()].find(node => node.name === 'Derived icon placement')
+      const sibling = [...graph.nodes.values()].find(node => node.name === 'Derived icon sibling')
+      const role = [...graph.variables.values()].find(variable => variable.name === roleName)
+      const glyph = root => graph.getChildren(root.id).find(node => node.type === 'INSTANCE')
+      const check = root => {
+        const icon = glyph(root)
+        for (const path of graph.getChildren(icon.id)) assert.equal(path.boundVariables['fills/0/color'], role.id)
+        const text = graph.getChildren(root.id).find(node => node.type === 'TEXT')
+        assert.equal(text.boundVariables['fills/0/color'], role.id)
+        close(icon.width, 20, 'derived glyph width')
+      }
+      check(instance)
+      check(sibling)
+      const editor = createEditor({ graph })
+      editor.setCanvasKit(ck, renderer)
+      const replacement = [...graph.nodes.values()].find(node => node.type === 'COMPONENT' && node.name === (cycle % 2 ? 'plus' : 'x'))
+      const before = structuredClone([sibling, ...graph.getChildren(sibling.id)])
+      editor.setInstanceComponentProperty(instance.id, swap.id, replacement.id)
+      check(instance)
+      editor.undoAction()
+      check(instance)
+      assert.deepEqual([sibling, ...graph.getChildren(sibling.id)], before)
+      editor.redoAction()
+      check(instance)
+      assert.equal(glyph(instance).componentId, replacement.id)
+      const token = [...graph.variables.values()].find(variable => variable.name === '--pk-color-accent-default')
+      const modeId = graph.variableCollections.get(token.collectionId).modes.find(item => item.name === mode).modeId
+      editor.updateVariableValue(token.id, modeId, { r: 1, g: 0, b: 0, a: .5 })
+      assert.deepEqual(graph.resolveColorVariableForNode(glyph(instance).id, role.id), { r: 1, g: 0, b: 0, a: .25 })
+      editor.undoAction()
+      if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    }
   }
 })
 

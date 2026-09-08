@@ -1,9 +1,9 @@
-import { parseColor } from '@open-pencil/core/color'
 import { computeAllLayouts, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { bindComponentProperties } from './bindings.mjs'
 import { loadFonts, validateFonts } from './fonts.mjs'
 import { planIcon } from './icon-composition.mjs'
 import { computedColor as color } from './computed-color.mjs'
+import { observedPaint, sameColor, createPaintedNode, bindPaintExpressions } from './component-paints.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
 const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
@@ -16,8 +16,6 @@ function pixels(value) {
   requireComponent(typeof value === 'string' && /^\d+(?:\.\d+)?px$/.test(value), `unsupported length ${value}`)
   return Number.parseFloat(value)
 }
-
-const paint = value => ({ type: 'SOLID', color: color(value), opacity: 1, visible: true })
 
 function requirePlainText(style) {
   requireComponent(style['text-shadow'] === 'none' && style['text-indent'] === '0px' &&
@@ -42,47 +40,6 @@ function matchesTextFace(face, observed, style, environment) {
   return face.weight >= 600 || weight < 600
 }
 
-function sameColor(a, b, tolerance = 1e-6) {
-  return a && b && ['r', 'g', 'b', 'a'].every(channel => Number.isFinite(a[channel]) &&
-    Number.isFinite(b[channel]) && Math.abs(a[channel] - b[channel]) <= tolerance)
-}
-
-// Bind only the direct aliases witnessed by capture, with matching source and
-// native values in every supplied mode. Mixed/derived paints need their own
-// representation; silently freezing them would break palette replacement.
-function observedPaint(graph, collection, snapshot, observation, root, property) {
-  const fill = paint(root.style[property]), source = root.paintSources[property]
-  requireComponent(Array.isArray(source?.tokens), 'paint dependency evidence required')
-  if (source.tokens.length === 0) {
-    requireComponent(source.directCandidate === null, 'literal paint has contradictory alias evidence')
-    return { fills: [fill], boundVariables: {} }
-  }
-  requireComponent(source.tokens.length === 1 && source.directCandidate === source.tokens[0],
-    'mixed or derived paint dependencies need further native conversion')
-  const variables = graph.getVariablesForCollection(collection.id).filter(item => item.name === source.directCandidate)
-  requireComponent(variables.length === 1 && variables[0].type === 'COLOR', 'one matching native color variable required')
-  const variable = variables[0]
-  for (const theme of snapshot.themes) {
-    const tokens = theme.tokens.filter(item => item.name === source.directCandidate)
-    const modes = collection.modes.filter(item => item.name === theme.mode)
-    requireComponent(tokens.length === 1 && tokens[0].type === 'color' && modes.length === 1,
-      'source color and native mode identities must be unambiguous')
-    const expected = parseColor(tokens[0].value)
-    requireComponent(sameColor(graph.resolveVariable(variable.id, modes[0].modeId), expected),
-      'native color variable differs from the source palette')
-    if (theme.mode === observation.mode) {
-      // CSSOM legacy RGB can serialize 128/255 alpha as 0.5. Compare that
-      // channel's 8-bit value, not a loose tolerance on every color channel.
-      // Modern color(srgb) retains fractional alpha and must not be quantized.
-      const observed = /^rgba?\(/.test(root.style[property]) ?
-        { ...fill.color, a: Math.round(fill.color.a * 255) / 255 } : fill.color
-      requireComponent(sameColor(observed, expected), 'observed paint differs from its source token')
-      fill.color = expected
-    }
-  }
-  return { fills: [fill], boundVariables: { 'fills/0/color': variable.id } }
-}
-
 // Read-only presentation planning is shared by text rows and composed frames.
 // Layout-specific constraints remain with the owning construction path.
 function planPresentation(node, paintFor, blockMargins = false) {
@@ -104,7 +61,7 @@ function planPresentation(node, paintFor, blockMargins = false) {
   const borderPaints = borders.map((border, index) => border.width > 0 ? paintFor(node, `border-${sides[index]}-color`) : null)
   // A bound zero-alpha border can become visible after a palette edit.
   const retained = borders.some((border, index) => border.width > 0 &&
-    (color(border.color).a > 0 || Object.keys(borderPaints[index].boundVariables).length > 0))
+    (color(border.color).a > 0 || Object.keys(borderPaints[index].boundVariables).length > 0 || borderPaints[index].expressionBindings))
   const strokes = retained ? borderPaints[0] : null
   if (retained) {
     requireComponent(borders.every(border => border.style === 'solid' && border.width === borders[0].width &&
@@ -127,6 +84,10 @@ function planPresentation(node, paintFor, blockMargins = false) {
       strokes: strokes.fills.map(fill => ({ ...fill, weight: borders[0].width, align: 'INSIDE' })),
       boundVariables: { ...background.boundVariables, ...Object.fromEntries(Object.entries(strokes.boundVariables)
         .map(([field, value]) => [field.replace('fills/', 'strokes/'), value])) },
+      ...((background.expressionBindings || strokes.expressionBindings) ? {
+        expressionBindings: { ...background.expressionBindings, ...Object.fromEntries(Object.entries(strokes.expressionBindings ?? {})
+          .map(([field, value]) => [field.replace('fills/', 'strokes/'), value])) },
+      } : {}),
     } : {}),
   }
 }
@@ -148,14 +109,26 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
     'definition parent variable mode must match the observation')
   requireComponent(observation.roots.length === 1 && observation.roots[0].kind === 'element', 'one component root required')
   const root = observation.roots[0]
-  if (root.source && (root.style.display === 'block' || root.children.some(child => child.kind === 'element'))) {
-    return materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root)
+  const pending = [], variables = []
+  let result
+  try {
+    if (root.source && (root.style.display === 'block' || root.children.some(child => child.kind === 'element'))) {
+      result = await materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending)
+    } else {
+      result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, [example.id], iconTargets, pending)
+      result = { ...result, components: [{ path: [example.id], ...result }] }
+    }
+    bindPaintExpressions(graph, collection, snapshot, pending, variables)
+    if (pending.length) for (const { master } of result.components) graph.syncInstances(master.id)
+    return result
+  } catch (error) {
+    for (const { master } of result?.components?.toReversed() ?? []) if (graph.getNode(master.id)) graph.deleteNode(master.id)
+    for (const id of variables.toReversed()) graph.removeVariable(id)
+    throw error
   }
-  const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, [example.id], iconTargets)
-  return { ...result, components: [{ path: [example.id], ...result }] }
 }
 
-async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = []) {
+async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = [], pending) {
   const style = root.style
   const presentation = planPresentation(root, (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))
   requireComponent(['inline-flex', 'flex'].includes(style.display) && style['flex-direction'] === 'row' &&
@@ -215,28 +188,30 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       family: face.family, weight: face.weight, style: face.style, text: region.text,
     })))
     await renderer.loadFonts()
-    master = graph.createNode('COMPONENT', parentId, masterProps)
+    master = createPaintedNode(graph, 'COMPONENT', parentId, masterProps, pending)
     const targets = []
     for (const region of root.children) {
       const icon = icons.get(region)
       let nativeNode
       if (icon) {
         nativeNode = graph.createInstance(icon.master.id, master.id, { name: region.name, uniformScaleFactor: icon.scale })
-        for (const { sourceNode, field, variableId } of icon.paints) {
+        for (const { sourceNode, field, variableId, expression } of icon.paints) {
           const children = graph.getChildren(nativeNode.id).filter(child => child.componentId === sourceNode.id)
           requireComponent(children.length === 1, 'one exact native vector occurrence required')
-          graph.bindVariable(children[0].id, field, variableId)
+          if (expression) {
+            pending.push({ node: children[0], bindings: { [field]: expression } })
+          } else graph.bindVariable(children[0].id, field, variableId)
         }
       } else {
         const { face } = texts.find(text => text.region === region)
-        nativeNode = graph.createNode('TEXT', master.id, {
+        nativeNode = createPaintedNode(graph, 'TEXT', master.id, {
           name: region.property, text: region.text, width: region.bounds.width, height: lineHeight,
           fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
           fontSize, lineHeight, letterSpacing, textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
           pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
             schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
           }) }],
-        })
+        }, pending)
       }
       targets.push({ region, nativeNode })
     }
@@ -472,7 +447,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
   return { plan, requirements }
 }
 
-async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root) {
+async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending) {
   const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root)
   const components = [], created = [], geometry = []
   function provenance(description, definitionPath) {
@@ -485,14 +460,14 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
   async function component(current) {
     const { description, path } = current.occurrence
     if (current.textRow) {
-      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path)
+      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path, [], pending)
       created.push(result.master.id)
       components.push({ path, ...result })
       return result.master
     }
-    const master = graph.createNode('COMPONENT', parentId, {
+    const master = createPaintedNode(graph, 'COMPONENT', parentId, {
       ...current.native, name: description.name || description.id, pluginData: provenance(description, path),
-    })
+    }, pending)
     created.push(master.id)
     const targets = []
     for (const child of current.children) await construct(child, master, targets, current)
@@ -519,7 +494,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
         schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
       }),
     }] : []
-    const node = graph.createNode(current.kind === 'text' ? 'TEXT' : 'FRAME', parent.id, { ...current.native, ...current.placement, pluginData })
+    const node = createPaintedNode(graph, current.kind === 'text' ? 'TEXT' : 'FRAME', parent.id, { ...current.native, ...current.placement, pluginData }, pending)
     if (current.control) {
       const previous = getTextMeasurer()
       try {

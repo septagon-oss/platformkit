@@ -96,6 +96,26 @@ test('containing-component sync preserves nested native color overrides and sibl
   assert.deepEqual(nested.overrides, overrides, 'planning does not rewrite authored ownership')
 })
 
+test('binding-only paint overrides keep authored fallback RGBA through two FIG saves', async () => {
+  let graph = fixture()
+  modify(graph)
+  for (let cycle = 0; cycle < 3; cycle++) {
+    checkBindings(graph)
+    const canonical = graph.getChildren(named(graph, 'Glyph').id)[0]
+    for (const mode of ['light', 'dark']) for (const role of ['Modified', 'Reference']) {
+      const path = vector(graph, named(graph, `${role} ${mode}`))
+      for (const field of ['fills', 'strokes']) {
+        assert.deepEqual(path[field][0].color, canonical[field][0].color,
+          `${role} ${mode} ${field}: a binding does not author a new fallback`)
+        for (const [channel, expected] of Object.entries(color(179, 32, 48))) {
+          assert.ok(Math.abs(path[field][0].color[channel] - expected) < 1e-6)
+        }
+      }
+    }
+    if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  }
+})
+
 test('nested fill and stroke variable overrides retain native pixels through two FIG saves and palette edits', async () => {
   let graph = fixture()
   modify(graph)

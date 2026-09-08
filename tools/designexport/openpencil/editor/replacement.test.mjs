@@ -17,6 +17,7 @@ import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { parseFigBuffer } from '@open-pencil/fig'
 import { buildFoundation } from '../foundation.mjs'
 import { buildComponentDocument } from '../document.mjs'
+import { materializeComponent } from '../components.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from '../browser/capture.mjs'
@@ -356,16 +357,12 @@ test('browser file-input replacement survives public editing, history and two do
   })
   const importedRole = [...baseline.variables.values()].find(variable => variable.name === role.name)
   for (const vector of baseline.getChildren(reference.id)) {
+    // A binding changes the rendered role, not the authored fallback paint.
     const paints = structuredClone({ fills: vector.fills, strokes: vector.strokes })
     for (const field of Object.keys(vector.boundVariables)) {
       baseline.bindVariable(vector.id, field, importedRole.id)
-      // FIG materializes the resolved override as a float32 fallback paint.
-      // The independent reference has not been serialized since this binding.
-      const [paint, index] = field.split('/')
-      paints[paint][Number(index)].color = Object.fromEntries(Object.entries(
-        baseline.resolveColorVariableForNode(vector.id, importedRole.id)).map(([channel, value]) => [channel, Math.fround(value)]))
     }
-    baseline.updateNode(vector.id, paints)
+    assert.deepEqual({ fills: vector.fills, strokes: vector.strokes }, paints)
   }
   const replacementGeometry = geometry(baseline, reference)
   const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
@@ -519,6 +516,14 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
     // not a substitute browser profile for source text-width comparisons.
     browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const { graph, placements, selections } = built
+    const derivedSource = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', paragraph, '--props'], {
+      cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify({ color: 'secondary' }),
+    }))
+    const observedRole = await captureExample(comparisonBrowser, derivedSource, paragraph, { fonts, viewport: { width: 320, height: 900 } })
+    const derived = await materializeComponent(graph, built.definitions.id, derivedSource, observedRole, fonts, renderer, built.collection.id)
+    graph.updateNode(derived.master.id, { name: 'Derived paragraph master', x: 800 })
+    graph.createInstance(derived.master.id, placements.id, { name: 'Derived paragraph', x: 800, y: 48 })
+    const roleName = '--pk-role-fg-secondary', inputNameForRole = '--pk-color-text-primary'
     graph.updateNode(selections[1].instance.id, { name: 'Editable button' })
     graph.updateNode(selections[2].instance.id, { name: 'Editable paragraph' })
     graph.updateNode(selections[3].instance.id, { name: 'Editable bordered button' })
@@ -581,6 +586,42 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           await page.keyboard.press('Control+Shift+z')
           await expect(control).toHaveValue(value)
         }
+        const variables = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        const openVariables = page.getByRole('button', { name: 'Open variables', exact: true })
+        // Escape exits the entered composition before it clears its selection.
+        for (let depth = 0; depth < 4 && !await openVariables.count(); depth++) await page.keyboard.press('Escape')
+        const tabTo = async target => {
+          for (let step = 0; step < 200 && !await target.evaluate(node => node === document.activeElement); step++) {
+            await page.keyboard.press('Tab')
+          }
+          await expect(target).toBeFocused()
+          assert.ok(await target.evaluate(node => node.matches(':focus-visible')))
+        }
+        await tabTo(openVariables)
+        await page.keyboard.press('Enter')
+        const roleRow = variables.getByRole('row').filter({ hasText: roleName })
+        const previousRole = await roleRow.innerText()
+        assert.match(previousRole, /Derived #/)
+        if (cycle === 0) {
+          await tabTo(variables.getByRole('row').filter({ hasText: inputNameForRole })
+            .getByRole('button', { name: 'Edit color', exact: true }).first())
+          await page.keyboard.press('Enter')
+          const red = page.getByRole('spinbutton', { name: 'Red', exact: true })
+          await tabTo(red)
+          await page.keyboard.press('Control+a')
+          await page.keyboard.type('200')
+          await page.keyboard.press('Tab')
+          await page.keyboard.press('Escape')
+          const nextRole = await roleRow.innerText()
+          assert.notEqual(nextRole, previousRole)
+          await page.keyboard.press('Escape')
+          await page.keyboard.press('Control+z')
+          await tabTo(openVariables)
+          await page.keyboard.press('Enter')
+          assert.equal(await roleRow.innerText(), previousRole)
+          await page.keyboard.press('Escape')
+          await page.keyboard.press('Control+Shift+z')
+        } else await page.keyboard.press('Escape')
         if (cycle < 2) {
           buffer = await saveDocument(page, errors, workers)
           const fontMetadata = parseFigBuffer(figBuffer(buffer)).nodeChanges.flatMap(node => node.derivedTextData?.fontMetaData ?? [])
@@ -592,6 +633,15 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
               'download identifies the exact bytes actually loaded by the editor, not only available system faces')
           }
           const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const role = [...reopened.variables.values()].find(variable => variable.name === roleName)
+          const mode = reopened.variableCollections.get(role.collectionId).modes.find(mode => mode.name === 'light').modeId
+          const paper = [...reopened.variables.values()].find(variable => variable.name === '--pk-color-surface-primary')
+          const instance = named(reopened, 'Derived paragraph'), text = reopened.getChildren(instance.id).find(node => node.type === 'TEXT')
+          assert.equal(text.boundVariables['fills/0/color'], role.id)
+          assert.equal(instance.componentId, named(reopened, 'Derived paragraph master').id)
+          assert.equal(role.valuesByMode[mode].cssColor.value, observedRole.roots[0].paintSources.color.expressionCandidate.value)
+          assert.ok(Math.abs(reopened.resolveVariable(role.id, mode).r -
+            (.78 * Math.fround(200 / 255) + .22 * reopened.resolveVariable(paper.id, mode).r)) < 1e-6)
           for (const id of [form, button, paragraph, secondary]) {
             const before = sourceNode(baseline, [id]), after = sourceNode(reopened, [id])
             const oldParent = baseline.getNode(before.parentId), newParent = reopened.getNode(after.parentId)

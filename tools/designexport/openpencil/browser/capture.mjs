@@ -146,9 +146,16 @@ export async function captureExample(browser, snapshot, exampleId, {
     })
     await page.evaluate(indexCaptureSources, { occurrences: prepared.occurrences, html: example.html })
     const colorTokens = snapshot.themes.find(theme => theme.mode === mode).tokens.filter(token => token.type === 'color')
-    const declarations = await page.evaluate(() => [...document.styleSheets].flatMap(sheet => [...sheet.cssRules])
-      .filter(rule => rule.selectorText === ':root').flatMap(rule => [...rule.style]
-        .filter(name => name.startsWith('--')).map(name => [name, rule.style.getPropertyValue(name).trim()])))
+    const declarations = await page.evaluate(() => {
+      // A sampled mode cannot prove an inactive override equivalent. Only one
+      // unconditional root declaration may define a portable formula or alias.
+      const inspect = (rules, topLevel) => [...rules].flatMap(rule => [
+        ...[...(rule.style ?? [])].filter(name => name.startsWith('--')).map(name =>
+          [name, topLevel && rule.selectorText === ':root' ? rule.style.getPropertyValue(name).trim() : null]),
+        ...(rule.cssRules ? inspect(rule.cssRules, false) : []),
+      ])
+      return [...document.styleSheets].flatMap(sheet => inspect(sheet.cssRules, true))
+    })
     const expressions = colorExpressionCandidates(declarations, colorTokens)
     const roots = await page.evaluate(({ colorTokens, probes, expressionNames }) => {
       // Exact text nodes and native text controls cross into CDP inspection.
