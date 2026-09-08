@@ -851,3 +851,19 @@ func TestSelectPreservesExactChoiceValues(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectDeclaresItsSourceChoiceFields(t *testing.T) {
+	for _, multiple := range []bool{false, true} {
+		example := c.ExampleOf(exampleInfo, c.SelectProps{Name: "choice", Multiple: multiple,
+			Options: []c.SelectOption{{Value: "draft", Label: "Draft"}}}, c.Select)
+		before := describeExample(t, example)
+		for _, marker := range []string{`data-pk-value="value"`, `data-pk-values="values"`, `data-pk-options="options"`} {
+			if strings.Count(before.HTML, marker) != 1 {
+				t.Fatalf("Select multiple=%t must declare one owning choice field: %s", multiple, marker)
+			}
+		}
+		if !strings.Contains(before.HTML, `name="choice"`) || !strings.Contains(before.HTML, `value="draft"`) {
+			t.Fatal("choice metadata replaced the native control or option")
+		}
+	}
+}

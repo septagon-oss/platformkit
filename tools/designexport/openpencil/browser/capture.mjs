@@ -271,7 +271,23 @@ export async function captureExample(browser, snapshot, exampleId, {
         }
         const source = globalThis.__platformkitCaptureSources.get(node)
         if (source) out.source = source
-        if (node.hasAttribute('data-pk-value')) {
+        if (node.hasAttribute('data-pk-options') || node.hasAttribute('data-pk-values') ||
+            node instanceof HTMLSelectElement && node.hasAttribute('data-pk-value')) {
+          const properties = Object.fromEntries(['value', 'values', 'options'].map(name => [name, node.getAttribute(`data-pk-${name}`)]))
+          if (!(node instanceof HTMLSelectElement) || Object.values(properties).some(name => !/^[A-Za-z][A-Za-z0-9]*$/.test(name ?? '')) ||
+              new Set(Object.values(properties)).size !== 3) throw new Error('Invalid choice-control property markers')
+          out.control = { kind: 'control', type: node.type, properties, value: node.value,
+            values: [...node.selectedOptions].map(option => option.value), size: node.size,
+            required: node.required, disabled: node.disabled,
+            options: [...node.options].map(option => ({ value: option.value, label: option.label,
+              selected: option.selected, disabled: option.disabled,
+              group: option.parentElement instanceof HTMLOptGroupElement ? {
+                label: option.parentElement.label, disabled: option.parentElement.disabled,
+              } : null })),
+            // For a listbox, font use includes all painted options, not just
+            // the selected values. Closed selects paint their displayed label.
+            fontObservationIds: [globalThis.__platformkitCaptureTextNodes.push(node) - 1] }
+        } else if (node.hasAttribute('data-pk-value')) {
           const property = node.getAttribute('data-pk-value')
           const multiline = node instanceof HTMLTextAreaElement
           if (!(node instanceof HTMLInputElement || multiline) || !/^[A-Za-z][A-Za-z0-9]*$/.test(property)) {
@@ -411,6 +427,22 @@ export async function captureExample(browser, snapshot, exampleId, {
             })
             const { nodeId } = await session.send('DOM.requestNode', { objectId: result.objectId })
             let fontNodes = [nodeId]
+            if (node.type === 'select-one' && node.size <= 1) {
+              const { node: control } = await session.send('DOM.describeNode', { nodeId, depth: -1, pierce: true })
+              const interiors = control.shadowRoots?.filter(root => root.shadowRootType === 'user-agent')
+                .flatMap(root => root.children ?? []).filter(item => item.localName === 'div' &&
+                  item.attributes?.some((attribute, index) => index % 2 === 0 && attribute === 'pseudo' &&
+                    item.attributes[index + 1] === '-internal-select-inner-element')) ?? []
+              if (interiors.length !== 1) throw new Error('Select requires an observed browser display viewport')
+              const { object } = await session.send('DOM.resolveNode', { backendNodeId: interiors[0].backendNodeId })
+              const { result: content } = await session.send('Runtime.callFunctionOn', { objectId: object.objectId, returnByValue: true,
+                functionDeclaration: `function() {
+                  const rect = r => ({ x: r.x, y: r.y, width: r.width, height: r.height });
+                  const range = document.createRange(); range.selectNodeContents(this);
+                  return { text: this.textContent, bounds: rect(this.getBoundingClientRect()), rects: [...range.getClientRects()].map(rect) };
+                }` })
+              node.content = content.value
+            }
             if (node.type === 'textarea') {
               const { node: control } = await session.send('DOM.describeNode', { nodeId, depth: -1, pierce: true })
               const editor = control.shadowRoots?.find(root => root.shadowRootType === 'user-agent')?.children?.at(-1)

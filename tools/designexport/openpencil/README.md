@@ -109,7 +109,7 @@ gate that should be made green by removing assertions.
 [captureExample](browser/capture.mjs) accepts a caller's Playwright Chromium
 browser, the existing Go snapshot, one exact example ID and optional mode,
 viewport and supplied fonts. It returns source identity, computed layout and
-paint observations, text regions, native text controls and Chromium's font evidence. It
+paint observations, text regions, native text and choice controls, and Chromium's font evidence. It
 does not construct native components or assert that those observations can all
 be represented faithfully in a FIG file.
 
@@ -162,6 +162,13 @@ not a fabricated DOM text region. An empty control without a placeholder has no
 observed glyphs; a visible placeholder can supply its own fonts. Native binding
 must check the typed source value, including explicit omitted-string defaults,
 and refuse unsupported placeholder behavior or browser-normalized mismatches.
+Select declares its existing `value`, `values` and `options` fields through
+`data-pk-value`, `data-pk-values` and `data-pk-options`. Capture preserves actual
+option values separately from labels, selected options, disabled state and groups.
+An observed browser default is not a source assignment. Closed selects retain their
+browser display text and viewport; listboxes retain aggregate painted font evidence,
+not per-option layout. These observations do not enable native Select construction:
+typed choice edits, browser arrow paint and FIG persistence remain unverified.
 Icons separately expose their requested name and source-resolved
 `data-pk-icon-canonical` identity. Capture retains both, including aliases and
 fallbacks; an adapter must still verify the canonical asset and its provenance.

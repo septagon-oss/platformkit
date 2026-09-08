@@ -635,6 +635,9 @@ func Select(p SelectProps) g.Node {
 	sel := []g.Node{
 		classes(cl.Compile(), p.Class),
 		h.ID(id), h.Name(p.Name),
+		g.Attr("data-pk-value", "value"),
+		g.Attr("data-pk-values", "values"),
+		g.Attr("data-pk-options", "options"),
 	}
 	sel = append(sel, attrPairs(p.Attrs)...)
 	sel = append(sel, htmxAttrs(p.HTMXProps)...)

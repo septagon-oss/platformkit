@@ -551,6 +551,109 @@ test('Select submits exact opaque values including an explicit empty multi-selec
   }
 })
 
+test('Select capture keeps explicit source fields, exact options and native selection separate from display labels', async () => {
+  const id = 'pk-ui.component.select/default'
+  const options = [{ value: 'first', label: 'Same', group: 'Group' }, { value: ' padded,a ', label: 'Same', group: 'Group' },
+    { value: '', label: 'Empty', disabled: true }, { value: 'MIXED', label: 'Other' }]
+  for (const multiple of [false, true]) {
+    const snapshot = projection(id, { multiple, required: true, value: multiple ? '' : ' padded,a ',
+      values: multiple ? ['', ' padded,a '] : [], options })
+    const before = structuredClone(snapshot)
+    const capture = await captureExample(browser, snapshot, id, { fonts: faces })
+    const control = observed(capture.roots).find(node => node.tag === 'select').control
+    assert.ok(control, 'Select must have an explicit native control observation')
+    assert.equal(control.kind, 'control')
+    assert.equal(control.type, multiple ? 'select-multiple' : 'select-one')
+    assert.deepEqual(control.properties, { value: 'value', values: 'values', options: 'options' })
+    assert.equal(control.value, ' padded,a ')
+    assert.deepEqual(control.values, multiple ? [' padded,a ', ''] : [' padded,a '])
+    assert.deepEqual(control.options, options.map((option, index) => ({ value: option.value, label: option.label,
+      selected: index === 1 || multiple && index === 2, disabled: index === 2,
+      group: index < 2 ? { label: 'Group', disabled: false } : null })))
+    assert.equal(control.required, true)
+    assert.equal(control.disabled, false)
+    assert.equal(control.size, multiple ? 4 : 0)
+    assert.ok(control.fonts.some(font => font.glyphCount > 0))
+    if (!multiple) {
+      assert.equal(control.fonts.length, 1)
+      assert.equal(control.fonts[0].postScriptName, 'IBMPlexSans-Regular')
+      assert.equal(control.fonts[0].isCustomFont, true)
+      assert.equal(control.content.text, 'Same')
+      assert.ok(control.content.bounds.width > 0)
+      assert.ok(control.content.rects.some(rect => rect.width > 0))
+    }
+    assert.deepEqual(snapshot, before)
+  }
+})
+
+test('Select capture preserves duplicate option values and browser defaults without inventing source selection', async () => {
+  const id = 'pk-ui.component.select/default'
+  const snapshot = projection(id, { value: '', required: true, options: [{ value: 'same', label: 'First' }, { value: 'same', label: 'Second' }] })
+  const capture = await captureExample(browser, snapshot, id)
+  const control = observed(capture.roots).find(node => node.tag === 'select').control
+  assert.ok(control)
+  assert.deepEqual(control.options.map(option => [option.value, option.selected]), [['same', true], ['same', false]])
+  assert.equal(control.value, 'same')
+  assert.equal(control.content.text, 'First')
+  assert.equal(snapshot.examples[0].props.value, undefined, 'the source still has its unspecified Go zero value')
+})
+
+test('Select capture distinguishes empty choices, placeholder options and listbox viewports', async () => {
+  const id = 'pk-ui.component.select/default'
+  for (const props of [{}, { placeholder: 'Pick one' }, { multiple: true, visibleRows: 2 },
+    { visibleRows: 3, disabled: true, value: 'one', options: [{ value: 'one', label: 'One' }] }]) {
+    const snapshot = projection(id, { value: '', required: true, options: [], ...props })
+    const result = await captureExample(browser, snapshot, id, { fonts: faces })
+    const node = observed(result.roots).find(node => node.tag === 'select'), control = node.control
+    assert.deepEqual(node.children, [], 'choice data must not masquerade as ordinary layout children')
+    assert.equal(Object.hasOwn(control, 'property'), false, 'choice fields are not a literal text binding')
+    assert.equal(control.value, props.value ?? '')
+    assert.deepEqual(control.values, props.value ? ['one'] : props.placeholder ? [''] : [])
+    assert.equal(control.disabled, props.disabled ?? false)
+    assert.equal(control.size, props.visibleRows ?? 0)
+    if (props.visibleRows) assert.equal(control.content, undefined, 'listboxes do not claim a closed display viewport')
+    else assert.equal(control.content.text, props.placeholder ?? '')
+    if (props.placeholder) assert.deepEqual(control.options, [{ value: '', label: 'Pick one', selected: true, disabled: true, group: null }])
+    else if (!props.value) {
+      assert.deepEqual(control.options, [])
+      assert.deepEqual(control.fonts, [], 'an empty choice cannot supply painted glyph evidence')
+    }
+  }
+})
+
+test('Select capture uses declared field identities and keeps label attributes and group state', async () => {
+  const { snapshot, example } = occurrenceFixture()
+  example.children = []
+  example.html = '<select data-pk-value="choice" data-pk-values="choices" data-pk-options="items">' +
+    '<optgroup label="Unavailable" disabled><option value="wire" label="Display" selected>Fallback</option></optgroup></select>'
+  const { control } = (await captureExample(browser, snapshot, primary)).roots[0]
+  assert.deepEqual(control.properties, { value: 'choice', values: 'choices', options: 'items' })
+  assert.deepEqual(control.options, [{ value: 'wire', label: 'Display', selected: true, disabled: false,
+    group: { label: 'Unavailable', disabled: true } }])
+  assert.equal(control.content.text, 'Display')
+  assert.equal(control.value, 'wire')
+})
+
+test('Select capture refuses incomplete, duplicate and misplaced field markers without inferring unmarked bindings', async () => {
+  const { snapshot, example } = occurrenceFixture()
+  example.children = []
+  const markers = ['data-pk-value="value"', 'data-pk-values="values"', 'data-pk-options="options"']
+  for (const attributes of [...markers, ...markers.map((_, index) => markers.filter((_, other) => other !== index).join(' ')),
+    'data-pk-value="value" data-pk-values="value" data-pk-options="options"',
+    'data-pk-value="" data-pk-values="values" data-pk-options="options"',
+    'data-pk-value="value" data-pk-values="nested.values" data-pk-options="options"']) {
+    example.html = `<select ${attributes}><option>Choice</option></select>`
+    await assert.rejects(captureExample(browser, snapshot, primary), /Invalid choice-control property markers/)
+    assert.equal(browser.contexts().length, 0)
+  }
+  for (const tag of ['div', 'input']) {
+    example.html = `<${tag} ${markers.join(' ')}>${tag === 'input' ? '' : '</div>'}`
+    await assert.rejects(captureExample(browser, snapshot, primary), /Invalid choice-control property markers/)
+  }
+  example.html = '<select><option>Unmarked</option></select>'
+  assert.equal((await captureExample(browser, snapshot, primary)).roots[0].control, undefined)
+})
+
 test('browser capture retains source-owned canonical icon identities for aliases and fallback', async () => {
   for (const [name, canonicalName] of [['upload', 'upload-simple'], [' X_MARK ', 'x'], ['missing-glyph', 'question']]) {
     const snapshot = projection('pk-ui.component.icon/check', { name, tone: 'neutral' })
