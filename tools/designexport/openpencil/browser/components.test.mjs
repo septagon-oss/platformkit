@@ -11,8 +11,11 @@ import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { parseFigBuffer } from '@open-pencil/fig'
+import { SceneGraph } from '@open-pencil/scene-graph'
 import { buildFoundation } from '../foundation.mjs'
 import { materializeComponent } from '../components.mjs'
+import { bindComponentVariants } from '../bindings.mjs'
+import { verifyComponentDocument } from '../document.mjs'
 import { associateSourceInstance, extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from './capture.mjs'
@@ -89,6 +92,73 @@ test('native source proposals reproject through Go after two FIG saves', async (
     assert.deepEqual([...graph.getAllNodes()], before, 'extraction and Go reprojection are read-only for the native document')
   }
   assert.deepEqual(snapshot, beforeSource)
+})
+
+test('real source variant families retain shared copy, native geometry and typed Go proposals through two saves', async () => {
+  const run = (args, input) => JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+    input: input === undefined ? undefined : JSON.stringify(input),
+  }))
+  const snapshot = run([]), tones = ['neutral', 'info', 'danger'], baseline = structuredClone(snapshot)
+  for (const mode of ['light', 'dark']) {
+    let graph = buildFoundation(snapshot).graph
+    const page = graph.addPage('Source variant proof'), collection = graph.variableCollections.get(colorCollection(graph))
+    graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
+    const owner = graph.createNode('COMPONENT_SET', page.id, { name: 'Source family' }), variants = []
+    for (const tone of tones) {
+      const projected = tone === 'neutral' ? snapshot : run(['--proposal'], { baseSHA256: snapshot.sha256, path: [primary], props: { tone } })
+      const observation = await captureExample(browser, projected, primary, { mode, fonts: faces })
+      const built = await materializeComponent(graph, page.id, projected, observation, faces, renderer, collection.id)
+      variants.push({ snapshot: projected, master: built.master })
+    }
+    const definitions = bindComponentVariants(graph, owner, snapshot, primary, 'tone', variants)
+    let instance = graph.createInstance(variants[0].master.id, page.id, { name: 'Editable family' })
+    graph.createInstance(variants[0].master.id, page.id, { name: 'Unchanged family preview' })
+    associateSourceInstance(graph, instance, snapshot, [primary])
+    const correspondence = verifyComponentDocument(graph, snapshot, [primary])
+    assert.equal(correspondence[0].family.bindingVersion, 2)
+    let baselineGraph = graph
+    for (let cycle = 0; cycle < 2; cycle++) {
+      baselineGraph = await parseFigFile((await exportFigFile(baselineGraph)).slice().buffer, { populate: 'all' })
+      verifyComponentDocument(baselineGraph, snapshot, [primary], correspondence)
+    }
+    const actions = createEditor({ graph })
+    actions.setCanvasKit(ck, renderer)
+    try {
+      const label = definitions.find(item => item.type === 'TEXT'), tone = definitions.find(item => item.type === 'VARIANT')
+      actions.setInstanceComponentProperty(instance.id, label.id, 'Publish album')
+      for (const selected of ['info', 'danger']) {
+        actions.setInstanceComponentProperty(instance.id, tone.id, selected)
+        const result = extractSourceProps(graph, instance, snapshot)
+        assert.equal(result.status, 'proposal', JSON.stringify(result))
+        assert.deepEqual(result.proposal, { baseSHA256: snapshot.sha256, path: [primary], props: { tone: selected, label: 'Publish album' } })
+        const projected = run(['--proposal'], result.proposal)
+        const expected = await captureExample(browser, projected, primary, { mode, fonts: faces })
+        close(instance.width, expected.roots[0].bounds.width, 'variant with edited copy width')
+        close(instance.height, expected.roots[0].bounds.height, 'variant with edited copy height')
+        const actualColor = graph.resolveColorVariableForNode(instance.id, instance.boundVariables['fills/0/color'])
+        const expectedColor = parseColor(expected.roots[0].style['background-color'])
+        for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(actualColor[channel] - expectedColor[channel]) < 1e-6,
+          'projected color survives FIG float32 storage')
+        actions.undo.undo()
+        assert.equal(actions.getInstanceComponentPropertyValue(instance.id, tone), selected === 'info' ? 'neutral' : 'info')
+        close(instance.width, expected.roots[0].bounds.width, 'undo retains edited copy width')
+        actions.undo.redo()
+        assert.deepEqual(extractSourceProps(graph, instance, snapshot).proposal, result.proposal)
+        close(instance.width, expected.roots[0].bounds.width, 'redo retains edited copy width')
+        for (let cycle = 0; cycle < 2; cycle++) {
+          graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+          actions.replaceGraph(graph)
+          instance = [...graph.getAllNodes()].find(node => node.name === 'Editable family')
+          assert.deepEqual(extractSourceProps(graph, instance, snapshot).proposal, result.proposal)
+          close(instance.width, expected.roots[0].bounds.width, 'reopened variant width')
+          const preview = [...graph.getAllNodes()].find(node => node.name === 'Unchanged family preview')
+          assert.equal(graph.getChildren(preview.id)[0].text, 'Save')
+        }
+      }
+    } finally { actions.replaceGraph(new SceneGraph()) }
+  }
+  assert.deepEqual(snapshot, baseline)
 })
 
 for (const [variant, backgroundName, foregroundName, padding] of [

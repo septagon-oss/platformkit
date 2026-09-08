@@ -98,7 +98,9 @@ export function verifyComponentDocument(graph, snapshot, examples, expected) {
         if (result.status !== 'no-supported-changes') {
           throw new Error(`Document example ${id}: ${result.message ?? result.status}`)
         }
-        correspondence.push({ path, origin: source(chain(graph, node, 'componentId').at(-1)) })
+        const master = chain(graph, node, 'componentId').at(-1), parent = graph.getNode(master.parentId)
+        correspondence.push({ path, origin: source(master),
+          ...(parent?.type === 'COMPONENT_SET' ? { family: source(parent) } : {}) })
       }
       for (const child of graph.getChildren(node.id)) {
         const localId = source(child)?.localId

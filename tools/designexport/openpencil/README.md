@@ -255,6 +255,18 @@ names can change without changing that map; provenance is not authentication.
 Explicit slot-property maps distinguish icon assets from nested source components;
 asset instances do not acquire string-proposal ownership by being inside a slot.
 
+[bindComponentVariants](bindings.mjs) groups already materialized source projections
+as `bindComponentVariants(graph, emptySet, baseSnapshot, exampleId, property, variants)`;
+each variant supplies `{ snapshot, master }`, including the exact baseline export.
+Obtain candidate snapshots through `--proposal`, then use the existing capture and
+materialization path. The set owns shared text definitions and one native variant
+definition; children retain their projected source revisions. Exact values, including
+empty strings, come from source properties, never visible labels or layer names.
+This currently supports one unconstrained string on a nonopaque leaf component.
+Go Button tone projections verify shared-copy sizing, colour, history and two saves
+in both themes. Catalog enumeration, composed families and native Select conversion
+remain unfinished; document generation does not yet assemble these families automatically.
+
 [associateSourceInstance](source-changes.mjs) maps an exact `graph.createInstance`
 result to one source root after validating its subtree. Previews stay unmapped;
 copied correspondence is refused. Child templates carry relative IDs and slots,
@@ -418,7 +430,7 @@ previous state and leave history retryable. Run
 exact values and two-save checks. The editor check drives the shared choice control
 by keyboard, preserving empty and reserved-looking values through three worker saves;
 mixed selection is separate UI state, not a reserved source string. This is an SDK
-prerequisite, not source Select conversion: generic source choice binding remains unfinished.
+prerequisite, not source Select conversion; the source-family API above has narrower scope.
 Bound paints keep their authored fallback RGBA on import instead of acquiring default-mode
 palette colours as paint edits. Solid and dashed strokes multiply resolved alpha by opacity.
 Normal graph subscriptions and history are checked after deferred notifications

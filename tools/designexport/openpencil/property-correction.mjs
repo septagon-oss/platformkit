@@ -156,6 +156,13 @@ export function correctPropertyActions(source, replaceOnce) {
     helpers + '\nfunction createComponentPropertyActions(ctx, switchVariant) {',
   )
   source = replaceOnce(source,
+    '\t\tif (definition && definition.type !== "VARIANT") applyPropertyValue(ctx, instanceId, definition, value);',
+    '\t\tif (definition && definition.type !== "VARIANT") {\n' +
+      '\t\t\tapplyPropertyValue(ctx, instanceId, definition, value);\n' +
+      '\t\t\trefreshPropertyLayout(ctx, propertyTarget(ctx, instance, propertyId));\n' +
+      '\t\t}',
+  )
+  source = replaceOnce(source,
     '\t\tconst target = propertyTarget(ctx, instance, propertyId);\n\t\tconst assignedValue =',
     '\t\tconst target = propertyTarget(ctx, instance, propertyId);\n' +
       '\t\tconst propertyScope = propertyHistoryScope(ctx, target);\n' +

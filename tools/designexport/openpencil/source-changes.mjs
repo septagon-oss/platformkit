@@ -98,18 +98,57 @@ function readProps(graph, instance, snapshot, example) {
     'unsupported-scope', 'Source invocation has no editable object contract', 'unsupported')
   requireSource(object(example.props) && object(example.schema.properties), 'invalid-source', 'Malformed source property contract')
   requireSource(master?.type === 'COMPONENT', 'invalid-binding', 'Instance must link to its canonical source master')
-  const origin = metadata(master)
+  const parent = graph.getNode(master.parentId), owner = parent?.type === 'COMPONENT_SET' ? parent : master
+  const origin = metadata(owner)
   requireSource(origin.schema === snapshot.schema && typeof origin.sha256 === 'string' &&
     /^[a-f0-9]{64}$/.test(origin.sha256), 'invalid-provenance', 'Master lacks complete source provenance')
   requireSource(origin.sha256 === snapshot.sha256, 'stale-base', 'Master source revision differs from the supplied snapshot', 'stale')
   requireSource(origin.exampleId === example.id && origin.componentId === example.componentId &&
     isDeepStrictEqual(origin.props, example.props), 'invalid-binding', 'Master does not match the source invocation')
-  requireSource(origin.bindingVersion === 1 && Array.isArray(origin.textBindings),
+  requireSource(origin.bindingVersion === (owner === master ? 1 : 2) && Array.isArray(origin.textBindings),
     'invalid-provenance', 'Versioned source text bindings are required')
   requireSource(object(instance.componentPropertyAssignments), 'invalid-binding', 'Native assignments must be an object')
-  requireSource(Array.isArray(master.componentPropertyDefinitions) && master.componentPropertyDefinitions.every(object),
+  requireSource(Array.isArray(owner.componentPropertyDefinitions) && owner.componentPropertyDefinitions.every(object),
     'invalid-binding', 'Malformed native property definitions')
   const ids = new Set(), fields = new Set(), changes = []
+  if (owner !== master) {
+    requireSource(Array.isArray(origin.variantBindings) && origin.variantBindings.length === 1 &&
+      Array.isArray(master.componentPropertyDefinitions) && master.componentPropertyDefinitions.length === 0 &&
+      owner.childIds.includes(master.id) && example.children?.length === 0 && example.opaqueSlots?.length === 0 && origin.slotBindings?.length === 0,
+    'invalid-binding', 'One set-owned source variant binding for a nonopaque leaf required')
+    const binding = origin.variantBindings[0]
+    requireSource(object(binding) && Object.keys(binding).length === 3 && typeof binding.id === 'string' && binding.id !== '' &&
+      isSourceTextProperty(example, binding.property) && Array.isArray(binding.projections) && binding.projections.length > 1,
+    'invalid-binding', 'Malformed source variant correspondence')
+    const definitions = owner.componentPropertyDefinitions.filter(item => item.id === binding.id), definition = definitions[0]
+    const values = binding.projections.map(item => item?.value), baseline = sourceTextValue(example, binding.property)
+    requireSource(definitions.length === 1 && definition.type === 'VARIANT' && definition.defaultValue === baseline &&
+      isDeepStrictEqual(definition.variantOptions, values) && values.every(value => typeof value === 'string') &&
+      new Set(values).size === values.length && values.includes(baseline) &&
+      !Object.hasOwn(instance.componentPropertyAssignments, binding.id), 'invalid-binding', 'Native variant definition differs from the source contract')
+    const variants = graph.getChildren(owner.id), observed = new Set()
+    for (const variant of variants) {
+      const state = variant.componentPropertyValues?.[definition.name], projection = binding.projections.find(item => item.value === state)
+      const record = metadata(variant), props = record.props
+      const without = value => Object.fromEntries(Object.entries(value).filter(([key]) => key !== binding.property))
+      requireSource(variant.type === 'COMPONENT' && variant.parentId === owner.id && Array.isArray(variant.componentPropertyDefinitions) &&
+        variant.componentPropertyDefinitions.length === 0 && object(variant.componentPropertyValues) &&
+        Object.keys(variant.componentPropertyValues).length === 1 && !observed.has(state) && projection && object(projection) &&
+        Object.keys(projection).length === 2 && /^[a-f0-9]{64}$/.test(projection.sha256) && record.sha256 === projection.sha256 &&
+        record.schema === snapshot.schema && record.exampleId === example.id && record.componentId === example.componentId &&
+        object(props) && sourceTextValue({ ...example, props }, binding.property) === state && isDeepStrictEqual(without(props), without(example.props)) &&
+        record.bindingVersion === 1 && isDeepStrictEqual(record.textBindings, origin.textBindings) &&
+        isDeepStrictEqual(record.slotBindings, origin.slotBindings) && isDeepStrictEqual(record.definitionPath, origin.definitionPath) &&
+        isDeepStrictEqual(variant.variantPropSpecs, [{ propDefId: binding.id, value: state }]),
+      'invalid-binding', 'Native variant no longer matches its source projection')
+      observed.add(state)
+    }
+    requireSource(observed.size === values.length && binding.projections.find(item => item.value === baseline).sha256 === snapshot.sha256,
+      'invalid-binding', 'Native family must retain every projected choice and its baseline')
+    ids.add(binding.id); fields.add(binding.property)
+    const value = master.componentPropertyValues[definition.name]
+    if (value !== baseline) changes.push([binding.property, value])
+  }
   for (const binding of origin.textBindings) {
     requireSource(object(binding) && Object.keys(binding).length === 2 && typeof binding.id === 'string' &&
       binding.id !== '' && typeof binding.property === 'string', 'invalid-provenance', 'Malformed source text binding')
@@ -121,7 +160,7 @@ function readProps(graph, instance, snapshot, example) {
       'invalid-binding', 'Binding must name an exact source property')
     requireSource(isSourceTextProperty(example, property), 'unsupported-scope', 'Only unconstrained source strings are supported', 'unsupported')
     const baseline = sourceTextValue(example, property)
-    const definitions = master.componentPropertyDefinitions.filter(item => item.id === id)
+    const definitions = owner.componentPropertyDefinitions.filter(item => item.id === id)
     requireSource(definitions.length === 1 && definitions[0].type === 'TEXT' &&
       definitions[0].defaultValue === baseline, 'invalid-binding', 'Native definition differs from the source contract')
     // Exact text handles may sit in layout frames, but remain inside this
@@ -158,7 +197,7 @@ function readProps(graph, instance, snapshot, example) {
     requireSource(declarations.length === 1 && slot.supported === true && slot.trustedOnly === true &&
       (slot.goType === 'gomponents.Node' && slot.multiple === false || slot.goType === '[]gomponents.Node' && slot.multiple === true),
       'invalid-binding', 'Native asset binding must retain its source slot contract')
-    const definitions = master.componentPropertyDefinitions.filter(item => item.id === binding.id)
+    const definitions = owner.componentPropertyDefinitions.filter(item => item.id === binding.id)
     const sources = propertyTargets(graph, master, binding.id), targets = propertyTargets(graph, instance, binding.id)
     requireSource(definitions.length === 1 && definitions[0].type === 'INSTANCE_SWAP' &&
       typeof definitions[0].defaultValue === 'string' && definitions[0].defaultValue !== '' && sources.length === 1 &&
@@ -172,8 +211,8 @@ function readProps(graph, instance, snapshot, example) {
       isDeepStrictEqual(source.componentPropertyReferences, reference) && isDeepStrictEqual(target.componentPropertyReferences, reference),
       'invalid-binding', 'Native asset correspondence differs from the source slot binding')
   }
-  requireSource(master.componentPropertyDefinitions.length === ids.size &&
-    master.componentPropertyDefinitions.every(definition => ids.has(definition.id)),
+  requireSource(owner.componentPropertyDefinitions.length === ids.size &&
+    owner.componentPropertyDefinitions.every(definition => ids.has(definition.id)),
   'invalid-binding', 'Native definitions exceed the source property bindings')
   return { example, master, slots, props: Object.fromEntries(changes), properties: [...fields] }
 }
