@@ -81,9 +81,18 @@ test('unsupported text presentation fails without partial construction or invent
 })
 
 test('gallery construction coverage is explicit under the supplied-font comparison profile', async t => {
-  const snapshot = source(), accepted = [], refused = []
+  const snapshot = source(), accepted = [], refused = [], captureRefused = []
   for (const example of snapshot.examples) {
-    const observation = await captureExample(browser, snapshot, example.id, { fonts })
+    let observation
+    try {
+      observation = await captureExample(browser, snapshot, example.id, { fonts })
+    } catch (error) {
+      assert.equal(error.message.split('\n')[0], 'page.evaluate: Error: Capture does not support executable or externally composed example content',
+        'unexpected capture failures are not support refusals')
+      assert.equal(browser.contexts().length, 0, `refused capture closes its context: ${example.id}`)
+      captureRefused.push(example.id)
+      continue
+    }
     const { graph, collection, icons } = buildFoundation(snapshot), page = graph.addPage('Coverage')
     const before = structuredClone([...graph.getAllNodes()])
     const slots = observation.roots[0]?.children?.filter(child => child.kind === 'slot') ?? []
@@ -97,7 +106,7 @@ test('gallery construction coverage is explicit under the supplied-font comparis
       refused.push({ id: example.id, reason: error.message })
     }
   }
-  t.diagnostic(JSON.stringify({ accepted, refused }))
+  t.diagnostic(JSON.stringify({ accepted, refused, captureRefused }))
   assert.deepEqual(accepted, [
     'pk-ui.component.button/as-link', 'pk-ui.component.button/danger', 'pk-ui.component.button/disabled-link',
     'pk-ui.component.button/ghost', 'pk-ui.component.button/info', 'pk-ui.component.button/primary',
@@ -106,6 +115,7 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
   ])
   assert.equal(refused.length, 91)
+  assert.deepEqual(captureRefused, ['pk-ui.component.video/default', 'pk-ui.component.video/disabled'])
   assert.equal(browser.contexts().length, 0)
 })
 

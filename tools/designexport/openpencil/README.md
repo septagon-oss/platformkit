@@ -10,7 +10,8 @@ components, using supplied-font validation, browser observations and a pinned
 SDK correction layer. Pages and flows are not converted yet; this is not a
 complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
-light mode and a 1280×900 viewport, capture accepts all 107 gallery examples.
+light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
+the two Video examples refuse because media capture is unsupported.
 Native construction accepts 16: eleven Buttons, bare/invalid Input, Form and two Text
 examples; the coverage test reports 91 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
