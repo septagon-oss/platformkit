@@ -7,6 +7,8 @@ import { after, afterEach, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { captureExample } from './capture.mjs'
+import { resolveColorExpression } from '../color-expression.mjs'
+import { computedColor } from '../computed-color.mjs'
 
 const repo = fileURLToPath(new URL('../../../../', import.meta.url))
 const primary = 'pk-ui.component.button/primary'
@@ -34,6 +36,51 @@ function projection(id, props) {
 function observed(nodes) {
   return nodes.flatMap(node => [node, ...observed(node.children ?? [])])
 }
+
+test('authored Go color roles match Chromium across palettes and independent transparent token edits', async () => {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    const cases = await page.evaluate(({ css, themes }) => {
+      const sheet = new CSSStyleSheet()
+      sheet.replaceSync(css)
+      document.adoptedStyleSheets = [sheet]
+      const definitions = [...sheet.cssRules].filter(rule => rule.selectorText === ':root').flatMap(rule =>
+        [...rule.style].filter(name => name.startsWith('--pk-role-')).map(name => [name, rule.style.getPropertyValue(name)]))
+      const sample = document.createElement('span'), results = []
+      document.body.append(sample)
+      for (const theme of themes) {
+        document.documentElement.dataset.theme = theme.mode
+        const tokens = theme.tokens.filter(token => token.type === 'color').map(token => [token.name, token.value])
+        for (const edit of [null, ...tokens.flatMap(([name]) => ['#20406080', '#abcdef00'].map(value => [name, value]))]) {
+          const values = new Map(tokens)
+          if (edit) values.set(...edit)
+          for (const [name, value] of values) document.documentElement.style.setProperty(name, value, 'important')
+          const colors = definitions.map(([name]) => {
+            // Ask Chromium for modern serialization: legacy rgba() can print
+            // #80 alpha as 0.5, concealing its actual 128/255 value.
+            sample.style.color = `color(from var(${name}) srgb r g b / alpha)`
+            return getComputedStyle(sample).color
+          })
+          results.push({ mode: theme.mode, edit, definitions, values: [...values], colors })
+        }
+      }
+      return results
+    }, source)
+    assert.equal(cases.length, source.themes.reduce((count, theme) => count + 1 + 2 * theme.tokens.filter(token => token.type === 'color').length, 0))
+    for (const item of cases) {
+      const definitions = new Map(item.definitions), values = new Map(item.values)
+      assert.equal(definitions.size, item.definitions.length, 'each tested role has one authored declaration')
+      assert.ok(item.definitions.some(([, value]) => value.startsWith('color-mix(')))
+      for (const [index, [name, expression]] of item.definitions.entries()) {
+        const actual = resolveColorExpression(expression, key => values.get(key) ?? definitions.get(key))
+        const expected = computedColor(item.colors[index])
+        for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(actual[channel] - expected[channel]) <= .000001,
+          `${item.mode} ${name} ${item.edit}: ${channel} ${actual[channel]} != ${expected[channel]}`)
+      }
+    }
+  } finally { await context.close() }
+})
 
 function occurrenceFixture() {
   const snapshot = structuredClone(source), example = snapshot.examples.find(item => item.id === primary)

@@ -175,13 +175,13 @@ The text-row capability supports one explicitly bound, nonempty text region in a
 centered, unconstrained, nonwrapping horizontal flex container, optionally with
 named slots containing one canonical SVG each. Rows and composed frames share
 one planner for solid fills, uniform solid borders, radii and padding, including
-transparent border insets. Observed direct token aliases become native bindings when
-the selected collection's identities and values match every source theme.
-Literal paints remain unbound; ambiguous, stale and derived paints are refused.
-This uses capture's measured alias evidence, not a general CSS equivalence proof.
-Construction requires successful native text measurement and refuses outer
-geometry differences larger than 1/64 CSS pixel. Rejection removes the newly
-constructed nodes and restores the caller's measurement hook.
+transparent border insets. Direct aliases bind only when collection identities and
+values match every theme; this is measured candidate evidence, not general CSS
+equivalence. Literal paints stay unbound; ambiguous, stale and derived paints are
+refused. The [CSS color evaluator](color-expression.mjs) verifies authored sRGB
+mixes, not native expression bindings. Construction measures text and rejects
+geometry differences over 1/64 CSS pixel, removing created nodes and restoring
+the caller's measurement hook on rejection.
 
 Nested construction includes block flow with uniform nonnegative collapsed margins
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
