@@ -130,7 +130,7 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 5000
+      "max": 5500
     },
     {
       "name": "design_tooling_test",
@@ -142,7 +142,7 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 8600
+      "max": 9300
     },
     {
       "name": "markdown",
