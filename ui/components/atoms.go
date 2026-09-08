@@ -780,6 +780,7 @@ func Textarea(p TextareaProps) g.Node {
 		classes(cl.Compile(), p.Class),
 		h.Name(p.Name), h.Rows(itoa(rows)),
 		g.Attr("data-textarea-input", ""),
+		g.Attr("data-pk-value", "value"),
 	}
 	if id != "" {
 		area = append(area, h.ID(id))
@@ -829,6 +830,10 @@ func Textarea(p TextareaProps) g.Node {
 	if len(actions) > 0 {
 		area = append(area, g.Attr("data-action", strings.Join(actions, " ")))
 	}
+	// HTML normalizes CR/LF and consumes the first LF after <textarea>.
+	if strings.HasPrefix(p.Value, "\n") || strings.HasPrefix(p.Value, "\r") {
+		area = append(area, g.Text("\n"))
+	}
 	area = append(area, g.Text(p.Value))
 
 	rootClass := clFieldWrap
@@ -846,7 +851,9 @@ func Textarea(p TextareaProps) g.Node {
 		field = append(field, g.Attr("data-controller", "textarea-counter"))
 	}
 	if p.Label != "" {
-		field = append(field, Label(LabelProps{Text: p.Label, For: id, Required: p.Required}))
+		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
+			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
+		}))
 	}
 	field = append(field, h.Textarea(area...))
 	var supporting []g.Node

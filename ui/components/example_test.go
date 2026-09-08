@@ -339,6 +339,25 @@ func TestInputFamilyDeclaresSolidBorders(t *testing.T) {
 	}
 }
 
+func TestTextareaRegionsRetainOwningCopyAndLeadingNewlines(t *testing.T) {
+	for _, tc := range []struct{ value, escaped string }{
+		{"", ""}, {"A & <tag>", "A &amp; &lt;tag&gt;"}, {"\nFirst\nLast\n", "\n\nFirst\nLast\n"},
+		{"\r\nFirst\r\n", "\n\r\nFirst\r\n"},
+	} {
+		example := c.ExampleOf(exampleInfo, c.TextareaProps{Name: "description", Label: "A & <label>", Value: tc.value, Rows: 5, Required: true}, c.Textarea)
+		description := describeExample(t, example)
+		if strings.Count(description.HTML, `data-pk-value="value"`) != 1 ||
+			!strings.Contains(description.HTML, "<!--pk-text:label-->A &amp; &lt;label&gt;<!--/pk-text:label-->") ||
+			strings.Contains(description.HTML, "pk-text:text") {
+			t.Fatalf("Textarea must own label and native value regions: %s", description.HTML)
+		}
+		if !strings.Contains(description.HTML, ">"+tc.escaped+"</textarea>") ||
+			!strings.Contains(description.HTML, `for="pk-textarea-description"`) || !strings.Contains(description.HTML, `rows="5"`) {
+			t.Fatalf("Textarea changed escaped content, initial newline or label semantics: %s", description.HTML)
+		}
+	}
+}
+
 func TestExampleStringDefaultsDescribeOnlyDefiniteOmittedZeros(t *testing.T) {
 	type namedString string
 	type EmbeddedStrings struct {
