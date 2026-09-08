@@ -17,6 +17,13 @@ RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY tools/designexport/openpencil/*-correction.mjs tools/designexport/openpencil/corrections.mjs tools/designexport/openpencil/build-editor.mjs ./
 COPY tools/designexport/openpencil/Dockerfile tools/designexport/openpencil/nginx.conf LICENSE NOTICE ./
 WORKDIR /upstream
+# These published packages omit their license files. The Yoga revision is the
+# package's gitHead. Provider-utils 4.0.26 and 4.0.27 share this root notice.
+ADD --chmod=0644 --checksum=sha256:52412d7bc7ce4157ea628bbaacb8829e0a9cb3c58f57f99176126bc8cf2bfc85 https://raw.githubusercontent.com/open-pencil/yoga/d96884e7105fdef998a64a89f1d3cf775eb38efd/LICENSE /upstream/public/licenses/Yoga-LICENSE
+ADD --chmod=0644 --checksum=sha256:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529 https://raw.githubusercontent.com/vercel/ai/02882860df29ae2aa8140003c87a493af80bef08/LICENSE /upstream/public/licenses/AI-SDK-ProviderUtils-LICENSE
+# format 0.2.2 names MIT in its manifest and README; its maintainer supplied
+# the complete license file in this later, attribution-only source revision.
+ADD --chmod=0644 --checksum=sha256:0b2c94863590ca2aed327e89642b7e74b1608ec423bfec1d8f1beba2945fc4ba https://raw.githubusercontent.com/samsonjs/format/91b6bd78af9b061c90010b86d83caa051edeb1ea/License.md /upstream/public/licenses/format-LICENSE
 RUN node /adapter/build-editor.mjs /upstream
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6

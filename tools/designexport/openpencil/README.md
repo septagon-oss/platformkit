@@ -368,9 +368,9 @@ rehydrates children in master order.
 
 ## Release blockers
 
-The pinned app's full workspace audit still fails. Adapter pins replace the observed
-affected browser imports; build tools, copied assets and complete notices still need review.
-Font deployment, SVG fidelity, responsive/accessibility and source conversion remain
+The upstream lock audit still fails; the adapter audit does not cover that tree.
+Missing package notices are supplied under `/licenses/` from Dockerfile-pinned sources.
+Build tools, copied assets, fonts, SVG fidelity, responsive/accessibility and source conversion remain
 incomplete. Product prototypes need runtime-state mappings
 and governed end-to-end persistence tests in their owning product repository.
 Native sizing still needs evidence beyond the declared comparison cases, including
