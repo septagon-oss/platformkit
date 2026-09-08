@@ -3,6 +3,7 @@ package components_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/netip"
 	"strings"
@@ -581,6 +582,20 @@ func TestExamplePreviewAndRenderFailure(t *testing.T) {
 	})
 	if _, err := broken.Describe(); !errors.Is(err, failure) {
 		t.Fatalf("render failure hidden: %v", err)
+	}
+}
+
+func TestHeadingKeepsSemanticLevelAndEscapedSourceProperty(t *testing.T) {
+	for level := range 6 {
+		text := `An album & <memories>`
+		example := c.ExampleOf(c.ExampleInfo{ID: "heading", ComponentID: "pk-ui.component.heading"},
+			c.HeadingProps{Level: level + 1, Text: text, Anchor: "album"}, c.Heading)
+		description := describeExample(t, example)
+		want := `<!--pk-text:text-->An album &amp; &lt;memories&gt;<!--/pk-text:text-->`
+		if !strings.Contains(description.HTML, want) || !strings.HasPrefix(description.HTML, fmt.Sprintf("<h%d ", level+1)) ||
+			!strings.Contains(description.HTML, `id="album"`) {
+			t.Fatalf("heading lost escaped text, level or anchor: %s", description.HTML)
+		}
 	}
 }
 

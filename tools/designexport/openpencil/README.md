@@ -16,6 +16,12 @@ Native construction accepts 17: eleven Buttons, bare/invalid Input, Form, Grid a
 examples; the coverage test reports 90 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
+Consumers can configure `design.Theme.Typography` before `ui.Export`; empty roles
+retain the default stacks. In a separate profile with display set to IBM Plex Sans
+and its supplied 600 face, H1–H5 retain editable source text, wrapping, history,
+semantics and two saves at 320px/1280px in both themes. H6's uppercase styling is
+still unsupported. These checks do not select a brand font or install font assets.
+
 ## Generate a design document
 
 Install the dependencies below, then run from this directory for tokens and icons:

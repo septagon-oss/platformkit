@@ -1159,7 +1159,9 @@ func normalizeTextTransform(transform string) string {
 // Heading renders HeadingProps at the given level (clamped 1..6) in the
 // design system's display face.
 func Heading(p HeadingProps) g.Node {
-	return headingWithText(p, g.Text(p.Text))
+	return headingWithText(p, g.Group{
+		g.Raw("<!--pk-text:text-->"), g.Text(p.Text), g.Raw("<!--/pk-text:text-->"),
+	})
 }
 
 func headingWithText(p HeadingProps, text g.Node) g.Node {
