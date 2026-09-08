@@ -401,10 +401,15 @@ placement uses native automatic start lines, including cells with spans.
 
 [Source Grid planning](source-grid.mjs) consumes captured CSS Typed OM track values,
 not the browser's resolved pixel tracks. It feeds the existing composition builder;
-source-owned Text cells remain linked instances. Two- and three-column fixtures in
+source-owned Text and Button cells remain linked instances. Two- and three-column fixtures in
 both themes compare 320px, 390px and 1280px layouts, full-width spans, unequal-height
 content, local text-property history and two saves against Go/Chromium output. Definitions retain
-intrinsic text height; placed instances receive their row's stretched height.
+intrinsic sizing; placed instances receive their parent's stretched dimensions.
+Button definitions match separately captured standalone controls, while their placed
+labels retain centering, wrapping after edits and CSS advance rounding. Source tests
+also exercise the shared fill-restoration path in stretched vertical Flex layouts and
+check keyboard order, accessible names, focus indication and Enter/Space activation;
+screen-reader, focus-contrast and complete accessibility coverage remain unverified.
 The default gallery Grid now contains three captured Text cells instead of one
 anonymous text run. Track parsing supports bounded integer repeat, fixed, fractional
 and automatic tracks, and min/max with a fixed minimum.

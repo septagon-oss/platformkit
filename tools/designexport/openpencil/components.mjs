@@ -18,6 +18,16 @@ function pixels(value) {
   return Number.parseFloat(value)
 }
 
+// Definitions own intrinsic dimensions; only a witnessed parent placement can
+// assign a different used size. Placed instances must match both observed axes.
+function matchesSourceSize(node, bounds, placement = {}) {
+  return ['width', 'height'].every(field => {
+    const primary = (field === 'width') === (node.layoutMode === 'HORIZONTAL')
+    return placement[primary ? 'primaryAxisSizing' : 'counterAxisSizing'] === 'FILL' ||
+      Math.abs(node[field] - bounds[field]) <= 1 / 64
+  })
+}
+
 function requirePlainText(style) {
   requireComponent(style['text-shadow'] === 'none' && style['text-indent'] === '0px' &&
     ['normal', '0px'].includes(style['word-spacing']) && style['writing-mode'] === 'horizontal-tb' && style.direction === 'ltr',
@@ -129,7 +139,7 @@ export async function materializeComponent(graph, parentId, snapshot, observatio
   }
 }
 
-async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = [], pending) {
+async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = [], pending, placement = {}) {
   const style = root.style
   const presentation = planPresentation(root, (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))
   requireComponent(['inline-flex', 'flex'].includes(style.display) && style['flex-direction'] === 'row' &&
@@ -229,8 +239,12 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       })
       computeAllLayouts(graph, master.id)
     } finally { setTextMeasurer(previousMeasurer) }
-    requireComponent(Math.abs(master.width - root.bounds.width) <= 1 / 64 && Math.abs(master.height - root.bounds.height) <= 1 / 64,
+    requireComponent(matchesSourceSize(master, root.bounds, placement),
       'native geometry differs from the observed rendering environment')
+    for (const { region, nativeNode } of targets.filter(target => target.region.kind === 'text')) {
+      requireComponent(matchesSourceSize(nativeNode, { width: region.bounds.width, height: lineHeight }),
+        'native text advance differs from the observed rendering environment')
+    }
     for (const { region, nativeNode } of targets.filter(target => target.region.kind === 'slot')) {
       const expected = region.children[0].bounds
       requireComponent(['width', 'height', 'x', 'y'].every(field => Math.abs(nativeNode[field] -
@@ -474,7 +488,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
   async function component(current) {
     const { description, path } = current.occurrence
     if (current.textRow) {
-      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path, [], pending)
+      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path, [], pending, current.placement)
       created.push(result.master.id)
       components.push({ path, ...result })
       return result.master
@@ -542,11 +556,14 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       const expected = current.observation.bounds
       const height = current.kind === 'text' || current.inline ? current.native.height : expected.height
       const width = current.wrapping ? current.native.width : expected.width
-      // A definition owns intrinsic height; its placed grid cell owns the
-      // stretched row height. Validate that used size on the instance below.
-      const stretchedDefinition = definition && current.placement?.[node.layoutMode === 'HORIZONTAL' ? 'counterAxisSizing' : 'primaryAxisSizing'] === 'FILL'
-      requireComponent(Math.abs(node.width - width) <= 1 / 64 && (stretchedDefinition || Math.abs(node.height - height) <= 1 / 64),
+      requireComponent(matchesSourceSize(node, { width, height }, definition ? current.placement : undefined),
         `composition native geometry differs from source ${current.observation.tag ?? 'text'}: ${node.width}×${node.height}, expected ${width}×${height}`)
+      if (current.textRow) {
+        const text = graph.getChildren(node.id)[0], region = current.observation.children[0]
+        requireComponent(Math.abs(text.x - (region.bounds.x - expected.x)) <= 1 / 64 &&
+          Math.abs(text.y - (region.bounds.y - expected.y - (text.height - region.bounds.height) / 2)) <= 1 / 64,
+          'composition text placement differs from the source parent')
+      }
       if (parentPlan) {
         const parentBounds = parentPlan.observation.bounds
         // Wrapping TEXT owns the CSS content box, not Range's font rectangle.
@@ -554,6 +571,8 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
         const lineInset = current.kind === 'text' ? (height - expected.height) / 2 : 0
         const x = current.wrapping ? parentPlan.native.paddingLeft : expected.x - parentBounds.x
         const y = current.wrapping ? parentPlan.native.paddingTop : expected.y - parentBounds.y - lineInset
+        requireComponent(!current.wrapping || Math.abs(expected.x - parentBounds.x - x) <= 1 / 64,
+          'composition text placement differs from the source content box')
         requireComponent(Math.abs(node.x - x) <= 1 / 64 && Math.abs(node.y - y) <= 1 / 64,
         `composition native placement differs from the source parent: ${node.name} at ${node.x},${node.y}, expected ${x},${y}`)
       }

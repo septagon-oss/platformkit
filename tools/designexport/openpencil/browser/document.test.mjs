@@ -143,10 +143,11 @@ test('unsupported wrap direction, line alignment and child order reject atomical
   }
 })
 
-test('wrapping source rows keep linked actions, reflow and property history across two saves', async t => {
+test('wrapping rows and stretched columns keep linked actions, reflow and property history across two saves', async t => {
   const source = await wrappingSource(t), id = 'fixture/actions'
   function assertRow(graph, root, observed, stage) {
-    assert.equal(root.layoutWrap, 'WRAP')
+    assert.equal(root.layoutWrap, observed.style['flex-wrap'] === 'wrap' ? 'WRAP' : 'NO_WRAP')
+    assert.equal(root.layoutMode, observed.style['flex-direction'] === 'column' ? 'VERTICAL' : 'HORIZONTAL')
     for (const field of ['width', 'height']) assert.ok(Math.abs(root[field] - observed.bounds[field]) <= 1 / 64,
       `${stage} root ${field}: ${root[field]} versus ${observed.bounds[field]}`)
     for (const child of observed.children) {
@@ -157,10 +158,17 @@ test('wrapping source rows keep linked actions, reflow and property history acro
         assert.ok(Math.abs(native[field] - (child.bounds[field] - offset)) <= 1 / 64,
           `${stage} ${child.source.path.at(-1)} ${field}: ${native[field]} versus ${child.bounds[field] - offset}`)
       }
+      const text = graph.getChildren(native.id)[0], region = child.children[0]
+      assert.ok(Math.abs(text.x - (region.bounds.x - child.bounds.x)) <= 1 / 64,
+        `${stage} ${child.source.path.at(-1)} label x: ${text.x} versus ${region.bounds.x - child.bounds.x}`)
+      assert.ok(Math.abs(text.y - (region.bounds.y - child.bounds.y - (text.height - region.bounds.height) / 2)) <= 1 / 64,
+        `${stage} ${child.source.path.at(-1)} label y`)
     }
   }
-  for (const mode of ['light', 'dark']) for (const justify of ['start', 'center', 'end', 'between']) {
-    const props = { wrap: true, gap: '4', align: 'center', justify }
+  const cases = [{ direction: 'column', wrap: false, gap: '4', align: 'stretch', justify: 'start' },
+    ...['start', 'center', 'end', 'between'].map(justify => ({ wrap: true, gap: '4', align: 'center', justify }))]
+  for (const mode of ['light', 'dark']) for (const props of cases) {
+    const justify = props.direction ?? props.justify
     const snapshot = source(props), built = await buildComponentDocument(snapshot, options({ examples: [id], mode }))
     let { graph } = built
     graph.createInstance(chain(graph, placed(graph, id), 'componentId').at(-1).id, built.placements.id,

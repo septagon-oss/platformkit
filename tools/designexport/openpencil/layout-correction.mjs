@@ -17,7 +17,10 @@ export function ownSourceLayoutScope(node) {
 }
 
 export function sourceCompositionLayout(graph, node) {
-  return ['source-composition-observed-aliases', 'source-composition-layout'].includes(sourceLayoutScope(graph, node))
+  // Text rows are source-owned layout too. Their placed FILL axes must use the
+  // same FIG restoration and cache invalidation as other composed components.
+  return ['source-composition-observed-aliases', 'source-composition-layout',
+    'text-component-observed-aliases', 'text-and-icon-component-observed-aliases'].includes(sourceLayoutScope(graph, node))
 }
 
 export function editedSourceLayout(graph, frame) {
@@ -38,8 +41,7 @@ export function correctLayout(source, replace) {
     `if (frame.${axis}AxisSizing === "FIXED" || frame.${axis}AxisSizing === "FILL" && sourceCompositionLayout(graph, frame))`)
   source = replace(source, 'function configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis = false) {', String.raw`
 function sourceTextRow(graph, parent) {
-  return parent.layoutMode === "HORIZONTAL" && parent.primaryAxisSizing === "HUG" &&
-    parent.counterAxisSizing === "HUG" && parent.layoutWrap === "NO_WRAP" &&
+  return parent.layoutMode === "HORIZONTAL" && parent.layoutWrap === "NO_WRAP" &&
     ["text-component-observed-aliases", "text-and-icon-component-observed-aliases"].includes(sourceLayoutScope(graph, parent));
 }
 
