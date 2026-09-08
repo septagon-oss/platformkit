@@ -7,7 +7,7 @@ component registry, page language or client-specific library here.
 
 The generator packages tokens, icons and explicitly selected experimental native
 components, using supplied-font validation, browser observations and a pinned
-SDK correction layer. Pages and flows are not converted yet; this is not a
+SDK correction layer. Product pages and flows are not converted yet; this is not a
 complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
@@ -209,8 +209,12 @@ the caller's measurement hook on rejection.
 
 Nested construction includes block flow with uniform nonnegative collapsed margins
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
-Linked Form, block and body-font Toolbar fixtures cover both themes at 320/1280px,
+Linked Form, block and configured-font Toolbar fixtures cover both themes at 320/1280px,
 history, isolation and two saves. Private copy keeps its owner's properties.
+Toolbar also composes with linked Text in named header/body slots backed by Stack:
+nested copy edits resize the page body without changing the sibling's copy or size
+through two saves. Browser checks retain the heading and keyboard-focusable link.
+This synthetic page body has no navigation chrome, artwork or prototype transitions.
 Nonwrapping intrinsic rows and submission are not modeled; default display-font fidelity is unverified.
 Native input values are unwrapped auto-width text in a fixed clipping viewport.
 Zero advance and clearing are measured; failures roll back the edit and history.

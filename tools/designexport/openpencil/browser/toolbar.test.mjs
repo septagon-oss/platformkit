@@ -11,13 +11,12 @@ import { buildComponentDocument } from '../document.mjs'
 import { buildFoundation } from '../foundation.mjs'
 import { materializeComponent } from '../components.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
+import { chain } from '../exporter-correction.mjs'
 import { captureExample } from './capture.mjs'
 
-test('Toolbar owns its private copy while linked actions, edits and two saves retain source identity', async t => {
-  const id = 'fixture/toolbar'
-  // Use a source-composed, licensed test font for headings. This is not proof
-  // of the default display-font fallback stack or Collect's supplied Georgia.
-  const source = await sourceFixture(t, `package main
+test('standalone and page-nested Toolbar retain linked actions, reflow, source identity and two saves', async t => {
+  // A configured, supplied test font is not the default system display stack.
+  const run = await sourceFixture(t, `package main
 import (
   "encoding/json"
   "os"
@@ -25,45 +24,61 @@ import (
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
   "github.com/septagon-oss/platformkit/ui/components"
-  "github.com/septagon-oss/platformkit/ui/css"
 )
 func main() {
-  var props components.ToolbarProps
-  if err := json.NewDecoder(os.Stdin).Decode(&props); err != nil { panic(err) }
+  var input struct { Props components.ToolbarProps; Page bool }
+  if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   action := components.ExampleOf(components.ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
     components.ButtonProps{Label: "Create album", Href: "/albums/new"}, components.Button)
-  example := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/toolbar", ComponentID: "pk-ui.component.toolbar"},
-    props, []g.Node{action.Node}, components.Toolbar)
-  heading := css.NewSheet().Select("h1.font-serif", css.Decl("font-family", css.Literal(design.FontBody)))
-  snapshot, err := ui.Export(design.Default(), []components.Example{example}, ui.Extra{Sheets: []*css.Sheet{heading}})
+  id := "fixture/toolbar"
+  if input.Page { id = "toolbar" }
+  example := components.ExampleWithChildren(components.ExampleInfo{ID: id, ComponentID: "pk-ui.component.toolbar"},
+    input.Props, []g.Node{action.Node}, components.Toolbar)
+  if input.Page {
+    body := components.ExampleOf(components.ExampleInfo{ID: "description", ComponentID: "pk-ui.component.text"},
+      components.TextProps{Content: "Small discoveries, collected together."}, components.Text)
+    type slots struct { Header, Body g.Node }
+    example = components.ExampleWithSlots(components.ExampleInfo{ID: "fixture/page", ComponentID: "fixture.page"},
+      struct{}{}, slots{Header: example.Node, Body: body.Node}, func(_ struct{}, content slots) g.Node {
+        return components.Stack(components.StackProps{Gap: "8"}, content.Header, content.Body)
+      })
+  }
+  theme := design.Default()
+  theme.Light.Typography.Display, theme.Dark.Typography.Display = design.FontBody, design.FontBody
+  snapshot, err := ui.Export(theme, []components.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
 `)
+  const source = (props, page) => run({ props, page })
   const fonts = suppliedFonts([400, 600])
-  const original = { Title: 'Album library', Subtitle: 'Keep every memory.' }, snapshot = source(original)
+  const original = { Title: 'Album library', Subtitle: 'Keep every memory.' }
   const browser = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
   const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1280, 900)), previous = getTextMeasurer()
   const origin = node => JSON.parse(node.pluginData.find(item => item.key === 'platformkit.source')?.value ?? 'null')
   const descendants = (graph, node) => [node, ...graph.getChildren(node.id).flatMap(child => descendants(graph, child))]
-  const placement = graph => [...graph.getAllNodes()].find(node => origin(node)?.path?.[0] === id)
+  const placement = (graph, id) => [...graph.getAllNodes()].find(node => origin(node)?.path?.[0] === id)
+  const toolbar = (graph, id, composed) => composed ? graph.getChildren(placement(graph, id).id).find(node => origin(node)?.localId === 'toolbar') : placement(graph, id)
   const close = (actual, expected, label) => assert.ok(Math.abs(actual - expected) <= 1 / 64, `${label}: ${actual} versus ${expected}`)
   try {
-    for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+    for (const composed of [false, true]) for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+      const id = composed ? 'fixture/page' : 'fixture/toolbar', path = composed ? [id, 'toolbar'] : [id], snapshot = source(original, composed)
       const viewport = { width, height: 900 }, options = { examples: [id], fonts, browser, renderer, mode, viewport }
-      const built = await buildComponentDocument(snapshot, options), observed = built.selections[0].observation.roots[0]
-      let { graph } = built, instance = built.selections[0].instance
+      const built = await buildComponentDocument(snapshot, options), observedRoot = built.selections[0].observation.roots[0]
+      const observed = composed ? observedRoot.children[0] : observedRoot
+      let { graph } = built, instance = toolbar(graph, id, composed)
       const copy = observed.children[0].children
       assert.deepEqual(copy.map(node => node.tag), ['h1', 'p'])
       assert.ok(copy.every(node => !node.component && !node.source), 'private copy does not claim independent components')
       assert.deepEqual(copy.map(node => node.children[0].property), ['Title', 'Subtitle'])
-      assert.deepEqual(built.selections[0].components.map(item => item.path).toSorted((a, b) => a.length - b.length), [[id], [id, 'action']])
+      assert.deepEqual(built.selections[0].components.map(item => item.path).toSorted(),
+        (composed ? [[id], [id, 'description'], path, [...path, 'action']] : [path, [...path, 'action']]).toSorted())
       graph.createInstance(built.selections[0].master.id, built.placements.id, { name: 'Unchanged toolbar', y: 500 })
       const props = { ...original }
       for (const [field, value] of [['Title', 'A collection of memories'], ['Subtitle', 'Remember the people and places. '.repeat(8).trim()]]) {
         props[field] = value
         const editor = createEditor({ graph }); editor.setCanvasKit(ck, renderer)
-        const master = graph.getNode(instance.componentId), definition = master.componentPropertyDefinitions.find(item => item.name === field)
+        const master = chain(graph, instance, 'componentId').at(-1), definition = master.componentPropertyDefinitions.find(item => item.name === field)
         const protectedNodes = structuredClone([...graph.getAllNodes()].filter(node => node.type === 'COMPONENT' || node.name === 'Unchanged toolbar')
           .flatMap(node => descendants(graph, node)))
         const before = structuredClone([...graph.getAllNodes()])
@@ -72,8 +87,30 @@ func main() {
         editor.undoAction(); await Promise.resolve(); assert.deepEqual([...graph.getAllNodes()], before)
         editor.redoAction(); await Promise.resolve(); assert.deepEqual([...graph.getAllNodes()], after)
         assert.deepEqual(protectedNodes.map(node => graph.getNode(node.id)), protectedNodes)
-        const expected = (await captureExample(browser, source(props), id, { fonts, mode, viewport })).roots[0]
+        const changed = source(props, composed), expectedRoot = (await captureExample(browser, changed, id, { fonts, mode, viewport })).roots[0]
+        const expected = composed ? expectedRoot.children[0] : expectedRoot
+        const page = await browser.newPage({ viewport, colorScheme: mode })
+        try {
+          await page.setContent(`<html data-theme="${mode}"><head><style>${changed.css}</style></head><body>${changed.examples[0].html}</body></html>`)
+          assert.equal(await page.getByRole('heading').count(), 1)
+          assert.equal(await page.getByRole('heading', { level: 1, name: props.Title, exact: true }).count(), 1)
+          const link = page.getByRole('link', { name: 'Create album', exact: true })
+          assert.equal(await link.getAttribute('href'), '/albums/new')
+          await page.keyboard.press('Tab')
+          assert.ok(await link.evaluate(node => document.activeElement === node && node.matches(':focus-visible')))
+        } finally { await page.close() }
         for (let cycle = 0; cycle < 3; cycle++) {
+          const sibling = [...graph.getAllNodes()].find(node => node.name === 'Unchanged toolbar')
+          assert.deepEqual(descendants(graph, sibling).filter(node => node.type === 'TEXT').map(node => node.text).toSorted(),
+            [original.Title, original.Subtitle, 'Create album', ...(composed ? ['Small discoveries, collected together.'] : [])].toSorted())
+          for (const field of ['width', 'height']) close(sibling[field], before.find(node => node.name === 'Unchanged toolbar')[field], `protected sibling ${field}`)
+          const root = placement(graph, id)
+          for (const field of ['width', 'height']) close(root[field], expectedRoot.bounds[field], `page ${field}`)
+          if (composed) for (const [index, child] of graph.getChildren(root.id).entries()) {
+            assert.equal(child.type, 'INSTANCE')
+            for (const field of ['x', 'y', 'width', 'height']) close(child[field], expectedRoot.children[index].bounds[field] -
+              (['x', 'y'].includes(field) ? expectedRoot.bounds[field] : 0), `page child ${index}/${field}`)
+          }
           close(instance.width, expected.bounds.width, 'toolbar width')
           close(instance.height, expected.bounds.height, 'toolbar height')
           for (const [index, node] of graph.getChildren(instance.id).entries()) for (const field of ['x', 'y', 'width', 'height']) {
@@ -95,16 +132,17 @@ func main() {
             } finally { paragraph.delete() }
           }
           assert.deepEqual(extractSourceProps(graph, instance, snapshot).proposal, {
-            baseSHA256: snapshot.sha256, path: [id], props: Object.fromEntries(Object.entries(props).filter(([key, value]) => value !== original[key])),
+            baseSHA256: snapshot.sha256, path, props: Object.fromEntries(Object.entries(props).filter(([key, value]) => value !== original[key])),
           })
           if (cycle < 2) {
             graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
-            instance = placement(graph)
+            instance = toolbar(graph, id, composed)
           }
         }
       }
       const refused = structuredClone(built.selections[0].observation)
-      refused.roots[0].children[0].children[1].component = 'text'
+      const refusedToolbar = composed ? refused.roots[0].children[0] : refused.roots[0]
+      refusedToolbar.children[0].children[1].component = 'text'
       const foundation = buildFoundation(snapshot), page = foundation.graph.addPage('Refused uncaptured component')
       foundation.graph.updateNode(page.id, { variableModes: {
         [foundation.collection.id]: foundation.collection.modes.find(item => item.name === mode).modeId,
