@@ -383,9 +383,22 @@ Failed measurement leaves grid sizing modes unchanged and frees the built Yoga t
 Grid and flex now share recursive native measurement. Low-level tests cover HUG and
 fixed row heights, nested wrapping text, spans, padding, hidden/absolute children and
 explicit stretch. FR tracks retain their content minimum; shrinking below it needs
-an explicit minimum-size choice. This is not source Grid conversion or persistence proof:
-the current FIG path drops native grid layout, and the editor only offers fixed grid
-dimensions. Grid-bearing documents are not safe release artifacts yet.
+an explicit minimum-size choice.
+
+[Native grid persistence](grid-fig-correction.mjs) writes FIG's own ordered track
+GUIDs, sizing maps, gaps and cell anchors, without a second document format.
+FIXED/FR/AUTO tracks, automatic rows, explicit spans and tested cell FILL/HUG axes
+survive two saves. Nested instances retain local track, gap and placement ownership;
+untouched fields still inherit. Keyboard track edits, undo/redo and two browser
+worker saves preserve measured cell geometry without changing masters or siblings.
+Native grid measurement invalidates its participating subtree's imported box cache;
+failed measurement restores that cache, and unopened-page population preserves edits.
+
+The boundary refuses malformed tracks, foreign anchors, unsupported min/max sizing,
+automatic columns, unrepresentable leaf alignment and instance layout-mode replacement.
+The editor's grid sizing menu still only exposes fixed dimensions. Source CSS Grid
+conversion, complete grid editing controls and arbitrary imported-grid fidelity remain
+unfinished; these checks do not establish a release-ready component library.
 
 Text-property guarantees cover placed root or nested targets and exact layout undo/redo.
 Master-owned edits, variants and arbitrary imports remain unverified; identity

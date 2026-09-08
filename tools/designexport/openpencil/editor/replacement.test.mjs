@@ -136,7 +136,7 @@ async function verifyBuild() {
   assert.equal(provenance.scope, 'generic-editor-without-packaged-design')
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'exporter-correction.mjs', 'font-correction.mjs',
-    'grid-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
+    'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
     'scaling-correction.mjs', 'sync-correction.mjs', 'variable-color.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
@@ -145,6 +145,65 @@ async function verifyBuild() {
     assert.equal(createHash('sha256').update(readFileSync(new URL(path, import.meta.url))).digest('hex'), digest, name)
   }
 }
+
+test('native grid track edits retain layout and local ownership through two browser worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), pageNode = graph.getPages()[0]
+  const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Grid master', width: 312, height: 60,
+    layoutMode: 'GRID', gridTemplateColumns: [{ sizing: 'FR', value: 1 }, { sizing: 'FR', value: 1 }],
+    gridTemplateRows: [{ sizing: 'FIXED', value: 60 }], gridColumnGap: 12 })
+  for (let column = 1; column <= 2; column++) graph.createNode('RECTANGLE', master.id, {
+    name: `Cell ${column}`, width: 20, height: 20, layoutAlignSelf: 'STRETCH',
+    gridPosition: { row: 1, column, rowSpan: 1, columnSpan: 1 },
+  })
+  computeLayout(graph, master.id)
+  graph.createInstance(master.id, pageNode.id, { name: 'Edited grid', x: 20, y: 120 })
+  graph.createInstance(master.id, pageNode.id, { name: 'Untouched grid', x: 500, y: 120 })
+  graph.addPage('Unopened grid page')
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Grid master', 'Untouched grid'].map(name => [name, geometry(baseline, named(baseline, name))])
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `native-grid-${cycle}.fig`)
+        const layer = page.getByRole('treeitem', { name: 'Edited grid Lock Hide', exact: true })
+        await layer.click()
+        const column = page.getByRole('spinbutton', { name: 'C1', exact: true })
+        await expect(column).toHaveAttribute('aria-valuenow', String(cycle + 1))
+        if (cycle === 2) { assert.deepEqual(errors, []); continue }
+        for (let step = 0; step < 60 && !await column.evaluate(node => node === document.activeElement); step++) {
+          await page.keyboard.press('Tab')
+        }
+        assert.ok(await column.evaluate(node => node === document.activeElement && node.matches(':focus-visible')),
+          'Tab reaches the named column control with keyboard focus')
+        await page.keyboard.press('ArrowUp')
+        await expect(column).toHaveAttribute('aria-valuenow', String(cycle + 2))
+        await layer.click()
+        await page.keyboard.press('Control+z')
+        await expect(column).toHaveAttribute('aria-valuenow', String(cycle + 1))
+        await page.keyboard.press('Control+Shift+z')
+        await expect(column).toHaveAttribute('aria-valuenow', String(cycle + 2))
+        buffer = await saveDocument(page, errors, workers)
+        const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' }), edited = named(reopened, 'Edited grid')
+        assert.equal(edited.layoutMode, 'GRID')
+        assert.deepEqual(edited.gridTemplateColumns, [{ sizing: 'FR', value: cycle + 2 }, { sizing: 'FR', value: 1 }])
+        assert.deepEqual([edited.x, edited.y, edited.width, edited.height], [20, 120, 312, 60])
+        const left = cycle === 0 ? 200 : 225
+        assert.deepEqual(reopened.getChildren(edited.id).map(child => [child.x, child.y, child.width, child.height]),
+          [[0, 0, left, 60], [left + 12, 0, 300 - left, 60]])
+        reopened.syncInstances(named(reopened, 'Grid master').id)
+        assert.equal(edited.gridTemplateColumns[0].value, cycle + 2)
+        for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
+        assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
 
 test('derived native colors follow keyboard palette edits and survive two browser worker saves', { timeout: 120000 }, async () => {
   await verifyBuild()
