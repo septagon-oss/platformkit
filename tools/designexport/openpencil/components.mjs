@@ -297,8 +297,8 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
 
   function text(region, node, { control = false, wrapping = false } = {}) {
     const style = node.style, value = control ? region.value : region.text
-    requireComponent(typeof value === 'string' && !/[\r\n\t]/.test(value), 'composition requires single-line text')
-    if (wrapping) requireComponent(value !== '' && value === value.replace(/[\t\n\r\f ]+/g, ' ').replace(/^ | $/g, ''),
+    requireComponent(typeof value === 'string' && !(control && wrapping ? /[\r\t]/ : /[\r\n\t]/).test(value), 'composition requires supported text whitespace')
+    if (wrapping && !control) requireComponent(value !== '' && value === value.replace(/[\t\n\r\f ]+/g, ' ').replace(/^ | $/g, ''),
       'text blocks need nonempty text without collapsed whitespace')
     if (!control) requireComponent(region.rects?.length > 0 && (wrapping || region.rects.length === 1) && region.bounds.height > 0,
       'composition text needs observed lines')
@@ -306,7 +306,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     requireComponent(Array.isArray(observed), 'composition text requires actual font evidence')
     const weight = Number(style['font-weight'])
     let matching
-    if (control && value === '') {
+    if (control && (value === '' || wrapping && /^\n+$/.test(value))) {
       requireComponent(observed.length === 0, 'empty control must not invent glyph evidence')
       const firstFamily = style['font-family'].split(',')[0].trim().replace(/^(["'])(.*)\1$/, '$2')
       matching = supplied.filter(face => face.family === firstFamily && face.weight === weight && face.style === style['font-style'])
@@ -382,20 +382,30 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       node.sizing['max-width'] === 'none' && node.sizing['max-height'] === 'none', 'composition constrained sizing requires further conversion')
     let plan
     if (node.control) {
-      requireComponent(node.tag === 'input' && node.control.kind === 'control' && node.control.type === 'text' &&
+      const multiline = node.tag === 'textarea' && node.control.type === 'textarea'
+      requireComponent((multiline || node.tag === 'input' && node.control.type === 'text') && node.control.kind === 'control' &&
         node.control.property === 'value' && node.children.length === 0, 'one explicitly bound native text control required')
       requireComponent(node.control.placeholder === '', 'control placeholder layout and paint require further conversion')
       requireComponent(style['text-align'] === 'start' || style['text-align'] === 'left', 'control text alignment requires further conversion')
-      const value = text(node.control, node, { control: true })
-      // A browser text input has a fixed one-line content viewport, not a
-      // wrapping paragraph. Its actual value remains an editable native TEXT.
+      requireComponent(!multiline || Number.isSafeInteger(node.control.rows) && node.control.rows > 0 &&
+        ['', 'soft'].includes(node.control.wrap) && !node.control.controllers && !node.control.counter &&
+        style['white-space'] === 'pre-wrap', 'textarea requires fixed rows, soft wrapping and no active controllers')
+      const value = text(node.control, node, { control: true, wrapping: multiline })
+      const width = node.bounds.width - native.paddingLeft - native.paddingRight
+      const height = value.native.lineHeight * (multiline ? node.control.rows : 1)
+      if (multiline) {
+        requireComponent(near(node.control.content?.bounds.width, width), 'textarea scrollbar or content width requires further conversion')
+        value.native.width = width
+      }
+      // Both controls own fixed viewports: one unwrapped input line or a
+      // textarea's declared rows. Editing text does not grow the control.
       const viewport = { kind: 'frame', children: [value], native: {
-        name: 'Input content viewport', width: node.bounds.width - native.paddingLeft - native.paddingRight,
-        height: value.native.lineHeight, layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
+        name: 'Input content viewport', width,
+        height, layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
         clipsContent: true, fills: [],
       } }
       plan = { kind: 'frame', observation: node, children: [viewport], native: {
-        name: 'Source input', width: node.bounds.width, height: value.native.lineHeight + native.paddingTop + native.paddingBottom,
+        name: `Source ${node.tag}`, width: node.bounds.width, height: height + native.paddingTop + native.paddingBottom,
         layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
         primaryAxisAlign: 'MIN', counterAxisAlign: 'CENTER', clipsContent: true, ...native,
       } }
@@ -542,7 +552,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       try {
         setTextMeasurer((node, maxWidth) => renderer.measureTextNode(node, maxWidth))
         graph.updateNode(node.id, textAutoResizeChanges(node, { text: node.text }, true))
-        requireComponent(Math.abs(node.height - node.lineHeight) <= 1 / 64, 'control requires one unwrapped native line')
+        requireComponent(current.wrapping || Math.abs(node.height - node.lineHeight) <= 1 / 64, 'control requires one unwrapped native line')
       } finally { setTextMeasurer(previous) }
     }
     if (current.kind === 'text' && current.region.property) targets.push({ region: current.region, nativeNode: node })

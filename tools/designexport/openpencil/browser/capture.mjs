@@ -273,13 +273,16 @@ export async function captureExample(browser, snapshot, exampleId, {
         if (source) out.source = source
         if (node.hasAttribute('data-pk-value')) {
           const property = node.getAttribute('data-pk-value')
-          if (!(node instanceof HTMLInputElement) || !/^[A-Za-z][A-Za-z0-9]*$/.test(property)) {
+          const multiline = node instanceof HTMLTextAreaElement
+          if (!(node instanceof HTMLInputElement || multiline) || !/^[A-Za-z][A-Za-z0-9]*$/.test(property)) {
             throw new Error('Invalid text-control property marker')
           }
-          if (node.type !== 'text') throw new Error('Capture only supports marked text controls')
+          if (!multiline && node.type !== 'text') throw new Error('Capture only supports marked text controls')
           // CDP observes painted control content: with an empty value, glyphs
           // may belong to its placeholder. Preserve that distinction explicitly.
           out.control = { kind: 'control', property, type: node.type, value: node.value, placeholder: node.placeholder,
+            ...(multiline ? { rows: node.rows, wrap: node.wrap, controllers: node.getAttribute('data-controller'),
+              counter: node.hasAttribute('data-textarea-counter-target') } : {}),
             fontObservationIds: [globalThis.__platformkitCaptureTextNodes.push(node) - 1] }
         }
         for (const pseudo of ['::before', '::after']) {
@@ -290,7 +293,7 @@ export async function captureExample(browser, snapshot, exampleId, {
           name: node.getAttribute('data-pk-icon'), canonicalName: node.getAttribute('data-pk-icon-canonical'), svg: node.outerHTML,
         }
         if (isSVG(node)) out.attributes = Object.fromEntries([...node.attributes].map(attribute => [attribute.name, attribute.value]))
-        out.children = children(node)
+        out.children = out.control ? [] : children(node)
         return out
       }
       const roots = children(document.body)
@@ -407,7 +410,36 @@ export async function captureExample(browser, snapshot, exampleId, {
               expression: `globalThis.__platformkitCaptureTextNodes[${id}]`, objectGroup: 'platformkit-capture',
             })
             const { nodeId } = await session.send('DOM.requestNode', { objectId: result.objectId })
-            const { fonts: used } = await session.send('CSS.getPlatformFontsForNode', { nodeId })
+            let fontNodes = [nodeId]
+            if (node.type === 'textarea') {
+              const { node: control } = await session.send('DOM.describeNode', { nodeId, depth: -1, pierce: true })
+              const editor = control.shadowRoots?.find(root => root.shadowRootType === 'user-agent')?.children?.at(-1)
+              if (editor?.localName !== 'div') throw new Error('Textarea requires an observed browser editing viewport')
+              const { object } = await session.send('DOM.resolveNode', { backendNodeId: editor.backendNodeId })
+              const { result: content } = await session.send('Runtime.callFunctionOn', { objectId: object.objectId, returnByValue: true,
+                functionDeclaration: `function() {
+                  const rect = r => ({ x: r.x, y: r.y, width: r.width, height: r.height });
+                  const range = document.createRange(); range.selectNodeContents(this);
+                  const bounds = rect(this.getBoundingClientRect()), rects = [...range.getClientRects()].map(rect);
+                  // Paragraph metrics exclude hanging spaces; retain blank lines
+                  // and measure the actual non-space range endpoints separately.
+                  const advances = new Map(rects.map(box => [box.y, 0]));
+                  const walker = document.createTreeWalker(this, NodeFilter.SHOW_TEXT);
+                  for (let text; (text = walker.nextNode());) for (let offset = 0; offset < text.length;) {
+                    const next = offset + (text.data.codePointAt(offset) > 65535 ? 2 : 1);
+                    range.setStart(text, offset); range.setEnd(text, next);
+                    const box = range.getBoundingClientRect();
+                    if (text.data.slice(offset, next) !== ' ') advances.set(box.y, Math.max(advances.get(box.y) ?? 0, box.right - bounds.x));
+                    offset = next;
+                  }
+                  return { bounds, rects, advances: [...advances.values()] };
+                }` })
+              node.content = content.value
+              const leaves = item => item.nodeType === 3 ? [item.backendNodeId] : (item.children ?? []).flatMap(leaves)
+              const { nodeIds } = await session.send('DOM.pushNodesByBackendIdsToFrontend', { backendNodeIds: leaves(editor) })
+              fontNodes = nodeIds
+            }
+            const used = (await Promise.all(fontNodes.map(nodeId => session.send('CSS.getPlatformFontsForNode', { nodeId })))).flatMap(result => result.fonts)
             for (const font of used) {
               const key = JSON.stringify([font.familyName, font.postScriptName, font.isCustomFont])
               const previous = fonts.get(key)

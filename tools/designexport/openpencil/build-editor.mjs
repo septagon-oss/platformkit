@@ -93,6 +93,20 @@ function nativeBoundary() {
     },
     transform(source, id) {
       const controlCorrections = {
+        'src/components/properties/component-properties/ComponentPropertyTextField.vue': ['14210f35374fd53f5478e9708c6ba21139977dc40b6bc5e4e4deae7a87d0a8c5',
+          "import { ref, watch } from 'vue'", "import { computed, ref, watch } from 'vue'",
+          "import AppInput from '@/components/ui/AppInput.vue'",
+          "import { tv } from 'tailwind-variants'\nimport theme from '@/theme/input'",
+          "const draft = ref('')",
+          "const draft = ref('')\nconst inputClass = computed(() => tv(theme)({ tone: 'panel', size: 'sm', state: value === MIXED ? 'mixed' : 'idle' }))",
+          '<AppInput\n    v-model="draft"\n    tone="panel"\n    size="sm"\n    :state="value === MIXED ? \'mixed\' : \'idle\'"',
+          `<textarea
+    v-model="draft"
+    :class="inputClass"
+    :rows="Math.max(1, Math.min(6, draft.split('\\n').length))"
+    style="height: auto; min-height: 1.5rem"
+    @keydown.ctrl.enter.prevent="($event.target as HTMLTextAreaElement).blur()"
+    @keydown.meta.enter.prevent="($event.target as HTMLTextAreaElement).blur()"`],
         'packages/vue/src/variables/helpers.ts': ['64956a42ec74f537186b528baf0379f2d2bd445c833df8bcf4e48fa0c90cec8e',
           'const value = variable.valuesByMode[modeId]',
           `const value = variable.valuesByMode[modeId]
@@ -157,6 +171,10 @@ function nativeBoundary() {
         if (sha256(source) !== digest) throw new Error('Editor control source changed: ' + path)
         correctedControls.add(path)
         for (let index = 0; index < edits.length; index += 2) source = replaceOnce(source, edits[index], edits[index + 1])
+        if (path.endsWith('/ComponentPropertyTextField.vue')) source += `
+<style scoped>
+textarea:focus-visible { outline: revert; outline-offset: 2px; }
+</style>\n`
         if (path.endsWith('/VariablesDialog.vue')) source += `
 <style scoped>
 :deep(button:focus-visible) { outline: revert; outline-offset: 2px; }
@@ -205,7 +223,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 6) throw new Error('Browser omitted a variable or keyboard control correction')
+if (correctedControls.size !== 7) throw new Error('Browser omitted a required editor control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

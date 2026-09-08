@@ -80,7 +80,8 @@ function restorePropertyHistory(ctx, state) {
 function refreshPropertyLayout(ctx, target) {
   if (target?.field !== "TEXT") return;
   ctx.withoutComponentSync(() => {
-    if (target.node.layoutPositioning === "ABSOLUTE" && target.node.textAutoResize === "WIDTH_AND_HEIGHT") {
+    if (target.node.layoutPositioning === "ABSOLUTE" && (target.node.textAutoResize === "WIDTH_AND_HEIGHT" ||
+        target.node.textAutoResize === "HEIGHT" && ownSourceLayoutScope(target.node) === "source-composition-layout")) {
       ctx.graph.updateNode(target.node.id, textAutoResizeChanges(target.node, { text: target.node.text }, true));
     }
     for (let node = target.node; node && node.type !== "CANVAS"; node = node.parentId ? ctx.graph.getNode(node.parentId) : null) {

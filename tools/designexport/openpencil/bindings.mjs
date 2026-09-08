@@ -53,7 +53,7 @@ export function bindComponentProperties(graph, master, example, targets) {
     if (region.kind !== 'slot') {
       requireBinding(isSourceTextProperty(example, property), 'unconstrained source string property required')
       const value = sourceTextValue(example, property), observed = region.kind === 'text' ? region.text : region.value
-      requireBinding(region.kind !== 'control' || Object.hasOwn(region, 'type') && region.type === 'text' &&
+      requireBinding(region.kind !== 'control' || Object.hasOwn(region, 'type') && ['text', 'textarea'].includes(region.type) &&
         (region.placeholder === undefined || region.placeholder === ''),
         'only literal text controls are supported')
       requireBinding(observed === value, 'observed text differs from source value')

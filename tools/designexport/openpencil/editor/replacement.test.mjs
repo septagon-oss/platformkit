@@ -550,6 +550,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
   }))
   const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
   const paragraph = 'pk-ui.component.text/muted', secondary = 'pk-ui.component.button/secondary'
+  const description = 'pk-ui.component.textarea/invalid'
   const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-fonts-'))
   let browser, comparisonBrowser, renderer
   try {
@@ -568,7 +569,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
     comparisonBrowser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const ck = await initCanvasKit()
     renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
-    const built = await buildComponentDocument(source, { examples: [form, button, paragraph, secondary], fonts,
+    const built = await buildComponentDocument(source, { examples: [form, button, paragraph, secondary, description], fonts,
       browser: comparisonBrowser, renderer, viewport: { width: 320, height: 900 } })
     // Generation and reprojection share one declared measurement environment.
     // Full Chromium supplies editor Local Font Access and worker interaction,
@@ -586,6 +587,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
     graph.updateNode(selections[1].instance.id, { name: 'Editable button' })
     graph.updateNode(selections[2].instance.id, { name: 'Editable paragraph' })
     graph.updateNode(selections[3].instance.id, { name: 'Editable bordered button' })
+    graph.updateNode(selections[4].instance.id, { name: 'Editable description' })
     graph.createInstance(selections[0].master.id, placements.id, { name: 'Untouched Form', x: 500, y: 48 })
     let buffer = Buffer.from(await exportFigFile(graph))
     const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
@@ -595,6 +597,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
       .map(node => [node.name, geometry(baseline, node)])
     const values = ['WAVY affinity album title '.repeat(6), ''], labels = ['Create affinity album', 'Return to album']
     const fieldLabels = ['Album title', 'Name']
+    const descriptions = ['\nFirst line\nSecond line\n', 'A short description.']
     const contents = ['Remember the people, places and small details. '.repeat(5).trim(), 'An album description.']
     for (let cycle = 0; cycle < 3; cycle++) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['local-fonts'] })
@@ -632,6 +635,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           ['Editable button', 'label', labels[cycle], 'Add item', labels[cycle - 1]],
           ['Editable paragraph', 'content', contents[cycle], 'Plain body copy.', contents[cycle - 1]],
           ['Editable bordered button', 'label', labels[cycle], 'Cancel', labels[cycle - 1]],
+          ['Editable description', 'value', descriptions[cycle], '', descriptions[cycle - 1]],
         ]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           const control = page.getByRole('textbox', { name: field, exact: true })
@@ -639,7 +643,13 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           await expect(control).toHaveValue(previous)
           if (cycle === 2) continue
           await control.fill(value)
-          await control.press('Tab')
+          if (name === 'Editable description' && cycle === 0) {
+            await control.fill('\nFirst line\nSecond line')
+            await control.press('Control+End'); await control.press('Enter')
+            assert.equal(await control.evaluate(node => node.tagName), 'TEXTAREA')
+            assert.ok(await control.evaluate(node => getComputedStyle(node).outlineStyle !== 'none'))
+          }
+          await control.press(name === 'Editable description' && cycle === 1 ? 'Control+Enter' : 'Tab')
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           assert.deepEqual(errors, [], 'property commit must not fail behind the displayed input value')
           await page.keyboard.press('Control+z')
@@ -703,7 +713,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           assert.equal(role.valuesByMode[mode].cssColor.value, observedRole.roots[0].paintSources.color.expressionCandidate.value)
           assert.ok(Math.abs(reopened.resolveVariable(role.id, mode).r -
             (.78 * Math.fround(200 / 255) + .22 * reopened.resolveVariable(paper.id, mode).r)) < 1e-6)
-          for (const id of [form, button, paragraph, secondary]) {
+          for (const id of [form, button, paragraph, secondary, description]) {
             const before = sourceNode(baseline, [id]), after = sourceNode(reopened, [id])
             const oldParent = baseline.getNode(before.parentId), newParent = reopened.getNode(after.parentId)
             assert.deepEqual([after.x, after.y, newParent.x, newParent.y], [before.x, before.y, oldParent.x, oldParent.y],
@@ -715,6 +725,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
             [[button], { label: labels[cycle] }],
             [[paragraph], { content: contents[cycle] }],
             [[secondary], { label: labels[cycle] }],
+            [[description], { value: descriptions[cycle] }],
           ]) {
             const result = extractSourceProps(reopened, sourceNode(reopened, path), source)
             assert.deepEqual(result.proposal, { baseSHA256: source.sha256, path, props })
@@ -722,6 +733,16 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
               cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(result.proposal),
             }))
             assert.notEqual(projected.sha256, source.sha256)
+            if (path[0] === description) {
+              const observed = await captureExample(comparisonBrowser, projected, description, { fonts, viewport: { width: 320, height: 900 } })
+              const expected = observed.roots[0].children.find(node => node.tag === 'textarea')
+              const area = reopened.getChildren(sourceNode(reopened, path).id).find(node => node.name === 'Source textarea')
+              const viewport = reopened.getChildren(area.id)[0], value = reopened.getChildren(viewport.id)[0]
+              assert.equal(value.text, descriptions[cycle])
+              assert.equal(viewport.clipsContent, true)
+              assert.equal(area.height, expected.bounds.height)
+              assert.ok(Math.abs(value.height - expected.control.content.bounds.height) <= 1 / 64)
+            }
             if (path.length === 2) {
               const observed = await captureExample(comparisonBrowser, projected, form, { fonts, viewport: { width: 320, height: 900 } })
               const label = observed.roots[0].children[0].children[0]

@@ -12,8 +12,8 @@ complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
 the two Video examples refuse because media capture is unsupported.
-Native construction accepts 18: eleven Buttons, bare/invalid/read-only Input, Form, Grid and two Text
-examples; the coverage test reports 89 refusals. These are measured guards, not proof of
+Native construction accepts 19: eleven Buttons, three Inputs, Form, Grid, two Text
+examples and invalid Textarea; the coverage test reports 88 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
 Consumers can configure `design.Theme.Typography` before `ui.Export`; empty roles
@@ -222,11 +222,11 @@ match Chromium within one channel value for opaque, translucent and transparent
 cards in both themes at 320/1280px. Inset, multiple, spread and token-dependent
 shadows remain refusals; artwork, hover presentation and rounded-edge pixels are unverified.
 Nonwrapping intrinsic rows and submission are not modeled; default display-font fidelity is unverified.
-Native input values are unwrapped auto-width text in a fixed clipping viewport.
-Zero advance and clearing are measured; failures roll back the edit and history.
-Empty controls have no glyph evidence; caret/selection scrolling is not modeled.
-Single-line required labels retain inline-marker placement through edits and two saves.
-Error/help copy is retained; only label/value bind, and multiline labels remain unverified.
+Input values stay unwrapped; fixed-row Textarea values wrap inside a clipping viewport.
+LFs, blank lines, clearing and measured edits survive two saves; failures roll back history.
+Text-property fields accept Enter for newlines and Ctrl+Enter to commit.
+Caret scrolling, scrollbars, manual resizing and textarea controllers are not modeled.
+Single-line labels retain required markers after edits and saves; only label/value bind. Multiline labels remain unverified.
 Text binds `content` inside its wrapping block. Light/dark 320px and 1280px checks
 cover line breaks/advances, property history and two saves. The editor test edits
 and downloads the 320px paragraph. Reopened direct Text instances also pass width
