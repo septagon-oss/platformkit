@@ -3,6 +3,7 @@ import { computeAllLayouts, getTextMeasurer, setTextMeasurer } from '@open-penci
 import { bindComponentProperties } from './bindings.mjs'
 import { loadFonts, validateFonts } from './fonts.mjs'
 import { planIcon } from './icon-composition.mjs'
+import { computedColor as color } from './computed-color.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
 const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
@@ -14,11 +15,6 @@ function requireComponent(condition, message) {
 function pixels(value) {
   requireComponent(typeof value === 'string' && /^\d+(?:\.\d+)?px$/.test(value), `unsupported length ${value}`)
   return Number.parseFloat(value)
-}
-
-function color(value) {
-  requireComponent(/^rgba?\([\d.,\s]+\)$/.test(value), `unsupported computed paint ${value}`)
-  return parseColor(value)
 }
 
 const paint = value => ({ type: 'SOLID', color: color(value), opacity: 1, visible: true })

@@ -406,6 +406,56 @@ test('text-row borders reject unsupported styles and inconsistent aliases withou
   }
 })
 
+test('computed sRGB literal fills and text retain alpha and precision through two native saves', async () => {
+  // Deliberate CSS fixtures exercise paint transport, not Go-source freshness.
+  const snapshot = source('Save')
+  snapshot.css += '\nbutton[data-component="button"] { background-color: color(srgb .125 .375 .625 / .5); color: color(srgb .9 .4 .2 / .75); }'
+  for (const mode of ['light', 'dark']) {
+    const observation = await observe(snapshot, mode), built = buildFoundation(snapshot)
+    let { graph } = built
+    const page = graph.addPage('Literal sRGB')
+    graph.updateNode(page.id, { variableModes: { [built.collection.id]: built.collection.modes.find(item => item.name === mode).modeId } })
+    const { master } = await materializeComponent(graph, page.id, snapshot, observation, faces, renderer, built.collection.id)
+    graph.createInstance(master.id, page.id, { name: 'Literal sRGB instance' })
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const instance = [...graph.getAllNodes()].find(node => node.name === 'Literal sRGB instance')
+      for (const [node, expected] of [[instance, { r: .125, g: .375, b: .625, a: .5 }],
+        [graph.getChildren(instance.id)[0], { r: .9, g: .4, b: .2, a: .75 }]]) {
+        assert.equal(node.boundVariables['fills/0/color'], undefined, 'a literal does not acquire an equal-valued token binding')
+        assert.equal(node.fills[0].opacity, 1, 'color alpha is not applied twice')
+        for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(node.fills[0].color[channel] - expected[channel]) < 1e-6)
+      }
+      if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    }
+    for (const value of ['rgb(1)', 'color(srgb 1.1 0 0)', 'color(display-p3 .125 .375 .625)']) {
+      const altered = structuredClone(observation); altered.roots[0].style['background-color'] = value
+      const before = structuredClone([...built.graph.getAllNodes()]), hook = getTextMeasurer()
+      await assert.rejects(materializeComponent(built.graph, page.id, snapshot, altered, faces, renderer, built.collection.id), /unsupported computed paint/)
+      assert.deepEqual([...built.graph.getAllNodes()], before)
+      assert.equal(getTextMeasurer(), hook)
+    }
+  }
+})
+
+test('real secondary Text still refuses unsupported derived token relationships without freezing its paint', async () => {
+  const id = 'pk-ui.component.text/muted'
+  const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', id, '--props'], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify({ color: 'secondary' }),
+  }))
+  for (const mode of ['light', 'dark']) {
+    const observation = await observe(snapshot, mode), built = buildFoundation(snapshot), page = built.graph.addPage('Refused derivation')
+    built.graph.updateNode(page.id, { variableModes: { [built.collection.id]: built.collection.modes.find(item => item.name === mode).modeId } })
+    assert.match(observation.roots[0].style.color, /^color\(srgb /)
+    assert.deepEqual(observation.roots[0].paintSources.color, {
+      tokens: ['--pk-color-surface-primary', '--pk-color-text-primary'], directCandidate: null,
+    })
+    const before = structuredClone([...built.graph.getAllNodes()]), hook = getTextMeasurer()
+    await assert.rejects(materializeComponent(built.graph, page.id, snapshot, observation, faces, renderer, built.collection.id), /mixed or derived paint dependencies/)
+    assert.deepEqual([...built.graph.getAllNodes()], before)
+    assert.equal(getTextMeasurer(), hook)
+  }
+})
+
 test('secondary Button source retains its accessible name, focus indicator and keyboard activation', async () => {
   const snapshot = source('Save', 'pk-ui.component.button/secondary')
   for (const mode of ['light', 'dark']) {
