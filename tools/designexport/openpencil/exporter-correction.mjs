@@ -495,6 +495,8 @@ function buildSizeOverriddenCloneUpdates(source, clone) {
 }
 
 export function correctPropertyTarget(source, replace) {
+  source = replace(source, '(instance.componentId ? ctx.graph.getNode(instance.componentId) : null)?.componentPropertyValues[definition.name]',
+    'chain(ctx.graph, instance, "componentId").at(-1)?.componentPropertyValues[definition.name]')
   source = replace(source, 'const component = ctx.graph.getNode(instance.componentId);',
     `const component = chain(ctx.graph, instance, 'componentId').at(-1);
   if (component?.type !== 'COMPONENT') throw new Error('Missing native component definition owner');`)

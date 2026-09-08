@@ -1,3 +1,5 @@
+import { chain } from './exporter-correction.mjs'
+
 // The native set owns definitions; its direct variants own values and FIG
 // specifications keyed by definition ID. History must retain all three together.
 const helpers = String.raw`
@@ -100,7 +102,14 @@ function changeVariantDefinition(ctx, componentSetId, propertyId, newName, remov
 
 export function correctVariantActions(source, replace) {
   source = 'import { isEqual } from "es-toolkit";\n' + source
-  source = replace(source, 'function createVariantActions(ctx) {', helpers + '\nfunction createVariantActions(ctx) {')
+  source = replace(source, 'function createVariantActions(ctx) {', chain.toString() + '\n' + helpers + '\nfunction createVariantActions(ctx) {')
+  source = replace(source, 'const component = ctx.graph.getNode(instance.componentId);',
+    'const component = chain(ctx.graph, instance, "componentId").at(-1);')
+  source = replace(source, 'const prevComponentId = instance.componentId;',
+    'const prevComponentId = instance.componentId, prevMasterId = component.id;')
+  source = replace(source, 'ctx.graph.swapInstanceComponent(instanceId, prevComponentId);',
+    'ctx.graph.swapInstanceComponent(instanceId, prevMasterId);\n' +
+    '\t\t\t\tctx.graph.updateNode(instanceId, { componentId: prevComponentId });')
   for (const [name, next, argumentsList, callArguments] of [
     ['removePropertyDefinition', 'renamePropertyDefinition', 'componentSetId, propertyId', 'componentSetId, propertyId, undefined, true'],
     ['renamePropertyDefinition', 'collectVariantOptions', 'componentSetId, propertyId, newName', 'componentSetId, propertyId, newName'],

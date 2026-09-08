@@ -27,6 +27,185 @@ function fixture() {
   return graph
 }
 
+function composedFixture(depth = 0) {
+  const graph = fixture(), owner = named(graph, 'Choices')
+  graph.updateNode(owner.id, { componentPropertyDefinitions: [...owner.componentPropertyDefinitions,
+    { id: '30:3', name: 'Shared label', type: 'TEXT', defaultValue: 'Label' }] })
+  for (const [index, component] of graph.getChildren(owner.id).entries()) {
+    let parent = component
+    for (let level = 0; level < depth; level++) parent = graph.createNode('FRAME', parent.id,
+      { name: `Layout ${index}/${level}`, width: 80, height: 24 })
+    const parts = [
+      { name: 'Lookalike', text: 'Label' },
+      { name: `Different display name ${index}`, text: 'Label', componentPropertyReferences: [{ propertyId: '30:3', field: 'TEXT' }] },
+    ]
+    for (const props of index % 2 ? parts.toReversed() : parts) graph.createNode('TEXT', parent.id,
+      { width: 40, height: 20, ...props })
+    graph.syncInstances(component.id)
+  }
+  graph.updateNode(named(graph, 'Edited').id, { pluginData: [{ pluginId: 'fixture', key: 'source-path', value: 'unchanged occurrence' }] })
+  return graph
+}
+
+for (const imported of [false, true]) for (const depth of [0, 2]) {
+  test(`variants inherit one shared label interface through switches, history and two saves: imported=${imported}, depth=${depth}`, async () => {
+    let graph = imported ? await reopen(composedFixture(depth)) : composedFixture(depth)
+    const actions = createEditor({ graph }), instance = named(graph, 'Edited')
+    const owner = named(graph, 'Choices'), definitions = actions.getInstanceComponentPropertyDefinitions(instance.id)
+    const label = definitions.find(item => item.type === 'TEXT'), choice = definitions.find(item => item.name === 'value')
+    const reference = structuredClone(graph.getChildren(owner.id))
+    const sibling = structuredClone([named(graph, 'Untouched'), ...graph.getChildren(named(graph, 'Untouched').id)])
+    const origin = structuredClone(instance.pluginData.filter(item => item.pluginId === 'fixture'))
+    function check(value, text) {
+      const live = named(graph, 'Edited'), properties = actions.getInstanceComponentPropertyDefinitions(live.id)
+      assert.equal(properties.length, 3)
+      assert.equal(actions.getInstanceComponentPropertyValue(live.id, properties.find(item => item.type === 'TEXT')), text)
+      assert.equal(actions.getInstanceComponentPropertyValue(live.id, properties.find(item => item.name === 'value')), value)
+      let parent = live
+      for (let level = 0; level < depth; level++) parent = graph.getChildren(parent.id).find(node => node.type === 'FRAME')
+      const children = graph.getChildren(parent.id)
+      assert.equal(children.filter(node => node.componentPropertyReferences.some(ref => ref.propertyId === label.id)).length, 1)
+      assert.equal(children.find(node => node.componentPropertyReferences.some(ref => ref.propertyId === label.id)).text, text)
+      assert.equal(children.find(node => node.name === 'Lookalike').text, 'Label')
+      assert.deepEqual(live.pluginData.filter(item => item.pluginId === 'fixture'), origin)
+    }
+    try {
+      actions.setInstanceComponentProperty(instance.id, label.id, 'My own label')
+      check(' padded,a ', 'My own label')
+      for (const value of ['', 'baseline', ' padded,a ']) {
+        actions.setInstanceComponentProperty(instance.id, choice.id, value)
+        check(value, 'My own label')
+      }
+      for (const value of ['baseline', '', ' padded,a ']) {
+        actions.undoAction()
+        check(value, 'My own label')
+      }
+      actions.undoAction()
+      check(' padded,a ', 'Label')
+      actions.redoAction()
+      for (const value of ['', 'baseline', ' padded,a ']) {
+        actions.redoAction()
+        check(value, 'My own label')
+      }
+      assert.deepEqual(graph.getChildren(owner.id), reference)
+      assert.deepEqual([named(graph, 'Untouched'), ...graph.getChildren(named(graph, 'Untouched').id)], sibling)
+      for (let cycle = 0; cycle < 2; cycle++) {
+        graph = await reopen(graph)
+        actions.replaceGraph(graph)
+        check(' padded,a ', 'My own label')
+      }
+    } finally { actions.replaceGraph(new SceneGraph()) }
+  })
+}
+
+test('shared variant correspondence refuses missing, ambiguous and incompatible targets before graph writes', () => {
+  for (const mutate of [
+    ({ target }) => { target.componentPropertyReferences = [] },
+    ({ graph, target }) => { graph.createNode('TEXT', target.parentId, { componentPropertyReferences: structuredClone(target.componentPropertyReferences) }) },
+    ({ owner }) => { owner.componentPropertyDefinitions.push({ id: '30:3', name: 'Other', type: 'BOOLEAN', defaultValue: true }) },
+    ({ component, owner }) => { component.componentPropertyDefinitions.push(structuredClone(owner.componentPropertyDefinitions.at(-1))) },
+    ({ target }) => { target.type = 'RECTANGLE' },
+    ({ graph, target }) => { graph.insertChildAt(target.id, graph.getNode(target.parentId).parentId, 0) },
+    ({ placed }) => { placed.componentPropertyReferences = [] },
+    ({ graph, placed }) => { graph.getChildren(placed.parentId).find(node => node.name === 'Lookalike').source.editedFields.push('text')
+      graph.getChildren(placed.parentId).find(node => node.name === 'Lookalike').text = 'Independent edit' },
+  ]) {
+    const graph = composedFixture(2), owner = named(graph, 'Choices'), component = graph.getChildren(owner.id)[0]
+    const text = root => {
+      let parent = root
+      while (graph.getChildren(parent.id).some(node => node.type === 'FRAME')) parent = graph.getChildren(parent.id).find(node => node.type === 'FRAME')
+      return graph.getChildren(parent.id).find(node => node.componentPropertyReferences.some(ref => ref.propertyId === '30:3'))
+    }
+    const instance = named(graph, 'Edited'), placed = text(instance), target = text(component)
+    mutate({ graph, owner, component, placed, target })
+    const before = structuredClone([...graph.nodes]), events = []
+    const stops = ['node:created', 'node:updated', 'node:deleted'].map(event => graph.emitter.on(event, id => events.push(id)))
+    try { assert.throws(() => graph.swapInstanceComponent(instance.id, component.id), /shared variant|Shared variant|subtree history/) }
+    finally { stops.forEach(stop => stop()) }
+    assert.deepEqual([...graph.nodes], before)
+    assert.deepEqual(events, [])
+  }
+})
+
+test('multiple inherited properties keep distinct ancestors and refuse ambiguous layout merges', async () => {
+  let graph = composedFixture(1), owner = named(graph, 'Choices')
+  owner.componentPropertyDefinitions.push({ id: '30:4', name: 'Caption', type: 'TEXT', defaultValue: 'Label' })
+  for (const component of graph.getChildren(owner.id)) {
+    const frame = graph.createNode('FRAME', component.id, { name: 'Same parent name', width: 80, height: 24 })
+    graph.createNode('TEXT', frame.id, { text: 'Label', width: 40, height: 20,
+      componentPropertyReferences: [{ propertyId: '30:4', field: 'TEXT' }] })
+    graph.syncInstances(component.id)
+  }
+  const instance = named(graph, 'Edited'), actions = createEditor({ graph })
+  try {
+    actions.setInstanceComponentProperty(instance.id, '30:3', 'One label')
+    actions.setInstanceComponentProperty(instance.id, '30:4', 'Another caption')
+    const frames = graph.getChildren(instance.id).filter(node => node.type === 'FRAME').map(node => node.id)
+    actions.setInstanceComponentProperty(instance.id, '30:1', '')
+    assert.deepEqual(graph.getChildren(instance.id).filter(node => node.type === 'FRAME').map(node => node.id), frames)
+    const target = named(graph, 'Independent name 0'), [labelFrame, captionFrame] = graph.getChildren(target.id).filter(node => node.type === 'FRAME')
+    const caption = graph.getChildren(captionFrame.id)[0]
+    graph.insertChildAt(caption.id, labelFrame.id, 0)
+    const before = structuredClone([...graph.nodes])
+    assert.throws(() => actions.setInstanceComponentProperty(instance.id, '30:1', 'baseline'), /Incompatible shared variant property ancestry/)
+    assert.deepEqual([...graph.nodes], before)
+    graph.insertChildAt(caption.id, captionFrame.id, 0)
+    actions.setInstanceComponentProperty(instance.id, '30:1', 'baseline')
+    for (let cycle = 0; cycle < 2; cycle++) {
+      graph = await reopen(graph)
+      actions.replaceGraph(graph)
+      for (const [name, expected] of [['Shared label', 'One label'], ['Caption', 'Another caption']]) {
+        const live = named(graph, 'Edited'), definition = actions.getInstanceComponentPropertyDefinitions(live.id).find(item => item.name === name)
+        assert.equal(actions.getInstanceComponentPropertyValue(live.id, definition), expected)
+      }
+    }
+  } finally { actions.replaceGraph(new SceneGraph()) }
+})
+
+for (const imported of [false, true]) {
+  test(`a nested variant inherits label edits without changing its containing template or sibling: imported=${imported}`, async () => {
+    let graph = composedFixture(), page = graph.getPages()[0]
+    const master = graph.createNode('COMPONENT', page.id, { name: 'Containing master', width: 100, height: 30 })
+    graph.createInstance(named(graph, 'Independent name 2').id, master.id, { name: 'Choice slot' })
+    graph.createInstance(master.id, page.id, { name: 'Containing placement' })
+    graph.createInstance(master.id, page.id, { name: 'Containing preview' })
+    if (imported) graph = await reopen(graph)
+    const nested = () => graph.getChildren(named(graph, 'Containing placement').id)[0]
+    const actions = createEditor({ graph }), before = structuredClone([...graph.getAllNodes()].filter(node =>
+      node.type === 'COMPONENT' || node.parentId === named(graph, 'Containing master').id))
+    const value = () => actions.getInstanceComponentPropertyValue(nested().id,
+      actions.getInstanceComponentPropertyDefinitions(nested().id).find(item => item.id === '30:1'))
+    try {
+      assert.equal(value(), ' padded,a ')
+      actions.setInstanceComponentProperty(nested().id, '30:3', 'Nested edit')
+      actions.setInstanceComponentProperty(nested().id, '30:1', '')
+      assert.equal(value(), '')
+      actions.undoAction()
+      assert.equal(value(), ' padded,a ')
+      actions.undoAction()
+      assert.equal(actions.getInstanceComponentPropertyValue(nested().id,
+        actions.getInstanceComponentPropertyDefinitions(nested().id).find(item => item.id === '30:3')), 'Label')
+      actions.redoAction()
+      actions.redoAction()
+      assert.deepEqual([...graph.getAllNodes()].filter(node => node.type === 'COMPONENT' ||
+        node.parentId === named(graph, 'Containing master').id), before)
+      for (let cycle = 0; cycle < 2; cycle++) {
+        graph = await reopen(graph)
+        actions.replaceGraph(graph)
+        assert.equal(actions.getInstanceComponentPropertyValue(nested().id,
+          actions.getInstanceComponentPropertyDefinitions(nested().id).find(item => item.id === '30:3')), 'Nested edit')
+        assert.equal(value(), '')
+        let component = graph.getNode(nested().componentId)
+        while (component.type === 'INSTANCE') component = graph.getNode(component.componentId)
+        assert.equal(component.componentPropertyValues.value, '')
+        const preview = graph.getChildren(named(graph, 'Containing preview').id)[0]
+        assert.equal(actions.getInstanceComponentPropertyValue(preview.id,
+          actions.getInstanceComponentPropertyDefinitions(preview.id).find(item => item.id === '30:3')), 'Label')
+      }
+    } finally { actions.replaceGraph(new SceneGraph()) }
+  })
+}
+
 test('invalid or colliding native variant renames refuse before graph or history changes', () => {
   const graph = fixture(), actions = createEditor({ graph }), owner = named(graph, 'Choices')
   try {

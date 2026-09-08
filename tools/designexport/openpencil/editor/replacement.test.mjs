@@ -151,11 +151,15 @@ test('native variant choices retain empty, reserved-looking and exact values thr
   await verifyBuild()
   const graph = new SceneGraph(), pageNode = graph.getPages()[0], values = ['', 'MIXED', ' padded,a ']
   const owner = graph.createNode('COMPONENT_SET', pageNode.id, { name: 'Choice definitions',
-    componentPropertyDefinitions: [{ id: '33:1', name: 'Choice', type: 'VARIANT', defaultValue: '', variantOptions: values }] })
+    componentPropertyDefinitions: [{ id: '33:1', name: 'Choice', type: 'VARIANT', defaultValue: '', variantOptions: values },
+      { id: '33:2', name: 'Shared label', type: 'TEXT', defaultValue: 'Label' }] })
   const variants = values.map((value, index) => {
     const variant = graph.createNode('COMPONENT', owner.id, { name: `Choice state ${index}`, x: index * 100,
       width: 80, height: 24, componentPropertyValues: { Choice: value }, variantPropSpecs: [{ propDefId: '33:1', value }] })
     graph.createNode('RECTANGLE', variant.id, { name: 'Shared geometry', width: 80, height: 24 })
+    const content = graph.createNode('FRAME', variant.id, { name: `Layout ${index}`, width: 80, height: 24 })
+    graph.createNode('TEXT', content.id, { name: `Label ${index}`, text: 'Label', width: 50, height: 20,
+      componentPropertyReferences: [{ propertyId: '33:2', field: 'TEXT' }] })
     return variant
   })
   graph.createInstance(variants[0].id, pageNode.id, { name: 'Edited choice', x: 400, y: 100 })
@@ -172,6 +176,8 @@ test('native variant choices retain empty, reserved-looking and exact values thr
         const { page, errors, workers } = await openDocument(context, buffer, 'native-choices.fig')
         await page.getByRole('treeitem', { name: 'Edited choice Lock Hide', exact: true }).click()
         const choice = page.getByRole('combobox', { name: 'Choice', exact: true })
+        const label = page.getByRole('textbox', { name: 'Shared label', exact: true })
+        await expect(label).toHaveValue(next === ' padded,a ' ? 'Label' : 'My label')
         await expect(choice).toBeVisible()
         await expect(choice).toHaveText(expected.trim() || 'None')
         if (next === ' padded,a ') {
@@ -185,9 +191,12 @@ test('native variant choices retain empty, reserved-looking and exact values thr
           await expect(choice).toBeFocused()
           await page.getByRole('treeitem', { name: 'Edited choice Lock Hide', exact: true }).click()
           await expect(choice).toHaveText('None')
+          await label.fill('My label')
+          await label.press('Tab')
         }
-        for (let step = 0; step < 60 && !await choice.evaluate(node => node === document.activeElement); step++) await page.keyboard.press('Tab')
-        assert.equal(await choice.evaluate(node => node === document.activeElement), true)
+        for (let step = 0; step < 200 && !await choice.evaluate(node => node === document.activeElement); step++) await page.keyboard.press('Tab')
+        assert.equal(await choice.evaluate(node => node === document.activeElement), true,
+          JSON.stringify(await page.evaluate(() => ({ tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute('aria-label') }))))
         assert.equal(await choice.evaluate(node => node.matches(':focus-visible')), true)
         await page.keyboard.press('Enter')
         await expect(page.getByRole('option')).toHaveCount(3, { timeout: 3000 })
@@ -200,9 +209,11 @@ test('native variant choices retain empty, reserved-looking and exact values thr
         }
         await page.keyboard.press('Enter')
         await expect(choice).toHaveText(next.trim() || 'None')
+        await expect(label).toHaveValue('My label')
         await expect(choice).toBeFocused()
         await page.keyboard.press('Control+z')
         await expect(choice).toHaveText(expected.trim() || 'None')
+        await expect(label).toHaveValue('My label')
         await page.keyboard.press('Control+Shift+z')
         await expect(choice).toHaveText(next.trim() || 'None')
         buffer = await saveDocument(page, errors, workers)
@@ -212,6 +223,8 @@ test('native variant choices retain empty, reserved-looking and exact values thr
         const edited = named(saved, 'Edited choice'), master = saved.getNode(edited.componentId)
         assert.equal(master.componentPropertyValues.Choice, next)
         assert.deepEqual(master.variantPropSpecs, [{ propDefId: '33:1', value: next }])
+        assert.equal(edited.componentPropertyAssignments['33:2'], 'My label')
+        assert.equal(saved.getChildren(saved.getChildren(edited.id).find(node => node.type === 'FRAME').id)[0].text, 'My label')
         assert.deepEqual([edited.x, edited.y, edited.width, edited.height], [400, 100, 80, 24])
         for (const [name, before] of untouched) assert.deepEqual(geometry(saved, named(saved, name)), before)
         expected = next

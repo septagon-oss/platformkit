@@ -328,6 +328,16 @@ owns ID allocation, notifications and temporary deletion ancestry, so a missing
 reference is never treated as evidence of a deletion.
 Nested instances retain their own root and descendant overrides during a
 containing-component synchronization; explicit outer paths retain precedence.
+Variants in one component set inherit shared TEXT definitions by native property
+ID. Switching retains each bound text node and its compatible layout ancestry,
+so local copy edits and their undo history survive reordered, differently named
+variant layers and FIG saves. Missing targets, duplicate definitions and ambiguous
+ancestry merges or depth changes refuse before writes. Unbound edited descendants
+still require subtree history; this is not general cross-component replacement or
+source Select conversion. Nested instances resolve variant values and switching
+through the same canonical lineage as their shared text properties.
+Browser checks exercise label editing, keyboard variant
+switching, undo/redo and three worker saves without changing masters or siblings.
 
 Native fill/stroke bindings and literal or empty paints retain their tested
 values through two saves and subsequent synchronization. Binding-only stroke
