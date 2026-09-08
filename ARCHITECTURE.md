@@ -96,8 +96,10 @@ that both running versions can use the schema.
 ## Compose the interface
 
 [design](design/) owns theme values and typography. A `design.Pair` supplies
-light and dark palettes. Components name semantic roles, roles resolve to
-tokens, and a palette supplies the token values.
+light and dark themes. Each theme's optional `Typography` selects display, body
+and mono fallback stacks; empty fields retain the defaults. Supply the same value
+on both themes for shared type, and deliver licensed font assets separately.
+Components name semantic roles, roles resolve to tokens, and themes supply values.
 
 [ui/icon](ui/icon/) owns icons. [ui/components](ui/components/) provides typed
 Go functions returning HTML and declares the classes those functions can emit.
