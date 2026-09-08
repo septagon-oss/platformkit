@@ -596,6 +596,18 @@ func TestEveryGalleryExampleHasAnAccurateDescription(t *testing.T) {
 	for _, example := range c.Gallery() {
 		t.Run(example.ID, func(t *testing.T) {
 			description := describeExample(t, example)
+			if example.ID == "pk-ui.component.grid/default" {
+				if len(description.Children) != 3 || len(description.OpaqueSlots) != 0 || strings.Count(description.HTML, "<p ") != 3 {
+					t.Fatalf("grid cells must be distinct, captured Text components: %+v", description)
+				}
+				for i, id := range []string{"first", "second", "third"} {
+					child := description.Children[i]
+					if child.Description.ID != id || child.Description.ComponentID != "pk-ui.component.text" || child.Slot != "children" {
+						t.Fatalf("grid cell lost its source identity: %+v", child)
+					}
+					checkCompositionSpan(t, description, child)
+				}
+			}
 			if want, ok := children[example.ID]; ok {
 				if len(description.Children) != 1 ||
 					[3]string{description.Children[0].Description.ID, description.Children[0].Slot, description.Children[0].Description.ComponentID} != want {

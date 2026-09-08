@@ -150,7 +150,7 @@ test('native grid track edits retain layout and local ownership through two brow
   await verifyBuild()
   const graph = new SceneGraph(), pageNode = graph.getPages()[0]
   const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Grid master', width: 312, height: 60,
-    layoutMode: 'GRID', gridTemplateColumns: [{ sizing: 'FR', value: 1 }, { sizing: 'FR', value: 1 }],
+    layoutMode: 'GRID', gridTemplateColumns: [{ sizing: 'FR', value: 1, minValue: 0 }, { sizing: 'FR', value: 1, minValue: 0 }],
     gridTemplateRows: [{ sizing: 'FIXED', value: 60 }], gridColumnGap: 12 })
   for (let column = 1; column <= 2; column++) graph.createNode('RECTANGLE', master.id, {
     name: `Cell ${column}`, width: 20, height: 20, layoutAlignSelf: 'STRETCH',
@@ -189,7 +189,7 @@ test('native grid track edits retain layout and local ownership through two brow
         buffer = await saveDocument(page, errors, workers)
         const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' }), edited = named(reopened, 'Edited grid')
         assert.equal(edited.layoutMode, 'GRID')
-        assert.deepEqual(edited.gridTemplateColumns, [{ sizing: 'FR', value: cycle + 2 }, { sizing: 'FR', value: 1 }])
+        assert.deepEqual(edited.gridTemplateColumns, [{ sizing: 'FR', value: cycle + 2, minValue: 0 }, { sizing: 'FR', value: 1, minValue: 0 }])
         assert.deepEqual([edited.x, edited.y, edited.width, edited.height], [20, 120, 312, 60])
         const left = cycle === 0 ? 200 : 225
         assert.deepEqual(reopened.getChildren(edited.id).map(child => [child.x, child.y, child.width, child.height]),

@@ -173,6 +173,8 @@ export async function captureExample(browser, snapshot, exampleId, {
         'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
         'flex-direction', 'flex-wrap', 'flex-grow', 'flex-shrink', 'flex-basis',
         'justify-content', 'align-items', 'align-self', 'align-content', 'order', 'row-gap', 'column-gap',
+        'justify-items', 'justify-self', 'grid-auto-flow', 'grid-template-areas',
+        'grid-column-start', 'grid-column-end', 'grid-row-start', 'grid-row-end',
         'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
         'font-synthesis-weight', 'font-synthesis-style',
         'font-feature-settings', 'font-variation-settings', 'line-height', 'letter-spacing',
@@ -262,7 +264,8 @@ export async function captureExample(browser, snapshot, exampleId, {
           kind: 'element', observationId: id, tag: node.localName,
           component: node.getAttribute('data-component'),
           bounds: bounds(node.getBoundingClientRect()), style: computed,
-          sizing: Object.fromEntries(['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height']
+          sizing: Object.fromEntries(['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
+            'grid-template-columns', 'grid-template-rows', 'grid-auto-columns', 'grid-auto-rows']
             .map(key => [key, typed.get(key)?.toString() ?? ''])),
           children: [],
         }

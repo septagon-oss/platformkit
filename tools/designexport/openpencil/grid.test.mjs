@@ -102,3 +102,14 @@ test('grid leaves preserve explicit stretch while fixed leaves retain their size
   assert.deepEqual(box(fill), [0, 0, 100, 50])
   assert.deepEqual(box(fixedLeaf), [112, 0, 20, 10])
 })
+
+test('automatic grid spans do not anchor every cell to the first track', () => {
+  const graph = new SceneGraph(), grid = graph.createNode('FRAME', graph.getPages()[0].id, {
+    layoutMode: 'GRID', width: 300, height: 40, gridTemplateColumns: [fr(1), fr(1), fr(1)],
+  })
+  const children = [2, 1, 1].map(columnSpan => graph.createNode('RECTANGLE', grid.id, {
+    width: 20, height: 20, gridPosition: { column: 0, row: 0, columnSpan, rowSpan: 1 },
+  }))
+  computeLayout(graph, grid.id)
+  assert.deepEqual(children.map(box), [[0, 0, 20, 20], [200, 0, 20, 20], [0, 20, 20, 20]])
+})

@@ -53,11 +53,12 @@ function importTracks(nc, axis) {
   return entries.map(entry => {
     const size = byId.get(guidKey(entry.id)), min = size?.minSizing, max = size?.maxSizing
     const sizing = Object.keys(sizingTypes).find(key => sizingTypes[key] === max?.type)
-    if (!sizing || !min || !(min.type === max.type && min.value === max.value ||
+    if (!sizing || !min || !(min.type === 'FIXED' || min.type === max.type && min.value === max.value ||
         sizing === 'FR' && min.type === 'HUG' && min.value === 0)) refuse('unsupported track sizing function')
     const value = number(max.value, 'track value', sizing === 'FR')
     if (sizing === 'AUTO' && value !== 0) refuse('nonzero automatic track value')
-    return { sizing, value }
+    const explicitMinimum = min.type === 'FIXED' && (max.type !== 'FIXED' || min.value !== max.value)
+    return { sizing, value, ...(explicitMinimum ? { minValue: number(min.value, 'track minimum') } : {}) }
   })
 }
 
@@ -135,7 +136,8 @@ function exportTracks(node, context, counter) {
       } while (context.assignedGuidValues.has(guidKey(id)))
       context.assignedGuidValues.add(guidKey(id))
       return { id, position: context.fractionalPosition(index), trackSize: {
-        minSizing: type === 'FLEX' ? { type: 'HUG', value: 0 } : { type, value },
+        minSizing: track.minValue !== undefined ? { type: 'FIXED', value: number(track.minValue, 'track minimum') } :
+          type === 'FLEX' ? { type: 'HUG', value: 0 } : { type, value },
         maxSizing: { type, value },
       } }
     })

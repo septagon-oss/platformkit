@@ -4,6 +4,7 @@ import { loadFonts, validateFonts } from './fonts.mjs'
 import { planIcon } from './icon-composition.mjs'
 import { computedColor as color } from './computed-color.mjs'
 import { observedPaint, sameColor, createPaintedNode, bindPaintExpressions } from './component-paints.mjs'
+import { planSourceGrid } from './source-grid.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
 const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
@@ -377,7 +378,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       'text blocks require normal wrapping, left alignment and visible overflow')
       const value = text(node.children[0], node, { wrapping: true })
       value.native.width = node.bounds.width - native.paddingLeft - native.paddingRight
-      value.native.height = node.bounds.height - native.paddingTop - native.paddingBottom
+      value.native.height = value.region.rects.length * value.native.lineHeight
       value.native.layoutAlignSelf = 'STRETCH'
       plan = { kind: 'frame', textBlock: true, observation: node, children: [value], native: {
         name: node.tag, width: node.bounds.width, height: node.bounds.height,
@@ -402,6 +403,19 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         name: node.tag, width: node.bounds.width, height: node.bounds.height,
         layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
         primaryAxisAlign: 'MIN', counterAxisAlign: 'STRETCH', itemSpacing: gaps[0] ?? 0, ...native,
+      } }
+    } else if (style.display === 'grid') {
+      const grid = planSourceGrid(node)
+      const children = node.children.map(child => element(child, owner))
+      for (const [index, child] of children.entries()) {
+        const { widthFill, heightFill, ...placement } = grid.children[index]
+        const horizontal = child.native?.layoutMode === 'HORIZONTAL' || child.textRow
+        child.placement = { ...placement,
+          ...(widthFill ? { [horizontal ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL' } : {}),
+          ...(heightFill ? { [horizontal ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL' } : {}) }
+      }
+      plan = { kind: 'frame', observation: node, children, native: {
+        name: node.tag, width: node.bounds.width, height: node.bounds.height, ...grid.native, ...native,
       } }
     } else if (['block', 'inline'].includes(style.display)) {
       plan = inline(node)
@@ -473,7 +487,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
     for (const child of current.children) await construct(child, master, targets, current)
     const properties = bindComponentProperties(graph, master, description, targets)
     components.push({ path, master, properties })
-    geometry.push({ plan: current, node: master })
+    geometry.push({ plan: current, node: master, definition: true })
     return master
   }
   async function construct(current, parent, targets, parentPlan) {
@@ -523,12 +537,15 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       for (const item of components) computeAllLayouts(graph, item.master.id)
       computeAllLayouts(graph, master.id)
     } finally { setTextMeasurer(previousMeasurer) }
-    for (const { plan: current, node, parentPlan } of geometry) {
+    for (const { plan: current, node, parentPlan, definition } of geometry) {
       if (!current.observation) continue
       const expected = current.observation.bounds
       const height = current.kind === 'text' || current.inline ? current.native.height : expected.height
       const width = current.wrapping ? current.native.width : expected.width
-      requireComponent(Math.abs(node.width - width) <= 1 / 64 && Math.abs(node.height - height) <= 1 / 64,
+      // A definition owns intrinsic height; its placed grid cell owns the
+      // stretched row height. Validate that used size on the instance below.
+      const stretchedDefinition = definition && current.placement?.[node.layoutMode === 'HORIZONTAL' ? 'counterAxisSizing' : 'primaryAxisSizing'] === 'FILL'
+      requireComponent(Math.abs(node.width - width) <= 1 / 64 && (stretchedDefinition || Math.abs(node.height - height) <= 1 / 64),
         `composition native geometry differs from source ${current.observation.tag ?? 'text'}: ${node.width}×${node.height}, expected ${width}×${height}`)
       if (parentPlan) {
         const parentBounds = parentPlan.observation.bounds
@@ -538,7 +555,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
         const x = current.wrapping ? parentPlan.native.paddingLeft : expected.x - parentBounds.x
         const y = current.wrapping ? parentPlan.native.paddingTop : expected.y - parentBounds.y - lineInset
         requireComponent(Math.abs(node.x - x) <= 1 / 64 && Math.abs(node.y - y) <= 1 / 64,
-        'composition native placement differs from the source parent')
+        `composition native placement differs from the source parent: ${node.name} at ${node.x},${node.y}, expected ${x},${y}`)
       }
     }
     return { master, properties: components.find(item => item.master === master).properties, components }

@@ -12,8 +12,8 @@ complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
 the two Video examples refuse because media capture is unsupported.
-Native construction accepts 16: eleven Buttons, bare/invalid Input, Form and two Text
-examples; the coverage test reports 91 refusals. These are measured guards, not proof of
+Native construction accepts 17: eleven Buttons, bare/invalid Input, Form, Grid and two Text
+examples; the coverage test reports 90 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
 ## Generate a design document
@@ -394,11 +394,28 @@ worker saves preserve measured cell geometry without changing masters or sibling
 Native grid measurement invalidates its participating subtree's imported box cache;
 failed measurement restores that cache, and unopened-page population preserves edits.
 
+The corrected native track retains optional `minValue`, a finite nonnegative fixed
+minimum mapped directly to Yoga and FIG's existing min/max fields. This preserves
+CSS `minmax(0, 1fr)` without changing the cell's own minimum-size contract. Automatic
+placement uses native automatic start lines, including cells with spans.
+
+[Source Grid planning](source-grid.mjs) consumes captured CSS Typed OM track values,
+not the browser's resolved pixel tracks. It feeds the existing composition builder;
+source-owned Text cells remain linked instances. Two- and three-column fixtures in
+both themes compare 320px, 390px and 1280px layouts, full-width spans, unequal-height
+content, local text-property history and two saves against Go/Chromium output. Definitions retain
+intrinsic text height; placed instances receive their row's stretched height.
+The default gallery Grid now contains three captured Text cells instead of one
+anonymous text run. Track parsing supports bounded integer repeat, fixed, fractional
+and automatic tracks, and min/max with a fixed minimum.
+
 The boundary refuses malformed tracks, foreign anchors, unsupported min/max sizing,
 automatic columns, unrepresentable leaf alignment and instance layout-mode replacement.
-The editor's grid sizing menu still only exposes fixed dimensions. Source CSS Grid
-conversion, complete grid editing controls and arbitrary imported-grid fidelity remain
-unfinished; these checks do not establish a release-ready component library.
+Source conversion additionally refuses automatic repeat, named areas/lines, reordered
+cells, unsupported alignment and explicit cell minima. Track/gap edits are not source
+property proposals. The grid sizing menu still only exposes fixed dimensions; complete
+controls, broader CSS layouts and arbitrary imports remain unfinished. These checks
+do not establish a release-ready component library.
 
 Text-property guarantees cover placed root or nested targets and exact layout undo/redo.
 Master-owned edits, variants and arbitrary imports remain unverified; identity

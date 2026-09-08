@@ -5,7 +5,7 @@ import { correctPropertyActions, correctComponentSync, correctEditorCreation, co
 import { correctLayout, correctLayoutApply } from './layout-correction.mjs'
 import { correctScaleDefaults, correctScaleGraph, correctScaleNodeChange, correctScaleImport } from './scaling-correction.mjs'
 import { correctSyncGraph } from './sync-correction.mjs'
-import { correctGridLayout, correctGridApply } from './grid-correction.mjs'
+import { correctGridLayout, correctGridApply, correctGridTrackMapping } from './grid-correction.mjs'
 import { correctGridNodeChange, correctGridImport, correctGridOverrides, correctGridActions } from './grid-fig-correction.mjs'
 
 // Source hashes pin the exact upstream implementation, not just its version
@@ -180,6 +180,10 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/layout/apply.js': {
     sha256: 'a02c896a0f808fd3ccb24ca6a8c09975ca7ef06e2555bc6313b54091e37e8c8d',
     transform: (source, replace) => correctGridApply(correctLayoutApply(source, replace), replace),
+  },
+  '@open-pencil/core/dist/layout/yoga-helpers.js': {
+    sha256: '24a80fac2b5649055876204e4f4b8df1761bcdee01601ecc2df808b8bfadc584',
+    transform: correctGridTrackMapping,
   },
   '@open-pencil/core/dist/text/opentype.js': {
     sha256: '4b95e351041faff7ab0fac48e78a09abcc82fb0d57e1e7d560bc2aef675cf8c4',

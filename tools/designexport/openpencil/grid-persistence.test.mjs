@@ -282,7 +282,7 @@ test('malformed native FIG track sizing and foreign anchors refuse instead of gu
     ['duplicate sizing', grid => { grid.gridColumnsSizing.entries[1].id = grid.gridColumnsSizing.entries[0].id }],
     ['missing sizing', grid => { grid.gridColumnsSizing.entries.pop() }],
     ['foreign sizing', grid => { grid.gridColumnsSizing.entries[1].id.localID = 900 }],
-    ['unsupported minmax', grid => { grid.gridColumnsSizing.entries[1].trackSize.minSizing = { type: 'FIXED', value: 5 } }],
+    ['unsupported minmax', grid => { grid.gridColumnsSizing.entries[1].trackSize.minSizing = { type: 'PERCENT', value: 5 } }],
     ['negative gap', grid => { grid.gridRowGap = -1 }],
     ['nonfinite gap', grid => { grid.gridRowGap = Infinity }],
     ['implicit columns', grid => { grid.gridAutoTracks = 'COLUMNS' }],

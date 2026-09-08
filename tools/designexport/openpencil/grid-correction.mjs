@@ -1,6 +1,17 @@
 import { fileURLToPath } from 'node:url'
 import { chain } from './exporter-correction.mjs'
 
+// Native GridTrack retains an optional fixed minValue alongside its existing
+// maximum sizing/value. Both Yoga and FIG have native minmax representations.
+export function correctGridTrackMapping(source, replace) {
+  return replace(source, 'function mapGridTrack(track) {', `function mapGridTrack(track) {
+    if (track.minValue !== undefined) {
+      if (!Number.isFinite(track.minValue) || track.minValue < 0) throw new Error("Invalid native grid minimum");
+      return { type: GridTrackType.Minmax, min: { type: GridTrackType.Points, value: track.minValue },
+        max: mapGridTrack({ sizing: track.sizing, value: track.value }) };
+    }`)
+}
+
 export function liveGridLayout(graph, node) {
   return node && chain(graph, node, 'parentId').some(parent => parent.layoutMode === 'GRID')
 }
@@ -62,9 +73,11 @@ function configureGridItemSizing(yogaNode, child, widthSizing, heightSizing) {
 function configureGridPosition(yogaNode, child, parent) {
   if (parent.layoutMode !== "GRID" || child.layoutPositioning === "ABSOLUTE" || !child.gridPosition) return;
   const pos = child.gridPosition;
-  yogaNode.setGridColumnStart(pos.column);
+  if (pos.column === 0) yogaNode.setGridColumnStartAuto();
+  else yogaNode.setGridColumnStart(pos.column);
   yogaNode.setGridColumnEndSpan(pos.columnSpan);
-  yogaNode.setGridRowStart(pos.row);
+  if (pos.row === 0) yogaNode.setGridRowStartAuto();
+  else yogaNode.setGridRowStart(pos.row);
   yogaNode.setGridRowEndSpan(pos.rowSpan);
 }`, replace)
   // Shared container configuration already owns direction, padding and limits.

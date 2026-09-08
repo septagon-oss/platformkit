@@ -158,7 +158,11 @@ func Gallery() []Example {
 		ExampleWithChildren(info("pk-ui.component.stack/default", "Layout", "Stack"), StackProps{Gap: "2", Align: "start"}, []g.Node{g.Text("a"), g.Text("b")}, Stack),
 		ExampleWithChildren(info("pk-ui.component.flex/default", "Layout", "Flex"), FlexProps{Direction: "row", Gap: "4", Align: "center",
 			Justify: "between", Wrap: true}, []g.Node{g.Text("l"), g.Text("r")}, Flex),
-		ExampleWithChildren(info("pk-ui.component.grid/default", "Layout", "Grid"), GridProps{Columns: "3", Gap: "6"}, []g.Node{g.Text("1"), g.Text("2"), g.Text("3")}, Grid),
+		ExampleWithChildren(info("pk-ui.component.grid/default", "Layout", "Grid"), GridProps{Columns: "3", Gap: "6"}, []g.Node{
+			ExampleOf(ExampleInfo{ID: "first", ComponentID: "pk-ui.component.text"}, TextProps{Content: "1"}, Text).Node,
+			ExampleOf(ExampleInfo{ID: "second", ComponentID: "pk-ui.component.text"}, TextProps{Content: "2"}, Text).Node,
+			ExampleOf(ExampleInfo{ID: "third", ComponentID: "pk-ui.component.text"}, TextProps{Content: "3"}, Text).Node,
+		}, Grid),
 		ExampleWithChildren(info("pk-ui.component.container/default", "Layout", "Container"), ContainerProps{MaxWidth: "4xl"}, []g.Node{g.Text("content")}, Container),
 		ExampleWithSlots(info("pk-ui.component.card/default", "Layout", "Card"), CardProps{Title: "Plain card", Description: "With copy."}, CardSlots{}, CardWithSlots),
 		ExampleWithSlots(info("pk-ui.component.card/clickable", "Layout", "Card / clickable"), CardProps{Title: "Go somewhere", Clickable: true, Href: "/detail"}, CardSlots{}, CardWithSlots),
