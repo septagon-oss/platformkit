@@ -456,6 +456,22 @@ test('real secondary Text still refuses unsupported derived token relationships 
   }
 })
 
+test('native construction refuses an alpha-derived paint that looks literal in an opaque source palette', async () => {
+  const snapshot = source()
+  snapshot.css += '\n[data-component="button"] { background-color: rgb(from var(--pk-color-accent-default) 30 40 50 / alpha); }'
+  for (const mode of ['light', 'dark']) {
+    const observation = await observe(snapshot, mode), built = buildFoundation(snapshot)
+    const page = built.graph.addPage('Alpha dependency')
+    built.graph.updateNode(page.id, { variableModes: { [built.collection.id]: built.collection.modes.find(item => item.name === mode).modeId } })
+    const before = structuredClone({ nodes: [...built.graph.getAllNodes()], variables: [...built.graph.variables] })
+    const hook = getTextMeasurer()
+    await assert.rejects(materializeComponent(built.graph, page.id, snapshot, observation, faces, renderer, built.collection.id),
+      /mixed or derived paint dependencies/, 'an editable palette must not leave a falsely literal fill behind')
+    assert.deepEqual({ nodes: [...built.graph.getAllNodes()], variables: [...built.graph.variables] }, before)
+    assert.equal(getTextMeasurer(), hook)
+  }
+})
+
 test('secondary Button source retains its accessible name, focus indicator and keyboard activation', async () => {
   const snapshot = source('Save', 'pk-ui.component.button/secondary')
   for (const mode of ['light', 'dark']) {

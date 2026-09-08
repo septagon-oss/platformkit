@@ -152,8 +152,8 @@ SVG observations retain ordered children, exact attributes and computed geometry
 fill/stroke dependencies and presentation, so canonical markup cannot conceal
 CSS changes to paths, paint or effects.
 
-Paint observations probe the existing root color variables with two distinct
-values. This distinguishes tested direct aliases and mixed paints from unrelated,
+Paint observations probe root color variables with opaque, partial and zero alpha.
+This distinguishes tested direct aliases and opacity-dependent paints from unrelated,
 equal-colored literals. `directCandidate` names an observed alias candidate,
 not a binding guarantee. These are observed dependencies, not a general CSS
 expression parser or proof for arbitrary functions and locally overridden themes.

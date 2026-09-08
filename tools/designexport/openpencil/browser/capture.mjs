@@ -227,8 +227,13 @@ export async function captureExample(browser, snapshot, exampleId, {
       const sources = elements.map(() => Object.fromEntries(paints.map(paint => [paint, { tokens: [], directCandidate: null }])))
       // Let the browser resolve roles, inheritance and color-mix. Matching a
       // baseline RGB would incorrectly bind unrelated literals and equal-valued
-      // tokens. Two matching probes suggest a direct binding; they do not prove
-      // arbitrary CSS expressions are equivalent to that token in every state.
+      // tokens. Probe opacity too: opaque-only samples miss alpha dependencies.
+      // Matching these samples suggests a direct binding, not equivalence for
+      // arbitrary CSS expressions in every state.
+      const probes = [
+        'rgb(18, 52, 86)', 'rgb(171, 205, 239)',
+        'rgba(18, 52, 86, 0.25)', 'rgba(171, 205, 239, 0.75)', 'rgba(32, 64, 96, 0)',
+      ]
       const probeSheet = document.createElement('style')
       probeSheet.textContent = '* { transition: none !important; }'
       const root = document.documentElement
@@ -239,19 +244,19 @@ export async function captureExample(browser, snapshot, exampleId, {
         for (const token of colorTokens) {
           const before = root.style.getPropertyValue(token)
           const priority = root.style.getPropertyPriority(token)
-          root.style.setProperty(token, '#123456', 'important')
-          const first = values()
-          root.style.setProperty(token, '#abcdef', 'important')
-          const second = values()
+          const samples = probes.map(value => {
+            root.style.setProperty(token, value, 'important')
+            return values()
+          })
           if (before) root.style.setProperty(token, before, priority)
           else root.style.removeProperty(token)
           for (const [index] of elements.entries()) {
             for (const [paintIndex, paint] of paints.entries()) {
-              const a = first[index][paintIndex], b = second[index][paintIndex]
-              if (a === baseline[index][paintIndex] && b === baseline[index][paintIndex]) continue
+              const observed = samples.map(sample => sample[index][paintIndex])
+              if (observed.every(value => value === baseline[index][paintIndex])) continue
               const source = sources[index][paint]
               source.tokens.push(token)
-              if (source.tokens.length === 1 && a === 'rgb(18, 52, 86)' && b === 'rgb(171, 205, 239)') source.directCandidate = token
+              if (source.tokens.length === 1 && observed.every((value, index) => value === probes[index])) source.directCandidate = token
               else source.directCandidate = null
             }
           }

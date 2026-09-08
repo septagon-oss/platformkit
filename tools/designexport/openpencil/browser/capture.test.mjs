@@ -354,6 +354,37 @@ test('browser capture observes token alias candidates, mixed paints and equal-co
   }
 })
 
+test('paint capture observes alpha-only dependencies without turning them into literals or direct aliases', async () => {
+  const accent = '--pk-color-accent-default', surface = '--pk-color-surface-primary'
+  for (const mode of ['light', 'dark']) {
+    for (const [expression, tokens] of [
+      [`rgb(from var(${accent}) 30 40 50 / alpha)`, [accent]],
+      [`rgb(from var(${accent}) 30 40 50 / min(1, calc(alpha * 100)))`, [accent]],
+      [`rgb(from color-mix(in srgb, var(${accent}), var(${surface})) 30 40 50 / alpha)`, [accent, surface]],
+      ['rgb(30 40 50)', []],
+    ]) {
+      const snapshot = structuredClone(source)
+      snapshot.css += `\n[data-component="button"] { color: ${expression}; background-color: ${expression}; border-color: ${expression}; }`
+      const before = structuredClone(snapshot)
+      const capture = await captureExample(browser, snapshot, withIcon, { mode, fonts: faces })
+      const root = capture.roots[0], paints = [
+        root.paintSources.color, root.paintSources['background-color'],
+        ...['top', 'right', 'bottom', 'left'].map(side => root.paintSources[`border-${side}-color`]),
+        ...observed(root.children).filter(node => node.tag === 'path').map(node => node.paintSources.fill),
+      ]
+      assert.ok(paints.length > 6, 'include inherited currentColor on the actual source SVG paths')
+      for (const paint of paints) {
+        assert.deepEqual(paint.tokens.toSorted(), tokens.toSorted(), expression)
+        assert.equal(paint.directCandidate, null, 'fixed RGB channels do not directly alias the token')
+      }
+      const original = await originalLayout(snapshot, withIcon, mode, viewport, faces)
+      assert.equal(root.style.color, original.color, 'capture retains the unmodified source paint')
+      assert.deepEqual(root.bounds, original.bounds, 'probing does not leak altered layout')
+      assert.deepEqual(snapshot, before)
+    }
+  }
+})
+
 test('browser capture follows source full-width layout at mobile and wide viewports', async () => {
   const label = 'Save in this viewport'
   const snapshot = projection(withIcon, { fullWidth: true, label })
