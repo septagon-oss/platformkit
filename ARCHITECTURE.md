@@ -96,8 +96,10 @@ that both running versions can use the schema.
 ## Compose the interface
 
 [design](design/) owns theme values and typography. A `design.Pair` supplies
-light and dark palettes. Components name semantic roles, roles resolve to
-tokens, and a palette supplies the token values.
+light and dark themes. Each theme's optional `Typography` selects display, body
+and mono fallback stacks; empty fields retain the defaults. Supply the same value
+on both themes for shared type, and deliver licensed font assets separately.
+Components name semantic roles, roles resolve to tokens, and themes supply values.
 
 [ui/icon](ui/icon/) owns icons. [ui/components](ui/components/) provides typed
 Go functions returning HTML and declares the classes those functions can emit.
@@ -185,6 +187,14 @@ composition to the router. [ui/screens](ui/screens/) renders resource screens
 and describes the resource catalog at `/api/v1/admin/resources`.
 The admin module and downstream storefronts call these packages rather than
 maintaining separate document or stylesheet machinery.
+
+The shared [Video](ui/components/video.go) component uses native playback and
+caption controls without autoplay. A composing page supplies a nearby transcript
+and authorized media URLs. File consumers reuse
+[ContentResponse](modules/file/contracts/response.go) after checking access on
+every request; seekable storage supports byte ranges and HEAD without a second
+streaming implementation. Playback position and course completion belong to the
+consuming learning capability, not the shared player.
 
 Resource schemas drive record-management screens, field choices and value
 display. Product-specific interactions use explicitly composed pages and their

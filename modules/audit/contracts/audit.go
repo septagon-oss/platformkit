@@ -49,15 +49,23 @@ type Event struct {
 // TableName pins the table, so the struct and migrations/000010 agree.
 func (Event) TableName() string { return "audit_events" }
 
-// Query is a page of the trail: what happened, who did it, and when. It is a
-// struct of its own rather than a crud.Query because two of the filters are
-// range comparisons and crud's are equalities. An empty Name is every kind of
-// event and the nil Actor is everybody; Since is inclusive and Until exclusive,
-// so two adjacent windows neither overlap nor skip. The zero value is
-// everything, newest first.
+// Query is a page of the trail: what happened, who did it, when, and to what.
+// It is a struct of its own rather than a crud.Query because two of the filters
+// are range comparisons and crud's are equalities. An empty Name is every kind
+// of event and the nil Actor is everybody; Since is inclusive and Until
+// exclusive, so two adjacent windows neither overlap nor skip. The zero value
+// is everything, newest first.
+//
+// Record is the trail of one row, and it is a search of the payload rather than
+// a column because a payload names its row differently depending on who
+// published it: a generated write carries the row, so the id is "id", while a
+// command carries its own argument, where it is "taskId" or "contentId". An
+// event is about a row when the row's id appears anywhere in its payload, which
+// is true of both shapes and of any module that follows either.
 type Query struct {
 	Name          string
 	Actor         uuid.UUID
+	Record        uuid.UUID
 	Since, Until  time.Time
 	Limit, Offset int
 }

@@ -2,17 +2,21 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { correctExporter, correctPropertyTarget, correctInstanceImporter } from './exporter-correction.mjs'
 import { correctPropertyActions, correctComponentSync, correctEditorCreation, correctTextAutoResize, correctUndoHistory } from './property-correction.mjs'
-import { correctLayout, correctGridRecompute } from './layout-correction.mjs'
+import { correctLayout, correctLayoutApply } from './layout-correction.mjs'
 import { correctScaleDefaults, correctScaleGraph, correctScaleNodeChange, correctScaleImport } from './scaling-correction.mjs'
 import { correctSyncGraph } from './sync-correction.mjs'
+import { correctGridLayout, correctGridApply, correctGridTrackMapping } from './grid-correction.mjs'
+import { correctGridNodeChange, correctGridImport, correctGridOverrides, correctGridActions } from './grid-fig-correction.mjs'
+import { correctVariantActions, correctVariantImport, correctVariantNodeChange } from './variant-correction.mjs'
 
 // Source hashes pin the exact upstream implementation, not just its version
 // label. A dependency upgrade requires a new review and the conformance suite.
 export const sdkVersion = '0.14.0'
+const colorHelper = JSON.stringify(fileURLToPath(new URL('./variable-color.mjs', import.meta.url)))
 export const corrections = Object.freeze({
   '@open-pencil/fig/dist/node-change2.js': {
     sha256: 'bdbb599d70a5cf92300c67c385ee0d269550d4eea9c637f608d85fa321e63ee7',
-    transform: (source, replace) => correctScaleNodeChange(correctExporter(source, replace), replace) +
+    transform: (source, replace) => correctVariantNodeChange(correctGridNodeChange(correctScaleNodeChange(correctExporter(source, replace), replace), replace), replace) +
       '\nexport { serializeVariableModes, extractComponentPropertyAssignments };\n',
   },
   '@open-pencil/fig/dist/node-change.js': {
@@ -22,9 +26,16 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/io/formats/fig/export.js': {
     sha256: '084acd6250329f95a0f3c92df1f863dab0e59fed559264eb4976c79ebee05d55',
     transform(source, replace) {
+      source = `import { serializeCSSColors } from ${colorHelper};\n` + source
+      source = replace(source, 'variableData: variableValueToKiwi(value, variable.type, varIdToGuid)',
+        'variableData: variableValueToKiwi(value?.cssColor ? graph.resolveVariable(variable.id, modeId) : value, variable.type, varIdToGuid)')
+      source = replace(source, 'if (variable.key) nc.key = variable.key;',
+        'nc.pluginData = serializeCSSColors(graph, variable, varIdToGuid, modeIdToGuid);\n\t\tif (variable.key) nc.key = variable.key;')
       // Pages take a separate export path; reuse the native mode serializer
       // after collection and mode GUIDs have been assigned, just like frames.
       source = 'import { serializeVariableModes } from "@open-pencil/fig/node-change";\n' + source
+      // Variable descriptions have a native FIG field, independent of names.
+      source = replace(source, 'name: variable.name,', 'name: variable.name,\n\t\t\tdescription: variable.description,')
       return replace(source, 'for (const entry of canvasEntries) nodeChanges.push(entry.canvasNc);',
         `for (const entry of canvasEntries) {
           const modes = entry.page.variableModes && serializeVariableModes(entry.page, varIdToGuid, modeIdToGuid);
@@ -36,6 +47,12 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/kiwi/fig/import.js': {
     sha256: '7e16f0f993319eba097756e94dba7ae080f3104ba4e6359483ed653fc3c08d1d',
     transform(source, replace) {
+      source = correctVariantImport(correctGridImport(source, replace), replace)
+      source = `import { restoreCSSColors, validateCSSColors } from ${colorHelper};\n` + source
+      source = replace(source, '\n\t\t\tvaluesByMode,', '\n\t\t\tvaluesByMode: restoreCSSColors(nc, type, valuesByMode),')
+      source = replace(source, 'importVariableEntries(changeMap, parentMap, graph, assetRefs);',
+        'importVariableEntries(changeMap, parentMap, graph, assetRefs);\n\tvalidateCSSColors(graph);')
+      source = replace(source, 'description: "",', 'description: typeof nc.description === "string" ? nc.description : "",')
       source = replace(source, 'function applyImportedCanvasMetadata(page, canvasNc) {',
         'function applyImportedCanvasMetadata(page, canvasNc) {\n\tpage.variableModes = nodeChangeToProps(canvasNc, []).variableModes;')
       // Updating the native link must also update the graph's instance index.
@@ -54,11 +71,40 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/fig/dist/instance-overrides.js': {
     sha256: '5efd3f221660fbbed3d60879f187cb946e391bc1556f80213961d4804b027eb0',
-    transform: (source, replace) => correctScaleImport(correctInstanceImporter(correctImporter(source, replace), replace), replace),
+    transform: (source, replace) => correctGridOverrides(correctScaleImport(correctInstanceImporter(correctImporter(source, replace), replace), replace), replace),
   },
   '@open-pencil/scene-graph/dist/types.js': {
     sha256: '79dcc003679545dae0cfeadfdbb68dc10c6e92b85468d344ac89a14cbbdfe8e6',
     transform(source, replace) {
+      source = `import { resolveCSSColor, validateCSSColorRemoval } from ${colorHelper};\n` + source
+      source = replace(source, 'function removeVariable(graph, id) {',
+        `function removeVariable(graph, id) {
+          if (!graph.variables.has(id)) return;
+          validateCSSColorRemoval(graph, [id]);
+          removeVariableUnchecked(graph, id);
+        }
+        function removeVariableUnchecked(graph, id) {`)
+      source = replace(source,
+        'if (collection) for (const varId of Array.from(collection.variableIds)) removeVariable(graph, varId);',
+        `if (collection) {
+          validateCSSColorRemoval(graph, collection.variableIds);
+          for (const varId of Array.from(collection.variableIds)) removeVariableUnchecked(graph, varId);
+        }`)
+      source = replace(source, 'function resolveVariable(graph, variableId, modeId, visited) {',
+        'function resolveVariable(graph, variableId, modeId, visited, work = { remaining: 4096 }, requiredType) {\n' +
+        '\tif (visited?.size > 64 || --work.remaining < 0) throw new Error("Native CSS color: variable resolution limit");')
+      source = replace(source, 'if (!variable) return void 0;\n\tconst collection = graph.variableCollections.get(variable.collectionId);',
+        'if (!variable || requiredType && variable.type !== requiredType) return void 0;\n' +
+        '\tconst collection = graph.variableCollections.get(variable.collectionId);')
+      source = replace(source, 'if (value && typeof value === "object" && "aliasId" in value) {',
+        `if (value && typeof value === "object" && "cssColor" in value) {
+          if (variable.type !== "COLOR") throw new Error("Native CSS color: COLOR variable required");
+          return resolveCSSColor(value.cssColor, id => graph.variables.get(id)?.type === "COLOR" ?
+            resolveVariable(graph, id, preferredModeId, new Set([...(visited ?? []), variableId]), work, "COLOR") : undefined);
+        }
+        if (value && typeof value === "object" && "aliasId" in value) {`)
+      source = replace(source, 'return resolveVariable(graph, value.aliasId, preferredModeId, seen);',
+        'return resolveVariable(graph, value.aliasId, preferredModeId, seen, work, requiredType);')
       // Retain deletion ownership for deferred synchronization after the node
       // has left the graph. Existing one-argument listeners remain compatible.
       source = replace(source, 'this.emitter.emit("node:deleted", id);',
@@ -85,6 +131,31 @@ export const corrections = Object.freeze({
     sha256: '7bc49a01f5148053123559f7e4a523317a7ea61339429607dd2fd338243ed123',
     transform: (source, replace) => correctPropertyActions(correctPropertyTarget(source, replace), replace),
   },
+  '@open-pencil/core/dist/editor/components/variants.js': {
+    sha256: 'b2b6ddf2575a44470f5143ed75e999a878190ad658020b6c01958210d05ef4d9',
+    transform: correctVariantActions,
+  },
+  '@open-pencil/core/dist/editor/variables.js': {
+    sha256: '95e406a14d6bf2f1057b09f31b8bf01b560d8a2dfc83cdd0fe62063e10923f47',
+    transform(source, replace) {
+      source = `import { setNativeVariableValue } from ${colorHelper};\n` + source
+      source = replace(source, 'const prevValue = structuredClone(variable.valuesByMode[modeId]);',
+        'const prevPresent = Object.hasOwn(variable.valuesByMode, modeId);\n' +
+        '\t\tconst prevValue = structuredClone(variable.valuesByMode[modeId]);')
+      source = replace(source, 'variable.valuesByMode[modeId] = newValue;',
+        'setNativeVariableValue(ctx.graph, variable, modeId, newValue);')
+      source = replace(source, 'if (v) v.valuesByMode[modeId] = structuredClone(newValue);',
+        'if (v) setNativeVariableValue(ctx.graph, v, modeId, newValue);')
+      return replace(source, 'if (v) v.valuesByMode[modeId] = structuredClone(prevValue);',
+        'if (v) setNativeVariableValue(ctx.graph, v, modeId, prevValue, prevPresent);')
+    },
+  },
+  '@open-pencil/core/dist/figma-api/index.js': {
+    sha256: '81ad3ed7376c9866dad1d3ec3778d00129b3eb24cc63db827b8a9f3cf17198b6',
+    transform: (source, replace) => `import { setNativeVariableValue } from ${colorHelper};\n` +
+      replace(source, 'variable.valuesByMode[modeId] = value;',
+        'setNativeVariableValue(this.graph, variable, modeId, value);'),
+  },
   '@open-pencil/core/dist/editor/text/auto-resize.js': {
     sha256: '9cab5aafe825afa0d7f959536b8fe61da620a535051f6b4bee5ae31e74b0fc1a',
     transform: correctTextAutoResize,
@@ -103,13 +174,21 @@ export const corrections = Object.freeze({
     sha256: '3d164478f09a94567cdd35e7a0c1b3d175a95afcb312695f18b284d756fc4f26',
     transform: correctEditorCreation,
   },
+  '@open-pencil/core/dist/editor/nodes.js': {
+    sha256: '658a69b330f927b31cc525ec4389d6913e4ea04b9db8ce9d0688ead725ca51a5',
+    transform: correctGridActions,
+  },
   '@open-pencil/core/dist/layout.js': {
     sha256: '358130698d8aa61bfcad65e4695679ed3883aac9efbb048df5a09cbe98f2b299',
-    transform: correctLayout,
+    transform: (source, replace) => correctGridLayout(correctLayout(source, replace), replace),
   },
   '@open-pencil/core/dist/layout/apply.js': {
     sha256: 'a02c896a0f808fd3ccb24ca6a8c09975ca7ef06e2555bc6313b54091e37e8c8d',
-    transform: correctGridRecompute,
+    transform: (source, replace) => correctGridApply(correctLayoutApply(source, replace), replace),
+  },
+  '@open-pencil/core/dist/layout/yoga-helpers.js': {
+    sha256: '24a80fac2b5649055876204e4f4b8df1761bcdee01601ecc2df808b8bfadc584',
+    transform: correctGridTrackMapping,
   },
   '@open-pencil/core/dist/text/opentype.js': {
     sha256: '4b95e351041faff7ab0fac48e78a09abcc82fb0d57e1e7d560bc2aef675cf8c4',
@@ -133,11 +212,44 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/canvas/text/index.js': {
     sha256: 'ebabf318ffdc67ffac0f90519c5681a81e0b02dbdb0552cded05b2ec0ee87a05',
-    // Layout consumes shaped advances, not raster pixel bounds. Preserve the
-    // paragraph's precision without changing shaping or readiness checks.
+    transform(source, replace) {
+      const helper = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
+      source = `import { ownSourceLayoutScope } from ${JSON.stringify(helper)};\n` + source
+      // Source paragraph line breaks use fractional CSS widths. CanvasKit's
+      // rounding hack changes those widths; native documents keep their default.
+      source = replace(source, 'const paraStyle = new ck.ParagraphStyle({',
+        'const paraStyle = new ck.ParagraphStyle({\n' +
+        '\t\tapplyRoundingHack: ownSourceLayoutScope(node) !== "source-composition-layout",')
+      // Layout consumes shaped advances, not raster pixel bounds.
+      return replace(source, 'width: Math.ceil(width),\n\t\theight: Math.ceil(height)', 'width,\n\t\theight')
+    },
+  },
+  '@open-pencil/core/dist/canvas/fills.js': {
+    sha256: '82f7ca84f5b854b9c5a317451dd28050dc74d686a10074d0826c9ba4fb982575',
+    // applyFill just installed the resolved solid color, including alpha.
+    // Paint opacity multiplies that alpha; it must not replace it.
+    transform: (source, replace) => replace(source, 'r.fillPaint.setAlphaf(fill.opacity);',
+      'r.fillPaint.setAlphaf(fill.opacity * (fill.type === "SOLID" ? r.fillPaint.getColor()[3] : 1));'),
+  },
+  '@open-pencil/core/dist/canvas/strokes.js': {
+    sha256: '8da58e7799f04db7dcf301b7033d4c113627e148e26f9c75b3533dfff1e7dc31',
+    transform(source, replace) {
+      // Both ordinary strokes and dashed rectangles with solid corners retain
+      // the resolved color alpha in addition to their own paint opacity.
+      for (const cap of ['r.ck.StrokeCap.Butt', 'getStrokeCapEntity(r, stroke.cap ?? node.strokeCap)']) {
+        source = replace(source, `r.strokePaint.setAlphaf(stroke.opacity);\n\tr.strokePaint.setStrokeCap(${cap});`,
+          `r.strokePaint.setAlphaf(stroke.opacity * color.a);\n\tr.strokePaint.setStrokeCap(${cap});`)
+      }
+      return source
+    },
+  },
+  '@open-pencil/core/dist/canvas/shadows.js': {
+    sha256: '9d44ef166ff3315a40d9b2594ac6e0785f450acb876040c7d808b24d66a80e84',
+    // Explicit false clips the shadow behind translucent fills too, not only
+    // unfilled nodes. https://developers.figma.com/docs/plugins/api/Effect/
     transform: (source, replace) => replace(source,
-      'width: Math.ceil(width),\n\t\theight: Math.ceil(height)',
-      'width,\n\t\theight'),
+      'effect.showShadowBehindNode === false && !hasVisibleFill && !shadowShapeChild',
+      'effect.showShadowBehindNode === false && !shadowShapeChild'),
   },
   '@open-pencil/core/dist/tools/calc.js': {
     sha256: '35d6fd205094a3e26f5098b98833c92ffe96a2defdb377208576f58c6e71b67d',

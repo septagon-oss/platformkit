@@ -41,6 +41,11 @@ type fixture struct {
 	principal  *tenancy.Principal
 	allow      bool
 	authErr    error
+	// includes and planErr are the plan answer, for the operations that
+	// declare a feature. wanted records the feature that was asked about.
+	includes bool
+	planErr  error
+	wanted   string
 	// asked counts the calls to Allowed, which is how a test says the
 	// authorizer was never reached rather than that it said no.
 	asked atomic.Int32
@@ -96,6 +101,11 @@ func (f *fixture) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool,
 	return f.allow, f.authErr
 }
 
+func (f *fixture) Includes(_ context.Context, _ tenancy.Tenant, feature string) (bool, error) {
+	f.wanted = feature
+	return f.includes, f.planErr
+}
+
 // authenticate is the identity hook in its E3 shape: it runs after the host has
 // resolved, inside that tenant's transaction, so a real implementation looks a
 // session up under row-level security. This one answers from a field, and takes
@@ -144,6 +154,7 @@ func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
 		Tenants:      f,
 		Conn:         app,
 		Authorize:    f,
+		Entitle:      f,
 		Authenticate: f.authenticate,
 		Log:          slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
@@ -1013,5 +1024,98 @@ func TestABodyHasACeilingAndTheStreamingRouteHasAHigherOne(t *testing.T) {
 	}
 	if code := send(t, "/stream", over); code != http.StatusOK {
 		t.Errorf("a body of %d on the streaming route = %d, want it read", over, code)
+	}
+}
+
+// TestAPlanFeatureIsAskedAfterThePermission is the entitlement seam: a route
+// says which feature of the price list it belongs to, and the kernel refuses a
+// tenant whose plan does not include it — with 402 and not 403, because a plan
+// that excludes something is not a permission anybody can be granted, and a
+// client that cannot tell them apart offers the wrong way out of both.
+//
+// The order is the point. A caller who may not do this at all is told that,
+// and is not told to buy something they still could not use.
+func TestAPlanFeatureIsAskedAfterThePermission(t *testing.T) {
+	api, router, f := setup(t)
+	httpx.Register(api, huma.Operation{
+		OperationID: "read-trail", Method: http.MethodGet, Path: "/trail",
+	}, httpx.Permission("trail:read").Needing("audit-trail"), ok)
+	f.signedIn()
+
+	// No permission: 403, and the plan is never asked about.
+	f.allow, f.includes = false, true
+	f.wanted = ""
+	if res := get(t, router, "/trail"); res.Code != http.StatusForbidden {
+		t.Errorf("a caller who holds nothing got %d %s, want 403", res.Code, res.Body)
+	}
+	if f.wanted != "" {
+		t.Errorf("the plan was asked about %q for a caller who may not anyway", f.wanted)
+	}
+
+	// The permission, without the plan: 402, naming the feature.
+	f.allow, f.includes = true, false
+	if res := get(t, router, "/trail"); res.Code != http.StatusPaymentRequired ||
+		!strings.Contains(res.Body.String(), "PLAN_EXCLUDES") {
+		t.Errorf("a plan that excludes the feature got %d %s, want 402", res.Code, res.Body)
+	}
+	if f.wanted != "audit-trail" {
+		t.Errorf("the kernel asked about %q, want the feature the route declared", f.wanted)
+	}
+
+	// Both: through.
+	f.includes = true
+	if res := get(t, router, "/trail"); res.Code != http.StatusOK {
+		t.Errorf("an entitled caller got %d %s", res.Code, res.Body)
+	}
+
+	// A plan that cannot be read is an outage and not a denial: billing being
+	// unreachable must not read as "your plan does not include this".
+	f.planErr = errors.New("the subscription store is unreachable")
+	if res := get(t, router, "/trail"); res.Code != http.StatusServiceUnavailable {
+		t.Errorf("an unreadable plan got %d %s, want 503", res.Code, res.Body)
+	}
+}
+
+// TestAFeatureNothingCanAnswerDoesNotStart. A declaration nothing answers is a
+// door that would be either always open or always shut, and both are wrong in a
+// way nobody notices until a customer does.
+func TestAFeatureNothingCanAnswerDoesNotStart(t *testing.T) {
+	admin, app := dbtest.Schema(t)
+	_ = admin
+	f := &fixture{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}, app: app, logs: &lines{}}
+	api, _ := httpx.New(httpx.Options{
+		PublicHost: host, Tenants: f, Conn: app, Authorize: f,
+		Authenticate: f.authenticate, Log: slog.New(slog.DiscardHandler),
+	})
+	httpx.Register(api, huma.Operation{
+		OperationID: "read-trail", Method: http.MethodGet, Path: "/trail",
+	}, httpx.Permission("trail:read").Needing("audit-trail"), ok)
+	err := api.ValidateDeclarations()
+	if err == nil || !strings.Contains(err.Error(), "audit-trail") {
+		t.Fatalf("ValidateDeclarations = %v, want a refusal naming the feature", err)
+	}
+}
+
+// TestAPublicRouteIsStillAskedAboutThePlan is the hole the adversarial pass on
+// this found: the public branch returned before the feature was ever
+// considered, so Public().Needing(...) was a declaration the kernel silently
+// ignored. A public operation asks nothing about the caller and may still ask
+// about the tenant — a public site that is part of a paid plan is exactly that.
+func TestAPublicRouteIsStillAskedAboutThePlan(t *testing.T) {
+	api, router, f := setup(t)
+	httpx.Register(api, huma.Operation{
+		OperationID: "read-site", Method: http.MethodGet, Path: "/site",
+	}, httpx.Public().Needing("public-site"), ok)
+
+	f.includes, f.wanted = false, ""
+	if res := get(t, router, "/site"); res.Code != http.StatusPaymentRequired {
+		t.Errorf("a public route on a plan that excludes it got %d %s, want 402", res.Code, res.Body)
+	}
+	if f.wanted != "public-site" {
+		t.Errorf("the kernel asked about %q; a public declaration was not checked at all", f.wanted)
+	}
+	f.includes = true
+	if res := get(t, router, "/site"); res.Code != http.StatusOK {
+		t.Errorf("a public route on a plan that includes it got %d %s", res.Code, res.Body)
 	}
 }

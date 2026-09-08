@@ -80,6 +80,17 @@ type Features []string
 func (f Features) Value() (driver.Value, error) { return pq.StringArray(f).Value() }
 func (f *Features) Scan(src any) error          { return (*pq.StringArray)(f).Scan(src) }
 
+// Serving reports whether a subscription in this status is a period the tenant
+// is entitled to. Three of the four are: a trial is the plan being served
+// before anything is asked for, and a past-due subscription is a period that
+// was served and is now owed for — taking the product away the moment a card
+// fails is how a payment retry becomes a support ticket. What ends
+// entitlement is the grace period running out, which is what moves a
+// subscription to cancelled.
+func Serving(status string) bool {
+	return status == StatusTrial || status == StatusActive || status == StatusPastDue
+}
+
 // Plan is one thing a tenant can subscribe to. The price is an integer of the
 // currency's minor unit: money in a float is wrong, money in a decimal is a
 // dependency and a serialization question, and money in cents is an int64 every

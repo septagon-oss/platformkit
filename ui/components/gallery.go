@@ -15,6 +15,10 @@ package components
 // Adding a component means adding a line here. That is the ratchet.
 
 import (
+	"cmp"
+	"encoding/json"
+	"maps"
+	"slices"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -30,6 +34,8 @@ func Gallery() []Example {
 		return ExampleInfo{ID: id, ComponentID: componentID, Group: group, Name: name}
 	}
 	return []Example{
+		ExampleOf(info("pk-ui.component.video/default", "Media", "Video / captions"), VideoProps{Label: "Recorded instruction", Sources: []VideoSource{{Src: "/example.mp4", Type: "video/mp4"}}, Tracks: []VideoTrack{{Src: "/example.vtt", Language: "en", Label: "English", Default: true}}}, Video),
+		ExampleOf(info("pk-ui.component.video/disabled", "Media", "Video / unavailable"), VideoProps{ComponentProps: ComponentProps{Disabled: true}, Label: "Recording unavailable"}, Video),
 		ExampleOf(info("pk-ui.component.heading/1", "Type", "Heading / 1"), HeadingProps{Text: "Page title", Level: 1}, Heading),
 		ExampleOf(info("pk-ui.component.heading/2", "Type", "Heading / 2"), HeadingProps{Text: "Section", Level: 2, Anchor: "section"}, Heading),
 		ExampleOf(info("pk-ui.component.heading/3", "Type", "Heading / 3"), HeadingProps{Text: "Sub", Level: 3}, Heading),
@@ -152,7 +158,11 @@ func Gallery() []Example {
 		ExampleWithChildren(info("pk-ui.component.stack/default", "Layout", "Stack"), StackProps{Gap: "2", Align: "start"}, []g.Node{g.Text("a"), g.Text("b")}, Stack),
 		ExampleWithChildren(info("pk-ui.component.flex/default", "Layout", "Flex"), FlexProps{Direction: "row", Gap: "4", Align: "center",
 			Justify: "between", Wrap: true}, []g.Node{g.Text("l"), g.Text("r")}, Flex),
-		ExampleWithChildren(info("pk-ui.component.grid/default", "Layout", "Grid"), GridProps{Columns: "3", Gap: "6"}, []g.Node{g.Text("1"), g.Text("2"), g.Text("3")}, Grid),
+		ExampleWithChildren(info("pk-ui.component.grid/default", "Layout", "Grid"), GridProps{Columns: "3", Gap: "6"}, []g.Node{
+			ExampleOf(ExampleInfo{ID: "first", ComponentID: "pk-ui.component.text"}, TextProps{Content: "1"}, Text).Node,
+			ExampleOf(ExampleInfo{ID: "second", ComponentID: "pk-ui.component.text"}, TextProps{Content: "2"}, Text).Node,
+			ExampleOf(ExampleInfo{ID: "third", ComponentID: "pk-ui.component.text"}, TextProps{Content: "3"}, Text).Node,
+		}, Grid),
 		ExampleWithChildren(info("pk-ui.component.container/default", "Layout", "Container"), ContainerProps{MaxWidth: "4xl"}, []g.Node{g.Text("content")}, Container),
 		ExampleWithSlots(info("pk-ui.component.card/default", "Layout", "Card"), CardProps{Title: "Plain card", Description: "With copy."}, CardSlots{}, CardWithSlots),
 		ExampleWithSlots(info("pk-ui.component.card/clickable", "Layout", "Card / clickable"), CardProps{Title: "Go somewhere", Clickable: true, Href: "/detail"}, CardSlots{}, CardWithSlots),
@@ -247,10 +257,10 @@ func Gallery() []Example {
 		ExampleWithSlots(info("pk-ui.component.modal/default", "Overlay", "Modal"), ModalProps{ComponentProps: ComponentProps{ID: "confirm-modal"},
 			Title: "Archive", Description: "This action cannot be undone.",
 			Body: "Review the affected records.", Footer: "Confirm or cancel.", Size: "small", Open: true}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/medium", "Overlay", "Modal / medium"), ModalProps{Title: "Edit record", Size: "medium"}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/large", "Overlay", "Modal / large"), ModalProps{Title: "Large review", Size: "large"}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/xl", "Overlay", "Modal / xl"), ModalProps{Title: "Wide review", Size: "xl"}, ModalSlots{}, ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/undismissable", "Overlay", "Modal / undismissable"), ModalProps{AriaLabel: "Required decision", Size: "full",
+		ExampleWithSlots(info("pk-ui.component.modal/medium", "Overlay", "Modal / medium"), ModalProps{Title: "Edit record", Size: "medium", Open: true}, ModalSlots{}, ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/large", "Overlay", "Modal / large"), ModalProps{Title: "Large review", Size: "large", Open: true}, ModalSlots{}, ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/xl", "Overlay", "Modal / xl"), ModalProps{Title: "Wide review", Size: "xl", Open: true}, ModalSlots{}, ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/undismissable", "Overlay", "Modal / undismissable"), ModalProps{AriaLabel: "Required decision", Size: "full", Open: true,
 			Closable: new(false), CloseOnOverlay: new(false), CloseOnEscape: new(false), ShowClose: new(false), ShowOverlay: new(false), Centered: new(false)}, ModalSlots{}, ModalWithSlots),
 		ExampleWithSlots(info("pk-ui.component.modal/deferred", "Overlay", "Modal / deferred"), ModalProps{ComponentProps: ComponentProps{ID: "server-modal"},
 			AriaLabel: "Server dialog", Deferred: true, OpenOnSwap: true}, ModalSlots{}, ModalWithSlots),
@@ -290,4 +300,114 @@ func Gallery() []Example {
 		// which renders every real screen and checks each class against the
 		// stylesheet.
 	}
+}
+
+// GalleryGroups is the groups the examples fall into, in order, so a page a
+// hundred specimens long can be jumped through. Derived from the list above, so
+// a new group needs no second edit.
+func GalleryGroups() []string {
+	var out []string
+	for _, example := range Gallery() {
+		if len(out) == 0 || out[len(out)-1] != example.Group {
+			out = append(out, example.Group)
+		}
+	}
+	return out
+}
+
+// Documentation is what a person needs in order to use the component beside it:
+// the id the design export names it by, every property its Props type takes with
+// the value this example gave it, and the slots something else can be put into.
+//
+// It is projected from the same Example the specimen is rendered from — the
+// schema and the props are the ones ui.Export publishes — so a page cannot
+// describe a component this package does not have, or a property it does not
+// take. That is the reason it exists: a wall of specimens says what a badge
+// looks like and nothing about how to ask for one.
+func Documentation(e Example) g.Node {
+	described, err := e.Describe()
+	if err != nil {
+		return Text(TextProps{Content: "Cannot be described: " + err.Error(), Size: "sm", Color: "muted"})
+	}
+	facts := []g.Node{Text(TextProps{Content: described.ID, Element: "code", Size: "xs", Color: "muted"})}
+	switch rows := propertyRows(described); {
+	case !described.PropsEditable:
+		facts = append(facts, Text(TextProps{Size: "sm", Color: "muted",
+			Content: "No typed properties: " + cmp.Or(described.Reason, "captured as a rendered node")}))
+	case len(rows) > 0:
+		facts = append(facts, Table(TableProps{Compact: true, Rows: rows, Columns: []TableColumn{
+			{Key: "name", Label: "Property", Primary: true},
+			{Key: "type", Label: "Type"},
+			{Key: "value", Label: "This example"},
+		}}))
+	}
+	var named []string
+	for _, slot := range described.Slots {
+		// A slot the editors cannot fill is left out: naming it would be an
+		// offer this package does not make.
+		if slot.Supported {
+			named = append(named, slot.Name)
+		}
+	}
+	if len(named) > 0 {
+		facts = append(facts, Text(TextProps{
+			Content: "Slots: " + strings.Join(named, ", "), Size: "sm", Color: "muted"}))
+	}
+	return Stack(StackProps{Gap: "2"}, facts...)
+}
+
+// propertyRows is every property the component takes, the required ones first
+// and then alphabetically, each with what this example gave it. A property left
+// out is shown empty rather than omitted: what a component will accept is the
+// half of this page a specimen cannot show. A value is written as a person
+// would type it — a string without its quotes, anything else as JSON.
+func propertyRows(d ExampleDescription) []TableRow {
+	// A property that may be left unset is spelled anyOf[type, null] — a *bool
+	// is how this package says "true, false, or the component's own default" —
+	// so the type is read from either shape or the column would be blank for
+	// exactly the properties whose absence means something.
+	type propertyType struct {
+		Type  string `json:"type"`
+		AnyOf []struct {
+			Type string `json:"type"`
+		} `json:"anyOf"`
+	}
+	var schema struct {
+		Properties map[string]propertyType `json:"properties"`
+		Required   []string                `json:"required"`
+	}
+	var given map[string]json.RawMessage
+	if json.Unmarshal(d.Schema, &schema) != nil {
+		return nil
+	}
+	_ = json.Unmarshal(d.Props, &given)
+	names := slices.Sorted(maps.Keys(schema.Properties))
+	rank := func(name string) int {
+		if slices.Contains(schema.Required, name) {
+			return 0
+		}
+		return 1
+	}
+	slices.SortStableFunc(names, func(a, b string) int { return rank(a) - rank(b) })
+	rows := make([]TableRow, 0, len(names))
+	for _, name := range names {
+		property := schema.Properties[name]
+		kind := property.Type
+		for _, one := range property.AnyOf {
+			if kind == "" && one.Type != "null" {
+				kind = one.Type + ", or the default"
+			}
+		}
+		if rank(name) == 0 {
+			kind += ", required"
+		}
+		value := ""
+		if raw := given[name]; len(raw) > 0 {
+			if value = string(raw); json.Unmarshal(raw, &value) != nil {
+				value = string(raw)
+			}
+		}
+		rows = append(rows, TableRow{ID: name, Cells: map[string]any{"name": name, "type": kind, "value": value}})
+	}
+	return rows
 }

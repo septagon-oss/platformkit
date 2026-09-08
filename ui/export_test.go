@@ -114,6 +114,36 @@ func TestDesignExportIsDeterministicAndContentAddressed(t *testing.T) {
 	}
 }
 
+func TestTypographyConfigurationReachesRuntimeAndExportWithoutChangingComponents(t *testing.T) {
+	t.Parallel()
+	theme := design.Default()
+	examples := c.Gallery()
+	before, err := ui.Export(theme, examples)
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme.Light.Typography.Display = `"Customer Display", serif`
+	theme.Dark.Typography.Display = theme.Light.Typography.Display
+	after, err := ui.Export(theme, examples)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.SHA256 == before.SHA256 || after.CSS == before.CSS || ui.Compose(theme).Fingerprint == ui.Compose(design.Default()).Fingerprint {
+		t.Fatal("typography must invalidate both source and stylesheet identities")
+	}
+	if !reflect.DeepEqual(after.Examples, before.Examples) || !reflect.DeepEqual(after.Icons, before.Icons) || after.FontPolicy != before.FontPolicy {
+		t.Fatal("typography configuration changed component contracts, assets or font-delivery policy")
+	}
+	for _, palette := range after.Themes {
+		for _, token := range palette.Tokens {
+			if token.Name == "--pk-font-display" && (token.Value != `"Customer Display", serif` ||
+				!strings.Contains(after.CSS, token.Name+": "+token.Value+";")) {
+				t.Fatalf("exported typography disagrees with the source stylesheet: %+v", token)
+			}
+		}
+	}
+}
+
 func TestDesignExportRejectsAmbiguousIdentityAndRenderFailures(t *testing.T) {
 	info := c.ExampleInfo{ID: "button/one", ComponentID: "button", Name: "Button"}
 	button := c.ExampleOf(info, c.ButtonProps{Label: "Save"}, c.Button)

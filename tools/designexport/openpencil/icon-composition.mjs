@@ -137,14 +137,15 @@ export function planIcon(graph, asset, svg, nativeMaster, colorCollectionId, obs
         (sourceNode.strokeCap === 'NONE' || sourceNode.strokeCap === expected[0].cap) &&
         (sourceNode.strokeJoin === 'MITER' || sourceNode.strokeJoin === expected[0].join), 'native effective stroke style differs')
       const observedPaint = observePaint(observed, cssField), variableId = observedPaint.boundVariables['fills/0/color']
+      const expression = observedPaint.expressionBindings?.['fills/0/color']
       if (canonical.currentColorFields.includes(field)) {
         requireIcon(graph.variables.get(variable)?.type === 'COLOR' && graph.variables.get(variable)?.collectionId === collection.id &&
-          graph.variables.get(variableId)?.type === 'COLOR' && graph.variables.get(variableId)?.collectionId === collection.id &&
+          (expression && !variableId || graph.variables.get(variableId)?.type === 'COLOR' && graph.variables.get(variableId)?.collectionId === collection.id) &&
           same(actual[0].color, graph.resolveVariable(variable, collection.defaultModeId)), 'native currentColor variable or fallback differs')
-        requireIcon(!roles.has(variable) || roles.get(variable) === variableId, 'conflicting native semantic paint roles')
-        roles.set(variable, variableId)
-        paints.push({ sourceNode, field, variableId })
-      } else requireIcon(!variableId && same(actual[0].color, expected[0].color) && sameObservedColor(observedPaint.fills[0].color, expected[0].color),
+        requireIcon(!roles.has(variable) || isDeepStrictEqual(roles.get(variable), expression ?? variableId), 'conflicting native semantic paint roles')
+        roles.set(variable, expression ?? variableId)
+        paints.push({ sourceNode, field, variableId, ...(expression ? { expression } : {}) })
+      } else requireIcon(!variableId && !expression && same(actual[0].color, expected[0].color) && sameObservedColor(observedPaint.fills[0].color, expected[0].color),
         'canonical literal paint must remain unchanged and unbound')
     }
   }

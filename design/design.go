@@ -20,16 +20,19 @@
 package design
 
 import (
+	"cmp"
+
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// Theme is one palette. Every field is a CSS colour, and every one of them is
-// read: ui/style's role table names each token exactly once, and its test
-// fails when a role has no token behind it. A field nothing reads would be a
-// value that goes stale without anybody noticing, so there are no spares.
+// Theme supplies semantic colours and optional typography. Components read
+// these values through the same tokens in CSS and design export.
 type Theme struct {
 	// Name is what the data-theme attribute carries, and the key Themes uses.
 	Name string
+
+	// Zero fields retain the default font stacks. This value loads no assets.
+	Typography Typography
 
 	// The three surfaces, from the page behind everything to the raised card.
 	SurfaceCanvas  string
@@ -72,14 +75,24 @@ type Theme struct {
 	SidebarMute string
 }
 
-// The three faces. They are one set for both themes: a theme changes colour,
-// and a typeface that changed with the colour scheme would be a different
-// product in the dark.
+// The default font stacks are shared by both themes. They name fallbacks,
+// not bundled assets or a guarantee that a specific physical face is available.
 const (
 	FontDisplay = `"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif`
 	FontBody    = `"IBM Plex Sans", Aptos, "Helvetica Neue", sans-serif`
 	FontMono    = `"IBM Plex Mono", "SFMono-Regular", Consolas, monospace`
 )
+
+// Typography is a caller-owned set of trusted CSS font-family stacks. Empty
+// fields use the corresponding defaults; font delivery and licensing remain
+// with the application. Set the same value on both themes for shared type.
+type Typography struct {
+	Display, Body, Mono string
+}
+
+func (t Typography) resolved() Typography {
+	return Typography{Display: cmp.Or(t.Display, FontDisplay), Body: cmp.Or(t.Body, FontBody), Mono: cmp.Or(t.Mono, FontMono)}
+}
 
 // Light is the default theme.
 func Light() Theme {
@@ -143,8 +156,8 @@ func Dark() Theme {
 
 // Pair is the two palettes one installation ships: what its pages look like in
 // the light and what they look like in the dark. It is a value rather than a
-// package-level pair of functions because a client's own colours are the one
-// thing about this design system that is theirs — everything above the tokens
+// package-level pair of functions because a client's colours and typography
+// belong to its composition — everything above the tokens
 // (the roles, the utilities, the components, the class lists, the stylesheet's
 // shape) is unchanged by them, which is the whole point of the role
 // indirection. Supplying a Pair is the entire seam: there is no second
@@ -171,7 +184,7 @@ type Token struct {
 	Value string `json:"value"`
 }
 
-// Tokens returns detached values for this theme and its shared typography.
+// Tokens returns detached values for this theme and its resolved typography.
 // This is the same list CSS renders, not a second design registry.
 func (t Theme) Tokens() []Token {
 	pairs := [...][2]string{
@@ -202,10 +215,11 @@ func (t Theme) Tokens() []Token {
 	for _, p := range pairs {
 		out = append(out, Token{Name: "--pk-color-" + p[0], Type: "color", Value: p[1]})
 	}
+	fonts := t.Typography.resolved()
 	return append(out,
-		Token{Name: "--pk-font-display", Type: "fontFamily", Value: FontDisplay},
-		Token{Name: "--pk-font-body", Type: "fontFamily", Value: FontBody},
-		Token{Name: "--pk-font-mono", Type: "fontFamily", Value: FontMono},
+		Token{Name: "--pk-font-display", Type: "fontFamily", Value: fonts.Display},
+		Token{Name: "--pk-font-body", Type: "fontFamily", Value: fonts.Body},
+		Token{Name: "--pk-font-mono", Type: "fontFamily", Value: fonts.Mono},
 	)
 }
 
@@ -232,14 +246,17 @@ func (t Theme) declarations(includeFonts bool) []css.Declaration {
 // with its own colours changes this one argument and nothing else. See Pair.
 func CSS(light, dark Theme) *css.Sheet {
 	s := css.NewSheet()
+	// Equal resolved stacks inherit once; differing stacks follow the same
+	// explicit-mode and system-preference cascade as colours.
+	darkFonts := light.Typography.resolved() != dark.Typography.resolved()
 	s.Select(":root", append(light.declarations(true),
 		css.Decl("color-scheme", css.Literal("light")),
 	)...)
-	s.Select(`[data-theme="dark"]`, append(dark.declarations(false),
+	s.Select(`[data-theme="dark"]`, append(dark.declarations(darkFonts),
 		css.Decl("color-scheme", css.Literal("dark")),
 	)...)
 	s.Media("(prefers-color-scheme: dark)", func(inner *css.Sheet) {
-		inner.Select(`:root:not([data-theme])`, append(dark.declarations(false),
+		inner.Select(`:root:not([data-theme])`, append(dark.declarations(darkFonts),
 			css.Decl("color-scheme", css.Literal("dark")),
 		)...)
 	})

@@ -138,10 +138,16 @@ func sidebar(visible []module.NavEntry, r page.Request) g.Node {
 	for _, entry := range visible {
 		items = append(items, components.SidebarItem{Label: entry.Label, Href: entry.Path, Icon: "file-text"})
 	}
-	items = append(items,
-		components.SidebarItem{Label: "Health", Href: healthPath, Icon: "check-circle"},
-		components.SidebarItem{Label: "Components", Href: galleryPath, Icon: "info"},
-	)
+	items = append(items, components.SidebarItem{Label: "Health", Href: healthPath, Icon: "check-circle"})
+	// The component gallery is the installation's design system and not a
+	// tenant's data, so it is offered where that is somebody's business: the
+	// operator's own tenant. A customer's administrator was being handed a link
+	// to a hundred and five specimens of somebody else's toolkit. The route
+	// stays reachable — it holds nothing but this application's own components
+	// rendered with sample values — it is simply not advertised.
+	if r.Tenant.Operator {
+		items = append(items, components.SidebarItem{Label: "Components", Href: galleryPath, Icon: "info"})
+	}
 	// BrandLabel rather than the Brand slot: the sidebar is inverted, and the
 	// colour that is legible on it is one the component owns.
 	return components.Sidebar(components.SidebarProps{

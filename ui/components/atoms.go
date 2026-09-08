@@ -588,20 +588,22 @@ func Select(p SelectProps) g.Node {
 	if id == "" && p.Name != "" {
 		id = "pk-select-" + p.Name
 	}
-	cl := clInput.Merge(clInputNormal).Merge(variantOr(clInputSize, "md", "md"))
+	single := !p.Multiple && p.VisibleRows <= 1
+	size := clInputSize["md"]
+	if single {
+		size = clSelectSize
+	}
+	cl := clInput.Merge(clInputNormal).Merge(size)
 	if p.Error != "" {
-		cl = clInput.Merge(clInputError).Merge(variantOr(clInputSize, "md", "md"))
+		cl = clInput.Merge(clInputError).Merge(size)
 	}
 
 	selectedValues := make(map[string]struct{}, len(p.Values)+1)
 	for _, value := range p.Values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			selectedValues[value] = struct{}{}
-		}
-	}
-	if value := strings.TrimSpace(p.Value); value != "" {
 		selectedValues[value] = struct{}{}
+	}
+	if p.Value != "" {
+		selectedValues[p.Value] = struct{}{}
 	}
 
 	var options []g.Node
@@ -638,6 +640,9 @@ func Select(p SelectProps) g.Node {
 	sel := []g.Node{
 		classes(cl.Compile(), p.Class),
 		h.ID(id), h.Name(p.Name),
+		g.Attr("data-pk-value", "value"),
+		g.Attr("data-pk-values", "values"),
+		g.Attr("data-pk-options", "options"),
 	}
 	sel = append(sel, attrPairs(p.Attrs)...)
 	sel = append(sel, htmxAttrs(p.HTMXProps)...)
@@ -682,9 +687,16 @@ func Select(p SelectProps) g.Node {
 		g.Attr("data-component", "select"),
 	}
 	if p.Label != "" {
-		field = append(field, Label(LabelProps{Text: p.Label, For: id, Required: p.Required}))
+		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
+			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
+		}))
 	}
-	field = append(field, h.Select(sel...))
+	control := h.Select(sel...)
+	if single {
+		control = h.Div(h.Class(clSelectGrid.Compile()), control,
+			h.Div(h.Class(clSelectIndicator.Compile()), Icon(IconProps{Name: "chevron-down", Size: "sm"})))
+	}
+	field = append(field, control)
 	if p.Error != "" {
 		field = append(field, h.P(
 			h.ID(id+"-error"),
@@ -780,6 +792,7 @@ func Textarea(p TextareaProps) g.Node {
 		classes(cl.Compile(), p.Class),
 		h.Name(p.Name), h.Rows(itoa(rows)),
 		g.Attr("data-textarea-input", ""),
+		g.Attr("data-pk-value", "value"),
 	}
 	if id != "" {
 		area = append(area, h.ID(id))
@@ -829,6 +842,10 @@ func Textarea(p TextareaProps) g.Node {
 	if len(actions) > 0 {
 		area = append(area, g.Attr("data-action", strings.Join(actions, " ")))
 	}
+	// HTML normalizes CR/LF and consumes the first LF after <textarea>.
+	if strings.HasPrefix(p.Value, "\n") || strings.HasPrefix(p.Value, "\r") {
+		area = append(area, g.Text("\n"))
+	}
 	area = append(area, g.Text(p.Value))
 
 	rootClass := clFieldWrap
@@ -846,7 +863,9 @@ func Textarea(p TextareaProps) g.Node {
 		field = append(field, g.Attr("data-controller", "textarea-counter"))
 	}
 	if p.Label != "" {
-		field = append(field, Label(LabelProps{Text: p.Label, For: id, Required: p.Required}))
+		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
+			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
+		}))
 	}
 	field = append(field, h.Textarea(area...))
 	var supporting []g.Node
@@ -1041,6 +1060,14 @@ func labelWithText(p LabelProps, text g.Node) g.Node {
 // Heading levels remain owned by Heading so document hierarchy cannot be
 // smuggled through an untyped tag string.
 func Text(p TextProps) g.Node {
+	return textWithContent(p, g.Group{
+		g.Raw("<!--pk-text:content-->"), g.Text(p.Content), g.Raw("<!--/pk-text:content-->"),
+	}, g.Attr("data-component", "text"))
+}
+
+// Composing constructors can annotate their own property without replacing
+// Text's semantics or styling. Only the public constructor marks a Text boundary.
+func textWithContent(p TextProps, content g.Node, attrs ...g.Node) g.Node {
 	element := normalizeTextElement(p.Element)
 	size := normalizeTextSize(p.Size)
 	align := normalizeTextAlign(p.Align)
@@ -1077,10 +1104,9 @@ func Text(p TextProps) g.Node {
 		cl = cl.Merge(clTextNoWrap)
 	}
 	var children []g.Node
-	children = append(children, baseAttrs(p.ComponentProps)...)
+	children = append(children, baseAttrs(p.ComponentProps, attrs...)...)
 	children = append(children,
 		classes(cl.Compile(), p.Class),
-		g.Attr("data-component", "text"),
 		g.Attr("data-element", element),
 		g.Attr("data-size", size),
 		g.Attr("data-align", align),
@@ -1090,7 +1116,7 @@ func Text(p TextProps) g.Node {
 	if lines > 0 {
 		children = append(children, g.Attr("data-lines", strconv.Itoa(lines)))
 	}
-	children = append(children, g.Raw("<!--pk-text:content-->"), g.Text(p.Content), g.Raw("<!--/pk-text:content-->"))
+	children = append(children, content)
 	return g.El(element, children...)
 }
 
@@ -1152,6 +1178,12 @@ func normalizeTextTransform(transform string) string {
 // Heading renders HeadingProps at the given level (clamped 1..6) in the
 // design system's display face.
 func Heading(p HeadingProps) g.Node {
+	return headingWithText(p, g.Group{
+		g.Raw("<!--pk-text:text-->"), g.Text(p.Text), g.Raw("<!--/pk-text:text-->"),
+	})
+}
+
+func headingWithText(p HeadingProps, text g.Node) g.Node {
 	level := p.Level
 	if level < 1 || level > 6 {
 		level = 2
@@ -1165,7 +1197,7 @@ func Heading(p HeadingProps) g.Node {
 	if p.Anchor != "" {
 		children = append(children, h.ID(p.Anchor))
 	}
-	children = append(children, classes(cl.Compile(), p.Class), g.Text(p.Text))
+	children = append(children, classes(cl.Compile(), p.Class), text)
 	switch level {
 	case 1:
 		return h.H1(children...)

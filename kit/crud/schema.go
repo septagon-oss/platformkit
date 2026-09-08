@@ -98,6 +98,26 @@ func Fields[T Entity]() []Field {
 	return fields
 }
 
+// FieldsOf is Fields for a struct that is not an entity, cached the same way.
+// A command's argument is why it exists: assigning a task takes {assigneeId},
+// a shape a screen renders and Fields cannot reach, being generic over Entity.
+// A type that is not a struct has none, which is the honest answer for a
+// command that takes no argument: rest.Command spells that struct{}.
+func FieldsOf(t reflect.Type) []Field {
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil || t.Kind() != reflect.Struct {
+		return nil
+	}
+	if cached, ok := schemas.Load(t); ok {
+		return cached.([]Field)
+	}
+	fields := derive(t)
+	schemas.Store(t, fields)
+	return fields
+}
+
 var (
 	baseType = reflect.TypeOf(Base{})
 	uuidType = reflect.TypeOf(uuid.UUID{})

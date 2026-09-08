@@ -93,3 +93,45 @@ func TestExportedTokensFollowOverridesAndRemainDetached(t *testing.T) {
 		t.Fatalf("token JSON contract: %s, %v", encoded, err)
 	}
 }
+
+func TestTypographyOverridesUseTheExistingTokensAndThemeCascade(t *testing.T) {
+	t.Parallel()
+	baseline := design.Default()
+	theme := baseline
+	theme.Light.Typography = design.Typography{Display: `"Example Display", serif`, Mono: `"Example Mono", monospace`}
+	theme.Dark.Typography = theme.Light.Typography
+	for _, palette := range theme.Both() {
+		want := []design.Token{
+			{Name: "--pk-font-display", Type: "fontFamily", Value: `"Example Display", serif`},
+			{Name: "--pk-font-body", Type: "fontFamily", Value: design.FontBody},
+			{Name: "--pk-font-mono", Type: "fontFamily", Value: `"Example Mono", monospace`},
+		}
+		tokens := palette.Tokens()
+		if !slices.Equal(tokens[22:], want) {
+			t.Fatalf("typography override or per-role fallback lost: %+v", tokens[22:])
+		}
+		tokens[22].Value = "not a mutation of the theme"
+		if palette.Tokens()[22].Value != want[0].Value {
+			t.Fatal("exported typography is not detached")
+		}
+	}
+	shared := design.CSS(theme.Light, theme.Dark).CSS()
+	if strings.Count(shared, "--pk-font-display:") != 1 {
+		t.Fatal("identical typography must be inherited from the root")
+	}
+	theme.Dark.Typography.Body = `"Accessible Body", sans-serif`
+	changed := design.CSS(theme.Light, theme.Dark).CSS()
+	for _, selector := range []string{`[data-theme="dark"] {`, `:root:not([data-theme]) {`} {
+		start := strings.Index(changed, selector)
+		if start < 0 || !properties(changed, selector)["--pk-font-body"] {
+			t.Fatalf("dark typography is absent from %s", selector)
+		}
+		block, _, _ := strings.Cut(changed[start:], "}")
+		if !strings.Contains(block, `--pk-font-body: "Accessible Body", sans-serif;`) {
+			t.Fatalf("dark typography disagrees with its exported token: %s", block)
+		}
+	}
+	if design.Default() != baseline {
+		t.Fatal("typography configuration changed defaults or lost comparable value semantics")
+	}
+}

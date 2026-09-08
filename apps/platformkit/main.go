@@ -81,6 +81,7 @@ func run(args []string) error {
 	a, err := app.New(ctx, cfg, c.modules, app.Options{
 		Tenants:      c.tenants,
 		Authorize:    c.auth,
+		Entitle:      c.plans,
 		Authenticate: c.auth.Authenticate,
 		Role:         app.Role(*role),
 	})

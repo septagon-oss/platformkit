@@ -23,6 +23,7 @@ import (
 func composedLists(t *testing.T) map[string]style.ClassList {
 	t.Helper()
 	out := map[string]style.ClassList{}
+	out["video/default"] = clVideo
 	for v := range clButtonVariant {
 		for s := range clButtonSize {
 			base := clButtonBase.Merge(clButtonVariant[v]).Merge(clButtonSize[s])
@@ -39,6 +40,10 @@ func composedLists(t *testing.T) map[string]style.ClassList {
 	}
 	out["input/normal"] = clInput.Merge(clInputNormal).Merge(clInputSize["md"])
 	out["input/error"] = clInput.Merge(clInputError).Merge(clInputSize["md"])
+	out["select/normal"] = clInput.Merge(clInputNormal).Merge(clSelectSize)
+	out["select/error"] = clInput.Merge(clInputError).Merge(clSelectSize)
+	out["select/grid"] = clSelectGrid
+	out["select/indicator"] = clSelectIndicator
 	out["textarea/manual"] = clInput.Merge(clInputNormal).Merge(clInputSize["md"]).Merge(clTextareaManual)
 	out["textarea/autoresize"] = clInput.Merge(clInputNormal).Merge(clInputSize["md"]).Merge(clTextareaAuto)
 	out["textarea/error"] = clInput.Merge(clInputError).Merge(clInputSize["md"]).Merge(clTextareaManual)

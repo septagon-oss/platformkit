@@ -41,6 +41,71 @@ function masterOf(graph, node) {
   return node
 }
 
+test('CLI assembles supplied variant projections without replacing ordinary source selection', async t => {
+  const directory = await fixture(t), id = 'pk-ui.component.button/primary', output = join(directory, 'family.fig')
+  const args = [output, '--example', id, '--example', form, ...fontArgs([400, 500, 600])]
+  for (const tone of ['info', 'danger']) {
+    const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--proposal'], {
+      cwd: repo, encoding: 'utf8', input: JSON.stringify({ baseSHA256: source.sha256, path: [id], props: { tone } }),
+    }))
+    const path = join(directory, `${tone}.json`)
+    await writeFile(path, JSON.stringify(snapshot), { flag: 'wx' })
+    args.push('--variant', id, 'tone', path)
+  }
+  const result = run(directory, args)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Variants: 2 caller-supplied projections; source freshness is not verified/)
+  const graph = await parseFigFile(Uint8Array.from(await readFile(output)).buffer, { populate: 'all' })
+  const roots = [...graph.getAllNodes()].filter(node => node.type === 'INSTANCE' && origin(node)?.path)
+  assert.equal(roots.length, 2)
+  const instance = roots.find(node => origin(node).path[0] === id), master = masterOf(graph, instance), family = graph.getNode(master.parentId)
+  assert.equal(family.type, 'COMPONENT_SET')
+  assert.deepEqual(graph.getChildren(family.id).map(node => node.componentPropertyValues.tone), ['neutral', 'info', 'danger'])
+  assert.deepEqual(family.componentPropertyDefinitions.map(item => item.type), ['TEXT', 'VARIANT'])
+  assert.ok(graph.getChildren(family.id).every(node => node.componentPropertyDefinitions.length === 0))
+  for (const root of roots) assert.equal(extractSourceProps(graph, root, source).status, 'no-supported-changes')
+  const invalid = join(directory, 'invalid.json'), saved = await readFile(output)
+  await writeFile(invalid, '{invalid json', { flag: 'wx' })
+  const files = await readdir(directory)
+  for (const extra of [
+    ['--variant', id, 'tone', invalid], ['--variant', id, 'tone', join(directory, 'missing.json')],
+    ['--variant', id, 'tone', join(directory, 'info.json')], ['--variant', id, 'label', join(directory, 'info.json')],
+    ['--variant', 'unselected', 'tone', join(directory, 'info.json')],
+  ]) {
+    const refused = run(directory, [join(directory, 'refused.fig'), ...args.slice(1), ...extra])
+    assert.notEqual(refused.status, 0, 'every requested state must pass before output exists')
+    assert.equal(refused.signal, null, refused.error?.message)
+    assert.deepEqual(await readdir(directory), files)
+    assert.deepEqual(await readFile(output), saved)
+  }
+})
+
+test('CLI addresses a nested family by exact source path and refuses malformed paths without publishing', async t => {
+  const directory = await fixture(t), path = [form, 'actions', 'create'], output = join(directory, 'nested.fig')
+  const projected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--proposal'], {
+    cwd: repo, encoding: 'utf8', input: JSON.stringify({ baseSHA256: source.sha256, path, props: { size: 'lg' } }),
+  }))
+  const snapshotPath = join(directory, 'large.json')
+  await writeFile(snapshotPath, JSON.stringify(projected), { flag: 'wx' })
+  const args = ['--example', form, ...fontArgs([400, 500, 600])]
+  const result = run(directory, [output, ...args, '--variant-at', JSON.stringify(path), 'size', snapshotPath])
+  assert.equal(result.status, 0, result.stderr)
+  const graph = await parseFigFile(Uint8Array.from(await readFile(output)).buffer, { populate: 'all' })
+  const root = [...graph.getAllNodes()].find(node => origin(node)?.path?.[0] === form)
+  const actions = graph.getChildren(root.id).find(node => origin(node)?.localId === 'actions')
+  const target = graph.getChildren(actions.id).find(node => origin(node)?.localId === 'create')
+  assert.equal(graph.getNode(masterOf(graph, target).parentId).type, 'COMPONENT_SET')
+  assert.equal(extractSourceProps(graph, target, source).status, 'no-supported-changes')
+  const saved = await readFile(output), files = await readdir(directory)
+  for (const address of ['not json', 'null', '{}', '[]', '[""]', '[1]', JSON.stringify([form, 'missing']), JSON.stringify(['unselected'])]) {
+    const refused = run(directory, [join(directory, 'refused.fig'), ...args, '--variant-at', address, 'size', snapshotPath])
+    assert.notEqual(refused.status, 0)
+    assert.equal(refused.signal, null, refused.error?.message)
+    assert.deepEqual(await readdir(directory), files)
+    assert.deepEqual(await readFile(output), saved)
+  }
+})
+
 test('CLI packages supplied source properties instead of silently regenerating the Core gallery', async t => {
   const directory = await fixture(t), exampleId = 'pk-ui.component.button/secondary'
   const supplied = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', exampleId, '--props'], {
@@ -57,6 +122,22 @@ test('CLI packages supplied source properties instead of silently regenerating t
   assert.notEqual(supplied.sha256, source.sha256)
   assert.equal(graph.getChildren(placed[0].id)[0].text, 'Publish album draft')
   assert.equal(extractSourceProps(graph, placed[0], supplied).status, 'no-supported-changes')
+  const projection = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', exampleId, '--props'], {
+    cwd: repo, encoding: 'utf8', input: JSON.stringify({ label: 'Publish album draft', tone: 'danger' }),
+  }))
+  const projectionPath = join(directory, 'supplied-projection.json'), familyOutput = join(directory, 'supplied-family.fig')
+  await writeFile(projectionPath, JSON.stringify(projection), { flag: 'wx' })
+  const familyResult = run(directory, [familyOutput, '--snapshot-stdin', '--example', exampleId,
+    '--variant', exampleId, 'tone', projectionPath, ...fontArgs([600])], JSON.stringify(supplied))
+  assert.equal(familyResult.status, 0, familyResult.stderr)
+  const familyGraph = await parseFigFile(Uint8Array.from(await readFile(familyOutput)).buffer, { populate: 'all' })
+  const familyRoot = [...familyGraph.getAllNodes()].find(node => node.type === 'INSTANCE' && origin(node)?.path)
+  const family = familyGraph.getNode(masterOf(familyGraph, familyRoot).parentId)
+  assert.equal(family.type, 'COMPONENT_SET')
+  assert.equal(origin(family).sha256, supplied.sha256, 'family generation must not fall back to the Core gallery')
+  assert.ok(familyGraph.getChildren(family.id).some(node => origin(node).sha256 === projection.sha256))
+  assert.equal(familyGraph.getChildren(familyRoot.id)[0].text, 'Publish album draft')
+  assert.equal(extractSourceProps(familyGraph, familyRoot, supplied).status, 'no-supported-changes')
   const missing = join(directory, 'missing.fig')
   assert.notEqual(run(directory, [missing, '--snapshot-stdin', '--example', form, ...fontArgs([600])], JSON.stringify(supplied)).status, 0)
   await assert.rejects(readFile(missing), { code: 'ENOENT' })
@@ -67,6 +148,7 @@ test('CLI packages exact selected native examples from fresh source, including n
   for (const selection of [
     { name: 'default', ids: [button], weights: [600], options: [], mode: 'light', viewport: { width: 1280, height: 900 } },
     { name: 'composed', ids: [form, button], weights: [400, 500, 600], options: ['--mode', 'dark', '--viewport', '640x480'], mode: 'dark', viewport: { width: 640, height: 480 } },
+    { name: 'matched-weight', ids: [form, button], weights: [400, 600], options: [], mode: 'light', viewport: { width: 1280, height: 900 } },
   ]) {
     const output = join(directory, `${selection.name}.fig`)
     const args = [output, ...selection.ids.flatMap(id => ['--example', id]), ...selection.options, ...fontArgs(selection.weights)]
@@ -129,7 +211,8 @@ test('selected generation refuses invalid requests completely and preserves syml
     [...valid, '--example', form],
     ['--example', 'pk-ui.component.input/email', ...fontArgs([400, 500, 600])],
     ['--example', button, '--example', 'pk-ui.component.input/email', ...fontArgs([400, 500, 600])],
-    ['--example', form, ...fontArgs([400, 600])],
+    ['--example', form, ...fontArgs([400, 500])],
+    ['--example', form, ...fontArgs([500, 600])],
     ['--example', form],
     ['--mode', 'dark'],
     ['--viewport', '320x480'],

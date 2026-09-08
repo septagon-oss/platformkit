@@ -7,6 +7,8 @@ import { after, afterEach, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { captureExample } from './capture.mjs'
+import { resolveColorExpression } from '../color-expression.mjs'
+import { computedColor } from '../computed-color.mjs'
 
 const repo = fileURLToPath(new URL('../../../../', import.meta.url))
 const primary = 'pk-ui.component.button/primary'
@@ -34,6 +36,51 @@ function projection(id, props) {
 function observed(nodes) {
   return nodes.flatMap(node => [node, ...observed(node.children ?? [])])
 }
+
+test('authored Go color roles match Chromium across palettes and independent transparent token edits', async () => {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    const cases = await page.evaluate(({ css, themes }) => {
+      const sheet = new CSSStyleSheet()
+      sheet.replaceSync(css)
+      document.adoptedStyleSheets = [sheet]
+      const definitions = [...sheet.cssRules].filter(rule => rule.selectorText === ':root').flatMap(rule =>
+        [...rule.style].filter(name => name.startsWith('--pk-role-')).map(name => [name, rule.style.getPropertyValue(name)]))
+      const sample = document.createElement('span'), results = []
+      document.body.append(sample)
+      for (const theme of themes) {
+        document.documentElement.dataset.theme = theme.mode
+        const tokens = theme.tokens.filter(token => token.type === 'color').map(token => [token.name, token.value])
+        for (const edit of [null, ...tokens.flatMap(([name]) => ['#20406080', '#abcdef00'].map(value => [name, value]))]) {
+          const values = new Map(tokens)
+          if (edit) values.set(...edit)
+          for (const [name, value] of values) document.documentElement.style.setProperty(name, value, 'important')
+          const colors = definitions.map(([name]) => {
+            // Ask Chromium for modern serialization: legacy rgba() can print
+            // #80 alpha as 0.5, concealing its actual 128/255 value.
+            sample.style.color = `color(from var(${name}) srgb r g b / alpha)`
+            return getComputedStyle(sample).color
+          })
+          results.push({ mode: theme.mode, edit, definitions, values: [...values], colors })
+        }
+      }
+      return results
+    }, source)
+    assert.equal(cases.length, source.themes.reduce((count, theme) => count + 1 + 2 * theme.tokens.filter(token => token.type === 'color').length, 0))
+    for (const item of cases) {
+      const definitions = new Map(item.definitions), values = new Map(item.values)
+      assert.equal(definitions.size, item.definitions.length, 'each tested role has one authored declaration')
+      assert.ok(item.definitions.some(([, value]) => value.startsWith('color-mix(')))
+      for (const [index, [name, expression]] of item.definitions.entries()) {
+        const actual = resolveColorExpression(expression, key => values.get(key) ?? definitions.get(key))
+        const expected = computedColor(item.colors[index])
+        for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(actual[channel] - expected[channel]) <= .000001,
+          `${item.mode} ${name} ${item.edit}: ${channel} ${actual[channel]} != ${expected[channel]}`)
+      }
+    }
+  } finally { await context.close() }
+})
 
 function occurrenceFixture() {
   const snapshot = structuredClone(source), example = snapshot.examples.find(item => item.id === primary)
@@ -158,7 +205,8 @@ test('capture observes actual text-control values and exact fonts without invent
 
 test('capture retains text presentation that native construction must not silently discard', async () => {
   const snapshot = projection('pk-ui.component.input/bare', { value: 'Audit' })
-  snapshot.css += '\ninput { text-indent: 20px; text-shadow: 4px 0 red; word-spacing: 3px; writing-mode: vertical-rl; direction: rtl; }'
+  snapshot.css += '\nbody { font-synthesis: none; }'
+  snapshot.css += '\ninput { text-indent: 20px; text-shadow: 4px 0 red; word-spacing: 3px; writing-mode: vertical-rl; direction: rtl; font-synthesis-weight: auto; }'
   const result = await captureExample(browser, snapshot, snapshot.examples[0].id, { fonts: faces })
   const { style } = observed(result.roots).find(node => node.control)
   assert.equal(style['text-indent'], '20px')
@@ -166,6 +214,8 @@ test('capture retains text presentation that native construction must not silent
   assert.equal(style['word-spacing'], '3px')
   assert.equal(style['writing-mode'], 'vertical-rl')
   assert.equal(style.direction, 'rtl')
+  assert.equal(style['font-synthesis-weight'], 'auto', 'the control overrides its inherited weight synthesis')
+  assert.equal(style['font-synthesis-style'], 'none', 'style synthesis remains disabled by inheritance')
 })
 
 // Independent DOM measurements remove the source annotations entirely.
@@ -222,6 +272,8 @@ test('browser capture preserves real Button layout, text regions and source iden
     assert.equal(result.environment.fontHinting, 'default')
     assert.equal(result.roots.length, 1)
     const button = result.roots[0]
+    assert.equal(button.style['font-synthesis-weight'], 'auto')
+    assert.equal(button.style['font-synthesis-style'], 'auto')
     assert.equal(button.kind, 'element')
     assert.equal(button.tag, 'button')
     assert.equal(button.component, 'button')
@@ -302,6 +354,105 @@ test('browser capture observes token alias candidates, mixed paints and equal-co
   }
 })
 
+test('paint capture observes alpha-only dependencies without turning them into literals or direct aliases', async () => {
+  const accent = '--pk-color-accent-default', surface = '--pk-color-surface-primary'
+  for (const mode of ['light', 'dark']) {
+    for (const [expression, tokens] of [
+      [`rgb(from var(${accent}) 30 40 50 / alpha)`, [accent]],
+      [`rgb(from var(${accent}) 30 40 50 / min(1, calc(alpha * 100)))`, [accent]],
+      [`rgb(from color-mix(in srgb, var(${accent}), var(${surface})) 30 40 50 / alpha)`, [accent, surface]],
+      ['rgb(30 40 50)', []],
+    ]) {
+      const snapshot = structuredClone(source)
+      snapshot.css += `\n[data-component="button"] { color: ${expression}; background-color: ${expression}; border-color: ${expression}; }`
+      const before = structuredClone(snapshot)
+      const capture = await captureExample(browser, snapshot, withIcon, { mode, fonts: faces })
+      const root = capture.roots[0], paints = [
+        root.paintSources.color, root.paintSources['background-color'],
+        ...['top', 'right', 'bottom', 'left'].map(side => root.paintSources[`border-${side}-color`]),
+        ...observed(root.children).filter(node => node.tag === 'path').map(node => node.paintSources.fill),
+      ]
+      assert.ok(paints.length > 6, 'include inherited currentColor on the actual source SVG paths')
+      for (const paint of paints) {
+        assert.deepEqual(paint.tokens.toSorted(), tokens.toSorted(), expression)
+        assert.equal(paint.directCandidate, null, 'fixed RGB channels do not directly alias the token')
+      }
+      const original = await originalLayout(snapshot, withIcon, mode, viewport, faces)
+      assert.equal(root.style.color, original.color, 'capture retains the unmodified source paint')
+      assert.deepEqual(root.bounds, original.bounds, 'probing does not leak altered layout')
+      assert.deepEqual(snapshot, before)
+    }
+  }
+})
+
+test('capture retains uniquely witnessed authored color expressions without a second role map', async () => {
+  const accent = '--pk-color-accent-default', surface = '--pk-color-surface-primary'
+  for (const mode of ['light', 'dark']) {
+    const badge = (await captureExample(browser, source, brandBadge, { mode })).roots[0]
+    assert.deepEqual(badge.paintSources['background-color'].expressionCandidate, {
+      customProperty: '--pk-role-surface-brand-soft',
+      value: `color-mix(in srgb, var(${accent}) 12%, var(${surface}))`, customProperties: {},
+    })
+    const snapshot = structuredClone(source)
+    const value = `color-mix(in srgb, var(${accent}) 27%, var(--product-paper))`
+    snapshot.css += `\n:root { --product-tint: ${value}; --product-paper: var(${surface}); }
+      [data-component="button"] { background-color: var(--product-tint); color: var(--product-tint); }`
+    const before = structuredClone(snapshot)
+    const root = (await captureExample(browser, snapshot, withIcon, { mode })).roots[0]
+    const paint = root.paintSources['background-color']
+    assert.deepEqual({ ...paint, tokens: paint.tokens.toSorted() }, {
+      tokens: [accent, surface].toSorted(), directCandidate: null,
+      expressionCandidate: { customProperty: '--product-tint', value, customProperties: { '--product-paper': `var(${surface})` } },
+    })
+    const original = await originalLayout(snapshot, withIcon, mode)
+    assert.deepEqual(root.bounds, original.bounds)
+    assert.equal(root.style['background-color'], original.backgroundColor)
+    const vector = observed(root.children).find(node => node.tag === 'path')
+    assert.deepEqual(vector.paintSources.fill.expressionCandidate, paint.expressionCandidate, 'currentColor retains the same authored relationship')
+    paint.expressionCandidate.customProperties['--product-paper'] = 'transparent'
+    assert.equal(root.paintSources.color.expressionCandidate.customProperties['--product-paper'], `var(${surface})`, 'paint records are caller-owned, not shared mutable definitions')
+    assert.equal(vector.paintSources.fill.expressionCandidate.customProperties['--product-paper'], `var(${surface})`)
+    assert.deepEqual(snapshot, before)
+    assert.deepEqual(Object.keys(badge.paintSources.color).toSorted(), ['directCandidate', 'tokens'], 'direct aliases keep their existing evidence')
+  }
+})
+
+test('expression capture leaves ambiguous, shadowed, unsupported and probe-mismatched definitions unclaimed', async () => {
+  const accent = '--pk-color-accent-default', surface = '--pk-color-surface-primary'
+  const value = `color-mix(in srgb, var(${accent}) 27%, var(${surface}))`
+  for (const mode of ['light', 'dark']) {
+    for (const extra of [
+      `:root { --product-tint: ${value}; }`,
+      `[data-component="button"] { --product-tint: ${value}; }`,
+      ':root { --product-alias: var(--product-tint); } [data-component="button"] { background-color: var(--product-alias); }',
+      `@media (min-width: 1px) { :root { --product-tint: color-mix(in srgb, var(${accent}) 80%, var(${surface})); } }`,
+      `@media (min-width: 99999px) { :root { --product-tint: ${value}; } }`,
+      `:root[data-theme="${mode === 'light' ? 'dark' : 'light'}"] { --product-tint: ${value}; }`,
+    ]) {
+      const snapshot = structuredClone(source)
+      // Equal baseline tokens conceal different mix weights until a token is probed.
+      for (const theme of snapshot.themes) {
+        const paper = theme.tokens.find(token => token.name === surface).value
+        theme.tokens.find(token => token.name === accent).value = paper
+        snapshot.css += `\n:root[data-theme="${theme.mode}"] { ${accent}: ${paper}; }`
+      }
+      snapshot.css += `\n:root { --product-tint: ${value}; }
+        [data-component="button"] { background-color: var(--product-tint); } ${extra}`
+      const paint = (await captureExample(browser, snapshot, primary, { mode })).roots[0].paintSources['background-color']
+      assert.deepEqual(paint.tokens.toSorted(), [accent, surface].toSorted())
+      assert.equal(paint.directCandidate, null)
+      assert.equal(paint.expressionCandidate, undefined, extra)
+      assert.deepEqual(Object.keys(paint).toSorted(), ['directCandidate', 'tokens'], 'temporary probe records never escape capture')
+    }
+    const snapshot = structuredClone(source)
+    snapshot.css += `\n:root { --product-tint: color-mix(in oklab, var(${accent}), var(${surface})); }
+      [data-component="button"] { background-color: var(--product-tint); }`
+    const paint = (await captureExample(browser, snapshot, primary, { mode })).roots[0].paintSources['background-color']
+    assert.deepEqual(paint.tokens.toSorted(), [accent, surface].toSorted())
+    assert.equal(paint.expressionCandidate, undefined, 'unimplemented color spaces are not rewritten as sRGB')
+  }
+})
+
 test('browser capture follows source full-width layout at mobile and wide viewports', async () => {
   const label = 'Save in this viewport'
   const snapshot = projection(withIcon, { fullWidth: true, label })
@@ -358,6 +509,149 @@ test('browser capture records markers rather than inferring properties from look
   example.html = '<button><!--pk-text:unknown-->Save<!--/pk-text:unknown--></button>'
   const unknown = observed((await captureExample(browser, unmarked, primary)).roots)
   assert.equal(unknown.find(node => node.kind === 'text').property, 'unknown')
+})
+
+test('Select keeps its own copy binding and native single/multiple keyboard selection', async () => {
+  const id = 'pk-ui.component.select/default', label = 'State & <kind>'
+  for (const multiple of [false, true]) for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+    const snapshot = projection(id, { label, multiple, error: 'Check the selection.' })
+    const capture = await captureExample(browser, snapshot, id, { mode, viewport: { width, height: 900 } })
+    const regions = observed(capture.roots).filter(node => Object.hasOwn(node, 'property'))
+    assert.deepEqual(regions.map(node => [node.property, node.text]), [['label', label]])
+    const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme: mode })
+    try {
+      await page.setContent(`<html data-theme="${mode}"><style>${snapshot.css}</style><body>${snapshot.examples[0].html}</body></html>`)
+      const control = page.getByRole(multiple ? 'listbox' : 'combobox', { name: label, exact: false })
+      assert.equal(await control.inputValue(), 'post')
+      assert.equal(await control.getAttribute('aria-invalid'), 'true')
+      assert.deepEqual(await control.evaluate(node => node.getAttribute('aria-describedby').split(' ').map(id => document.getElementById(id).textContent)),
+        ['Check the selection.', 'What the entry renders as.'])
+      await page.locator('label[for="pk-select-kind"]').click()
+      assert.equal(await control.evaluate(node => node === document.activeElement), true)
+      if (multiple) { await control.press('Home'); await control.press('Shift+End') }
+      else await control.press('ArrowDown')
+      assert.deepEqual(await control.evaluate(node => [...node.selectedOptions].map(option => option.value)), multiple ? ['post', 'page'] : ['page'])
+      assert.equal(await control.evaluate(node => getComputedStyle(node).outlineStyle !== 'none'), true)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    } finally { await page.close() }
+  }
+})
+
+test('Select submits exact opaque values including an explicit empty multi-selection', async () => {
+  const options = [{ value: 'padded', label: 'Plain' }, { value: ' padded ', label: 'Padded' }, { value: '', label: 'Empty' }]
+  for (const [props, expected] of [[{ value: ' padded ' }, [' padded ']],
+    [{ multiple: true, value: '', values: ['', ' padded '] }, [' padded ', '']]]) {
+    const snapshot = projection('pk-ui.component.select/default', { ...props, options })
+    const page = await browser.newPage()
+    try {
+      await page.setContent(`<style>${snapshot.css}</style><form>${snapshot.examples[0].html}</form>`)
+      assert.deepEqual(await page.locator('select').evaluate(node => [...node.selectedOptions].map(option => option.value)), expected)
+      assert.deepEqual(await page.evaluate(() => new FormData(document.querySelector('form')).getAll('kind')), expected)
+    } finally { await page.close() }
+  }
+})
+
+test('Select capture keeps explicit source fields, exact options and native selection separate from display labels', async () => {
+  const id = 'pk-ui.component.select/default'
+  const options = [{ value: 'first', label: 'Same', group: 'Group' }, { value: ' padded,a ', label: 'Same', group: 'Group' },
+    { value: '', label: 'Empty', disabled: true }, { value: 'MIXED', label: 'Other' }]
+  for (const multiple of [false, true]) {
+    const snapshot = projection(id, { multiple, required: true, value: multiple ? '' : ' padded,a ',
+      values: multiple ? ['', ' padded,a '] : [], options })
+    const before = structuredClone(snapshot)
+    const capture = await captureExample(browser, snapshot, id, { fonts: faces })
+    const control = observed(capture.roots).find(node => node.tag === 'select').control
+    assert.ok(control, 'Select must have an explicit native control observation')
+    assert.equal(control.kind, 'control')
+    assert.equal(control.type, multiple ? 'select-multiple' : 'select-one')
+    assert.deepEqual(control.properties, { value: 'value', values: 'values', options: 'options' })
+    assert.equal(control.value, ' padded,a ')
+    assert.deepEqual(control.values, multiple ? [' padded,a ', ''] : [' padded,a '])
+    assert.deepEqual(control.options, options.map((option, index) => ({ value: option.value, label: option.label,
+      selected: index === 1 || multiple && index === 2, disabled: index === 2,
+      group: index < 2 ? { label: 'Group', disabled: false } : null })))
+    assert.equal(control.required, true)
+    assert.equal(control.disabled, false)
+    assert.equal(control.size, multiple ? 4 : 0)
+    assert.ok(control.fonts.some(font => font.glyphCount > 0))
+    if (!multiple) {
+      assert.equal(control.fonts.length, 1)
+      assert.equal(control.fonts[0].postScriptName, 'IBMPlexSans-Regular')
+      assert.equal(control.fonts[0].isCustomFont, true)
+      assert.equal(control.content.text, 'Same')
+      assert.ok(control.content.bounds.width > 0)
+      assert.ok(control.content.rects.some(rect => rect.width > 0))
+    }
+    assert.deepEqual(snapshot, before)
+  }
+})
+
+test('Select capture preserves duplicate option values and browser defaults without inventing source selection', async () => {
+  const id = 'pk-ui.component.select/default'
+  const snapshot = projection(id, { value: '', required: true, options: [{ value: 'same', label: 'First' }, { value: 'same', label: 'Second' }] })
+  const capture = await captureExample(browser, snapshot, id)
+  const control = observed(capture.roots).find(node => node.tag === 'select').control
+  assert.ok(control)
+  assert.deepEqual(control.options.map(option => [option.value, option.selected]), [['same', true], ['same', false]])
+  assert.equal(control.value, 'same')
+  assert.equal(control.content.text, 'First')
+  assert.equal(snapshot.examples[0].props.value, undefined, 'the source still has its unspecified Go zero value')
+})
+
+test('Select capture distinguishes empty choices, placeholder options and listbox viewports', async () => {
+  const id = 'pk-ui.component.select/default'
+  for (const props of [{}, { placeholder: 'Pick one' }, { multiple: true, visibleRows: 2 },
+    { visibleRows: 3, disabled: true, value: 'one', options: [{ value: 'one', label: 'One' }] }]) {
+    const snapshot = projection(id, { value: '', required: true, options: [], ...props })
+    const result = await captureExample(browser, snapshot, id, { fonts: faces })
+    const node = observed(result.roots).find(node => node.tag === 'select'), control = node.control
+    assert.deepEqual(node.children, [], 'choice data must not masquerade as ordinary layout children')
+    assert.equal(Object.hasOwn(control, 'property'), false, 'choice fields are not a literal text binding')
+    assert.equal(control.value, props.value ?? '')
+    assert.deepEqual(control.values, props.value ? ['one'] : props.placeholder ? [''] : [])
+    assert.equal(control.disabled, props.disabled ?? false)
+    assert.equal(control.size, props.visibleRows ?? 0)
+    if (props.visibleRows) assert.equal(control.content, undefined, 'listboxes do not claim a closed display viewport')
+    else assert.equal(control.content.text, props.placeholder ?? '')
+    if (props.placeholder) assert.deepEqual(control.options, [{ value: '', label: 'Pick one', selected: true, disabled: true, group: null }])
+    else if (!props.value) {
+      assert.deepEqual(control.options, [])
+      assert.deepEqual(control.fonts, [], 'an empty choice cannot supply painted glyph evidence')
+    }
+  }
+})
+
+test('Select capture uses declared field identities and keeps label attributes and group state', async () => {
+  const { snapshot, example } = occurrenceFixture()
+  example.children = []
+  example.html = '<select data-pk-value="choice" data-pk-values="choices" data-pk-options="items">' +
+    '<optgroup label="Unavailable" disabled><option value="wire" label="Display" selected>Fallback</option></optgroup></select>'
+  const { control } = (await captureExample(browser, snapshot, primary)).roots[0]
+  assert.deepEqual(control.properties, { value: 'choice', values: 'choices', options: 'items' })
+  assert.deepEqual(control.options, [{ value: 'wire', label: 'Display', selected: true, disabled: false,
+    group: { label: 'Unavailable', disabled: true } }])
+  assert.equal(control.content.text, 'Display')
+  assert.equal(control.value, 'wire')
+})
+
+test('Select capture refuses incomplete, duplicate and misplaced field markers without inferring unmarked bindings', async () => {
+  const { snapshot, example } = occurrenceFixture()
+  example.children = []
+  const markers = ['data-pk-value="value"', 'data-pk-values="values"', 'data-pk-options="options"']
+  for (const attributes of [...markers, ...markers.map((_, index) => markers.filter((_, other) => other !== index).join(' ')),
+    'data-pk-value="value" data-pk-values="value" data-pk-options="options"',
+    'data-pk-value="" data-pk-values="values" data-pk-options="options"',
+    'data-pk-value="value" data-pk-values="nested.values" data-pk-options="options"']) {
+    example.html = `<select ${attributes}><option>Choice</option></select>`
+    await assert.rejects(captureExample(browser, snapshot, primary), /Invalid choice-control property markers/)
+    assert.equal(browser.contexts().length, 0)
+  }
+  for (const tag of ['div', 'input']) {
+    example.html = `<${tag} ${markers.join(' ')}>${tag === 'input' ? '' : '</div>'}`
+    await assert.rejects(captureExample(browser, snapshot, primary), /Invalid choice-control property markers/)
+  }
+  example.html = '<select><option>Unmarked</option></select>'
+  assert.equal((await captureExample(browser, snapshot, primary)).roots[0].control, undefined)
 })
 
 test('browser capture retains source-owned canonical icon identities for aliases and fallback', async () => {

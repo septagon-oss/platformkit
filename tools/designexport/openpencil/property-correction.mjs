@@ -1,6 +1,31 @@
+import { fileURLToPath } from 'node:url'
+
 // Injected into the pinned browser-compatible property action module. These
 // helpers retain node identity; they never replace a page or rebuild a tree.
 const helpers = String.raw`
+// Stage node and layout effects through the same SDK operations. Measurement
+// failure must precede live graph notifications, deletions and history changes.
+function projectComponentPropertyChange(ctx, change) {
+  const graph = ctx.graph, projected = new SceneGraph();
+  projected.nodes = structuredClone(graph.nodes);
+  projected.rootId = graph.rootId;
+  projected.instanceIndex = structuredClone(graph.instanceIndex);
+  projected.deletedNodeParents = structuredClone(graph.deletedNodeParents);
+  // These resources are read-only inputs to node/layout operations.
+  for (const field of ["images", "variables", "variableCollections", "activeMode"]) projected[field] = graph[field];
+  change({ graph: projected, ...createLayoutRunner(() => projected), withoutComponentSync: operation => operation() });
+  const created = new Set(), removed = new Set();
+  for (const [id, node] of projected.nodes) {
+    const original = graph.getNode(id);
+    if (!original) created.add(id);
+    else if (isEqual(original, node)) projected.nodes.set(id, original);
+  }
+  for (const id of graph.nodes.keys()) if (!projected.nodes.has(id)) removed.add(id);
+  // Preserve live handles and the synchronizer's native ID remapping; unchanged
+  // nodes are shared back into the plan and emit no spurious invalidations.
+  applyNativeSync(graph, { nodes: projected.nodes, created, removed });
+}
+
 function propertyHistoryScope(ctx, target) {
   if (target?.field !== "TEXT" || target.node.type !== "TEXT") return null;
   const nodes = new Map();
@@ -78,11 +103,22 @@ function restorePropertyHistory(ctx, state) {
 function refreshPropertyLayout(ctx, target) {
   if (target?.field !== "TEXT") return;
   ctx.withoutComponentSync(() => {
-    if (target.node.layoutPositioning === "ABSOLUTE" && target.node.textAutoResize === "WIDTH_AND_HEIGHT") {
+    if (target.node.layoutPositioning === "ABSOLUTE" && (target.node.textAutoResize === "WIDTH_AND_HEIGHT" ||
+        target.node.textAutoResize === "HEIGHT" && ownSourceLayoutScope(target.node) === "source-composition-layout")) {
       ctx.graph.updateNode(target.node.id, textAutoResizeChanges(target.node, { text: target.node.text }, true));
     }
     for (let node = target.node; node && node.type !== "CANVAS"; node = node.parentId ? ctx.graph.getNode(node.parentId) : null) {
       ctx.graph.updateNode(node.id, { figmaDerivedLayout: null });
+    }
+    if (ownSourceLayoutScope(target.node) === "source-composition-layout") {
+      // Intrinsic paragraph edits can resize the entire containing row. Saved
+      // sibling line boxes are derived too; history already owns this scope.
+      ctx.graph.preserveSourceMetadataDuring(() => {
+        for (const id of propertyHistoryScope(ctx, target)) {
+          const node = ctx.graph.getNode(id);
+          if (node.visible && node.layoutPositioning !== "ABSOLUTE") ctx.graph.updateNode(id, { figmaDerivedLayout: null });
+        }
+      });
     }
     ctx.runLayoutForNode(target.node.id);
   });
@@ -117,7 +153,16 @@ export function correctEditorCreation(source, replace) {
 // Hash/version guards belong to corrections.mjs. Every structural anchor here
 // must match exactly once before any substituted module is allowed to load.
 export function correctPropertyActions(source, replaceOnce) {
-  source = 'import { textAutoResizeChanges } from "../text/auto-resize.js";\n' + source
+  const helper = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
+  const sync = fileURLToPath(new URL('./sync-correction.mjs', import.meta.url))
+  source = `import { ownSourceLayoutScope } from ${JSON.stringify(helper)};\n` +
+    `import { applyNativeSync } from ${JSON.stringify(sync)};\n` +
+    'import { SceneGraph } from "@open-pencil/scene-graph";\n' +
+    'import { isEqual } from "es-toolkit";\n' +
+    'import { createLayoutRunner } from "../layout-runner.js";\n' +
+    'import { textAutoResizeChanges } from "../text/auto-resize.js";\n' + source
+  source = replaceOnce(source, 'export { createComponentPropertyActions, reapplyInstanceComponentProperties };',
+    'export { createComponentPropertyActions, reapplyInstanceComponentProperties, projectComponentPropertyChange };')
   source = replaceOnce(source, 'function targetValue(target) {', 'function targetValue(ctx, target) {')
   source = replaceOnce(source, 'return target.source.componentId ?? target.node.componentId ?? "";',
     'return chain(ctx.graph, target.node, "componentId").at(-1)?.id ?? "";')
@@ -139,6 +184,13 @@ export function correctPropertyActions(source, replaceOnce) {
   source = replaceOnce(source,
     'function createComponentPropertyActions(ctx, switchVariant) {',
     helpers + '\nfunction createComponentPropertyActions(ctx, switchVariant) {',
+  )
+  source = replaceOnce(source,
+    '\t\tif (definition && definition.type !== "VARIANT") applyPropertyValue(ctx, instanceId, definition, value);',
+    '\t\tif (definition && definition.type !== "VARIANT") {\n' +
+      '\t\t\tapplyPropertyValue(ctx, instanceId, definition, value);\n' +
+      '\t\t\trefreshPropertyLayout(ctx, propertyTarget(ctx, instance, propertyId));\n' +
+      '\t\t}',
   )
   source = replaceOnce(source,
     '\t\tconst target = propertyTarget(ctx, instance, propertyId);\n\t\tconst assignedValue =',

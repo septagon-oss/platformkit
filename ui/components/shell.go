@@ -78,10 +78,14 @@ func Toolbar(p ToolbarProps, actions ...g.Node) g.Node {
 	nodes = append(nodes, classes(clToolbar.Compile(), p.Class))
 	var copy []g.Node
 	if p.Title != "" {
-		copy = append(copy, Heading(HeadingProps{Text: p.Title, Level: 1}))
+		copy = append(copy, headingWithText(HeadingProps{Level: 1}, g.Group{
+			g.Raw("<!--pk-text:Title-->"), g.Text(p.Title), g.Raw("<!--/pk-text:Title-->"),
+		}))
 	}
 	if p.Subtitle != "" {
-		copy = append(copy, Text(TextProps{Content: p.Subtitle, Size: "sm", Color: "muted"}))
+		copy = append(copy, textWithContent(TextProps{Size: "sm", Color: "muted"}, g.Group{
+			g.Raw("<!--pk-text:Subtitle-->"), g.Text(p.Subtitle), g.Raw("<!--/pk-text:Subtitle-->"),
+		}))
 	}
 	nodes = append(nodes,
 		h.Div(h.Class(clToolbarCopy.Compile()), g.Group(copy)),

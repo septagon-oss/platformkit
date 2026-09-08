@@ -673,10 +673,10 @@ func cardNode(p CardProps, slots CardSlots, children []g.Node) g.Node {
 func cardTextHeader(p CardProps) []g.Node {
 	var nodes []g.Node
 	if p.Title != "" {
-		nodes = append(nodes, h.P(h.Class(clCardTitle.Compile()), g.Text(p.Title)))
+		nodes = append(nodes, h.P(h.Class(clCardTitle.Compile()), g.Raw("<!--pk-text:title-->"), g.Text(p.Title), g.Raw("<!--/pk-text:title-->")))
 	}
 	if p.Description != "" {
-		nodes = append(nodes, h.P(h.Class(clCardDesc.Compile()), g.Text(p.Description)))
+		nodes = append(nodes, h.P(h.Class(clCardDesc.Compile()), g.Raw("<!--pk-text:description-->"), g.Text(p.Description), g.Raw("<!--/pk-text:description-->")))
 	}
 	return nodes
 }

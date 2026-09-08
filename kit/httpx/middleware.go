@@ -830,6 +830,22 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 	if auth.kind == kindPublic {
+		// A public operation asks nothing about the caller and may still ask
+		// about the tenant: a public site that is part of a paid plan is a
+		// public route with a feature on it. The tenant is resolved before this
+		// middleware runs, except on a host that resolves to none — and a host
+		// with no tenant has no plan, so there is nothing that could include
+		// the feature.
+		if auth.feature != "" {
+			t, hasTenant := tenancy.FromContext(ctx.Context())
+			if !hasTenant {
+				_ = huma.WriteErr(a.api, ctx, http.StatusNotFound, "no site is served at this host")
+				return
+			}
+			if !a.entitled(ctx, t, auth) {
+				return
+			}
+		}
 		next(ctx)
 		return
 	}
@@ -859,6 +875,9 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	// way for it to fail: the principal was built from a row read inside this
 	// tenant's own transaction. See Principal.
 	if auth.kind == kindSignedIn {
+		if !a.entitled(ctx, t, auth) {
+			return
+		}
 		next(ctx)
 		return
 	}
@@ -889,7 +908,54 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		a.deny(ctx, "AUTH_DENIED", "this operation requires "+grant.Permission)
 		return
 	}
+	// The plan question last, so a caller who may not do this at all is told
+	// that and not told to buy something. The order matters for what a person
+	// reads: "ask your administrator" and "upgrade" are different sentences and
+	// only one of them is true.
+	if !a.entitled(ctx, t, auth) {
+		return
+	}
 	next(ctx)
+}
+
+// entitled answers the feature a declaration names, and writes the refusal
+// itself when the answer is no — 402 rather than 403, because a plan that does
+// not include something is not a permission a person can be granted, and a
+// client that cannot tell the two apart shows the wrong way out of both.
+//
+// A declaration that names no feature asks nothing. An Entitler that cannot
+// decide is an outage and not a denial, exactly as an Authorizer that cannot:
+// billing being unreachable must not read as "your plan does not include this".
+func (a *API) entitled(ctx huma.Context, t tenancy.Tenant, auth Auth) bool {
+	if auth.feature == "" {
+		return true
+	}
+	if a.opts.Entitle == nil {
+		// Defense in depth, like the undeclared branch above: ValidateDeclarations
+		// refuses this composition, so reaching here means the gate did not run.
+		// Closed rather than open, and an outage rather than a denial, because
+		// the fault is the application's and not the caller's.
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: an operation declares a feature and nothing answers it",
+			"feature", auth.feature, "path", ctx.URL().Path)
+		_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
+		return false
+	}
+	included, err := a.opts.Entitle.Includes(ctx.Context(), t, auth.feature)
+	if err != nil {
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: entitlement decision unavailable",
+			"feature", auth.feature, "tenant", t.Slug, "error", err)
+		ctx.SetHeader("Retry-After", "3")
+		_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
+		return false
+	}
+	if !included {
+		a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: plan excludes this operation",
+			"feature", auth.feature, "tenant", t.Slug, "path", ctx.URL().Path)
+		_ = huma.WriteErr(a.api, ctx, http.StatusPaymentRequired,
+			"PLAN_EXCLUDES: this tenant's plan does not include "+auth.feature)
+		return false
+	}
+	return true
 }
 
 // deny logs the machine-readable reason and answers 403 with it. The code is

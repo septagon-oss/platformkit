@@ -1,4 +1,5 @@
 import { generateId } from '@open-pencil/scene-graph'
+import { isDeepStrictEqual } from 'node:util'
 
 function requireBinding(condition, message) {
   if (!condition) throw new Error(`Source component binding: ${message}`)
@@ -24,6 +25,42 @@ export function isSourceTextProperty(example, property) {
 export function sourceTextValue(example, property) {
   if (!isSourceTextProperty(example, property)) return undefined
   return Object.hasOwn(example.props, property) ? example.props[property] : example.schema.properties[property].default
+}
+
+// Mask only the selected invocation. Ancestor HTML is compared as the exact
+// byte ranges around its declared children, so changed child lengths cannot
+// hide unrelated markup, sibling, slot or source-contract changes.
+export function sourceVariantContext(snapshot, path) {
+  requireBinding(Array.isArray(path) && path.length > 0 && path.every(id => typeof id === 'string' && id !== ''),
+    'variant path requires exact source invocation identities')
+  let selected
+  function descend(examples, depth) {
+    requireBinding(Array.isArray(examples) && examples.filter(example => example?.id === path[depth]).length === 1,
+      'variant path must identify exactly one source invocation')
+    return examples.map(example => {
+      if (example.id !== path[depth]) return example
+      if (depth === path.length - 1) { selected = example; return null }
+      requireBinding(typeof example.html === 'string' && Array.isArray(example.children), 'variant ancestors require source composition')
+      const bytes = Buffer.from(example.html), fragments = []
+      let end = 0
+      for (const child of example.children) {
+        const span = child.span
+        requireBinding(span && Number.isSafeInteger(span.start) && Number.isSafeInteger(span.end) &&
+          span.start >= end && span.end >= span.start && span.end <= bytes.length &&
+          typeof child.description?.html === 'string' && bytes.subarray(span.start, span.end).equals(Buffer.from(child.description.html)),
+        'variant ancestors require exact ordered source byte spans')
+        fragments.push(bytes.subarray(end, span.start).toString('base64'))
+        end = span.end
+      }
+      fragments.push(bytes.subarray(end).toString('base64'))
+      const children = descend(example.children.map(child => child.description), depth + 1)
+      return { ...example, html: fragments, children: example.children.map(({ span, ...child }, index) => ({ ...child, description: children[index] })) }
+    })
+  }
+  requireBinding(plainObject(snapshot), 'identified source snapshot required')
+  const { sha256, ...context } = snapshot
+  context.examples = descend(snapshot.examples, 0)
+  return { context, example: selected }
 }
 
 // Construction handles supplied by the converter, not a lookup by node name,
@@ -53,7 +90,7 @@ export function bindComponentProperties(graph, master, example, targets) {
     if (region.kind !== 'slot') {
       requireBinding(isSourceTextProperty(example, property), 'unconstrained source string property required')
       const value = sourceTextValue(example, property), observed = region.kind === 'text' ? region.text : region.value
-      requireBinding(region.kind !== 'control' || Object.hasOwn(region, 'type') && region.type === 'text' &&
+      requireBinding(region.kind !== 'control' || Object.hasOwn(region, 'type') && ['text', 'textarea'].includes(region.type) &&
         (region.placeholder === undefined || region.placeholder === ''),
         'only literal text controls are supported')
       requireBinding(observed === value, 'observed text differs from source value')
@@ -112,6 +149,102 @@ export function bindComponentProperties(graph, master, example, targets) {
     graph.updateNode(nativeNode.id, {
       componentPropertyReferences: [{ propertyId: definitions[index].id, field: definitions[index].type }],
     })
+  }
+  return definitions
+}
+
+// Group already constructed source projections, not synthetic label variants.
+// The set owns one interface; each child retains its own projection provenance.
+export function bindComponentVariants(graph, owner, snapshot, exampleId, property, variants) {
+  requireBinding(snapshot?.schema === 'platformkit.design-export.v1' && /^[a-f0-9]{64}$/.test(snapshot.sha256) &&
+    typeof property === 'string' && property !== '', 'identified source export and exact property name required')
+  requireBinding(owner?.type === 'COMPONENT_SET' && graph.getNode(owner.id) === owner &&
+    owner.childIds.length === 0 && owner.componentPropertyDefinitions.length === 0 &&
+    !owner.pluginData.some(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source'), 'fresh native component set required')
+  const path = Array.isArray(exampleId) ? exampleId : [exampleId]
+  const baselineContext = sourceVariantContext(snapshot, path), example = baselineContext.example
+  requireBinding(example.propsEditable === true && plainObject(example.schema) &&
+    Object.hasOwn(example.schema, 'type') && example.schema.type === 'object' && isSourceTextProperty(example, property),
+    'one editable source string property required')
+  requireBinding(Array.isArray(variants) && variants.length > 1 &&
+    new Set(variants.map(item => item?.master?.id)).size === variants.length, 'distinct native source variants required')
+  const without = (value, keys) => Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)))
+  const states = variants.map(({ snapshot: projected, master }) => {
+    requireBinding(master?.type === 'COMPONENT' && graph.getNode(master.id) === master && graph.getInstances(master.id).length === 0 &&
+      master.parentId === owner.parentId && master.variantPropSpecs.length === 0 && Object.keys(master.componentPropertyValues).length === 0,
+    'fresh canonical source component required')
+    const projectedContext = sourceVariantContext(projected, path), candidate = projectedContext.example
+    requireBinding(/^[a-f0-9]{64}$/.test(projected.sha256) && isDeepStrictEqual(projectedContext.context, baselineContext.context),
+    'variant projection must retain the source export context')
+    requireBinding(isDeepStrictEqual(without(candidate, ['props', 'html']), without(example, ['props', 'html'])) && candidate.propsEditable === true &&
+      candidate.children?.length === 0 && candidate.opaqueSlots?.length === 0 && example.children?.length === 0 && example.opaqueSlots?.length === 0 &&
+      plainObject(candidate.props) && isDeepStrictEqual(without(candidate.props, [property]), without(example.props, [property])),
+    'variant projection must change only one property of the same nonopaque leaf interface')
+    const value = sourceTextValue(candidate, property)
+    requireBinding(typeof value === 'string', 'variant projection requires an exact source string value')
+    const records = master.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
+    requireBinding(records.length === 1, 'one constructed source projection record required')
+    const origin = JSON.parse(records[0].value)
+    requireBinding(origin.schema === projected.schema && origin.sha256 === projected.sha256 && origin.exampleId === example.id &&
+      isDeepStrictEqual(origin.definitionPath, path) &&
+      origin.componentId === candidate.componentId && isDeepStrictEqual(origin.props, candidate.props) && origin.bindingVersion === 1 &&
+      Array.isArray(origin.textBindings) && origin.slotBindings?.length === 0 &&
+      master.componentPropertyDefinitions.length === origin.textBindings.length, 'constructed variant must retain its source bindings')
+    const targets = [], ids = new Set(), properties = new Set()
+    for (const binding of origin.textBindings) {
+      const definitions = master.componentPropertyDefinitions.filter(item => item.id === binding.id), definition = definitions[0]
+      requireBinding(!ids.has(binding.id) && !properties.has(binding.property) && definitions.length === 1 && definition.type === 'TEXT' &&
+        isSourceTextProperty(candidate, binding.property) && definition.defaultValue === sourceTextValue(candidate, binding.property),
+      'one literal definition per source text property required')
+      ids.add(binding.id); properties.add(binding.property)
+      const pending = graph.getChildren(master.id).map(node => ({ node, boundary: false })), found = [], seen = new Set()
+      while (pending.length) {
+        const item = pending.pop(), node = item.node, boundary = item.boundary || node.type === 'INSTANCE'
+        requireBinding(!seen.has(node.id) && !['COMPONENT', 'COMPONENT_SET', 'CANVAS', 'DOCUMENT'].includes(node.type),
+          'variant text must retain one direct component boundary')
+        seen.add(node.id)
+        if (node.componentPropertyReferences.some(ref => ref.propertyId === binding.id)) {
+          requireBinding(!boundary, 'variant text must retain one direct component boundary')
+          found.push(node)
+        }
+        pending.push(...graph.getChildren(node.id).map(node => ({ node, boundary })))
+      }
+      requireBinding(found.length === 1 && found[0].type === 'TEXT' && found[0].text === definition.defaultValue &&
+        isDeepStrictEqual(found[0].componentPropertyReferences, [{ propertyId: binding.id, field: 'TEXT' }]),
+      'one exact native text target must retain the source value')
+      targets.push({ property: binding.property, definition, node: found[0] })
+    }
+    return { master, origin, targets, value }
+  })
+  requireBinding(new Set(states.map(item => item.value)).size === states.length, 'duplicate source variant value')
+  const baseline = states.find(item => item.value === sourceTextValue(example, property))
+  requireBinding(baseline?.origin.sha256 === snapshot.sha256, 'the exact baseline source projection must be included')
+  const shared = baseline.targets.filter(item => item.property !== property)
+  for (const state of states) {
+    requireBinding(shared.length === state.targets.filter(item => item.property !== property).length && shared.every(item =>
+      state.targets.some(target => target.property === item.property && target.definition.defaultValue === item.definition.defaultValue)) &&
+      ['mode', 'environment', 'viewport', 'fontFaces', 'definitionPath'].every(key => isDeepStrictEqual(state.origin[key], baseline.origin[key])),
+    'variants must share text properties and one observation profile')
+  }
+  const occupied = new Set([...graph.getAllNodes()].flatMap(node => node.componentPropertyDefinitions.map(definition => definition.id)))
+  let id = generateId()
+  while (occupied.has(id)) id = generateId()
+  const definitions = [...shared.map(item => ({ ...item.definition })),
+    { id, name: property, type: 'VARIANT', defaultValue: baseline.value, variantOptions: states.map(item => item.value) }]
+  requireBinding(new Set(definitions.map(item => item.name)).size === definitions.length, 'shared native control names must be distinct')
+  const textBindings = shared.map(item => ({ id: item.definition.id, property: item.property }))
+  const origin = { ...baseline.origin, scope: 'source-variant-family', bindingVersion: 2, textBindings,
+    variantBindings: [{ id, property, projections: states.map(item => ({ value: item.value, sha256: item.origin.sha256 })) }] }
+  // All source/native correspondence checks precede the first graph write.
+  graph.updateNode(owner.id, { componentPropertyDefinitions: structuredClone(definitions), pluginData: [...owner.pluginData,
+    { pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify(origin) }] })
+  for (const [index, state] of states.entries()) {
+    for (const target of state.targets) graph.updateNode(target.node.id, { componentPropertyReferences: target.property === property ? [] :
+      [{ propertyId: shared.find(item => item.property === target.property).definition.id, field: 'TEXT' }] })
+    graph.updateNode(state.master.id, { componentPropertyDefinitions: [], componentPropertyValues: { [property]: state.value },
+      variantPropSpecs: [{ propDefId: id, value: state.value }], pluginData: state.master.pluginData.map(item =>
+        item.pluginId === 'platformkit' && item.key === 'platformkit.source' ? { ...item, value: JSON.stringify({ ...state.origin, textBindings }) } : item) })
+    graph.insertChildAt(state.master.id, owner.id, index)
   }
   return definitions
 }

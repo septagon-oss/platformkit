@@ -88,6 +88,18 @@ type Authorizer interface {
 	Allowed(ctx context.Context, tenant tenancy.Tenant, grant tenancy.Grant) (bool, error)
 }
 
+// Entitler answers what the tenant's plan includes, for the operations that
+// declare a feature with Auth.Needing. It is a second question and not a second
+// authorizer: a permission is what a person may do, a feature is what their
+// tenant is paying for, and conflating them makes a price change a permission
+// change.
+//
+// An installation that sells nothing implements none of this: an application
+// whose operations declare no feature is never asked.
+type Entitler interface {
+	Includes(ctx context.Context, tenant tenancy.Tenant, feature string) (bool, error)
+}
+
 // Options are the collaborators main chooses for the HTTP layer. Every field
 // except Log, PublicHost and Docs is required: an API missing one of them could
 // only fail closed on every request, which is worse than failing at New.
@@ -113,6 +125,13 @@ type Options struct {
 
 	// Authorize answers the permission questions the declarations ask.
 	Authorize Authorizer
+
+	// Entitle answers the plan questions the declarations ask. It is required
+	// only when an operation declares a feature, and ValidateDeclarations
+	// refuses a startup where one does and this is nil — a feature nothing can
+	// answer is a door that would be either always open or always shut, and
+	// both are wrong in a way nobody would notice until a customer did.
+	Entitle Entitler
 
 	// Authenticate recognises the caller. It runs after the host has resolved
 	// to a tenant and is handed that request's own transaction, so a session
@@ -204,6 +223,9 @@ type API struct {
 	// resources are the entities kit/rest has mounted, for the screens that
 	// are generated from them rather than written. See schemas.go.
 	resources []Resource
+	// commands are the lifecycle routes on those entities, by "module/entity",
+	// kept beside them because the two are registered separately. See AddCommand.
+	commands map[string][]Command
 }
 
 // errorShape guards the one package-global huma reads per request.
@@ -397,11 +419,21 @@ func (a *API) Recorded() []*huma.Operation {
 // middleware denies the same operations, so this turns a 403 nobody notices
 // into a startup failure someone has to fix.
 func (a *API) ValidateDeclarations() error {
-	var bad []string
+	var bad, unanswerable []string
 	for _, op := range a.Recorded() {
-		if _, ok := declarationOf(op); !ok {
+		auth, ok := declarationOf(op)
+		if !ok {
 			bad = append(bad, describe(op))
+			continue
 		}
+		if auth.Feature() != "" && a.opts.Entitle == nil {
+			unanswerable = append(unanswerable, describe(op)+" needs the "+auth.Feature()+" feature")
+		}
+	}
+	if len(unanswerable) > 0 {
+		sort.Strings(unanswerable)
+		return fmt.Errorf("httpx: %d operation(s) declare a plan feature and Options.Entitle is nil:\n  %s",
+			len(unanswerable), strings.Join(unanswerable, "\n  "))
 	}
 	if len(bad) == 0 {
 		return nil

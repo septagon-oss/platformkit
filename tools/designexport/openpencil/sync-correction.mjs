@@ -126,6 +126,67 @@ function syncRoleBindings(source, roles) {
     [field, /^(fills|strokes)\/\d+\/color$/.test(field) ? roles.get(variable) ?? variable : variable]))
 }
 
+// Shared set properties identify corresponding content across variants. Walk
+// from those explicit anchors to retain their layout ancestry too; incompatible
+// merges, splits or depths need subtree history, never name/order matching.
+function syncVariantCorrespondence(nodes, instance, component) {
+  const view = syncReadView(nodes), previous = chain(view, instance, 'componentId').at(-1)
+  const owner = nodes.get(component.parentId)
+  const matches = new Map(), used = new Map()
+  if (owner?.type !== 'COMPONENT_SET' || previous?.parentId !== owner.id) return matches
+  const definitions = owner.componentPropertyDefinitions.filter(definition => definition.type === 'TEXT')
+  if (definitions.some(definition => owner.componentPropertyDefinitions.filter(item => item.id === definition.id).length !== 1 ||
+      owner.componentPropertyDefinitions.filter(item => item.name === definition.name).length !== 1 ||
+      [previous, component].some(node => node.componentPropertyDefinitions.some(item => item.id === definition.id)))) {
+    throw new Error('Ambiguous shared variant property definition')
+  }
+  function target(root, definition) {
+    const pending = [...view.getChildren(root.id)], found = [], seen = new Set()
+    while (pending.length) {
+      const node = pending.pop()
+      if (seen.has(node.id)) throw new Error('Cyclic shared variant property subtree')
+      seen.add(node.id)
+      const refs = node.componentPropertyReferences.filter(ref => ref.propertyId === definition.id)
+      if (refs.length) {
+        if (refs.length !== 1 || refs[0].field !== 'TEXT' || node.type !== 'TEXT' || node.childIds.length) {
+          throw new Error('Shared variant property requires one literal text target')
+        }
+        found.push(node)
+      }
+      if (!['COMPONENT', 'INSTANCE'].includes(node.type)) pending.push(...view.getChildren(node.id))
+    }
+    if (found.length !== 1) throw new Error('Missing or ambiguous shared variant property target')
+    return found[0]
+  }
+  function path(root, leaf) {
+    const ancestry = chain(view, leaf, 'parentId'), end = ancestry.indexOf(root)
+    if (end < 1) throw new Error('Shared variant property lies outside its owner')
+    return ancestry.slice(0, end).reverse()
+  }
+  for (const definition of definitions) {
+    const before = path(previous, target(previous, definition)), after = path(component, target(component, definition))
+    if (before.length !== after.length) throw new Error('Shared variant property ancestry requires subtree history')
+    let source = previous, placed = instance
+    for (const [index, child] of before.entries()) {
+      const links = sourceChildren(view, source, placed, ancestryOverrides(view, placed))
+      const occurrences = [...links].filter(([, linked]) => linked === child)
+      if (occurrences.length !== 1) throw new Error('Ambiguous shared variant property occurrence')
+      placed = nodes.get(occurrences[0][0])
+      const next = after[index]
+      if (placed.type !== next.type || placed.type !== child.type ||
+          JSON.stringify(placed.componentPropertyReferences) !== JSON.stringify(child.componentPropertyReferences) ||
+          matches.has(next.id) && matches.get(next.id) !== placed.id ||
+          used.has(placed.id) && used.get(placed.id) !== next.id) {
+        throw new Error('Incompatible shared variant property ancestry')
+      }
+      matches.set(next.id, placed.id)
+      used.set(placed.id, next.id)
+      source = child
+    }
+  }
+  return matches
+}
+
 function syncApplyPaintRoles(nodes, instance, roles) {
   if (!roles.size) return
   const view = syncReadView(nodes), used = new Set(), overrides = { ...instance.overrides }
@@ -171,27 +232,44 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
   const originalScales = new Map(replacement ? uniformScalePlan(syncReadView(previousNodes), replacement)?.updates ?? [] : [])
   const replacementOccurrence = replacement && syncReplacementOccurrence(previousNodes, replacement)
   const paintRoles = replacement ? syncPaintRoles(previousNodes, replacement) : new Map()
+  const variantMatches = replacement ? syncVariantCorrespondence(previousNodes, replacement, component) : new Map()
+  const retained = new Set(variantMatches.values())
+  const removalSources = new Map(replacement ? [[replacementId, chain(syncReadView(previousNodes), replacement, 'componentId').at(-1)]] : [])
+  function removalSource(node) {
+    if (!removalSources.has(node.id)) {
+      const view = syncReadView(previousNodes), parent = previousNodes.get(node.parentId)
+      if (!parent) throw new Error('Missing native removal source parent')
+      for (const [id, source] of sourceChildren(view, removalSource(parent), parent, ancestryOverrides(view, parent))) {
+        removalSources.set(id, source)
+      }
+    }
+    if (!removalSources.has(node.id)) throw new Error('Missing native removal source')
+    return removalSources.get(node.id)
+  }
   function temporaryId() {
     let id
     do { id = `native-sync:${serial++}` } while (nodes.has(id) || previousNodes.has(id))
     return id
   }
   function remove(id, ancestors = new Set()) {
+    if (retained.has(id)) return
     if (ancestors.has(id)) throw new Error('Cyclic native sync removal')
     const node = nodes.get(id)
     if (!node) throw new Error('Missing native sync removal target')
-    if (replacement) {
-      const parent = previousNodes.get(node.parentId)
-      sourceChildren(syncReadView(previousNodes), chain(syncReadView(previousNodes), parent, 'componentId').at(-1), parent, parent.overrides)
-    }
-    const canonical = replacement && chain(syncReadView(previousNodes), node, 'componentId').at(-1)
-    const expected = replacement && { ...canonical, ...originalScales.get(id), boundVariables: syncRoleBindings(canonical, paintRoles) }
+    // Compare with the owning occurrence, not the terminal asset: containing
+    // components can intentionally specialize their private icons and layout.
+    const source = replacement && removalSource(node)
+    const expected = replacement && { ...source, ...originalScales.get(id), boundVariables: syncRoleBindings(source, paintRoles) }
+    // Yoga and FIG round used dimensions to float32; a scaled 16px instance
+    // can otherwise differ from its source by less than one representable bit.
+    const unchanged = field => ['width', 'height'].includes(field) && Number.isFinite(Math.fround(node[field])) &&
+      Math.fround(node[field]) === Math.fround(expected[field]) || JSON.stringify(node[field]) === JSON.stringify(expected[field])
     const derivedPaint = field => paintRoles.size && ['fills', 'strokes', 'boundVariables'].includes(field) &&
       JSON.stringify(node[field]) === JSON.stringify(expected[field])
-    const edited = replacement && node.source.editedFields.some(field => JSON.stringify(node[field]) !== JSON.stringify(expected[field]))
+    const edited = replacement && node.source.editedFields.some(field => !unchanged(field))
     if (replacement && (edited || chain(syncReadView(previousNodes), replacement, 'parentId').some(owner =>
       Object.keys(owner.overrides).some(key => key.startsWith(`${id}:`) && !derivedPaint(key.slice(id.length + 1)))))) {
-      throw new Error('Native replacement of edited descendants requires subtree history')
+      throw new Error(`Native replacement of edited descendants requires subtree history: ${node.type} ${node.name}`)
     }
     for (const child of node.childIds) {
       if (nodes.get(child)?.parentId !== id) throw new Error('Invalid native sync removal child')
@@ -242,6 +320,9 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
         continue
       }
       const keys = [...INSTANCE_SYNC_PROPS, ...SYNC_CHILD_PROPS]
+      // Reuse the SDK's complete typography/rendering fields, not its partial
+      // instance list: retained variant text must inherit the new line box too.
+      if (child.type === 'TEXT') keys.push(...TEXT_STYLE_KEYS, ...TEXT_PICTURE_KEYS)
       if (child.type === 'VECTOR') keys.push('x', 'y', 'vectorNetwork', 'fillGeometry', 'strokeGeometry')
       nodes.set(id, syncProperties(child, current, keys, childOverrides, `${id}:`))
       if (current.type === 'INSTANCE') affected.add(id)
@@ -254,9 +335,27 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     // Replacement discards the old child occurrence, not the canonical source.
     // Reuse the same planned clone/removal and derived-scale validation as sync.
     for (const id of replacement.childIds) remove(id)
+    for (const [sourceId, id] of variantMatches) {
+      const current = nodes.get(id)
+      for (const childId of current.childIds) remove(childId)
+      nodes.set(id, { ...current, componentId: sourceId, childIds: current.childIds.filter(child => retained.has(child)) })
+    }
+    // Imported overrides may explicitly name the previous source occurrence.
+    // Retained native IDs keep authored edits; only their source anchors move.
+    const identities = new Map([...variantMatches].map(([sourceId, id]) => [id, sourceId]))
+    const owners = new Set([...retained, ...chain(syncReadView(previousNodes), replacement, 'parentId').map(node => node.id)])
+    const suffix = ':sourceComponentId'
+    for (const id of owners) {
+      const current = nodes.get(id)
+      if (!Object.keys(current.overrides).some(key => key.endsWith(suffix) && identities.has(key.slice(0, -suffix.length)))) continue
+      const overrides = Object.fromEntries(Object.entries(current.overrides).map(([key, value]) =>
+        [key, key.endsWith(suffix) ? identities.get(key.slice(0, -suffix.length)) ?? value : value]))
+      nodes.set(id, { ...current, overrides })
+    }
     const previous = previousNodes.get(replacement.componentId)
     const name = previous && replacement.name !== previous.name ? replacement.name : component.name
-    nodes.set(replacementId, { ...replacement, componentId, name, childIds: [] })
+    nodes.set(replacementId, { ...nodes.get(replacementId), componentId, name,
+      childIds: replacement.childIds.filter(id => retained.has(id)) })
   }
   const completed = new Set(), active = new Set()
   function instance(id) {
@@ -297,7 +396,7 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
   return { nodes, created, removed, affected }
 }
 
-function applyNativeSync(graph, plan) {
+export function applyNativeSync(graph, plan) {
   if (!plan) return
   const actualIds = new Map()
   const idFor = id => actualIds.get(id) ?? id
@@ -365,6 +464,11 @@ function swapInstanceComponent(graph, instanceId, componentId) {
 }
 
 export function correctSyncGraph(source, replace) {
+  // The SDK already distinguishes layout mutations from authored operations.
+  // Computed positions must not masquerade as local descendant edits. Keep
+  // preexisting edit markers and dimension dirtiness required by FIG sizing.
+  source = replace(source, 'if (this.sourceMetadataPreservationDepth === 0) markSourceFieldsEdited(node, Object.keys(changes));',
+    'if (this.sourceMetadataPreservationDepth === 0) markSourceFieldsEdited(node, Object.keys(changes).filter(key => !this.isApplyingLayout || !["x", "y"].includes(key)));')
   const start = source.indexOf('function syncChildren(')
   const end = source.indexOf('function copyInstanceComponentProps(', start)
   const original = source.slice(start, end)
@@ -377,7 +481,7 @@ export function correctSyncGraph(source, replace) {
   const syncEnd = source.indexOf('function detachInstance(', syncStart)
   if (swapStart < 0 || syncStart < swapStart || syncEnd < 0) throw new Error('Native sync instance anchor changed')
   const helpers = [syncReadView, syncSourceOccurrence, syncReconciliation, syncProperties, syncRemapOverrides,
-    syncReplacementOccurrence, syncPaintRoles, syncRoleBindings, syncApplyPaintRoles,
+    syncReplacementOccurrence, syncPaintRoles, syncRoleBindings, syncVariantCorrespondence, syncApplyPaintRoles,
     planNativeSync, applyNativeSync, syncInstances, swapInstanceComponent].map(fn => fn.toString()).join('\n')
   return replace(source, source.slice(swapStart, syncEnd),
     `${lineageHelpers}\nconst SYNC_CHILD_PROPS = ${fieldList};\n${helpers}\n`)

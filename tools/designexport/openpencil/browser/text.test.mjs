@@ -81,13 +81,24 @@ test('unsupported text presentation fails without partial construction or invent
 })
 
 test('gallery construction coverage is explicit under the supplied-font comparison profile', async t => {
-  const snapshot = source(), accepted = [], refused = []
+  const snapshot = source(), accepted = [], refused = [], captureRefused = []
   for (const example of snapshot.examples) {
-    const observation = await captureExample(browser, snapshot, example.id, { fonts })
+    let observation
+    try {
+      observation = await captureExample(browser, snapshot, example.id, { fonts })
+    } catch (error) {
+      assert.equal(error.message.split('\n')[0], 'page.evaluate: Error: Capture does not support executable or externally composed example content',
+        'unexpected capture failures are not support refusals')
+      assert.equal(browser.contexts().length, 0, `refused capture closes its context: ${example.id}`)
+      captureRefused.push(example.id)
+      continue
+    }
     const { graph, collection, icons } = buildFoundation(snapshot), page = graph.addPage('Coverage')
     const before = structuredClone([...graph.getAllNodes()])
-    const slots = observation.roots[0]?.children?.filter(child => child.kind === 'slot') ?? []
-    const targets = slots.map(region => ({ region, master: icons.get(region.children[0]?.icon?.canonicalName) }))
+    const visit = region => region.kind === 'slot' || region.tag === 'svg' ? [{ region,
+      master: icons.get((region.kind === 'slot' ? region.children[0] : region)?.icon?.canonicalName) }] :
+      (region.children ?? []).flatMap(visit)
+    const targets = observation.roots.flatMap(visit)
     try {
       await materializeComponent(graph, page.id, snapshot, observation, fonts, renderer, collection.id, targets)
       accepted.push(example.id)
@@ -97,15 +108,19 @@ test('gallery construction coverage is explicit under the supplied-font comparis
       refused.push({ id: example.id, reason: error.message })
     }
   }
-  t.diagnostic(JSON.stringify({ accepted, refused }))
+  t.diagnostic(JSON.stringify({ accepted, refused, captureRefused }))
   assert.deepEqual(accepted, [
     'pk-ui.component.button/as-link', 'pk-ui.component.button/danger', 'pk-ui.component.button/disabled-link',
     'pk-ui.component.button/ghost', 'pk-ui.component.button/info', 'pk-ui.component.button/primary',
     'pk-ui.component.button/secondary', 'pk-ui.component.button/success', 'pk-ui.component.button/warning', 'pk-ui.component.button/with-icon',
-    'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form/default', 'pk-ui.component.input/bare', 'pk-ui.component.input/invalid',
+    'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form/default', 'pk-ui.component.grid/default',
+    'pk-ui.component.input/bare', 'pk-ui.component.input/invalid', 'pk-ui.component.input/read-only',
+    'pk-ui.component.select/default', 'pk-ui.component.select/invalid',
     'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
+    'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 91)
+  assert.equal(refused.length, 86)
+  assert.deepEqual(captureRefused, ['pk-ui.component.video/default', 'pk-ui.component.video/disabled'])
   assert.equal(browser.contexts().length, 0)
 })
 

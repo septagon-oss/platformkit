@@ -5,9 +5,11 @@ import { SceneGraph, generateId } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { parseFigBuffer } from '@open-pencil/fig'
-import { bindComponentProperties, isSourceTextProperty, sourceTextValue } from './bindings.mjs'
+import * as bindings from './bindings.mjs'
+import { verifyComponentDocument } from './document.mjs'
 import { associateSourceInstance, extractSourceProps, extractSourceReplacement } from './source-changes.mjs'
 
+const { bindComponentProperties, isSourceTextProperty, sourceTextValue } = bindings
 const snapshot = JSON.parse(execFileSync('go', [
   'run', './tools/designexport', '--example', 'pk-ui.component.button/primary',
 ], { cwd: new URL('../../../', import.meta.url), encoding: 'utf8' }))
@@ -27,6 +29,206 @@ function sourceMetadata(node) {
   assert.equal(entries.length, 1)
   return JSON.parse(entries[0].value)
 }
+
+function variantFixture(property = 'tone') {
+  const canonical = structuredClone(snapshot), source = canonical.examples[0]
+  source.props[property] = property === 'label' ? 'Save' : 'neutral'
+  const input = fixture(), { graph } = input
+  graph.deleteNode(input.master.id)
+  const owner = graph.createNode('COMPONENT_SET', graph.getPages()[0].id, { name: 'Source choices' })
+  const variants = [source.props[property], ' padded,a ', ''].map((value, index) => {
+    const projected = structuredClone(canonical)
+    projected.sha256 = String(index + 1).repeat(64)
+    projected.examples[0].props[property] = value
+    const master = graph.createNode('COMPONENT', graph.getPages()[0].id, { name: `Unrelated state ${index}`, width: 100, height: 40,
+      pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+        schema: projected.schema, sha256: projected.sha256, exampleId: source.id, componentId: source.componentId,
+        props: projected.examples[0].props, definitionPath: [source.id],
+      }) }] })
+    const label = projected.examples[0].props.label
+    const nativeNode = graph.createNode('TEXT', master.id, { name: 'Copy', text: label, width: 40, height: 20 })
+    bindComponentProperties(graph, master, projected.examples[0], [{ region: { kind: 'text', property: 'label', text: label }, nativeNode }])
+    return { snapshot: projected, master }
+  })
+  canonical.sha256 = variants[0].snapshot.sha256
+  return { graph, canonical, source, owner, variants }
+}
+
+function nestedVariantFixture() {
+  const data = variantFixture(), path = ['fixture/form', data.source.id]
+  function wrap(snapshot, suffix = '') {
+    const child = snapshot.examples[0]
+    child.html = child.html.replace('data-component=', `data-fixture="${suffix}" data-component=`)
+    const prefix = '<form aria-label="Memórias 🌱">', sibling = { id: 'sibling', html: '<span>Keep me</span>' }
+    const start = Buffer.byteLength(prefix), end = start + Buffer.byteLength(child.html)
+    snapshot.examples = [{ id: path[0], props: { label: 'Memórias' }, html: prefix + child.html + sibling.html + '</form>',
+      children: [{ slot: 'children', span: { start, end }, description: child },
+        { slot: 'children', span: { start: end, end: end + Buffer.byteLength(sibling.html) }, description: sibling }] }]
+  }
+  wrap(data.canonical)
+  for (const [index, state] of data.variants.entries()) {
+    wrap(state.snapshot, index ? 'a longer child projection' : '')
+    const record = sourceMetadata(state.master)
+    data.graph.updateNode(state.master.id, { pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source',
+      value: JSON.stringify({ ...record, definitionPath: path }) }] })
+  }
+  return { ...data, path }
+}
+
+test('nested variant context retains byte-exact ancestors and siblings while child projection lengths change', () => {
+  const data = nestedVariantFixture(), before = structuredClone(data.canonical)
+  const definitions = bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.path, 'tone', data.variants)
+  assert.equal(definitions.at(-1).type, 'VARIANT')
+  assert.deepEqual(sourceMetadata(data.owner).definitionPath, data.path)
+  assert.deepEqual(data.canonical, before)
+})
+
+test('nested families refuse changed ancestors, siblings, slots, byte spans and ambiguous paths before graph writes', () => {
+  for (const mutate of [
+    (root, data) => { data.path = [data.path[0], 'missing'] },
+    root => { root.props.label = 'An unrelated parent edit' },
+    root => { root.html = root.html.replace('Memórias', 'memórias') },
+    root => { root.html += '<aside>Unrelated markup</aside>' },
+    root => { root.children[1].description.id = 'different sibling' },
+    root => { root.children[0].slot = 'different slot' },
+    root => { root.children[0].span.start-- },
+    root => { root.children[0].span.end++ },
+    root => { root.children[1].span.start-- },
+    root => { root.children.reverse() },
+    root => { root.children[1].description.id = root.children[0].description.id },
+    root => { root.children[0].description.name = 'Unrelated leaf metadata' },
+  ]) {
+    const data = nestedVariantFixture()
+    mutate(data.variants[1].snapshot.examples[0], data)
+    const before = structuredClone([...data.graph.nodes]), inputs = structuredClone(data.variants.map(item => item.snapshot))
+    assert.throws(() => bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.path, 'tone', data.variants), /Source component binding:/)
+    assert.deepEqual([...data.graph.nodes], before)
+    assert.deepEqual(data.variants.map(item => item.snapshot), inputs)
+  }
+})
+
+test('source variant families expose one typed property without replacing shared text ownership', async () => {
+  const { graph, canonical, source, owner, variants } = variantFixture()
+  const definitions = bindings.bindComponentVariants(graph, owner, canonical, source.id, 'tone', variants)
+  assert.deepEqual(definitions.map(item => item.type), ['TEXT', 'VARIANT'])
+  assert.equal(graph.getChildren(owner.id).length, 3)
+  assert.ok(variants.every(({ master }) => master.componentPropertyDefinitions.length === 0))
+  const instance = graph.createInstance(variants[0].master.id, graph.getPages()[0].id, { name: 'Source placement' })
+  associateSourceInstance(graph, instance, canonical, [source.id])
+  const actions = createEditor({ graph })
+  try {
+    const label = definitions.find(item => item.type === 'TEXT'), tone = definitions.find(item => item.type === 'VARIANT')
+    actions.setInstanceComponentProperty(instance.id, label.id, 'Independent label')
+    actions.setInstanceComponentProperty(instance.id, tone.id, ' padded,a ')
+    const expected = { baseSHA256: canonical.sha256, path: [source.id], props: { tone: ' padded,a ', label: 'Independent label' } }
+    assert.deepEqual(extractSourceProps(graph, instance, canonical).proposal, expected)
+    actions.renamePropertyDefinition(owner.id, tone.id, 'Renamed native control')
+    assert.deepEqual(extractSourceProps(graph, instance, canonical).proposal, expected)
+    let reopened = graph
+    for (let cycle = 0; cycle < 2; cycle++) {
+      reopened = await parseFigFile((await exportFigFile(reopened)).slice().buffer, { populate: 'all' })
+      const placed = [...reopened.getAllNodes()].find(node => node.name === 'Source placement')
+      assert.deepEqual(extractSourceProps(reopened, placed, canonical).proposal, expected)
+    }
+    actions.replaceGraph(reopened)
+    const placed = [...reopened.getAllNodes()].find(node => node.name === 'Source placement')
+    actions.setInstanceComponentProperty(placed.id, tone.id, '')
+    assert.deepEqual(extractSourceProps(reopened, placed, canonical).proposal,
+      { ...expected, props: { tone: '', label: 'Independent label' } }, 'empty is an exact source choice, not a missing assignment')
+  } finally { actions.replaceGraph(new SceneGraph()) }
+})
+
+test('a source text field can become a finite variant without retaining a competing text binding', async () => {
+  const input = variantFixture('label'), { graph, owner, canonical, source, variants } = input
+  const definitions = bindings.bindComponentVariants(graph, owner, canonical, source.id, 'label', variants)
+  assert.deepEqual(definitions.map(item => item.type), ['VARIANT'])
+  assert.ok(variants.every(({ master }) => graph.getChildren(master.id)[0].componentPropertyReferences.length === 0))
+  const instance = graph.createInstance(variants[0].master.id, owner.parentId, { name: 'Finite copy' })
+  associateSourceInstance(graph, instance, canonical, [source.id])
+  const expected = verifyComponentDocument(graph, canonical, [source.id]), actions = createEditor({ graph })
+  try {
+    actions.setInstanceComponentProperty(instance.id, definitions[0].id, '')
+    let reopened = graph
+    for (let cycle = 0; cycle < 2; cycle++) {
+      reopened = await parseFigFile((await exportFigFile(reopened)).slice().buffer, { populate: 'all' })
+      const placed = [...reopened.getAllNodes()].find(node => node.name === 'Finite copy')
+      assert.equal(reopened.getChildren(placed.id)[0].text, '')
+      assert.deepEqual(extractSourceProps(reopened, placed, canonical).proposal,
+        { baseSHA256: canonical.sha256, path: [source.id], props: { label: '' } })
+    }
+    actions.setInstanceComponentProperty(instance.id, definitions[0].id, 'Save')
+    graph.insertChildAt(variants[0].master.id, owner.parentId, 0)
+    graph.deleteNode(owner.id)
+    assert.equal(extractSourceProps(graph, instance, canonical).status, 'no-supported-changes')
+    assert.throws(() => verifyComponentDocument(graph, canonical, [source.id], expected), /correspondence changed/,
+      'losing the entire family must not look like a valid unchanged document')
+  } finally { actions.replaceGraph(new SceneGraph()) }
+})
+
+test('source variant construction refuses inconsistent projections and bindings before native writes', () => {
+  for (const mutate of [
+    data => { data.variants.shift() },
+    data => { data.variants[1].snapshot.css += ' body {color:red}' },
+    data => { data.variants[1].snapshot.examples[0].props.label = 'Different field' },
+    data => { data.variants[1].snapshot.examples[0].schema = { type: 'object', properties: {} } },
+    data => { data.source.schema.type = 'array' },
+    data => { data.variants[1].snapshot.examples[0].children = [{}] },
+    data => { data.variants[1].master.componentPropertyDefinitions.push({ id: 'other', type: 'TEXT' }) },
+    data => { data.graph.getChildren(data.variants[1].master.id)[0].text = 'Not the source' },
+    data => { data.variants[1] = data.variants[0] },
+    data => { data.canonical.sha256 = 'f'.repeat(64) },
+    data => { data.graph.createInstance(data.variants[1].master.id, data.owner.parentId) },
+  ]) {
+    const data = variantFixture()
+    mutate(data)
+    const before = structuredClone([...data.graph.nodes]), sourceBefore = structuredClone(data.canonical)
+    assert.throws(() => bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.source.id, 'tone', data.variants), /Source component binding:/)
+    assert.deepEqual([...data.graph.nodes], before)
+    assert.deepEqual(data.canonical, sourceBefore)
+  }
+})
+
+test('private instances do not own or conceal a containing family text binding', () => {
+  for (const forged of [false, true]) {
+    const { graph, owner, canonical, source, variants } = variantFixture()
+    const decoration = graph.createNode('COMPONENT', owner.parentId)
+    graph.createNode('TEXT', decoration.id, { text: 'Private label' })
+    for (const { master } of variants) {
+      const instance = graph.createInstance(decoration.id, master.id)
+      if (forged) graph.updateNode(graph.getChildren(instance.id)[0].id, {
+        componentPropertyReferences: [{ propertyId: master.componentPropertyDefinitions[0].id, field: 'TEXT' }],
+      })
+    }
+    const before = structuredClone([...graph.nodes])
+    const bind = () => bindings.bindComponentVariants(graph, owner, canonical, source.id, 'tone', variants)
+    if (forged) {
+      assert.throws(bind, /one direct component boundary/)
+      assert.deepEqual([...graph.nodes], before)
+    } else assert.deepEqual(bind().map(item => item.type), ['TEXT', 'VARIANT'])
+  }
+})
+
+test('source variant extraction rejects stale, missing and conflicting correspondence without proposals or mutations', () => {
+  for (const mutate of [
+    data => { changeMetadata(data.owner, origin => { origin.sha256 = 'f'.repeat(64) }) },
+    data => { data.graph.deleteNode(data.variants[2].master.id) },
+    data => { data.variants[1].master.variantPropSpecs[0].value = 'wrong' },
+    data => { changeMetadata(data.variants[1].master, origin => { origin.props.label = 'Wrong source' }) },
+    data => { data.owner.componentPropertyDefinitions.find(item => item.type === 'VARIANT').variantOptions.reverse() },
+    data => { data.instance.componentPropertyAssignments[data.definitions.at(-1).id] = 'ignored assignment' },
+    data => { changeMetadata(data.owner, origin => { origin.variantBindings[0].projections[1].sha256 = 'f'.repeat(64) }) },
+  ]) {
+    const data = variantFixture()
+    data.definitions = bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.source.id, 'tone', data.variants)
+    data.instance = data.graph.createInstance(data.variants[0].master.id, data.owner.parentId)
+    associateSourceInstance(data.graph, data.instance, data.canonical, [data.source.id])
+    mutate(data)
+    const before = structuredClone([...data.graph.nodes]), result = extractSourceProps(data.graph, data.instance, data.canonical)
+    assert.ok(['invalid', 'stale'].includes(result.status), JSON.stringify(result))
+    assert.equal(result.proposal, undefined)
+    assert.deepEqual([...data.graph.nodes], before)
+  }
+})
 
 function mappedFixture(second = false) {
   const input = fixture(), canonical = structuredClone(snapshot), source = canonical.examples[0]

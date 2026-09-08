@@ -32,24 +32,31 @@ var (
 // resource with three operations turned off — it is a different thing, and
 // saying so here is cheaper than a Spec with three holes in it. Both answer
 // through kit/rest's mapping, so a 404 means what it means everywhere.
-func RegisterRoutes(api *httpx.API, svc contracts.Service) {
+func RegisterRoutes(api *httpx.API, svc contracts.Service, feature string) {
+	// Both routes read the same thing, so both are gated by the same feature.
+	// An empty one leaves the declaration exactly as it was.
+	read := httpx.Permission(contracts.PermissionAuditRead)
+	if feature != "" {
+		read = read.Needing(feature)
+	}
 	httpx.Register(api, huma.Operation{
 		OperationID: "audit-event-list",
 		Method:      http.MethodGet,
 		Path:        path,
 		Summary:     "List the audit trail",
 		Description: "Every event this tenant's modules published, newest first. " +
-			"Filterable by name, by the user who caused it, and by when it happened.",
+			"Filterable by name, by the user who caused it, by the row it is about, and by when it happened.",
 		Tags:   []string{"audit"},
 		Errors: faults,
-	}, httpx.Permission(contracts.PermissionAuditRead),
+	}, read,
 		func(ctx context.Context, in *listInput) (*rest.Page[*contracts.Event], error) {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
 				return nil, unavailable
 			}
 			items, total, err := svc.List(ctx, tx, contracts.Query{
-				Name: in.Name, Actor: in.Actor, Since: in.Since, Until: in.Until,
+				Name: in.Name, Actor: in.Actor, Record: in.Record,
+				Since: in.Since, Until: in.Until,
 				Limit: in.Limit, Offset: in.Offset,
 			})
 			if err != nil {
@@ -68,7 +75,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		Summary:     "Read one audit event",
 		Tags:        []string{"audit"},
 		Errors:      faults,
-	}, httpx.Permission(contracts.PermissionAuditRead),
+	}, read,
 		func(ctx context.Context, in *idInput) (*rest.Item[*contracts.Event], error) {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -89,6 +96,7 @@ type idInput struct {
 type listInput struct {
 	Name   string    `query:"name" doc:"Only events with this name" example:"task.task.created"`
 	Actor  uuid.UUID `query:"actor" format:"uuid" doc:"Only events this user caused"`
+	Record uuid.UUID `query:"record" format:"uuid" doc:"Only events about this row, whatever its payload calls it"`
 	Since  time.Time `query:"since" doc:"Only events at or after this instant"`
 	Until  time.Time `query:"until" doc:"Only events before this instant"`
 	Limit  int       `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`

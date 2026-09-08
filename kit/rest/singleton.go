@@ -183,7 +183,7 @@ func (s Singleton[T]) resource() httpx.Resource {
 		return problem.Conflict("a tenant has one " + s.Entity + ", and it is neither created nor removed")
 	}
 	return httpx.Resource{
-		Module: s.Module, Entity: s.Entity, Path: s.Path,
+		Module: s.Module, Entity: s.Entity, Path: s.Path, Singleton: true,
 		Read: s.Read, Write: s.Write, Schema: crud.Schema{
 			Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: crud.Fields[T](),
 		},

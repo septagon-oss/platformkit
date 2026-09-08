@@ -19,6 +19,7 @@ func buttonLoadingIndicator(color style.Color) style.ClassList {
 }
 
 var (
+	clVideo = style.New().Display(style.DisplayBlock).Width(style.SFull).AspectVideo().ObjectContain().Bg(style.SurfaceSecondary).Merge(clFocusRing)
 
 	// The application frame. See shell.go: markup written outside this package
 	// would have no rules in the stylesheet, so the frame is a component too.
@@ -285,6 +286,12 @@ var (
 			PaddingRight(style.S3).PointerEvents(style.PointerNone)
 	clInputPadStart = style.New().PaddingLeft(style.S10)
 	clInputPadEnd   = style.New().PaddingRight(style.S10)
+	clSelectCell    = style.New().ColSpanFull().RowSpanFull()
+	clSelectGrid    = style.New().Display(style.DisplayGrid).GridCols(1).GridRows(1)
+	clSelectSize    = style.New().PaddingLeft(style.S3).PaddingRight(style.S10).
+			PaddingY(style.S2).FontSize(style.TextSM).AppearanceNone().Merge(clSelectCell)
+	clSelectIndicator = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
+				Justify(style.JustifyEnd).PaddingRight(style.S3).PointerEvents(style.PointerNone).Merge(clSelectCell)
 
 	// Modal is the governed centered-dialog / mobile-sheet overlay. The root
 	// also doubles as the empty HTMX swap target used by server-loaded forms.
@@ -756,12 +763,13 @@ func ShellClassLists() []style.ClassList {
 		clFieldWrap, clFieldWrapFull, clLabel, clHelp, clFieldErr, clRequired,
 		clInput, clInputNormal, clInputError, clInputReadOnly, clInputDisabled,
 		clInputIconWrap, clInputIconStart, clInputIconEnd, clInputPadStart, clInputPadEnd,
+		clSelectGrid, clSelectSize, clSelectIndicator,
 		clTextareaManual, clTextareaAuto, clTextareaFull, clTextareaMeta,
 		clTextareaSupporting, clTextareaCounter,
 		clCheckbox, clCheckboxRoot, clCheckboxRootDisabled,
 		clCheckboxInput, clCheckboxIndicator, clCheckboxIndicatorIdle,
 		clCheckboxIndicatorActive, clCheckboxCheckmark, clCheckboxBar, clCheckboxLabel,
-		clHeadingBase, clSpinner,
+		clHeadingBase, clSpinner, clVideo,
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clStack, clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clDetailList, clDetailHeader, clDetailTitle, clDetailDescription,

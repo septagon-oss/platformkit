@@ -1,8 +1,10 @@
-import { parseColor } from '@open-pencil/core/color'
 import { computeAllLayouts, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
-import { bindComponentProperties } from './bindings.mjs'
+import { bindComponentProperties, bindComponentVariants, sourceVariantContext, sourceTextValue } from './bindings.mjs'
 import { loadFonts, validateFonts } from './fonts.mjs'
 import { planIcon } from './icon-composition.mjs'
+import { computedColor as color } from './computed-color.mjs'
+import { observedPaint, sameColor, createPaintedNode, bindPaintExpressions } from './component-paints.mjs'
+import { planSourceGrid } from './source-grid.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
 const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
@@ -11,17 +13,31 @@ function requireComponent(condition, message) {
   if (!condition) throw new Error(`Native component: ${message}`)
 }
 
+function constructIcon(graph, parentId, icon, name, pending) {
+  const node = graph.createInstance(icon.master.id, parentId, { name, uniformScaleFactor: icon.scale })
+  for (const { sourceNode, field, variableId, expression } of icon.paints) {
+    const children = graph.getChildren(node.id).filter(child => child.componentId === sourceNode.id)
+    requireComponent(children.length === 1, 'one exact native vector occurrence required')
+    if (expression) pending.push({ node: children[0], bindings: { [field]: expression } })
+    else graph.bindVariable(children[0].id, field, variableId)
+  }
+  return node
+}
+
 function pixels(value) {
   requireComponent(typeof value === 'string' && /^\d+(?:\.\d+)?px$/.test(value), `unsupported length ${value}`)
   return Number.parseFloat(value)
 }
 
-function color(value) {
-  requireComponent(/^rgba?\([\d.,\s]+\)$/.test(value), `unsupported computed paint ${value}`)
-  return parseColor(value)
+// Definitions own intrinsic dimensions; only a witnessed parent placement can
+// assign a different used size. Placed instances must match both observed axes.
+function matchesSourceSize(node, bounds, placement = {}) {
+  return ['width', 'height'].every(field => {
+    const primary = (field === 'width') === (node.layoutMode === 'HORIZONTAL')
+    return placement[primary ? 'primaryAxisSizing' : 'counterAxisSizing'] === 'FILL' ||
+      Math.abs(node[field] - bounds[field]) <= 1 / 64
+  })
 }
-
-const paint = value => ({ type: 'SOLID', color: color(value), opacity: 1, visible: true })
 
 function requirePlainText(style) {
   requireComponent(style['text-shadow'] === 'none' && style['text-indent'] === '0px' &&
@@ -29,53 +45,47 @@ function requirePlainText(style) {
   'text shadows, indentation, word spacing or writing direction require further conversion')
 }
 
-function sameColor(a, b, tolerance = 1e-6) {
-  return a && b && ['r', 'g', 'b', 'a'].every(channel => Number.isFinite(a[channel]) &&
-    Number.isFinite(b[channel]) && Math.abs(a[channel] - b[channel]) <= tolerance)
+function boxShadow(node) {
+  const value = node.style['box-shadow']
+  if (value === 'none') return []
+  const source = node.paintSources?.['box-shadow']
+  requireComponent(source?.tokens?.length === 0 && source.directCandidate === null && !source.expressionCandidate,
+    'shadow color dependencies require further native conversion')
+  const match = /^((?:rgba?|color)\([^)]*\)) (-?\d+(?:\.\d+)?px) (-?\d+(?:\.\d+)?px) (\d+(?:\.\d+)?px) 0px$/.exec(value)
+  requireComponent(match && node.style.display !== 'inline', 'one non-inset zero-spread box shadow required')
+  requireComponent(match.slice(2).every(value => Number.isFinite(Math.fround(Number.parseFloat(value)))), 'finite native shadow geometry required')
+  return [{ type: 'DROP_SHADOW', color: color(match[1]), offset: { x: Number.parseFloat(match[2]), y: Number.parseFloat(match[3]) },
+    radius: pixels(match[4]), spread: 0, visible: true, blendMode: 'NORMAL', showShadowBehindNode: false }]
 }
 
-// Bind only the direct aliases witnessed by capture, with matching source and
-// native values in every supplied mode. Mixed/derived paints need their own
-// representation; silently freezing them would break palette replacement.
-function observedPaint(graph, collection, snapshot, observation, root, property) {
-  const fill = paint(root.style[property]), source = root.paintSources[property]
-  requireComponent(Array.isArray(source?.tokens), 'paint dependency evidence required')
-  if (source.tokens.length === 0) {
-    requireComponent(source.directCandidate === null, 'literal paint has contradictory alias evidence')
-    return { fills: [fill], boundVariables: {} }
-  }
-  requireComponent(source.tokens.length === 1 && source.directCandidate === source.tokens[0],
-    'mixed or derived paint dependencies need further native conversion')
-  const variables = graph.getVariablesForCollection(collection.id).filter(item => item.name === source.directCandidate)
-  requireComponent(variables.length === 1 && variables[0].type === 'COLOR', 'one matching native color variable required')
-  const variable = variables[0]
-  for (const theme of snapshot.themes) {
-    const tokens = theme.tokens.filter(item => item.name === source.directCandidate)
-    const modes = collection.modes.filter(item => item.name === theme.mode)
-    requireComponent(tokens.length === 1 && tokens[0].type === 'color' && modes.length === 1,
-      'source color and native mode identities must be unambiguous')
-    const expected = parseColor(tokens[0].value)
-    requireComponent(sameColor(graph.resolveVariable(variable.id, modes[0].modeId), expected),
-      'native color variable differs from the source palette')
-    if (theme.mode === observation.mode) {
-      // Chromium serializes alpha to a limited decimal precision.
-      requireComponent(sameColor(fill.color, expected, 0.00051), 'observed paint differs from its source token')
-    }
-  }
-  return { fills: [fill], boundVariables: { 'fills/0/color': variable.id } }
+// CSS requests select a face; they do not rename its binary weight. For static
+// custom faces, this Chromium revision synthesizes bold only when the selected
+// weight is below 600 and the request is at least 600. Keep that inference scoped
+// to the verified browser; explicit synthesis refusal needs no engine inference.
+// chromium@782af9cb: core/css/css_segmented_font_face.cc, GetFontData.
+function matchesTextFace(face, observed, style, environment) {
+  if (face.postscriptName !== observed.postScriptName || face.style !== style['font-style']) return false
+  const weight = Number(style['font-weight'])
+  if (!Number.isFinite(weight) || weight < 1 || weight > 1000) return false
+  if (face.weight === weight) return true
+  const synthesis = style['font-synthesis-weight']
+  if (synthesis === 'none') return true
+  if (synthesis !== 'auto' || environment?.protocol !== '1.3' ||
+      !/^(?:Headless)?Chrome\/151\.0\.7922\.34$/.test(environment?.browser ?? '')) return false
+  return face.weight >= 600 || weight < 600
 }
 
 // Read-only presentation planning is shared by text rows and composed frames.
 // Layout-specific constraints remain with the owning construction path.
-function planPresentation(node, paintFor) {
+function planPresentation(node, paintFor, blockMargins = false) {
   const style = node.style
   requirePlainText(style)
   requireComponent(['static', 'relative'].includes(style.position) && style.visibility === 'visible' &&
     style.transform === 'none' && style.filter === 'none' && style['background-image'] === 'none' &&
-    style['box-shadow'] === 'none' && style['animation-name'] === 'none', 'positioning, filters, effects or motion require further conversion')
+    style['animation-name'] === 'none', 'positioning, filters, effects or motion require further conversion')
   requireComponent(['none', 'hidden'].includes(style['outline-style']) || pixels(style['outline-width']) === 0 ||
     color(style['outline-color']).a === 0, 'visible outlines require further conversion')
-  requireComponent(['top', 'right', 'bottom', 'left'].every(side => pixels(style[`margin-${side}`]) === 0),
+  requireComponent((blockMargins ? ['right', 'left'] : ['top', 'right', 'bottom', 'left']).every(side => pixels(style[`margin-${side}`]) === 0),
     'external margins require further layout conversion')
   requireComponent(style['text-transform'] === 'none' && style['text-decoration-line'] === 'none' &&
     style['font-feature-settings'] === 'normal' && style['font-variation-settings'] === 'normal' &&
@@ -83,12 +93,15 @@ function planPresentation(node, paintFor) {
   const sides = ['top', 'right', 'bottom', 'left']
   const borders = sides.map(side => ({ width: pixels(style[`border-${side}-width`]),
     style: style[`border-${side}-style`], color: style[`border-${side}-color`] }))
-  const visible = borders.some(border => border.width > 0 && color(border.color).a > 0)
-  const strokes = visible ? paintFor(node, 'border-top-color') : null
-  if (visible) {
+  const borderPaints = borders.map((border, index) => border.width > 0 ? paintFor(node, `border-${sides[index]}-color`) : null)
+  // A bound zero-alpha border can become visible after a palette edit.
+  const retained = borders.some((border, index) => border.width > 0 &&
+    (color(border.color).a > 0 || Object.keys(borderPaints[index].boundVariables).length > 0 || borderPaints[index].expressionBindings))
+  const strokes = retained ? borderPaints[0] : null
+  if (retained) {
     requireComponent(borders.every(border => border.style === 'solid' && border.width === borders[0].width &&
       sameColor(color(border.color), color(borders[0].color))), 'uniform solid borders required')
-    for (const side of sides.slice(1)) requireComponent(JSON.stringify(paintFor(node, `border-${side}-color`)) ===
+    for (const borderPaint of borderPaints.slice(1)) requireComponent(JSON.stringify(borderPaint) ===
       JSON.stringify(strokes), 'border aliases must match on every side')
   }
   // Native layout ignores strokesIncludedInLayout. Account for used CSS border
@@ -98,7 +111,7 @@ function planPresentation(node, paintFor) {
   ]))
   const background = paintFor(node, 'background-color')
   return {
-    ...background, ...insets, opacity: Number(style.opacity),
+    ...background, ...insets, opacity: Number(style.opacity), effects: boxShadow(node),
     independentCorners: true,
     topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
     bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
@@ -106,35 +119,95 @@ function planPresentation(node, paintFor) {
       strokes: strokes.fills.map(fill => ({ ...fill, weight: borders[0].width, align: 'INSIDE' })),
       boundVariables: { ...background.boundVariables, ...Object.fromEntries(Object.entries(strokes.boundVariables)
         .map(([field, value]) => [field.replace('fills/', 'strokes/'), value])) },
+      ...((background.expressionBindings || strokes.expressionBindings) ? {
+        expressionBindings: { ...background.expressionBindings, ...Object.fromEntries(Object.entries(strokes.expressionBindings ?? {})
+          .map(([field, value]) => [field.replace('fills/', 'strokes/'), value])) },
+      } : {}),
     } : {}),
   }
 }
 
 // Construct one observed text row with explicit named SVG slots. The caller
 // supplies exact foundation handles; source names never locate native layers.
-export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets = []) {
+export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets = [], { variants = [] } = {}) {
+  return materializeOccurrence(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets,
+    { path: [observation?.exampleId], variants })
+}
+
+// Parent sizing allowances are private construction evidence, never caller
+// overrides that could bypass comparison with the observed source geometry.
+async function materializeOccurrence(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets, {
+  path, placement = {}, variants = [],
+}) {
   requireComponent(['FRAME', 'CANVAS'].includes(graph.getNode(parentId)?.type), 'existing definition parent required')
   requireComponent(snapshot?.schema === 'platformkit.design-export.v1' && /^[a-f0-9]{64}$/.test(snapshot.sha256) &&
     observation?.sourceSHA === snapshot.sha256, 'observation must identify the selected source snapshot')
   const examples = snapshot.examples.filter(item => item.id === observation.exampleId)
   requireComponent(examples.length === 1 && examples[0].componentId === observation.componentId, 'one matching source invocation required')
   requireComponent(snapshot.themes.some(theme => theme.mode === observation.mode), 'unknown observed theme')
-  const example = examples[0]
+  const example = sourceVariantContext(snapshot, path).example
+  requireComponent(path[0] === observation.exampleId, 'definition path must belong to the observed source root')
   const collection = graph.variableCollections.get(colorCollectionId)
   requireComponent(collection, 'explicit native color collection required')
   const modes = collection.modes.filter(item => item.name === observation.mode)
   requireComponent(modes.length === 1 && graph.getNodeVariableModeId(parentId, collection.id) === modes[0].modeId,
     'definition parent variable mode must match the observation')
   requireComponent(observation.roots.length === 1 && observation.roots[0].kind === 'element', 'one component root required')
-  const root = observation.roots[0]
-  if (root.source && (root.style.display === 'block' || root.children.some(child => child.kind === 'element'))) {
-    return materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root)
+  const observed = [], visit = node => {
+    if (JSON.stringify(node.source?.path) === JSON.stringify(path)) observed.push(node)
+    for (const child of node.children ?? []) visit(child)
   }
-  const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, [example.id], iconTargets)
-  return { ...result, components: [{ path: [example.id], ...result }] }
+  visit(observation.roots[0])
+  requireComponent(observed.length === 1 && observed[0].source.componentId === example.componentId,
+    'definition requires one exactly observed source occurrence')
+  const root = observed[0]
+  requireComponent(Array.isArray(variants), 'source variants must be an array')
+  const pending = [], variables = [], families = [], familyNodes = [], projectedComponents = []
+  async function finish(master, definitionPath, usedPlacement = {}) {
+    const requests = variants.filter(item => JSON.stringify(item.path) === JSON.stringify(definitionPath))
+    if (!requests.length) return
+    const states = [{ snapshot, master }]
+    for (const request of requests) {
+      requireComponent(request.property === requests[0].property, 'one source property per variant family required')
+      const existingVariables = new Set(graph.variables.keys())
+      const built = await materializeOccurrence(graph, parentId, request.snapshot, request.observation, faces, renderer,
+        colorCollectionId, request.iconTargets ?? [], { path: definitionPath, placement: usedPlacement })
+      variables.push(...[...graph.variables.keys()].filter(id => !existingVariables.has(id)))
+      familyNodes.push(...built.components.map(item => item.master.id))
+      projectedComponents.push(...built.components)
+      states.push({ snapshot: request.snapshot, master: built.master })
+    }
+    const family = graph.createNode('COMPONENT_SET', parentId, { name: definitionPath.join(' / '), clipsContent: false })
+    familyNodes.push(family.id)
+    const properties = bindComponentVariants(graph, family, snapshot, definitionPath, requests[0].property, states)
+    families.push({ path: definitionPath, family, properties })
+  }
+  let result
+  try {
+    if (root.source && (root.style.display === 'block' || root.children.some(child => child.kind === 'element'))) {
+      result = await materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement, iconTargets)
+    } else {
+      result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, path, iconTargets, pending, placement)
+      result = { ...result, components: [{ path, ...result }] }
+      await finish(result.master, path, placement)
+    }
+    requireComponent(variants.every(request => families.some(item => JSON.stringify(item.path) === JSON.stringify(request.path))),
+      'every requested variant path must be constructed')
+    result.components.push(...projectedComponents)
+    for (const component of result.components) if (graph.getNode(component.master.parentId)?.type === 'COMPONENT_SET') component.properties = []
+    bindPaintExpressions(graph, collection, snapshot, pending, variables)
+    if (pending.length) for (const { master } of result.components) graph.syncInstances(master.id)
+    const own = families.find(item => JSON.stringify(item.path) === JSON.stringify(path))
+    return { ...result, families, ...(own ? { family: own.family, properties: own.properties } : {}) }
+  } catch (error) {
+    for (const { master } of result?.components?.toReversed() ?? []) if (graph.getNode(master.id)) graph.deleteNode(master.id)
+    for (const id of familyNodes.toReversed()) if (graph.getNode(id)) graph.deleteNode(id)
+    for (const id of variables.toReversed()) graph.removeVariable(id)
+    throw error
+  }
 }
 
-async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = []) {
+async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = [], pending, placement = {}) {
   const style = root.style
   const presentation = planPresentation(root, (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))
   requireComponent(['inline-flex', 'flex'].includes(style.display) && style['flex-direction'] === 'row' &&
@@ -168,8 +241,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
     requireComponent(region.text !== '' && region.text === region.text.replace(/[\t\n\r\f ]+/g, ' ').replace(/^ | $/g, '') &&
       region.rects.length === 1, 'empty, collapsed-whitespace or multiline text needs additional layout semantics')
     requireComponent(region.fonts.length === 1 && region.fonts[0].isCustomFont, 'one actual supplied face per text region required')
-    const matches = supplied.filter(face => face.postscriptName === region.fonts[0].postScriptName &&
-      face.weight === Number(style['font-weight']) && face.style === style['font-style'])
+    const matches = supplied.filter(face => matchesTextFace(face, region.fonts[0], style, observation.environment))
     requireComponent(matches.length === 1, 'actual text face is missing or synthesized')
     const face = matches[0]
     requireComponent(observation.fontFaces.some(item => item.family === face.family && item.weight === face.weight &&
@@ -195,25 +267,23 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       family: face.family, weight: face.weight, style: face.style, text: region.text,
     })))
     await renderer.loadFonts()
-    master = graph.createNode('COMPONENT', parentId, masterProps)
+    master = createPaintedNode(graph, 'COMPONENT', parentId, masterProps, pending)
     const targets = []
     for (const region of root.children) {
       const icon = icons.get(region)
       let nativeNode
       if (icon) {
-        nativeNode = graph.createInstance(icon.master.id, master.id, { name: region.name, uniformScaleFactor: icon.scale })
-        for (const { sourceNode, field, variableId } of icon.paints) {
-          const children = graph.getChildren(nativeNode.id).filter(child => child.componentId === sourceNode.id)
-          requireComponent(children.length === 1, 'one exact native vector occurrence required')
-          graph.bindVariable(children[0].id, field, variableId)
-        }
+        nativeNode = constructIcon(graph, master.id, icon, region.name, pending)
       } else {
         const { face } = texts.find(text => text.region === region)
-        nativeNode = graph.createNode('TEXT', master.id, {
+        nativeNode = createPaintedNode(graph, 'TEXT', master.id, {
           name: region.property, text: region.text, width: region.bounds.width, height: lineHeight,
           fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
           fontSize, lineHeight, letterSpacing, textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
-        })
+          pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+            schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
+          }) }],
+        }, pending)
       }
       targets.push({ region, nativeNode })
     }
@@ -230,8 +300,12 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       })
       computeAllLayouts(graph, master.id)
     } finally { setTextMeasurer(previousMeasurer) }
-    requireComponent(Math.abs(master.width - root.bounds.width) <= 1 / 64 && Math.abs(master.height - root.bounds.height) <= 1 / 64,
+    requireComponent(matchesSourceSize(master, root.bounds, placement),
       'native geometry differs from the observed rendering environment')
+    for (const { region, nativeNode } of targets.filter(target => target.region.kind === 'text')) {
+      requireComponent(matchesSourceSize(nativeNode, { width: region.bounds.width, height: lineHeight }),
+        'native text advance differs from the observed rendering environment')
+    }
     for (const { region, nativeNode } of targets.filter(target => target.region.kind === 'slot')) {
       const expected = region.children[0].bounds
       requireComponent(['width', 'height', 'x', 'y'].every(field => Math.abs(nativeNode[field] -
@@ -248,7 +322,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
 // This is an export-local native construction plan, not a component registry or
 // another renderer. Every boundary comes from a captured source occurrence and
 // every supported layout/paint comes from that occurrence's browser observation.
-function planComposition(graph, snapshot, observation, faces, collection, example, root) {
+function planComposition(graph, snapshot, observation, faces, collection, example, root, iconTargets) {
   const supplied = validateFonts(faces), requirements = [], occurrences = new Map(), seen = new Set()
   function describe(description, path, slot) {
     const key = JSON.stringify(path)
@@ -265,14 +339,14 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       describe(child.description, [...path, child.description.id], child.slot)
     }
   }
-  describe(example, [example.id])
+  describe(example, root.source.path, root.source.slot)
   const paintFor = (node, property) => observedPaint(graph, collection, snapshot, observation, node, property)
   const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1 / 64
 
   function text(region, node, { control = false, wrapping = false } = {}) {
     const style = node.style, value = control ? region.value : region.text
-    requireComponent(typeof value === 'string' && !/[\r\n\t]/.test(value), 'composition requires single-line text')
-    if (wrapping) requireComponent(value !== '' && value === value.replace(/[\t\n\r\f ]+/g, ' ').replace(/^ | $/g, ''),
+    requireComponent(typeof value === 'string' && !(control && wrapping ? /[\r\t]/ : /[\r\n\t]/).test(value), 'composition requires supported text whitespace')
+    if (wrapping && !control) requireComponent(value !== '' && value === value.replace(/[\t\n\r\f ]+/g, ' ').replace(/^ | $/g, ''),
       'text blocks need nonempty text without collapsed whitespace')
     if (!control) requireComponent(region.rects?.length > 0 && (wrapping || region.rects.length === 1) && region.bounds.height > 0,
       'composition text needs observed lines')
@@ -280,14 +354,13 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     requireComponent(Array.isArray(observed), 'composition text requires actual font evidence')
     const weight = Number(style['font-weight'])
     let matching
-    if (control && value === '') {
+    if (control && (value === '' || wrapping && /^\n+$/.test(value))) {
       requireComponent(observed.length === 0, 'empty control must not invent glyph evidence')
       const firstFamily = style['font-family'].split(',')[0].trim().replace(/^(["'])(.*)\1$/, '$2')
       matching = supplied.filter(face => face.family === firstFamily && face.weight === weight && face.style === style['font-style'])
     } else {
       requireComponent(observed.length === 1 && observed[0].isCustomFont, 'composition text requires one supplied actual face')
-      matching = supplied.filter(face => face.postscriptName === observed[0].postScriptName &&
-        face.weight === weight && face.style === style['font-style'])
+      matching = supplied.filter(face => matchesTextFace(face, observed[0], style, observation.environment))
     }
     requireComponent(matching.length === 1, 'composition text face is missing or synthesized')
     const face = matching[0]
@@ -332,7 +405,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     } }
   }
 
-  function element(node, owner, isRoot = false) {
+  function element(node, owner, isRoot = false, blockMargins = false) {
     requireComponent(node?.kind === 'element', 'composition requires explicit element roots')
     let occurrence
     if (node.source) {
@@ -346,31 +419,64 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     }
     requireComponent(owner && (!isRoot || occurrence), 'composition requires exact source root ownership')
     requireComponent(!node.component || occurrence, 'composition cannot flatten an uncaptured component boundary')
+    if (node.tag === 'svg' && !occurrence) {
+      const targets = iconTargets.filter(target => target.region === node)
+      const assets = snapshot.icons.filter(asset => asset.name === node.icon?.canonicalName)
+      requireComponent(targets.length === 1 && assets.length === 1, 'private SVG needs one explicit canonical construction handle')
+      return { kind: 'icon', observation: node,
+        icon: planIcon(graph, assets[0], node, targets[0].master, collection.id, paintFor) }
+    }
     if (occurrence && ['flex', 'inline-flex'].includes(node.style.display) &&
       node.children.every(child => ['text', 'slot'].includes(child.kind))) {
-      requireComponent(node.children.every(child => child.kind === 'text'), 'nested SVG slots require explicit native construction handles')
       return { kind: 'component', occurrence, observation: node, textRow: true }
     }
-    const native = planPresentation(node, paintFor), style = node.style
+    const native = planPresentation(node, paintFor, blockMargins), style = node.style
     requireComponent(['auto', '100%'].includes(node.sizing.width) && node.sizing.height === 'auto' &&
       ['auto', '0px'].includes(node.sizing['min-width']) && ['auto', '0px'].includes(node.sizing['min-height']) &&
       node.sizing['max-width'] === 'none' && node.sizing['max-height'] === 'none', 'composition constrained sizing requires further conversion')
     let plan
     if (node.control) {
-      requireComponent(node.tag === 'input' && node.control.kind === 'control' && node.control.type === 'text' &&
-        node.control.property === 'value' && node.children.length === 0, 'one explicitly bound native text control required')
-      requireComponent(node.control.placeholder === '', 'control placeholder layout and paint require further conversion')
+      const control = node.control, multiline = node.tag === 'textarea' && control.type === 'textarea'
+      const select = node.tag === 'select' && control.type === 'select-one' && control.size <= 1
+      requireComponent((select || (multiline || node.tag === 'input' && control.type === 'text') && control.property === 'value') &&
+        control.kind === 'control' && node.children.length === 0, 'one explicitly bound native text or closed choice control required')
+      requireComponent(select || control.placeholder === '', 'control placeholder layout and paint require further conversion')
       requireComponent(style['text-align'] === 'start' || style['text-align'] === 'left', 'control text alignment requires further conversion')
-      const value = text(node.control, node, { control: true })
-      // A browser text input has a fixed one-line content viewport, not a
-      // wrapping paragraph. Its actual value remains an editable native TEXT.
+      requireComponent(!multiline || Number.isSafeInteger(node.control.rows) && node.control.rows > 0 &&
+        ['', 'soft'].includes(node.control.wrap) && !node.control.controllers && !node.control.counter &&
+        style['white-space'] === 'pre-wrap', 'textarea requires fixed rows, soft wrapping and no active controllers')
+      if (select) {
+        const fields = control.properties, selected = control.options.filter(option => option.selected)
+        requireComponent(style.appearance === 'none', 'choice chrome must be source-owned')
+        requireComponent(fields && new Set(Object.values(fields)).size === 3 &&
+          sourceTextValue(owner.description, fields.value) === control.value &&
+          (owner.description.props[fields.values] ?? []).length === 0 &&
+          new Set(control.options.map(option => option.value)).size === control.options.length &&
+          selected.length <= 1 && control.values.length === selected.length &&
+          (selected.length ? selected[0].value === control.value && control.values[0] === control.value &&
+            selected[0].label === control.content?.text : control.value === '' && control.content?.text === ''),
+        'choice requires an unambiguous exact source value and observed display label')
+      }
+      // A choice's visible label is private presentation, never its stored value.
+      const value = text(select ? { value: control.content.text, fonts: control.fonts } : control, node, { control: true, wrapping: multiline })
+      const width = node.bounds.width - native.paddingLeft - native.paddingRight
+      const height = value.native.lineHeight * (multiline ? node.control.rows : 1)
+      if (select) requireComponent(near(control.content.bounds.width, width) && near(control.content.bounds.height, height) &&
+        near(control.content.bounds.x, node.bounds.x + native.paddingLeft) &&
+        near(control.content.bounds.y, node.bounds.y + native.paddingTop), 'choice display viewport requires further conversion')
+      if (multiline) {
+        requireComponent(near(node.control.content?.bounds.width, width), 'textarea scrollbar or content width requires further conversion')
+        value.native.width = width
+      }
+      // Both controls own fixed viewports: one unwrapped input line or a
+      // textarea's declared rows. Editing text does not grow the control.
       const viewport = { kind: 'frame', children: [value], native: {
-        name: 'Input content viewport', width: node.bounds.width - native.paddingLeft - native.paddingRight,
-        height: value.native.lineHeight, layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
+        name: 'Input content viewport', width,
+        height, layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
         clipsContent: true, fills: [],
       } }
       plan = { kind: 'frame', observation: node, children: [viewport], native: {
-        name: 'Source input', width: node.bounds.width, height: value.native.lineHeight + native.paddingTop + native.paddingBottom,
+        name: `Source ${node.tag}`, width: node.bounds.width, height: height + native.paddingTop + native.paddingBottom,
         layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FILL', counterAxisSizing: 'FIXED',
         primaryAxisAlign: 'MIN', counterAxisAlign: 'CENTER', clipsContent: true, ...native,
       } }
@@ -380,12 +486,44 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       'text blocks require normal wrapping, left alignment and visible overflow')
       const value = text(node.children[0], node, { wrapping: true })
       value.native.width = node.bounds.width - native.paddingLeft - native.paddingRight
-      value.native.height = node.bounds.height - native.paddingTop - native.paddingBottom
+      value.native.height = value.region.rects.length * value.native.lineHeight
       value.native.layoutAlignSelf = 'STRETCH'
-      plan = { kind: 'frame', observation: node, children: [value], native: {
+      plan = { kind: 'frame', textBlock: true, observation: node, children: [value], native: {
         name: node.tag, width: node.bounds.width, height: node.bounds.height,
         layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
         primaryAxisAlign: 'MIN', counterAxisAlign: 'STRETCH', ...native,
+      } }
+    } else if (style.display === 'block' && node.children.some(child => child.kind === 'element' && child.style.display === 'block')) {
+      requireComponent(node.children.every(child => child.kind === 'element' && child.style.display === 'block' && child.bounds.height > 0),
+        'block flow requires nonempty block children without mixed inline content')
+      requireComponent([node, ...node.children].every(item => item.style.float === 'none' && item.style.clear === 'none' &&
+        item.style.position === 'static' && ['auto', '1'].includes(item.style['column-count']) && item.style['column-width'] === 'auto'),
+      'block flow requires ordinary unfragmented layout without floats or clearance')
+      const margins = node.children.map(child => [pixels(child.style['margin-top']), pixels(child.style['margin-bottom'])])
+      requireComponent(margins[0][0] === 0 && margins.at(-1)[1] === 0, 'outer block margins require parent-collapse conversion')
+      const gaps = margins.slice(1).map(([top], index) => Math.max(top, margins[index][1]))
+      requireComponent(gaps.every(gap => gap === gaps[0]), 'nonuniform block margins require individual native spacing')
+      const children = node.children.map(child => element(child, owner, false, true))
+      for (const child of children) child.placement = {
+        layoutAlignSelf: 'STRETCH', [child.native.layoutMode === 'VERTICAL' ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL',
+      }
+      plan = { kind: 'frame', blockFlow: true, observation: node, children, native: {
+        name: node.tag, width: node.bounds.width, height: node.bounds.height,
+        layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
+        primaryAxisAlign: 'MIN', counterAxisAlign: 'STRETCH', itemSpacing: gaps[0] ?? 0, ...native,
+      } }
+    } else if (style.display === 'grid') {
+      const grid = planSourceGrid(node)
+      const children = node.children.map(child => element(child, owner))
+      for (const [index, child] of children.entries()) {
+        const { widthFill, heightFill, ...placement } = grid.children[index]
+        const horizontal = child.native?.layoutMode === 'HORIZONTAL' || child.textRow
+        child.placement = { ...placement,
+          ...(widthFill ? { [horizontal ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL' } : {}),
+          ...(heightFill ? { [horizontal ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL' } : {}) }
+      }
+      plan = { kind: 'frame', observation: node, children, native: {
+        name: node.tag, width: node.bounds.width, height: node.bounds.height, ...grid.native, ...native,
       } }
     } else if (['block', 'inline'].includes(style.display)) {
       plan = inline(node)
@@ -396,25 +534,31 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       'composition requires nonwrapping flex or forward-wrapping row layout')
       requireComponent(!wrapping || ['normal', 'stretch', 'flex-start'].includes(style['align-content']),
         'wrapping row content alignment requires further conversion')
-      const justify = { normal: 'MIN', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['justify-content']]
+      const justify = { normal: 'MIN', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER', 'space-between': 'SPACE_BETWEEN' }[style['justify-content']]
       const align = { normal: 'STRETCH', stretch: 'STRETCH', 'flex-start': 'MIN', 'flex-end': 'MAX', center: 'CENTER' }[style['align-items']]
       requireComponent(justify && align, 'composition alignment requires further conversion')
       const vertical = style['flex-direction'] === 'column'
+      const gap = axis => style[`${axis}-gap`] === 'normal' ? 0 : pixels(style[`${axis}-gap`])
       plan = { kind: 'frame', observation: node, children: node.children.map(child => element(child, owner)), native: {
         name: node.tag, width: node.bounds.width, height: node.bounds.height,
         layoutMode: vertical ? 'VERTICAL' : 'HORIZONTAL',
         primaryAxisSizing: vertical ? 'HUG' : 'FIXED', counterAxisSizing: vertical ? 'FIXED' : 'HUG',
         primaryAxisAlign: justify, counterAxisAlign: align, layoutWrap: wrapping ? 'WRAP' : 'NO_WRAP',
-        itemSpacing: pixels(style[vertical ? 'row-gap' : 'column-gap']),
-        counterAxisSpacing: pixels(style[vertical ? 'column-gap' : 'row-gap']), ...native,
+        itemSpacing: gap(vertical ? 'row' : 'column'),
+        counterAxisSpacing: gap(vertical ? 'column' : 'row'), ...native,
       } }
       for (const child of plan.children) {
         const childStyle = child.observation.style
-        requireComponent(childStyle['flex-grow'] === '0' && childStyle['flex-shrink'] === '1' &&
+        if (!vertical && child.blockFlow) {
+          requireComponent(wrapping && child.observation.sizing.width === 'auto',
+            'intrinsic blocks require automatic width in a wrapping row')
+          child.placement = { counterAxisSizing: 'HUG' }
+        }
+        requireComponent(childStyle['flex-grow'] === '0' && childStyle['flex-shrink'] === (child.kind === 'icon' ? '0' : '1') &&
           childStyle['flex-basis'] === 'auto' && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
         requireComponent(!wrapping || childStyle.order === '0', 'wrapping rows require source child order')
         if (vertical && align === 'STRETCH') child.placement = {
-          layoutAlignSelf: 'STRETCH', [child.native?.layoutMode === 'VERTICAL' ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL',
+          layoutAlignSelf: 'STRETCH', [child.textRow || child.native?.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL',
         }
       }
     }
@@ -426,8 +570,9 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
   return { plan, requirements }
 }
 
-async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root) {
-  const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root)
+async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement, iconTargets) {
+  const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root, iconTargets)
+  plan.placement = placement
   const components = [], created = [], geometry = []
   function provenance(description, definitionPath) {
     return [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
@@ -439,23 +584,31 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
   async function component(current) {
     const { description, path } = current.occurrence
     if (current.textRow) {
-      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path)
+      const targets = iconTargets.filter(target => current.observation.children.includes(target.region))
+      const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path, targets, pending, current.placement)
       created.push(result.master.id)
       components.push({ path, ...result })
+      await finish(result.master, path, current.placement)
       return result.master
     }
-    const master = graph.createNode('COMPONENT', parentId, {
+    const master = createPaintedNode(graph, 'COMPONENT', parentId, {
       ...current.native, name: description.name || description.id, pluginData: provenance(description, path),
-    })
+    }, pending)
     created.push(master.id)
     const targets = []
     for (const child of current.children) await construct(child, master, targets, current)
     const properties = bindComponentProperties(graph, master, description, targets)
     components.push({ path, master, properties })
-    geometry.push({ plan: current, node: master })
+    geometry.push({ plan: current, node: master, definition: true })
+    await finish(master, path, current.placement)
     return master
   }
   async function construct(current, parent, targets, parentPlan) {
+    if (current.kind === 'icon') {
+      const node = constructIcon(graph, parent.id, current.icon, current.observation.icon.canonicalName, pending)
+      geometry.push({ plan: current, node, parentPlan })
+      return node
+    }
     if (current.kind === 'component') {
       const definition = await component(current)
       const node = graph.createInstance(definition.id, parent.id, {
@@ -467,13 +620,20 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       geometry.push({ plan: current, node, parentPlan })
       return node
     }
-    const node = graph.createNode(current.kind === 'text' ? 'TEXT' : 'FRAME', parent.id, { ...current.native, ...current.placement })
+    // Private paragraphs and inline runs share linked Text's source-owned layout.
+    const pluginData = current.blockFlow || current.textBlock || current.wrapping || current.inline || parentPlan?.inline ||
+      ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
+      pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+        schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
+      }),
+    }] : []
+    const node = createPaintedNode(graph, current.kind === 'text' ? 'TEXT' : 'FRAME', parent.id, { ...current.native, ...current.placement, pluginData }, pending)
     if (current.control) {
       const previous = getTextMeasurer()
       try {
         setTextMeasurer((node, maxWidth) => renderer.measureTextNode(node, maxWidth))
         graph.updateNode(node.id, textAutoResizeChanges(node, { text: node.text }, true))
-        requireComponent(Math.abs(node.height - node.lineHeight) <= 1 / 64, 'control requires one unwrapped native line')
+        requireComponent(current.wrapping || Math.abs(node.height - node.lineHeight) <= 1 / 64, 'control requires one unwrapped native line')
       } finally { setTextMeasurer(previous) }
     }
     if (current.kind === 'text' && current.region.property) targets.push({ region: current.region, nativeNode: node })
@@ -496,13 +656,19 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       for (const item of components) computeAllLayouts(graph, item.master.id)
       computeAllLayouts(graph, master.id)
     } finally { setTextMeasurer(previousMeasurer) }
-    for (const { plan: current, node, parentPlan } of geometry) {
+    for (const { plan: current, node, parentPlan, definition } of geometry) {
       if (!current.observation) continue
       const expected = current.observation.bounds
       const height = current.kind === 'text' || current.inline ? current.native.height : expected.height
       const width = current.wrapping ? current.native.width : expected.width
-      requireComponent(Math.abs(node.width - width) <= 1 / 64 && Math.abs(node.height - height) <= 1 / 64,
-        `composition native geometry differs from source ${current.observation.tag ?? 'text'}`)
+      requireComponent(matchesSourceSize(node, { width, height }, definition ? current.placement : undefined),
+        `composition native geometry differs from source ${current.observation.tag ?? 'text'}: ${node.width}×${node.height}, expected ${width}×${height}`)
+      if (current.textRow) {
+        const text = graph.getChildren(node.id)[0], region = current.observation.children[0]
+        requireComponent(Math.abs(text.x - (region.bounds.x - expected.x)) <= 1 / 64 &&
+          Math.abs(text.y - (region.bounds.y - expected.y - (text.height - region.bounds.height) / 2)) <= 1 / 64,
+          'composition text placement differs from the source parent')
+      }
       if (parentPlan) {
         const parentBounds = parentPlan.observation.bounds
         // Wrapping TEXT owns the CSS content box, not Range's font rectangle.
@@ -510,8 +676,10 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
         const lineInset = current.kind === 'text' ? (height - expected.height) / 2 : 0
         const x = current.wrapping ? parentPlan.native.paddingLeft : expected.x - parentBounds.x
         const y = current.wrapping ? parentPlan.native.paddingTop : expected.y - parentBounds.y - lineInset
+        requireComponent(!current.wrapping || Math.abs(expected.x - parentBounds.x - x) <= 1 / 64,
+          'composition text placement differs from the source content box')
         requireComponent(Math.abs(node.x - x) <= 1 / 64 && Math.abs(node.y - y) <= 1 / 64,
-        'composition native placement differs from the source parent')
+        `composition native placement differs from the source parent: ${node.name} at ${node.x},${node.y}, expected ${x},${y}`)
       }
     }
     return { master, properties: components.find(item => item.master === master).properties, components }

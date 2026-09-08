@@ -317,6 +317,13 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 	if len(events) > 0 {
 		op.Extensions = map[string]any{httpx.EventsExtension: events}
 	}
+	// The same declaration, recorded on the resource, so a shell generated
+	// from the catalog offers this door rather than inventing one.
+	api.AddCommand(spec.Module, spec.Entity, httpx.Command{
+		Verb: verb, Summary: summary, Description: description,
+		Collection: opts.Collection, Auth: auth,
+		Fields: crud.FieldsOf(reflect.TypeFor[I]()),
+	})
 	// The two mounts differ in their input type and in nothing else, and the
 	// type is what tells huma whether there is a path parameter to bind. That
 	// is the irreducible half of the difference; everything above it and the

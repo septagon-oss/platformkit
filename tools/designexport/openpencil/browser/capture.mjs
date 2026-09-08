@@ -1,5 +1,65 @@
 import { validateFonts } from '../fonts.mjs'
 import { indexCaptureSources, prepareCaptureSource } from './capture-source.mjs'
+import { resolveColorExpression } from '../color-expression.mjs'
+import { computedColor } from '../computed-color.mjs'
+
+// Exact 8-bit inputs keep mix math distinct from rounded CSSOM alpha text.
+const colorProbes = [
+  { value: '#123456', serialized: 'rgb(18, 52, 86)' },
+  { value: '#abcdef', serialized: 'rgb(171, 205, 239)' },
+  { value: '#12345640', serialized: 'rgba(18, 52, 86, 0.25)' },
+  { value: '#abcdefbf', serialized: 'rgba(171, 205, 239, 0.75)' },
+  { value: '#20406000', serialized: 'rgba(32, 64, 96, 0)' },
+]
+
+// Candidate declarations come from the supplied stylesheet, never a role map.
+// Only the existing CSS evaluator's subset can provide a comparison witness.
+function colorExpressionCandidates(declarations, tokens) {
+  const definitions = new Map(), palette = new Map(tokens.map(token => [token.name, token.value]))
+  if (palette.size !== tokens.length) return []
+  for (const [name, value] of declarations) definitions.set(name, definitions.has(name) ? null : value)
+  return [...definitions].filter(([name]) => !palette.has(name)).flatMap(([name, value]) => {
+    const references = new Map(), dependencies = new Set()
+    const resolve = (editedName, editedValue) => key => {
+      if (palette.has(key)) {
+        dependencies.add(key)
+        return key === editedName ? editedValue : palette.get(key)
+      }
+      const definition = definitions.get(key)
+      if (typeof definition === 'string') references.set(key, definition)
+      return definition
+    }
+    try {
+      const baseline = resolveColorExpression(value, resolve())
+      const tokens = [...dependencies].toSorted()
+      if (!tokens.length) return []
+      const colors = [baseline, ...tokens.flatMap(token => colorProbes.map(probe => resolveColorExpression(value, resolve(token, probe.value))))]
+      return [{ name, value, customProperties: Object.fromEntries(references), tokens, colors }]
+    } catch { return [] } // Unsupported or ambiguous CSS remains unclaimed.
+  })
+}
+
+function retainColorExpressions(nodes, expressions) {
+  for (const node of nodes) {
+    for (const [property, source] of Object.entries(node.paintSources ?? {})) {
+      const { responses, candidates } = source
+      delete source.responses
+      delete source.candidates
+      if (candidates?.length !== 1) continue
+      const expression = expressions.find(item => item.name === candidates[0])
+      if (JSON.stringify(source.tokens.toSorted()) !== JSON.stringify(expression.tokens)) continue
+      try {
+        const colors = [node.style[property], ...expression.tokens.flatMap(token => responses[token])].map(computedColor)
+        if (!colors.every((color, index) => ['r', 'g', 'b', 'a'].every(channel =>
+          Math.abs(color[channel] - expression.colors[index][channel]) <= 1e-6))) continue
+        source.expressionCandidate = {
+          customProperty: expression.name, value: expression.value, customProperties: structuredClone(expression.customProperties),
+        }
+      } catch { /* Unsupported computed colors provide no expression witness. */ }
+    }
+    if (node.children) retainColorExpressions(node.children, expressions)
+  }
+}
 
 // Observe the existing Go HTML and CSS in a disposable, unauthenticated browser
 // document. This is static adapter input, not a second component renderer or a
@@ -85,14 +145,26 @@ export async function captureExample(browser, snapshot, exampleId, {
       fonts: faces.map(face => ({ family: face.family, weight: face.weight, style: face.style, bytes: [...face.bytes] })),
     })
     await page.evaluate(indexCaptureSources, { occurrences: prepared.occurrences, html: example.html })
-    const roots = await page.evaluate(colorTokens => {
+    const colorTokens = snapshot.themes.find(theme => theme.mode === mode).tokens.filter(token => token.type === 'color')
+    const declarations = await page.evaluate(() => {
+      // A sampled mode cannot prove an inactive override equivalent. Only one
+      // unconditional root declaration may define a portable formula or alias.
+      const inspect = (rules, topLevel) => [...rules].flatMap(rule => [
+        ...[...(rule.style ?? [])].filter(name => name.startsWith('--')).map(name =>
+          [name, topLevel && rule.selectorText === ':root' ? rule.style.getPropertyValue(name).trim() : null]),
+        ...(rule.cssRules ? inspect(rule.cssRules, false) : []),
+      ])
+      return [...document.styleSheets].flatMap(sheet => inspect(sheet.cssRules, true))
+    })
+    const expressions = colorExpressionCandidates(declarations, colorTokens)
+    const roots = await page.evaluate(({ colorTokens, probes, expressionNames }) => {
       // Exact text nodes and native text controls cross into CDP inspection.
       // Other element queries aggregate descendants and cannot identify regions.
       globalThis.__platformkitCaptureTextNodes = []
       const elements = []
       const properties = [
-        'display', 'visibility', 'opacity', 'position', 'transform', 'box-sizing',
-        'color', 'background-color', 'background-image', 'box-shadow',
+        'display', 'visibility', 'opacity', 'position', 'transform', 'box-sizing', 'float', 'clear', 'column-count', 'column-width',
+        'color', 'background-color', 'background-image', 'box-shadow', 'appearance',
         'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
         'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
         'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
@@ -101,7 +173,10 @@ export async function captureExample(browser, snapshot, exampleId, {
         'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
         'flex-direction', 'flex-wrap', 'flex-grow', 'flex-shrink', 'flex-basis',
         'justify-content', 'align-items', 'align-self', 'align-content', 'order', 'row-gap', 'column-gap',
+        'justify-items', 'justify-self', 'grid-auto-flow', 'grid-template-areas',
+        'grid-column-start', 'grid-column-end', 'grid-row-start', 'grid-row-end',
         'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
+        'font-synthesis-weight', 'font-synthesis-style',
         'font-feature-settings', 'font-variation-settings', 'line-height', 'letter-spacing',
         'white-space', 'text-align', 'text-transform', 'text-decoration-line',
         'text-indent', 'text-shadow', 'word-spacing', 'writing-mode', 'direction',
@@ -189,21 +264,41 @@ export async function captureExample(browser, snapshot, exampleId, {
           kind: 'element', observationId: id, tag: node.localName,
           component: node.getAttribute('data-component'),
           bounds: bounds(node.getBoundingClientRect()), style: computed,
-          sizing: Object.fromEntries(['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height']
+          sizing: Object.fromEntries(['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
+            'grid-template-columns', 'grid-template-rows', 'grid-auto-columns', 'grid-auto-rows']
             .map(key => [key, typed.get(key)?.toString() ?? ''])),
           children: [],
         }
         const source = globalThis.__platformkitCaptureSources.get(node)
         if (source) out.source = source
-        if (node.hasAttribute('data-pk-value')) {
+        if (node.hasAttribute('data-pk-options') || node.hasAttribute('data-pk-values') ||
+            node instanceof HTMLSelectElement && node.hasAttribute('data-pk-value')) {
+          const properties = Object.fromEntries(['value', 'values', 'options'].map(name => [name, node.getAttribute(`data-pk-${name}`)]))
+          if (!(node instanceof HTMLSelectElement) || Object.values(properties).some(name => !/^[A-Za-z][A-Za-z0-9]*$/.test(name ?? '')) ||
+              new Set(Object.values(properties)).size !== 3) throw new Error('Invalid choice-control property markers')
+          out.control = { kind: 'control', type: node.type, properties, value: node.value,
+            values: [...node.selectedOptions].map(option => option.value), size: node.size,
+            required: node.required, disabled: node.disabled,
+            options: [...node.options].map(option => ({ value: option.value, label: option.label,
+              selected: option.selected, disabled: option.disabled,
+              group: option.parentElement instanceof HTMLOptGroupElement ? {
+                label: option.parentElement.label, disabled: option.parentElement.disabled,
+              } : null })),
+            // For a listbox, font use includes all painted options, not just
+            // the selected values. Closed selects paint their displayed label.
+            fontObservationIds: [globalThis.__platformkitCaptureTextNodes.push(node) - 1] }
+        } else if (node.hasAttribute('data-pk-value')) {
           const property = node.getAttribute('data-pk-value')
-          if (!(node instanceof HTMLInputElement) || !/^[A-Za-z][A-Za-z0-9]*$/.test(property)) {
+          const multiline = node instanceof HTMLTextAreaElement
+          if (!(node instanceof HTMLInputElement || multiline) || !/^[A-Za-z][A-Za-z0-9]*$/.test(property)) {
             throw new Error('Invalid text-control property marker')
           }
-          if (node.type !== 'text') throw new Error('Capture only supports marked text controls')
+          if (!multiline && node.type !== 'text') throw new Error('Capture only supports marked text controls')
           // CDP observes painted control content: with an empty value, glyphs
           // may belong to its placeholder. Preserve that distinction explicitly.
           out.control = { kind: 'control', property, type: node.type, value: node.value, placeholder: node.placeholder,
+            ...(multiline ? { rows: node.rows, wrap: node.wrap, controllers: node.getAttribute('data-controller'),
+              counter: node.hasAttribute('data-textarea-counter-target') } : {}),
             fontObservationIds: [globalThis.__platformkitCaptureTextNodes.push(node) - 1] }
         }
         for (const pseudo of ['::before', '::after']) {
@@ -214,11 +309,11 @@ export async function captureExample(browser, snapshot, exampleId, {
           name: node.getAttribute('data-pk-icon'), canonicalName: node.getAttribute('data-pk-icon-canonical'), svg: node.outerHTML,
         }
         if (isSVG(node)) out.attributes = Object.fromEntries([...node.attributes].map(attribute => [attribute.name, attribute.value]))
-        out.children = children(node)
+        out.children = out.control ? [] : children(node)
         return out
       }
       const roots = children(document.body)
-      const paints = ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color', 'fill', 'stroke']
+      const paints = ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color', 'fill', 'stroke', 'box-shadow']
       const values = () => elements.map(node => {
         const computed = getComputedStyle(node)
         return paints.map(paint => computed.getPropertyValue(paint))
@@ -226,8 +321,9 @@ export async function captureExample(browser, snapshot, exampleId, {
       const sources = elements.map(() => Object.fromEntries(paints.map(paint => [paint, { tokens: [], directCandidate: null }])))
       // Let the browser resolve roles, inheritance and color-mix. Matching a
       // baseline RGB would incorrectly bind unrelated literals and equal-valued
-      // tokens. Two matching probes suggest a direct binding; they do not prove
-      // arbitrary CSS expressions are equivalent to that token in every state.
+      // tokens. Probe opacity too: opaque-only samples miss alpha dependencies.
+      // Matching these samples suggests a direct binding, not equivalence for
+      // arbitrary CSS expressions in every state.
       const probeSheet = document.createElement('style')
       probeSheet.textContent = '* { transition: none !important; }'
       const root = document.documentElement
@@ -235,24 +331,42 @@ export async function captureExample(browser, snapshot, exampleId, {
       document.head.append(probeSheet)
       try {
         const baseline = values()
-        for (const token of colorTokens) {
+        const sample = token => {
           const before = root.style.getPropertyValue(token)
           const priority = root.style.getPropertyPriority(token)
-          root.style.setProperty(token, '#123456', 'important')
-          const first = values()
-          root.style.setProperty(token, '#abcdef', 'important')
-          const second = values()
+          const samples = probes.map(probe => {
+            root.style.setProperty(token, probe.value, 'important')
+            return values()
+          })
           if (before) root.style.setProperty(token, before, priority)
           else root.style.removeProperty(token)
+          return samples
+        }
+        for (const token of colorTokens) {
+          const samples = sample(token)
           for (const [index] of elements.entries()) {
             for (const [paintIndex, paint] of paints.entries()) {
-              const a = first[index][paintIndex], b = second[index][paintIndex]
-              if (a === baseline[index][paintIndex] && b === baseline[index][paintIndex]) continue
+              const observed = samples.map(sample => sample[index][paintIndex])
+              if (observed.every(value => value === baseline[index][paintIndex])) continue
               const source = sources[index][paint]
               source.tokens.push(token)
-              if (source.tokens.length === 1 && a === 'rgb(18, 52, 86)' && b === 'rgb(171, 205, 239)') source.directCandidate = token
+              source.responses ??= {}
+              source.responses[token] = observed
+              if (source.tokens.length === 1 && observed.every((value, index) => value === probes[index].serialized)) source.directCandidate = token
               else source.directCandidate = null
             }
+          }
+        }
+        const targets = sources.flatMap((paintsByName, index) => paints.flatMap((paint, paintIndex) => {
+          const source = paintsByName[paint]
+          if (!source.tokens.length || source.directCandidate !== null) return []
+          source.candidates = []
+          return [{ index, paintIndex, source }]
+        }))
+        if (targets.length) for (const name of expressionNames) {
+          const samples = sample(name)
+          for (const { index, paintIndex, source } of targets) {
+            if (samples.every((values, probe) => values[index][paintIndex] === probes[probe].serialized)) source.candidates.push(name)
           }
         }
       } finally {
@@ -271,7 +385,8 @@ export async function captureExample(browser, snapshot, exampleId, {
       }
       annotate(roots)
       return roots
-    }, snapshot.themes.find(theme => theme.mode === mode).tokens.filter(token => token.type === 'color').map(token => token.name))
+    }, { colorTokens: colorTokens.map(token => token.name), probes: colorProbes, expressionNames: expressions.map(item => item.name) })
+    retainColorExpressions(roots, expressions)
     const session = await context.newCDPSession(page)
     let environment
     try {
@@ -311,7 +426,52 @@ export async function captureExample(browser, snapshot, exampleId, {
               expression: `globalThis.__platformkitCaptureTextNodes[${id}]`, objectGroup: 'platformkit-capture',
             })
             const { nodeId } = await session.send('DOM.requestNode', { objectId: result.objectId })
-            const { fonts: used } = await session.send('CSS.getPlatformFontsForNode', { nodeId })
+            let fontNodes = [nodeId]
+            if (node.type === 'select-one' && node.size <= 1) {
+              const { node: control } = await session.send('DOM.describeNode', { nodeId, depth: -1, pierce: true })
+              const interiors = control.shadowRoots?.filter(root => root.shadowRootType === 'user-agent')
+                .flatMap(root => root.children ?? []).filter(item => item.localName === 'div' &&
+                  item.attributes?.some((attribute, index) => index % 2 === 0 && attribute === 'pseudo' &&
+                    item.attributes[index + 1] === '-internal-select-inner-element')) ?? []
+              if (interiors.length !== 1) throw new Error('Select requires an observed browser display viewport')
+              const { object } = await session.send('DOM.resolveNode', { backendNodeId: interiors[0].backendNodeId })
+              const { result: content } = await session.send('Runtime.callFunctionOn', { objectId: object.objectId, returnByValue: true,
+                functionDeclaration: `function() {
+                  const rect = r => ({ x: r.x, y: r.y, width: r.width, height: r.height });
+                  const range = document.createRange(); range.selectNodeContents(this);
+                  return { text: this.textContent, bounds: rect(this.getBoundingClientRect()), rects: [...range.getClientRects()].map(rect) };
+                }` })
+              node.content = content.value
+            }
+            if (node.type === 'textarea') {
+              const { node: control } = await session.send('DOM.describeNode', { nodeId, depth: -1, pierce: true })
+              const editor = control.shadowRoots?.find(root => root.shadowRootType === 'user-agent')?.children?.at(-1)
+              if (editor?.localName !== 'div') throw new Error('Textarea requires an observed browser editing viewport')
+              const { object } = await session.send('DOM.resolveNode', { backendNodeId: editor.backendNodeId })
+              const { result: content } = await session.send('Runtime.callFunctionOn', { objectId: object.objectId, returnByValue: true,
+                functionDeclaration: `function() {
+                  const rect = r => ({ x: r.x, y: r.y, width: r.width, height: r.height });
+                  const range = document.createRange(); range.selectNodeContents(this);
+                  const bounds = rect(this.getBoundingClientRect()), rects = [...range.getClientRects()].map(rect);
+                  // Paragraph metrics exclude hanging spaces; retain blank lines
+                  // and measure the actual non-space range endpoints separately.
+                  const advances = new Map(rects.map(box => [box.y, 0]));
+                  const walker = document.createTreeWalker(this, NodeFilter.SHOW_TEXT);
+                  for (let text; (text = walker.nextNode());) for (let offset = 0; offset < text.length;) {
+                    const next = offset + (text.data.codePointAt(offset) > 65535 ? 2 : 1);
+                    range.setStart(text, offset); range.setEnd(text, next);
+                    const box = range.getBoundingClientRect();
+                    if (text.data.slice(offset, next) !== ' ') advances.set(box.y, Math.max(advances.get(box.y) ?? 0, box.right - bounds.x));
+                    offset = next;
+                  }
+                  return { bounds, rects, advances: [...advances.values()] };
+                }` })
+              node.content = content.value
+              const leaves = item => item.nodeType === 3 ? [item.backendNodeId] : (item.children ?? []).flatMap(leaves)
+              const { nodeIds } = await session.send('DOM.pushNodesByBackendIdsToFrontend', { backendNodeIds: leaves(editor) })
+              fontNodes = nodeIds
+            }
+            const used = (await Promise.all(fontNodes.map(nodeId => session.send('CSS.getPlatformFontsForNode', { nodeId })))).flatMap(result => result.fonts)
             for (const font of used) {
               const key = JSON.stringify([font.familyName, font.postScriptName, font.isCustomFont])
               const previous = fonts.get(key)

@@ -7,13 +7,20 @@ component registry, page language or client-specific library here.
 
 The generator packages tokens, icons and explicitly selected experimental native
 components, using supplied-font validation, browser observations and a pinned
-SDK correction layer. Pages and flows are not converted yet; this is not a
+SDK correction layer. Product pages and flows are not converted yet; this is not a
 complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
-light mode and a 1280×900 viewport, capture accepts all 107 gallery examples.
-Native construction accepts 16: eleven Buttons, bare/invalid Input, Form and two Text
-examples; the coverage test reports 91 refusals. These are measured guards, not proof of
+light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
+the two Video examples refuse because media capture is unsupported.
+Native construction accepts 21: eleven Buttons, three Inputs, two Selects, Form, Grid,
+two Text examples and invalid Textarea; the coverage test reports 86 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
+
+Consumers can configure `design.Theme.Typography` before `ui.Export`; empty roles
+retain the default stacks. In a separate profile with display set to IBM Plex Sans
+and its supplied 600 face, H1–H5 retain editable source text, wrapping, history,
+semantics and two saves at 320px/1280px in both themes. H6's uppercase styling is
+still unsupported. These checks do not select a brand font or install font assets.
 
 ## Generate a design document
 
@@ -35,6 +42,12 @@ To include components, install Chromium as described below and append repeated
 arguments. Quote family names containing spaces; supply every required static face
 with its actual family, weight and style. No brand font is selected implicitly.
 For example, `--example pk-ui.component.form/default` selects the linked Form.
+Add repeated `--variant ID PROPERTY /absolute/projection.json` for nonbaseline
+`ui.ProjectProps` snapshots (32 MiB each); the ID must also be selected. These
+caller-supplied projections are validated for correspondence, not source freshness.
+For a nested leaf, use `--variant-at '["pk-ui.component.form/default","actions","create"]' size /absolute/large.json`;
+the projected snapshot must change that exact invocation, and the root must be selected.
+This builds a child family inside the existing composition, not copies of the whole Form.
 Optional `--mode light|dark` and `--viewport WIDTHxHEIGHT` choose one observation
 profile; defaults are light and 1280×900. Every requested example must pass or no
 file is created. Construction and source correspondence are checked across two
@@ -50,8 +63,12 @@ same fonts separately in the editor. No page prototypes are included.
 
 [buildComponentDocument](document.mjs) accepts one existing `ui.Export` snapshot,
 explicit `examples`, `fonts`, `mode`, `viewport`, and caller-owned `browser` and
-`renderer`. It returns foundation handles plus definition/placement frames and
-exact selection handles. [buildFoundation](foundation.mjs) supplies the shared
+`renderer`, plus optional `variants: [{ exampleId, path?, property, snapshot }]`.
+`path` defaults to `[exampleId]`; nested paths use exact source invocation IDs.
+Family selections expose `family` as property owner, inherited `properties` and
+all state masters in `components`; `master` and `instance` retain the baseline.
+`families` lists `{ path, family, properties }` for every requested leaf, including nested ones.
+It returns foundation and definition/placement handles. [buildFoundation](foundation.mjs) supplies the shared
 `{ graph, collection, icons }`; `prepareIcon` validates glyphs without creating nodes.
 
 Supported inputs are the existing light/dark token contract, literal hexadecimal
@@ -75,13 +92,23 @@ npm test
 
 The tests create disposable scene graphs and FIG buffers in memory; CLI cases
 write only to automatically removed temporary directories outside the workspace.
-They do not open your documents or connect to an editor. Foundation tests compare
-native variable values, master links, provenance and rendered icon pixels across
-two successive FIG round trips. CanvasKit renders every light/dark icon in memory
-without requiring a GPU. This verifies native raster persistence, not browser
-interaction or comparison with an independent SVG renderer. Separate supplied-font
-tests exercise actual shaping within the boundary described below.
-This suite supplements `make check`'s Go and repository-policy gates.
+They do not open your documents or connect to an editor. Native checks supplement
+`make check`, covering variable descriptions, links, provenance and two FIG saves.
+CanvasKit verifies light/dark icon pixels without a GPU; supplied-font tests cover shaping.
+Experimental [color variables](variable-color.mjs) reuse authored CSS and native input IDs.
+Palette edits, modes and history retain formulas in versioned FIG plugin data alongside
+resolved COLOR fallbacks. Changed external fallbacks, missing inputs and cycles refuse.
+This is adapter-specific persistence, not formula support in other editors or palette-to-source writeback.
+
+Native editor value edits (including undo/redo) and the automation API's value setter
+validate a candidate variable map before writing. Variable and collection deletion
+validate the remaining formulas before unbinding nodes; a collection's complete
+internal dependency closure can be removed together. Cross-collection mode fallbacks,
+refused edits, retained redo entries and two FIG saves have independent native tests.
+The variables dialog keeps a refused operation's explanation until dismissed and
+retains keyboard focus. Deletion buttons have names and remain visible without hover.
+This does not certify successful deletion's undo restoration, mode-changing operations,
+raw graph mutation or unrestricted formula creation; those remain separate safety work.
 
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release
@@ -92,7 +119,7 @@ gate that should be made green by removing assertions.
 [captureExample](browser/capture.mjs) accepts a caller's Playwright Chromium
 browser, the existing Go snapshot, one exact example ID and optional mode,
 viewport and supplied fonts. It returns source identity, computed layout and
-paint observations, text regions, native text controls and Chromium's font evidence. It
+paint observations, text regions, native text and choice controls, and Chromium's font evidence. It
 does not construct native components or assert that those observations can all
 be represented faithfully in a FIG file.
 
@@ -145,6 +172,20 @@ not a fabricated DOM text region. An empty control without a placeholder has no
 observed glyphs; a visible placeholder can supply its own fonts. Native binding
 must check the typed source value, including explicit omitted-string defaults,
 and refuse unsupported placeholder behavior or browser-normalized mismatches.
+Select declares its existing `value`, `values` and `options` fields through
+`data-pk-value`, `data-pk-values` and `data-pk-options`. Capture preserves actual
+option values separately from labels, selected options, disabled state and groups.
+An observed browser default is not a source assignment. Closed selects retain their
+browser display text and viewport; listboxes retain aggregate painted font evidence,
+not per-option layout. Closed single Select composes a real native control with the
+shared grid and canonical chevron; the decoration ignores pointer events. Native
+construction uses that linked glyph and the observed display viewport. Stored `value`
+is a finite source-projected variant, never the visible option label's TEXT binding.
+Use `--variant` or `--variant-at` with `value` projections to make choices editable;
+without projections, only supported literal fields such as `label` are exposed.
+Exact and empty values, disabled/error states, nested Form ownership, keyboard focus,
+forced colors, history and two saves have bounded tests. Multiple/listbox selection,
+duplicate values, competing `values`, unmatched browser defaults and UA chrome refuse.
 Icons separately expose their requested name and source-resolved
 `data-pk-icon-canonical` identity. Capture retains both, including aliases and
 fallbacks; an adapter must still verify the canonical asset and its provenance.
@@ -152,12 +193,12 @@ SVG observations retain ordered children, exact attributes and computed geometry
 fill/stroke dependencies and presentation, so canonical markup cannot conceal
 CSS changes to paths, paint or effects.
 
-Paint observations probe the existing root color variables with two distinct
-values. This distinguishes tested direct aliases and mixed paints from unrelated,
-equal-colored literals. `directCandidate` names an observed alias candidate,
-not a binding guarantee. These are observed dependencies, not a general CSS
-expression parser or proof for arbitrary functions and locally overridden themes.
-They must not be used to advertise universal token-binding support.
+Paint probes vary opaque, partial and zero alpha; `directCandidate` is not a binding guarantee.
+A unique unconditional `:root` definition may yield an `expressionCandidate` with
+authored CSS and referenced custom properties. The [color evaluator](color-expression.mjs) checks source values
+and every observed token probe; ambiguous, shadowed or mismatched candidates stay absent.
+Inactive media and theme overrides also disqualify a definition or referenced alias.
+These are scoped observations, not a general CSS parser or proof for arbitrary functions.
 
 ## Construct an experimental native component
 
@@ -174,34 +215,52 @@ adapter API, not the unfinished shared provider interface or a library publisher
 The text-row capability supports one explicitly bound, nonempty text region in a
 centered, unconstrained, nonwrapping horizontal flex container, optionally with
 named slots containing one canonical SVG each. Rows and composed frames share
-one planner for solid fills, uniform solid borders, radii and padding, including
-transparent border insets. Observed direct token aliases become native bindings when
-the selected collection's identities and values match every source theme.
-Literal paints remain unbound; ambiguous, stale and derived paints are refused.
-This uses capture's measured alias evidence, not a general CSS equivalence proof.
-Construction requires successful native text measurement and refuses outer
-geometry differences larger than 1/64 CSS pixel. Rejection removes the newly
-constructed nodes and restores the caller's measurement hook.
+one planner for solid fills, uniform solid borders, radii and padding, retaining
+transparent token-bound strokes and border insets. Direct aliases require matching palettes in every theme
+and retain source RGBA through legacy CSS alpha rounding. This is candidate evidence,
+not general CSS equivalence. Literal paints stay unbound. Unambiguous authored expressions
+become COLOR variables in the existing foundation collection, keyed by their source CSS
+custom-property names and bound to native input IDs. Matching roles are reused; conflicting
+or edited roles refuse without being overwritten. Allocation follows successful construction
+and geometry checks, and failed construction removes its own nodes and variables.
+Supported text, fills, uniform borders and canonical SVG currentColor occurrences retain
+these formulas through palette edits, history and two saves. Glyph swaps preserve occurrence
+colour roles without changing canonical assets. Ambiguous, stale and unsupported expressions
+remain refusals; this does not add layout capabilities or certify arbitrary CSS.
+Construction measures text and rejects
+geometry differences over 1/64 CSS pixel, removing created nodes and restoring
+the caller's measurement hook on rejection.
 
-Nested construction uses vertical stretch/fill, aligned rows, inline labels and
-text controls. Each invocation has its own linked master, so Cancel and Create
-retain distinct baselines despite sharing the Button interface. Form covers Input
-and both actions in light/dark at 320px and 1280px: property history, isolation,
-two saves and source reprojection pass; submission is not modeled.
-Native input values are unwrapped auto-width text in a fixed clipping viewport.
-Zero advance and clearing are measured; failures roll back the edit and history.
-Empty controls have no glyph evidence; caret/selection scrolling is not modeled.
-Invalid Input preserves its error copy but binds only label/value.
+Nested construction includes block flow with uniform nonnegative collapsed margins
+(no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
+Linked Form, block and configured-font Toolbar fixtures cover both themes at 320/1280px,
+history, isolation and two saves. Private copy keeps its owner's properties.
+Toolbar also composes with linked Text in named header/body slots backed by Stack:
+nested copy edits resize the page body without changing the sibling's copy or size
+through two saves. Browser checks retain the heading and keyboard-focusable link.
+This synthetic page body has no navigation chrome, artwork or prototype transitions.
+Configured-font Card pages also compose Heading, Stack and Grid; title/description
+edits retain linked ownership and content-driven grid height after two saves.
+Single literal zero-spread box shadows retain native effects. Straight-edge samples
+match Chromium within one channel value for opaque, translucent and transparent
+cards in both themes at 320/1280px. Inset, multiple, spread and token-dependent
+shadows remain refusals; artwork, hover presentation and rounded-edge pixels are unverified.
+Nonwrapping intrinsic rows and submission are not modeled; default display-font fidelity is unverified.
+Input values stay unwrapped; fixed-row Textarea values wrap inside a clipping viewport.
+LFs, blank lines, clearing and measured edits survive two saves; failures roll back history.
+Text-property fields accept Enter for newlines and Ctrl+Enter to commit.
+Caret scrolling, scrollbars, manual resizing and textarea controllers are not modeled.
+Single-line labels retain required markers after edits and saves; only label/value bind. Multiline labels remain unverified.
 Text binds `content` inside its wrapping block. Light/dark 320px and 1280px checks
 cover line breaks/advances, property history and two saves. The editor test edits
 and downloads the 320px paragraph. Reopened direct Text instances also pass width
 reflow; arbitrary container-resize history remains unverified.
-Captured horizontal Flex rows can wrap linked children in source order with source
-gaps and start/center/end alignment. The constructor-based fixture passes width
-reflow at 320/390/1280px, label edits, full undo/redo, master and sibling isolation
-and two saves in both themes. Reverse/column wrapping, child reordering and other
-line alignments remain refused. This row fixture has not yet been driven through
-the browser editor. Run `npm run test:browser`.
+Captured horizontal Flex rows wrap linked children with CSS minimum gaps and
+start/center/end/space-between alignment. Constructor-based checks cover both themes,
+320/390/1280px reflow, label history, isolation and two saves. A separate linked-box
+editor fixture verifies keyboard resizing, history and two downloads; fixed-size
+ownership survives synchronization while HUG dimensions reflow. Reverse/column
+wrapping, reordering and other line alignments remain refused. Run `npm run test:browser`.
 
 [bindComponentProperties](bindings.mjs) preflights exact constructed handles before
 binding source strings to native `TEXT` properties and the supported single-icon
@@ -212,6 +271,19 @@ environment and a versioned native-property-ID to source-field map. Native displ
 names can change without changing that map; provenance is not authentication.
 Explicit slot-property maps distinguish icon assets from nested source components;
 asset instances do not acquire string-proposal ownership by being inside a slot.
+
+[bindComponentVariants](bindings.mjs) groups already materialized source projections
+as `bindComponentVariants(graph, emptySet, baseSnapshot, pathOrExampleId, property, variants)`;
+each variant supplies `{ snapshot, master }`, including the exact baseline export.
+Obtain candidate snapshots through `--proposal`, then use the existing capture and
+materialization path. The set owns shared text definitions and one native variant
+definition; children retain their projected source revisions. Exact values, including
+empty strings, come from source properties, never visible labels or layer names.
+This currently supports one unconstrained string on a nonopaque leaf component.
+Go Button tone and size projections verify shared-copy sizing, colour, history and
+two saves, including Form → FormActions → Button in both themes at 320/1280px.
+Ancestor HTML, sibling contracts and source byte spans must remain exact around the
+selected child. Select value families use the same path. Catalog enumeration and composite variants remain unfinished.
 
 [associateSourceInstance](source-changes.mjs) maps an exact `graph.createInstance`
 result to one source root after validating its subtree. Previews stay unmapped;
@@ -286,6 +358,18 @@ owns ID allocation, notifications and temporary deletion ancestry, so a missing
 reference is never treated as evidence of a deletion.
 Nested instances retain their own root and descendant overrides during a
 containing-component synchronization; explicit outer paths retain precedence.
+Variants in one component set inherit shared TEXT definitions by native property
+ID. Switching retains each bound text node and its compatible layout ancestry,
+so local copy edits and their undo history survive reordered, differently named
+variant layers and FIG saves. Missing targets, duplicate definitions and ambiguous
+ancestry merges or depth changes refuse before writes. Unbound edited descendants
+still require subtree history; this is not general cross-component replacement.
+Private assets are compared with their owning source occurrence, including inherited
+scale and paint. Automatic layout positions do not claim authored edits; FIG retains
+size dirtiness. Nested instances resolve variant values and switching
+through the same canonical lineage as their shared text properties.
+Browser checks exercise label editing, keyboard variant
+switching, undo/redo and three worker saves without changing masters or siblings.
 
 Native fill/stroke bindings and literal or empty paints retain their tested
 values through two saves and subsequent synchronization. Binding-only stroke
@@ -343,7 +427,9 @@ PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18089 node --import ./register.mjs -
 ```
 
 The [editor check](editor/replacement.test.mjs) refuses stale builds and tests generated
-Form/Button/Text properties and icon swaps through history and two downloaded saves.
+Form/Button/Text and nested Select properties and icon swaps through history and two downloaded saves.
+Generated secondary Text also retains its authored colour role through keyboard palette edits,
+undo/redo and worker saves; native tests cover both themes and translucent border pixels.
 Fresh contexts check links, proposals, masters, siblings and placement positions.
 Font settings loads process-only OTF fixtures with verified digests. Source comparisons
 reuse the generation browser; full Chromium runs the editor. CI treats its isolated
@@ -354,10 +440,74 @@ No document, WebGPU assets or product fonts are packaged; PWA registration is di
 Native properties and FIG override paths retain links through reflow and undo;
 repeated saves merge overrides by path. Low-level property fixtures use a
 deterministic measurer, while component comparisons use the supplied real fonts.
+
+[Native variant history](variant-correction.mjs) retains set definitions, child
+values and ID-based FIG specifications together. Empty defaults are explicit;
+rename/remove undo restores owned metadata without reverting unrelated appearance.
+Invalid names and stale history refuse before mutation; failed writes restore the
+previous state and leave history retryable. Run
+`node --import ./register.mjs --test variant.test.mjs` for fresh/imported graphs,
+exact values and two-save checks. The editor check drives the shared choice control
+by keyboard, preserving empty and reserved-looking values through three worker saves;
+mixed selection is separate UI state, not a reserved source string. The source-family
+API above has narrower scope than the underlying SDK choice controls.
+Variant switching and its history stage node changes and property layout before
+commit. Shared text inherits the selected master's typography, including line height;
+explicit occurrence overrides remain local. Tone and size families are checked through editor saves.
+Nested replay also restores retained occurrence links, names and source override anchors;
+it does not promise stable identities for unbound decorative layers replaced by a swap.
+FIG export retains local nested layer names as occurrence overrides, leaving definitions and sibling placements unchanged.
+The editor's option list resolves the same canonical component lineage as property values and switching; nesting does not create a second interface.
+The existing synchronization plan applies these changes. Synchronous measurement failures publish no native
+mutations and leave history retryable. Staging currently copies the node map;
+large-document latency and memory remain unverified, as do arbitrary commit-listener failures.
+Bound paints keep their authored fallback RGBA on import instead of acquiring default-mode
+palette colours as paint edits. Solid and dashed strokes multiply resolved alpha by opacity.
 Normal graph subscriptions and history are checked after deferred notifications
 settle. Property operations pause synchronization only while computing/restoring
 captured geometry; authored parent resizing still propagates master dimensions.
-Failed measurement restores grid sizing modes and frees the built Yoga trees.
+Failed measurement leaves grid sizing modes unchanged and frees the built Yoga trees.
+Grid and flex now share recursive native measurement. Low-level tests cover HUG and
+fixed row heights, nested wrapping text, spans, padding, hidden/absolute children and
+explicit stretch. FR tracks retain their content minimum; shrinking below it needs
+an explicit minimum-size choice.
+
+[Native grid persistence](grid-fig-correction.mjs) writes FIG's own ordered track
+GUIDs, sizing maps, gaps and cell anchors, without a second document format.
+FIXED/FR/AUTO tracks, automatic rows, explicit spans and tested cell FILL/HUG axes
+survive two saves. Nested instances retain local track, gap and placement ownership;
+untouched fields still inherit. Keyboard track edits, undo/redo and two browser
+worker saves preserve measured cell geometry without changing masters or siblings.
+Native grid measurement invalidates its participating subtree's imported box cache;
+failed measurement restores that cache, and unopened-page population preserves edits.
+
+The corrected native track retains optional `minValue`, a finite nonnegative fixed
+minimum mapped directly to Yoga and FIG's existing min/max fields. This preserves
+CSS `minmax(0, 1fr)` without changing the cell's own minimum-size contract. Automatic
+placement uses native automatic start lines, including cells with spans.
+
+[Source Grid planning](source-grid.mjs) consumes captured CSS Typed OM track values,
+not the browser's resolved pixel tracks. It feeds the existing composition builder;
+source-owned Text and Button cells remain linked instances. Two- and three-column fixtures in
+both themes compare 320px, 390px and 1280px layouts, full-width spans, unequal-height
+content, local text-property history and two saves against Go/Chromium output. Definitions retain
+intrinsic sizing; placed instances receive their parent's stretched dimensions.
+Button definitions match separately captured standalone controls, while their placed
+labels retain centering, wrapping after edits and CSS advance rounding. Source tests
+also exercise the shared fill-restoration path in stretched vertical Flex layouts and
+check keyboard order, accessible names, focus indication and Enter/Space activation;
+screen-reader, focus-contrast and complete accessibility coverage remain unverified.
+The default gallery Grid now contains three captured Text cells instead of one
+anonymous text run. Track parsing supports bounded integer repeat, fixed, fractional
+and automatic tracks, and min/max with a fixed minimum.
+
+The boundary refuses malformed tracks, foreign anchors, unsupported min/max sizing,
+automatic columns, unrepresentable leaf alignment and instance layout-mode replacement.
+Source conversion additionally refuses automatic repeat, named areas/lines, reordered
+cells, unsupported alignment and explicit cell minima. Track/gap edits are not source
+property proposals. The grid sizing menu still only exposes fixed dimensions; complete
+controls, broader CSS layouts and arbitrary imports remain unfinished. These checks
+do not establish a release-ready component library.
 
 Text-property guarantees cover placed root or nested targets and exact layout undo/redo.
 Master-owned edits, variants and arbitrary imports remain unverified; identity
@@ -368,9 +518,9 @@ rehydrates children in master order.
 
 ## Release blockers
 
-The pinned app's full workspace audit still fails. Adapter pins replace the observed
-affected browser imports; build tools, copied assets and complete notices still need review.
-Font deployment, SVG fidelity, responsive/accessibility and source conversion remain
+The upstream lock audit still fails; the adapter audit does not cover that tree.
+Missing package notices are supplied under `/licenses/` from Dockerfile-pinned sources.
+Build tools, copied assets, fonts, SVG fidelity, responsive/accessibility and source conversion remain
 incomplete. Product prototypes need runtime-state mappings
 and governed end-to-end persistence tests in their owning product repository.
 Native sizing still needs evidence beyond the declared comparison cases, including

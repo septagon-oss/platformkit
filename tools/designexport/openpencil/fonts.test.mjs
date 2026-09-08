@@ -246,3 +246,32 @@ test('precise native text measurement retains font readiness and empty-text guar
     assert.equal(renderer.measureTextNode(rectangle), null)
   } finally { renderer.destroy() }
 })
+
+test('source paragraph fractional line widths persist without changing ordinary native rounding', async () => {
+  await loadFonts(faces, requirements)
+  const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(200, 100))
+  let graph = new SceneGraph()
+  const record = value => ({ pluginId: 'platformkit', key: 'platformkit.source', value })
+  for (const [name, pluginData] of [
+    ['source', [record(JSON.stringify({ schema: 'platformkit.design-export.v1', scope: 'source-composition-layout' }))]],
+    ['native', []], ['invalid', [record('{')]],
+    ['foreign', [record(JSON.stringify({ schema: 'foreign', scope: 'source-composition-layout' }))]],
+  ]) graph.createNode('TEXT', graph.getPages()[0].id, {
+    name, pluginData, text: 'An album begins here.', fontFamily: family, fontWeight: 400,
+    fontSize: 16, lineHeight: 24, textAutoResize: 'HEIGHT', width: 159.78125, height: name === 'source' ? 24 : 48,
+  })
+  try {
+    await renderer.loadFonts()
+    for (let cycle = 0; cycle < 3; cycle++) {
+      for (const node of [...graph.getAllNodes()].filter(node => node.type === 'TEXT')) {
+        const expected = node.name === 'source' ? 24 : 48, paragraph = renderer.buildParagraph(node)
+        try {
+          assert.equal(paragraph.getHeight(), expected, `${node.name}/${cycle}: rendering and measurement use the same line breaks`)
+          assert.equal(paragraph.getShapedLines().length, expected / 24)
+          assert.equal(renderer.measureTextNode(node).height, expected)
+        } finally { paragraph.delete() }
+      }
+      if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    }
+  } finally { renderer.destroy() }
+})

@@ -3,6 +3,7 @@ package components_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/netip"
 	"strings"
@@ -212,6 +213,81 @@ func TestTextContentRegionPreservesSemanticElementAndEscaping(t *testing.T) {
 	}
 }
 
+func TestToolbarTextRegionsBelongToToolbarProps(t *testing.T) {
+	for _, value := range []string{"", "Act", `A & <tag>"'<!--/pk-text:Title-->`} {
+		action := c.ExampleOf(c.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Act"}, c.Button)
+		original := c.ExampleWithChildren(c.ExampleInfo{ID: "toolbar", ComponentID: "toolbar"},
+			c.ToolbarProps{Title: value, Subtitle: value}, []g.Node{action.Node}, c.Toolbar)
+		description := describeExample(t, original)
+		var escaped strings.Builder
+		if err := g.Text(value).Render(&escaped); err != nil {
+			t.Fatal(err)
+		}
+		want := 1
+		if value == "" {
+			want = 0
+		}
+		for _, field := range []string{"Title", "Subtitle"} {
+			open, close := "<!--pk-text:"+field+"-->", "<!--/pk-text:"+field+"-->"
+			if strings.Count(description.HTML, open) != want || strings.Count(description.HTML, close) != want ||
+				(want == 1 && !strings.Contains(description.HTML, open+escaped.String()+close)) {
+				t.Fatalf("Toolbar must own exactly its rendered %s: %s", field, description.HTML)
+			}
+		}
+		if strings.Contains(description.HTML, "<!--pk-text:content-->") || strings.Contains(description.HTML, "<!--pk-text:text-->") ||
+			strings.Contains(description.HTML, `data-component="text"`) ||
+			strings.Count(description.HTML, "<h1 ") != want || strings.Count(description.HTML, "<p ") != want {
+			t.Fatalf("Toolbar copy lost its native elements or borrowed an atom's identity or property: %s", description.HTML)
+		}
+		if len(description.Children) != 1 || description.Children[0].Description.ID != "action" || description.Children[0].Span == nil {
+			t.Fatal("Toolbar annotation lost the observed action occurrence")
+		}
+		updated, err := original.WithProps(json.RawMessage(`{"Title":"Changed","Subtitle":"Revised"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		changed := describeExample(t, updated)
+		if !strings.Contains(changed.HTML, "<!--pk-text:Title-->Changed<!--/pk-text:Title-->") ||
+			!strings.Contains(changed.HTML, "<!--pk-text:Subtitle-->Revised<!--/pk-text:Subtitle-->") ||
+			changed.Children[0].Description.HTML != description.Children[0].Description.HTML || describeExample(t, original).HTML != description.HTML {
+			t.Fatal("Toolbar projection lost property ownership or changed the action or original")
+		}
+	}
+}
+
+func TestCardTextRegionsFollowRenderedHeaderOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		slots c.CardSlots
+		count int
+	}{
+		{name: "plain", count: 1},
+		{name: "sectioned fallback", slots: c.CardSlots{Content: []g.Node{g.Text("Body")}}, count: 1},
+		{name: "caller header", slots: c.CardSlots{Header: []g.Node{g.Text("Custom")}}, count: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			example := c.ExampleWithSlots(c.ExampleInfo{ID: "card", ComponentID: "card"},
+				c.CardProps{Title: "A & <title>", Description: "A & <description>"}, tc.slots, c.CardWithSlots)
+			description := describeExample(t, example)
+			for _, field := range []string{"title", "description"} {
+				open, close := "<!--pk-text:"+field+"-->", "<!--/pk-text:"+field+"-->"
+				if strings.Count(description.HTML, open) != tc.count || strings.Count(description.HTML, close) != tc.count ||
+					(tc.count == 1 && !strings.Contains(description.HTML, open+"A &amp; &lt;"+field+"&gt;"+close)) {
+					t.Fatalf("Card must bind only its rendered %s: %s", field, description.HTML)
+				}
+			}
+			if strings.Contains(description.HTML, "pk-text:content") || strings.Contains(description.HTML, "pk-text:text") ||
+				strings.Count(description.HTML, "<p ") != tc.count*2 {
+				t.Fatalf("Card copy changed semantic elements or borrowed another contract: %s", description.HTML)
+			}
+		})
+	}
+	empty := c.ExampleWithSlots(c.ExampleInfo{ID: "empty", ComponentID: "card"}, c.CardProps{}, c.CardSlots{}, c.CardWithSlots)
+	if strings.Contains(describeExample(t, empty).HTML, "pk-text:") {
+		t.Fatal("Absent Card copy must not invent text regions")
+	}
+}
+
 func TestInputValueRegionIsLimitedToTextControls(t *testing.T) {
 	for _, typ := range []string{"", "text", " TEXT ", "email", "password", "number", "tel", "url", "search", "date", "time", "datetime-local", "month", "week", "color", "hidden", "file"} {
 		t.Run(typ, func(t *testing.T) {
@@ -259,6 +335,25 @@ func TestInputFamilyDeclaresSolidBorders(t *testing.T) {
 			if !strings.Contains(html.String(), attribute) {
 				t.Errorf("input-family control lost %s: %s", attribute, html.String())
 			}
+		}
+	}
+}
+
+func TestTextareaRegionsRetainOwningCopyAndLeadingNewlines(t *testing.T) {
+	for _, tc := range []struct{ value, escaped string }{
+		{"", ""}, {"A & <tag>", "A &amp; &lt;tag&gt;"}, {"\nFirst\nLast\n", "\n\nFirst\nLast\n"},
+		{"\r\nFirst\r\n", "\n\r\nFirst\r\n"},
+	} {
+		example := c.ExampleOf(exampleInfo, c.TextareaProps{Name: "description", Label: "A & <label>", Value: tc.value, Rows: 5, Required: true}, c.Textarea)
+		description := describeExample(t, example)
+		if strings.Count(description.HTML, `data-pk-value="value"`) != 1 ||
+			!strings.Contains(description.HTML, "<!--pk-text:label-->A &amp; &lt;label&gt;<!--/pk-text:label-->") ||
+			strings.Contains(description.HTML, "pk-text:text") {
+			t.Fatalf("Textarea must own label and native value regions: %s", description.HTML)
+		}
+		if !strings.Contains(description.HTML, ">"+tc.escaped+"</textarea>") ||
+			!strings.Contains(description.HTML, `for="pk-textarea-description"`) || !strings.Contains(description.HTML, `rows="5"`) {
+			t.Fatalf("Textarea changed escaped content, initial newline or label semantics: %s", description.HTML)
 		}
 	}
 }
@@ -542,6 +637,20 @@ func TestExamplePreviewAndRenderFailure(t *testing.T) {
 	}
 }
 
+func TestHeadingKeepsSemanticLevelAndEscapedSourceProperty(t *testing.T) {
+	for level := range 6 {
+		text := `An album & <memories>`
+		example := c.ExampleOf(c.ExampleInfo{ID: "heading", ComponentID: "pk-ui.component.heading"},
+			c.HeadingProps{Level: level + 1, Text: text, Anchor: "album"}, c.Heading)
+		description := describeExample(t, example)
+		want := `<!--pk-text:text-->An album &amp; &lt;memories&gt;<!--/pk-text:text-->`
+		if !strings.Contains(description.HTML, want) || !strings.HasPrefix(description.HTML, fmt.Sprintf("<h%d ", level+1)) ||
+			!strings.Contains(description.HTML, `id="album"`) {
+			t.Fatalf("heading lost escaped text, level or anchor: %s", description.HTML)
+		}
+	}
+}
+
 func TestEveryGalleryExampleHasAnAccurateDescription(t *testing.T) {
 	children := map[string][3]string{
 		"pk-ui.component.button/with-icon":         {"icon", "IconEnd", "pk-ui.component.icon"},
@@ -554,6 +663,18 @@ func TestEveryGalleryExampleHasAnAccurateDescription(t *testing.T) {
 	for _, example := range c.Gallery() {
 		t.Run(example.ID, func(t *testing.T) {
 			description := describeExample(t, example)
+			if example.ID == "pk-ui.component.grid/default" {
+				if len(description.Children) != 3 || len(description.OpaqueSlots) != 0 || strings.Count(description.HTML, "<p ") != 3 {
+					t.Fatalf("grid cells must be distinct, captured Text components: %+v", description)
+				}
+				for i, id := range []string{"first", "second", "third"} {
+					child := description.Children[i]
+					if child.Description.ID != id || child.Description.ComponentID != "pk-ui.component.text" || child.Slot != "children" {
+						t.Fatalf("grid cell lost its source identity: %+v", child)
+					}
+					checkCompositionSpan(t, description, child)
+				}
+			}
 			if want, ok := children[example.ID]; ok {
 				if len(description.Children) != 1 ||
 					[3]string{description.Children[0].Description.ID, description.Children[0].Slot, description.Children[0].Description.ComponentID} != want {
@@ -686,5 +807,63 @@ func TestExampleNilEmbeddedPointerDoesNotRequireAbsentFields(t *testing.T) {
 	updated, err := example.WithProps(json.RawMessage(`{"label":"Present"}`))
 	if err != nil || describeExample(t, updated).HTML != "Present" || describeExample(t, example).HTML != "Absent" {
 		t.Fatalf("promoted field patch did not isolate pointer allocation: %v", err)
+	}
+}
+
+func TestSelectLabelKeepsItsOwningPropertyWhenReusingLabel(t *testing.T) {
+	example := c.ExampleOf(exampleInfo, c.SelectProps{Name: "state", Label: "State & <kind>", Required: true,
+		Value: "draft", Options: []c.SelectOption{{Value: "draft", Label: "Draft"}}}, c.Select)
+	before := describeExample(t, example)
+	if !strings.Contains(before.HTML, "<!--pk-text:label-->State &amp; &lt;kind&gt;<!--/pk-text:label-->") ||
+		strings.Contains(before.HTML, "<!--pk-text:text-->") {
+		t.Fatal("Select borrowed standalone Label's property identity instead of retaining label")
+	}
+	edited, err := example.WithProps(json.RawMessage(`{"label":"Lifecycle"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`for="pk-select-state"`, `id="pk-select-state"`, `required`,
+		`value="draft" selected`, "<!--pk-text:label-->Lifecycle<!--/pk-text:label-->"} {
+		if !strings.Contains(describeExample(t, edited).HTML, want) {
+			t.Fatalf("label edit lost %s", want)
+		}
+	}
+	if describeExample(t, example).HTML != before.HTML {
+		t.Fatal("label edit mutated the original Select")
+	}
+}
+
+func TestSelectPreservesExactChoiceValues(t *testing.T) {
+	options := []c.SelectOption{{Value: "padded", Label: "Plain"}, {Value: " padded ", Label: "Padded"}, {Value: "", Label: "Empty"}}
+	for _, multiple := range []bool{false, true} {
+		t.Run(fmt.Sprintf("multiple=%t", multiple), func(t *testing.T) {
+			props := c.SelectProps{Name: "choice", Value: " padded ", Required: true, Options: options, Multiple: multiple}
+			if multiple {
+				props.Value, props.Values = "", []string{"", " padded "}
+			}
+			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Select))
+			if !strings.Contains(description.HTML, `value=" padded " selected`) || strings.Contains(description.HTML, `value="padded" selected`) {
+				t.Fatal("Select changed the selected identifier by trimming it")
+			}
+			if multiple && !strings.Contains(description.HTML, `value="" selected`) {
+				t.Fatal("multiple selection discarded an explicitly selected empty identifier")
+			}
+		})
+	}
+}
+
+func TestSelectDeclaresItsSourceChoiceFields(t *testing.T) {
+	for _, multiple := range []bool{false, true} {
+		example := c.ExampleOf(exampleInfo, c.SelectProps{Name: "choice", Multiple: multiple,
+			Options: []c.SelectOption{{Value: "draft", Label: "Draft"}}}, c.Select)
+		before := describeExample(t, example)
+		for _, marker := range []string{`data-pk-value="value"`, `data-pk-values="values"`, `data-pk-options="options"`} {
+			if strings.Count(before.HTML, marker) != 1 {
+				t.Fatalf("Select multiple=%t must declare one owning choice field: %s", multiple, marker)
+			}
+		}
+		if !strings.Contains(before.HTML, `name="choice"`) || !strings.Contains(before.HTML, `value="draft"`) {
+			t.Fatal("choice metadata replaced the native control or option")
+		}
 	}
 }

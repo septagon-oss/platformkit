@@ -49,6 +49,7 @@ func ValidPermission(token string) bool { return permissionToken.MatchString(tok
 type Auth struct {
 	kind       authKind
 	permission string
+	feature    string
 }
 
 // Permission requires the caller to hold token, checked against Options.Authorize
@@ -96,8 +97,35 @@ func (a Auth) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Kind       authKind `json:"kind"`
 		Permission string   `json:"permission,omitempty"`
-	}{a.kind, a.permission})
+		Feature    string   `json:"feature,omitempty"`
+	}{a.kind, a.permission, a.feature})
 }
+
+// Needing returns this declaration for an operation that is part of a plan
+// feature: the caller must hold the permission and the tenant's plan must
+// include the named feature, in that order.
+//
+// It is a method on Auth rather than a field of the operation because the two
+// questions belong together — "who may do this, and is it in what they are
+// paying for" — and because Auth is already the one typed value the document
+// publishes and the middleware enforces. A second extension key would be a
+// second thing to forget.
+//
+// The name is the plan's, not a permission: what a feature entitles somebody to
+// is the module's business, so a plan can be re-priced without touching an
+// authorization. See modules/billing.Plan.Features.
+func (a Auth) Needing(feature string) Auth {
+	if feature == "" {
+		panic("httpx.Needing: a feature is a name; use the declaration without it")
+	}
+	a.feature = feature
+	return a
+}
+
+// Feature is the plan feature this declaration requires, or empty when it
+// requires none. kit/app reads it to refuse a startup that declares features
+// with nothing to answer them.
+func (a Auth) Feature() string { return a.feature }
 
 // Declared reports whether a came from one of the four constructors. The zero
 // Auth is not a declaration: Go lets any package write httpx.Auth{}, and an

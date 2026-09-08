@@ -8,6 +8,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/modules/audit"
@@ -42,6 +43,9 @@ type composition struct {
 	auth    authcontracts.Auth
 	notify  notificationcontracts.Service
 	mail    notificationcontracts.Mailer
+	// plans answers what a tenant's subscription includes, for the operations
+	// that declare a feature.
+	plans httpx.Entitler
 }
 
 // compose constructs complete dependencies in order: users, tenants,
@@ -86,6 +90,10 @@ func compose(cfg config.Config) composition {
 	// The file service is returned beside its manifest, as user's and
 	// notification's are: a module that has to open a stored file takes
 	// filecontracts.Opener, and this is where it would be handed one.
+	// The plan answer is returned beside the manifest, because the kernel asks
+	// it for every operation that declares a feature. See app.Options.Entitle.
+	plans, billingModule := billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()})
+
 	contents, contentModule := content.Module(content.Deps{})
 	sites, siteModule := site.Module(site.Deps{})
 	_, fileModule := file.Module(file.Deps{
@@ -104,7 +112,7 @@ func compose(cfg config.Config) composition {
 		// bytes behind both. Each takes the one thing it cannot decide for
 		// itself — how money is taken, where files go — from here, which is the
 		// file that names every module by definition.
-		billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()}),
+		billingModule,
 		contentModule,
 		siteModule,
 		fileModule,
@@ -112,9 +120,15 @@ func compose(cfg config.Config) composition {
 		// A product with a storefront of its own composes that instead.
 		web.Module(web.Deps{Site: sites, Content: contents, Theme: design.Default()}),
 	}
+	// The trail is this reference product's worked example of something a plan
+	// includes or does not. The name is the price list's, and it is chosen here
+	// rather than inside the module because which features a product sells is
+	// this file's decision and not the audit module's: an installation that
+	// sells the trail to everybody leaves it empty and nothing is asked.
 	mods = append(mods, audit.Module(audit.Deps{
 		Tenants:       active,
 		RetentionDays: cfg.Audit.RetentionDays,
+		Feature:       "audit-trail",
 	}))
 	// The shell is last, and for the same kind of reason audit is next to last:
 	// it generates a screen for every resource the modules above it mounted, so
@@ -127,7 +141,8 @@ func compose(cfg config.Config) composition {
 	mods = append(mods, admin.Module(admin.Deps{
 		Modules: mods, Authorize: auths, Tenants: tenants, Theme: design.Default()}))
 
-	return composition{modules: mods, tenants: tenants, users: users, auth: auths, notify: notify, mail: mail}
+	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
+		notify: notify, mail: mail, plans: plans}
 }
 
 // mailer is the one choice this application makes about mail: the SMTP sender
