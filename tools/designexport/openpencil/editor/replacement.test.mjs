@@ -18,8 +18,7 @@ import { parseFigBuffer } from '@open-pencil/fig'
 import { buildFoundation } from '../foundation.mjs'
 import { buildComponentDocument } from '../document.mjs'
 import { materializeComponent } from '../components.mjs'
-import { bindComponentVariants } from '../bindings.mjs'
-import { associateSourceInstance, extractSourceProps } from '../source-changes.mjs'
+import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from '../browser/capture.mjs'
 import { sourceFixture } from '../browser/fixtures.test.mjs'
@@ -80,7 +79,8 @@ function sourceNode(graph, path) {
 function geometry(graph, node) {
   return {
     ...Object.fromEntries(['type', 'name', 'x', 'y', 'width', 'height', 'uniformScaleFactor',
-      'fills', 'strokes', 'vectorNetwork', 'text', 'fontFamily', 'fontWeight', 'fontSize'].map(key => [key, node[key]])),
+      'fills', 'strokes', 'vectorNetwork', 'text', 'fontFamily', 'fontWeight', 'fontSize',
+      'lineHeight', 'letterSpacing', 'italic', 'textDecoration'].map(key => [key, node[key]])),
     component: graph.getNode(node.componentId)?.name,
     bindings: Object.fromEntries(Object.entries(node.boundVariables).map(([field, id]) => [field, graph.variables.get(id)?.name])),
     children: graph.getChildren(node.id).map(child => geometry(graph, child)),
@@ -630,7 +630,15 @@ for (const depth of [1, 2]) test(`nested property picker retains native ownershi
   } finally { await browser.close() }
 })
 
-test('Core and schema-generated forms inherit native properties through local fonts, history and two worker saves', { timeout: 120000 }, async t => {
+// OTF encoding adds timestamps. Parameterized cases must reuse identical bytes
+// for the same face, as required by the process-wide native font identity guard.
+const editorFontFixtures = [400, 500, 600].map(weight => {
+  const woff = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
+  return { weight, bytes: new Uint8Array(OpenType.parse(figBuffer(woff)).toArrayBuffer()) }
+})
+
+for (const [field, choices] of [['tone', ['neutral', 'info', 'danger']], ['size', ['md', 'sm', 'lg']]])
+test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves`, { timeout: 120000 }, async t => {
   await verifyBuild()
   const hash = bytes => createHash('sha256').update(bytes).digest('hex')
   const project = await sourceFixture(t, `package main
@@ -666,7 +674,10 @@ func main() {
   const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
   const paragraph = 'pk-ui.component.text/muted', secondary = 'pk-ui.component.button/secondary'
   const description = 'pk-ui.component.textarea/invalid'
-  const generated = 'fixture/generated-form', examples = [form, button, paragraph, secondary, description, generated]
+  const family = 'pk-ui.component.button/primary'
+  const variants = choices.slice(1).map(value => ({ exampleId: family, property: field,
+    snapshot: project({ proposal: { baseSHA256: source.sha256, path: [family], props: { [field]: value } } }) }))
+  const generated = 'fixture/generated-form', examples = [form, button, paragraph, secondary, description, generated, family]
   const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-fonts-'))
   let browser, comparisonBrowser, renderer
   try {
@@ -674,9 +685,7 @@ func main() {
     // static OTF without changing their legacy names; use these exact bytes at
     // both boundaries, not a claim of original WOFF/hinting equivalence.
     const fonts = []
-    for (const weight of [400, 500, 600]) {
-      const woff = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
-      const bytes = new Uint8Array(OpenType.parse(figBuffer(woff)).toArrayBuffer())
+    for (const { weight, bytes } of editorFontFixtures) {
       await writeFile(join(temporary, `${weight}.otf`), bytes, { flag: 'wx' })
       fonts.push({ family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: hash(bytes) })
     }
@@ -685,7 +694,7 @@ func main() {
     comparisonBrowser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const ck = await initCanvasKit()
     renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
-    const built = await buildComponentDocument(source, { examples, fonts,
+    const built = await buildComponentDocument(source, { examples, fonts, variants,
       browser: comparisonBrowser, renderer, viewport: { width: 320, height: 900 } })
     // Generation and reprojection share one declared measurement environment.
     // Full Chromium supplies editor Local Font Access and worker interaction,
@@ -699,18 +708,7 @@ func main() {
     const derived = await materializeComponent(graph, built.definitions.id, derivedSource, observedRole, fonts, renderer, built.collection.id)
     graph.updateNode(derived.master.id, { name: 'Derived paragraph master', x: 800 })
     graph.createInstance(derived.master.id, placements.id, { name: 'Derived paragraph', x: 800, y: 48 })
-    const family = 'pk-ui.component.button/primary', tones = ['neutral', 'info', 'danger'], variants = []
-    const familySet = graph.createNode('COMPONENT_SET', built.definitions.id, { name: 'Source tone family', x: 800, y: 250 })
-    for (const [index, tone] of tones.entries()) {
-      const snapshot = index === 0 ? source : project({ proposal: { baseSHA256: source.sha256, path: [family], props: { tone } } })
-      const observed = await captureExample(comparisonBrowser, snapshot, family, { fonts, viewport: { width: 320, height: 900 } })
-      const variant = await materializeComponent(graph, built.definitions.id, snapshot, observed, fonts, renderer, built.collection.id)
-      graph.updateNode(variant.master.id, { name: `Source tone ${tone}`, x: 0, y: index * 80 })
-      variants.push({ snapshot, master: variant.master })
-    }
-    bindComponentVariants(graph, familySet, source, family, 'tone', variants)
-    const familyInstance = graph.createInstance(variants[0].master.id, placements.id, { name: 'Editable family', x: 800, y: 400 })
-    associateSourceInstance(graph, familyInstance, source, [family])
+    graph.updateNode(selections.at(-1).instance.id, { name: 'Editable family', x: 800, y: 400 })
     const roleName = '--pk-role-fg-secondary', inputNameForRole = '--pk-color-text-primary'
     graph.updateNode(selections[1].instance.id, { name: 'Editable button' })
     graph.updateNode(selections[2].instance.id, { name: 'Editable paragraph' })
@@ -791,13 +789,13 @@ func main() {
           await expect(control).toHaveValue(value)
         }
         await page.getByRole('treeitem', { name: 'Editable family Lock Hide', exact: true }).click()
-        const toneControl = page.getByRole('combobox', { name: 'tone', exact: true })
-        const previousTone = tones[Math.min(cycle, 2)]
-        await expect(toneControl).toHaveText(previousTone)
+        const propertyControl = page.getByRole('combobox', { name: field, exact: true })
+        const previousChoice = choices[Math.min(cycle, 2)]
+        await expect(propertyControl).toHaveText(previousChoice)
         if (cycle < 2) {
-          await toneControl.focus()
+          await propertyControl.focus()
           await page.keyboard.press('Enter')
-          await expect(page.getByRole('option')).toHaveCount(tones.length)
+          await expect(page.getByRole('option')).toHaveCount(choices.length)
           await page.keyboard.press('Home')
           await expect(page.getByRole('option').nth(0)).toBeFocused()
           for (let index = 0; index <= cycle; index++) {
@@ -805,11 +803,11 @@ func main() {
             await expect(page.getByRole('option').nth(index + 1)).toBeFocused()
           }
           await page.keyboard.press('Enter')
-          await expect(toneControl).toHaveText(tones[cycle + 1])
+          await expect(propertyControl).toHaveText(choices[cycle + 1])
           await page.keyboard.press('Control+z')
-          await expect(toneControl).toHaveText(previousTone)
+          await expect(propertyControl).toHaveText(previousChoice)
           await page.keyboard.press('Control+Shift+z')
-          await expect(toneControl).toHaveText(tones[cycle + 1])
+          await expect(propertyControl).toHaveText(choices[cycle + 1])
           await expect(page.getByRole('textbox', { name: 'label', exact: true })).toHaveValue(labels[cycle])
         }
         const variables = page.getByRole('dialog', { name: 'Local variables', exact: true })
@@ -868,7 +866,7 @@ func main() {
           assert.equal(role.valuesByMode[mode].cssColor.value, observedRole.roots[0].paintSources.color.expressionCandidate.value)
           assert.ok(Math.abs(reopened.resolveVariable(role.id, mode).r -
             (.78 * Math.fround(200 / 255) + .22 * reopened.resolveVariable(paper.id, mode).r)) < 1e-6)
-          for (const id of [...examples, family]) {
+          for (const id of examples) {
             const before = sourceNode(baseline, [id]), after = sourceNode(reopened, [id])
             const oldParent = baseline.getNode(before.parentId), newParent = reopened.getNode(after.parentId)
             assert.deepEqual([after.x, after.y, newParent.x, newParent.y], [before.x, before.y, oldParent.x, oldParent.y],
@@ -883,7 +881,7 @@ func main() {
           for (const [path, props] of [
             [[form, 'title'], { ...(cycle === 0 ? { value: values[cycle] } : {}), label: fieldLabels[cycle] }],
             [[button], { label: labels[cycle] }],
-            [[family], { tone: tones[cycle + 1], label: labels[cycle] }],
+            [[family], { [field]: choices[cycle + 1], label: labels[cycle] }],
             [[paragraph], { content: contents[cycle] }],
             [[secondary], { label: labels[cycle] }],
             [[description], { value: descriptions[cycle] }],
@@ -920,7 +918,7 @@ func main() {
             }
             if ([paragraph, secondary, family].includes(path[0])) {
               const observed = await captureExample(comparisonBrowser, projected, path[0], { fonts, viewport: { width: 320, height: 900 } })
-              const selected = selections.find(item => item.observation.exampleId === (path[0] === family ? secondary : path[0]))
+              const selected = selections.find(item => item.observation.exampleId === path[0])
               assert.deepEqual(observed.environment, selected.observation.environment, 'source comparison profile must not change after editing')
               const placed = sourceNode(reopened, path), expected = observed.roots[0].bounds
               for (const field of ['width', 'height']) assert.ok(Math.abs(placed[field] - expected[field]) <= 1 / 64,

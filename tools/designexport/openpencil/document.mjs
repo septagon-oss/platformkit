@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { captureExample } from './browser/capture.mjs'
 import { materializeComponent } from './components.mjs'
+import { bindComponentVariants } from './bindings.mjs'
 import { buildFoundation } from './foundation.mjs'
 import { chain } from './exporter-correction.mjs'
 import { validateFonts } from './fonts.mjs'
@@ -9,7 +10,7 @@ import { associateSourceInstance, extractSourceProps } from './source-changes.mj
 // Build a new document from one caller-owned export. Selection is explicit:
 // failure of any requested root rejects the document, never a partial library.
 export async function buildComponentDocument(snapshot, {
-  examples, fonts, browser, renderer, mode = 'light', viewport = { width: 1280, height: 900 },
+  examples, fonts, browser, renderer, variants = [], mode = 'light', viewport = { width: 1280, height: 900 },
 }) {
   if (!Array.isArray(examples) || examples.length === 0 ||
     examples.some(id => typeof id !== 'string' || id === '') || new Set(examples).size !== examples.length) {
@@ -20,6 +21,17 @@ export async function buildComponentDocument(snapshot, {
     if (snapshot?.examples?.filter(example => example.id === id).length !== 1) {
       throw new Error(`Document requires exactly one source example: ${id}`)
     }
+  }
+  if (!Array.isArray(variants)) throw new Error('Document variants must be an array of source projections')
+  const families = new Map()
+  for (const variant of variants) {
+    if (!variant || !selected.includes(variant.exampleId) || typeof variant.property !== 'string' ||
+      variant.property === '' || !Object.hasOwn(variant, 'snapshot')) {
+      throw new Error('Document variants require a selected exampleId, exact property and projected snapshot')
+    }
+    const states = families.get(variant.exampleId) ?? []
+    if (states.length && states[0].property !== variant.property) throw new Error('Document families currently support one source property')
+    families.set(variant.exampleId, [...states, { ...variant }])
   }
   const faces = validateFonts(fonts)
   if (faces.length === 0) throw new Error('Component documents require caller-supplied fonts')
@@ -37,17 +49,39 @@ export async function buildComponentDocument(snapshot, {
     return frame
   }
   const definitions = board('Component definitions'), placements = board('Editable source instances')
+  async function construct(projected, exampleId) {
+    const observation = await captureExample(browser, projected, exampleId, { mode, viewport, fonts: faces })
+    const slots = observation.roots[0]?.children?.filter(child => child.kind === 'slot') ?? []
+    // Resolve only explicit canonical glyph handles; the materializer owns
+    // region, geometry, slot and source-interface validation for every state.
+    const targets = slots.map(region => ({ region, master: icons.get(region.children[0]?.icon?.canonicalName) }))
+    return { observation, ...await materializeComponent(graph, definitions.id, projected, observation, faces, renderer, collection.id, targets) }
+  }
   const selections = []
   let definitionY = 48, placementY = 48, definitionWidth = 0, placementWidth = 0
   for (const exampleId of selected) {
     try {
-      const observation = await captureExample(browser, snapshot, exampleId, { mode, viewport, fonts: faces })
-      const slots = observation.roots[0]?.children?.filter(child => child.kind === 'slot') ?? []
-      // The materializer verifies each region, canonical glyph and exact master;
-      // missing or non-icon slots are not repaired by searching native names.
-      const targets = slots.map(region => ({ region, master: icons.get(region.children[0]?.icon?.canonicalName) }))
-      const built = await materializeComponent(graph, definitions.id, snapshot, observation, faces, renderer, collection.id, targets)
-      for (const { path, master } of built.components) {
+      let built = await construct(snapshot, exampleId)
+      const requests = families.get(exampleId)
+      if (requests) {
+        const states = [{ snapshot, ...built }]
+        for (const request of requests) states.push({ snapshot: request.snapshot, ...await construct(request.snapshot, exampleId) })
+        const family = graph.createNode('COMPONENT_SET', definitions.id, { name: exampleId, clipsContent: false })
+        const property = requests[0].property, properties = bindComponentVariants(graph, family, snapshot, exampleId, property, states)
+        let y = 48, width = 0
+        for (const { master } of states) {
+          graph.updateNode(master.id, { name: `${property} = ${JSON.stringify(master.componentPropertyValues[property])}`, x: 48, y })
+          y += master.height + 48
+          width = Math.max(width, master.width)
+        }
+        graph.updateNode(family.id, { width: width + 96, height: y })
+        // State masters own no duplicate definitions; the selection exposes
+        // its inherited interface and the exact native family owner separately.
+        built = { ...built, family, properties, components: states.flatMap(state => state.components.map(component => ({ ...component, properties: [] }))) }
+      }
+      const units = built.family ? [{ path: [exampleId], master: built.family }] : built.components
+      for (const { path, master } of units) {
+        graph.insertChildAt(master.id, definitions.id, definitions.childIds.length)
         graph.updateNode(master.id, { name: path.join(' / '), x: 48, y: definitionY })
         definitionY += master.height + 48
         definitionWidth = Math.max(definitionWidth, master.width)
@@ -56,7 +90,7 @@ export async function buildComponentDocument(snapshot, {
       associateSourceInstance(graph, instance, snapshot, [exampleId])
       placementY += instance.height + 48
       placementWidth = Math.max(placementWidth, instance.width)
-      selections.push({ exampleId, observation, ...built, instance })
+      selections.push({ exampleId, ...built, instance })
     } catch (error) {
       throw new Error(`Document example ${exampleId}: ${error.message}`, { cause: error })
     }

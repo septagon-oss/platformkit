@@ -42,6 +42,9 @@ To include components, install Chromium as described below and append repeated
 arguments. Quote family names containing spaces; supply every required static face
 with its actual family, weight and style. No brand font is selected implicitly.
 For example, `--example pk-ui.component.form/default` selects the linked Form.
+Add repeated `--variant ID PROPERTY /absolute/projection.json` for nonbaseline
+`ui.ProjectProps` snapshots (32 MiB each); the ID must also be selected. These
+caller-supplied projections are validated for correspondence, not source freshness.
 Optional `--mode light|dark` and `--viewport WIDTHxHEIGHT` choose one observation
 profile; defaults are light and 1280×900. Every requested example must pass or no
 file is created. Construction and source correspondence are checked across two
@@ -57,8 +60,10 @@ same fonts separately in the editor. No page prototypes are included.
 
 [buildComponentDocument](document.mjs) accepts one existing `ui.Export` snapshot,
 explicit `examples`, `fonts`, `mode`, `viewport`, and caller-owned `browser` and
-`renderer`. It returns foundation handles plus definition/placement frames and
-exact selection handles. [buildFoundation](foundation.mjs) supplies the shared
+`renderer`, plus optional `variants: [{ exampleId, property, snapshot }]`.
+Family selections expose `family` as property owner, inherited `properties` and
+all state masters in `components`; `master` and `instance` retain the baseline.
+It returns foundation and definition/placement handles. [buildFoundation](foundation.mjs) supplies the shared
 `{ graph, collection, icons }`; `prepareIcon` validates glyphs without creating nodes.
 
 Supported inputs are the existing light/dark token contract, literal hexadecimal
@@ -264,8 +269,7 @@ definition; children retain their projected source revisions. Exact values, incl
 empty strings, come from source properties, never visible labels or layer names.
 This currently supports one unconstrained string on a nonopaque leaf component.
 Go Button tone projections verify shared-copy sizing, colour, history and two saves
-in both themes. Catalog enumeration, composed families and native Select conversion
-remain unfinished; document generation does not yet assemble these families automatically.
+in both themes. Catalog enumeration, composed families and native Select conversion remain unfinished.
 
 [associateSourceInstance](source-changes.mjs) maps an exact `graph.createInstance`
 result to one source root after validating its subtree. Previews stay unmapped;
@@ -432,7 +436,9 @@ by keyboard, preserving empty and reserved-looking values through three worker s
 mixed selection is separate UI state, not a reserved source string. This is an SDK
 prerequisite, not source Select conversion; the source-family API above has narrower scope.
 Variant switching and its history stage node changes and property layout before
-applying the existing synchronization plan. Synchronous measurement failures publish no native
+commit. Shared text inherits the selected master's typography, including line height;
+explicit occurrence overrides remain local. Tone and size families are checked through editor saves.
+The existing synchronization plan applies these changes. Synchronous measurement failures publish no native
 mutations and leave history retryable. Staging currently copies the node map;
 large-document latency and memory remain unverified, as do arbitrary commit-listener failures.
 Bound paints keep their authored fallback RGBA on import instead of acquiring default-mode

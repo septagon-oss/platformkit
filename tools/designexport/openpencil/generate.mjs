@@ -1,6 +1,7 @@
 import './register.mjs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { link, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,9 +13,9 @@ const [{ exportFigFile, parseFigFile }, { buildFoundation }] = await Promise.all
 ])
 
 function options(args) {
-  const usage = 'Usage: npm run generate -- /absolute/path/outside-workspace/document.fig [--snapshot-stdin] [--example ID ... --font FAMILY WEIGHT STYLE /absolute/font.woff ...] [--mode light|dark] [--viewport WIDTHxHEIGHT]'
+  const usage = 'Usage: npm run generate -- /absolute/path/outside-workspace/document.fig [--snapshot-stdin] [--example ID ... --font FAMILY WEIGHT STYLE /absolute/font.woff ...] [--variant ID PROPERTY /absolute/projection.json ...] [--mode light|dark] [--viewport WIDTHxHEIGHT]'
   if (!args.length || !isAbsolute(args[0]) || extname(args[0]) !== '.fig') throw new Error(usage)
-  const result = { examples: [], faces: [] }, seen = new Set()
+  const result = { examples: [], faces: [], variants: [] }, seen = new Set()
   for (let index = 1; index < args.length;) {
     const flag = args[index++]
     if (flag === '--snapshot-stdin') {
@@ -23,11 +24,16 @@ function options(args) {
       result.snapshotStdin = true
       continue
     }
-    if (!['--example', '--font', '--mode', '--viewport'].includes(flag)) throw new Error(usage)
-    const count = flag === '--font' ? 4 : 1, values = args.slice(index, index + count)
+    if (!['--example', '--font', '--variant', '--mode', '--viewport'].includes(flag)) throw new Error(usage)
+    const count = flag === '--font' ? 4 : flag === '--variant' ? 3 : 1, values = args.slice(index, index + count)
     if (values.length !== count || values.some(value => !value || value.startsWith('--'))) throw new Error(usage)
     index += count
     if (flag === '--example') result.examples.push(values[0])
+    else if (flag === '--variant') {
+      const [exampleId, property, path] = values
+      if (!isAbsolute(path)) throw new Error(usage)
+      result.variants.push({ exampleId, property, path })
+    }
     else if (flag === '--font') {
       const [family, weight, style, path] = values
       if (!/^[1-9]00$/.test(weight) || !['normal', 'italic'].includes(style) || !isAbsolute(path)) throw new Error(usage)
@@ -46,12 +52,12 @@ function options(args) {
       }
     }
   }
-  if (!result.examples.length && (result.faces.length || result.mode || result.viewport)) throw new Error('Component options require --example selections')
+  if (!result.examples.length && (result.faces.length || result.variants.length || result.mode || result.viewport)) throw new Error('Component options require --example selections')
   if (result.examples.length && !result.faces.length) throw new Error('Component selections require caller-supplied --font faces')
   return result
 }
 
-async function readSnapshot(input) {
+async function readSnapshot(input, description = 'stdin') {
   const chunks = [], limit = 32 * 1024 * 1024
   let size = 0
   for await (const chunk of input) {
@@ -62,7 +68,7 @@ async function readSnapshot(input) {
   try {
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)))
   } catch {
-    throw new Error('Expected one UTF-8 JSON design-export snapshot on stdin')
+    throw new Error(`Expected one UTF-8 JSON design-export snapshot on ${description}`)
   }
 }
 
@@ -80,13 +86,17 @@ async function documentBytes(snapshot, selection) {
     const bytes = await readFile(path)
     return { ...face, bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
   })))
+  const variants = []
+  for (const { path, ...variant } of selection.variants) {
+    variants.push({ ...variant, snapshot: await readSnapshot(createReadStream(path), path) })
+  }
   let browser, renderer
   try {
     browser = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
     const ck = await initCanvasKit(), surface = ck.MakeSurface(1, 1)
     if (!surface) throw new Error('Cannot allocate native text measurement surface')
     renderer = new SkiaRenderer(ck, surface)
-    let { graph } = await buildComponentDocument(snapshot, { ...selection, fonts, browser, renderer })
+    let { graph } = await buildComponentDocument(snapshot, { ...selection, variants, fonts, browser, renderer })
     const correspondence = verifyComponentDocument(graph, snapshot, selection.examples)
     let bytes
     for (let save = 0; save < 2; save++) {
@@ -127,7 +137,8 @@ async function generate(args) {
     ? `tokens, icons and ${selection.examples.length} selected source compositions; not a complete library or prototype. Fonts must be supplied separately in the editor.`
     : 'tokens and icons; not a component library or prototype.'
   const producer = selection.snapshotStdin ? 'caller-supplied snapshot; source freshness is not verified' : 'fresh Core export from this checkout'
-  console.log(`Created ${destination}\nSource SHA256: ${snapshot.sha256}\nInput: ${producer}\nScope: ${scope}`)
+  const variants = selection.variants.length ? `\nVariants: ${selection.variants.length} caller-supplied projections; source freshness is not verified` : ''
+  console.log(`Created ${destination}\nSource SHA256: ${snapshot.sha256}\nInput: ${producer}${variants}\nScope: ${scope}`)
 }
 
 try {

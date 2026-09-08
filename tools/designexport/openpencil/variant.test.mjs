@@ -9,6 +9,9 @@ import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name === name)
 const reopen = async graph => parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
 const values = ['baseline', '', ' padded,a ']
+const typography = index => ({ fontSize: 14 + index * 2, lineHeight: 20 + index * 4,
+  letterSpacing: index, italic: index === 1, textCase: index === 1 ? 'UPPER' : 'ORIGINAL',
+  textDecoration: index === 1 ? 'UNDERLINE' : 'NONE', textAlignHorizontal: index === 1 ? 'RIGHT' : 'LEFT' })
 
 function fixture() {
   const graph = new SceneGraph(), page = graph.getPages()[0]
@@ -42,7 +45,7 @@ function composedFixture(depth = 0) {
       { name: `Different display name ${index}`, text: 'Label', componentPropertyReferences: [{ propertyId: '30:3', field: 'TEXT' }] },
     ]
     for (const props of index % 2 ? parts.toReversed() : parts) graph.createNode('TEXT', parent.id,
-      { width: 40, height: 20, ...props })
+      { width: 40, height: 20, ...typography(index), ...props })
     graph.syncInstances(component.id)
   }
   graph.updateNode(named(graph, 'Edited').id, { pluginData: [{ pluginId: 'fixture', key: 'source-path', value: 'unchanged occurrence' }] })
@@ -121,6 +124,8 @@ for (const imported of [false, true]) for (const depth of [0, 2]) {
       const children = graph.getChildren(parent.id)
       assert.equal(children.filter(node => node.componentPropertyReferences.some(ref => ref.propertyId === label.id)).length, 1)
       assert.equal(children.find(node => node.componentPropertyReferences.some(ref => ref.propertyId === label.id)).text, text)
+      const target = children.find(node => node.componentPropertyReferences.some(ref => ref.propertyId === label.id))
+      for (const [field, expected] of Object.entries(typography(values.indexOf(value)))) assert.equal(target[field], expected, field)
       assert.equal(children.find(node => node.name === 'Lookalike').text, 'Label')
       assert.deepEqual(live.pluginData.filter(item => item.pluginId === 'fixture'), origin)
     }
@@ -152,6 +157,27 @@ for (const imported of [false, true]) for (const depth of [0, 2]) {
     } finally { actions.replaceGraph(new SceneGraph()) }
   })
 }
+
+for (const imported of [false, true]) test(`shared typography sync preserves explicit occurrence overrides: imported=${imported}`, async () => {
+  let graph = composedFixture()
+  if (imported) graph = await reopen(graph)
+  const instance = named(graph, 'Edited'), master = named(graph, 'Independent name 2')
+  const target = graph.getChildren(instance.id).find(node => node.componentPropertyReferences.length)
+  const source = graph.getChildren(master.id).find(node => node.componentPropertyReferences.length)
+  graph.updateNode(target.id, { lineHeight: 36 })
+  graph.updateNode(instance.id, { overrides: { ...instance.overrides, [`${target.id}:lineHeight`]: true } })
+  graph.updateNode(source.id, { lineHeight: 32, letterSpacing: 3, italic: true })
+  const reference = structuredClone(source)
+  graph.syncInstances(master.id)
+  assert.equal(target.lineHeight, 36)
+  assert.equal(target.letterSpacing, 3)
+  assert.equal(target.italic, true)
+  assert.deepEqual(source, reference, 'inheritance never changes its source')
+  graph.swapInstanceComponent(instance.id, named(graph, 'Independent name 0').id)
+  assert.equal(target.lineHeight, 36)
+  assert.equal(target.letterSpacing, 0)
+  assert.equal(target.italic, false)
+})
 
 test('shared variant correspondence refuses missing, ambiguous and incompatible targets before graph writes', () => {
   for (const mutate of [

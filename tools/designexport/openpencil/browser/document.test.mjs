@@ -77,6 +77,66 @@ function vertical(nodes) {
   }
 }
 
+for (const [field, choices] of [
+  ['tone', ['info', 'danger']],
+  ['size', ['sm', 'lg']],
+]) test(`document generation assembles source ${field} families beside ordinary compositions`, async () => {
+  const id = 'pk-ui.component.button/primary', selected = [id, form]
+  const description = snapshot.examples.find(example => example.id === id)
+  const baseline = description.props[field] ?? description.schema.properties[field].default
+  const variants = choices.map(value => ({ exampleId: id, property: field,
+    snapshot: source({ baseSHA256: snapshot.sha256, path: [id], props: { [field]: value } }) }))
+  const before = structuredClone(variants)
+  for (const mode of ['light', 'dark']) {
+    const built = await buildComponentDocument(snapshot, options({ examples: selected, variants, mode }))
+    const selection = built.selections[0], family = selection.family
+    assert.equal(family?.type, 'COMPONENT_SET', 'generation must assemble the requested family, not ignore it')
+    assert.equal(family.parentId, built.definitions.id)
+    assert.equal(selection.master.parentId, family.id)
+    const states = built.graph.getChildren(family.id)
+    assert.deepEqual(states.map(master => master.componentPropertyValues[field]), [baseline, ...choices])
+    if (field === 'size') assert.ok(new Set(states.map(master => master.height)).size > 1, 'size variants change native geometry')
+    assert.deepEqual(selection.properties, family.componentPropertyDefinitions)
+    assert.ok(selection.components.every(component => component.properties.length === 0 && component.master.parentId === family.id))
+    vertical(built.graph.getChildren(family.id))
+    vertical(built.graph.getChildren(built.definitions.id))
+    const expected = verifyComponentDocument(built.graph, snapshot, selected)
+    let graph = built.graph
+    for (let cycle = 0; cycle < 2; cycle++) {
+      graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+      verifyComponentDocument(graph, snapshot, selected, expected)
+    }
+    const actions = createEditor({ graph }), instance = placed(graph, id)
+    actions.setCanvasKit(ck, renderer)
+    const definitions = actions.getInstanceComponentPropertyDefinitions(instance.id)
+    actions.setInstanceComponentProperty(instance.id, definitions.find(item => item.type === 'TEXT').id, 'Publish album')
+    actions.setInstanceComponentProperty(instance.id, definitions.find(item => item.type === 'VARIANT').id, choices.at(-1))
+    const proposal = { baseSHA256: snapshot.sha256, path: [id], props: { [field]: choices.at(-1), label: 'Publish album' } }
+    assert.deepEqual(extractSourceProps(graph, instance, snapshot).proposal, proposal)
+    const observed = await captureExample(browser, source(proposal), id, { mode, fonts, viewport })
+    for (const dimension of ['width', 'height']) assert.ok(Math.abs(instance[dimension] - observed.roots[0].bounds[dimension]) <= 1 / 64,
+      `${mode}/${field}/${dimension}: native ${instance[dimension]} versus source ${observed.roots[0].bounds[dimension]}; ` +
+      JSON.stringify(graph.getChildren(instance.id).map(node => ({ text: node.text, fontSize: node.fontSize, lineHeight: node.lineHeight,
+        width: node.width, height: node.height, source: node.source, scale: node.uniformScaleFactor }))))
+    assert.equal(extractSourceProps(graph, placed(graph, form), snapshot).status, 'no-supported-changes')
+  }
+  assert.deepEqual(variants, before)
+})
+
+test('document generation refuses invalid or inconsistent variant requests instead of dropping them', async () => {
+  const id = 'pk-ui.component.button/primary'
+  const projected = source({ baseSHA256: snapshot.sha256, path: [id], props: { tone: 'info' } })
+  const valid = { exampleId: id, property: 'tone', snapshot: projected }
+  const stale = structuredClone(projected)
+  stale.css += '\n/* different source stylesheet */'
+  for (const variants of [null, {}, [{}], [{ ...valid, exampleId: form }], [{ ...valid, property: '' }],
+    [valid, { ...valid, property: 'label' }], [valid, valid], [{ ...valid, snapshot }], [{ ...valid, snapshot: stale }]]) {
+    const before = structuredClone({ snapshot, variants })
+    await assert.rejects(buildComponentDocument(snapshot, options({ examples: [id], variants })), /Document/)
+    assert.deepEqual({ snapshot, variants }, before)
+  }
+})
+
 async function wrappingSource(t) {
   const run = await sourceFixture(t, `package main
 import (

@@ -306,6 +306,9 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
         continue
       }
       const keys = [...INSTANCE_SYNC_PROPS, ...SYNC_CHILD_PROPS]
+      // Reuse the SDK's complete typography/rendering fields, not its partial
+      // instance list: retained variant text must inherit the new line box too.
+      if (child.type === 'TEXT') keys.push(...TEXT_STYLE_KEYS, ...TEXT_PICTURE_KEYS)
       if (child.type === 'VECTOR') keys.push('x', 'y', 'vectorNetwork', 'fillGeometry', 'strokeGeometry')
       nodes.set(id, syncProperties(child, current, keys, childOverrides, `${id}:`))
       if (current.type === 'INSTANCE') affected.add(id)
