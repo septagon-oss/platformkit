@@ -89,10 +89,30 @@ func Detail(r httpx.Resource, o Options, row map[string]any, writable bool) page
 // rather than treating it as an error nobody sees.
 func Form(r httpx.Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) page.View {
 	at := Path(r, o)
+	status := 0
+	if detail != "" {
+		status = http.StatusUnprocessableEntity
+	}
+	return page.View{Title: title, Status: status, Body: []g.Node{
+		breadcrumb(o, rest.Humanize(r.Entity)+"s", at, title),
+		components.Toolbar(components.ToolbarProps{Title: title}),
+		FormExample("screen-form", r, o, action, title, row, errs, detail, create).Node,
+	}}
+}
+
+// FormExample captures the same form body that Form serves, without its page
+// chrome. Supply an owner-local example ID and synthetic row/error inputs for
+// design export. Children retain Core's typed contracts and named slots; fields
+// use "field/" plus their schema name so actions and errors cannot shadow them.
+// Property edits produce presentation candidates, not schema or database writes.
+// Native editor support and interactive flow behavior require separate evidence.
+func FormExample(id string, r httpx.Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) components.Example {
+	at := Path(r, o)
 	body := []g.Node{}
 	if detail != "" {
-		body = append(body, components.Alert(components.AlertProps{
-			Tone: "danger", Title: "That could not be saved", Message: detail, Bordered: true}))
+		body = append(body, components.ExampleWithSlots(components.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
+			components.AlertProps{Tone: "danger", Title: "That could not be saved", Message: detail, Bordered: true},
+			components.AlertSlots{}, components.AlertWithSlots).Node)
 	}
 	for _, f := range r.Schema.Fields {
 		if f.ReadOnly {
@@ -108,29 +128,27 @@ func Form(r httpx.Resource, o Options, action, title string, row map[string]any,
 		}
 		body = append(body, Control(f, start(f, row, create), errs[f.Name], immutable))
 	}
-	body = append(body, components.FormActions(components.FormActionsProps{},
-		components.Button(components.ButtonProps{Label: "Cancel", Variant: "secondary", Href: at}),
-		components.Button(components.ButtonProps{Label: "Save", Type: "submit"})))
-	status := 0
-	if detail != "" {
-		status = http.StatusUnprocessableEntity
-	}
-	return page.View{Title: title, Status: status, Body: []g.Node{
-		breadcrumb(o, rest.Humanize(r.Entity)+"s", at, title),
-		components.Toolbar(components.ToolbarProps{Title: title}),
-		components.Form(components.FormProps{
+	body = append(body, components.ExampleWithChildren(
+		components.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
+			components.ExampleWithSlots(components.ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
+				components.ButtonProps{Label: "Cancel", Variant: "secondary", Href: at}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+			components.ExampleWithSlots(components.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
+				components.ButtonProps{Label: "Save", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+		}, components.FormActions).Node)
+	return components.ExampleWithChildren(
+		components.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: title}, components.FormProps{
 			ComponentProps: components.ComponentProps{ID: "screen-form"},
 			HTMXProps: components.HTMXProps{
 				Post: action, Target: "#screen-form", Swap: "outerHTML", Select: "#screen-form"},
 			Action: action, Label: title,
-		}, body...),
-	}}
+		}, body, components.Form)
 }
 
 // Control is one field's input. The widget comes from the tag when the entity
 // named one and from the type otherwise, which is the whole of "screens derive
 // from schemas": a select exists because the struct says enum, not because
-// somebody wrote a select.
+// somebody wrote a select. Its node retains the selected Core invocation for
+// enclosing ExampleWithChildren compositions without changing its HTML.
 func Control(f crud.Field, value, fieldErr string, immutable bool) g.Node {
 	label, name := rest.FieldLabel(f), f.Name
 	base := components.InputProps{
@@ -151,53 +169,47 @@ func Control(f crud.Field, value, fieldErr string, immutable bool) g.Node {
 		if f.Default == "" {
 			placeholder = "Choose a " + strings.ToLower(label)
 		}
-		return components.Select(components.SelectProps{
+		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
 			ComponentProps: components.ComponentProps{Disabled: immutable},
 			Name:           name, Label: label, Value: value, Error: fieldErr,
 			Required: f.Required, Options: options, Placeholder: placeholder,
 			HelpText: base.HelpText,
-		})
+		}, components.Select).Node
 	// The widget and not the column type. A text column is how a database
 	// stores a string of no fixed length, which is what an email address, a
 	// display name and a link all are: rendering every one of them as a
 	// five-row textarea is a form that reads as if somebody were expected to
 	// write a paragraph into their own address. A field that wants one says so.
 	case f.Widget == "textarea":
-		return components.Textarea(components.TextareaProps{
+		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
 			ComponentProps: components.ComponentProps{Disabled: immutable},
 			Name:           name, Label: label, Value: value, ErrorMessage: fieldErr,
 			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
-		})
+		}, components.Textarea).Node
 	case f.Type == crud.TypeBool:
-		return components.Checkbox(components.CheckboxProps{
+		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
 			ComponentProps: components.ComponentProps{Disabled: immutable},
 			Name:           name, Label: label, Value: "true", Checked: value == "true",
 			HelpText: base.HelpText,
-		})
+		}, components.Checkbox).Node
 	case f.Widget == "entity-picker":
 		// There is no picker yet, and pretending otherwise would be a control
 		// that looks like it searches and does not. It is the id, and the note
 		// says so.
 		base.HelpText = hint(base.HelpText, "The identifier of the related record. There is no picker for it yet.")
-		return components.Input(base)
 	case f.Type == crud.TypeList:
 		base.HelpText = hint(base.HelpText, "Comma separated.")
-		return components.Input(base)
 	case f.Type == crud.TypeTime:
 		base.Type = "datetime-local"
 		if len(base.Value) >= 16 {
 			base.Value = base.Value[:16] // an RFC 3339 instant is longer than the control accepts
 		}
-		return components.Input(base)
 	case f.Type == crud.TypeInt:
 		base.Type, base.Step = "number", "1"
-		return components.Input(base)
 	case f.Type == crud.TypeFloat:
 		base.Type, base.Step = "number", "any"
-		return components.Input(base)
-	default:
-		return components.Input(base)
 	}
+	return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
 }
 
 // table is the list screen's rows: the field a row is known by first, as the

@@ -21,6 +21,7 @@ import { materializeComponent } from '../components.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from '../browser/capture.mjs'
+import { sourceFixture } from '../browser/fixtures.test.mjs'
 
 const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL)
 assert.ok(endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', 'openpencil'].includes(endpoint.hostname),
@@ -542,15 +543,43 @@ for (const depth of [1, 2]) test(`nested property picker retains native ownershi
   } finally { await browser.close() }
 })
 
-test('generated Form, Buttons and wrapping Text support local fonts, property edits and two worker saves', { timeout: 120000 }, async () => {
+test('Core and schema-generated forms inherit native properties through local fonts, history and two worker saves', { timeout: 120000 }, async t => {
   await verifyBuild()
   const hash = bytes => createHash('sha256').update(bytes).digest('hex')
-  const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8',
-  }))
+  const project = await sourceFixture(t, `package main
+import (
+  "encoding/json"
+  "os"
+  "github.com/septagon-oss/platformkit/design"
+  "github.com/septagon-oss/platformkit/kit/crud"
+  "github.com/septagon-oss/platformkit/kit/httpx"
+  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/screens"
+)
+type Note struct {
+  crud.Base
+  Title string \`json:"title" validate:"required"\`
+  Description string \`json:"description" ui:"widget:textarea"\`
+}
+func (Note) TableName() string { return "notes" }
+func main() {
+  var input struct { Proposal *ui.PropsProposal }
+  if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
+  resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: crud.Fields[*Note]()}}
+  form := screens.FormExample("fixture/generated-form", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note", nil, nil, "", true)
+  examples := append(components.Gallery(), form)
+  snapshot, err := ui.Export(design.Default(), examples)
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal) }
+  if err != nil { panic(err) }
+  if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
+}
+`)
+  const source = project({})
   const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
   const paragraph = 'pk-ui.component.text/muted', secondary = 'pk-ui.component.button/secondary'
   const description = 'pk-ui.component.textarea/invalid'
+  const generated = 'fixture/generated-form', examples = [form, button, paragraph, secondary, description, generated]
   const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-fonts-'))
   let browser, comparisonBrowser, renderer
   try {
@@ -569,7 +598,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
     comparisonBrowser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const ck = await initCanvasKit()
     renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
-    const built = await buildComponentDocument(source, { examples: [form, button, paragraph, secondary, description], fonts,
+    const built = await buildComponentDocument(source, { examples, fonts,
       browser: comparisonBrowser, renderer, viewport: { width: 320, height: 900 } })
     // Generation and reprojection share one declared measurement environment.
     // Full Chromium supplies editor Local Font Access and worker interaction,
@@ -593,6 +622,8 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
     const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
     const inputName = sourceNode(baseline, [form, 'title']).name
     assert.equal(inputName, 'title', 'source-owned nested instances retain meaningful layer names after import')
+    const generatedInputName = sourceNode(baseline, [generated, 'field/description']).name
+    assert.equal(generatedInputName, 'Description', 'generated fields inherit their Core name, independently of their field path')
     const untouched = [...baseline.getAllNodes()].filter(node => node.type === 'COMPONENT' || node.name === 'Untouched Form')
       .map(node => [node.name, geometry(baseline, node)])
     const values = ['WAVY affinity album title '.repeat(6), ''], labels = ['Create affinity album', 'Return to album']
@@ -625,7 +656,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           assert.deepEqual(blobs.map(bytes => hash(Uint8Array.from(bytes))).sort(), fonts.map(face => face.sha256).sort())
         })
         await page.getByRole('button', { name: 'Editable source instances', exact: true }).click()
-        for (const name of ['Editable source instances', form]) {
+        for (const name of ['Editable source instances', form, generated]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           await page.keyboard.press('ArrowRight')
         }
@@ -636,6 +667,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           ['Editable paragraph', 'content', contents[cycle], 'Plain body copy.', contents[cycle - 1]],
           ['Editable bordered button', 'label', labels[cycle], 'Cancel', labels[cycle - 1]],
           ['Editable description', 'value', descriptions[cycle], '', descriptions[cycle - 1]],
+          [generatedInputName, 'value', descriptions[cycle], '', descriptions[cycle - 1]],
         ]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           const control = page.getByRole('textbox', { name: field, exact: true })
@@ -643,13 +675,14 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           await expect(control).toHaveValue(previous)
           if (cycle === 2) continue
           await control.fill(value)
-          if (name === 'Editable description' && cycle === 0) {
+          const multiline = ['Editable description', generatedInputName].includes(name)
+          if (multiline && cycle === 0) {
             await control.fill('\nFirst line\nSecond line')
             await control.press('Control+End'); await control.press('Enter')
             assert.equal(await control.evaluate(node => node.tagName), 'TEXTAREA')
             assert.ok(await control.evaluate(node => getComputedStyle(node).outlineStyle !== 'none'))
           }
-          await control.press(name === 'Editable description' && cycle === 1 ? 'Control+Enter' : 'Tab')
+          await control.press(multiline && cycle === 1 ? 'Control+Enter' : 'Tab')
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           assert.deepEqual(errors, [], 'property commit must not fail behind the displayed input value')
           await page.keyboard.press('Control+z')
@@ -713,29 +746,34 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
           assert.equal(role.valuesByMode[mode].cssColor.value, observedRole.roots[0].paintSources.color.expressionCandidate.value)
           assert.ok(Math.abs(reopened.resolveVariable(role.id, mode).r -
             (.78 * Math.fround(200 / 255) + .22 * reopened.resolveVariable(paper.id, mode).r)) < 1e-6)
-          for (const id of [form, button, paragraph, secondary, description]) {
+          for (const id of examples) {
             const before = sourceNode(baseline, [id]), after = sourceNode(reopened, [id])
             const oldParent = baseline.getNode(before.parentId), newParent = reopened.getNode(after.parentId)
             assert.deepEqual([after.x, after.y, newParent.x, newParent.y], [before.x, before.y, oldParent.x, oldParent.y],
               'layer-tree navigation must not move source placements or their board')
           }
           for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
+          for (const sibling of ['field/title', 'actions']) {
+            const path = [generated, sibling]
+            assert.deepEqual(geometry(reopened, sourceNode(reopened, path)), geometry(baseline, sourceNode(baseline, path)),
+              `editing a generated field preserves its sibling ${sibling}`)
+          }
           for (const [path, props] of [
             [[form, 'title'], { ...(cycle === 0 ? { value: values[cycle] } : {}), label: fieldLabels[cycle] }],
             [[button], { label: labels[cycle] }],
             [[paragraph], { content: contents[cycle] }],
             [[secondary], { label: labels[cycle] }],
             [[description], { value: descriptions[cycle] }],
+            [[generated, 'field/description'], { value: descriptions[cycle] }],
           ]) {
             const result = extractSourceProps(reopened, sourceNode(reopened, path), source)
             assert.deepEqual(result.proposal, { baseSHA256: source.sha256, path, props })
-            const projected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--proposal'], {
-              cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(result.proposal),
-            }))
+            const projected = project({ proposal: result.proposal })
             assert.notEqual(projected.sha256, source.sha256)
-            if (path[0] === description) {
-              const observed = await captureExample(comparisonBrowser, projected, description, { fonts, viewport: { width: 320, height: 900 } })
-              const expected = observed.roots[0].children.find(node => node.tag === 'textarea')
+            if ([description, generated].includes(path[0])) {
+              const observed = await captureExample(comparisonBrowser, projected, path[0], { fonts, viewport: { width: 320, height: 900 } })
+              const field = path[0] === generated ? observed.roots[0].children[1] : observed.roots[0]
+              const expected = field.children.find(node => node.tag === 'textarea')
               const area = reopened.getChildren(sourceNode(reopened, path).id).find(node => node.name === 'Source textarea')
               const viewport = reopened.getChildren(area.id)[0], value = reopened.getChildren(viewport.id)[0]
               assert.equal(value.text, descriptions[cycle])
@@ -743,7 +781,7 @@ test('generated Form, Buttons and wrapping Text support local fonts, property ed
               assert.equal(area.height, expected.bounds.height)
               assert.ok(Math.abs(value.height - expected.control.content.bounds.height) <= 1 / 64)
             }
-            if (path.length === 2) {
+            if (path[0] === form && path.length === 2) {
               const observed = await captureExample(comparisonBrowser, projected, form, { fonts, viewport: { width: 320, height: 900 } })
               const label = observed.roots[0].children[0].children[0]
               const nativeLabel = reopened.getChildren(sourceNode(reopened, path).id)[0]

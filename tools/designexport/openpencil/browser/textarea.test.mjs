@@ -21,17 +21,27 @@ import (
   "os"
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
+  "github.com/septagon-oss/platformkit/kit/crud"
+  "github.com/septagon-oss/platformkit/kit/httpx"
   "github.com/septagon-oss/platformkit/ui"
   "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/screens"
 )
 func main() {
-  var input components.TextareaProps
+  var input struct { components.TextareaProps; Generated bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  children := []g.Node{components.ExampleOf(components.ExampleInfo{ID: "description", ComponentID: "pk-ui.component.textarea"}, input, components.Textarea).Node,
+  children := []g.Node{components.ExampleOf(components.ExampleInfo{ID: "description", ComponentID: "pk-ui.component.textarea"}, input.TextareaProps, components.Textarea).Node,
     components.ExampleOf(components.ExampleInfo{ID: "note", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "Changes remain local."}, components.Text).Node,
     components.ExampleWithSlots(components.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"}, components.ButtonProps{Label: "Save", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node}
   example := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/textarea", ComponentID: "pk-ui.component.form"},
     components.FormProps{Label: "Album description", Action: "/albums"}, children, components.Form)
+  if input.Generated {
+    resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: []crud.Field{
+      {Name: "description", Type: crud.TypeText, Widget: "textarea", Doc: input.HelperText},
+    }}}
+    example = screens.FormExample("fixture/textarea", resource, screens.Options{Root: "/admin"}, "/admin/notes", "Note description",
+      map[string]any{"description": input.Value}, map[string]string{"description": input.ErrorMessage}, "", true)
+  }
   snapshot, err := ui.Export(design.Default(), []components.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
@@ -43,7 +53,7 @@ func main() {
   const origin = node => JSON.parse(node.pluginData.find(item => item.key === 'platformkit.source')?.value ?? 'null')
   const descendants = (graph, node) => [node, ...graph.getChildren(node.id).flatMap(child => descendants(graph, child))]
   const root = graph => [...graph.getAllNodes()].find(node => origin(node)?.path?.[0] === id)
-  const field = graph => descendants(graph, root(graph)).find(node => origin(node)?.localId === 'description')
+  const field = graph => descendants(graph, root(graph)).find(node => ['description', 'field/description'].includes(origin(node)?.localId))
   const close = (actual, expected, name) => assert.ok(Math.abs(actual - expected) <= 1 / 64, `${name}: ${actual} versus ${expected}`)
   let renderer, ck
   function matches(graph, observed, value) {
@@ -79,8 +89,8 @@ func main() {
       const built = await buildComponentDocument(snapshot, { examples: [id], fonts, browser, renderer })
       matches(built.graph, built.selections[0].observation.roots[0], value)
     }
-    for (const mode of ['light', 'dark']) for (const width of [320, 1280]) for (const errorMessage of ['', 'Add more detail.']) {
-      const input = { ...original, errorMessage }, snapshot = source(input)
+    for (const generated of [false, true]) for (const mode of ['light', 'dark']) for (const width of [320, 1280]) for (const errorMessage of ['', 'Add more detail.']) {
+      const input = { ...original, errorMessage, generated }, snapshot = source(input)
       const options = { examples: [id], fonts, browser, renderer, mode, viewport: { width, height: 900 } }
       const built = await buildComponentDocument(snapshot, options)
       let { graph } = built
@@ -107,10 +117,10 @@ func main() {
         editor.redoAction(); assert.deepEqual([...graph.getAllNodes()], after)
         const expected = (await captureExample(browser, source({ ...input, value }), id, options)).roots[0]
         for (let cycle = 0; cycle < 3; cycle++) {
-          try { matches(graph, expected, value) } catch (cause) { throw new Error(`${mode}/${width}/${JSON.stringify(value)}/save ${cycle}`, { cause }) }
+          try { matches(graph, expected, value) } catch (cause) { throw new Error(`${generated ? 'generated' : 'composed'}/${mode}/${width}/${JSON.stringify(value)}/save ${cycle}`, { cause }) }
           const proposal = extractSourceProps(graph, field(graph), snapshot)
           if (value === '') assert.equal(proposal.status, 'no-supported-changes')
-          else assert.deepEqual(proposal.proposal, { baseSHA256: snapshot.sha256, path: [id, 'description'], props: { value } })
+          else assert.deepEqual(proposal.proposal, { baseSHA256: snapshot.sha256, path: [id, generated ? 'field/description' : 'description'], props: { value } })
           if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
         }
       }
@@ -125,7 +135,8 @@ func main() {
         assert.equal(await area.getAttribute('aria-invalid'), errorMessage ? 'true' : null)
         assert.deepEqual(await area.evaluate(node => node.getAttribute('aria-describedby').split(' ').map(id => document.getElementById(id)?.textContent)),
           [...(errorMessage ? [errorMessage] : []), original.helperText])
-        for (const target of [area, page.getByRole('button', { name: 'Save', exact: true })]) {
+        const cancel = generated ? [page.getByRole('link', { name: 'Cancel', exact: true })] : []
+        for (const target of [area, ...cancel, page.getByRole('button', { name: 'Save', exact: true })]) {
           await page.keyboard.press('Tab')
           assert.equal(await target.evaluate(node => node === document.activeElement && getComputedStyle(node).outlineStyle !== 'none'), true)
         }
