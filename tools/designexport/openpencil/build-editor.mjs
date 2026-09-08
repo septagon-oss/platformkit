@@ -93,6 +93,35 @@ function nativeBoundary() {
     },
     transform(source, id) {
       const controlCorrections = {
+        'src/components/ui/AppSelect.vue': ['a7faaee2db2d26a3324382ff3833373e799cf77e89bf87c246c18e09533e040c',
+          "import { tv } from 'tailwind-variants'", "import { computed } from 'vue'\nimport { tv } from 'tailwind-variants'",
+          '  placeholder?: string', '  placeholder?: string\n  mixed?: boolean',
+          'const { options, label, placeholder, ui }', 'const { options, label, placeholder, mixed, ui }',
+          'const styles = tv(theme)()',
+          `const styles = tv(theme)()
+// Reka reserves the empty string for clearing. Keep that wire constraint out
+// of the public typed option values, including strings that look like tokens.
+const optionKey = (value: T) => JSON.stringify([typeof value, value])
+const selectedValue = computed({
+  get: () => mixed ? undefined : optionKey(modelValue.value),
+  set: (key: string) => {
+    const option = options.find(item => optionKey(item.value) === key)
+    if (option) modelValue.value = option.value
+  }
+})`,
+          '<SelectRoot v-model="modelValue">', '<SelectRoot v-model="selectedValue">',
+          ':key="String(opt.value)"', ':key="optionKey(opt.value)"',
+          ':value="opt.value"', ':value="optionKey(opt.value)"'],
+        'src/components/properties/component-properties/ComponentPropertiesSection.vue': ['3014fc5a451e89f674d262686853dd2591afe9044af8ca92727d6a64dcc958b7',
+          `  return control.value === MIXED
+    ? [{ value: 'MIXED', label: panels.value.mixed }, ...control.options]
+    : control.options`,
+          `  return control.options.map(option => ({ ...option,
+    label: option.label.trim() === '' ? panels.value.none : option.label
+  }))`,
+          "return control.value === MIXED ? 'MIXED' : control.value", "return control.value === MIXED ? '' : control.value",
+          "if (value !== 'MIXED') setValue(propertyId, value)", 'setValue(propertyId, value)',
+          ':model-value="selectValue(control)"', ':model-value="selectValue(control)"\n          :mixed="control.value === MIXED"\n          :placeholder="control.value === MIXED ? panels.mixed : undefined"'],
         'src/components/properties/component-properties/ComponentPropertyTextField.vue': ['14210f35374fd53f5478e9708c6ba21139977dc40b6bc5e4e4deae7a87d0a8c5',
           "import { ref, watch } from 'vue'", "import { computed, ref, watch } from 'vue'",
           "import AppInput from '@/components/ui/AppInput.vue'",
@@ -223,7 +252,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 7) throw new Error('Browser omitted a required editor control correction')
+if (correctedControls.size !== 9) throw new Error('Browser omitted a required editor control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

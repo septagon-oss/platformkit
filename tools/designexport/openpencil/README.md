@@ -391,6 +391,17 @@ No document, WebGPU assets or product fonts are packaged; PWA registration is di
 Native properties and FIG override paths retain links through reflow and undo;
 repeated saves merge overrides by path. Low-level property fixtures use a
 deterministic measurer, while component comparisons use the supplied real fonts.
+
+[Native variant history](variant-correction.mjs) retains set definitions, child
+values and ID-based FIG specifications together. Empty defaults are explicit;
+rename/remove undo restores owned metadata without reverting unrelated appearance.
+Invalid names and stale history refuse before mutation; failed writes restore the
+previous state and leave history retryable. Run
+`node --import ./register.mjs --test variant.test.mjs` for fresh/imported graphs,
+exact values and two-save checks. The editor check drives the shared choice control
+by keyboard, preserving empty and reserved-looking values through three worker saves;
+mixed selection is separate UI state, not a reserved source string. This is an SDK
+prerequisite, not source Select conversion: generic source choice binding remains unfinished.
 Bound paints keep their authored fallback RGBA on import instead of acquiring default-mode
 palette colours as paint edits. Solid and dashed strokes multiply resolved alpha by opacity.
 Normal graph subscriptions and history are checked after deferred notifications

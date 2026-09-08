@@ -138,7 +138,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'exporter-correction.mjs', 'font-correction.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
-    'scaling-correction.mjs', 'sync-correction.mjs', 'variable-color.mjs',
+    'scaling-correction.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -146,6 +146,79 @@ async function verifyBuild() {
     assert.equal(createHash('sha256').update(readFileSync(new URL(path, import.meta.url))).digest('hex'), digest, name)
   }
 }
+
+test('native variant choices retain empty, reserved-looking and exact values through keyboard history and worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), pageNode = graph.getPages()[0], values = ['', 'MIXED', ' padded,a ']
+  const owner = graph.createNode('COMPONENT_SET', pageNode.id, { name: 'Choice definitions',
+    componentPropertyDefinitions: [{ id: '33:1', name: 'Choice', type: 'VARIANT', defaultValue: '', variantOptions: values }] })
+  const variants = values.map((value, index) => {
+    const variant = graph.createNode('COMPONENT', owner.id, { name: `Choice state ${index}`, x: index * 100,
+      width: 80, height: 24, componentPropertyValues: { Choice: value }, variantPropSpecs: [{ propDefId: '33:1', value }] })
+    graph.createNode('RECTANGLE', variant.id, { name: 'Shared geometry', width: 80, height: 24 })
+    return variant
+  })
+  graph.createInstance(variants[0].id, pageNode.id, { name: 'Edited choice', x: 400, y: 100 })
+  graph.createInstance(variants[1].id, pageNode.id, { name: 'Untouched choice', x: 500, y: 100 })
+  graph.addPage('Unopened choices')
+  let buffer = Buffer.from(await exportFigFile(graph)), expected = ''
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Choice definitions', 'Untouched choice'].map(name => [name, geometry(baseline, named(baseline, name))])
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (const next of [' padded,a ', 'MIXED', '']) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, 'native-choices.fig')
+        await page.getByRole('treeitem', { name: 'Edited choice Lock Hide', exact: true }).click()
+        const choice = page.getByRole('combobox', { name: 'Choice', exact: true })
+        await expect(choice).toBeVisible()
+        await expect(choice).toHaveText(expected.trim() || 'None')
+        if (next === ' padded,a ') {
+          await page.getByRole('treeitem', { name: 'Untouched choice Lock Hide', exact: true }).click({ modifiers: ['Control'] })
+          await expect(choice).toHaveText('Mixed')
+          await choice.press('Enter')
+          await expect(page.getByRole('option')).toHaveCount(3)
+          await expect(page.getByRole('option', { name: 'MIXED', exact: true })).toBeVisible()
+          await expect(page.getByRole('option', { name: 'None', exact: true })).toBeVisible()
+          await page.keyboard.press('Escape')
+          await expect(choice).toBeFocused()
+          await page.getByRole('treeitem', { name: 'Edited choice Lock Hide', exact: true }).click()
+          await expect(choice).toHaveText('None')
+        }
+        for (let step = 0; step < 60 && !await choice.evaluate(node => node === document.activeElement); step++) await page.keyboard.press('Tab')
+        assert.equal(await choice.evaluate(node => node === document.activeElement), true)
+        assert.equal(await choice.evaluate(node => node.matches(':focus-visible')), true)
+        await page.keyboard.press('Enter')
+        await expect(page.getByRole('option')).toHaveCount(3, { timeout: 3000 })
+        assert.deepEqual(errors, [])
+        await page.keyboard.press('Home')
+        await expect(page.getByRole('option').nth(0)).toBeFocused()
+        for (let index = 0; index < values.indexOf(next); index++) {
+          await page.keyboard.press('ArrowDown')
+          await expect(page.getByRole('option').nth(index + 1)).toBeFocused()
+        }
+        await page.keyboard.press('Enter')
+        await expect(choice).toHaveText(next.trim() || 'None')
+        await expect(choice).toBeFocused()
+        await page.keyboard.press('Control+z')
+        await expect(choice).toHaveText(expected.trim() || 'None')
+        await page.keyboard.press('Control+Shift+z')
+        await expect(choice).toHaveText(next.trim() || 'None')
+        buffer = await saveDocument(page, errors, workers)
+        assert.deepEqual(errors, [])
+        assert.ok(workers.some(path => /export-worker/.test(path)))
+        const saved = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+        const edited = named(saved, 'Edited choice'), master = saved.getNode(edited.componentId)
+        assert.equal(master.componentPropertyValues.Choice, next)
+        assert.deepEqual(master.variantPropSpecs, [{ propDefId: '33:1', value: next }])
+        assert.deepEqual([edited.x, edited.y, edited.width, edited.height], [400, 100, 80, 24])
+        for (const [name, before] of untouched) assert.deepEqual(geometry(saved, named(saved, name)), before)
+        expected = next
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
 
 test('native grid track edits retain layout and local ownership through two browser worker saves', { timeout: 120000 }, async () => {
   await verifyBuild()
