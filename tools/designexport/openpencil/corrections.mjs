@@ -25,6 +25,8 @@ export const corrections = Object.freeze({
       // Pages take a separate export path; reuse the native mode serializer
       // after collection and mode GUIDs have been assigned, just like frames.
       source = 'import { serializeVariableModes } from "@open-pencil/fig/node-change";\n' + source
+      // Variable descriptions have a native FIG field, independent of names.
+      source = replace(source, 'name: variable.name,', 'name: variable.name,\n\t\t\tdescription: variable.description,')
       return replace(source, 'for (const entry of canvasEntries) nodeChanges.push(entry.canvasNc);',
         `for (const entry of canvasEntries) {
           const modes = entry.page.variableModes && serializeVariableModes(entry.page, varIdToGuid, modeIdToGuid);
@@ -36,6 +38,7 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/kiwi/fig/import.js': {
     sha256: '7e16f0f993319eba097756e94dba7ae080f3104ba4e6359483ed653fc3c08d1d',
     transform(source, replace) {
+      source = replace(source, 'description: "",', 'description: typeof nc.description === "string" ? nc.description : "",')
       source = replace(source, 'function applyImportedCanvasMetadata(page, canvasNc) {',
         'function applyImportedCanvasMetadata(page, canvasNc) {\n\tpage.variableModes = nodeChangeToProps(canvasNc, []).variableModes;')
       // Updating the native link must also update the graph's instance index.

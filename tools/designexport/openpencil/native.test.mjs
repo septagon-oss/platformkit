@@ -32,6 +32,25 @@ async function reopen(graph) {
   return parseFigFile(bytes.slice().buffer, { populate: 'all' })
 }
 
+test('native variable descriptions, renaming and clearing survive two FIG saves without changing other values', async () => {
+  let graph = new SceneGraph()
+  const collection = graph.createCollection('Variable metadata')
+  for (const type of ['COLOR', 'FLOAT', 'STRING', 'BOOLEAN']) graph.createVariable(type, type, collection.id)
+  const values = graph => [...graph.variables.values()].map(({ name, type, description, valuesByMode }) => [name, type, description, Object.values(valuesByMode)])
+  for (const description of ['Foreground · João\nvar(--source-ink)', 'Edited definition', '']) {
+    const variable = [...graph.variables.values()].find(item => item.type === 'COLOR')
+    graph.addVariable({ ...variable, name: `Renamed ${description.length}`, description })
+    const before = values(graph)
+    for (let cycle = 0; cycle < 2; cycle++) {
+      const bytes = await save(graph)
+      const wire = parseFigBuffer(bytes.slice().buffer).nodeChanges.filter(node => node.type === 'VARIABLE')
+      assert.deepEqual(wire.map(node => node.description), before.map(value => value[2]))
+      graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+      assert.deepEqual(values(graph), before)
+    }
+  }
+})
+
 function editor(graph) {
   return createEditor({ graph })
 }

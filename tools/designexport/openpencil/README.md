@@ -75,8 +75,8 @@ npm test
 
 The tests create disposable scene graphs and FIG buffers in memory; CLI cases
 write only to automatically removed temporary directories outside the workspace.
-They do not open your documents or connect to an editor. Foundation tests compare
-native variable values, master links, provenance and rendered icon pixels across
+They do not open your documents or connect to an editor. Native tests compare
+variable values and descriptions, master links, provenance and icon pixels across
 two successive FIG round trips. CanvasKit renders every light/dark icon in memory
 without requiring a GPU. This verifies native raster persistence, not browser
 interaction or comparison with an independent SVG renderer. Separate supplied-font
