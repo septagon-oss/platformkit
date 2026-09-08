@@ -677,6 +677,9 @@ func main() {
   const family = 'pk-ui.component.button/primary'
   const variants = choices.slice(1).map(value => ({ exampleId: family, property: field,
     snapshot: project({ proposal: { baseSHA256: source.sha256, path: [family], props: { [field]: value } } }) }))
+  const nestedPath = [form, 'actions', 'create'], nestedChoices = ['', ...choices.slice(1)]
+  for (const value of nestedChoices.slice(1)) variants.push({ exampleId: form, path: nestedPath, property: field,
+    snapshot: project({ proposal: { baseSHA256: source.sha256, path: nestedPath, props: { [field]: value } } }) })
   const generated = 'fixture/generated-form', examples = [form, button, paragraph, secondary, description, generated, family]
   const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-fonts-'))
   let browser, comparisonBrowser, renderer
@@ -709,6 +712,8 @@ func main() {
     graph.updateNode(derived.master.id, { name: 'Derived paragraph master', x: 800 })
     graph.createInstance(derived.master.id, placements.id, { name: 'Derived paragraph', x: 800, y: 48 })
     graph.updateNode(selections.at(-1).instance.id, { name: 'Editable family', x: 800, y: 400 })
+    graph.updateNode(sourceNode(graph, nestedPath).id, { name: 'Editable nested family' })
+    graph.updateNode(sourceNode(graph, nestedPath.slice(0, -1)).id, { name: 'Editable Form actions' })
     const roleName = '--pk-role-fg-secondary', inputNameForRole = '--pk-color-text-primary'
     graph.updateNode(selections[1].instance.id, { name: 'Editable button' })
     graph.updateNode(selections[2].instance.id, { name: 'Editable paragraph' })
@@ -717,12 +722,18 @@ func main() {
     graph.createInstance(selections[0].master.id, placements.id, { name: 'Untouched Form', x: 500, y: 48 })
     let buffer = Buffer.from(await exportFigFile(graph))
     const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+    assert.equal(sourceNode(baseline, nestedPath).name, 'Editable nested family')
+    assert.equal(sourceNode(baseline, nestedPath.slice(0, -1)).name, 'Editable Form actions')
     const inputName = sourceNode(baseline, [form, 'title']).name
     assert.equal(inputName, 'title', 'source-owned nested instances retain meaningful layer names after import')
     const generatedInputName = sourceNode(baseline, [generated, 'field/description']).name
     assert.equal(generatedInputName, 'Description', 'generated fields inherit their Core name, independently of their field path')
+    const definitionKey = node => {
+      const origin = JSON.parse(node.pluginData.find(item => item.key === 'platformkit.source')?.value ?? 'null')
+      return JSON.stringify(origin?.definitionPath ? [node.type, origin.sha256, origin.definitionPath] : [node.type, node.name])
+    }
     const untouched = [...baseline.getAllNodes()].filter(node => node.type === 'COMPONENT' || node.name === 'Untouched Form')
-      .map(node => [node.name, geometry(baseline, node)])
+      .map(node => [definitionKey(node), geometry(baseline, node)])
     const values = ['WAVY affinity album title '.repeat(6), ''], labels = ['Create affinity album', 'Return to album']
     const fieldLabels = ['Album title', 'Name']
     const descriptions = ['\nFirst line\nSecond line\n', 'A short description.']
@@ -753,8 +764,10 @@ func main() {
           assert.deepEqual(blobs.map(bytes => hash(Uint8Array.from(bytes))).sort(), fonts.map(face => face.sha256).sort())
         })
         await page.getByRole('button', { name: 'Editable source instances', exact: true }).click()
-        for (const name of ['Editable source instances', form, generated]) {
-          await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
+        for (const name of ['Editable source instances', form, generated, 'Editable Form actions']) {
+          await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click({ timeout: 5000 }).catch(async cause => {
+            throw new Error(JSON.stringify({ cycle, name, tree: await page.getByRole('treeitem').allTextContents() }), { cause })
+          })
           await page.keyboard.press('ArrowRight')
         }
         for (const [name, field, value, initial, previousValue] of [
@@ -762,6 +775,7 @@ func main() {
           [inputName, 'label', fieldLabels[cycle], 'Title', fieldLabels[cycle - 1]],
           ['Editable button', 'label', labels[cycle], 'Add item', labels[cycle - 1]],
           ['Editable family', 'label', labels[cycle], 'Save', labels[cycle - 1]],
+          ['Editable nested family', 'label', labels[cycle], 'Create', labels[cycle - 1]],
           ['Editable paragraph', 'content', contents[cycle], 'Plain body copy.', contents[cycle - 1]],
           ['Editable bordered button', 'label', labels[cycle], 'Cancel', labels[cycle - 1]],
           ['Editable description', 'value', descriptions[cycle], '', descriptions[cycle - 1]],
@@ -788,27 +802,29 @@ func main() {
           await page.keyboard.press('Control+Shift+z')
           await expect(control).toHaveValue(value)
         }
-        await page.getByRole('treeitem', { name: 'Editable family Lock Hide', exact: true }).click()
-        const propertyControl = page.getByRole('combobox', { name: field, exact: true })
-        const previousChoice = choices[Math.min(cycle, 2)]
-        await expect(propertyControl).toHaveText(previousChoice)
-        if (cycle < 2) {
-          await propertyControl.focus()
-          await page.keyboard.press('Enter')
-          await expect(page.getByRole('option')).toHaveCount(choices.length)
-          await page.keyboard.press('Home')
-          await expect(page.getByRole('option').nth(0)).toBeFocused()
-          for (let index = 0; index <= cycle; index++) {
-            await page.keyboard.press('ArrowDown')
-            await expect(page.getByRole('option').nth(index + 1)).toBeFocused()
-          }
-          await page.keyboard.press('Enter')
-          await expect(propertyControl).toHaveText(choices[cycle + 1])
-          await page.keyboard.press('Control+z')
+        for (const [name, values] of [['Editable family', choices], ['Editable nested family', nestedChoices]]) {
+          await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
+          const propertyControl = page.getByRole('combobox', { name: field, exact: true })
+          const previousChoice = values[Math.min(cycle, 2)] || 'None'
           await expect(propertyControl).toHaveText(previousChoice)
-          await page.keyboard.press('Control+Shift+z')
-          await expect(propertyControl).toHaveText(choices[cycle + 1])
-          await expect(page.getByRole('textbox', { name: 'label', exact: true })).toHaveValue(labels[cycle])
+          if (cycle < 2) {
+            await propertyControl.focus()
+            await page.keyboard.press('Enter')
+            await expect(page.getByRole('option')).toHaveCount(values.length)
+            await page.keyboard.press('Home')
+            await expect(page.getByRole('option').nth(0)).toBeFocused()
+            for (let index = 0; index <= cycle; index++) {
+              await page.keyboard.press('ArrowDown')
+              await expect(page.getByRole('option').nth(index + 1)).toBeFocused()
+            }
+            await page.keyboard.press('Enter')
+            await expect(propertyControl).toHaveText(values[cycle + 1])
+            await page.keyboard.press('Control+z')
+            await expect(propertyControl).toHaveText(previousChoice)
+            await page.keyboard.press('Control+Shift+z')
+            await expect(propertyControl).toHaveText(values[cycle + 1])
+            await expect(page.getByRole('textbox', { name: 'label', exact: true })).toHaveValue(labels[cycle])
+          }
         }
         const variables = page.getByRole('dialog', { name: 'Local variables', exact: true })
         const openVariables = page.getByRole('button', { name: 'Open variables', exact: true })
@@ -872,7 +888,11 @@ func main() {
             assert.deepEqual([after.x, after.y, newParent.x, newParent.y], [before.x, before.y, oldParent.x, oldParent.y],
               'layer-tree navigation must not move source placements or their board')
           }
-          for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
+          for (const [key, expected] of untouched) {
+            const matches = [...reopened.getAllNodes()].filter(node => definitionKey(node) === key)
+            assert.equal(matches.length, 1, `one exact definition or preview: ${key}`)
+            assert.deepEqual(geometry(reopened, matches[0]), expected, key)
+          }
           for (const sibling of ['field/title', 'actions']) {
             const path = [generated, sibling]
             assert.deepEqual(geometry(reopened, sourceNode(reopened, path)), geometry(baseline, sourceNode(baseline, path)),
@@ -882,6 +902,7 @@ func main() {
             [[form, 'title'], { ...(cycle === 0 ? { value: values[cycle] } : {}), label: fieldLabels[cycle] }],
             [[button], { label: labels[cycle] }],
             [[family], { [field]: choices[cycle + 1], label: labels[cycle] }],
+            [nestedPath, { [field]: nestedChoices[cycle + 1], label: labels[cycle] }],
             [[paragraph], { content: contents[cycle] }],
             [[secondary], { label: labels[cycle] }],
             [[description], { value: descriptions[cycle] }],
@@ -916,11 +937,13 @@ func main() {
                 assert.ok(Math.abs(runs[index].width - region.bounds.width) <= 1 / 64)
               }
             }
-            if ([paragraph, secondary, family].includes(path[0])) {
+            if ([paragraph, secondary, family].includes(path[0]) || JSON.stringify(path) === JSON.stringify(nestedPath)) {
               const observed = await captureExample(comparisonBrowser, projected, path[0], { fonts, viewport: { width: 320, height: 900 } })
               const selected = selections.find(item => item.observation.exampleId === path[0])
               assert.deepEqual(observed.environment, selected.observation.environment, 'source comparison profile must not change after editing')
-              const placed = sourceNode(reopened, path), expected = observed.roots[0].bounds
+              let observedNode = observed.roots[0]
+              for (const id of path.slice(1)) observedNode = observedNode.children.find(child => child.source?.path.at(-1) === id)
+              const placed = sourceNode(reopened, path), expected = observedNode.bounds
               for (const field of ['width', 'height']) assert.ok(Math.abs(placed[field] - expected[field]) <= 1 / 64,
                 `worker-saved ${path[0]} ${field}: ${placed[field]} versus ${expected[field]}`)
               if (path[0] === secondary) {

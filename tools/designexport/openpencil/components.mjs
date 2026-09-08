@@ -1,5 +1,5 @@
 import { computeAllLayouts, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
-import { bindComponentProperties } from './bindings.mjs'
+import { bindComponentProperties, bindComponentVariants, sourceVariantContext } from './bindings.mjs'
 import { loadFonts, validateFonts } from './fonts.mjs'
 import { planIcon } from './icon-composition.mjs'
 import { computedColor as color } from './computed-color.mjs'
@@ -118,35 +118,79 @@ function planPresentation(node, paintFor, blockMargins = false) {
 
 // Construct one observed text row with explicit named SVG slots. The caller
 // supplies exact foundation handles; source names never locate native layers.
-export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets = []) {
+export async function materializeComponent(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets = [], { variants = [] } = {}) {
+  return materializeOccurrence(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets,
+    { path: [observation?.exampleId], variants })
+}
+
+// Parent sizing allowances are private construction evidence, never caller
+// overrides that could bypass comparison with the observed source geometry.
+async function materializeOccurrence(graph, parentId, snapshot, observation, faces, renderer, colorCollectionId, iconTargets, {
+  path, placement = {}, variants = [],
+}) {
   requireComponent(['FRAME', 'CANVAS'].includes(graph.getNode(parentId)?.type), 'existing definition parent required')
   requireComponent(snapshot?.schema === 'platformkit.design-export.v1' && /^[a-f0-9]{64}$/.test(snapshot.sha256) &&
     observation?.sourceSHA === snapshot.sha256, 'observation must identify the selected source snapshot')
   const examples = snapshot.examples.filter(item => item.id === observation.exampleId)
   requireComponent(examples.length === 1 && examples[0].componentId === observation.componentId, 'one matching source invocation required')
   requireComponent(snapshot.themes.some(theme => theme.mode === observation.mode), 'unknown observed theme')
-  const example = examples[0]
+  const example = sourceVariantContext(snapshot, path).example
+  requireComponent(path[0] === observation.exampleId, 'definition path must belong to the observed source root')
   const collection = graph.variableCollections.get(colorCollectionId)
   requireComponent(collection, 'explicit native color collection required')
   const modes = collection.modes.filter(item => item.name === observation.mode)
   requireComponent(modes.length === 1 && graph.getNodeVariableModeId(parentId, collection.id) === modes[0].modeId,
     'definition parent variable mode must match the observation')
   requireComponent(observation.roots.length === 1 && observation.roots[0].kind === 'element', 'one component root required')
-  const root = observation.roots[0]
-  const pending = [], variables = []
+  const observed = [], visit = node => {
+    if (JSON.stringify(node.source?.path) === JSON.stringify(path)) observed.push(node)
+    for (const child of node.children ?? []) visit(child)
+  }
+  visit(observation.roots[0])
+  requireComponent(observed.length === 1 && observed[0].source.componentId === example.componentId,
+    'definition requires one exactly observed source occurrence')
+  const root = observed[0]
+  requireComponent(Array.isArray(variants), 'source variants must be an array')
+  const pending = [], variables = [], families = [], familyNodes = [], projectedComponents = []
+  async function finish(master, definitionPath, usedPlacement = {}) {
+    const requests = variants.filter(item => JSON.stringify(item.path) === JSON.stringify(definitionPath))
+    if (!requests.length) return
+    const states = [{ snapshot, master }]
+    for (const request of requests) {
+      requireComponent(request.property === requests[0].property, 'one source property per variant family required')
+      const existingVariables = new Set(graph.variables.keys())
+      const built = await materializeOccurrence(graph, parentId, request.snapshot, request.observation, faces, renderer,
+        colorCollectionId, [], { path: definitionPath, placement: usedPlacement })
+      variables.push(...[...graph.variables.keys()].filter(id => !existingVariables.has(id)))
+      familyNodes.push(...built.components.map(item => item.master.id))
+      projectedComponents.push(...built.components)
+      states.push({ snapshot: request.snapshot, master: built.master })
+    }
+    const family = graph.createNode('COMPONENT_SET', parentId, { name: definitionPath.join(' / '), clipsContent: false })
+    familyNodes.push(family.id)
+    const properties = bindComponentVariants(graph, family, snapshot, definitionPath, requests[0].property, states)
+    families.push({ path: definitionPath, family, properties })
+  }
   let result
   try {
     if (root.source && (root.style.display === 'block' || root.children.some(child => child.kind === 'element'))) {
-      result = await materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending)
+      result = await materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement)
     } else {
-      result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, [example.id], iconTargets, pending)
-      result = { ...result, components: [{ path: [example.id], ...result }] }
+      result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, path, iconTargets, pending, placement)
+      result = { ...result, components: [{ path, ...result }] }
+      await finish(result.master, path, placement)
     }
+    requireComponent(variants.every(request => families.some(item => JSON.stringify(item.path) === JSON.stringify(request.path))),
+      'every requested variant path must be constructed')
+    result.components.push(...projectedComponents)
+    for (const component of result.components) if (graph.getNode(component.master.parentId)?.type === 'COMPONENT_SET') component.properties = []
     bindPaintExpressions(graph, collection, snapshot, pending, variables)
     if (pending.length) for (const { master } of result.components) graph.syncInstances(master.id)
-    return result
+    const own = families.find(item => JSON.stringify(item.path) === JSON.stringify(path))
+    return { ...result, families, ...(own ? { family: own.family, properties: own.properties } : {}) }
   } catch (error) {
     for (const { master } of result?.components?.toReversed() ?? []) if (graph.getNode(master.id)) graph.deleteNode(master.id)
+    for (const id of familyNodes.toReversed()) if (graph.getNode(id)) graph.deleteNode(id)
     for (const id of variables.toReversed()) graph.removeVariable(id)
     throw error
   }
@@ -291,7 +335,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       describe(child.description, [...path, child.description.id], child.slot)
     }
   }
-  describe(example, [example.id])
+  describe(example, root.source.path, root.source.slot)
   const paintFor = (node, property) => observedPaint(graph, collection, snapshot, observation, node, property)
   const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1 / 64
 
@@ -498,8 +542,9 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
   return { plan, requirements }
 }
 
-async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending) {
+async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement) {
   const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root)
+  plan.placement = placement
   const components = [], created = [], geometry = []
   function provenance(description, definitionPath) {
     return [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
@@ -514,6 +559,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       const result = await materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, description, current.observation, path, [], pending, current.placement)
       created.push(result.master.id)
       components.push({ path, ...result })
+      await finish(result.master, path, current.placement)
       return result.master
     }
     const master = createPaintedNode(graph, 'COMPONENT', parentId, {
@@ -525,6 +571,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
     const properties = bindComponentProperties(graph, master, description, targets)
     components.push({ path, master, properties })
     geometry.push({ plan: current, node: master, definition: true })
+    await finish(master, path, current.placement)
     return master
   }
   async function construct(current, parent, targets, parentPlan) {

@@ -155,9 +155,11 @@ function serializeNestedReferences(context, instance, counter) {
     const nested = scopedOverrides(child, overrides);
     pending.push(...child.childIds.map(id => ({ id, overrides: nested })));
     const swapped = Object.hasOwn(overrides, id + ':componentId');
-    if (!child.componentPropertyReferences.length && !swapped) continue;
+    const renamed = child.source.editedFields.includes('name');
+    if (!child.componentPropertyReferences.length && !swapped && !renamed) continue;
     result.push({
       guidPath: nativeOverridePath(context, instance, child, counter),
+      ...(renamed ? { name: child.name } : {}),
       ...(swapped ? {
         overriddenSymbolID: nativeComponentGuid(context, resolveInstanceComponentId(context, child.componentId), counter),
         size: { x: child.width, y: child.height }

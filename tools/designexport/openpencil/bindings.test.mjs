@@ -54,6 +54,59 @@ function variantFixture(property = 'tone') {
   return { graph, canonical, source, owner, variants }
 }
 
+function nestedVariantFixture() {
+  const data = variantFixture(), path = ['fixture/form', data.source.id]
+  function wrap(snapshot, suffix = '') {
+    const child = snapshot.examples[0]
+    child.html = child.html.replace('data-component=', `data-fixture="${suffix}" data-component=`)
+    const prefix = '<form aria-label="Memórias 🌱">', sibling = { id: 'sibling', html: '<span>Keep me</span>' }
+    const start = Buffer.byteLength(prefix), end = start + Buffer.byteLength(child.html)
+    snapshot.examples = [{ id: path[0], props: { label: 'Memórias' }, html: prefix + child.html + sibling.html + '</form>',
+      children: [{ slot: 'children', span: { start, end }, description: child },
+        { slot: 'children', span: { start: end, end: end + Buffer.byteLength(sibling.html) }, description: sibling }] }]
+  }
+  wrap(data.canonical)
+  for (const [index, state] of data.variants.entries()) {
+    wrap(state.snapshot, index ? 'a longer child projection' : '')
+    const record = sourceMetadata(state.master)
+    data.graph.updateNode(state.master.id, { pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source',
+      value: JSON.stringify({ ...record, definitionPath: path }) }] })
+  }
+  return { ...data, path }
+}
+
+test('nested variant context retains byte-exact ancestors and siblings while child projection lengths change', () => {
+  const data = nestedVariantFixture(), before = structuredClone(data.canonical)
+  const definitions = bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.path, 'tone', data.variants)
+  assert.equal(definitions.at(-1).type, 'VARIANT')
+  assert.deepEqual(sourceMetadata(data.owner).definitionPath, data.path)
+  assert.deepEqual(data.canonical, before)
+})
+
+test('nested families refuse changed ancestors, siblings, slots, byte spans and ambiguous paths before graph writes', () => {
+  for (const mutate of [
+    (root, data) => { data.path = [data.path[0], 'missing'] },
+    root => { root.props.label = 'An unrelated parent edit' },
+    root => { root.html = root.html.replace('Memórias', 'memórias') },
+    root => { root.html += '<aside>Unrelated markup</aside>' },
+    root => { root.children[1].description.id = 'different sibling' },
+    root => { root.children[0].slot = 'different slot' },
+    root => { root.children[0].span.start-- },
+    root => { root.children[0].span.end++ },
+    root => { root.children[1].span.start-- },
+    root => { root.children.reverse() },
+    root => { root.children[1].description.id = root.children[0].description.id },
+    root => { root.children[0].description.name = 'Unrelated leaf metadata' },
+  ]) {
+    const data = nestedVariantFixture()
+    mutate(data.variants[1].snapshot.examples[0], data)
+    const before = structuredClone([...data.graph.nodes]), inputs = structuredClone(data.variants.map(item => item.snapshot))
+    assert.throws(() => bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.path, 'tone', data.variants), /Source component binding:/)
+    assert.deepEqual([...data.graph.nodes], before)
+    assert.deepEqual(data.variants.map(item => item.snapshot), inputs)
+  }
+})
+
 test('source variant families expose one typed property without replacing shared text ownership', async () => {
   const { graph, canonical, source, owner, variants } = variantFixture()
   const definitions = bindings.bindComponentVariants(graph, owner, canonical, source.id, 'tone', variants)

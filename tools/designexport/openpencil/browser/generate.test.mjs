@@ -80,6 +80,32 @@ test('CLI assembles supplied variant projections without replacing ordinary sour
   }
 })
 
+test('CLI addresses a nested family by exact source path and refuses malformed paths without publishing', async t => {
+  const directory = await fixture(t), path = [form, 'actions', 'create'], output = join(directory, 'nested.fig')
+  const projected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--proposal'], {
+    cwd: repo, encoding: 'utf8', input: JSON.stringify({ baseSHA256: source.sha256, path, props: { size: 'lg' } }),
+  }))
+  const snapshotPath = join(directory, 'large.json')
+  await writeFile(snapshotPath, JSON.stringify(projected), { flag: 'wx' })
+  const args = ['--example', form, ...fontArgs([400, 500, 600])]
+  const result = run(directory, [output, ...args, '--variant-at', JSON.stringify(path), 'size', snapshotPath])
+  assert.equal(result.status, 0, result.stderr)
+  const graph = await parseFigFile(Uint8Array.from(await readFile(output)).buffer, { populate: 'all' })
+  const root = [...graph.getAllNodes()].find(node => origin(node)?.path?.[0] === form)
+  const actions = graph.getChildren(root.id).find(node => origin(node)?.localId === 'actions')
+  const target = graph.getChildren(actions.id).find(node => origin(node)?.localId === 'create')
+  assert.equal(graph.getNode(masterOf(graph, target).parentId).type, 'COMPONENT_SET')
+  assert.equal(extractSourceProps(graph, target, source).status, 'no-supported-changes')
+  const saved = await readFile(output), files = await readdir(directory)
+  for (const address of ['not json', 'null', '{}', '[]', '[""]', '[1]', JSON.stringify([form, 'missing']), JSON.stringify(['unselected'])]) {
+    const refused = run(directory, [join(directory, 'refused.fig'), ...args, '--variant-at', address, 'size', snapshotPath])
+    assert.notEqual(refused.status, 0)
+    assert.equal(refused.signal, null, refused.error?.message)
+    assert.deepEqual(await readdir(directory), files)
+    assert.deepEqual(await readFile(output), saved)
+  }
+})
+
 test('CLI packages supplied source properties instead of silently regenerating the Core gallery', async t => {
   const directory = await fixture(t), exampleId = 'pk-ui.component.button/secondary'
   const supplied = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', exampleId, '--props'], {

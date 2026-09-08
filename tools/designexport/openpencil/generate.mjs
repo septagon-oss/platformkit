@@ -13,7 +13,7 @@ const [{ exportFigFile, parseFigFile }, { buildFoundation }] = await Promise.all
 ])
 
 function options(args) {
-  const usage = 'Usage: npm run generate -- /absolute/path/outside-workspace/document.fig [--snapshot-stdin] [--example ID ... --font FAMILY WEIGHT STYLE /absolute/font.woff ...] [--variant ID PROPERTY /absolute/projection.json ...] [--mode light|dark] [--viewport WIDTHxHEIGHT]'
+  const usage = 'Usage: npm run generate -- /absolute/path/outside-workspace/document.fig [--snapshot-stdin] [--example ID ... --font FAMILY WEIGHT STYLE /absolute/font.woff ...] [--variant ID PROPERTY /absolute/projection.json ...] [--variant-at JSON_PATH PROPERTY /absolute/projection.json ...] [--mode light|dark] [--viewport WIDTHxHEIGHT]'
   if (!args.length || !isAbsolute(args[0]) || extname(args[0]) !== '.fig') throw new Error(usage)
   const result = { examples: [], faces: [], variants: [] }, seen = new Set()
   for (let index = 1; index < args.length;) {
@@ -24,15 +24,17 @@ function options(args) {
       result.snapshotStdin = true
       continue
     }
-    if (!['--example', '--font', '--variant', '--mode', '--viewport'].includes(flag)) throw new Error(usage)
-    const count = flag === '--font' ? 4 : flag === '--variant' ? 3 : 1, values = args.slice(index, index + count)
+    if (!['--example', '--font', '--variant', '--variant-at', '--mode', '--viewport'].includes(flag)) throw new Error(usage)
+    const count = flag === '--font' ? 4 : ['--variant', '--variant-at'].includes(flag) ? 3 : 1, values = args.slice(index, index + count)
     if (values.length !== count || values.some(value => !value || value.startsWith('--'))) throw new Error(usage)
     index += count
     if (flag === '--example') result.examples.push(values[0])
-    else if (flag === '--variant') {
-      const [exampleId, property, path] = values
-      if (!isAbsolute(path)) throw new Error(usage)
-      result.variants.push({ exampleId, property, path })
+    else if (flag === '--variant' || flag === '--variant-at') {
+      const [address, property, snapshotPath] = values
+      let path
+      try { path = flag === '--variant' ? [address] : JSON.parse(address) } catch { throw new Error(usage) }
+      if (!isAbsolute(snapshotPath) || !Array.isArray(path) || !path.length || path.some(id => typeof id !== 'string' || id === '')) throw new Error(usage)
+      result.variants.push({ exampleId: path[0], path, property, snapshotPath })
     }
     else if (flag === '--font') {
       const [family, weight, style, path] = values
@@ -87,8 +89,8 @@ async function documentBytes(snapshot, selection) {
     return { ...face, bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
   })))
   const variants = []
-  for (const { path, ...variant } of selection.variants) {
-    variants.push({ ...variant, snapshot: await readSnapshot(createReadStream(path), path) })
+  for (const { snapshotPath, ...variant } of selection.variants) {
+    variants.push({ ...variant, snapshot: await readSnapshot(createReadStream(snapshotPath), snapshotPath) })
   }
   let browser, renderer
   try {

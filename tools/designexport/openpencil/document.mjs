@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { captureExample } from './browser/capture.mjs'
 import { materializeComponent } from './components.mjs'
-import { bindComponentVariants } from './bindings.mjs'
+import { sourceVariantContext } from './bindings.mjs'
 import { buildFoundation } from './foundation.mjs'
 import { chain } from './exporter-correction.mjs'
 import { validateFonts } from './fonts.mjs'
@@ -29,9 +29,14 @@ export async function buildComponentDocument(snapshot, {
       variant.property === '' || !Object.hasOwn(variant, 'snapshot')) {
       throw new Error('Document variants require a selected exampleId, exact property and projected snapshot')
     }
+    const path = Object.hasOwn(variant, 'path') ? variant.path : [variant.exampleId]
+    try { sourceVariantContext(snapshot, path) } catch (error) { throw new Error(`Document variant: ${error.message}`, { cause: error }) }
+    if (path[0] !== variant.exampleId) throw new Error('Document variant path must belong to its selected root')
     const states = families.get(variant.exampleId) ?? []
-    if (states.length && states[0].property !== variant.property) throw new Error('Document families currently support one source property')
-    families.set(variant.exampleId, [...states, { ...variant }])
+    if (states.some(state => isDeepStrictEqual(state.path, path) && state.property !== variant.property)) {
+      throw new Error('Document families currently support one source property')
+    }
+    families.set(variant.exampleId, [...states, { ...variant, path: [...path] }])
   }
   const faces = validateFonts(fonts)
   if (faces.length === 0) throw new Error('Component documents require caller-supplied fonts')
@@ -55,31 +60,28 @@ export async function buildComponentDocument(snapshot, {
     // Resolve only explicit canonical glyph handles; the materializer owns
     // region, geometry, slot and source-interface validation for every state.
     const targets = slots.map(region => ({ region, master: icons.get(region.children[0]?.icon?.canonicalName) }))
-    return { observation, ...await materializeComponent(graph, definitions.id, projected, observation, faces, renderer, collection.id, targets) }
+    const variants = []
+    for (const request of families.get(exampleId) ?? []) variants.push({ ...request,
+      observation: await captureExample(browser, request.snapshot, exampleId, { mode, viewport, fonts: faces }) })
+    return { observation, ...await materializeComponent(graph, definitions.id, projected, observation, faces, renderer, collection.id, targets, { variants }) }
   }
   const selections = []
   let definitionY = 48, placementY = 48, definitionWidth = 0, placementWidth = 0
   for (const exampleId of selected) {
     try {
-      let built = await construct(snapshot, exampleId)
-      const requests = families.get(exampleId)
-      if (requests) {
-        const states = [{ snapshot, ...built }]
-        for (const request of requests) states.push({ snapshot: request.snapshot, ...await construct(request.snapshot, exampleId) })
-        const family = graph.createNode('COMPONENT_SET', definitions.id, { name: exampleId, clipsContent: false })
-        const property = requests[0].property, properties = bindComponentVariants(graph, family, snapshot, exampleId, property, states)
+      const built = await construct(snapshot, exampleId)
+      for (const { family } of built.families) {
         let y = 48, width = 0
-        for (const { master } of states) {
+        const property = family.componentPropertyDefinitions.find(item => item.type === 'VARIANT').name
+        for (const master of graph.getChildren(family.id)) {
           graph.updateNode(master.id, { name: `${property} = ${JSON.stringify(master.componentPropertyValues[property])}`, x: 48, y })
           y += master.height + 48
           width = Math.max(width, master.width)
         }
         graph.updateNode(family.id, { width: width + 96, height: y })
-        // State masters own no duplicate definitions; the selection exposes
-        // its inherited interface and the exact native family owner separately.
-        built = { ...built, family, properties, components: states.flatMap(state => state.components.map(component => ({ ...component, properties: [] }))) }
       }
-      const units = built.family ? [{ path: [exampleId], master: built.family }] : built.components
+      const units = [...built.components.filter(item => graph.getNode(item.master.parentId)?.type !== 'COMPONENT_SET'),
+        ...built.families.map(item => ({ path: item.path, master: item.family }))]
       for (const { path, master } of units) {
         graph.insertChildAt(master.id, definitions.id, definitions.childIds.length)
         graph.updateNode(master.id, { name: path.join(' / '), x: 48, y: definitionY })

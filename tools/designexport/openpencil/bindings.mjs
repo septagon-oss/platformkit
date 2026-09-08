@@ -27,6 +27,42 @@ export function sourceTextValue(example, property) {
   return Object.hasOwn(example.props, property) ? example.props[property] : example.schema.properties[property].default
 }
 
+// Mask only the selected invocation. Ancestor HTML is compared as the exact
+// byte ranges around its declared children, so changed child lengths cannot
+// hide unrelated markup, sibling, slot or source-contract changes.
+export function sourceVariantContext(snapshot, path) {
+  requireBinding(Array.isArray(path) && path.length > 0 && path.every(id => typeof id === 'string' && id !== ''),
+    'variant path requires exact source invocation identities')
+  let selected
+  function descend(examples, depth) {
+    requireBinding(Array.isArray(examples) && examples.filter(example => example?.id === path[depth]).length === 1,
+      'variant path must identify exactly one source invocation')
+    return examples.map(example => {
+      if (example.id !== path[depth]) return example
+      if (depth === path.length - 1) { selected = example; return null }
+      requireBinding(typeof example.html === 'string' && Array.isArray(example.children), 'variant ancestors require source composition')
+      const bytes = Buffer.from(example.html), fragments = []
+      let end = 0
+      for (const child of example.children) {
+        const span = child.span
+        requireBinding(span && Number.isSafeInteger(span.start) && Number.isSafeInteger(span.end) &&
+          span.start >= end && span.end >= span.start && span.end <= bytes.length &&
+          typeof child.description?.html === 'string' && bytes.subarray(span.start, span.end).equals(Buffer.from(child.description.html)),
+        'variant ancestors require exact ordered source byte spans')
+        fragments.push(bytes.subarray(end, span.start).toString('base64'))
+        end = span.end
+      }
+      fragments.push(bytes.subarray(end).toString('base64'))
+      const children = descend(example.children.map(child => child.description), depth + 1)
+      return { ...example, html: fragments, children: example.children.map(({ span, ...child }, index) => ({ ...child, description: children[index] })) }
+    })
+  }
+  requireBinding(plainObject(snapshot), 'identified source snapshot required')
+  const { sha256, ...context } = snapshot
+  context.examples = descend(snapshot.examples, 0)
+  return { context, example: selected }
+}
+
 // Construction handles supplied by the converter, not a lookup by node name,
 // visible text or child order. This runs before the fresh master has instances.
 // Binding identity is separate from native layout and replacement readiness.
@@ -125,24 +161,22 @@ export function bindComponentVariants(graph, owner, snapshot, exampleId, propert
   requireBinding(owner?.type === 'COMPONENT_SET' && graph.getNode(owner.id) === owner &&
     owner.childIds.length === 0 && owner.componentPropertyDefinitions.length === 0 &&
     !owner.pluginData.some(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source'), 'fresh native component set required')
-  const examples = snapshot?.examples?.filter(item => item.id === exampleId), example = examples?.[0]
-  requireBinding(examples?.length === 1 && example.propsEditable === true && plainObject(example.schema) &&
+  const path = Array.isArray(exampleId) ? exampleId : [exampleId]
+  const baselineContext = sourceVariantContext(snapshot, path), example = baselineContext.example
+  requireBinding(example.propsEditable === true && plainObject(example.schema) &&
     Object.hasOwn(example.schema, 'type') && example.schema.type === 'object' && isSourceTextProperty(example, property),
     'one editable source string property required')
   requireBinding(Array.isArray(variants) && variants.length > 1 &&
     new Set(variants.map(item => item?.master?.id)).size === variants.length, 'distinct native source variants required')
   const without = (value, keys) => Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)))
-  const ambient = value => without(value, ['sha256', 'examples'])
   const states = variants.map(({ snapshot: projected, master }) => {
     requireBinding(master?.type === 'COMPONENT' && graph.getNode(master.id) === master && graph.getInstances(master.id).length === 0 &&
       master.parentId === owner.parentId && master.variantPropSpecs.length === 0 && Object.keys(master.componentPropertyValues).length === 0,
     'fresh canonical source component required')
-    const candidates = projected?.examples?.filter(item => item.id === exampleId), candidate = candidates?.[0]
-    requireBinding(candidates?.length === 1 && /^[a-f0-9]{64}$/.test(projected.sha256) && isDeepStrictEqual(ambient(projected), ambient(snapshot)) &&
-      isDeepStrictEqual(projected.examples.filter(item => item.id !== exampleId), snapshot.examples.filter(item => item.id !== exampleId)),
+    const projectedContext = sourceVariantContext(projected, path), candidate = projectedContext.example
+    requireBinding(/^[a-f0-9]{64}$/.test(projected.sha256) && isDeepStrictEqual(projectedContext.context, baselineContext.context),
     'variant projection must retain the source export context')
-    requireBinding(candidate.componentId === example.componentId && candidate.propsEditable === true &&
-      isDeepStrictEqual(candidate.schema, example.schema) && isDeepStrictEqual(candidate.slots, example.slots) &&
+    requireBinding(isDeepStrictEqual(without(candidate, ['props', 'html']), without(example, ['props', 'html'])) && candidate.propsEditable === true &&
       candidate.children?.length === 0 && candidate.opaqueSlots?.length === 0 && example.children?.length === 0 && example.opaqueSlots?.length === 0 &&
       plainObject(candidate.props) && isDeepStrictEqual(without(candidate.props, [property]), without(example.props, [property])),
     'variant projection must change only one property of the same nonopaque leaf interface')
@@ -151,7 +185,8 @@ export function bindComponentVariants(graph, owner, snapshot, exampleId, propert
     const records = master.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
     requireBinding(records.length === 1, 'one constructed source projection record required')
     const origin = JSON.parse(records[0].value)
-    requireBinding(origin.schema === projected.schema && origin.sha256 === projected.sha256 && origin.exampleId === exampleId &&
+    requireBinding(origin.schema === projected.schema && origin.sha256 === projected.sha256 && origin.exampleId === example.id &&
+      isDeepStrictEqual(origin.definitionPath, path) &&
       origin.componentId === candidate.componentId && isDeepStrictEqual(origin.props, candidate.props) && origin.bindingVersion === 1 &&
       Array.isArray(origin.textBindings) && origin.slotBindings?.length === 0 &&
       master.componentPropertyDefinitions.length === origin.textBindings.length, 'constructed variant must retain its source bindings')

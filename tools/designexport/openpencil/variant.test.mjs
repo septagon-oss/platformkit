@@ -256,18 +256,29 @@ for (const imported of [false, true]) {
       node.type === 'COMPONENT' || node.parentId === named(graph, 'Containing master').id))
     const value = () => actions.getInstanceComponentPropertyValue(nested().id,
       actions.getInstanceComponentPropertyDefinitions(nested().id).find(item => item.id === '30:1'))
+    const anchors = () => structuredClone([nested(), graph.getNode(nested().parentId),
+      ...graph.getChildren(nested().id).filter(node => node.componentPropertyReferences.length)].map(node =>
+      Object.fromEntries(['id', 'componentId', 'name', 'source', 'overrides'].map(key => [key, node[key]]))))
     try {
       assert.equal(value(), ' padded,a ')
+      const unchanged = structuredClone([...graph.getAllNodes()])
+      actions.setInstanceComponentProperty(nested().id, '30:1', ' padded,a ')
+      assert.ok(isDeepStrictEqual([...graph.getAllNodes()], unchanged), 'selecting the inherited current variant is not a replacement')
+      assert.equal(actions.undo.canUndo, false)
       actions.setInstanceComponentProperty(nested().id, '30:3', 'Nested edit')
+      const beforeSwitch = anchors()
       actions.setInstanceComponentProperty(nested().id, '30:1', '')
+      const afterSwitch = anchors()
       assert.equal(value(), '')
       actions.undoAction()
+      assert.deepEqual(anchors(), beforeSwitch, 'undo restores exact retained occurrence anchors and names')
       assert.equal(value(), ' padded,a ')
       actions.undoAction()
       assert.equal(actions.getInstanceComponentPropertyValue(nested().id,
         actions.getInstanceComponentPropertyDefinitions(nested().id).find(item => item.id === '30:3')), 'Label')
       actions.redoAction()
       actions.redoAction()
+      assert.deepEqual(anchors(), afterSwitch, 'redo restores exact retained occurrence anchors and names')
       assert.deepEqual([...graph.getAllNodes()].filter(node => node.type === 'COMPONENT' ||
         node.parentId === named(graph, 'Containing master').id), before)
       for (let cycle = 0; cycle < 2; cycle++) {
@@ -302,6 +313,31 @@ test('invalid or colliding native variant renames refuse before graph or history
     actions.renamePropertyDefinition(owner.id, '30:1', 'value')
     assert.equal(actions.undo.canUndo, false, 'renaming to the same name is not an edit')
   } finally { actions.replaceGraph(new SceneGraph()) }
+})
+
+test('renamed nested occurrences survive two saves without renaming their definitions or sibling placements', async () => {
+  let graph = composedFixture(), page = graph.getPages()[0]
+  const master = graph.createNode('COMPONENT', page.id, { name: 'Container definition', width: 100, height: 30 })
+  graph.createInstance(named(graph, 'Independent name 2').id, master.id, { name: 'Choice slot' })
+  graph.createInstance(master.id, page.id, { name: 'Edited container' })
+  graph.createInstance(master.id, page.id, { name: 'Preview container' })
+  const editor = createEditor({ graph })
+  try {
+    const nested = () => graph.getChildren(named(graph, 'Edited container').id)[0]
+    editor.renameNode(nested().id, 'A local occurrence name')
+    for (let cycle = 0; cycle < 3; cycle++) {
+      assert.equal(nested().name, 'A local occurrence name')
+      assert.equal(graph.getChildren(named(graph, 'Preview container').id)[0].name, 'Choice slot')
+      assert.equal(graph.getChildren(named(graph, 'Container definition').id)[0].name, 'Choice slot')
+      if (cycle === 2) break
+      graph = await reopen(graph)
+      editor.replaceGraph(graph)
+    }
+    editor.setInstanceComponentProperty(nested().id, '30:1', '')
+    assert.equal(nested().name, 'A local occurrence name')
+    editor.undoAction()
+    assert.equal(nested().name, 'A local occurrence name')
+  } finally { editor.replaceGraph(new SceneGraph()) }
 })
 
 test('native variant history preserves unrelated appearance and source edits', () => {

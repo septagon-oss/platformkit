@@ -45,6 +45,9 @@ For example, `--example pk-ui.component.form/default` selects the linked Form.
 Add repeated `--variant ID PROPERTY /absolute/projection.json` for nonbaseline
 `ui.ProjectProps` snapshots (32 MiB each); the ID must also be selected. These
 caller-supplied projections are validated for correspondence, not source freshness.
+For a nested leaf, use `--variant-at '["pk-ui.component.form/default","actions","create"]' size /absolute/large.json`;
+the projected snapshot must change that exact invocation, and the root must be selected.
+This builds a child family inside the existing composition, not copies of the whole Form.
 Optional `--mode light|dark` and `--viewport WIDTHxHEIGHT` choose one observation
 profile; defaults are light and 1280×900. Every requested example must pass or no
 file is created. Construction and source correspondence are checked across two
@@ -60,9 +63,11 @@ same fonts separately in the editor. No page prototypes are included.
 
 [buildComponentDocument](document.mjs) accepts one existing `ui.Export` snapshot,
 explicit `examples`, `fonts`, `mode`, `viewport`, and caller-owned `browser` and
-`renderer`, plus optional `variants: [{ exampleId, property, snapshot }]`.
+`renderer`, plus optional `variants: [{ exampleId, path?, property, snapshot }]`.
+`path` defaults to `[exampleId]`; nested paths use exact source invocation IDs.
 Family selections expose `family` as property owner, inherited `properties` and
 all state masters in `components`; `master` and `instance` retain the baseline.
+`families` lists `{ path, family, properties }` for every requested leaf, including nested ones.
 It returns foundation and definition/placement handles. [buildFoundation](foundation.mjs) supplies the shared
 `{ graph, collection, icons }`; `prepareIcon` validates glyphs without creating nodes.
 
@@ -261,15 +266,17 @@ Explicit slot-property maps distinguish icon assets from nested source component
 asset instances do not acquire string-proposal ownership by being inside a slot.
 
 [bindComponentVariants](bindings.mjs) groups already materialized source projections
-as `bindComponentVariants(graph, emptySet, baseSnapshot, exampleId, property, variants)`;
+as `bindComponentVariants(graph, emptySet, baseSnapshot, pathOrExampleId, property, variants)`;
 each variant supplies `{ snapshot, master }`, including the exact baseline export.
 Obtain candidate snapshots through `--proposal`, then use the existing capture and
 materialization path. The set owns shared text definitions and one native variant
 definition; children retain their projected source revisions. Exact values, including
 empty strings, come from source properties, never visible labels or layer names.
 This currently supports one unconstrained string on a nonopaque leaf component.
-Go Button tone projections verify shared-copy sizing, colour, history and two saves
-in both themes. Catalog enumeration, composed families and native Select conversion remain unfinished.
+Go Button tone and size projections verify shared-copy sizing, colour, history and
+two saves, including Form → FormActions → Button in both themes at 320/1280px.
+Ancestor HTML, sibling contracts and source byte spans must remain exact around the
+selected child. Catalog enumeration, composite variants and native Select conversion remain unfinished.
 
 [associateSourceInstance](source-changes.mjs) maps an exact `graph.createInstance`
 result to one source root after validating its subtree. Previews stay unmapped;
@@ -438,6 +445,10 @@ prerequisite, not source Select conversion; the source-family API above has narr
 Variant switching and its history stage node changes and property layout before
 commit. Shared text inherits the selected master's typography, including line height;
 explicit occurrence overrides remain local. Tone and size families are checked through editor saves.
+Nested replay also restores retained occurrence links, names and source override anchors;
+it does not promise stable identities for unbound decorative layers replaced by a swap.
+FIG export retains local nested layer names as occurrence overrides, leaving definitions and sibling placements unchanged.
+The editor's option list resolves the same canonical component lineage as property values and switching; nesting does not create a second interface.
 The existing synchronization plan applies these changes. Synchronous measurement failures publish no native
 mutations and leave history retryable. Staging currently copies the node map;
 large-document latency and memory remain unverified, as do arbitrary commit-listener failures.

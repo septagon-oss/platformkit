@@ -3,6 +3,45 @@ import { chain } from './exporter-correction.mjs'
 // The native set owns definitions; its direct variants own values and FIG
 // specifications keyed by definition ID. History must retain all three together.
 const helpers = String.raw`
+function variantOccurrenceState(ctx, instance) {
+  const nodes = new Map();
+  function visit(node) {
+    nodes.set(node.id, node);
+    for (const child of ctx.graph.getChildren(node.id)) visit(child);
+  }
+  visit(instance);
+  for (const node of chain(ctx.graph, instance, "parentId")) nodes.set(node.id, node);
+  return new Map([...nodes].map(([id, node]) => [id, structuredClone({
+    name: node.name, componentId: node.componentId, overrides: node.overrides, editedFields: node.source.editedFields
+  })]));
+}
+
+// A reverse swap computes the right appearance but not the original imported
+// occurrence anchors. Restore only metadata changed by this operation, keeping
+// unrelated overrides and dirty markers. Replay remains inside the same staged
+// swap/measurement transaction, before live notifications or history movement.
+function restoreVariantOccurrence(ctx, expected, desired) {
+  ctx.graph.preserveSourceMetadataDuring(() => {
+    for (const [id, state] of desired) {
+      const prior = expected.get(id), node = ctx.graph.getNode(id);
+      if (!prior || !node) continue;
+      const props = {};
+      for (const key of ["name", "componentId"]) if (!isEqual(prior[key], state[key])) props[key] = state[key];
+      const overrides = { ...node.overrides };
+      for (const key of new Set([...Object.keys(prior.overrides), ...Object.keys(state.overrides)])) {
+        if (isEqual(prior.overrides[key], state.overrides[key])) continue;
+        if (Object.hasOwn(state.overrides, key)) overrides[key] = structuredClone(state.overrides[key]);
+        else delete overrides[key];
+      }
+      const changed = new Set([...prior.editedFields, ...state.editedFields].filter(field =>
+        prior.editedFields.includes(field) !== state.editedFields.includes(field)));
+      props.source = { ...node.source, editedFields: [...state.editedFields,
+        ...node.source.editedFields.filter(field => !changed.has(field) && !state.editedFields.includes(field))] };
+      ctx.graph.updateNode(id, { ...props, overrides });
+    }
+  });
+}
+
 function variantDefinitionState(ctx, owner) {
   return [owner, ...ctx.graph.getChildren(owner.id).filter(node => node.type === "COMPONENT")].map(node => ({
     id: node.id,
@@ -105,24 +144,34 @@ export function correctVariantActions(source, replace) {
   source = replace(source, 'import { reapplyInstanceComponentProperties } from "./properties.js";',
     'import { reapplyInstanceComponentProperties, projectComponentPropertyChange } from "./properties.js";')
   source = replace(source, 'function createVariantActions(ctx) {', chain.toString() + '\n' + helpers + '\nfunction createVariantActions(ctx) {')
-  source = replace(source, 'const component = ctx.graph.getNode(instance.componentId);',
-    'const component = chain(ctx.graph, instance, "componentId").at(-1);')
-  source = replace(source, 'const prevComponentId = instance.componentId;',
-    'const prevComponentId = instance.componentId, prevMasterId = component.id;')
-  source = replace(source, 'ctx.graph.swapInstanceComponent(instanceId, prevComponentId);',
-    'ctx.graph.swapInstanceComponent(instanceId, prevMasterId);\n' +
-    '\t\t\t\tctx.graph.updateNode(instanceId, { componentId: prevComponentId });')
-  for (const indent of ['\t\t', '\t\t\t\t']) {
-    source = replace(source, `${indent}ctx.graph.swapInstanceComponent(instanceId, target.id);\n${indent}reapplyInstanceComponentProperties(ctx, instanceId);`,
-      `${indent}projectComponentPropertyChange(ctx, planned => {\n${indent}\tplanned.graph.swapInstanceComponent(instanceId, target.id);\n` +
-      `${indent}\treapplyInstanceComponentProperties(planned, instanceId);\n${indent}});`)
+  const start = source.indexOf('\tfunction switchInstanceVariant('), end = source.indexOf('\treturn {', start)
+  if (start < 0 || end <= start) throw new Error('Native variant: missing switch action boundary')
+  source = replace(source, source.slice(start, end), String.raw`
+  function switchInstanceVariant(instanceId, propertyName, newValue) {
+    const instance = ctx.graph.getNode(instanceId);
+    if (instance?.type !== "INSTANCE" || !instance.componentId) return;
+    const component = chain(ctx.graph, instance, "componentId").at(-1);
+    if (!component || ctx.graph.getNode(component.parentId)?.type !== "COMPONENT_SET") return;
+    const target = findVariantByValues(component.parentId, { ...component.componentPropertyValues, [propertyName]: newValue });
+    if (!target || target.id === component.id) return;
+    const before = variantOccurrenceState(ctx, instance);
+    function apply(componentId, expected, desired) {
+      projectComponentPropertyChange(ctx, planned => {
+        planned.graph.swapInstanceComponent(instanceId, componentId);
+        reapplyInstanceComponentProperties(planned, instanceId);
+        if (desired) restoreVariantOccurrence(planned, expected, desired);
+      });
+    }
+    apply(target.id);
+    const after = variantOccurrenceState(ctx, instance);
+    ctx.undo.push({
+      label: "Switch variant",
+      forward: () => { apply(target.id, before, after); ctx.requestRender(); },
+      inverse: () => { apply(component.id, after, before); ctx.requestRender(); }
+    });
+    ctx.requestRender();
   }
-  source = replace(source, '\t\t\t\tctx.graph.swapInstanceComponent(instanceId, prevMasterId);\n' +
-    '\t\t\t\tctx.graph.updateNode(instanceId, { componentId: prevComponentId });\n\t\t\t\treapplyInstanceComponentProperties(ctx, instanceId);',
-    '\t\t\t\tprojectComponentPropertyChange(ctx, planned => {\n' +
-    '\t\t\t\t\tplanned.graph.swapInstanceComponent(instanceId, prevMasterId);\n' +
-    '\t\t\t\t\tplanned.graph.updateNode(instanceId, { componentId: prevComponentId });\n' +
-    '\t\t\t\t\treapplyInstanceComponentProperties(planned, instanceId);\n\t\t\t\t});')
+`)
   for (const [name, next, argumentsList, callArguments] of [
     ['removePropertyDefinition', 'renamePropertyDefinition', 'componentSetId, propertyId', 'componentSetId, propertyId, undefined, true'],
     ['renamePropertyDefinition', 'collectVariantOptions', 'componentSetId, propertyId, newName', 'componentSetId, propertyId, newName'],

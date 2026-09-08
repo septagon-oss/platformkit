@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, realpathSync, write
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { corrections, correctSource, sdkVersion } from './corrections.mjs'
+import { chain } from './exporter-correction.mjs'
 
 // Run only in the disposable Docker build stage. Application sources come
 // from the checksum-pinned archive; engine modules come from our npm lock.
@@ -93,6 +94,10 @@ function nativeBoundary() {
     },
     transform(source, id) {
       const controlCorrections = {
+        'packages/vue/src/controls/component-props/use.ts': ['c9430929645a8981f4ef669f4deb039dcbfc5a96a25969a4eba0bf6e6f398f86',
+          'function variantOptions(', chain.toString() + '\n\nfunction variantOptions(',
+          'const component = instance.componentId ? editor.graph.getNode(instance.componentId) : null',
+          "const component = chain(editor.graph, instance, 'componentId').at(-1)"],
         'src/components/ui/AppSelect.vue': ['a7faaee2db2d26a3324382ff3833373e799cf77e89bf87c246c18e09533e040c',
           "import { tv } from 'tailwind-variants'", "import { computed } from 'vue'\nimport { tv } from 'tailwind-variants'",
           '  placeholder?: string', '  placeholder?: string\n  mixed?: boolean',
@@ -252,7 +257,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 9) throw new Error('Browser omitted a required editor control correction')
+if (correctedControls.size !== 10) throw new Error('Browser omitted a required editor control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

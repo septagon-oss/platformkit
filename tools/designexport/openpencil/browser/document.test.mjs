@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { isDeepStrictEqual } from 'node:util'
 import { sourceFixture, suppliedFonts } from './fixtures.test.mjs'
 import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
@@ -130,10 +131,120 @@ test('document generation refuses invalid or inconsistent variant requests inste
   const stale = structuredClone(projected)
   stale.css += '\n/* different source stylesheet */'
   for (const variants of [null, {}, [{}], [{ ...valid, exampleId: form }], [{ ...valid, property: '' }],
+    [{ ...valid, path: null }], [{ ...valid, path: [] }], [{ ...valid, path: [form] }],
     [valid, { ...valid, property: 'label' }], [valid, valid], [{ ...valid, snapshot }], [{ ...valid, snapshot: stale }]]) {
     const before = structuredClone({ snapshot, variants })
     await assert.rejects(buildComponentDocument(snapshot, options({ examples: [id], variants })), /Document/)
     assert.deepEqual({ snapshot, variants }, before)
+  }
+})
+
+test('nested source families inherit through Form and FormActions without replacing siblings or parent definitions', async () => {
+  const path = [form, 'actions', 'create'], choices = ['sm', 'lg']
+  const variants = choices.map(size => ({ exampleId: form, path, property: 'size',
+    snapshot: source({ baseSHA256: snapshot.sha256, path, props: { size } }) }))
+  const before = structuredClone({ snapshot, variants })
+  for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+    const profile = options({ examples: [form], variants, mode, viewport: { width, height: 900 } })
+    const built = await buildComponentDocument(snapshot, profile)
+    let graph = built.graph
+    const selection = built.selections[0]
+    const family = selection.families.find(item => JSON.stringify(item.path) === JSON.stringify(path))?.family
+    assert.equal(family?.type, 'COMPONENT_SET')
+    assert.equal(selection.family, undefined, 'the Form is not converted into duplicated whole-page variants')
+    assert.equal(graph.getChildren(family.id).length, 3)
+    assert.equal(graph.getChildren(built.definitions.id).filter(node => node.type === 'COMPONENT_SET').length, 1)
+    assert.equal(selection.components.filter(item => item.path.length === 1).length, 1)
+    const expected = verifyComponentDocument(graph, snapshot, [form])
+    graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+    verifyComponentDocument(graph, snapshot, [form], expected)
+    const instance = placed(graph, form), actions = nested(graph, instance, 'actions')
+    const target = nested(graph, actions, 'create'), sibling = nested(graph, actions, 'cancel')
+    const preview = graph.createInstance(chain(graph, instance, 'componentId').at(-1).id, instance.parentId, { name: 'Untouched preview' })
+    const master = chain(graph, target, 'componentId').at(-1), owner = graph.getNode(master.parentId)
+    assert.equal(owner.type, 'COMPONENT_SET')
+    const editor = createEditor({ graph }); editor.setCanvasKit(ck, renderer)
+    const definitions = editor.getInstanceComponentPropertyDefinitions(target.id)
+    const label = definitions.find(item => item.name === 'label'), size = definitions.find(item => item.name === 'size')
+    assert.equal(size.type, 'VARIANT')
+    const siblingProps = extractSourceProps(graph, sibling, snapshot)
+    const protectedNodes = [...graph.getAllNodes()].filter(node =>
+      chain(graph, node, 'parentId').some(parent => parent.id === preview.id || ['COMPONENT', 'COMPONENT_SET'].includes(parent.type)))
+    const protectedBefore = structuredClone(protectedNodes)
+    editor.setInstanceComponentProperty(target.id, label.id, 'Publish album')
+    for (const choice of ['lg', 'sm', '']) {
+      const prior = structuredClone([...graph.getAllNodes()])
+      editor.setInstanceComponentProperty(target.id, size.id, choice)
+      const changed = structuredClone([...graph.getAllNodes()])
+      editor.undoAction(); assert.ok(isDeepStrictEqual([...graph.getAllNodes()], prior), 'undo restores the exact native occurrence')
+      editor.redoAction(); assert.ok(isDeepStrictEqual([...graph.getAllNodes()], changed), 'redo restores the exact native occurrence')
+      for (const node of protectedBefore) assert.deepEqual(graph.getNode(node.id), node, `unchanged ${node.name}`)
+      assert.deepEqual(extractSourceProps(graph, sibling, snapshot), siblingProps, 'layout may move the sibling but must not edit it')
+      const proposal = { baseSHA256: snapshot.sha256, path, props: { label: 'Publish album', ...(choice ? { size: choice } : {}) } }
+      assert.deepEqual(extractSourceProps(graph, target, snapshot).proposal, proposal)
+      const observed = await captureExample(browser, source(proposal), form, profile)
+      const sourceActions = observed.roots[0].children.find(child => child.source?.path.at(-1) === 'actions')
+      const sourceButton = sourceActions.children.find(child => child.source?.path.at(-1) === 'create')
+      for (const [native, actual] of [[instance, observed.roots[0]], [actions, sourceActions], [target, sourceButton]]) {
+        for (const dimension of ['width', 'height']) assert.ok(Math.abs(native[dimension] - actual.bounds[dimension]) <= 1 / 64,
+          `${mode}/${width}/${choice}/${native.name}/${dimension}: ${native[dimension]} versus ${actual.bounds[dimension]}`)
+      }
+    }
+    for (let cycle = 0; cycle < 2; cycle++) {
+      graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+      const reopened = nested(graph, nested(graph, placed(graph, form), 'actions'), 'create')
+      assert.deepEqual(extractSourceProps(graph, reopened, snapshot).proposal,
+        { baseSHA256: snapshot.sha256, path, props: { label: 'Publish album' } })
+      assert.equal(extractSourceProps(graph, placed(graph, form), snapshot).status, 'no-supported-changes')
+    }
+  }
+  assert.deepEqual({ snapshot, variants }, before)
+})
+
+test('failed nested family construction removes only its own masters, sets and derived variables', async () => {
+  const path = [form, 'actions', 'create']
+  const projected = source({ baseSHA256: snapshot.sha256, path, props: { tone: 'info' } })
+  const observation = await captureExample(browser, snapshot, form, options())
+  const request = { path, property: 'tone', snapshot: projected,
+    observation: await captureExample(browser, projected, form, options()) }
+  for (const variants of [[request, request], [request, { ...request, path: [form, 'missing'] }],
+    [{ ...request, property: 'size' }]]) {
+    const { graph, collection } = buildFoundation(snapshot)
+    const parent = graph.createNode('FRAME', graph.getPages()[0].id, { name: 'Caller-owned definitions',
+      variableModes: { [collection.id]: collection.modes.find(item => item.name === 'light').modeId } })
+    const before = structuredClone({ nodes: [...graph.nodes], variables: [...graph.variables], collections: [...graph.variableCollections] })
+    const measurer = getTextMeasurer()
+    await assert.rejects(materializeComponent(graph, parent.id, snapshot, observation, fonts, renderer, collection.id, [], { variants }),
+      /Source component binding:|Native component:/)
+    assert.ok(isDeepStrictEqual({ nodes: [...graph.nodes], variables: [...graph.variables], collections: [...graph.variableCollections] }, before),
+      'refusal must preserve the entire caller-owned graph and variable environment')
+    assert.equal(getTextMeasurer(), measurer)
+  }
+})
+
+test('one Form inherits independent Input and Button families through their existing construction paths', async () => {
+  const choices = [{ path: [form, 'title'], property: 'value', value: 'field-notes' },
+    { path: [form, 'actions', 'create'], property: 'tone', value: 'danger' }]
+  const variants = choices.map(({ path, property, value }) => ({ exampleId: form, path, property,
+    snapshot: source({ baseSHA256: snapshot.sha256, path, props: { [property]: value } }) }))
+  const built = await buildComponentDocument(snapshot, options({ examples: [form], variants }))
+  assert.equal(built.selections[0].families.length, 2)
+  assert.equal(built.selections[0].components.filter(item => item.path.length === 1).length, 1)
+  let graph = built.graph
+  const editor = createEditor({ graph }); editor.setCanvasKit(ck, renderer)
+  const at = path => path.slice(1).reduce((parent, localId) => nested(graph, parent, localId), placed(graph, path[0]))
+  for (const { path, property, value } of choices) {
+    const target = at(path)
+    const definition = editor.getInstanceComponentPropertyDefinitions(target.id).find(item => item.name === property)
+    assert.equal(definition.type, 'VARIANT')
+    editor.setInstanceComponentProperty(target.id, definition.id, value)
+  }
+  for (let cycle = 0; cycle < 3; cycle++) {
+    for (const { path, property, value } of choices) assert.deepEqual(extractSourceProps(graph, at(path), snapshot).proposal,
+      { baseSHA256: snapshot.sha256, path, props: { [property]: value } })
+    const texts = node => node.type === 'TEXT' ? [node.text] : graph.getChildren(node.id).flatMap(texts)
+    assert.ok(texts(at([form, 'title'])).includes('field-notes'), 'Input must render its selected source value, not only report it')
+    if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
   }
 })
 
