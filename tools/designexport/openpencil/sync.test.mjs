@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { SceneGraph } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { parseFigBuffer } from '@open-pencil/fig'
 
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 2e-5, `${actual} != ${expected}`)
 const descendants = (graph, node) => [node, ...graph.getChildren(node.id).flatMap(child => descendants(graph, child))]
@@ -20,6 +21,59 @@ test('layout positions do not claim authorship while FIG size dirtiness and exis
   graph.withLayoutMutations(() => graph.updateNode(node.id, { x: 14, y: 30 }))
   assert.deepEqual(node.source.editedFields, ['width', 'height', 'x'], 'layout cannot erase a preexisting authored marker')
   assert.deepEqual([node.x, node.y, node.width, node.height], [14, 30, 120, 40])
+})
+
+test('imported layout edits replace only their own cached fields across two saves', async () => {
+  const graph = new SceneGraph()
+  graph.createNode('FRAME', graph.getPages()[0].id, { name: 'Layout', width: 120, height: 48,
+    layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED',
+    paddingLeft: 17, paddingRight: 17, paddingTop: 17, paddingBottom: 17, itemSpacing: 8,
+    counterAxisSpacing: 4, layoutWrap: 'WRAP', itemReverseZIndex: true, strokesIncludedInLayout: true })
+  const initial = await exportFigFile(graph)
+  const cases = [
+    ['paddingLeft', 5, { stackHorizontalPadding: 5, stackPaddingRight: 17 }],
+    ['paddingRight', 6, { stackPaddingRight: 6 }],
+    ['paddingTop', 3, { stackVerticalPadding: 3, stackPaddingBottom: 17 }],
+    ['paddingBottom', 2, { stackPaddingBottom: 2 }],
+    ['itemSpacing', 0, { stackSpacing: 0 }],
+    ['counterAxisSpacing', 0, { stackCounterSpacing: undefined }],
+    ['layoutWrap', 'NO_WRAP', { stackWrap: undefined }],
+    ['primaryAxisAlign', 'MAX', { stackPrimaryAlignItems: 'MAX', stackJustify: undefined }],
+    ['counterAxisAlign', 'CENTER', { stackCounterAlignItems: 'CENTER', stackCounterAlign: undefined }],
+    ['primaryAxisSizing', 'HUG', { stackPrimarySizing: 'RESIZE_TO_FIT' }],
+    ['counterAxisSizing', 'HUG', { stackCounterSizing: 'RESIZE_TO_FIT' }],
+    ['layoutPositioning', 'ABSOLUTE', { stackPositioning: 'ABSOLUTE' }],
+    ['layoutAlignSelf', 'STRETCH', { stackChildAlignSelf: 'STRETCH' }],
+    ['layoutGrow', 1, { stackChildPrimaryGrow: 1 }],
+    ['itemReverseZIndex', false, { stackReverseZIndex: undefined }],
+    ['strokesIncludedInLayout', false, { bordersTakeSpace: false }],
+    ['layoutMode', 'NONE', { stackMode: undefined, stackPadding: undefined, stackSpacing: undefined }],
+  ]
+  for (const [field, value, expected] of cases) {
+    let current = await parseFigFile(initial.slice().buffer, { populate: 'all' })
+    const node = [...current.getAllNodes()].find(node => node.name === 'Layout')
+    // Legacy trailing padding can be implicit. Changing its leading partner
+    // must make the unchanged trailing value explicit, not silently copy it.
+    const layout = { ...node.source.fig.layout, stackPadding: 17, stackPaddingRight: undefined, stackPaddingBottom: undefined }
+    current.preserveSourceMetadataDuring(() => current.updateNode(node.id, { source: { ...node.source,
+      fig: { ...node.source.fig, layout } } }))
+    const metadata = structuredClone(node.source.fig)
+    current.updateNode(node.id, { [field]: value })
+    for (let cycle = 0; cycle < 2; cycle++) {
+      const bytes = await exportFigFile(current)
+      const wire = parseFigBuffer(bytes.slice().buffer).nodeChanges.find(item => item.name === 'Layout')
+      for (const [key, expectedValue] of Object.entries(expected)) assert.equal(wire[key], expectedValue, `${field}: ${key}`)
+      if (!['itemReverseZIndex', 'layoutMode'].includes(field)) assert.equal(wire.stackReverseZIndex, true)
+      if (!['strokesIncludedInLayout', 'layoutMode'].includes(field)) assert.equal(wire.bordersTakeSpace, true)
+      if (cycle === 0) assert.deepEqual(node.source.fig, metadata, 'export does not destroy cached metadata')
+      current = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+      const saved = [...current.getAllNodes()].find(item => item.name === 'Layout')
+      assert.equal(saved[field], value, field)
+      if (field !== 'layoutMode') for (const [key, baseline] of Object.entries({ paddingLeft: 17, paddingRight: 17, paddingTop: 17, paddingBottom: 17 })) {
+        assert.equal(saved[key], key === field ? value : baseline, `${field}: unchanged ${key}`)
+      }
+    }
+  }
 })
 
 function path(graph, parentId, x = 1.25) {

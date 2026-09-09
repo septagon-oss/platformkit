@@ -85,6 +85,35 @@ export function ancestryOverrides(graph, target) {
 export const lineageHelpers = [chain, sourceChild, sourceChildren, scopedOverrides, ancestryOverrides].map(fn => fn.toString()).join('\n')
 
 const exporterHelpers = String.raw`
+function serializeEditedLayout(node, nc, graph) {
+  // Keep untouched FIG layout encodings, including implicit sizing and older
+  // alignment aliases. Only changed native fields use the SDK's current encoding.
+  const fields = {
+    layoutMode: ["stackMode", "stackPadding"],
+    itemSpacing: ["stackSpacing"], counterAxisSpacing: ["stackCounterSpacing"],
+    paddingLeft: ["stackHorizontalPadding", "stackPaddingRight"],
+    paddingRight: ["stackPaddingRight"],
+    paddingTop: ["stackVerticalPadding", "stackPaddingBottom"],
+    paddingBottom: ["stackPaddingBottom"],
+    primaryAxisAlign: ["stackPrimaryAlignItems", "stackJustify"],
+    counterAxisAlign: ["stackCounterAlignItems", "stackCounterAlign"],
+    primaryAxisSizing: ["stackPrimarySizing"], counterAxisSizing: ["stackCounterSizing"],
+    layoutWrap: ["stackWrap"], layoutPositioning: ["stackPositioning"],
+    layoutGrow: ["stackChildPrimaryGrow"], layoutAlignSelf: ["stackChildAlignSelf"],
+    strokesIncludedInLayout: ["bordersTakeSpace"], itemReverseZIndex: ["stackReverseZIndex"]
+  };
+  const edited = node.source.editedFields;
+  const keys = new Set((edited.includes("layoutMode") ? Object.values(fields) :
+    edited.map(field => fields[field] ?? [])).flat());
+  if (!keys.size) return;
+  const current = {};
+  serializeLayoutProps({ ...node, source: { ...node.source, fig: { ...node.source.fig, layout: null } } }, current, graph);
+  for (const key of keys) {
+    delete nc[key];
+    if (Object.hasOwn(current, key)) nc[key] = current[key];
+  }
+}
+
 function serializeRootSizing(node, symbolID) {
   const size = {};
   for (const [field, axis] of [["width", "x"], ["height", "y"]]) {
@@ -240,7 +269,7 @@ function serializeDerivedLayout(context, instance, counter) {
   return result;
 }
 
-function serializePaintOverrides(context, instance, counter) {
+function serializeAppearanceOverrides(context, instance, counter) {
   const result = [];
   const nativePaint = paint => {
     const { colorVariableBinding, ...fields } = paint;
@@ -249,37 +278,49 @@ function serializePaintOverrides(context, instance, counter) {
     };
     return fields;
   };
-  function visit(parent, owners, seen) {
-    if (seen.has(parent.id)) throw new Error('Cyclic native paint override subtree');
-    const next = new Set(seen).add(parent.id);
-    for (const id of parent.childIds) {
-      const target = context.graph.getNode(id);
-      if (!target || target.parentId !== parent.id) throw new Error('Missing native paint override child');
-      const scopes = target.type === 'INSTANCE' ? [...owners, target] : owners;
-      const owns = field => scopes.some(owner => Object.hasOwn(owner.overrides,
-        owner.id === target.id ? field : target.id + ':' + field));
-      const fields = ['fills', 'strokes'].filter(field => owns(field) || owns('boundVariables'));
-      if (fields.length) {
-        const override = { guidPath: nativeOverridePath(context, instance, target, counter) };
-        if (fields.includes('fills')) override.fillPaints = target.fills.map((fill, index) =>
-          nativePaint(applyColorVariableBinding(context, target, context.fillToKiwiPaint(fill), 'fills/' + index + '/color')));
-        if (fields.includes('strokes')) {
-          override.strokePaints = createStrokePaints(context, target).map(nativePaint);
-          if (owns('strokes') && target.strokes.length) {
-            const first = target.strokes[0];
-            if (target.strokes.some(stroke => stroke.weight !== first.weight || stroke.align !== first.align)) {
-              throw new Error('Native paint override requires one shared stroke weight and alignment');
-            }
-            override.strokeWeight = first.weight;
-            override.strokeAlign = first.align;
+  function visit(target, owners, seen) {
+    if (seen.has(target.id)) throw new Error('Cyclic native appearance override subtree');
+    const next = new Set(seen).add(target.id);
+    const scopes = target.type === 'INSTANCE' ? [...owners, target] : owners;
+    const owns = field => scopes.some(owner => Object.hasOwn(owner.overrides,
+      owner.id === target.id ? field : target.id + ':' + field));
+    const fields = target === instance ? [] : ['fills', 'strokes'].filter(field => owns(field) || owns('boundVariables'));
+    const padding = { paddingTop: 'stackVerticalPadding', paddingBottom: 'stackPaddingBottom',
+      paddingLeft: 'stackHorizontalPadding', paddingRight: 'stackPaddingRight' };
+    const paddingFields = Object.keys(padding).filter(owns);
+    const sized = target !== instance && ['width', 'height'].some(owns);
+    if (fields.length || paddingFields.length || sized) {
+      const guidPath = target === instance ? { guids: [getOrCreateNodeGuid(context,
+        resolveInstanceComponentId(context, instance.componentId), counter)] } : nativeOverridePath(context, instance, target, counter);
+      const override = { guidPath };
+      if (sized) override.size = { x: target.width, y: target.height };
+      for (const field of paddingFields) override[padding[field]] = target[field];
+      // FIG's leading-padding override also sets the trailing edge when it
+      // is absent. Preserve the actual opposite edge explicitly.
+      if (owns('paddingTop')) override.stackPaddingBottom = target.paddingBottom;
+      if (owns('paddingLeft')) override.stackPaddingRight = target.paddingRight;
+      if (fields.includes('fills')) override.fillPaints = target.fills.map((fill, index) =>
+        nativePaint(applyColorVariableBinding(context, target, context.fillToKiwiPaint(fill), 'fills/' + index + '/color')));
+      if (fields.includes('strokes')) {
+        override.strokePaints = createStrokePaints(context, target).map(nativePaint);
+        if (owns('strokes') && target.strokes.length) {
+          const first = target.strokes[0];
+          if (target.strokes.some(stroke => stroke.weight !== first.weight || stroke.align !== first.align)) {
+            throw new Error('Native paint override requires one shared stroke weight and alignment');
           }
+          override.strokeWeight = first.weight;
+          override.strokeAlign = first.align;
         }
-        result.push(override);
       }
-      visit(target, scopes, next);
+      result.push(override);
+    }
+    for (const id of target.childIds) {
+      const child = context.graph.getNode(id);
+      if (!child || child.parentId !== target.id) throw new Error('Missing native appearance override child');
+      visit(child, scopes, next);
     }
   }
-  visit(instance, [instance], new Set());
+  visit(instance, [], new Set());
   return result;
 }
 `
@@ -308,6 +349,8 @@ function mergePluginData(pluginData) {
   }`)
   source = replaceSection(source, 'function serializeTextOverrides(', 'function overridePathKey(',
     lineageHelpers + '\n' + exporterHelpers)
+  source = replaceOnce(source, '\t\tserializeInheritedCounterAxisStretch(node, nc, graph);\n\t\treturn;',
+    '\t\tserializeInheritedCounterAxisStretch(node, nc, graph);\n\t\tserializeEditedLayout(node, nc, graph);\n\t\treturn;')
   source = replaceSection(source, 'function mergeTextOverrides(', '/**\n* Fields that are ALWAYS', String.raw`
 function mergeTextOverrides(symbolOverrides, overrides) {
   const merged = new Map();
@@ -327,7 +370,7 @@ function mergeTextOverrides(symbolOverrides, overrides) {
   source = replaceOnce(source,
     'mergeTextOverrides(symbolOverrides, serializeTextOverrides(context, node, localIdCounter));',
     'mergeTextOverrides(symbolOverrides, serializeNestedReferences(context, node, localIdCounter));\n' +
-    '\t\tmergeTextOverrides(symbolOverrides, serializePaintOverrides(context, node, localIdCounter));\n' +
+    '\t\tmergeTextOverrides(symbolOverrides, serializeAppearanceOverrides(context, node, localIdCounter));\n' +
     '\t\tmergeTextOverrides(symbolOverrides, serializeTextOverrides(context, node, localIdCounter));')
   source = replaceOnce(source,
     'if (node.source.fig.componentPropAssignments.length > 0) nc.componentPropAssignments =',
@@ -471,29 +514,36 @@ function buildSizeOverriddenCloneUpdates(source, clone) {
   return replace(source,
     'overriddenNodes.add(targetId);\n\t\t\tapplyOverridePatch(ctx, patch);',
     String.raw`overriddenNodes.add(targetId);
-      const paintFields = ['fills', 'strokes'].filter(field => Object.hasOwn(patch.props ?? {}, field));
-      let paintOwner, paintOverrides;
-      if (paintFields.length) {
+      const target = ctx.graph.getNode(targetId);
+      const sizingSource = target?.type === 'INSTANCE' ? chain(ctx.graph,
+        ctx.graph.getNode(patch.swapComponentId ?? target.componentId), 'componentId').at(-1) : null;
+      const ownedFields = ['fills', 'strokes', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'width', 'height']
+        .filter(field => Object.hasOwn(patch.props ?? {}, field) && (!['width', 'height'].includes(field) ||
+          sizingSource && Math.fround(patch.props[field]) !== Math.fround(sizingSource[field] * (target.uniformScaleFactor ?? 1)) &&
+          (target.layoutMode === 'NONE' || ((field === 'width') === (target.layoutMode === 'HORIZONTAL') ?
+            target.primaryAxisSizing : target.counterAxisSizing) === 'FIXED')));
+      let owner, overrides;
+      if (ownedFields.length) {
         let current = ctx.graph.getNode(targetId);
         const visited = new Set();
         while (current) {
-          if (visited.has(current.id)) throw new Error('Cyclic native paint override ancestry');
+          if (visited.has(current.id)) throw new Error('Cyclic native appearance override ancestry');
           visited.add(current.id);
-          if (!paintOwner && current.type === 'INSTANCE') paintOwner = current;
+          if (!owner && current.type === 'INSTANCE') owner = current;
           if (current.id === nodeId) break;
           current = ctx.graph.getNode(current.parentId);
         }
-        if (!current || !paintOwner) throw new Error('Native paint override is outside its declaring instance');
-        paintOverrides = { ...paintOwner.overrides };
-        for (const paintField of paintFields) {
-          const field = paintField === 'strokes' && ov.strokePaints?.length && ov.strokeWeight == null && ov.strokeAlign == null
-            ? 'boundVariables' : paintField;
-          paintOverrides[paintOwner.id === targetId ? field : targetId + ':' + field] = true;
+        if (!current || !owner) throw new Error('Native appearance override is outside its declaring instance');
+        overrides = { ...owner.overrides };
+        for (const owned of ownedFields) {
+          const field = owned === 'strokes' && ov.strokePaints?.length && ov.strokeWeight == null && ov.strokeAlign == null
+            ? 'boundVariables' : owned;
+          overrides[owner.id === targetId ? field : targetId + ':' + field] = true;
         }
       }
       applyOverridePatch(ctx, patch);
-      if (paintOwner) ctx.graph.preserveSourceMetadataDuring(() =>
-        ctx.graph.updateNode(paintOwner.id, { overrides: paintOverrides }));`)
+      if (owner) ctx.graph.preserveSourceMetadataDuring(() =>
+        ctx.graph.updateNode(owner.id, { overrides }));`)
 }
 
 export function correctPropertyTarget(source, replace) {

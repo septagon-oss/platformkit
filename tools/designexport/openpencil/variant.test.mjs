@@ -5,6 +5,7 @@ import { SceneGraph } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
 import { getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { chain } from './exporter-correction.mjs'
 
 const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name === name)
 const reopen = async graph => parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
@@ -12,6 +13,72 @@ const values = ['baseline', '', ' padded,a ']
 const typography = index => ({ fontSize: 14 + index * 2, lineHeight: 20 + index * 4,
   letterSpacing: index, italic: index === 1, textCase: index === 1 ? 'UPPER' : 'ORIGINAL',
   textDecoration: index === 1 ? 'UNDERLINE' : 'NONE', textAlignHorizontal: index === 1 ? 'RIGHT' : 'LEFT' })
+
+for (const nested of [false, true]) for (const customSizing of [false, true]) {
+  test(`variant-only size changes survive history and two saves without a text edit: nested=${nested}, customSizing=${customSizing}`, async () => {
+    let graph = new SceneGraph()
+    const page = graph.getPages()[0]
+    const sizes = {
+      regular: { width: 120, height: 48, paddingLeft: 17, paddingRight: 19, paddingTop: 9, paddingBottom: 11, itemSpacing: 8 },
+      compact: { width: 80, height: 28, paddingLeft: 7, paddingRight: 5, paddingTop: 3, paddingBottom: 1, itemSpacing: 4 },
+    }
+    const family = graph.createNode('COMPONENT_SET', page.id, { name: 'Density', componentPropertyDefinitions: [
+      { id: '70:1', name: 'size', type: 'VARIANT', defaultValue: 'regular', variantOptions: Object.keys(sizes) },
+    ] })
+    for (const [size, geometry] of Object.entries(sizes)) graph.createNode('COMPONENT', family.id, {
+      name: size, ...geometry, layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED',
+      variantPropSpecs: [{ propDefId: '70:1', value: size }], componentPropertyValues: { size },
+    })
+    const regular = named(graph, 'regular')
+    const wrapper = nested ? graph.createNode('COMPONENT', page.id, { name: 'Wrapper' }) : null
+    graph.createInstance(regular.id, wrapper?.id ?? page.id, { name: 'Size occurrence' })
+    if (wrapper) graph.createInstance(wrapper.id, page.id, { name: 'Wrapper placement' })
+    graph.createInstance(regular.id, page.id, { name: 'Unchanged size occurrence' })
+    graph = await reopen(graph)
+    const occurrence = () => nested ? graph.getChildren(named(graph, 'Wrapper placement').id)[0] : named(graph, 'Size occurrence')
+    const instance = occurrence()
+    if (customSizing) graph.updateNode(instance.id, { width: 166, paddingRight: 23,
+      overrides: { ...instance.overrides, width: true, paddingRight: true } })
+    const actions = createEditor({ graph })
+    const originalSource = structuredClone(instance.source), originalOverrides = structuredClone(instance.overrides)
+    const originals = structuredClone([...graph.nodes].filter(([id]) => id !== instance.id &&
+      id !== named(graph, 'Wrapper placement')?.id))
+    const check = (current, size, node = occurrence(), authored = customSizing) => {
+      const geometry = { ...sizes[size], ...(authored ? { width: 166, paddingRight: 23 } : {}) }
+      for (const [field, expected] of Object.entries(geometry)) assert.equal(node[field], expected, `${size}.${field}`)
+      assert.equal(chain(current, node, 'componentId').at(-1).name, size)
+    }
+    async function checkSaves(size) {
+      let saved = graph
+      for (let cycle = 0; cycle < 2; cycle++) {
+        saved = await reopen(saved)
+        const node = nested ? saved.getChildren(named(saved, 'Wrapper placement').id)[0] : named(saved, 'Size occurrence')
+        check(saved, size, node)
+        check(saved, 'regular', named(saved, 'Unchanged size occurrence'), false)
+        saved.syncInstances(named(saved, size).id)
+        check(saved, size, node)
+        for (const [name, geometry] of Object.entries(sizes)) for (const [field, expected] of Object.entries(geometry)) {
+          assert.equal(named(saved, name)[field], expected, `master ${name}.${field}`)
+        }
+      }
+    }
+    try {
+      check(graph, 'regular')
+      actions.setInstanceComponentProperty(instance.id, '70:1', 'compact')
+      check(graph, 'compact')
+      await checkSaves('compact')
+      actions.undoAction()
+      check(graph, 'regular')
+      assert.deepEqual(instance.source, originalSource, 'undo restores imported source metadata exactly')
+      assert.deepEqual(instance.overrides, originalOverrides)
+      await checkSaves('regular')
+      actions.redoAction()
+      check(graph, 'compact')
+      await checkSaves('compact')
+      for (const [id, original] of originals) assert.deepEqual(graph.getNode(id), original, `unrelated ${original.name}`)
+    } finally { actions.replaceGraph(new SceneGraph()) }
+  })
+}
 
 function fixture() {
   const graph = new SceneGraph(), page = graph.getPages()[0]

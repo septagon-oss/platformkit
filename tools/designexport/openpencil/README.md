@@ -378,6 +378,12 @@ size dirtiness. Nested instances resolve variant values and switching
 through the same canonical lineage as their shared text properties.
 Browser checks exercise label editing, keyboard variant
 switching, undo/redo and three worker saves without changing masters or siblings.
+Size-only switches are tested without a preceding label edit: inherited changes
+invalidate stale imported dimensions and layout fields before FIG serialization.
+Untouched source encodings remain intact, and undo restores their edit markers.
+Native checks cover standalone and nested variants with custom fixed width and
+right padding through two saves and subsequent synchronization; the browser
+checks compare unedited-label Button sizes against fresh Go projections.
 
 Native fill/stroke bindings and literal or empty paints retain their tested
 values through two saves and subsequent synchronization. Binding-only stroke

@@ -73,7 +73,13 @@ function syncProperties(source, target, keys, overrides, prefix = '') {
       ])
     }
   }
-  return { ...target, ...structuredClone(changes) }
+  // Imported fallbacks describe the previous occurrence. Inherited changes
+  // invalidate those fields too, without claiming a local instance override.
+  // Stage the markers on a fresh source record so refused plans stay pure.
+  const projected = { ...target, ...structuredClone(changes),
+    source: { ...target.source, editedFields: [...target.source.editedFields] } }
+  markSourceFieldsEdited(projected, Object.keys(changes).filter(key => !isEqual(target[key], changes[key])))
+  return projected
 }
 
 function syncRemapOverrides(overrides, identities, copiedSource = false) {
@@ -464,6 +470,7 @@ function swapInstanceComponent(graph, instanceId, componentId) {
 }
 
 export function correctSyncGraph(source, replace) {
+  source = 'import { isEqual } from "es-toolkit";\n' + source
   // The SDK already distinguishes layout mutations from authored operations.
   // Computed positions must not masquerade as local descendant edits. Keep
   // preexisting edit markers and changed dimensions required by FIG sizing.

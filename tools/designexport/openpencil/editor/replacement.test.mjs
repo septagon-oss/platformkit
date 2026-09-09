@@ -637,8 +637,10 @@ const editorFontFixtures = [400, 500, 600].map(weight => {
   return { weight, bytes: new Uint8Array(OpenType.parse(figBuffer(woff)).toArrayBuffer()) }
 })
 
-for (const [field, choices] of [['tone', ['neutral', 'info', 'danger']], ['size', ['md', 'sm', 'lg']]])
-test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves`, { timeout: 120000 }, async t => {
+for (const [field, choices, editFamilyCopy = true] of [
+  ['tone', ['neutral', 'info', 'danger']], ['size', ['md', 'sm', 'lg']], ['size', ['md', 'xs', '2xl'], false],
+])
+test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves: editFamilyCopy=${editFamilyCopy}`, { timeout: 120000 }, async t => {
   await verifyBuild()
   const hash = bytes => createHash('sha256').update(bytes).digest('hex')
   const project = await sourceFixture(t, `package main
@@ -795,6 +797,10 @@ func main() {
         ]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click()
           const control = page.getByRole('textbox', { name: field, exact: true })
+          if (!editFamilyCopy && ['Editable family', 'Editable nested family'].includes(name)) {
+            await expect(control).toHaveValue(name === 'Editable family' ? 'Save' : 'Create')
+            continue
+          }
           const previous = cycle ? previousValue : initial
           await expect(control).toHaveValue(previous)
           if (cycle === 2) continue
@@ -836,7 +842,9 @@ func main() {
             await expect(propertyControl).toHaveText(previousChoice)
             await page.keyboard.press('Control+Shift+z')
             await expect(propertyControl).toHaveText(values[cycle + 1] || 'None')
-            await expect(page.getByRole('textbox', { name: 'label', exact: true })).toHaveValue(labels[cycle])
+            const label = !editFamilyCopy && name !== 'Editable choice' ?
+              name === 'Editable family' ? 'Save' : 'Create' : labels[cycle]
+            await expect(page.getByRole('textbox', { name: 'label', exact: true })).toHaveValue(label)
           }
         }
         const variables = page.getByRole('dialog', { name: 'Local variables', exact: true })
@@ -914,8 +922,8 @@ func main() {
           for (const [path, props] of [
             [[form, 'title'], { ...(cycle === 0 ? { value: values[cycle] } : {}), label: fieldLabels[cycle] }],
             [[button], { label: labels[cycle] }],
-            [[family], { [field]: choices[cycle + 1], label: labels[cycle] }],
-            [nestedPath, { [field]: nestedChoices[cycle + 1], label: labels[cycle] }],
+            [[family], { [field]: choices[cycle + 1], ...(editFamilyCopy ? { label: labels[cycle] } : {}) }],
+            [nestedPath, { [field]: nestedChoices[cycle + 1], ...(editFamilyCopy ? { label: labels[cycle] } : {}) }],
             [choicePath, { value: selectValues[cycle + 1], label: labels[cycle] }],
             [[paragraph], { content: contents[cycle] }],
             [[secondary], { label: labels[cycle] }],
