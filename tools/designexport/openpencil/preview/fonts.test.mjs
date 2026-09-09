@@ -91,7 +91,11 @@ func main() {
   const args = ['--enable-automation', '--font-render-hinting=none', '--use-gl=angle',
     '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-blink-features=FileSystemAccessLocal']
   const comparison = await chromium.launch({ headless: true, args })
-  const browser = await chromium.launch({ headless: true, channel: 'chromium', args })
+  // FIG font hashing requires WebCrypto. Like the generic editor check, mark
+  // only the validated disposable CI origin secure; grant no local-font access.
+  const editorArgs = [...args, ...(endpoint.hostname === 'openpencil-preview'
+    ? [`--unsafely-treat-insecure-origin-as-secure=${endpoint.origin}`] : [])]
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: editorArgs })
   const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
   try {
     const examples = ['pk-ui.component.button/primary', 'pk-ui.component.input/invalid']
@@ -112,6 +116,7 @@ func main() {
         page.on('worker', worker => workers.push(worker.url()))
         page.on('response', response => { if (provenance.fontFaces.some(face => response.url() === new URL(face.path, endpoint).href)) fontRequests.push(response) })
         await page.goto(endpoint.href)
+        assert.equal(await page.evaluate(() => window.isSecureContext), true, 'FIG export requires a secure browser context')
         assert.notEqual(await page.evaluate(async () => {
           try { return (await navigator.permissions.query({ name: 'local-fonts' })).state } catch { return 'unavailable' }
         }), 'granted')

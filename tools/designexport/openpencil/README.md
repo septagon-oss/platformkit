@@ -451,6 +451,9 @@ Against a disposable `preview` target, run
 `PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18090 node --import ./register.mjs --test preview/*.test.mjs`.
 This checks automatic font loading without local permission, visible button/field
 glyphs and alignment, exact font digests and two browser worker saves/reopens.
+FIG export still needs a secure browser context for WebCrypto; tailnet HTTP is
+not sufficient for saving. Use HTTPS for shared previews. CI marks only its
+isolated service origin secure, as in the generic editor check.
 
 Native properties and FIG override paths retain links through reflow and undo;
 repeated saves merge overrides by path. Low-level property fixtures use a
