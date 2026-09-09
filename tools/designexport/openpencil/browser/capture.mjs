@@ -82,6 +82,9 @@ export async function captureExample(browser, snapshot, exampleId, {
   const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', serviceWorkers: 'block' })
   try {
     const requests = []
+    // CSP can refuse a request before routing, with its DOM event still queued.
+    // Keep that browser failure in the same final resource-refusal boundary.
+    context.on('requestfailed', request => requests.push(request.resourceType()))
     await context.route('**/*', route => {
       requests.push(route.request().resourceType())
       return route.abort('blockedbyclient')

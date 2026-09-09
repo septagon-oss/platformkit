@@ -258,10 +258,13 @@ func base() *css.Sheet {
 	s.Select("dialog::backdrop", css.Decl("background", css.Literal("rgb(0 0 0 / 0.45)")))
 	s.Media("(prefers-reduced-motion: reduce)", func(inner *css.Sheet) {
 		// Override ordinary utility and consumer rules while retaining completion
-		// events for code waiting on animationend or transitionend.
+		// events for declared animations and transitions. A nonzero duration must
+		// not activate the default transition-property: all on ordinary content;
+		// later utility and consumer declarations can still name their properties.
 		inner.Select("*, *::before, *::after",
 			css.Decl("animation-duration", css.Literal("0.01ms !important")),
 			css.Decl("animation-iteration-count", css.Literal("1 !important")),
+			css.Decl("transition-property", css.Literal("none")),
 			css.Decl("transition-duration", css.Literal("0.01ms !important")),
 			css.Decl("scroll-behavior", css.Literal("auto !important")))
 	})

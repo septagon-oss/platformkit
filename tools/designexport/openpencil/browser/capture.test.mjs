@@ -793,8 +793,13 @@ test('browser capture refuses executable content and external assets', async () 
     snapshot.examples.find(example => example.id === primary).html = html
     await assert.rejects(captureExample(browser, snapshot, primary), /executable|external|asset|resource/i)
   }
-  const imported = { ...source, css: '@import url("https://capture.invalid/style.css");\n' + source.css }
-  await assert.rejects(captureExample(browser, imported, primary), /external|resource|policy|CSP|asset/i)
+  for (const css of [
+    '@import url("https://capture.invalid/style.css");',
+    'button { background-image: url("https://capture.invalid/image.png"); }',
+    '@font-face { font-family: Rejected; src: url("https://capture.invalid/font.woff"); } button { font-family: Rejected; }',
+  ]) {
+    await assert.rejects(captureExample(browser, { ...source, css: css + '\n' + source.css }, primary), /external|resource|policy|CSP|asset/i)
+  }
 })
 
 test('browser capture proves supplied font use through CDP and records byte-free provenance', async () => {
@@ -912,6 +917,29 @@ test('source reduced-motion fallback wins later consumer specificity without cha
       const expected = reduced ? ['1e-05s', '1', '1e-05s', 'auto'] : ['3s', 'infinite', '4s', 'smooth']
       assert.deepEqual(computed.consumer, [expected, expected, expected])
     } finally { await context.close() }
+  }
+})
+
+test('reduced motion never creates implicit transitions on ordinary content', async () => {
+  for (const reducedMotion of ['reduce', 'no-preference']) {
+    const page = await browser.newPage({ reducedMotion })
+    try {
+      await page.setContent(`<!doctype html><style>${source.css}
+        :where(#declared) { transition: opacity 4s; }
+      </style><p id="plain" class="text-lg">Enlarged text</p><span id="declared">Declared transition</span>`)
+      const result = await page.evaluate(() => {
+        const plain = document.querySelector('#plain'), declared = document.querySelector('#declared')
+        const before = parseFloat(getComputedStyle(plain).fontSize)
+        const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize)
+        document.documentElement.style.fontSize = `${rootSize * 2}px`
+        return { before, after: parseFloat(getComputedStyle(plain).fontSize),
+          configured: getComputedStyle(declared).transitionProperty,
+          unexpected: document.getAnimations().filter(animation => animation.transitionProperty === 'font-size').length }
+      })
+      assert.equal(result.after, result.before * 2, 'rem text resize is immediate without an authored transition')
+      assert.equal(result.unexpected, 0)
+      assert.equal(result.configured, 'opacity', 'even a zero-specificity consumer declaration remains authoritative')
+    } finally { await page.close() }
   }
 })
 
