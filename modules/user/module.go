@@ -1,6 +1,6 @@
 // Package user is the module manifest: the people in a tenant.
 //
-// It is the exemplar's shape with one entity, one Spec and three lifecycle
+// It is the exemplar's shape with one entity, one Spec and explicit lifecycle
 // commands, and it takes no dependencies at all: a user belongs to a tenant by
 // carrying its id, which row-level security matches on, so there is nothing for
 // this module to ask the tenant module for.
@@ -33,8 +33,8 @@ var spec = rest.Spec[*contracts.User]{
 	Read:       contracts.PermissionUserRead,
 	Write:      contracts.PermissionUserManage,
 	SoftDelete: true,
-	// The two fields a command owns. status is moved by Deactivate, which
-	// publishes user.deactivated, and roles by SetRoles, which publishes
+	// The two fields a command owns. Lifecycle commands move status, and
+	// roles are changed by SetRoles, which publishes
 	// user.roles_set; a caller who could set either through the generic update
 	// would deactivate somebody, or make them an administrator, and tell
 	// nobody.
@@ -50,7 +50,7 @@ var spec = rest.Spec[*contracts.User]{
 //
 // It could: the form is derived from the schema, and roles is a list field like
 // any other. What stops it is the rule two lines above — a grant is an event
-// somebody can audit, published by POST {id}/roles, and refuseRolesOnCreate
+// somebody can audit, published by POST {id}/roles, and refuseLifecycleOnCreate
 // below refuses roles at the create route for exactly that reason. A screen
 // that offered the field and then silently made a second request would be a
 // screen whose audit trail did not match what the person did, and one that
@@ -73,6 +73,7 @@ var spec = rest.Spec[*contracts.User]{
 var permissions = []module.Permission{
 	{Key: contracts.PermissionUserRead},
 	{Key: contracts.PermissionUserManage},
+	{Key: contracts.PermissionRegistrationApprove},
 }
 
 // Module is the manifest, and the service it is built on: the auth module takes
@@ -80,7 +81,7 @@ var permissions = []module.Permission{
 func Module(_ Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
 	mounted := spec
-	mounted.AfterCreate = refuseRolesOnCreate
+	mounted.AfterCreate = refuseLifecycleOnCreate
 	return svc, module.Module{
 		Name:        "user",
 		Permissions: permissions,
@@ -88,6 +89,7 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 			contracts.EventCreated, contracts.EventUpdated, contracts.EventDeleted,
 			contracts.EventInvited, contracts.EventPasswordSet,
 			contracts.EventRolesSet, contracts.EventDeactivated,
+			contracts.EventRegistrationPending, contracts.EventRegistrationApproved,
 		},
 		Nav: []module.NavEntry{
 			{Label: "Users", Path: "/admin/user/users", Permission: contracts.PermissionUserRead},
@@ -101,14 +103,17 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 	}
 }
 
-// refuseRolesOnCreate is the create route's hook: a user is created without
-// roles, and roles are granted by the command that publishes an event saying so.
+// refuseLifecycleOnCreate keeps roles and pending credentials behind their
+// owner commands. Public signup cannot create a pending row through generic CRUD.
 //
 // The hook runs inside the request's transaction, after the row and its event,
 // so returning an error rolls the whole create back and the caller gets a 422.
 // The PATCH route is guarded by spec.Immutable instead; a create cannot be,
 // because there is no row yet to refuse a change to.
-func refuseRolesOnCreate(_ context.Context, _ db.Tx[db.Tenant], u *contracts.User) error {
+func refuseLifecycleOnCreate(_ context.Context, _ db.Tx[db.Tenant], u *contracts.User) error {
+	if u.Status == contracts.StatusPending {
+		return fmt.Errorf("%w: pending accounts must be created by the registration service", crud.ErrInvalid)
+	}
 	if len(u.Roles) == 0 {
 		return nil
 	}

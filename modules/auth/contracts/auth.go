@@ -347,7 +347,7 @@ type Service interface {
 	// Reissue is the other half, and it runs in the worker: look the address
 	// up, and if somebody active has it, mint a token and mail them the link.
 	//
-	// It answers nil for an address nobody has, for a deactivated user, for a
+	// It answers nil for an address nobody has, for a pending or deactivated user, for a
 	// composition that wired no mailer, and for a person who was sent one
 	// recently — every one of those is "no mail" and none of them is a failure
 	// the outbox should retry.

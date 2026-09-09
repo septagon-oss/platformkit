@@ -11,10 +11,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
-// RegisterRoutes mounts the three lifecycle commands on the same resource the
+// RegisterRoutes mounts the lifecycle commands on the same resource the
 // Spec mounts the five CRUD routes on.
 //
 // They are routes rather than fields of a PATCH because each is a rule about
@@ -68,6 +69,15 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 			}
 			return &rest.Item[*contracts.User]{Body: u}, nil
 		})
+
+	rest.Command(api, spec, "approve-registration",
+		"Approve a pending registration",
+		"Activates a pending account without changing its password or roles. Active accounts are unchanged; invitations and deactivated accounts cannot be approved.",
+		[]string{contracts.EventRegistrationApproved},
+		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.User, error) {
+			principal, _ := tenancy.PrincipalFrom(ctx)
+			return svc.ApproveRegistration(ctx, tx, id, principal.UserID)
+		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionRegistrationApprove)})
 
 	rest.Command(api, spec, "set-password",
 		"Set a user's password",

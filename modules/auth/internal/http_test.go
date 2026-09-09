@@ -102,6 +102,7 @@ func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration b
 		{Permission: contracts.PermissionRoleManage},
 		{Permission: usercontracts.PermissionUserRead},
 		{Permission: usercontracts.PermissionUserManage},
+		{Permission: usercontracts.PermissionRegistrationApprove},
 		{Permission: "tenant:manage", Operator: true},
 	})
 	authModule.Routes(api)

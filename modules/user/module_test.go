@@ -95,7 +95,11 @@ func call(t *testing.T, r http.Handler, method, path, body string) (int, string)
 func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 	router := mount(t)
 
-	code, body := call(t, router, http.MethodPost, at, `{"email":"ada@acme.test","roles":["admin"]}`)
+	code, body := call(t, router, http.MethodPost, at, `{"email":"pending@acme.test","status":"pending"}`)
+	if code != 422 {
+		t.Fatalf("generic create bypassed the pending registration command: %d", code)
+	}
+	code, body = call(t, router, http.MethodPost, at, `{"email":"ada@acme.test","roles":["admin"]}`)
 	if code != http.StatusUnprocessableEntity {
 		t.Errorf("creating a user with roles = %d %s, want 422", code, body)
 	}

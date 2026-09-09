@@ -28,6 +28,18 @@ accounts, including inactive accounts, and the shared mail-request limit bounds
 signup and password recovery together. Compositions without this dependency
 mount no registration endpoint.
 
+The user service also owns [pending registrations](modules/user/contracts/registration.go)
+for applications requiring operator approval. `RegisterPending` hashes a supplied
+password and stores application-chosen roles; it emits no invitation or password
+link. `PendingRegistrations` lists the tenant's pending accounts. The explicit
+`POST /api/v1/user/users/{id}/approve-registration` command requires
+`user:approve`, independently of password and role management,
+preserves credentials and roles, and records the approving principal. Password
+recovery, password changes and sign-in cannot activate pending accounts; status
+decisions share a row lock with deactivation. This service capability does not
+enable a public signup route or establish mailbox verification. A client still
+needs its registration policy, consent/confirmation validation and composed UI.
+
 A module has three parts. `contracts/` defines its entities, public service,
 events, permissions and conformance suite. `internal/` contains its
 implementation. `module.go` declares the constructor and manifest.

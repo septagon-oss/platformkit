@@ -66,8 +66,8 @@ func (f *Fake) SetPassword(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, 
 	if err != nil {
 		return err
 	}
-	if u.Status == contracts.StatusInactive {
-		return fmt.Errorf("%w: a deactivated user cannot be given a password", crud.ErrConflict)
+	if u.Status != contracts.StatusInvited && u.Status != contracts.StatusActive {
+		return fmt.Errorf("%w: only invited or active users can be given a password", crud.ErrConflict)
 	}
 	hash, err := contracts.HashPassword(password)
 	if err != nil {

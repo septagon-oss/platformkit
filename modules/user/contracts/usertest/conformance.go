@@ -5,6 +5,7 @@ package usertest
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -34,7 +35,9 @@ type Harness func(t *testing.T, run func(Fixture))
 // contracts.Service passes it, or it is not one.
 func RunService(t *testing.T, h Harness) {
 	t.Helper()
-	for name, run := range cases() {
+	all := cases()
+	maps.Copy(all, registrationCases())
+	for name, run := range all {
 		t.Run(name, func(t *testing.T) {
 			h(t, func(f Fixture) { run(t, f) })
 		})

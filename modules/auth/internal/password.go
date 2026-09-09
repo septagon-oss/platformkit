@@ -73,9 +73,8 @@ func (s *Service) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string
 		return nil
 	case err != nil:
 		return err
-	case user.Status == usercontracts.StatusInactive:
-		// A deactivated account is not one somebody may talk their way back
-		// into.
+	case user.Status != usercontracts.StatusInvited && user.Status != usercontracts.StatusActive:
+		// Recovery cannot bypass a required approval or restore a deactivated account.
 		return nil
 	}
 	return s.offer(ctx, tx, user, resetSubject, resetBody)

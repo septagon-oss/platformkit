@@ -48,12 +48,12 @@ func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displa
 // already had is still a password change, and a person who did it deliberately
 // has to see it in their own audit trail.
 func (s *Service) SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, password string) error {
-	u, err := crud.Get[*contracts.User](tx, id)
+	u, err := lockedUser(tx, id)
 	if err != nil {
 		return err
 	}
-	if u.Status == contracts.StatusInactive {
-		return fmt.Errorf("%w: a deactivated user cannot be given a password", crud.ErrConflict)
+	if u.Status != contracts.StatusInvited && u.Status != contracts.StatusActive {
+		return fmt.Errorf("%w: only invited or active users can be given a password", crud.ErrConflict)
 	}
 	hash, err := contracts.HashPassword(password)
 	if err != nil {
@@ -93,7 +93,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 
 // Deactivate stops the user signing in. Deactivating them again changes nothing.
 func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
-	u, err := crud.Get[*contracts.User](tx, id)
+	u, err := lockedUser(tx, id)
 	if err != nil {
 		return nil, err
 	}
