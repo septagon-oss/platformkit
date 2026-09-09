@@ -22,6 +22,19 @@ func HumaError(status int, message string, errs ...error) huma.StatusError {
 	if status < http.StatusInternalServerError {
 		p := New(status, message)
 		for _, err := range errs {
+			if field, ok := errors.AsType[interface {
+				error
+				huma.ErrorDetailer
+			}](err); ok {
+				detail := field.ErrorDetail()
+				text := detail.Message
+				if detail.Location != "" {
+					text = detail.Location + ": " + text
+				}
+				// Values can contain a password or an entire credential-bearing body.
+				p.Errors = append(p.Errors, text)
+				continue
+			}
 			if err != nil {
 				p.Errors = append(p.Errors, err.Error())
 			}

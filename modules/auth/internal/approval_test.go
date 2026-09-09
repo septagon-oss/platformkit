@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
@@ -19,12 +20,16 @@ import (
 )
 
 func TestPendingRegistrationCannotRecoverOrSignInBeforeApproval(t *testing.T) {
-	router, conn, auths := mount(t, auth.OIDC{})
+	_, conn := dbtest.Schema(t)
+	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup)
 	users := realUsers()
 	var pending *user.User
+	if res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, "pending@example.com", nil)); res.Code != http.StatusAccepted {
+		t.Fatalf("public registration = %d", res.Code)
+	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var err error
-		pending, err = users.RegisterPending(ctx, tx, user.PendingRegistration{Email: "pending@example.com", DisplayName: "Pending", Password: authtest.Password, Roles: []string{"member"}})
+		pending, err = users.ByEmail(ctx, tx, "pending@example.com")
 		return err
 	}); err != nil {
 		t.Fatal(err)

@@ -35,10 +35,15 @@ type Deps struct {
 	// uses.
 	Users contracts.Users
 
-	// Registration opts this composition into public member signup. A nil
-	// capability mounts no registration route or subscriber. Mailer and Hosts
-	// must be configured before registration requests can be accepted.
+	// Registration opts this composition into public member signup with emailed
+	// password setup. Mailer and Hosts must be configured before requests can
+	// be accepted. Without either registration capability, signup is disabled.
 	Registration contracts.RegistrationUsers
+
+	// ApprovalRegistration accepts a password, confirmation and terms consent
+	// and keeps the account pending for review. Initial roles are application
+	// defaults. It needs no mail delivery and cannot coexist with Registration.
+	ApprovalRegistration *contracts.ApprovalRegistration
 
 	// Notify is how somebody is told, inside the application, that a link was
 	// sent. It never carries the link: the notice points at /auth/reset and the
@@ -81,6 +86,16 @@ type Deps struct {
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
 func Module(deps Deps) (contracts.Auth, module.Module) {
+	if deps.ApprovalRegistration != nil {
+		if deps.Registration != nil {
+			panic("auth: choose emailed password setup or approval-required registration")
+		}
+		policy, err := deps.ApprovalRegistration.Checked()
+		if err != nil {
+			panic(err)
+		}
+		deps.ApprovalRegistration = &policy
+	}
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure,
@@ -131,6 +146,9 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			internal.RegisterRoutes(api, svc, cookies)
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(api, svc)
+			}
+			if deps.ApprovalRegistration != nil {
+				internal.RegisterApprovalRegistrationRoutes(api, svc, *deps.ApprovalRegistration)
 			}
 			if deps.OIDC.Issuer != "" {
 				internal.RegisterOIDCRoutes(api, svc, deps.Users,

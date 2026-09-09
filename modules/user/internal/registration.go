@@ -22,8 +22,21 @@ func (s *Service) RegisterPending(ctx context.Context, tx db.Tx[db.Tenant], in c
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
 	u.PasswordHash = hash
-	if err := crud.Create(ctx, tx, u); err != nil {
-		return nil, err
+	u.ID, u.TenantID = uuid.New(), db.TenantOf(tx).ID
+	// Match the partial expression index exactly. A duplicate is a no-op,
+	// not a SQL error that would poison the caller's acknowledgment transaction.
+	// Hashing happens for both new and existing addresses before this write;
+	// there is no account lookup and no credential update on conflict.
+	created := tx.DB().Clauses(clause.OnConflict{
+		Columns:     []clause.Column{{Name: "tenant_id"}, {Name: "lower(email)", Raw: true}},
+		TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Eq{Column: "deleted_at", Value: nil}}},
+		DoNothing:   true,
+	}).Create(u)
+	if created.Error != nil {
+		return nil, crud.Classify(created.Error)
+	}
+	if created.RowsAffected == 0 {
+		return nil, contracts.ErrRegistrationExists
 	}
 	// This is not an invitation: no password link may activate this account.
 	return u, events.Publish(ctx, tx, contracts.EventRegistrationPending, contracts.RegistrationPending{UserID: u.ID, At: db.Now()})

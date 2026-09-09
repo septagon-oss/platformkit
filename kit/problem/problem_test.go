@@ -75,6 +75,22 @@ func TestHumaErrorKeepsClientDetailAndHidesServerCause(t *testing.T) {
 	}
 }
 
+func TestValidationErrorsKeepLocationsWithoutEchoingRequestValues(t *testing.T) {
+	const password = "private registration passphrase"
+	for _, value := range []any{password, map[string]any{"password": password}} {
+		problem := problem.HumaError(422, "validation failed", &huma.ErrorDetail{
+			Message: "expected a string", Location: "body.password", Value: value,
+		})
+		body, err := json.Marshal(problem)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), password) || !strings.Contains(string(body), "body.password") || !strings.Contains(string(body), "expected a string") {
+			t.Fatal("validation must retain the field and explanation without repeating credentials")
+		}
+	}
+}
+
 // TestAServerErrorCarriesNoDetailAndAnUnknownStatusStillHasATitle. Repeating
 // the title in the detail says nothing the status has not said, and a body with
 // an empty title is not an RFC 9457 problem.

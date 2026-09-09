@@ -2,11 +2,18 @@ package contracts
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 )
+
+// ErrRegistrationExists is the only registration conflict that leaves the
+// transaction usable for a neutral public acknowledgment. The existing account
+// is unchanged. Other failures must abort the caller's transaction.
+var ErrRegistrationExists = fmt.Errorf("%w: this email address is already registered", crud.ErrConflict)
 
 // PendingRegistration is a trusted application command, not a public request
 // schema. The composing registrar validates consent and confirmation, chooses
@@ -27,7 +34,9 @@ type RegistrationPage struct {
 // user rows. It neither enables public signup nor claims mailbox verification.
 type Registrations interface {
 	// RegisterPending creates a pending account with a password and trusted
-	// roles. An existing email conflicts without changing that account.
+	// roles. An existing email returns ErrRegistrationExists without changing
+	// that account or aborting the transaction. Validation and hashing precede the insert on
+	// every attempt; it never reads an existing account to decide its response.
 	RegisterPending(context.Context, db.Tx[db.Tenant], PendingRegistration) (*User, error)
 	// PendingRegistrations lists oldest first, then by ID, with bounded offset
 	// pagination. Zero limit uses the standard default; invalid bounds fail.

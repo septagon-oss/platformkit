@@ -26,7 +26,7 @@ func (f *Fake) RegisterPending(ctx context.Context, _ db.Tx[db.Tenant], in contr
 	defer f.mu.Unlock()
 	for _, existing := range f.users {
 		if existing.Email == u.Email {
-			return nil, &crud.UniqueConflict{Constraint: "users_tenant_email"}
+			return nil, contracts.ErrRegistrationExists
 		}
 	}
 	u.ID, u.CreatedAt, u.UpdatedAt, u.PasswordHash = uuid.New(), db.Now(), db.Now(), hash

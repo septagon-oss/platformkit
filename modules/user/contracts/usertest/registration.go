@@ -103,9 +103,14 @@ func registrationCases() map[string]func(*testing.T, Fixture) {
 			if _, err := f.Service.Invite(f.Ctx, f.Tx, "ada@example.com", "Original"); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := f.Service.RegisterPending(f.Ctx, f.Tx, contracts.PendingRegistration{Email: "ADA@example.com", Password: good}); !errors.Is(err, crud.ErrConflict) {
+			if _, err := f.Service.RegisterPending(f.Ctx, f.Tx, contracts.PendingRegistration{Email: "ADA@example.com", Password: good}); !errors.Is(err, contracts.ErrRegistrationExists) || !errors.Is(err, crud.ErrConflict) {
 				t.Fatalf("duplicate pending registration = %v", err)
 			}
+			u, err := f.Service.ByEmail(f.Ctx, f.Tx, "ada@example.com")
+			if err != nil || u.DisplayName != "Original" || u.Status != contracts.StatusInvited || u.PasswordHash != "" {
+				t.Fatal("an email conflict aborted the transaction or changed the invitation")
+			}
+			published(t, f, contracts.EventInvited)
 		},
 	}
 }

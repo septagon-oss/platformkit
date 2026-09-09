@@ -25,8 +25,8 @@ tenant host lookup and email delivery. The public endpoint queues a request;
 auth's worker creates an invited member and the existing password-link flow
 verifies mailbox access. Callers cannot choose roles. Retries preserve existing
 accounts, including inactive accounts, and the shared mail-request limit bounds
-signup and password recovery together. Compositions without this dependency
-mount no registration endpoint.
+signup and password recovery together. Without an opt-in registration capability,
+no registration endpoint is mounted.
 
 The user service also owns [pending registrations](modules/user/contracts/registration.go)
 for applications requiring operator approval. `RegisterPending` hashes a supplied
@@ -37,8 +37,18 @@ link. `PendingRegistrations` lists the tenant's pending accounts. The explicit
 preserves credentials and roles, and records the approving principal. Password
 recovery, password changes and sign-in cannot activate pending accounts; status
 decisions share a row lock with deactivation. This service capability does not
-enable a public signup route or establish mailbox verification. A client still
-needs its registration policy, consent/confirmation validation and composed UI.
+establish mailbox verification.
+
+Compositions requiring review supply `auth.Deps.ApprovalRegistration` with the
+user registrar and trusted initial roles, instead of `Registration`. The same
+`POST /api/v1/auth/register` path then requires a full name, password, matching
+confirmation and accepted terms. It writes the pending account directly and
+returns the same acknowledgment for an existing email. Every attempt hashes
+the supplied password before one insertion attempt; no account lookup decides
+the public response. An email conflict leaves the transaction usable and cannot
+overwrite credentials or roles. Credentials never enter the event outbox.
+This mode shares the recovery request limit and needs no email delivery. A
+client still composes its terms guidance, pending-success page and review UI.
 
 A module has three parts. `contracts/` defines its entities, public service,
 events, permissions and conformance suite. `internal/` contains its

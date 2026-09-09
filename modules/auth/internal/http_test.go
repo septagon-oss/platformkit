@@ -75,7 +75,7 @@ func mountOn(t *testing.T, conn *db.Conn, oidc auth.OIDC) (chi.Router, *db.Conn,
 	return mountConfigured(t, conn, oidc, false)
 }
 
-func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration bool) (chi.Router, *db.Conn, contracts.Auth) {
+func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration bool, configure ...func(*auth.Deps)) (chi.Router, *db.Conn, contracts.Auth) {
 	t.Helper()
 	mailbox, notices = &authtest.Mailbox{}, &authtest.Notices{}
 	users, userModule := user.Module(user.Deps{})
@@ -83,10 +83,14 @@ func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration b
 	if registration {
 		registrar = users
 	}
-	svc, authModule := auth.Module(auth.Deps{
+	deps := auth.Deps{
 		Users: users, Notify: notices, Mailer: mailbox, Hosts: authtest.Host(host),
 		OIDC: oidc, PublicHost: host, Registration: registrar,
-	})
+	}
+	for _, change := range configure {
+		change(&deps)
+	}
+	svc, authModule := auth.Module(deps)
 	subs = authModule.Subscriptions
 	seed(t, conn, acme)
 
