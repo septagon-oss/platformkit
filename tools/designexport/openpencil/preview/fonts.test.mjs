@@ -16,6 +16,9 @@ assert.ok(!endpoint.username && !endpoint.password && !endpoint.search && !endpo
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const arrayBuffer = bytes => Uint8Array.from(bytes).buffer
 const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name === name)
+const descendants = (graph, node) => graph.getChildren(node.id).flatMap(child => [child, ...descendants(graph, child)])
+const definitionGeometry = (graph, node) => descendants(graph, node).filter(child => child.parentId === node.id || child.type === 'TEXT')
+  .map(child => [child.name, child.text, child.x, child.y, child.width, child.height])
 
 // Inspect actual editor-canvas pixels, not just text stored in the scene graph.
 // This fixture has one green button; its interior paint locates it without
@@ -103,7 +106,7 @@ func main() {
   const browser = await chromium.launch({ headless: true, channel: 'chromium', args: editorArgs })
   const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
   try {
-    const examples = ['pk-ui.component.button/primary', 'pk-ui.component.input/invalid']
+    const examples = ['pk-ui.component.button/primary', 'pk-ui.component.input/invalid', 'pk-ui.component.select/default']
     const { graph, placements, selections } = await buildComponentDocument(project({}), {
       examples, fonts, browser: comparison, renderer, viewport: { width: 320, height: 900 },
     })
@@ -114,7 +117,7 @@ func main() {
     let buffer = Buffer.from(await exportFigFile(graph)), previousPixels
     const baseline = await parseFigFile(arrayBuffer(buffer), { populate: 'all' })
     const definitions = [...baseline.getAllNodes()].filter(node => node.type === 'COMPONENT')
-      .map(node => [node.name, baseline.getChildren(node.id).map(child => [child.name, child.text, child.x, child.y, child.width, child.height])])
+      .map(node => [node.name, definitionGeometry(baseline, node)])
     for (let cycle = 0; cycle < 3; cycle++) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
       try {
@@ -175,8 +178,7 @@ func main() {
         for (const response of fontRequests) assert.equal(response.status(), 200)
         assert.deepEqual(errors, [])
         const reopened = await parseFigFile(arrayBuffer(buffer), { populate: 'all' })
-        for (const [name, children] of definitions) assert.deepEqual(reopened.getChildren(named(reopened, name).id)
-          .map(child => [child.name, child.text, child.x, child.y, child.width, child.height]), children)
+        for (const [name, children] of definitions) assert.deepEqual(definitionGeometry(reopened, named(reopened, name)), children)
         for (const metadata of parseFigBuffer(arrayBuffer(buffer)).nodeChanges.flatMap(node => node.derivedTextData?.fontMetaData ?? [])) {
           const face = fonts.find(face => face.family === metadata.key.family && face.weight === metadata.fontWeight)
           assert.ok(face, 'saved text must use one of the exact supplied faces')

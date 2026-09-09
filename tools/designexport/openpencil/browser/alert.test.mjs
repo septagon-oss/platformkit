@@ -6,6 +6,7 @@ import { createEditor } from '@open-pencil/core/editor'
 import { parseColor } from '@open-pencil/core/color'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { computeAllLayouts, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { buildComponentDocument } from '../document.mjs'
 import { buildFoundation } from '../foundation.mjs'
 import { materializeComponent } from '../components.mjs'
@@ -100,6 +101,17 @@ func main() {
       const original = structuredClone(snapshot)
       const protectedNodes = [...graph.getAllNodes()].filter(node => node.type === 'COMPONENT')
         .map(node => [node.name, descendants(graph, node).map(child => [child.name, child.text, child.x, child.y, child.width, child.height])])
+      const previous = getTextMeasurer()
+      try {
+        // Page population can run before the renderer can measure a face.
+        // Repeating unchanged layout must retain the imported label advances.
+        const pending = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+        const textGeometry = () => [...pending.getAllNodes()].filter(node => node.type === 'TEXT')
+          .map(node => [node.id, node.text, node.x, node.y, node.width, node.height])
+        const measured = textGeometry()
+        setTextMeasurer(() => null); computeAllLayouts(pending); computeAllLayouts(pending)
+        assert.deepEqual(textGeometry(), measured)
+      } finally { setTextMeasurer(previous) }
       const target = () => descendants(graph, placed(graph, 'fixture/validation')).find(node => origin(node)?.localId === 'error')
       const message = 'Please add a title before saving. '.repeat(4).trim()
       const editor = createEditor({ graph }); editor.setCanvasKit(ck, renderer)
