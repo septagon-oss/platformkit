@@ -437,6 +437,21 @@ HTTP origin as secure. Saves load unopened pages without replay; tree navigation
 no canvas nudges. OS pickers, hardware GPUs and full accessibility remain unverified.
 No document, WebGPU assets or product fonts are packaged; PWA registration is disabled.
 
+The Dockerfile's explicit `--target preview` adds the four licensed IBM Plex Sans
+verification faces through the SDK's existing bundled-font loader and picker.
+They load from the same editor origin, including tailnet HTTP, without local-font
+permission or desktop-only providers. The default `editor` target stays generic.
+The builder also accepts repeated `--font FAMILY WEIGHT STYLE /absolute/file`
+and one `--font-license /absolute/notice` for another caller-owned static profile.
+Shared font validation rejects false identities and duplicate faces; packaging
+refuses replacement of SDK faces. `platformkit-provenance.json` records supplied
+face hashes, asset paths and the included license. This is font delivery, not a
+Collect typography decision or evidence that another profile matches its source.
+Against a disposable `preview` target, run
+`PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18090 node --import ./register.mjs --test preview/*.test.mjs`.
+This checks automatic font loading without local permission, visible button/field
+glyphs and alignment, exact font digests and two browser worker saves/reopens.
+
 Native properties and FIG override paths retain links through reflow and undo;
 repeated saves merge overrides by path. Low-level property fixtures use a
 deterministic measurer, while component comparisons use the supplied real fonts.

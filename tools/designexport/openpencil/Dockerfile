@@ -1,7 +1,7 @@
 # Build from the repository root. This produces a generic editor, not a Collect
 # document, a published image or a staging deployment.
 FROM oven/bun:1.3.10@sha256:b86c67b531d87b4db11470d9b2bd0c519b1976eee6fcd71634e73abfa6230d2e AS bun
-FROM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS build
+FROM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS build-inputs
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /upstream
 ADD --checksum=sha256:68f86e1f807f35847b9453a7049b3d59375c4eef441a4afffc215a24c843a409 https://codeload.github.com/open-pencil/open-pencil/tar.gz/c29654cd07ac46b53e76c16b18505919f16571be /tmp/upstream.tar.gz
@@ -15,6 +15,7 @@ WORKDIR /adapter
 COPY tools/designexport/openpencil/package.json tools/designexport/openpencil/package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY tools/designexport/openpencil/*-correction.mjs tools/designexport/openpencil/corrections.mjs tools/designexport/openpencil/build-editor.mjs ./
+COPY tools/designexport/openpencil/editor-fonts.mjs tools/designexport/openpencil/fonts.mjs ./
 COPY tools/designexport/openpencil/variable-color.mjs tools/designexport/openpencil/color-expression.mjs tools/designexport/openpencil/computed-color.mjs ./
 COPY tools/designexport/openpencil/Dockerfile tools/designexport/openpencil/nginx.conf LICENSE NOTICE ./
 WORKDIR /upstream
@@ -25,10 +26,25 @@ ADD --chmod=0644 --checksum=sha256:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17
 # format 0.2.2 names MIT in its manifest and README; its maintainer supplied
 # the complete license file in this later, attribution-only source revision.
 ADD --chmod=0644 --checksum=sha256:0b2c94863590ca2aed327e89642b7e74b1608ec423bfec1d8f1beba2945fc4ba https://raw.githubusercontent.com/samsonjs/format/91b6bd78af9b061c90010b86d83caa051edeb1ea/License.md /upstream/public/licenses/format-LICENSE
+FROM build-inputs AS build
 RUN node /adapter/build-editor.mjs /upstream
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
-COPY --from=build /upstream/dist/ /usr/share/nginx/html/
+FROM build-inputs AS preview-build
+# An explicit verification profile, not a generic-editor or client-brand default.
+RUN node /adapter/build-editor.mjs /upstream \
+    --font 'IBM Plex Sans' 400 normal /adapter/node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff \
+    --font 'IBM Plex Sans' 500 normal /adapter/node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-500-normal.woff \
+    --font 'IBM Plex Sans' 600 normal /adapter/node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff \
+    --font 'IBM Plex Sans' 700 normal /adapter/node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-700-normal.woff \
+    --font-license /adapter/node_modules/@fontsource/ibm-plex-sans/LICENSE
+
+FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6 AS runtime
 COPY tools/designexport/openpencil/nginx.conf /etc/nginx/conf.d/default.conf
 USER 101:101
 EXPOSE 8080
+
+FROM runtime AS preview
+COPY --from=preview-build /upstream/dist/ /usr/share/nginx/html/
+
+FROM runtime AS editor
+COPY --from=build /upstream/dist/ /usr/share/nginx/html/
