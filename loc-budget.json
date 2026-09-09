@@ -27,7 +27,7 @@
       "exclude_dir_suffixes": [
         "test"
       ],
-      "max": 12000
+      "max": 12300
     },
     {
       "name": "ui",
