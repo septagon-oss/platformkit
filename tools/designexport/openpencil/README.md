@@ -141,6 +141,9 @@ npx playwright install --with-deps chromium
 npm run test:browser
 ```
 
+Browser files run with two workers; each owns Chromium and native rendering.
+This bounds test resource use independently of the host CPU count.
+
 The first command downloads a browser and may install system dependencies.
 CI runs these checks alongside the native suite and `make e2e`.
 
