@@ -180,6 +180,7 @@ export async function captureExample(browser, snapshot, exampleId, {
         'font-synthesis-weight', 'font-synthesis-style',
         'font-feature-settings', 'font-variation-settings', 'font-variant-numeric', 'line-height', 'letter-spacing', 'aspect-ratio',
         'white-space', 'text-align', 'text-transform', 'text-decoration-line',
+        'overflow-wrap', 'word-break', 'line-break', 'hyphens', 'text-wrap-style',
         'text-indent', 'text-shadow', 'word-spacing', 'writing-mode', 'direction',
         'overflow-x', 'overflow-y', 'outline-style', 'outline-width', 'outline-color',
         'animation-name', 'animation-duration', 'filter',

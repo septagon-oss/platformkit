@@ -89,7 +89,11 @@ export function planSourceGrid(node) {
     const align = axis => {
       const value = child.style[`${axis}-self`] === 'auto' ? style[`${axis}-items`] : child.style[`${axis}-self`]
       requireGrid(['normal', 'stretch', 'start'].includes(value), 'cell alignment is unsupported')
-      return value !== 'start'
+      // Normal block-axis sizing preserves a preferred aspect ratio; it is
+      // not an instruction to stretch the cell to the row's eventual height.
+      // https://drafts.csswg.org/css-grid-2/#grid-item-sizing
+      const ratio = child.style['aspect-ratio'] && child.style['aspect-ratio'] !== 'auto'
+      return value !== 'start' && !(axis === 'align' && value === 'normal' && ratio)
     }
     const column = placement(child.style, 'column', columns.length), row = placement(child.style, 'row', rows.length)
     requireGrid(child.sizing['min-width'] === 'auto' && child.sizing['min-height'] === 'auto',

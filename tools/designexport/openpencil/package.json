@@ -10,6 +10,7 @@
     "test:stock": "node --test native.test.mjs"
   },
   "dependencies": {
+    "@cto.af/linebreak": "4.0.3",
     "@open-pencil/core": "0.14.0",
     "@open-pencil/fig": "0.14.0",
     "@open-pencil/scene-graph": "0.14.0",

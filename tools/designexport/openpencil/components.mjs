@@ -510,7 +510,12 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       requireComponent(style['white-space'] === 'normal' && alignment &&
         style['overflow-x'] === 'visible' && style['overflow-y'] === 'visible',
       'text blocks require normal wrapping, supported alignment and visible overflow')
+      requireComponent(['overflow-wrap', 'word-break'].every(key => style[key] === 'normal') &&
+        style['line-break'] === 'auto' && style.hyphens === 'manual' && style['text-wrap-style'] === 'auto',
+      'text blocks require ordinary Unicode line breaking without automatic hyphenation or balancing')
       const value = text(node.children[0], node, { wrapping: true })
+      value.textWrap = 'normal-v1'
+      value.native.textDirection = 'LTR'
       value.native.textAlignHorizontal = alignment
       value.native.width = node.bounds.width - native.paddingLeft - native.paddingRight
       value.native.height = value.region.rects.length * value.native.lineHeight
@@ -689,6 +694,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
       pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
         schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
+        ...(current.textWrap ? { textWrap: current.textWrap } : {}),
       }),
     }] : []
     const node = createPaintedNode(graph, current.kind === 'text' ? 'TEXT' : 'FRAME', parent.id, { ...current.native, ...current.placement, pluginData }, pending)

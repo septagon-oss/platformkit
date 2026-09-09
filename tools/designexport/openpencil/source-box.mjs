@@ -29,6 +29,25 @@ export function sourceAspectRatio(graph, node) {
     ['FIXED', 'FILL'].includes(widthSizing) ? box.aspectRatio : undefined
 }
 
+// Width-led CSS ratios use 1/64px layout units before the parent measures its
+// rows. Quantizing only the final frame leaves cumulative row heights wrong.
+// Walk the same child order as buildYogaTree; detached leaves have no children.
+export function settleSourceAspectRatios(graph, node, yogaNode) {
+  let changed = false
+  const ratio = sourceAspectRatio(graph, node)
+  if (ratio !== undefined && node.visible) {
+    const height = Math.floor(Math.floor(yogaNode.getComputedWidth() * 64) / ratio) / 64
+    if (height !== yogaNode.getComputedHeight()) {
+      yogaNode.setHeight(height)
+      changed = true
+    }
+  }
+  for (let i = 0; i < yogaNode.getChildCount(); i++) {
+    if (settleSourceAspectRatios(graph, graph.getChildren(node.id)[i], yogaNode.getChild(i))) changed = true
+  }
+  return changed
+}
+
 export function clipSourceOverflow(r, canvas, graph, node) {
   const box = sourceLayoutRecord(graph, node)?.cssBox, borders = box?.overflow
   if (box?.version !== 1 || !Array.isArray(borders) || borders.length !== 4 || !borders.every(value => Number.isFinite(value) && value >= 0)) return false

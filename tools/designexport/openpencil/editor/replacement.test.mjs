@@ -11,7 +11,7 @@ import { chromium } from 'playwright'
 import { expect } from 'playwright/test'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { SceneGraph } from '@open-pencil/scene-graph'
-import { computeLayout } from '@open-pencil/core/layout'
+import { computeLayout, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { parseFigBuffer } from '@open-pencil/fig'
@@ -21,7 +21,7 @@ import { materializeComponent } from '../components.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from '../browser/capture.mjs'
-import { sourceFixture } from '../browser/fixtures.test.mjs'
+import { sourceFixture, exportCore } from '../browser/fixtures.test.mjs'
 
 const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL)
 assert.ok(endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', 'openpencil'].includes(endpoint.hostname),
@@ -31,6 +31,7 @@ assert.ok(!endpoint.username && !endpoint.password && !endpoint.search && !endpo
 const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name === name)
 const masterOf = (graph, name) => [...graph.getAllNodes()].find(node => node.type === 'COMPONENT' && node.name === name)
 const figBuffer = bytes => Uint8Array.from(bytes).buffer
+const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const browserArgs = ['--enable-automation', '--font-render-hinting=none', '--use-gl=angle',
   '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-blink-features=FileSystemAccessLocal',
   // Full Chromium honors this CI-only HTTP secure-context test exception
@@ -138,10 +139,14 @@ async function verifyBuild() {
   const notices = await (await fetch(new URL('/licenses/PlatformKit-NOTICE', endpoint))).text()
   assert.equal(notices, readFileSync(new URL('../../../../NOTICE', import.meta.url), 'utf8'), 'shipped notices match the source')
   assert.ok(notices.includes('Blink border geometry — BSD 3-Clause\n\nCopyright (C) 2013 Google Inc.'))
+  for (const [file, digest] of [
+    ['UnicodeTrie-LICENSE', 'e59138ecbc0b770010b0781905e2bcc181e4f0735494c58fd9681b24f0246187'],
+    ['Unicode-LICENSE', 'e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96'],
+  ]) assert.equal(hash(new Uint8Array(await (await fetch(new URL(`/licenses/${file}`, endpoint))).arrayBuffer())), digest)
   assert.equal(provenance.scope, 'generic-editor-without-packaged-design')
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
-    'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
+    'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
     'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
@@ -150,6 +155,53 @@ async function verifyBuild() {
     assert.equal(createHash('sha256').update(readFileSync(new URL(path, import.meta.url))).digest('hex'), digest, name)
   }
 }
+
+test('oversized source words remain editable through keyboard history and two browser worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const id = 'pk-ui.component.text/muted', snapshot = exportCore(['--example', id, '--props'], { content: 'Album', size: 'base' })
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1)), previous = getTextMeasurer()
+  try {
+    const fonts = editorFontFixtures.filter(face => face.weight === 400).map(({ weight, bytes }) =>
+      ({ family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: hash(bytes) }))
+    const { graph, selections } = await buildComponentDocument(snapshot, {
+      examples: [id], fonts, browser, renderer, viewport: { width: 320, height: 900 },
+    })
+    const instance = selections[0].instance
+    setTextMeasurer((node, width) => renderer.measureTextNode(node, width))
+    graph.updateNode(instance.id, { name: 'Wrapping paragraph', width: 41.328125 })
+    computeLayout(graph, instance.id)
+    let buffer = Buffer.from(await exportFigFile(graph)), previousValue = 'Album'
+    const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+    const definition = chain(baseline, named(baseline, 'Wrapping paragraph'), 'componentId').at(-1)
+    const untouched = geometry(baseline, definition)
+    for (const [value, height] of [['The people and places we remember together.', 168], ['Album', 24]]) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, 'source-wrapping.fig')
+        await page.getByRole('button', { name: 'Editable source instances', exact: true }).click()
+        await page.getByRole('treeitem', { name: 'Editable source instances Lock Hide', exact: true }).click()
+        await page.keyboard.press('ArrowRight')
+        const layer = page.getByRole('treeitem', { name: 'Wrapping paragraph Lock Hide', exact: true })
+        await layer.click()
+        const control = page.getByRole('textbox', { name: 'content', exact: true })
+        await expect(control).toHaveValue(previousValue)
+        await control.fill(value); await control.press('Tab'); await layer.click()
+        assert.deepEqual(errors, [], 'canvas painting and property edits complete without runtime errors')
+        await page.keyboard.press('Control+z'); await expect(control).toHaveValue(previousValue)
+        await page.keyboard.press('Control+Shift+z'); await expect(control).toHaveValue(value)
+        buffer = await saveDocument(page, errors, workers)
+        const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' }), placed = named(reopened, 'Wrapping paragraph')
+        assert.equal(placed.width, 41.328125)
+        assert.equal(placed.height, height)
+        assert.equal(reopened.getChildren(placed.id)[0].text, value)
+        assert.deepEqual(geometry(reopened, chain(reopened, placed, 'componentId').at(-1)), untouched)
+        assert.deepEqual(errors, [])
+        previousValue = value
+      } finally { await context.close() }
+    }
+  } finally { renderer.destroy(); setTextMeasurer(previous); await browser.close() }
+})
 
 test('native variant choices retain empty, reserved-looking and exact values through keyboard history and worker saves', { timeout: 120000 }, async () => {
   await verifyBuild()
@@ -709,7 +761,6 @@ for (const [field, choices, editFamilyCopy = true, dashed = false, centered = fa
 ])
 test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves: editFamilyCopy=${editFamilyCopy}, dashed=${dashed}, centered=${centered}`, { timeout: 120000 }, async t => {
   await verifyBuild()
-  const hash = bytes => createHash('sha256').update(bytes).digest('hex')
   const exportSource = await sourceFixture(t, `package main
 import (
   "encoding/json"

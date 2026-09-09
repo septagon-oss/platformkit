@@ -222,6 +222,12 @@ export const corrections = Object.freeze({
     transform(source, replace) {
       const helper = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
       source = `import { ownSourceLayoutScope } from ${JSON.stringify(helper)};\n` + source
+      source = `import { sourceParagraph, drawSourceParagraph } from ${JSON.stringify(fileURLToPath(new URL('./paragraph-correction.mjs', import.meta.url)))};\n` + source
+      source = replace(source, 'function buildParagraph(r, node, color, { halfLeading = false } = {}) {',
+        'function buildParagraph(r, node, color, options) {\n' +
+        '\treturn sourceParagraph(node, value => buildNativeParagraph(r, value, color, options));\n}\n' +
+        'function buildNativeParagraph(r, node, color, { halfLeading = false } = {}) {')
+      source = replace(source, 'recCanvas.drawParagraph(paragraph, 0, 0);', 'drawSourceParagraph(recCanvas, paragraph, 0, 0);')
       // Source paragraph line breaks use fractional CSS widths. CanvasKit's
       // rounding hack changes those widths; native documents keep their default.
       source = replace(source, 'const paraStyle = new ck.ParagraphStyle({',
@@ -242,7 +248,11 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/canvas/scene.js': {
     sha256: '7d935160fff2f7ac19a6ef55bf05e920e813b880012251063027078370757123',
-    transform: (source, replace) => correctSourceOverflow(correctCSSBorders(source, replace), replace),
+    transform(source, replace) {
+      source = `import { drawSourceParagraph } from ${JSON.stringify(fileURLToPath(new URL('./paragraph-correction.mjs', import.meta.url)))};\n` + source
+      source = source.replaceAll('canvas.drawParagraph(paragraph, 0, paragraphY);', 'drawSourceParagraph(canvas, paragraph, 0, paragraphY);')
+      return correctSourceOverflow(correctCSSBorders(source, replace), replace)
+    },
   },
   '@open-pencil/core/dist/canvas/strokes.js': {
     sha256: '8da58e7799f04db7dcf301b7033d4c113627e148e26f9c75b3533dfff1e7dc31',

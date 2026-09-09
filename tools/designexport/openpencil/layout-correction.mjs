@@ -15,7 +15,7 @@ export function ownSourceLayoutScope(node) {
   return ownSourceLayoutRecord(node)?.scope
 }
 
-function ownSourceLayoutRecord(node) {
+export function ownSourceLayoutRecord(node) {
   if (!Array.isArray(node?.pluginData)) return
   const entries = node.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
   if (entries.length !== 1) return
@@ -42,7 +42,7 @@ export function editedSourceLayout(graph, frame) {
 // Layout owns temporary Yoga objects. Release them at that boundary even when
 // measurement or nested layout throws.
 export function correctLayout(source, replace) {
-  source = `import { sourceAspectRatio } from ${JSON.stringify(fileURLToPath(new URL('./source-box.mjs', import.meta.url)))};\n` + source
+  source = `import { sourceAspectRatio, settleSourceAspectRatios } from ${JSON.stringify(fileURLToPath(new URL('./source-box.mjs', import.meta.url)))};\n` + source
   source = `import { sourceLayoutScope, sourceCompositionLayout, editedSourceLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   // A child laid out independently still uses its parent-resolved fill size.
   // Parent layout remains responsible for assigning that size on the next pass.
@@ -158,6 +158,7 @@ function computeLayoutMeasured(graph, frameId) {`)
     String.raw`
   try {
     yogaRoot.calculateLayout(void 0, void 0, yogaDirection);
+    if (settleSourceAspectRatios(graph, frame, yogaRoot)) yogaRoot.calculateLayout(void 0, void 0, yogaDirection);
     applyYogaLayout(graph, frame, yogaRoot, computeLayoutInternal);
   } finally {
     freeYogaTree(yogaRoot);

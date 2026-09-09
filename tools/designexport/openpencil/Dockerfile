@@ -26,6 +26,10 @@ ADD --chmod=0644 --checksum=sha256:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17
 # format 0.2.2 names MIT in its manifest and README; its maintainer supplied
 # the complete license file in this later, attribution-only source revision.
 ADD --chmod=0644 --checksum=sha256:0b2c94863590ca2aed327e89642b7e74b1608ec423bfec1d8f1beba2945fc4ba https://raw.githubusercontent.com/samsonjs/format/91b6bd78af9b061c90010b86d83caa051edeb1ea/License.md /upstream/public/licenses/format-LICENSE
+# The Unicode trie runtime omits its root license from npm. Keep that exact
+# revision's notice and the Unicode data notice beside the bundled line breaker.
+ADD --chmod=0644 --checksum=sha256:e59138ecbc0b770010b0781905e2bcc181e4f0735494c58fd9681b24f0246187 https://raw.githubusercontent.com/cto-af/unicode-trie/e82d02e5c6f6e5d6e6d66bd75ac0bb2cb397abef/LICENSE /upstream/public/licenses/UnicodeTrie-LICENSE
+ADD --chmod=0644 --checksum=sha256:e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96 https://www.unicode.org/license.txt /upstream/public/licenses/Unicode-LICENSE
 FROM build-inputs AS build
 RUN node /adapter/build-editor.mjs /upstream
 

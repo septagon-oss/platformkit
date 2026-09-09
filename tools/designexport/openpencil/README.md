@@ -272,10 +272,10 @@ LFs, blank lines, clearing and measured edits survive two saves; failures roll b
 Text-property fields accept Enter for newlines and Ctrl+Enter to commit.
 Caret scrolling, scrollbars, manual resizing and textarea controllers are not modeled.
 Single-line labels retain required markers after edits and saves; only label/value bind. Multiline labels remain unverified.
-Text binds `content` inside its wrapping block. Light/dark 320px and 1280px Heading
-checks cover start/center/end line alignment, advances, property history and two saves.
-The editor checks centered paragraph edits and downloads; reopened Text reflows.
-Overlong words can wrap differently from CSS; container-resize history is unverified.
+Text binds `content` to one editable paragraph. [Source wrapping](paragraph-correction.mjs)
+keeps oversized words intact; tests cover alignment, Unicode offsets, selection, painting,
+property history and two saves. Controls and unmarked native text retain their own policy.
+Hyphenation, dictionary-based breaking and paragraph container-resize history remain unverified.
 Captured horizontal Flex rows wrap linked children with CSS minimum gaps and
 start/center/end/space-between alignment. Constructor-based checks cover both themes,
 320/390/1280px reflow, label history, isolation and two saves. A separate linked-box
