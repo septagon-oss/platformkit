@@ -142,7 +142,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
-    'scaling-correction.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -397,6 +397,65 @@ test('derived native colors follow keyboard palette edits and survive two browse
         const value = reopened.resolveVariable(next.id)
         assert.deepEqual(value, { r: .25 + .75 * Math.fround(1 / 255), g: .25, b: .25, a: 1 })
         assert.equal(named(reopened, 'Token instance').componentId, named(reopened, 'Token master').id)
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
+test('source absolute placements follow editor resizing, history and two worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), pageNode = graph.getPages()[0]
+  const provenance = record => [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+    schema: 'platformkit.design-export.v1', scope: 'source-composition-layout', ...record,
+  }) }]
+  const badge = graph.createNode('COMPONENT', pageNode.id, { name: 'Reusable positioned content', width: 80, height: 32 })
+  const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Positioning master', width: 320, height: 160,
+    layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED', pluginData: provenance({}) })
+  for (const [horizontal, vertical] of [['left', 'top'], ['right', 'top'], ['left', 'bottom'], ['right', 'bottom']]) {
+    const wrapper = graph.createNode('FRAME', master.id, { name: `${horizontal} ${vertical}`, width: 80, height: 32,
+      layoutMode: 'VERTICAL', primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED', layoutPositioning: 'ABSOLUTE',
+      horizontalConstraint: horizontal === 'left' ? 'MIN' : 'MAX', verticalConstraint: vertical === 'top' ? 'MIN' : 'MAX',
+      pluginData: provenance({ cssPosition: { version: 1, horizontal: { edge: horizontal, inset: 12.25 },
+        vertical: { edge: vertical, inset: 2.5 } } }) })
+    graph.createInstance(badge.id, wrapper.id)
+  }
+  computeLayout(graph, master.id)
+  graph.createInstance(master.id, pageNode.id, { name: 'Edited positioning', x: 20, y: 220 })
+  graph.createInstance(master.id, pageNode.id, { name: 'Untouched positioning', x: 500, y: 220 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Reusable positioned content', 'Positioning master', 'Untouched positioning'].map(name => [name, geometry(baseline, named(baseline, name))])
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `positioning-${cycle}.fig`)
+        const selected = page.getByRole('treeitem', { name: 'Edited positioning Lock Hide', exact: true })
+        await selected.click()
+        const width = page.getByRole('spinbutton', { name: 'Width', exact: true }), previous = cycle === 1 ? 321 : 320
+        await expect(width).toHaveAttribute('aria-valuenow', String(previous))
+        if (cycle < 2) {
+          await width.focus(); await width.press(cycle === 0 ? 'ArrowUp' : 'ArrowDown')
+          await selected.click(); await page.keyboard.press('Control+z')
+          await expect(width).toHaveAttribute('aria-valuenow', String(previous))
+          await page.keyboard.press('Control+Shift+z')
+          const next = cycle === 0 ? 321 : 320
+          await expect(width).toHaveAttribute('aria-valuenow', String(next))
+          buffer = await saveDocument(page, errors, workers)
+          const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' }), edited = named(reopened, 'Edited positioning')
+          assert.deepEqual([edited.x, edited.y, edited.width, edited.height], [20, 220, next, 160])
+          for (const wrapper of reopened.getChildren(edited.id)) {
+            const [horizontal, vertical] = wrapper.name.split(' ')
+            assert.deepEqual([wrapper.x, wrapper.y, wrapper.width, wrapper.height],
+              [horizontal === 'left' ? 12.25 : next - 92.25, vertical === 'top' ? 2.5 : 125.5, 80, 32])
+            assert.equal(chain(reopened, reopened.getChildren(wrapper.id)[0], 'componentId').at(-1).name, 'Reusable positioned content')
+          }
+          for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
         assert.deepEqual(errors, [])
       } finally { await context.close() }
     }

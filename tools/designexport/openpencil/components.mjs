@@ -5,6 +5,7 @@ import { planIcon } from './icon-composition.mjs'
 import { computedColor as color } from './computed-color.mjs'
 import { observedPaint, sameColor, createPaintedNode, bindPaintExpressions } from './component-paints.mjs'
 import { planSourceGrid } from './source-grid.mjs'
+import { planSourceAbsolute } from './source-positioning.mjs'
 import { cssDashIntervals } from './border-correction.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
@@ -81,7 +82,7 @@ function matchesTextFace(face, observed, style, environment) {
 function planPresentation(node, paintFor, parentLayout = null) {
   const style = node.style
   requirePlainText(style)
-  requireComponent(['static', 'relative'].includes(style.position) && style.visibility === 'visible' &&
+  requireComponent((['static', 'relative'].includes(style.position) || style.position === 'absolute' && parentLayout === 'absolute') && style.visibility === 'visible' &&
     style.transform === 'none' && style.filter === 'none' && style['background-image'] === 'none' &&
     style['animation-name'] === 'none', 'positioning, filters, effects or motion require further conversion')
   requireComponent(['none', 'hidden'].includes(style['outline-style']) || pixels(style['outline-width']) === 0 ||
@@ -440,7 +441,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       return { kind: 'icon', observation: node,
         icon: planIcon(graph, assets[0], node, targets[0].master, collection.id, paintFor) }
     }
-    if (occurrence && ['flex', 'inline-flex'].includes(node.style.display) &&
+    if (occurrence && ['flex', 'inline-flex'].includes(node.style.display) && node.sizing.width === 'auto' && node.sizing.height === 'auto' &&
       node.children.every(child => ['text', 'slot'].includes(child.kind))) {
       return { kind: 'component', occurrence, observation: node, textRow: true }
     }
@@ -556,7 +557,21 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       requireComponent(justify && align, 'composition alignment requires further conversion')
       const vertical = style['flex-direction'] === 'column'
       const gap = axis => style[`${axis}-gap`] === 'normal' ? 0 : pixels(style[`${axis}-gap`])
+      const firstAbsolute = node.children.findIndex(child => child.style?.position === 'absolute')
+      requireComponent(firstAbsolute < 0 || node.children.slice(firstAbsolute).every(child => child.style?.position === 'absolute'),
+        'positioned paint order requires trailing absolute children')
+      requireComponent(firstAbsolute < 0 || node.children.every(child => child.style?.['z-index'] === 'auto'),
+        'positioned paint order requires unstacked siblings')
       const children = node.children.map(child => {
+        if (child.style?.position === 'absolute') {
+          const position = planSourceAbsolute(child, node)
+          const content = element(child, owner, false, 'absolute')
+          return { kind: 'frame', positioned: true, observation: child, children: [content], native: {
+            name: 'Source absolute placement', ...position, fills: [],
+            layoutMode: 'VERTICAL', primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED',
+            primaryAxisAlign: 'MIN', counterAxisAlign: 'MIN',
+          } }
+        }
         const content = element(child, owner, false, 'flex')
         const [top, right, bottom, left] = ['top', 'right', 'bottom', 'left'].map(side => pixels(child.style[`margin-${side}`]))
         if (![top, right, bottom, left].some(Boolean)) return content
@@ -584,6 +599,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         counterAxisSpacing: gap(vertical ? 'column' : 'row'), ...native,
       } }
       for (const child of plan.children) {
+        if (child.positioned) continue
         const childStyle = child.observation.style
         if (!vertical && child.blockFlow) {
           requireComponent(wrapping && child.observation.sizing.width === 'auto',
@@ -659,7 +675,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       return node
     }
     // Private paragraphs and inline runs share linked Text's source-owned layout.
-    const pluginData = current.blockFlow || current.textBlock || current.wrapping || current.inline || parentPlan?.inline ||
+    const pluginData = current.positioned || current.blockFlow || current.textBlock || current.wrapping || current.inline || parentPlan?.inline ||
       ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
       pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
         schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',

@@ -163,7 +163,8 @@ export async function captureExample(browser, snapshot, exampleId, {
       globalThis.__platformkitCaptureTextNodes = []
       const elements = []
       const properties = [
-        'display', 'visibility', 'opacity', 'position', 'transform', 'box-sizing', 'float', 'clear', 'column-count', 'column-width',
+        'display', 'visibility', 'opacity', 'position', 'transform', 'translate', 'rotate', 'scale', 'zoom', 'z-index',
+        'box-sizing', 'float', 'clear', 'column-count', 'column-width',
         'color', 'background-color', 'background-image', 'box-shadow', 'appearance',
         'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
         'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
@@ -264,7 +265,7 @@ export async function captureExample(browser, snapshot, exampleId, {
           kind: 'element', observationId: id, tag: node.localName,
           component: node.getAttribute('data-component'),
           bounds: bounds(node.getBoundingClientRect()), style: computed,
-          sizing: Object.fromEntries(['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
+          sizing: Object.fromEntries(['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height', 'top', 'right', 'bottom', 'left',
             'grid-template-columns', 'grid-template-rows', 'grid-auto-columns', 'grid-auto-rows']
             .map(key => [key, typed.get(key)?.toString() ?? ''])),
           children: [],

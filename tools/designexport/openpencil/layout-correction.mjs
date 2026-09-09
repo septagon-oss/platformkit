@@ -154,12 +154,14 @@ function computeLayoutMeasured(graph, frameId) {`)
 }
 
 export function correctLayoutApply(source, replace) {
+  source = `import { applySourceAbsolute } from ${JSON.stringify(fileURLToPath(new URL('./source-positioning.mjs', import.meta.url)))};\n` + source
   source = `import { editedSourceLayout, sourceCompositionLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   source = replace(source, 'function preservesImportedHugCrossSize(graph, frame, axis) {',
     'function preservesImportedHugCrossSize(graph, frame, axis) {\n' +
     '\tif (sourceCompositionLayout(graph, frame) && !frame.figmaDerivedLayout) return false;')
   source = replace(source, 'if (preservesImportedInstanceInternals(child)) continue;',
-    'if (preservesImportedInstanceInternals(child) && !(sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout)) continue;')
+    'if (applySourceAbsolute(graph, frame, child, computeLayout)) continue;\n' +
+    '\t\tif (preservesImportedInstanceInternals(child) && !(sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout)) continue;')
   return replace(source,
     'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId);',
     'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId) && !editedSourceLayout(graph, graph.getNode(child.parentId));')

@@ -9,6 +9,7 @@ import { correctGridLayout, correctGridApply, correctGridTrackMapping } from './
 import { correctGridNodeChange, correctGridImport, correctGridOverrides, correctGridActions } from './grid-fig-correction.mjs'
 import { correctVariantActions, correctVariantImport, correctVariantNodeChange } from './variant-correction.mjs'
 import { correctCSSBorders } from './border-correction.mjs'
+import { correctSourcePositionActions, correctSourcePositionImport, correctSourcePositionGraph } from './source-positioning.mjs'
 
 // Source hashes pin the exact upstream implementation, not just its version
 // label. A dependency upgrade requires a new review and the conformance suite.
@@ -17,8 +18,11 @@ const colorHelper = JSON.stringify(fileURLToPath(new URL('./variable-color.mjs',
 export const corrections = Object.freeze({
   '@open-pencil/fig/dist/node-change2.js': {
     sha256: 'bdbb599d70a5cf92300c67c385ee0d269550d4eea9c637f608d85fa321e63ee7',
-    transform: (source, replace) => correctVariantNodeChange(correctGridNodeChange(correctScaleNodeChange(correctExporter(source, replace), replace), replace), replace) +
-      '\nexport { serializeVariableModes, extractComponentPropertyAssignments };\n',
+    transform: (source, replace) => {
+      source = correctVariantNodeChange(correctGridNodeChange(correctScaleNodeChange(correctExporter(source, replace), replace), replace), replace)
+      return `import { sourceAbsoluteRecord } from ${JSON.stringify(fileURLToPath(new URL('./source-positioning.mjs', import.meta.url)))};\n` +
+        source + '\nexport { serializeVariableModes, extractComponentPropertyAssignments };\n'
+    },
   },
   '@open-pencil/fig/dist/node-change.js': {
     sha256: 'c468a330820b16cbe552b70d7090b30a014477b6b4e3b5149cc8d2584cc8abba',
@@ -72,7 +76,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/fig/dist/instance-overrides.js': {
     sha256: '5efd3f221660fbbed3d60879f187cb946e391bc1556f80213961d4804b027eb0',
-    transform: (source, replace) => correctGridOverrides(correctScaleImport(correctInstanceImporter(correctImporter(source, replace), replace), replace), replace),
+    transform: (source, replace) => correctSourcePositionImport(correctGridOverrides(correctScaleImport(correctInstanceImporter(correctImporter(source, replace), replace), replace), replace), replace),
   },
   '@open-pencil/scene-graph/dist/types.js': {
     sha256: '79dcc003679545dae0cfeadfdbb68dc10c6e92b85468d344ac89a14cbbdfe8e6',
@@ -122,7 +126,7 @@ export const corrections = Object.freeze({
         }
         this.nodes.delete(id);`)
       source = replace(source, 'const INSTANCE_SYNC_PROPS = [', 'const INSTANCE_SYNC_PROPS = [\n\t"dashPattern",')
-      return correctUndoHistory(correctSyncGraph(correctScaleGraph(source, replace), replace), replace)
+      return correctUndoHistory(correctSyncGraph(correctSourcePositionGraph(correctScaleGraph(source, replace), replace), replace), replace)
     },
   },
   '@open-pencil/scene-graph/dist/chunks/copy.js': {
@@ -178,7 +182,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/editor/nodes.js': {
     sha256: '658a69b330f927b31cc525ec4389d6913e4ea04b9db8ce9d0688ead725ca51a5',
-    transform: correctGridActions,
+    transform: (source, replace) => correctGridActions(correctSourcePositionActions(source, replace), replace),
   },
   '@open-pencil/core/dist/layout.js': {
     sha256: '358130698d8aa61bfcad65e4695679ed3883aac9efbb048df5a09cbe98f2b299',

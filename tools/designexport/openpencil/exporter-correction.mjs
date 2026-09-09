@@ -290,10 +290,12 @@ function serializeAppearanceOverrides(context, instance, counter) {
     const paddingFields = Object.keys(padding).filter(owns);
     const sized = target !== instance && ['width', 'height'].some(owns);
     const dashed = owns('dashPattern');
-    if (fields.length || paddingFields.length || sized || dashed) {
+    const positioned = target !== instance && sourceAbsoluteRecord(target);
+    if (fields.length || paddingFields.length || sized || dashed || positioned) {
       const guidPath = target === instance ? { guids: [getOrCreateNodeGuid(context,
         resolveInstanceComponentId(context, instance.componentId), counter)] } : nativeOverridePath(context, instance, target, counter);
       const override = { guidPath };
+      if (positioned) override.transform = context.computeExportTransform(target);
       if (dashed) override.dashPattern = [...target.dashPattern];
       if (sized) override.size = { x: target.width, y: target.height };
       for (const field of paddingFields) override[padding[field]] = target[field];
