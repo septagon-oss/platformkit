@@ -49,7 +49,7 @@ func main() {
         css.Decl(sides[1], css.Literal("-1.5px")), css.Decl("padding", css.Literal("2px 6px")),
         css.Decl("font-variant-numeric", css.Literal("tabular-nums")), css.Decl("background", css.Literal("#eee")))
       children = append(children, components.ExampleOf(components.ExampleInfo{ID:fmt.Sprintf("corner%d", i), ComponentID:"pk-ui.component.text"},
-        components.TextProps{Element:"span", Content:"7", Size:"xs", Class:class}, components.Text).Node)
+        components.TextProps{ComponentProps:components.ComponentProps{Class:class}, Element:"span", Content:"7", Size:"xs"}, components.Text).Node)
       continue
     }
     caption := components.ExampleOf(components.ExampleInfo{ID:"caption", ComponentID:"pk-ui.component.text"},
