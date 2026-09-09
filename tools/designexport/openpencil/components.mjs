@@ -77,7 +77,7 @@ function matchesTextFace(face, observed, style, environment) {
 
 // Read-only presentation planning is shared by text rows and composed frames.
 // Layout-specific constraints remain with the owning construction path.
-function planPresentation(node, paintFor, blockMargins = false) {
+function planPresentation(node, paintFor, parentLayout = null) {
   const style = node.style
   requirePlainText(style)
   requireComponent(['static', 'relative'].includes(style.position) && style.visibility === 'visible' &&
@@ -85,7 +85,7 @@ function planPresentation(node, paintFor, blockMargins = false) {
     style['animation-name'] === 'none', 'positioning, filters, effects or motion require further conversion')
   requireComponent(['none', 'hidden'].includes(style['outline-style']) || pixels(style['outline-width']) === 0 ||
     color(style['outline-color']).a === 0, 'visible outlines require further conversion')
-  requireComponent((blockMargins ? ['right', 'left'] : ['top', 'right', 'bottom', 'left']).every(side => pixels(style[`margin-${side}`]) === 0),
+  requireComponent((parentLayout === 'flex' ? [] : parentLayout === 'block' ? ['right', 'left'] : ['top', 'right', 'bottom', 'left']).every(side => pixels(style[`margin-${side}`]) === 0),
     'external margins require further layout conversion')
   requireComponent(style['text-transform'] === 'none' && style['text-decoration-line'] === 'none' &&
     style['font-feature-settings'] === 'normal' && style['font-variation-settings'] === 'normal' &&
@@ -97,11 +97,11 @@ function planPresentation(node, paintFor, blockMargins = false) {
   // A bound zero-alpha border can become visible after a palette edit.
   const retained = borders.some((border, index) => border.width > 0 &&
     (color(border.color).a > 0 || Object.keys(borderPaints[index].boundVariables).length > 0 || borderPaints[index].expressionBindings))
-  const strokes = retained ? borderPaints[0] : null
+  const active = borderPaints.filter(Boolean), strokes = retained ? active[0] : null
   if (retained) {
-    requireComponent(borders.every(border => border.style === 'solid' && border.width === borders[0].width &&
-      sameColor(color(border.color), color(borders[0].color))), 'uniform solid borders required')
-    for (const borderPaint of borderPaints.slice(1)) requireComponent(JSON.stringify(borderPaint) ===
+    requireComponent(borders.every(border => border.width === 0 || border.style === 'solid' &&
+      sameColor(color(border.color), color(borders.find(item => item.width > 0).color))), 'solid borders with one shared paint required')
+    for (const borderPaint of active.slice(1)) requireComponent(JSON.stringify(borderPaint) ===
       JSON.stringify(strokes), 'border aliases must match on every side')
   }
   // Native layout ignores strokesIncludedInLayout. Account for used CSS border
@@ -116,7 +116,11 @@ function planPresentation(node, paintFor, blockMargins = false) {
     topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
     bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
     ...(strokes ? {
-      strokes: strokes.fills.map(fill => ({ ...fill, weight: borders[0].width, align: 'INSIDE' })),
+      strokes: strokes.fills.map(fill => ({ ...fill, weight: Math.max(...borders.map(border => border.width)), align: 'INSIDE' })),
+      ...(borders.some(border => border.width !== borders[0].width) ? {
+        independentStrokeWeights: true,
+        ...Object.fromEntries(sides.map((side, index) => [`border${side[0].toUpperCase()}${side.slice(1)}Weight`, borders[index].width])),
+      } : {}),
       boundVariables: { ...background.boundVariables, ...Object.fromEntries(Object.entries(strokes.boundVariables)
         .map(([field, value]) => [field.replace('fills/', 'strokes/'), value])) },
       ...((background.expressionBindings || strokes.expressionBindings) ? {
@@ -405,7 +409,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     } }
   }
 
-  function element(node, owner, isRoot = false, blockMargins = false) {
+  function element(node, owner, isRoot = false, parentLayout = null) {
     requireComponent(node?.kind === 'element', 'composition requires explicit element roots')
     let occurrence
     if (node.source) {
@@ -430,8 +434,11 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       node.children.every(child => ['text', 'slot'].includes(child.kind))) {
       return { kind: 'component', occurrence, observation: node, textRow: true }
     }
-    const native = planPresentation(node, paintFor, blockMargins), style = node.style
-    requireComponent(['auto', '100%'].includes(node.sizing.width) && node.sizing.height === 'auto' &&
+    const native = planPresentation(node, paintFor, parentLayout), style = node.style
+    const fixedWidth = /^\d+(?:\.\d+)?px$/.test(node.sizing.width), fixedHeight = /^\d+(?:\.\d+)?px$/.test(node.sizing.height)
+    requireComponent(!(fixedWidth || fixedHeight) || ['flex', 'inline-flex'].includes(style.display), 'fixed composition sizing requires flex layout')
+    requireComponent((['auto', '100%'].includes(node.sizing.width) || fixedWidth && style['box-sizing'] === 'border-box' && near(pixels(node.sizing.width), node.bounds.width)) &&
+      (node.sizing.height === 'auto' || fixedHeight && style['box-sizing'] === 'border-box' && near(pixels(node.sizing.height), node.bounds.height)) &&
       ['auto', '0px'].includes(node.sizing['min-width']) && ['auto', '0px'].includes(node.sizing['min-height']) &&
       node.sizing['max-width'] === 'none' && node.sizing['max-height'] === 'none', 'composition constrained sizing requires further conversion')
     let plan
@@ -461,9 +468,9 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       const value = text(select ? { value: control.content.text, fonts: control.fonts } : control, node, { control: true, wrapping: multiline })
       const width = node.bounds.width - native.paddingLeft - native.paddingRight
       const height = value.native.lineHeight * (multiline ? node.control.rows : 1)
-      if (select) requireComponent(near(control.content.bounds.width, width) && near(control.content.bounds.height, height) &&
+      if (!multiline) requireComponent(control.content && near(control.content.bounds.width, width) && near(control.content.bounds.height, height) &&
         near(control.content.bounds.x, node.bounds.x + native.paddingLeft) &&
-        near(control.content.bounds.y, node.bounds.y + native.paddingTop), 'choice display viewport requires further conversion')
+        near(control.content.bounds.y, node.bounds.y + native.paddingTop), 'control display viewport requires further conversion')
       if (multiline) {
         requireComponent(near(node.control.content?.bounds.width, width), 'textarea scrollbar or content width requires further conversion')
         value.native.width = width
@@ -503,7 +510,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       requireComponent(margins[0][0] === 0 && margins.at(-1)[1] === 0, 'outer block margins require parent-collapse conversion')
       const gaps = margins.slice(1).map(([top], index) => Math.max(top, margins[index][1]))
       requireComponent(gaps.every(gap => gap === gaps[0]), 'nonuniform block margins require individual native spacing')
-      const children = node.children.map(child => element(child, owner, false, true))
+      const children = node.children.map(child => element(child, owner, false, 'block'))
       for (const child of children) child.placement = {
         layoutAlignSelf: 'STRETCH', [child.native.layoutMode === 'VERTICAL' ? 'counterAxisSizing' : 'primaryAxisSizing']: 'FILL',
       }
@@ -539,10 +546,29 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       requireComponent(justify && align, 'composition alignment requires further conversion')
       const vertical = style['flex-direction'] === 'column'
       const gap = axis => style[`${axis}-gap`] === 'normal' ? 0 : pixels(style[`${axis}-gap`])
-      plan = { kind: 'frame', observation: node, children: node.children.map(child => element(child, owner)), native: {
+      const children = node.children.map(child => {
+        const content = element(child, owner, false, 'flex')
+        const [top, right, bottom, left] = ['top', 'right', 'bottom', 'left'].map(side => pixels(child.style[`margin-${side}`]))
+        if (![top, right, bottom, left].some(Boolean)) return content
+        requireComponent(!content.textRow, 'text-row margins require placement conversion')
+        if (['auto', '100%'].includes(child.sizing.width)) content.placement = {
+          [content.native?.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL', layoutAlignSelf: 'STRETCH',
+        }
+        // CSS flex margins do not collapse. A private padding frame represents
+        // the derived margin box without changing the reusable child's border box.
+        const bounds = { x: child.bounds.x - left, y: child.bounds.y - top,
+          width: child.bounds.width + left + right, height: child.bounds.height + top + bottom }
+        return { kind: 'frame', observation: { ...child, bounds }, children: [content], native: {
+          name: 'Source margin box', width: bounds.width, height: bounds.height, fills: [],
+          layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
+          primaryAxisAlign: 'MIN', counterAxisAlign: 'MIN',
+          paddingTop: top, paddingRight: right, paddingBottom: bottom, paddingLeft: left,
+        } }
+      })
+      plan = { kind: 'frame', observation: node, children, native: {
         name: node.tag, width: node.bounds.width, height: node.bounds.height,
         layoutMode: vertical ? 'VERTICAL' : 'HORIZONTAL',
-        primaryAxisSizing: vertical ? 'HUG' : 'FIXED', counterAxisSizing: vertical ? 'FIXED' : 'HUG',
+        primaryAxisSizing: vertical && !fixedHeight ? 'HUG' : 'FIXED', counterAxisSizing: vertical || fixedHeight ? 'FIXED' : 'HUG',
         primaryAxisAlign: justify, counterAxisAlign: align, layoutWrap: wrapping ? 'WRAP' : 'NO_WRAP',
         itemSpacing: gap(vertical ? 'row' : 'column'),
         counterAxisSpacing: gap(vertical ? 'column' : 'row'), ...native,
@@ -554,11 +580,13 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
             'intrinsic blocks require automatic width in a wrapping row')
           child.placement = { counterAxisSizing: 'HUG' }
         }
-        requireComponent(childStyle['flex-grow'] === '0' && childStyle['flex-shrink'] === (child.kind === 'icon' ? '0' : '1') &&
-          childStyle['flex-basis'] === 'auto' && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
+        const grows = !vertical && !wrapping && childStyle['flex-grow'] === '1' && ['0%', '0px'].includes(childStyle['flex-basis'])
+        requireComponent((grows || childStyle['flex-grow'] === '0' && childStyle['flex-basis'] === 'auto') &&
+          ['0', '1'].includes(childStyle['flex-shrink']) && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
         requireComponent(!wrapping || childStyle.order === '0', 'wrapping rows require source child order')
-        if (vertical && align === 'STRETCH') child.placement = {
-          layoutAlignSelf: 'STRETCH', [child.textRow || child.native?.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL',
+        if (grows || vertical && align === 'STRETCH' && ['auto', '100%'].includes(child.observation.sizing.width)) child.placement = {
+          ...(!grows ? { layoutAlignSelf: 'STRETCH' } : {}),
+          [child.textRow || child.native?.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL',
         }
       }
     }

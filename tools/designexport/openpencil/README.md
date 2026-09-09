@@ -12,8 +12,8 @@ complete published component library or the finished shared provider interface.
 With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
 light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
 the two Video examples refuse because media capture is unsupported.
-Native construction accepts 21: eleven Buttons, three Inputs, two Selects, Form, Grid,
-two Text examples and invalid Textarea; the coverage test reports 86 refusals. These are measured guards, not proof of
+Native construction accepts 27: six Alerts, eleven Buttons, three Inputs, two Selects, Form, Grid,
+two Text examples and invalid Textarea; the coverage test reports 80 refusals. These are measured guards, not proof of
 complete typography, visual, interaction or provider support.
 
 Consumers can configure `design.Theme.Typography` before `ui.Export`; empty roles
@@ -218,7 +218,7 @@ adapter API, not the unfinished shared provider interface or a library publisher
 The text-row capability supports one explicitly bound, nonempty text region in a
 centered, unconstrained, nonwrapping horizontal flex container, optionally with
 named slots containing one canonical SVG each. Rows and composed frames share
-one planner for solid fills, uniform solid borders, radii and padding, retaining
+one planner for solid fills, same-paint solid borders, radii and padding, retaining
 transparent token-bound strokes and border insets. Direct aliases require matching palettes in every theme
 and retain source RGBA through legacy CSS alpha rounding. This is candidate evidence,
 not general CSS equivalence. Literal paints stay unbound. Unambiguous authored expressions
@@ -226,7 +226,7 @@ become COLOR variables in the existing foundation collection, keyed by their sou
 custom-property names and bound to native input IDs. Matching roles are reused; conflicting
 or edited roles refuse without being overwritten. Allocation follows successful construction
 and geometry checks, and failed construction removes its own nodes and variables.
-Supported text, fills, uniform borders and canonical SVG currentColor occurrences retain
+Supported text, fills, borders and canonical SVG currentColor occurrences retain
 these formulas through palette edits, history and two saves. Glyph swaps preserve occurrence
 colour roles without changing canonical assets. Ambiguous, stale and unsupported expressions
 remain refusals; this does not add layout capabilities or certify arbitrary CSS.
@@ -236,6 +236,11 @@ the caller's measurement hook on rejection.
 
 Nested construction includes block flow with uniform nonnegative collapsed margins
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
+Nonnegative flex margins use private margin-box frames; fixed border-box sizes and
+zero-basis horizontal fill keep reusable children independent of their placement.
+Generated refusal forms inherit Alert text, icon offsets and rounded independent
+border widths through edits and two saves at 320/1280px in both themes. Text inputs
+also require an observed browser editing viewport, not inferred content offsets.
 Linked Form, block and configured-font Toolbar fixtures cover both themes at 320/1280px,
 history, isolation and two saves. Private copy keeps its owner's properties.
 Toolbar also composes with linked Text in named header/body slots backed by Stack:
@@ -325,7 +330,7 @@ native modes and live links.
 
 Icon composition verifies canonical flat path/circle geometry, attributes and
 observed paints; grouped, transformed or potentially clipped SVGs are refused.
-Arbitrary nested content, nonuniform or nonsolid borders, outlines, filters,
+Arbitrary nested content, differently painted or nonsolid border sides, outlines, filters,
 truncation and unimplemented sizing constraints remain unsupported. Text controls
 support empty values; text blocks and flex labels still need empty/collapsed-space
 participation semantics. Native properties accept those edits, but the converter
@@ -454,6 +459,7 @@ Against a disposable `preview` target, run
 `PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18090 node --import ./register.mjs --test preview/*.test.mjs`.
 This checks automatic font loading without local permission, visible button/field
 glyphs and alignment, exact font digests and two browser worker saves/reopens.
+Pixel comparison waits for every referenced face and excludes the overlapping editor toolbar.
 FIG export still needs a secure browser context for WebCrypto; tailnet HTTP is
 not sufficient for saving. Use HTTPS for shared previews. CI marks only its
 isolated service origin secure, as in the generic editor check.

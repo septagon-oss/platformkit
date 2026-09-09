@@ -21,7 +21,12 @@ const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name =
 // This fixture has one green button; its interior paint locates it without
 // depending on panel widths, screen coordinates or private editor automation.
 async function buttonInk(page, ck) {
-  const bytes = await page.locator('[data-test-id="canvas-element"]').screenshot()
+  // A locator screenshot includes overlapping DOM. Exclude only the floating
+  // tool palette: its backdrop compositing differs by one channel under load
+  // and is not document paint. Glyph checks still require both visible controls.
+  const bytes = await page.locator('[data-test-id="canvas-element"]').screenshot({
+    style: '[data-test-id="toolbar"] { visibility: hidden !important; }',
+  })
   const image = ck.MakeImageFromEncoded(bytes)
   try {
     const width = image.width(), height = image.height()
@@ -66,7 +71,7 @@ async function buttonInk(page, ck) {
       `field vertical alignment: ${JSON.stringify({ outline, value })}`)
     assert.ok(value.left - outline.left >= 10 && value.left - outline.left <= 16,
       'field value keeps source left alignment, not horizontal centering')
-    return hash(pixels)
+    return { hash: hash(pixels), pixels, width, height }
   } finally { image.delete() }
 }
 
@@ -104,6 +109,8 @@ func main() {
     })
     graph.updateNode(selections[0].instance.id, { name: 'Editable button' })
     graph.updateNode(selections[1].instance.id, { name: 'Editable field' })
+    const requiredFaces = [...new Map([...graph.getAllNodes()].filter(node => node.type === 'TEXT')
+      .map(node => [`${node.fontFamily}/${node.fontWeight}`, { family: node.fontFamily, weight: String(node.fontWeight) }])).values()]
     let buffer = Buffer.from(await exportFigFile(graph)), previousPixels
     const baseline = await parseFigFile(arrayBuffer(buffer), { populate: 'all' })
     const definitions = [...baseline.getAllNodes()].filter(node => node.type === 'COMPONENT')
@@ -112,6 +119,12 @@ func main() {
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
       try {
         const page = await context.newPage(), errors = [], workers = [], fontRequests = []
+        // Slow one referenced face independently: a different loaded font is
+        // not evidence that the document is ready to paint after import.
+        if (cycle === 1) await page.route(new URL(provenance.fontFaces.find(face => face.weight === 500).path, endpoint).href, async route => {
+          await new Promise(resolve => setTimeout(resolve, 3000))
+          await route.continue()
+        })
         page.on('pageerror', error => errors.push(error.message))
         page.on('worker', worker => workers.push(worker.url()))
         page.on('response', response => { if (provenance.fontFaces.some(face => response.url() === new URL(face.path, endpoint).href)) fontRequests.push(response) })
@@ -130,10 +143,20 @@ func main() {
         await page.getByRole('treeitem', { name: 'Editable button Lock Hide', exact: true }).click()
         const label = page.getByRole('textbox', { name: 'label', exact: true })
         await expect(label).toHaveValue(['Save', 'Create album', 'Save'][cycle])
-        await expect.poll(async () => page.evaluate(() => [...document.fonts]
-          .filter(face => face.family === 'IBM Plex Sans' && face.status === 'loaded').length)).toBeGreaterThan(0)
+        await expect.poll(async () => page.evaluate(required => required.every(wanted => [...document.fonts]
+          .some(face => face.family === wanted.family && face.weight === wanted.weight && face.status === 'loaded')), requiredFaces)).toBe(true)
         const pixels = await buttonInk(page, ck)
-        if (previousPixels) assert.equal(pixels, previousPixels, 'save/reopen preserves visible edited canvas pixels')
+        if (previousPixels && pixels.hash !== previousPixels.hash) {
+          const diff = { left: pixels.width, top: pixels.height, right: 0, bottom: 0, count: 0, samples: [] }
+          for (let y = 0; y < pixels.height; y++) for (let x = 0; x < pixels.width; x++) {
+            const i = 4 * (y * pixels.width + x)
+            if (pixels.pixels.subarray(i, i + 4).every((v, c) => v === previousPixels.pixels[i + c])) continue
+            diff.count++; diff.left = Math.min(diff.left, x); diff.top = Math.min(diff.top, y)
+            diff.right = Math.max(diff.right, x); diff.bottom = Math.max(diff.bottom, y)
+            if (diff.samples.length < 8) diff.samples.push([x, y, [...previousPixels.pixels.subarray(i, i + 4)], [...pixels.pixels.subarray(i, i + 4)]])
+          }
+          assert.fail(`save/reopen pixel difference: ${JSON.stringify(diff)}`)
+        }
         await page.getByRole('treeitem', { name: 'Editable field Lock Hide', exact: true }).click()
         const value = page.getByRole('textbox', { name: 'value', exact: true })
         await expect(value).toHaveValue(['hello', 'album-title', 'next-title'][cycle])
