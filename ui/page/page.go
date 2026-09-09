@@ -51,7 +51,8 @@ type Chrome struct {
 	// applied before first paint by an inline snippet Serve adds.
 	Theme string
 	// Attrs are further <html> attributes: a client's grain and scrollbar,
-	// which the shell's own rules give a meaning to.
+	// which the shell's own rules give a meaning to. A lang attribute sets the
+	// shell's default document language; View.Language takes precedence.
 	Attrs map[string]string
 }
 
@@ -76,6 +77,11 @@ type View struct {
 	Title  string
 	Status int
 	Bare   bool
+	// Language is the BCP 47 tag of the rendered copy, such as "pt-PT".
+	// Empty uses Chrome.Attrs["lang"], or English when no default is set.
+	// The application selects and translates the content; this field only
+	// declares its language to the browser and assistive technology.
+	Language string
 	// Theme pins data-theme on this document over the chrome's, for a page
 	// whose theme is the tenant's choice rather than the shell's. A pinned
 	// document carries no theme script: the choice is not the visitor's.
@@ -87,7 +93,17 @@ type View struct {
 // Document renders a whole HTML document: the head from the chrome and the
 // view, and the framed body. It is pure; body is the frame's result.
 func Document(c Chrome, r Request, v View, body g.Node) g.Node {
-	attrs := []g.Node{h.Lang("en")}
+	keys := slices.Sorted(maps.Keys(c.Attrs))
+	language := cmp.Or(v.Language, c.Attrs["lang"])
+	if language == "" {
+		for _, k := range keys {
+			if strings.EqualFold(k, "lang") && c.Attrs[k] != "" {
+				language = c.Attrs[k]
+				break
+			}
+		}
+	}
+	attrs := []g.Node{h.Lang(cmp.Or(language, "en"))}
 	if theme := cmp.Or(v.Theme, c.Theme); theme != "" {
 		attrs = append(attrs, g.Attr("data-theme", theme))
 	}
@@ -97,8 +113,10 @@ func Document(c Chrome, r Request, v View, body g.Node) g.Node {
 	if r.SignedIn {
 		attrs = append(attrs, g.Attr("data-principal", r.Principal.UserID.String()))
 	}
-	for _, k := range slices.Sorted(maps.Keys(c.Attrs)) {
-		attrs = append(attrs, g.Attr(k, c.Attrs[k]))
+	for _, k := range keys {
+		if !strings.EqualFold(k, "lang") {
+			attrs = append(attrs, g.Attr(k, c.Attrs[k]))
+		}
 	}
 	return h.HTML(append(attrs, head(c, r, v), h.Body(body, requestNotices(c)))...)
 }
@@ -119,7 +137,7 @@ func requestNotices(c Chrome) g.Node {
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
 		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
 	} {
-		nodes = append(nodes, h.Div(h.ID("pk-auth-"+notice.kind), h.Hidden(""), g.Attr("data-request-notice", ""),
+		nodes = append(nodes, h.Div(h.ID("pk-auth-"+notice.kind), h.Hidden(""), h.Lang("en"), g.Attr("data-request-notice", ""),
 			components.Stack(components.StackProps{Gap: "3"},
 				components.Alert(components.AlertProps{Tone: "danger", Title: notice.title, Message: notice.message, Bordered: true}),
 				g.If(notice.signin && httpx.LocalPath(c.SignIn), components.Link(components.LinkProps{
@@ -171,7 +189,7 @@ func Fault(status int, detail, back, backLabel string) View {
 	if strings.TrimSpace(detail) == "" {
 		detail = "That did not work."
 	}
-	return View{Title: http.StatusText(status), Status: status, Body: []g.Node{
+	return View{Title: http.StatusText(status), Status: status, Language: "en", Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: http.StatusText(status)}),
 		components.Alert(components.AlertProps{Tone: "danger", Message: detail, Bordered: true}),
 		components.Link(components.LinkProps{Label: backLabel, Href: back}),
