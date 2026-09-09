@@ -1307,9 +1307,9 @@ func EmptyStateWithSlots(p EmptyStateProps, slots EmptyStateSlots) g.Node {
 	children = append(children, baseAttrs(p.ComponentProps)...)
 	children = append(children, classes(cl.Compile(), p.Class))
 	children = append(children, slots.IconStart...)
-	children = append(children, h.P(h.Class(clEmptyTitle.Compile()), g.Text(p.Title)))
+	children = append(children, h.P(h.Class(clEmptyTitle.Compile()), g.Raw("<!--pk-text:title-->"), g.Text(p.Title), g.Raw("<!--/pk-text:title-->")))
 	if p.Description != "" {
-		children = append(children, h.P(h.Class(clEmptyDesc.Compile()), g.Text(p.Description)))
+		children = append(children, h.P(h.Class(clEmptyDesc.Compile()), g.Raw("<!--pk-text:description-->"), g.Text(p.Description), g.Raw("<!--/pk-text:description-->")))
 	}
 	children = append(children, slots.Actions...)
 	return h.Div(children...)

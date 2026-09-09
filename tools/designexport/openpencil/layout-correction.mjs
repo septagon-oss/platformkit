@@ -24,6 +24,21 @@ export function ownSourceLayoutRecord(node) {
   return source?.schema === 'platformkit.design-export.v1' ? source : undefined
 }
 
+// Walk placed normal-flow descendants, never their reusable component masters.
+export function layoutNodes(graph, frame, descend = () => true) {
+  const nodes = [frame], seen = new Set([frame.id])
+  for (const parent of nodes) {
+    if (parent !== frame && !descend(parent)) continue
+    for (const child of graph.getChildren(parent.id)) {
+      if (!child.visible || child.layoutPositioning === 'ABSOLUTE') continue
+      if (seen.has(child.id)) throw new Error('Cyclic native layout')
+      seen.add(child.id)
+      nodes.push(child)
+    }
+  }
+  return nodes
+}
+
 export function sourceCompositionLayout(graph, node) {
   // Text rows are source-owned layout too. Their placed FILL axes must use the
   // same FIG restoration and cache invalidation as other composed components.
@@ -43,7 +58,7 @@ export function editedSourceLayout(graph, frame) {
 // measurement or nested layout throws.
 export function correctLayout(source, replace) {
   source = `import { sourceAspectRatio, settleSourceAspectRatios } from ${JSON.stringify(fileURLToPath(new URL('./source-box.mjs', import.meta.url)))};\n` + source
-  source = `import { sourceLayoutScope, sourceCompositionLayout, editedSourceLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
+  source = `import { sourceLayoutScope, sourceCompositionLayout, editedSourceLayout, layoutNodes } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   // A child laid out independently still uses its parent-resolved fill size.
   // Parent layout remains responsible for assigning that size on the next pass.
   for (const axis of ['primary', 'counter']) source = replace(source, `if (frame.${axis}AxisSizing === "FIXED")`,
@@ -130,10 +145,9 @@ function resizedWrappingFrame(graph, frame) {
 function computeLayoutInternal(graph, frameId) {
   const frame = graph.getNode(frameId);
   if (!resizedWrappingFrame(graph, frame) && !editedSourceLayout(graph, frame)) return computeLayoutMeasured(graph, frameId);
-  // Authored layout edits invalidate the affected saved boxes, not reusable
-  // masters or unrelated descendants. Other imported layout keeps its guards.
-  const cached = [frame, ...graph.getChildren(frameId)].filter(node =>
-    node === frame || node.visible && node.layoutPositioning !== "ABSOLUTE")
+  // A resized source occurrence invalidates descendant line boxes too. Follow
+  // containment, never component links; unrelated imported layout stays opaque.
+  const cached = layoutNodes(graph, frame, node => sourceCompositionLayout(graph, node))
     .map(node => [node.id, node.figmaDerivedLayout]);
   graph.preserveSourceMetadataDuring(() => {
     for (const [id, previous] of cached) if (previous) graph.updateNode(id, { figmaDerivedLayout: null });
@@ -177,5 +191,41 @@ export function correctLayoutApply(source, replace) {
     '\t\tif (preservesImportedInstanceInternals(child) && !(sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout)) continue;')
   return replace(source,
     'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId);',
-    'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId) && !editedSourceLayout(graph, graph.getNode(child.parentId));')
+    'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId) && !(sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout) && !editedSourceLayout(graph, graph.getNode(child.parentId));')
+}
+
+// JavaScript exceptions must not unwind through Yoga's WebAssembly stack.
+// Each layout owns its callbacks and failure; only successful geometry applies.
+export function correctMeasuredLayout(source, replace) {
+  for (const name of ['root', 'yogaChild', 'yogaGC']) source = replace(source,
+    `const ${name} = createYogaNode();`, `const ${name} = createLayoutNode();`)
+  for (const signature of ['buildYogaTree(graph, frame, inheritedDirection)',
+    'configureChildAsAutoLayout(yogaChild, child, parent, graph, inheritedDirection)',
+    'configureChildAsAutoLayout(yogaChild, child, frame, graph, direction)',
+    'configureChildAsAutoLayout(yogaGC, gc, child, graph, direction)',
+    'buildYogaTree(graph, frame, rootDirection)']) {
+    source = replace(source, signature, signature.slice(0, -1) + ', createLayoutNode)')
+  }
+  source = replace(source, 'function computeLayoutMeasured(graph, frameId) {', String.raw`
+function computeLayoutMeasured(graph, frameId) {
+  const failures = [];
+  function createLayoutNode() {
+    const node = createYogaNode(), setMeasure = node.setMeasureFunc.bind(node);
+    node.setMeasureFunc = measure => setMeasure((...args) => {
+      if (!failures.length) {
+        try { return measure(...args); } catch (error) { failures.push(error); }
+      }
+      return { width: 0, height: 0 };
+    });
+    return node;
+  }`)
+  return replace(source,
+    '    yogaRoot.calculateLayout(void 0, void 0, yogaDirection);\n' +
+    '    if (settleSourceAspectRatios(graph, frame, yogaRoot)) yogaRoot.calculateLayout(void 0, void 0, yogaDirection);', String.raw`
+    const calculate = () => {
+      yogaRoot.calculateLayout(void 0, void 0, yogaDirection);
+      if (failures.length) throw failures[0];
+    };
+    calculate();
+    if (settleSourceAspectRatios(graph, frame, yogaRoot)) calculate();`)
 }

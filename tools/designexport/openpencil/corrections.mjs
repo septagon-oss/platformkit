@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { correctExporter, correctPropertyTarget, correctInstanceImporter } from './exporter-correction.mjs'
 import { correctPropertyActions, correctComponentSync, correctEditorCreation, correctTextAutoResize, correctUndoHistory } from './property-correction.mjs'
-import { correctLayout, correctLayoutApply } from './layout-correction.mjs'
+import { correctLayout, correctLayoutApply, correctMeasuredLayout } from './layout-correction.mjs'
 import { correctScaleDefaults, correctScaleGraph, correctScaleNodeChange, correctScaleImport } from './scaling-correction.mjs'
 import { correctSyncGraph } from './sync-correction.mjs'
 import { correctGridLayout, correctGridApply, correctGridTrackMapping } from './grid-correction.mjs'
@@ -187,7 +187,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/layout.js': {
     sha256: '358130698d8aa61bfcad65e4695679ed3883aac9efbb048df5a09cbe98f2b299',
-    transform: (source, replace) => correctGridLayout(correctLayout(source, replace), replace),
+    transform: (source, replace) => correctMeasuredLayout(correctGridLayout(correctLayout(source, replace), replace), replace),
   },
   '@open-pencil/core/dist/layout/apply.js': {
     sha256: 'a02c896a0f808fd3ccb24ca6a8c09975ca7ef06e2555bc6313b54091e37e8c8d',

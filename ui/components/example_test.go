@@ -329,6 +329,41 @@ func TestCardTextRegionsFollowRenderedHeaderOwnership(t *testing.T) {
 	}
 }
 
+func TestEmptyStateTextRegionsRetainOwnershipAndEscaping(t *testing.T) {
+	for _, value := range []string{"", "Gather memories", `A & <tag>"'<!--/pk-text:description-->`} {
+		example := c.ExampleWithSlots(c.ExampleInfo{ID: "empty", ComponentID: "empty-state"},
+			c.EmptyStateProps{Title: value, Description: value}, c.EmptyStateSlots{Actions: []g.Node{
+				c.ExampleOf(c.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Create"}, c.Button).Node,
+			}}, c.EmptyStateWithSlots)
+		description := describeExample(t, example)
+		var escaped strings.Builder
+		if err := g.Text(value).Render(&escaped); err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{"title", "description"} {
+			open, close := "<!--pk-text:"+field+"-->", "<!--/pk-text:"+field+"-->"
+			if field == "description" && value == "" {
+				if strings.Contains(description.HTML, open) {
+					t.Fatal("Absent description must not invent a text region")
+				}
+			} else if strings.Count(description.HTML, open) != 1 || !strings.Contains(description.HTML, open+escaped.String()+close) {
+				t.Fatalf("EmptyState must bind only its escaped %s: %s", field, description.HTML)
+			}
+		}
+		changed, err := example.WithProps(json.RawMessage(`{"title":"Revised","description":"Add memories"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		revised := describeExample(t, changed)
+		if !strings.Contains(revised.HTML, "<!--pk-text:title-->Revised<!--/pk-text:title-->") ||
+			!strings.Contains(revised.HTML, "<!--pk-text:description-->Add memories<!--/pk-text:description-->") ||
+			len(revised.Children) != 1 || revised.Children[0].Description.ID != "action" ||
+			describeExample(t, example).HTML != description.HTML {
+			t.Fatal("EmptyState edits must preserve linked actions and the original invocation")
+		}
+	}
+}
+
 func TestInputValueRegionIsLimitedToTextControls(t *testing.T) {
 	for _, typ := range []string{"", "text", " TEXT ", "email", "password", "number", "tel", "url", "search", "date", "time", "datetime-local", "month", "week", "color", "hidden", "file"} {
 		t.Run(typ, func(t *testing.T) {

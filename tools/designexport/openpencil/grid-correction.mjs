@@ -16,17 +16,6 @@ export function liveGridLayout(graph, node) {
   return node && chain(graph, node, 'parentId').some(parent => parent.layoutMode === 'GRID')
 }
 
-export function gridLayoutNodes(graph, frame) {
-  const nodes = [frame], seen = new Set([frame.id])
-  for (const parent of nodes) for (const child of graph.getChildren(parent.id)) {
-    if (!child.visible || child.layoutPositioning === 'ABSOLUTE') continue
-    if (seen.has(child.id)) throw new Error('Cyclic native grid layout')
-    seen.add(child.id)
-    nodes.push(child)
-  }
-  return nodes
-}
-
 // Grid and flex must participate in one Yoga tree. Measuring grid cells as
 // fixed leaves freezes wrapped text and gives the parent a stale row height.
 function replaceFunction(source, name, next, replacement, replace) {
@@ -36,14 +25,14 @@ function replaceFunction(source, name, next, replacement, replace) {
 }
 
 export function correctGridLayout(source, replace) {
-  source = `import { liveGridLayout, gridLayoutNodes } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` +
+  source = `import { liveGridLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` +
     'import { Justify } from "yoga-layout";\n' + source
   // The native GRID model owns its measured subtree. Imported boxes are caches,
   // not layout constraints; unrelated imported documents retain their guards.
   source = replace(source, '!resizedWrappingFrame(graph, frame) && !editedSourceLayout(graph, frame)',
     '!resizedWrappingFrame(graph, frame) && !editedSourceLayout(graph, frame) && !liveGridLayout(graph, frame)')
-  source = replace(source, 'const cached = [frame, ...graph.getChildren(frameId)].filter',
-    'const cached = (liveGridLayout(graph, frame) ? gridLayoutNodes(graph, frame) : [frame, ...graph.getChildren(frameId)]).filter')
+  source = replace(source, 'layoutNodes(graph, frame, node => sourceCompositionLayout(graph, node))',
+    'layoutNodes(graph, frame, node => liveGridLayout(graph, frame) || sourceCompositionLayout(graph, node))')
   source = replace(source, '|| editedSourceLayout(graph, node))',
     '|| editedSourceLayout(graph, node) || liveGridLayout(graph, node))')
   for (const axis of ['primary', 'counter']) source = replace(source,
@@ -109,8 +98,8 @@ export function correctGridApply(source, replace) {
   source = `import { liveGridLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   source = replace(source, 'sourceCompositionLayout(graph, frame) && !frame.figmaDerivedLayout',
     '(sourceCompositionLayout(graph, frame) || liveGridLayout(graph, frame)) && !frame.figmaDerivedLayout')
-  source = replace(source, 'sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout',
-    '(sourceCompositionLayout(graph, child) || liveGridLayout(graph, child)) && !child.figmaDerivedLayout')
+  source = replace(source, 'if (preservesImportedInstanceInternals(child) && !(sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout)) continue;',
+    'if (preservesImportedInstanceInternals(child) && !((sourceCompositionLayout(graph, child) || liveGridLayout(graph, child)) && !child.figmaDerivedLayout)) continue;')
   source = replace(source, '!editedSourceLayout(graph, graph.getNode(child.parentId));',
     '!editedSourceLayout(graph, graph.getNode(child.parentId)) && !liveGridLayout(graph, child);')
   source = replace(source,

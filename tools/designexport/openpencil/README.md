@@ -230,9 +230,9 @@ Supported text, fills, borders and canonical SVG currentColor occurrences retain
 these formulas through palette edits, history and two saves. Glyph swaps preserve occurrence
 colour roles without changing canonical assets. Ambiguous, stale and unsupported expressions
 remain refusals; this does not add layout capabilities or certify arbitrary CSS.
-Construction measures text and rejects
-geometry differences over 1/64 CSS pixel, removing created nodes and restoring
-the caller's measurement hook on rejection.
+Construction rejects geometry differences over 1/64 CSS pixel, removing created
+nodes and restoring the caller's measurement hook. Measurement failures return
+through Yoga before being rethrown, keeping its WebAssembly state reusable.
 
 Observed constructor-internal captures retain linked masters without becoming
 replaceable slots. Their derived property values must remain at the source
@@ -246,6 +246,8 @@ changing the reusable definition's intrinsic sizing.
 
 Nested construction includes block flow with uniform nonnegative collapsed margins
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
+Border-box paragraphs support pixel maximum widths and intrinsic flex-column alignment.
+Configured-font EmptyState retains linked actions, nonempty copy edits and responsive line boxes through two editor saves.
 Nonnegative flex margins use private margin-box frames; fixed border-box sizes and
 zero-basis horizontal fill keep reusable children independent of their placement.
 Trailing fixed flex boxes and nonempty auto-sized text badges use parent-owned edge anchors;
@@ -254,12 +256,10 @@ Stretch insets, stacking and transformed/scrolling containing blocks remain refu
 Generated refusal forms inherit Alert text, icon offsets and rounded independent
 border widths through edits and two saves at 320/1280px in both themes. Text inputs
 also require an observed browser editing viewport, not inferred content offsets.
-Linked Form, block and configured-font Toolbar fixtures cover both themes at 320/1280px,
-history, isolation and two saves. Private copy keeps its owner's properties.
-Toolbar also composes with linked Text in named header/body slots backed by Stack:
-nested copy edits resize the page body without changing the sibling's copy or size
-through two saves. Browser checks retain the heading and keyboard-focusable link.
-This synthetic page body has no navigation chrome, artwork or prototype transitions.
+Linked Form, block and configured-font Toolbar/Stack/Text fixtures cover both themes at
+320/1280px, copy edits, isolation, history and two saves. Private copy keeps its owner's properties.
+Toolbar's named header/body slots retain heading semantics and a keyboard-focusable link.
+This synthetic page has no navigation chrome, artwork or prototype transitions.
 Configured-font Card pages also compose Heading, Stack and Grid; title/description
 edits retain linked ownership and content-driven grid height after two saves.
 Single literal zero-spread box shadows retain native effects. Straight-edge samples

@@ -81,16 +81,28 @@ test('source layout cache invalidation restores failures and leaves ordinary imp
     counterAxisSizing: 'HUG', width: 200, height: 20, itemSpacing: 16,
     pluginData: [source('source-composition-layout')],
   })
-  const child = graph.createNode('TEXT', root.id, { text: 'Source label', textAutoResize: 'WIDTH_AND_HEIGHT' })
-  for (const node of [root, child]) {
+  const nested = graph.createNode('FRAME', root.id, {
+    layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG',
+    pluginData: [source('source-composition-layout')],
+  })
+  const child = graph.createNode('TEXT', nested.id, { text: 'Source label', textAutoResize: 'WIDTH_AND_HEIGHT' })
+  for (const node of [root, nested, child]) {
     node.source = { ...node.source, format: 'fig', editedFields: node === root ? ['itemSpacing'] : [] }
     node.figmaDerivedLayout = { width: 100, height: 20, x: 0, y: 0 }
   }
   const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
   try {
-    setTextMeasurer(() => { throw new Error('Source measurement unavailable') })
-    assert.throws(() => computeLayout(graph, root.id), /Source measurement unavailable/)
-    assert.deepEqual([...graph.getAllNodes()], before, 'failure restores caches, geometry and source edit metadata')
+    setTextMeasurer(() => {
+      for (const node of [root, nested, child]) assert.equal(node.figmaDerivedLayout, null, 'nested layout caches are derived too')
+      throw new Error('Source measurement unavailable')
+    })
+    for (let attempt = 0; attempt < 1024; attempt++) {
+      assert.throws(() => computeLayout(graph, root.id), /Source measurement unavailable/)
+      assert.deepEqual([...graph.getAllNodes()], before, 'failure restores caches, geometry and source edit metadata')
+    }
+    setTextMeasurer(() => ({ width: 50, height: 20 }))
+    computeLayout(graph, root.id)
+    assert.equal(child.width, 50, 'the same native engine still measures successfully after repeated refusals')
   } finally { setTextMeasurer(previous) }
 })
 

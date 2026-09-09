@@ -21,7 +21,7 @@ import { materializeComponent } from '../components.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from '../browser/capture.mjs'
-import { sourceFixture, exportCore } from '../browser/fixtures.test.mjs'
+import { sourceFixture, exportCore, emptyStateFixture } from '../browser/fixtures.test.mjs'
 
 const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL)
 assert.ok(endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', 'openpencil'].includes(endpoint.hostname),
@@ -156,16 +156,19 @@ async function verifyBuild() {
   }
 }
 
-test('oversized source words remain editable through keyboard history and two browser worker saves', { timeout: 120000 }, async () => {
+test('oversized source words remain editable through keyboard history and two browser worker saves', { timeout: 120000 }, async t => {
   await verifyBuild()
   const id = 'pk-ui.component.text/muted', snapshot = exportCore(['--example', id, '--props'], { content: 'Album', size: 'base' })
-  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-wrap-fonts-'))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const { fonts, config } = await writeEditorFontFixtures(temporary)
+  const comparisonBrowser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
+  t.after(() => comparisonBrowser.close())
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
   const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1)), previous = getTextMeasurer()
   try {
-    const fonts = editorFontFixtures.filter(face => face.weight === 400).map(({ weight, bytes }) =>
-      ({ family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: hash(bytes) }))
     const { graph, selections } = await buildComponentDocument(snapshot, {
-      examples: [id], fonts, browser, renderer, viewport: { width: 320, height: 900 },
+      examples: [id], fonts, browser: comparisonBrowser, renderer, viewport: { width: 320, height: 900 },
     })
     const instance = selections[0].instance
     setTextMeasurer((node, width) => renderer.measureTextNode(node, width))
@@ -176,9 +179,9 @@ test('oversized source words remain editable through keyboard history and two br
     const definition = chain(baseline, named(baseline, 'Wrapping paragraph'), 'componentId').at(-1)
     const untouched = geometry(baseline, definition)
     for (const [value, height] of [['The people and places we remember together.', 168], ['Album', 24]]) {
-      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['local-fonts'] })
       try {
-        const { page, errors, workers } = await openDocument(context, buffer, 'source-wrapping.fig')
+        const { page, errors, workers } = await openDocument(context, buffer, 'source-wrapping.fig', page => enableLocalFonts(page, fonts))
         await page.getByRole('button', { name: 'Editable source instances', exact: true }).click()
         await page.getByRole('treeitem', { name: 'Editable source instances Lock Hide', exact: true }).click()
         await page.keyboard.press('ArrowRight')
@@ -196,6 +199,67 @@ test('oversized source words remain editable through keyboard history and two br
         assert.equal(placed.height, height)
         assert.equal(reopened.getChildren(placed.id)[0].text, value)
         assert.deepEqual(geometry(reopened, chain(reopened, placed, 'componentId').at(-1)), untouched)
+        assert.deepEqual(errors, [])
+        previousValue = value
+      } finally { await context.close() }
+    }
+  } finally { renderer.destroy(); setTextMeasurer(previous); await browser.close() }
+})
+
+test('real EmptyState copy and responsive line boxes survive editor property edits and two worker saves', { timeout: 120000 }, async t => {
+  await verifyBuild()
+  const run = await emptyStateFixture(t), id = 'fixture/empty'
+  const input = { title: 'This album is still being made', description: 'There are no stickers in it yet.', action: true }
+  const snapshot = run(input), temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-empty-fonts-'))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const { fonts, config } = await writeEditorFontFixtures(temporary)
+  const comparisonBrowser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
+  t.after(() => comparisonBrowser.close())
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
+  const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1)), previous = getTextMeasurer()
+  try {
+    const options = { examples: [id], fonts, browser: comparisonBrowser, renderer, viewport: { width: 320, height: 900 } }
+    const { graph, selections, placements } = await buildComponentDocument(snapshot, options)
+    graph.updateNode(selections[0].instance.id, { name: 'Editable empty state' })
+    graph.createInstance(selections[0].master.id, placements.id, { name: 'Unchanged empty state' })
+    let buffer = Buffer.from(await exportFigFile(graph)), previousValue = input.description
+    const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+    const protectedNodes = [...baseline.getAllNodes()].filter(node => node.type === 'COMPONENT' || node.name === 'Unchanged empty state')
+      .map(node => [node.name, geometry(baseline, node)])
+    for (const [width, value] of [[1280, 'Gather the people and places we remember together. '.repeat(7).trim()], [320, input.description]]) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['local-fonts'] })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, 'empty-state.fig', page => enableLocalFonts(page, fonts))
+        await page.getByRole('button', { name: 'Editable source instances', exact: true }).click()
+        await page.getByRole('treeitem', { name: 'Editable source instances Lock Hide', exact: true }).click()
+        await page.keyboard.press('ArrowRight')
+        const layer = page.getByRole('treeitem', { name: 'Editable empty state Lock Hide', exact: true })
+        await layer.click()
+        const size = page.getByRole('spinbutton', { name: 'Width', exact: true })
+        await size.dblclick(); await page.keyboard.press('Control+a'); await page.keyboard.type(String(width)); await page.keyboard.press('Enter')
+        await expect(size).toHaveAttribute('aria-valuenow', String(width))
+        const control = page.getByRole('textbox', { name: 'description', exact: true })
+        await expect(control).toHaveValue(previousValue)
+        await control.fill(value); await control.press('Tab'); await layer.click()
+        await page.keyboard.press('Control+z'); await expect(control).toHaveValue(previousValue)
+        await page.keyboard.press('Control+Shift+z'); await expect(control).toHaveValue(value)
+        buffer = await saveDocument(page, errors, workers)
+        const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' }), placed = named(reopened, 'Editable empty state')
+        const observed = (await captureExample(comparisonBrowser, run({ ...input, description: value }), id, { ...options, viewport: { width, height: 900 } })).roots[0]
+        for (const field of ['width', 'height']) assert.ok(Math.abs(placed[field] - observed.bounds[field]) <= 1 / 64)
+        for (const [i, child] of reopened.getChildren(placed.id).entries()) {
+          const source = observed.children[i]
+          for (const field of ['width', 'height']) assert.ok(Math.abs(child[field] - source.bounds[field]) <= 1 / 64)
+          for (const field of ['x', 'y']) assert.ok(Math.abs(child[field] - source.bounds[field] + observed.bounds[field]) <= 1 / 64)
+          if (i < 2) assert.equal(reopened.getChildren(child.id)[0].width, child.width, 'saved text line boxes follow the resized paragraph')
+        }
+        assert.equal(reopened.getChildren(reopened.getChildren(placed.id)[1].id)[0].text, value)
+        assert.equal(reopened.getChildren(placed.id)[1].maxWidth, 448)
+        const extraction = extractSourceProps(reopened, placed, snapshot)
+        if (value === input.description) assert.equal(extraction.status, 'no-supported-changes')
+        else assert.deepEqual(extraction.proposal, { baseSHA256: snapshot.sha256, path: [id], props: { description: value } })
+        for (const [name, expected] of protectedNodes) assert.deepEqual(geometry(reopened, named(reopened, name)), expected)
+        assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
         assert.deepEqual(errors, [])
         previousValue = value
       } finally { await context.close() }
@@ -755,6 +819,41 @@ const editorFontFixtures = [400, 500, 600].map(weight => {
   return { weight, bytes: new Uint8Array(OpenType.parse(figBuffer(woff)).toArrayBuffer()) }
 })
 
+async function writeEditorFontFixtures(temporary) {
+  // Local Font Access needs static OTF, not WOFF. Both measurement boundaries
+  // use these exact process-owned bytes; no fonts are installed on the host.
+  const fonts = []
+  for (const { weight, bytes } of editorFontFixtures) {
+    await writeFile(join(temporary, `${weight}.otf`), bytes, { flag: 'wx' })
+    fonts.push({ family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: hash(bytes) })
+  }
+  const config = join(temporary, 'fonts.conf')
+  await writeFile(config, `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>${temporary}</dir><cachedir>${temporary}/cache</cachedir></fontconfig>`, { flag: 'wx' })
+  return { fonts, config }
+}
+
+async function enableLocalFonts(page, fonts) {
+  assert.deepEqual(await page.evaluate(() => [window.isSecureContext, typeof window.queryLocalFonts]), [true, 'function'])
+  await page.keyboard.press('t')
+  await page.locator('[data-test-id="canvas-element"]').click({ position: { x: 300, y: 300 } })
+  await page.keyboard.type('Font access')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Font settings', exact: true }).click()
+  const panel = page.locator('[data-test-id="font-settings-panel"]')
+  // Online and local access are separate permissions, never interchangeable.
+  const localFonts = panel.getByText('Local fonts', { exact: true }).locator('..')
+  const onlineFonts = panel.getByText('Online fonts', { exact: true }).locator('..')
+  await expect(onlineFonts.getByText('Enabled', { exact: true })).toBeVisible()
+  await expect(localFonts.getByText('Enabled', { exact: true })).toHaveCount(0)
+  await panel.getByRole('button', { name: 'Allow', exact: true }).click()
+  await expect(localFonts.getByText('Enabled', { exact: true })).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  const blobs = await page.evaluate(async () => Promise.all((await window.queryLocalFonts()).map(async font =>
+    [...new Uint8Array(await (await font.blob()).arrayBuffer())])))
+  assert.deepEqual(blobs.map(bytes => hash(Uint8Array.from(bytes))).sort(), fonts.map(face => face.sha256).sort())
+}
+
 for (const [field, choices, editFamilyCopy = true, dashed = false, centered = false] of [
   ['tone', ['neutral', 'info', 'danger']], ['size', ['md', 'sm', 'lg']], ['size', ['md', 'xs', '2xl'], false, false, true],
   ['tone', ['neutral', 'info', 'danger'], true, true],
@@ -830,16 +929,7 @@ func main() {
   const temporary = await mkdtemp(join(tmpdir(), 'platformkit-editor-fonts-'))
   let browser, comparisonBrowser, renderer
   try {
-    // Chromium Local Font Access cannot read WOFF blobs. Re-encode fixtures as
-    // static OTF without changing their legacy names; use these exact bytes at
-    // both boundaries, not a claim of original WOFF/hinting equivalence.
-    const fonts = []
-    for (const { weight, bytes } of editorFontFixtures) {
-      await writeFile(join(temporary, `${weight}.otf`), bytes, { flag: 'wx' })
-      fonts.push({ family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: hash(bytes) })
-    }
-    const config = join(temporary, 'fonts.conf')
-    await writeFile(config, `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>${temporary}</dir><cachedir>${temporary}/cache</cachedir></fontconfig>`, { flag: 'wx' })
+    const { fonts, config } = await writeEditorFontFixtures(temporary)
     comparisonBrowser = await chromium.launch({ headless: true, args: browserArgs, env: { ...process.env, FONTCONFIG_FILE: config } })
     const ck = await initCanvasKit()
     renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
@@ -891,28 +981,7 @@ func main() {
     for (let cycle = 0; cycle < 3; cycle++) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['local-fonts'] })
       try {
-        const { page, errors, workers } = await openDocument(context, buffer, `composition-${cycle}.fig`, async page => {
-          assert.deepEqual(await page.evaluate(() => [window.isSecureContext, typeof window.queryLocalFonts]), [true, 'function'])
-          await page.keyboard.press('t')
-          await page.locator('[data-test-id="canvas-element"]').click({ position: { x: 300, y: 300 } })
-          await page.keyboard.type('Font access')
-          await page.keyboard.press('Escape')
-          await page.getByRole('button', { name: 'Font settings', exact: true }).click()
-          const panel = page.locator('[data-test-id="font-settings-panel"]')
-          // Online providers can already say Enabled before local access is
-          // granted. Check the named rows, never either status interchangeably.
-          const localFonts = panel.getByText('Local fonts', { exact: true }).locator('..')
-          const onlineFonts = panel.getByText('Online fonts', { exact: true }).locator('..')
-          await expect(onlineFonts.getByText('Enabled', { exact: true })).toBeVisible()
-          await expect(localFonts.getByText('Enabled', { exact: true })).toHaveCount(0)
-          await panel.getByRole('button', { name: 'Allow', exact: true }).click()
-          await expect(localFonts.getByText('Enabled', { exact: true })).toBeVisible()
-          await expect(panel.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
-          await page.keyboard.press('Escape')
-          const blobs = await page.evaluate(async () => Promise.all((await window.queryLocalFonts()).map(async font =>
-            [...new Uint8Array(await (await font.blob()).arrayBuffer())])))
-          assert.deepEqual(blobs.map(bytes => hash(Uint8Array.from(bytes))).sort(), fonts.map(face => face.sha256).sort())
-        })
+        const { page, errors, workers } = await openDocument(context, buffer, `composition-${cycle}.fig`, page => enableLocalFonts(page, fonts))
         await page.getByRole('button', { name: 'Editable source instances', exact: true }).click()
         for (const name of ['Editable source instances', form, generated, 'Editable Form actions', choiceForm]) {
           await page.getByRole('treeitem', { name: `${name} Lock Hide`, exact: true }).click({ timeout: 5000 }).catch(async cause => {

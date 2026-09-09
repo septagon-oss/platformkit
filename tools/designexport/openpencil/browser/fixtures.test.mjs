@@ -35,3 +35,39 @@ export function suppliedFonts(weights) {
     return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
   })
 }
+
+// The browser and shipped-editor checks exercise the same real constructor;
+// neither replaces its paragraphs, constraints, optional slots or source props.
+export function emptyStateFixture(t) {
+  return sourceFixture(t, `package main
+import (
+  "encoding/json"
+  "os"
+  g "maragu.dev/gomponents"
+  "github.com/septagon-oss/platformkit/design"
+  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/css"
+)
+func main() {
+  var input struct { Title, Description, Align, Constraint, Value string; Compact, Action bool }
+  if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
+  theme := design.Default()
+  theme.Light.Typography.Display, theme.Dark.Typography.Display = "IBM Plex Sans", "IBM Plex Sans"
+  var actions []g.Node
+  if input.Action {
+    action := components.ExampleOf(components.ExampleInfo{ID:"create", ComponentID:"pk-ui.component.button"}, components.ButtonProps{Label:"Create album"}, components.Button)
+    actions = []g.Node{action.Node}
+  }
+  example := components.ExampleWithSlots(components.ExampleInfo{ID:"fixture/empty", ComponentID:"pk-ui.component.emptystate"},
+    components.EmptyStateProps{ComponentProps:components.ComponentProps{ID:"empty"}, Title:input.Title, Description:input.Description, Compact:input.Compact, Bordered:true},
+    components.EmptyStateSlots{Actions:actions}, components.EmptyStateWithSlots)
+  sheet := css.NewSheet()
+  if input.Align != "" { sheet.Select("#empty", css.Decl("align-items", css.Literal(input.Align))) }
+  if input.Constraint != "" { sheet.Select("#empty > p", css.Decl(input.Constraint, css.Literal(input.Value))) }
+  snapshot, err := ui.Export(theme, []components.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
+  if err != nil { panic(err) }
+  if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
+}
+`)
+}

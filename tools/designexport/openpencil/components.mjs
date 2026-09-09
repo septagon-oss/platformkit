@@ -458,7 +458,9 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     requireComponent((['auto', '100%'].includes(node.sizing.width) || fixedWidth && style['box-sizing'] === 'border-box' && near(pixels(node.sizing.width), node.bounds.width)) &&
       (node.sizing.height === 'auto' || fixedHeight && style['box-sizing'] === 'border-box' && near(pixels(node.sizing.height), node.bounds.height)) &&
       ['auto', '0px'].includes(node.sizing['min-width']) && ['auto', '0px'].includes(node.sizing['min-height']) &&
-      node.sizing['max-width'] === 'none' && node.sizing['max-height'] === 'none', 'composition constrained sizing requires further conversion')
+      (node.sizing['max-width'] === 'none' || style.display === 'block' && style['box-sizing'] === 'border-box' &&
+        /^\d+(?:\.\d+)?px$/.test(node.sizing['max-width'])) && node.sizing['max-height'] === 'none',
+    'composition constrained sizing requires further conversion')
     let plan
     if (node.control) {
       const control = node.control, multiline = node.tag === 'textarea' && control.type === 'textarea'
@@ -621,6 +623,9 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
             'intrinsic blocks require automatic width in a wrapping row')
           child.placement = { counterAxisSizing: 'HUG' }
         }
+        if (vertical && align !== 'STRETCH' && (child.textBlock || child.blockFlow) && child.observation.sizing.width === 'auto') {
+          child.placement = { counterAxisSizing: 'HUG' }
+        }
         const grows = !vertical && !wrapping && childStyle['flex-grow'] === '1' && ['0%', '0px'].includes(childStyle['flex-basis'])
         requireComponent((grows || childStyle['flex-grow'] === '0' && childStyle['flex-basis'] === 'auto') &&
           ['0', '1'].includes(childStyle['flex-shrink']) && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
@@ -630,6 +635,10 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
           [child.textRow || child.native?.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL',
         }
       }
+    }
+    if (node.sizing['max-width'] !== 'none') {
+      requireComponent(plan.textBlock || plan.blockFlow, 'maximum width requires a wrapping paragraph or ordinary block flow')
+      plan.native.maxWidth = pixels(node.sizing['max-width'])
     }
     if (occurrence) return { ...plan, kind: 'component', occurrence }
     return plan
