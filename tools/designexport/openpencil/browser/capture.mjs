@@ -178,7 +178,7 @@ export async function captureExample(browser, snapshot, exampleId, {
         'grid-column-start', 'grid-column-end', 'grid-row-start', 'grid-row-end',
         'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
         'font-synthesis-weight', 'font-synthesis-style',
-        'font-feature-settings', 'font-variation-settings', 'line-height', 'letter-spacing',
+        'font-feature-settings', 'font-variation-settings', 'font-variant-numeric', 'line-height', 'letter-spacing', 'aspect-ratio',
         'white-space', 'text-align', 'text-transform', 'text-decoration-line',
         'text-indent', 'text-shadow', 'word-spacing', 'writing-mode', 'direction',
         'overflow-x', 'overflow-y', 'outline-style', 'outline-width', 'outline-color',

@@ -206,7 +206,7 @@ for (const [text, maxWidth, expectedWidth, expectedHeight] of [
         assert.ok(lines.flatMap(line => line.runs).reduce((count, run) => count + run.glyphs.length, 0) < text.length,
           'real ligature shaping combines characters, not a manual sum of glyph advances')
       }
-      assert.deepEqual(renderer.measureTextNode(node, maxWidth), expected)
+      assert.deepEqual(renderer.measureTextNode(node, maxWidth), { ...expected, minContentWidth: paragraph.getMinIntrinsicWidth() })
       if (maxWidth === undefined) {
         const previous = getTextMeasurer()
         try {
@@ -218,7 +218,7 @@ for (const [text, maxWidth, expectedWidth, expectedHeight] of [
             computeLayout(graph, row.id)
             assert.equal(node.width, scope === 'text-component-observed-aliases' ? Math.ceil(expected.width * 64) / 64 : expected.width,
               'only a source text row receives intrinsic inline-box rounding')
-            assert.deepEqual(renderer.measureTextNode(node), expected, 'layout never changes shaping')
+            assert.deepEqual(renderer.measureTextNode(node), { ...expected, minContentWidth: paragraph.getMinIntrinsicWidth() }, 'layout never changes shaping')
           }
         } finally { setTextMeasurer(previous) }
       }

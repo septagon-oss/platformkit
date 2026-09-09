@@ -5,20 +5,22 @@ const pixel = value => typeof value === 'string' && /^-?\d+(?:\.\d+)?px$/.test(v
 const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1 / 64
 
 // CSS absolute boxes use their containing block's padding edge, not its content
-// edge. Only direct, untransformed flex ownership and explicit border-box sizes
-// are admitted here; static-position, stretch and shrink-to-fit need other proof.
+// edge. Direct, untransformed flex ownership admits fixed flex boxes and
+// shrink-to-fit single-text blocks; static-position and stretch need other proof.
 // https://drafts.csswg.org/css-position-3/#def-cb
 export function planSourceAbsolute(node, parent) {
   requirePosition(node?.style.position === 'absolute' && parent?.style.position === 'relative' &&
     ['flex', 'inline-flex'].includes(parent.style.display), 'requires a direct positioned flex containing block')
   requirePosition(['transform', 'translate', 'rotate', 'scale'].every(key => parent.style[key] === 'none') &&
-    parent.style.zoom === '1' && ['x', 'y'].every(axis => parent.style[`overflow-${axis}`] === 'visible'),
-  'containing-block transforms, clipping or scrolling require further conversion')
-  requirePosition(node.style.display === 'flex' && node.style['box-sizing'] === 'border-box' && node.style['z-index'] === 'auto' &&
+    parent.style.zoom === '1' && ['x', 'y'].every(axis => ['visible', 'hidden'].includes(parent.style[`overflow-${axis}`])),
+  'containing-block transforms or scrolling require further conversion')
+  const autoSize = node.style.display === 'block' && node.sizing.width === 'auto' && node.sizing.height === 'auto' &&
+    node.children?.length === 1 && node.children[0].kind === 'text'
+  requirePosition((autoSize || node.style.display === 'flex') && node.style['box-sizing'] === 'border-box' && node.style['z-index'] === 'auto' &&
     ['x', 'y'].every(axis => node.style[`overflow-${axis}`] === 'visible') &&
     ['top', 'right', 'bottom', 'left'].every(side => pixel(node.style[`margin-${side}`]) === 0),
-  'requires an unstacked flex box without margins, scrolling or clipping')
-  const width = pixel(node.sizing.width), height = pixel(node.sizing.height)
+  'requires an unstacked flex box or automatic text block without margins, scrolling or clipping')
+  const width = autoSize ? node.bounds.width : pixel(node.sizing.width), height = autoSize ? node.bounds.height : pixel(node.sizing.height)
   requirePosition(width > 0 && height > 0 && near(width, node.bounds.width) && near(height, node.bounds.height),
     'requires explicit fixed border-box dimensions')
   function axis(start, end, coordinate, size) {
@@ -33,7 +35,8 @@ export function planSourceAbsolute(node, parent) {
   const horizontal = axis('left', 'right', 'x', 'width'), vertical = axis('top', 'bottom', 'y', 'height')
   return { x: horizontal.position, y: vertical.position, width, height, layoutPositioning: 'ABSOLUTE',
     horizontalConstraint: horizontal.constraint, verticalConstraint: vertical.constraint,
-    cssPosition: { version: 1, horizontal: horizontal.anchor, vertical: vertical.anchor } }
+    cssPosition: { version: 1, horizontal: horizontal.anchor, vertical: vertical.anchor,
+      ...(autoSize ? { autoSize: { oppositeBorder: pixel(parent.style[`border-${horizontal.anchor.edge === 'left' ? 'right' : 'left'}-width`]) } } : {}) } }
 }
 
 // Placement is a private parent-owned frame, never a property of the reusable
@@ -51,11 +54,27 @@ export function sourceAbsoluteRecord(node) {
   return record
 }
 
-export function applySourceAbsolute(graph, parent, node, computeLayout) {
+export function applySourceAbsolute(graph, parent, node, computeLayout, measureText) {
   const record = sourceAbsoluteRecord(node)
   if (!record) return false
   // An absolute Yoga placeholder has no subtree. Lay out the owned content
   // independently, then anchor its actual dimensions against the resolved parent.
+  if (record.autoSize && node.counterAxisSizing === 'FIXED' && node.primaryAxisSizing === 'HUG') {
+    const children = graph.getChildren(node.id), content = children[0], leaves = content && graph.getChildren(content.id), text = leaves?.[0]
+    requirePosition(children.length === 1 && leaves?.length === 1 && text.type === 'TEXT' && content.layoutMode === 'VERTICAL',
+      'automatic size requires its owned single-text block')
+    const measured = measureText?.({ ...text, textAutoResize: 'WIDTH_AND_HEIGHT' })
+    requirePosition(measured && [measured.width, measured.minContentWidth, record.autoSize.oppositeBorder].every(value => Number.isFinite(value) && value >= 0),
+      'automatic size requires actual intrinsic measurement and border evidence')
+    const padding = content.paddingLeft + content.paddingRight
+    const available = Math.max(0, parent.width - record.horizontal.inset - record.autoSize.oppositeBorder - padding)
+    const width = padding + Math.max(Math.ceil(measured.minContentWidth * 64) / 64, Math.min(Math.ceil(measured.width * 64) / 64, available))
+    graph.preserveSourceMetadataDuring(() => {
+      graph.updateNode(node.id, { width, figmaDerivedLayout: null })
+      graph.updateNode(content.id, { width, figmaDerivedLayout: null })
+      graph.updateNode(text.id, { figmaDerivedLayout: null })
+    })
+  }
   computeLayout(graph, node.id)
   const updates = {}
   for (const [axis, coordinate, size, start] of [['horizontal', 'x', 'width', 'left'], ['vertical', 'y', 'height', 'top']]) {

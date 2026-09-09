@@ -142,7 +142,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
-    'scaling-correction.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -403,7 +403,8 @@ test('derived native colors follow keyboard palette edits and survive two browse
   } finally { await browser.close() }
 })
 
-test('source absolute placements follow editor resizing, history and two worker saves', { timeout: 120000 }, async () => {
+for (const square of [false, true])
+test(`source absolute placements follow editor resizing, history and two worker saves: square=${square}`, { timeout: 120000 }, async () => {
   await verifyBuild()
   const graph = new SceneGraph(), pageNode = graph.getPages()[0]
   const provenance = record => [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
@@ -411,7 +412,9 @@ test('source absolute placements follow editor resizing, history and two worker 
   }) }]
   const badge = graph.createNode('COMPONENT', pageNode.id, { name: 'Reusable positioned content', width: 80, height: 32 })
   const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Positioning master', width: 320, height: 160,
-    layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED', pluginData: provenance({}) })
+    layoutMode: 'HORIZONTAL', primaryAxisSizing: 'FIXED', counterAxisSizing: square ? 'HUG' : 'FIXED',
+    clipsContent: square, cornerRadius: 12,
+    pluginData: provenance(square ? { cssBox: { version: 1, aspectRatio: 1, overflow: [2, 5, 4, 3] } } : {}) })
   for (const [horizontal, vertical] of [['left', 'top'], ['right', 'top'], ['left', 'bottom'], ['right', 'bottom']]) {
     const wrapper = graph.createNode('FRAME', master.id, { name: `${horizontal} ${vertical}`, width: 80, height: 32,
       layoutMode: 'VERTICAL', primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED', layoutPositioning: 'ABSOLUTE',
@@ -445,11 +448,12 @@ test('source absolute placements follow editor resizing, history and two worker 
           await expect(width).toHaveAttribute('aria-valuenow', String(next))
           buffer = await saveDocument(page, errors, workers)
           const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' }), edited = named(reopened, 'Edited positioning')
-          assert.deepEqual([edited.x, edited.y, edited.width, edited.height], [20, 220, next, 160])
+          assert.deepEqual([edited.x, edited.y, edited.width, edited.height], [20, 220, next, square ? next : 160])
+          assert.equal(edited.clipsContent, square)
           for (const wrapper of reopened.getChildren(edited.id)) {
             const [horizontal, vertical] = wrapper.name.split(' ')
             assert.deepEqual([wrapper.x, wrapper.y, wrapper.width, wrapper.height],
-              [horizontal === 'left' ? 12.25 : next - 92.25, vertical === 'top' ? 2.5 : 125.5, 80, 32])
+              [horizontal === 'left' ? 12.25 : next - 92.25, vertical === 'top' ? 2.5 : edited.height - 34.5, 80, 32])
             assert.equal(chain(reopened, reopened.getChildren(wrapper.id)[0], 'componentId').at(-1).name, 'Reusable positioned content')
           }
           for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)

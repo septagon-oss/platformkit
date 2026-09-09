@@ -76,12 +76,12 @@ export function observedPaint(graph, collection, snapshot, observation, root, pr
 }
 
 export function createPaintedNode(graph, type, parentId, props, pending) {
-  const { expressionBindings, cssBorder, cssPosition, ...native } = props
-  if (cssBorder || cssPosition) {
+  const { expressionBindings, cssBorder, cssPosition, cssBox, ...native } = props
+  if (cssBorder || cssPosition || cssBox) {
     const entries = native.pluginData?.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
     requirePaint(entries?.length === 1, 'CSS presentation needs its existing source correspondence')
     native.pluginData = native.pluginData.map(item => item === entries[0]
-      ? { ...item, value: JSON.stringify({ ...JSON.parse(item.value), ...(cssBorder ? { cssBorder } : {}), ...(cssPosition ? { cssPosition } : {}) }) } : item)
+      ? { ...item, value: JSON.stringify({ ...JSON.parse(item.value), ...(cssBorder ? { cssBorder } : {}), ...(cssPosition ? { cssPosition } : {}), ...(cssBox ? { cssBox } : {}) }) } : item)
   }
   const node = graph.createNode(type, parentId, native)
   if (expressionBindings) pending.push({ node, bindings: expressionBindings })

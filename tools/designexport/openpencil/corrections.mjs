@@ -9,6 +9,7 @@ import { correctGridLayout, correctGridApply, correctGridTrackMapping } from './
 import { correctGridNodeChange, correctGridImport, correctGridOverrides, correctGridActions } from './grid-fig-correction.mjs'
 import { correctVariantActions, correctVariantImport, correctVariantNodeChange } from './variant-correction.mjs'
 import { correctCSSBorders } from './border-correction.mjs'
+import { correctSourceOverflow } from './source-box.mjs'
 import { correctSourcePositionActions, correctSourcePositionImport, correctSourcePositionGraph } from './source-positioning.mjs'
 
 // Source hashes pin the exact upstream implementation, not just its version
@@ -227,7 +228,9 @@ export const corrections = Object.freeze({
         'const paraStyle = new ck.ParagraphStyle({\n' +
         '\t\tapplyRoundingHack: ownSourceLayoutScope(node) !== "source-composition-layout",')
       // Layout consumes shaped advances, not raster pixel bounds.
-      return replace(source, 'width: Math.ceil(width),\n\t\theight: Math.ceil(height)', 'width,\n\t\theight')
+      source = replace(source, 'const height = paragraph.getHeight();',
+        'const height = paragraph.getHeight();\n\tconst minContentWidth = paragraph.getMinIntrinsicWidth();')
+      return replace(source, 'width: Math.ceil(width),\n\t\theight: Math.ceil(height)', 'width,\n\t\theight,\n\t\tminContentWidth')
     },
   },
   '@open-pencil/core/dist/canvas/fills.js': {
@@ -239,7 +242,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/canvas/scene.js': {
     sha256: '7d935160fff2f7ac19a6ef55bf05e920e813b880012251063027078370757123',
-    transform: correctCSSBorders,
+    transform: (source, replace) => correctSourceOverflow(correctCSSBorders(source, replace), replace),
   },
   '@open-pencil/core/dist/canvas/strokes.js': {
     sha256: '8da58e7799f04db7dcf301b7033d4c113627e148e26f9c75b3533dfff1e7dc31',

@@ -2,18 +2,26 @@ import { fileURLToPath } from 'node:url'
 import { chain } from './exporter-correction.mjs'
 
 export function sourceLayoutScope(graph, node) {
+  return sourceLayoutRecord(graph, node)?.scope
+}
+
+export function sourceLayoutRecord(graph, node) {
   let master
   try { master = chain(graph, node, 'componentId').at(-1) } catch { return }
-  return ownSourceLayoutScope(master)
+  return ownSourceLayoutRecord(master)
 }
 
 export function ownSourceLayoutScope(node) {
+  return ownSourceLayoutRecord(node)?.scope
+}
+
+function ownSourceLayoutRecord(node) {
   if (!Array.isArray(node?.pluginData)) return
   const entries = node.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
   if (entries.length !== 1) return
   let source
   try { source = JSON.parse(entries[0].value) } catch { return }
-  return source?.schema === 'platformkit.design-export.v1' ? source.scope : undefined
+  return source?.schema === 'platformkit.design-export.v1' ? source : undefined
 }
 
 export function sourceCompositionLayout(graph, node) {
@@ -34,6 +42,7 @@ export function editedSourceLayout(graph, frame) {
 // Layout owns temporary Yoga objects. Release them at that boundary even when
 // measurement or nested layout throws.
 export function correctLayout(source, replace) {
+  source = `import { sourceAspectRatio } from ${JSON.stringify(fileURLToPath(new URL('./source-box.mjs', import.meta.url)))};\n` + source
   source = `import { sourceLayoutScope, sourceCompositionLayout, editedSourceLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   // A child laid out independently still uses its parent-resolved fill size.
   // Parent layout remains responsible for assigning that size on the next pass.
@@ -62,8 +71,10 @@ function intrinsicSourceWidth(graph, node) {
 
 function configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis = false, graph) {`)
   source = replace(source, 'function configureFlexContainer(yogaNode, node, direction) {',
-    'function configureFlexContainer(yogaNode, node, direction, graph) {')
-  source = replace(source, 'configureFlexContainer(root, frame, direction);', 'configureFlexContainer(root, frame, direction, graph);')
+    'function configureFlexContainer(yogaNode, node, direction, graph) {\n' +
+    '\tconst ratio = sourceAspectRatio(graph, node);\n\tif (ratio !== undefined) yogaNode.setAspectRatio(ratio);')
+  source = replace(source, 'configureFlexContainer(root, frame, direction);', 'configureFlexContainer(root, frame, direction, graph);\n' +
+    '\tconst ratio = sourceAspectRatio(graph, frame);\n\tif (ratio !== undefined) root.setHeight(frame.width / ratio);')
   source = replace(source, 'configureFlexContainer(yogaChild, child, direction);', 'configureFlexContainer(yogaChild, child, direction, graph);')
   source = replace(source, 'const primaryGap = node.primaryAxisAlign === "SPACE_BETWEEN" ? 0 : node.itemSpacing;',
     'const primaryGap = primaryItemGap(graph, node);')
@@ -154,13 +165,14 @@ function computeLayoutMeasured(graph, frameId) {`)
 }
 
 export function correctLayoutApply(source, replace) {
+  source = 'import { getTextMeasurer } from "./text-measurement.js";\n' + source
   source = `import { applySourceAbsolute } from ${JSON.stringify(fileURLToPath(new URL('./source-positioning.mjs', import.meta.url)))};\n` + source
   source = `import { editedSourceLayout, sourceCompositionLayout } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   source = replace(source, 'function preservesImportedHugCrossSize(graph, frame, axis) {',
     'function preservesImportedHugCrossSize(graph, frame, axis) {\n' +
     '\tif (sourceCompositionLayout(graph, frame) && !frame.figmaDerivedLayout) return false;')
   source = replace(source, 'if (preservesImportedInstanceInternals(child)) continue;',
-    'if (applySourceAbsolute(graph, frame, child, computeLayout)) continue;\n' +
+    'if (applySourceAbsolute(graph, frame, child, computeLayout, getTextMeasurer())) continue;\n' +
     '\t\tif (preservesImportedInstanceInternals(child) && !(sourceCompositionLayout(graph, child) && !child.figmaDerivedLayout)) continue;')
   return replace(source,
     'const preservesImportedFrameGeometry = child.type === "FRAME" && child.source.format === "fig" && frameSourceIsFig(graph, child.parentId);',

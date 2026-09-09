@@ -6,6 +6,7 @@ import { computedColor as color } from './computed-color.mjs'
 import { observedPaint, sameColor, createPaintedNode, bindPaintExpressions } from './component-paints.mjs'
 import { planSourceGrid } from './source-grid.mjs'
 import { planSourceAbsolute } from './source-positioning.mjs'
+import { planSourceBox } from './source-box.mjs'
 import { cssDashIntervals } from './border-correction.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
@@ -79,6 +80,11 @@ function matchesTextFace(face, observed, style, environment) {
 
 // Read-only presentation planning is shared by text rows and composed frames.
 // Layout-specific constraints remain with the owning construction path.
+function numericFeatures(style) {
+  requireComponent(['normal', 'tabular-nums'].includes(style['font-variant-numeric'] ?? 'normal'), 'numeric typography requires further conversion')
+  return style['font-variant-numeric'] === 'tabular-nums' ? [{ tag: 'tnum', enabled: true }] : []
+}
+
 function planPresentation(node, paintFor, parentLayout = null) {
   const style = node.style
   requirePlainText(style)
@@ -118,6 +124,7 @@ function planPresentation(node, paintFor, parentLayout = null) {
   ]))
   const background = paintFor(node, 'background-color')
   return {
+    ...planSourceBox(node, borders.map(border => border.width)),
     ...background, ...insets, opacity: Number(style.opacity), effects: boxShadow(node),
     independentCorners: true,
     topLeftRadius: radii[0], topRightRadius: radii[1], bottomRightRadius: radii[2], bottomLeftRadius: radii[3],
@@ -293,7 +300,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
         nativeNode = createPaintedNode(graph, 'TEXT', master.id, {
           name: region.property, text: region.text, width: region.bounds.width, height: lineHeight,
           fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
-          fontSize, lineHeight, letterSpacing, textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
+          fontSize, lineHeight, letterSpacing, fontFeatures: numericFeatures(style), textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
           pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
             schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
           }) }],
@@ -387,7 +394,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     return { kind: 'text', region, observation: control ? null : region, control, wrapping, native: {
       name: region.property ?? 'Source text', text: value, width: control ? 0 : region.bounds.width, height: lineHeight,
       fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic', fontSize, lineHeight,
-      letterSpacing: style['letter-spacing'] === 'normal' ? 0 : pixels(style['letter-spacing']),
+      letterSpacing: style['letter-spacing'] === 'normal' ? 0 : pixels(style['letter-spacing']), fontFeatures: numericFeatures(style),
       textAutoResize: wrapping ? 'HEIGHT' : 'WIDTH_AND_HEIGHT',
       ...(control ? { layoutPositioning: 'ABSOLUTE', x: 0, y: 0 } : {}),
       ...paintFor(node, 'color'),
@@ -566,9 +573,10 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         if (child.style?.position === 'absolute') {
           const position = planSourceAbsolute(child, node)
           const content = element(child, owner, false, 'absolute')
+          if (position.cssPosition.autoSize) content.placement = { counterAxisSizing: 'FILL' }
           return { kind: 'frame', positioned: true, observation: child, children: [content], native: {
             name: 'Source absolute placement', ...position, fills: [],
-            layoutMode: 'VERTICAL', primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED',
+            layoutMode: 'VERTICAL', primaryAxisSizing: position.cssPosition.autoSize ? 'HUG' : 'FIXED', counterAxisSizing: 'FIXED',
             primaryAxisAlign: 'MIN', counterAxisAlign: 'MIN',
           } }
         }

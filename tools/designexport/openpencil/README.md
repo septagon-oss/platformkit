@@ -248,9 +248,9 @@ Nested construction includes block flow with uniform nonnegative collapsed margi
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
 Nonnegative flex margins use private margin-box frames; fixed border-box sizes and
 zero-basis horizontal fill keep reusable children independent of their placement.
-Trailing fixed-size absolute flex boxes use parent-owned edge anchors, preserving
-linked content, native placement edits and two saves. Automatic badge sizing,
-stretch insets, stacking, transformed/scrolling or clipped containing blocks remain refused.
+Trailing fixed flex boxes and nonempty auto-sized text badges use parent-owned edge anchors;
+width-led aspect ratios, padding-edge hidden overflow and tabular numbers retain source layout through two saves.
+Stretch insets, stacking and transformed/scrolling containing blocks remain refused; artwork conversion is unfinished.
 Generated refusal forms inherit Alert text, icon offsets and rounded independent
 border widths through edits and two saves at 320/1280px in both themes. Text inputs
 also require an observed browser editing viewport, not inferred content offsets.
