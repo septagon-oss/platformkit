@@ -35,7 +35,7 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 	if assignee == uuid.Nil {
 		return nil, fmt.Errorf("%w: a task is assigned to somebody", crud.ErrInvalid)
 	}
-	task, err := crud.Get[*contracts.Task](tx, id)
+	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 // is the auditable part and a retry is not a correction.
 func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, resolution string) (*contracts.Task, error) {
 	resolution = strings.TrimSpace(resolution)
-	task, err := crud.Get[*contracts.Task](tx, id)
+	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -93,10 +93,10 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 
 // CheckSLA records a breach, once. The sweep calls it every minute for every
 // task whose deadline has passed, so "once" is the whole contract: the stored
-// flag is read and written in one transaction, and the row lock the update
-// takes makes two sweeps racing on one task one breach and one event.
+// row is locked before reading the flag, deadline and resolution, so a waiting
+// command evaluates the preceding writer's committed state before deciding.
 func (s *Service) CheckSLA(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.Task, error) {
-	task, err := crud.Get[*contracts.Task](tx, id)
+	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
 	if err != nil {
 		return nil, err
 	}

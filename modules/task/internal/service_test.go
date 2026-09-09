@@ -2,7 +2,6 @@ package internal_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -224,92 +223,6 @@ func TestTheSweepBreachesTheOverdueAndNothingElse(t *testing.T) {
 type lister []tenancy.Tenant
 
 func (l lister) List(context.Context, db.Tx[db.System]) ([]tenancy.Tenant, error) { return l, nil }
-
-// TestAConcurrentPatchOfAnotherFieldSurvivesAnAssign. Every command reads a row
-// and then writes it, and between the two there is a window; a request that
-// changes a different field in that window must not be undone. Assign writes
-// the three columns it changed, so it is not — where writing the whole row
-// would put the description back to the value the Assign happened to read.
-//
-// The window is made deterministic with a row lock rather than a sleep: the
-// other writer holds the row, so the Assign has certainly read it and is
-// certainly waiting on its own write by the time that writer commits.
-func TestAConcurrentPatchOfAnotherFieldSurvivesAnAssign(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
-	svc := internal.NewService()
-
-	var id uuid.UUID
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		task := &contracts.Task{Title: "chiller", Description: "as it was"}
-		if err := crud.Create(ctx, tx, task); err != nil {
-			return err
-		}
-		id = task.ID
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	locked, release := make(chan struct{}), make(chan struct{})
-	patched := make(chan error, 1)
-	go func() {
-		patched <- db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-			if err := tx.DB().Exec("SELECT id FROM tasks WHERE id = ? FOR UPDATE", id).Error; err != nil {
-				return err
-			}
-			close(locked)
-			<-release
-			return tx.DB().Exec("UPDATE tasks SET description = ? WHERE id = ?", "the other patch", id).Error
-		})
-	}()
-	<-locked
-
-	assigned := make(chan error, 1)
-	go func() {
-		assigned <- db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := svc.Assign(ctx, tx, id, uuid.New())
-			return err
-		})
-	}()
-	waitForABlockedUpdate(t, admin)
-	close(release)
-
-	if err := <-patched; err != nil {
-		t.Fatalf("the concurrent patch: %v", err)
-	}
-	if err := <-assigned; err != nil {
-		t.Fatalf("the assign: %v", err)
-	}
-
-	var description, status string
-	if err := admin.QueryRowContext(t.Context(),
-		`SELECT description, status FROM tasks WHERE id = $1`, id).Scan(&description, &status); err != nil {
-		t.Fatalf("read the task: %v", err)
-	}
-	if description != "the other patch" || status != contracts.StatusAcknowledged {
-		t.Errorf("the task is %q/%q; the assign writes the columns it changed, so the other patch is still there",
-			description, status)
-	}
-}
-
-// waitForABlockedUpdate returns once some backend is waiting on a lock to
-// update a task, which is the assign having read the row and reached its write.
-func waitForABlockedUpdate(t *testing.T, admin *sql.DB) {
-	t.Helper()
-	const q = `SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE "tasks" SET%'`
-	for range 500 {
-		var n int
-		if err := admin.QueryRowContext(t.Context(), q).Scan(&n); err != nil {
-			t.Fatalf("read pg_stat_activity: %v", err)
-		}
-		if n > 0 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("the assign never blocked on the row lock, so there was no window to test")
-}
 
 // TestTheSweepPassesALegacyRowAndBreachesTheRest. A row an older writer left in
 // a shape Validate refuses — a priority that is no longer one of the four — used

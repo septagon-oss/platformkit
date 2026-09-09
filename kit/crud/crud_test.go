@@ -139,6 +139,53 @@ func TestCreateStampsTheTenantFromTheTransaction(t *testing.T) {
 	})
 }
 
+// Locking one entity must not turn a later ordinary Get into a locking read.
+// A separate transaction can still update the ordinarily read row while the
+// first transaction remains open and holds its explicit lock on another row.
+func TestGetForUpdateDoesNotMakeLaterReadsLock(t *testing.T) {
+	conn := setup(t)
+	ctx := tenancy.WithTenant(t.Context(), acme)
+	locked := &Task{Title: "locked"}
+	read := &Task{Title: "ordinary read"}
+	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if err := crud.Create(ctx, tx, locked); err != nil {
+			return err
+		}
+		return crud.Create(ctx, tx, read)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		if _, err := crud.GetForUpdate[*Task](tx, locked.ID); err != nil {
+			return err
+		}
+		if _, err := crud.Get[*Task](tx, read.ID); err != nil {
+			return err
+		}
+		// Use the outer context without a transaction, so db.Run opens another
+		// one. A leaked FOR UPDATE would block it until the timeout.
+		other, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		return db.Run(other, conn, func(ctx context.Context, next db.Tx[db.Tenant]) error {
+			row, err := crud.GetForUpdate[*Task](next, read.ID)
+			if err != nil {
+				return err
+			}
+			row.Notes = "independent writer"
+			return crud.Update(ctx, next, row, "notes", "updated_at")
+		})
+	})
+	if err != nil {
+		t.Fatalf("ordinary Get prevented an independent write: %v", err)
+	}
+	as(t, conn, acme, func(_ context.Context, tx db.Tx[db.Tenant]) {
+		row, err := crud.Get[*Task](tx, read.ID)
+		if err != nil || row.Notes != "independent writer" {
+			t.Fatalf("independent write = %v, %v", row, err)
+		}
+	})
+}
+
 // TestAnotherTenantReachesNothing is the isolation claim at the level a module
 // works at: not one of the five operations sees the other tenant's row, and it
 // is Postgres that refuses, not a predicate anyone remembered to write.
@@ -154,6 +201,9 @@ func TestAnotherTenantReachesNothing(t *testing.T) {
 	as(t, conn, globex, func(ctx context.Context, tx db.Tx[db.Tenant]) {
 		if _, err := crud.Get[*Task](tx, mine.ID); !errors.Is(err, crud.ErrNotFound) {
 			t.Errorf("Get across tenants = %v, want ErrNotFound", err)
+		}
+		if row, err := crud.GetForUpdate[*Task](tx, mine.ID); row != nil || !errors.Is(err, crud.ErrNotFound) {
+			t.Errorf("GetForUpdate across tenants = %v, %v, want nil and ErrNotFound", row, err)
 		}
 		items, total, err := crud.List[*Task](tx, crud.Query{})
 		if err != nil {
@@ -277,6 +327,9 @@ func TestSoftDeleteHidesTheRowFromGetAndList(t *testing.T) {
 		}
 		if _, err := crud.Get[*Task](tx, task.ID); !errors.Is(err, crud.ErrNotFound) {
 			t.Errorf("Get of a soft-deleted row = %v, want ErrNotFound", err)
+		}
+		if row, err := crud.GetForUpdate[*Task](tx, task.ID); row != nil || !errors.Is(err, crud.ErrNotFound) {
+			t.Errorf("GetForUpdate of a soft-deleted row = %v, %v, want nil and ErrNotFound", row, err)
 		}
 		items, total, err := crud.List[*Task](tx, crud.Query{})
 		if err != nil || len(items) != 0 || total != 0 {

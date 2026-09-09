@@ -41,6 +41,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 )
@@ -122,8 +123,21 @@ const (
 
 // Get reads one row of this tenant. A soft-deleted row is not found.
 func Get[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	return get[T](tx.DB(), id)
+}
+
+// GetForUpdate reads and locks one live row of this tenant until the caller's
+// transaction ends. Use it before decisions or validation that depend on the
+// stored state. At read committed, a waiter reads the preceding writer's
+// committed version. Serialization failures at stricter isolation levels pass
+// through unchanged; the caller must retry its whole transaction.
+func GetForUpdate[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	return get[T](tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}), id)
+}
+
+func get[T Entity](query *gorm.DB, id uuid.UUID) (T, error) {
 	e := blank[T]()
-	if err := tx.DB().Where("id = ? AND deleted_at IS NULL", id).Take(e).Error; err != nil {
+	if err := query.Where("id = ? AND deleted_at IS NULL", id).Take(e).Error; err != nil {
 		var zero T
 		return zero, Classify(err)
 	}
@@ -210,6 +224,9 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 // field nobody touched is lost. Spec.Mount passes exactly the columns the patch
 // body named. crud.Schema is the only thing that produces these names; a caller
 // that invents one gets whatever GORM makes of it.
+//
+// Read with GetForUpdate before merging or validating stored state; acquiring
+// a lock only at this write cannot correct an earlier decision on a stale row.
 //
 // A failed write aborts the whole transaction, in Postgres as everywhere: a
 // caller that means to try something else after a conflict needs a new

@@ -166,7 +166,10 @@ func (t *Task) Validate(context.Context) error {
 //
 // Each command is idempotent when repeated with the same argument: the callers
 // that retry — a browser, a redelivered event, the next sweep — must not each
-// produce an event.
+// produce an event. Concurrent commands serialize their decisions on the task
+// until the caller commits or rolls back. At read committed, a waiter evaluates
+// the committed state; a stricter isolation level may return a serialization
+// failure, which requires retrying the caller's whole transaction.
 type Service interface {
 	// Assign makes assignee responsible and acknowledges an open task. The
 	// same person again changes nothing and publishes nothing.

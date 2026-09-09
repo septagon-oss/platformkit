@@ -208,7 +208,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, err
 			}
-			e, err := crud.Get[T](tx, in.ID)
+			e, err := crud.GetForUpdate[T](tx, in.ID)
 			if err != nil {
 				return nil, Fault(err)
 			}
@@ -235,10 +235,10 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, err
 			}
-			// The row is read first so that a delete of something this tenant
+			// The row is locked first so that a delete of something this tenant
 			// does not have is a 404, and so that the hook and the event carry
 			// what was deleted rather than only its id.
-			e, err := crud.Get[T](tx, in.ID)
+			e, err := crud.GetForUpdate[T](tx, in.ID)
 			if err != nil {
 				return nil, Fault(err)
 			}
