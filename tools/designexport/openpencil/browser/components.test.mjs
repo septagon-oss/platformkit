@@ -1,7 +1,4 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { after, afterEach, before, test } from 'node:test'
 import { isDeepStrictEqual } from 'node:util'
 import { chromium } from 'playwright'
@@ -21,10 +18,10 @@ import { associateSourceInstance, extractSourceProps } from '../source-changes.m
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from './capture.mjs'
 import { computedColor } from '../computed-color.mjs'
+import { exportCore, suppliedFonts } from './fixtures.test.mjs'
 
 const primary = 'pk-ui.component.button/primary'
-const bytes = readFileSync(new URL('../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff', import.meta.url))
-const faces = [{ family: 'IBM Plex Sans', weight: 600, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }]
+const faces = suppliedFonts([600])
 const originalMeasurer = getTextMeasurer()
 let browser, ck, renderer
 before(async () => {
@@ -37,9 +34,7 @@ after(async () => { renderer?.destroy(); setTextMeasurer(originalMeasurer); awai
 afterEach(() => assert.equal(browser.contexts().length, 0))
 
 function source(label = 'Save', id = primary, extra = {}) {
-  return JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', id, '--props'], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify({ label, ...extra }),
-  }))
+  return exportCore(['--example', id, '--props'], { label, ...extra })
 }
 
 async function observe(snapshot, mode = 'light', usingBrowser = browser) {
@@ -56,11 +51,7 @@ function colorCollection(graph) {
 }
 
 test('native source proposals reproject through Go after two FIG saves', async () => {
-  const run = (args, input) => JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
-    input: input === undefined ? undefined : JSON.stringify(input),
-  }))
-  const snapshot = run([]), beforeSource = structuredClone(snapshot)
+  const snapshot = exportCore(), beforeSource = structuredClone(snapshot)
   let graph = buildFoundation(snapshot).graph
   const page = graph.addPage('Source reprojection')
   const observation = await captureExample(browser, snapshot, primary, { fonts: faces })
@@ -82,7 +73,7 @@ test('native source proposals reproject through Go after two FIG saves', async (
     const before = structuredClone([...graph.getAllNodes()]), result = extractSourceProps(graph, instance, snapshot)
     assert.equal(result.status, 'proposal')
     assert.deepEqual(result.proposal, { baseSHA256: snapshot.sha256, path: [primary], props: { label } })
-    const projected = run(['--proposal'], result.proposal)
+    const projected = exportCore(['--proposal'], result.proposal)
     assert.notEqual(projected.sha256, snapshot.sha256)
     assert.equal(projected.examples.length, snapshot.examples.length)
     assert.equal(projected.examples.find(example => example.id === primary).props.label, label)
@@ -96,18 +87,14 @@ test('native source proposals reproject through Go after two FIG saves', async (
 })
 
 test('real source variant families retain shared copy, native geometry and typed Go proposals through two saves', async () => {
-  const run = (args, input) => JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
-    input: input === undefined ? undefined : JSON.stringify(input),
-  }))
-  const snapshot = run([]), tones = ['neutral', 'info', 'danger'], baseline = structuredClone(snapshot)
+  const snapshot = exportCore(), tones = ['neutral', 'info', 'danger'], baseline = structuredClone(snapshot)
   for (const mode of ['light', 'dark']) {
     let graph = buildFoundation(snapshot).graph
     const page = graph.addPage('Source variant proof'), collection = graph.variableCollections.get(colorCollection(graph))
     graph.updateNode(page.id, { variableModes: { [collection.id]: collection.modes.find(item => item.name === mode).modeId } })
     const owner = graph.createNode('COMPONENT_SET', page.id, { name: 'Source family' }), variants = []
     for (const tone of tones) {
-      const projected = tone === 'neutral' ? snapshot : run(['--proposal'], { baseSHA256: snapshot.sha256, path: [primary], props: { tone } })
+      const projected = tone === 'neutral' ? snapshot : exportCore(['--proposal'], { baseSHA256: snapshot.sha256, path: [primary], props: { tone } })
       const observation = await captureExample(browser, projected, primary, { mode, fonts: faces })
       const built = await materializeComponent(graph, page.id, projected, observation, faces, renderer, collection.id)
       variants.push({ snapshot: projected, master: built.master })
@@ -139,7 +126,7 @@ test('real source variant families retain shared copy, native geometry and typed
         const result = extractSourceProps(graph, instance, snapshot)
         assert.equal(result.status, 'proposal', JSON.stringify(result))
         assert.deepEqual(result.proposal, { baseSHA256: snapshot.sha256, path: [primary], props: { tone: selected, label: 'Publish album' } })
-        const projected = run(['--proposal'], result.proposal)
+        const projected = exportCore(['--proposal'], result.proposal)
         const expected = await captureExample(browser, projected, primary, { mode, fonts: faces })
         close(instance.width, expected.roots[0].bounds.width, 'variant with edited copy width')
         close(instance.height, expected.roots[0].bounds.height, 'variant with edited copy height')
@@ -361,15 +348,11 @@ test('transparent direct tokens keep source precision, live mode edits, history 
 })
 
 test('native glyph swaps agree with nested source property edits without changing icon size or tone', async () => {
-  const run = (args, input) => JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
-    input: input === undefined ? undefined : JSON.stringify(input),
-  }))
-  const snapshot = run([]), before = structuredClone(snapshot)
+  const snapshot = exportCore(), before = structuredClone(snapshot)
   for (const id of ['pk-ui.component.button/with-icon', 'pk-ui.component.button/with-leading-icon']) {
     const example = snapshot.examples.find(item => item.id === id), child = example.children[0]
     assert.deepEqual([child.description.id, child.description.componentId], ['icon', 'pk-ui.component.icon'])
-    const projected = run(['--proposal'], { baseSHA256: snapshot.sha256, path: [id, child.description.id], props: { name: 'x' } })
+    const projected = exportCore(['--proposal'], { baseSHA256: snapshot.sha256, path: [id, child.description.id], props: { name: 'x' } })
     const changed = projected.examples.find(item => item.id === id)
     assert.deepEqual(changed.props, example.props, 'the containing Button properties remain unchanged')
     assert.deepEqual(changed.children[0].description.props, { ...child.description.props, name: 'x' })
@@ -632,9 +615,7 @@ test('computed sRGB literal fills and text retain alpha and precision through tw
 
 test('real secondary Text binds its authored role and follows palette edits through two FIG saves', async () => {
   const id = 'pk-ui.component.text/muted'
-  const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', id, '--props'], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify({ color: 'secondary' }),
-  }))
+  const snapshot = exportCore(['--example', id, '--props'], { color: 'secondary' })
   for (const mode of ['light', 'dark']) {
     const observation = await observe(snapshot, mode), built = buildFoundation(snapshot), page = built.graph.addPage('Derived source')
     built.graph.updateNode(page.id, { variableModes: { [built.collection.id]: built.collection.modes.find(item => item.name === mode).modeId } })
@@ -1024,17 +1005,7 @@ test('paint binding refuses ambiguous, stale or derived inputs before graph muta
 const formId = 'pk-ui.component.form/default'
 
 function formSource(proposal) {
-  return JSON.parse(execFileSync('go', ['run', './tools/designexport', ...(proposal ? ['--proposal'] : [])], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
-    input: proposal ? JSON.stringify(proposal) : undefined,
-  }))
-}
-
-function suppliedFormFaces() {
-  return [400, 500, 600].map(weight => {
-    const bytes = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
-    return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
-  })
+  return exportCore(proposal ? ['--proposal'] : [], proposal)
 }
 
 function formNodes(graph, root) {
@@ -1083,7 +1054,7 @@ async function formPixels(graph, instance) {
 }
 
 test('real source Form becomes linked nested components with native fill and end alignment', async () => {
-  const snapshot = formSource(), before = structuredClone(snapshot), formFaces = suppliedFormFaces()
+  const snapshot = formSource(), before = structuredClone(snapshot), formFaces = suppliedFonts([400, 500, 600])
   for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
     const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces, mode, viewport: { width, height: 900 } })
     const built = buildFoundation(snapshot), page = built.graph.addPage('Source Form')
@@ -1129,7 +1100,7 @@ test('real source Form becomes linked nested components with native fill and end
 })
 
 test('real nested Input properties survive native history and two saves into source projection', async () => {
-  const snapshot = formSource(), before = structuredClone(snapshot), formFaces = suppliedFormFaces()
+  const snapshot = formSource(), before = structuredClone(snapshot), formFaces = suppliedFonts([400, 500, 600])
   const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces })
   const built = buildFoundation(snapshot), page = built.graph.addPage('Source Form')
   const result = await materializeComponent(built.graph, page.id, snapshot, observation, formFaces, renderer, built.collection.id)
@@ -1194,7 +1165,7 @@ test('real nested Input properties survive native history and two saves into sou
 })
 
 test('real nested Form actions retain end alignment and source transport through history and two saves', async () => {
-  const snapshot = formSource(), formFaces = suppliedFormFaces()
+  const snapshot = formSource(), formFaces = suppliedFonts([400, 500, 600])
   for (const localId of ['cancel', 'create']) {
     const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces, viewport: { width: 320, height: 900 } })
     const built = buildFoundation(snapshot), page = built.graph.addPage('Source actions')
@@ -1247,7 +1218,7 @@ test('real nested Form actions retain end alignment and source transport through
 })
 
 test('asymmetric input borders use the observed browser editing viewport through two saves', async () => {
-  const snapshot = formSource(), fonts = suppliedFormFaces()
+  const snapshot = formSource(), fonts = suppliedFonts([400, 500, 600])
   snapshot.css += '\ninput[data-pk-value] { border-left-width: 2px; }'
   const observed = await captureExample(browser, snapshot, formId, { fonts })
   let { graph, collection } = buildFoundation(snapshot)
@@ -1266,7 +1237,7 @@ test('asymmetric input borders use the observed browser editing viewport through
 })
 
 test('source composition refuses incomplete ownership, unsupported layout and invalid controls atomically', async () => {
-  const snapshot = formSource(), formFaces = suppliedFormFaces()
+  const snapshot = formSource(), formFaces = suppliedFonts([400, 500, 600])
   const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces })
   const cases = [
     input => { delete input.root.source },
@@ -1314,7 +1285,7 @@ test('source composition refuses incomplete ownership, unsupported layout and in
 })
 
 test('native text refuses real source indentation, shadow, spacing and writing-direction changes', async () => {
-  const formFaces = suppliedFormFaces()
+  const formFaces = suppliedFonts([400, 500, 600])
   for (const rule of ['text-indent:20px', 'text-shadow:4px 0 red', 'word-spacing:4px', 'writing-mode:vertical-rl', 'direction:rtl']) {
     for (const [id, selector, fonts] of [[formId, 'input', formFaces], [primary, '[data-component="button"]', faces]]) {
       const snapshot = formSource()
@@ -1329,7 +1300,7 @@ test('native text refuses real source indentation, shadow, spacing and writing-d
 })
 
 test('native Input values remain unwrapped with accurate text bounds through history and two saves', async () => {
-  const snapshot = formSource(), formFaces = suppliedFormFaces()
+  const snapshot = formSource(), formFaces = suppliedFonts([400, 500, 600])
   const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces, viewport: { width: 320, height: 900 } })
   const built = buildFoundation(snapshot), page = built.graph.addPage('Single-line control')
   const result = await materializeComponent(built.graph, page.id, snapshot, observation, formFaces, renderer, built.collection.id)
@@ -1400,7 +1371,7 @@ test('native Input values remain unwrapped with accurate text bounds through his
 })
 
 test('source-populated and zero-advance Input values initialize through the owning native auto-size path', async () => {
-  const base = formSource(), formFaces = suppliedFormFaces()
+  const base = formSource(), formFaces = suppliedFonts([400, 500, 600])
   for (const value of ['Populated source value', '\u0301']) {
     const snapshot = formSource({ baseSHA256: base.sha256, path: [formId, 'title'], props: { value } })
     const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces, viewport: { width: 320, height: 900 } })
@@ -1428,7 +1399,7 @@ test('source-populated and zero-advance Input values initialize through the owni
 })
 
 test('absolute native property measurement failures roll back graph, source caches and history', async () => {
-  const snapshot = formSource(), formFaces = suppliedFormFaces()
+  const snapshot = formSource(), formFaces = suppliedFonts([400, 500, 600])
   const observation = await captureExample(browser, snapshot, formId, { fonts: formFaces })
   for (const failure of [null, { width: NaN, height: 20 }, { width: -1, height: 20 },
     { width: Infinity, height: 20 }, { width: 10, height: 0 }, { width: 10, height: NaN }, new Error('Measurement failed')]) {

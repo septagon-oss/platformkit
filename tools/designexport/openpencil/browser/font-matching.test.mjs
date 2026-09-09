@@ -1,7 +1,4 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -14,12 +11,10 @@ import { buildComponentDocument } from '../document.mjs'
 import { materializeComponent } from '../components.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
 import { captureExample } from './capture.mjs'
+import { exportCore, suppliedFonts } from './fixtures.test.mjs'
 
 const button = 'pk-ui.component.button/primary', text = 'pk-ui.component.text/muted'
-const faces = [400, 500, 600, 700].map(weight => {
-  const bytes = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
-  return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
-})
+const faces = suppliedFonts([400, 500, 600, 700])
 const previousMeasurer = getTextMeasurer()
 let browser, ck, renderer
 before(async () => {
@@ -31,9 +26,7 @@ after(async () => { renderer?.destroy(); setTextMeasurer(previousMeasurer); awai
 afterEach(() => assert.equal(browser.contexts().length, 0))
 
 function source(id, props) {
-  return JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', id, '--props'], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(props),
-  }))
+  return exportCore(['--example', id, '--props'], props)
 }
 function placement(graph, id) {
   return [...graph.getAllNodes()].find(node => node.type === 'INSTANCE' && node.pluginData.some(item =>

@@ -1,26 +1,17 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { after, afterEach, before, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { captureExample } from './capture.mjs'
 import { resolveColorExpression } from '../color-expression.mjs'
 import { computedColor } from '../computed-color.mjs'
+import { exportCore, suppliedFonts } from './fixtures.test.mjs'
 
-const repo = fileURLToPath(new URL('../../../../', import.meta.url))
 const primary = 'pk-ui.component.button/primary'
 const withIcon = 'pk-ui.component.button/with-icon'
 const brandBadge = 'pk-ui.component.badge/brand-dot'
 const viewport = { width: 1280, height: 900 }
-const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], { cwd: repo, encoding: 'utf8' }))
-const require = createRequire(import.meta.url)
-const faces = [400, 600].map(weight => {
-  const bytes = readFileSync(require.resolve(`@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`))
-  return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
-})
+const source = exportCore()
+const faces = suppliedFonts([400, 600])
 const face = faces[1]
 let browser
 before(async () => { browser = await chromium.launch({ headless: true, args: ['--enable-automation'] }) })
@@ -28,9 +19,7 @@ after(async () => { await browser?.close() })
 afterEach(() => assert.equal(browser.contexts().length, 0, 'capture closed every disposable context'))
 
 function projection(id, props) {
-  return JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', id, '--props'], {
-    cwd: repo, encoding: 'utf8', input: JSON.stringify(props),
-  }))
+  return exportCore(['--example', id, '--props'], props)
 }
 
 function observed(nodes) {

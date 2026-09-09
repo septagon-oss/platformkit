@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { mkdtemp, readFile, readdir, rm, symlink, writeFile, lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,10 +7,10 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { extractSourceProps } from '../source-changes.mjs'
+import { exportCore } from './fixtures.test.mjs'
 
-const repo = fileURLToPath(new URL('../../../../', import.meta.url))
 const cli = fileURLToPath(new URL('../generate.mjs', import.meta.url))
-const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], { cwd: repo, encoding: 'utf8' }))
+const source = exportCore()
 const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
 const fontPath = weight => fileURLToPath(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
 const fontArgs = weights => weights.flatMap(weight => ['--font', 'IBM Plex Sans', String(weight), 'normal', fontPath(weight)])
@@ -45,9 +45,7 @@ test('CLI assembles supplied variant projections without replacing ordinary sour
   const directory = await fixture(t), id = 'pk-ui.component.button/primary', output = join(directory, 'family.fig')
   const args = [output, '--example', id, '--example', form, ...fontArgs([400, 500, 600])]
   for (const tone of ['info', 'danger']) {
-    const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--proposal'], {
-      cwd: repo, encoding: 'utf8', input: JSON.stringify({ baseSHA256: source.sha256, path: [id], props: { tone } }),
-    }))
+    const snapshot = exportCore(['--proposal'], { baseSHA256: source.sha256, path: [id], props: { tone } })
     const path = join(directory, `${tone}.json`)
     await writeFile(path, JSON.stringify(snapshot), { flag: 'wx' })
     args.push('--variant', id, 'tone', path)
@@ -82,9 +80,7 @@ test('CLI assembles supplied variant projections without replacing ordinary sour
 
 test('CLI addresses a nested family by exact source path and refuses malformed paths without publishing', async t => {
   const directory = await fixture(t), path = [form, 'actions', 'create'], output = join(directory, 'nested.fig')
-  const projected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--proposal'], {
-    cwd: repo, encoding: 'utf8', input: JSON.stringify({ baseSHA256: source.sha256, path, props: { size: 'lg' } }),
-  }))
+  const projected = exportCore(['--proposal'], { baseSHA256: source.sha256, path, props: { size: 'lg' } })
   const snapshotPath = join(directory, 'large.json')
   await writeFile(snapshotPath, JSON.stringify(projected), { flag: 'wx' })
   const args = ['--example', form, ...fontArgs([400, 500, 600])]
@@ -108,9 +104,7 @@ test('CLI addresses a nested family by exact source path and refuses malformed p
 
 test('CLI packages supplied source properties instead of silently regenerating the Core gallery', async t => {
   const directory = await fixture(t), exampleId = 'pk-ui.component.button/secondary'
-  const supplied = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', exampleId, '--props'], {
-    cwd: repo, encoding: 'utf8', input: JSON.stringify({ label: 'Publish album draft' }),
-  }))
+  const supplied = exportCore(['--example', exampleId, '--props'], { label: 'Publish album draft' })
   const output = join(directory, 'supplied.fig')
   const generated = run(directory, [output, '--snapshot-stdin', '--example', exampleId, ...fontArgs([600])], JSON.stringify(supplied))
   assert.equal(generated.status, 0, generated.stderr)
@@ -122,9 +116,7 @@ test('CLI packages supplied source properties instead of silently regenerating t
   assert.notEqual(supplied.sha256, source.sha256)
   assert.equal(graph.getChildren(placed[0].id)[0].text, 'Publish album draft')
   assert.equal(extractSourceProps(graph, placed[0], supplied).status, 'no-supported-changes')
-  const projection = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', exampleId, '--props'], {
-    cwd: repo, encoding: 'utf8', input: JSON.stringify({ label: 'Publish album draft', tone: 'danger' }),
-  }))
+  const projection = exportCore(['--example', exampleId, '--props'], { label: 'Publish album draft', tone: 'danger' })
   const projectionPath = join(directory, 'supplied-projection.json'), familyOutput = join(directory, 'supplied-family.fig')
   await writeFile(projectionPath, JSON.stringify(projection), { flag: 'wx' })
   const familyResult = run(directory, [familyOutput, '--snapshot-stdin', '--example', exampleId,

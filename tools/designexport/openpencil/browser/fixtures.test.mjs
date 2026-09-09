@@ -6,6 +6,15 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// Shared process setup, not an expected-result oracle. Every call runs the
+// owning Go exporter with fresh inputs; assertions remain in the calling test.
+export function exportCore(args = [], input) {
+  return JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
+    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+    input: input === undefined ? undefined : JSON.stringify(input),
+  }))
+}
+
 // Compile the caller's real Go composition once; every observation still runs
 // it afresh with independent JSON input. The test owns source/binary cleanup,
 // including build failures. Nothing is installed or cached in the checkout.

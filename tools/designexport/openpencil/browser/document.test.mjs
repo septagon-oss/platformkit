@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { isDeepStrictEqual } from 'node:util'
-import { sourceFixture, suppliedFonts } from './fixtures.test.mjs'
+import { exportCore, sourceFixture, suppliedFonts } from './fixtures.test.mjs'
 import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -24,10 +24,7 @@ const originalMeasurer = getTextMeasurer()
 let browser, ck, renderer, snapshot
 
 function source(proposal) {
-  return JSON.parse(execFileSync('go', ['run', './tools/designexport', ...(proposal ? ['--proposal'] : [])], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
-    input: proposal ? JSON.stringify(proposal) : undefined,
-  }))
+  return exportCore(proposal ? ['--proposal'] : [], proposal)
 }
 
 before(async () => {
@@ -518,9 +515,7 @@ test('document refuses invalid or unsupported requested selections and fonts wit
 for (const mode of ['light', 'dark']) test(`generated Form replacement agrees with Go projection through two saves: ${mode}`, async () => {
   const primary = 'pk-ui.component.button/primary', path = [form, 'actions', 'create']
   const proposal = { baseSHA256: snapshot.sha256, path, replacementPath: [primary] }
-  const projected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--replacement'], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(proposal),
-  }))
+  const projected = exportCore(['--replacement'], proposal)
   const observed = await captureExample(browser, projected, form, { fonts, viewport, mode })
   const sourceActions = observed.roots[0].children[1]
   const built = await buildComponentDocument(snapshot, options({ examples: [form, primary], mode }))
@@ -559,9 +554,7 @@ for (const mode of ['light', 'dark']) test(`generated Form replacement agrees wi
       assert.deepEqual(origin(current), initialOrigin)
       const extracted = extractSourceReplacement(graph, current, snapshot)
       assert.deepEqual(extracted.proposal, proposal, JSON.stringify(extracted))
-      const reprojected = JSON.parse(execFileSync('go', ['run', './tools/designexport', '--replacement'], {
-        cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', input: JSON.stringify(extracted.proposal),
-      }))
+      const reprojected = exportCore(['--replacement'], extracted.proposal)
       assert.deepEqual(reprojected, projected, 'the extracted provider-neutral proposal reaches the owning Go operation')
       if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
     }

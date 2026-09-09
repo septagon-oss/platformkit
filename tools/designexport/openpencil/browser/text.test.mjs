@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
 import { after, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -14,7 +13,7 @@ import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from './capture.mjs'
 import { parseFigBuffer } from '@open-pencil/fig'
-import { suppliedFonts } from './fixtures.test.mjs'
+import { exportCore as source, suppliedFonts } from './fixtures.test.mjs'
 
 const id = 'pk-ui.component.text/muted'
 const fonts = suppliedFonts([400, 500, 600, 700])
@@ -26,13 +25,6 @@ before(async () => {
   renderer = new SkiaRenderer(ck, ck.MakeSurface(1280, 900))
 })
 after(async () => { renderer?.destroy(); setTextMeasurer(originalMeasurer); await browser?.close() })
-
-function source(args = [], input) {
-  return JSON.parse(execFileSync('go', ['run', './tools/designexport', ...args], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
-    input: input === undefined ? undefined : JSON.stringify(input),
-  }))
-}
 
 test('text blocks construct wrapped source with exact weights and keep paragraph semantics', async () => {
   const content = 'Album notes & memories. '.repeat(8).trim()
