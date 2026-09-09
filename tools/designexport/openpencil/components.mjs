@@ -506,10 +506,12 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         primaryAxisAlign: 'MIN', counterAxisAlign: 'CENTER', clipsContent: true, ...native,
       } }
     } else if (style.display === 'block' && node.children.length === 1 && node.children[0].kind === 'text') {
-      requireComponent(style['white-space'] === 'normal' && ['start', 'left'].includes(style['text-align']) &&
+      const alignment = { start: 'LEFT', left: 'LEFT', center: 'CENTER', end: 'RIGHT', right: 'RIGHT' }[style['text-align']]
+      requireComponent(style['white-space'] === 'normal' && alignment &&
         style['overflow-x'] === 'visible' && style['overflow-y'] === 'visible',
-      'text blocks require normal wrapping, left alignment and visible overflow')
+      'text blocks require normal wrapping, supported alignment and visible overflow')
       const value = text(node.children[0], node, { wrapping: true })
+      value.native.textAlignHorizontal = alignment
       value.native.width = node.bounds.width - native.paddingLeft - native.paddingRight
       value.native.height = value.region.rects.length * value.native.lineHeight
       value.native.layoutAlignSelf = 'STRETCH'
@@ -738,8 +740,13 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
         const lineInset = current.kind === 'text' ? (height - expected.height) / 2 : 0
         const x = current.wrapping ? parentPlan.native.paddingLeft : expected.x - parentBounds.x
         const y = current.wrapping ? parentPlan.native.paddingTop : expected.y - parentBounds.y - lineInset
-        requireComponent(!current.wrapping || Math.abs(expected.x - parentBounds.x - x) <= 1 / 64,
-          'composition text placement differs from the source content box')
+        if (current.wrapping) {
+          const alignment = current.native.textAlignHorizontal
+          const lineOffset = (parentBounds.width - parentPlan.native.paddingLeft - parentPlan.native.paddingRight - expected.width) *
+            (alignment === 'CENTER' ? .5 : alignment === 'RIGHT' ? 1 : 0)
+          requireComponent(Math.abs(expected.x - parentBounds.x - x - lineOffset) <= 1 / 64,
+            'composition text placement differs from the source content box')
+        }
         requireComponent(Math.abs(node.x - x) <= 1 / 64 && Math.abs(node.y - y) <= 1 / 64,
         `composition native placement differs from the source parent: ${node.name} at ${node.x},${node.y}, expected ${x},${y}`)
       }

@@ -20,9 +20,10 @@ import (
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
   "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/css"
 )
 func main() {
-  var input struct { Light, Dark design.Typography; Level int; Text string }
+  var input struct { Light, Dark design.Typography; Level int; Text, Align string }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   theme := design.Default()
   theme.Light.Typography, theme.Dark.Typography = input.Light, input.Dark
@@ -32,7 +33,9 @@ func main() {
       ID: "fixture/heading", ComponentID: "pk-ui.component.heading",
     }, components.HeadingProps{Level: input.Level, Text: input.Text, Anchor: "album"}, components.Heading)}
   }
-  snapshot, err := ui.Export(theme, examples)
+  var extra ui.Extra
+  if input.Align != "" { extra.Sheets = []*css.Sheet{css.NewSheet().Select("#album", css.Decl("text-align", css.Literal(input.Align)))} }
+  snapshot, err := ui.Export(theme, examples, extra)
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
@@ -69,8 +72,8 @@ func main() {
     const fonts = suppliedFonts([600])
     const ck = await initCanvasKit(); renderer = new SkiaRenderer(ck, ck.MakeSurface(1280, 900))
     const id = 'fixture/heading', typography = { display: '"IBM Plex Sans", sans-serif' }
-    for (const level of [1, 2, 3, 4, 5]) for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
-      const input = { light: typography, dark: typography, level,
+    for (const align of ['start', 'center', 'end']) for (const level of [1, 2, 3, 4, 5]) for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+      const input = { light: typography, dark: typography, level, align,
         text: level === 1 ? 'An album of people and places. '.repeat(4).trim() : 'Album & memories' }, snapshot = source(input)
       const options = { examples: [id], fonts, browser, renderer, mode, viewport: { width, height: 900 } }
       const built = await buildComponentDocument(snapshot, options)
@@ -89,6 +92,15 @@ func main() {
         const native = graph.getChildren(instance.id)[0], master = graph.getNode(instance.componentId)
         assert.equal(native.fontFamily, 'IBM Plex Sans'); assert.equal(native.fontWeight, 600)
         assert.equal(native.text, value)
+        assert.equal(native.textAlignHorizontal, { start: 'LEFT', center: 'CENTER', end: 'RIGHT' }[align])
+        const paragraph = renderer.buildParagraph(native, undefined, { halfLeading: true })
+        try {
+          for (const [i, line] of paragraph.getLineMetrics().entries()) {
+            const rect = observed.children[0].rects[i]
+            assert.ok(Math.abs(line.left - rect.x + observed.bounds.x) <= 1 / 64, `${align}/line ${i} alignment`)
+            assert.ok(Math.abs(line.width - rect.width) <= 1 / 64, `${align}/line ${i} width`)
+          }
+        } finally { paragraph.delete() }
         for (const field of ['width', 'height']) assert.ok(Math.abs(instance[field] - observed.bounds[field]) <= 1 / 64, `${level}/${mode}/${width}/${field}`)
         assert.equal(native.height / native.lineHeight, observed.children[0].rects.length)
         assert.equal(graph.getChildren(master.id)[0].text, input.text)

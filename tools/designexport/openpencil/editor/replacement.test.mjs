@@ -80,7 +80,7 @@ function geometry(graph, node) {
   return {
     ...Object.fromEntries(['type', 'name', 'x', 'y', 'width', 'height', 'uniformScaleFactor',
       'fills', 'strokes', 'vectorNetwork', 'text', 'fontFamily', 'fontWeight', 'fontSize',
-      'lineHeight', 'letterSpacing', 'italic', 'textDecoration'].map(key => [key, node[key]])),
+      'lineHeight', 'letterSpacing', 'italic', 'textDecoration', 'textAlignHorizontal'].map(key => [key, node[key]])),
     component: graph.getNode(node.componentId)?.name,
     bindings: Object.fromEntries(Object.entries(node.boundVariables).map(([field, id]) => [field, graph.variables.get(id)?.name])),
     children: graph.getChildren(node.id).map(child => geometry(graph, child)),
@@ -703,11 +703,11 @@ const editorFontFixtures = [400, 500, 600].map(weight => {
   return { weight, bytes: new Uint8Array(OpenType.parse(figBuffer(woff)).toArrayBuffer()) }
 })
 
-for (const [field, choices, editFamilyCopy = true, dashed = false] of [
-  ['tone', ['neutral', 'info', 'danger']], ['size', ['md', 'sm', 'lg']], ['size', ['md', 'xs', '2xl'], false],
+for (const [field, choices, editFamilyCopy = true, dashed = false, centered = false] of [
+  ['tone', ['neutral', 'info', 'danger']], ['size', ['md', 'sm', 'lg']], ['size', ['md', 'xs', '2xl'], false, false, true],
   ['tone', ['neutral', 'info', 'danger'], true, true],
 ])
-test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves: editFamilyCopy=${editFamilyCopy}, dashed=${dashed}`, { timeout: 120000 }, async t => {
+test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves: editFamilyCopy=${editFamilyCopy}, dashed=${dashed}, centered=${centered}`, { timeout: 120000 }, async t => {
   await verifyBuild()
   const hash = bytes => createHash('sha256').update(bytes).digest('hex')
   const exportSource = await sourceFixture(t, `package main
@@ -735,7 +735,7 @@ func choiceForm(p components.FormProps, children ...g.Node) g.Node {
   return components.Form(p, append([]g.Node{summary.Node}, children...)...)
 }
 func main() {
-  var input struct { Proposal *ui.PropsProposal; Dashed bool }
+  var input struct { Proposal *ui.PropsProposal; Dashed, Centered bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: crud.Fields[*Note]()}}
   form := screens.FormExample("fixture/generated-form", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note", nil, nil, "", true)
@@ -747,10 +747,13 @@ func main() {
     components.FormProps{Label: "Album state", Action: "/albums"}, []g.Node{state.Node}, choiceForm)
   examples = append(examples, choices)
   var extra ui.Extra
+  if input.Centered {
+    extra.Sheets = append(extra.Sheets, css.NewSheet().Select("[data-component=text]", css.Decl("text-align", css.Literal("center"))))
+  }
   if input.Dashed {
-    extra.Sheets = []*css.Sheet{css.NewSheet().Select("[data-component=button]",
+    extra.Sheets = append(extra.Sheets, css.NewSheet().Select("[data-component=button]",
       css.Decl("border", css.Literal("1px dashed var(--pk-color-border-default)")),
-      css.Decl("border-radius", css.Literal("12px")))}
+      css.Decl("border-radius", css.Literal("12px"))))
   }
   snapshot, err := ui.Export(design.Default(), examples, extra)
   if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal, extra) }
@@ -758,7 +761,7 @@ func main() {
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
 `)
-  const project = input => exportSource({ ...input, dashed })
+  const project = input => exportSource({ ...input, dashed, centered })
   const source = project({})
   const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
   const paragraph = 'pk-ui.component.text/muted', secondary = 'pk-ui.component.button/secondary'
@@ -1017,6 +1020,10 @@ func main() {
             assert.deepEqual(result.proposal, { baseSHA256: source.sha256, path, props })
             const projected = project({ proposal: result.proposal })
             assert.notEqual(projected.sha256, source.sha256)
+            if (path[0] === paragraph) {
+              const text = reopened.getChildren(sourceNode(reopened, path).id).find(node => node.type === 'TEXT')
+              assert.equal(text.textAlignHorizontal, centered ? 'CENTER' : 'LEFT')
+            }
             if (path[0] === choiceForm) {
               const summary = sourceNode(reopened, [choiceForm, 'source-summary'])
               assert.equal(summary.type, 'INSTANCE', 'source-owned internal composition remains linked after browser saves')

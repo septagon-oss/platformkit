@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { after, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -16,12 +14,10 @@ import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from './capture.mjs'
 import { parseFigBuffer } from '@open-pencil/fig'
+import { suppliedFonts } from './fixtures.test.mjs'
 
 const id = 'pk-ui.component.text/muted'
-const fonts = [400, 500, 600, 700].map(weight => {
-  const bytes = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
-  return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
-})
+const fonts = suppliedFonts([400, 500, 600, 700])
 const originalMeasurer = getTextMeasurer()
 let browser, renderer, ck
 before(async () => {
