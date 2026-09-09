@@ -234,6 +234,16 @@ Construction measures text and rejects
 geometry differences over 1/64 CSS pixel, removing created nodes and restoring
 the caller's measurement hook on rejection.
 
+Observed constructor-internal captures retain linked masters without becoming
+replaceable slots. Their derived property values must remain at the source
+baseline, including beneath further nested components. Source extraction offers
+no independent property edits, replacements or variants for those paths; changing
+derived text refuses a proposal rather than concealing it behind a sibling edit.
+Declared slots outside that boundary remain editable. This does not infer arbitrary
+Go dependencies or make native edits execute the source constructor.
+Parent-owned stretch sizing survives variant changes and FIG reloads without
+changing the reusable definition's intrinsic sizing.
+
 Nested construction includes block flow with uniform nonnegative collapsed margins
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
 Nonnegative flex margins use private margin-box frames; fixed border-box sizes and

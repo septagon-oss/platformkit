@@ -197,8 +197,9 @@ Go components. Source-owned text comments identify exact property regions withou
 adding layout elements. Observations and supplied-font checks are converter inputs,
 not proof of native component editing or slot replacement. Experimental native
 construction binds observed text, literal text controls and explicitly supplied
-single-SVG slots. Nested composition consumes verified occurrence roots and
-declared ownership, with linked masters rather than flattened source components.
+single-SVG slots. Nested composition retains linked masters for observed occurrences.
+Declared slots retain independent source ownership; constructor-internal captures
+retain source-derived inputs without inventing replaceable slots.
 The [adapter guide](tools/designexport/openpencil/README.md) defines supported proposals and fidelity limits.
 Native tooling and tests have their own reviewed source budgets, separate from
 the application's browser controllers.

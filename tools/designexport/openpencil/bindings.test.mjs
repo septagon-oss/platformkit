@@ -91,10 +91,19 @@ test('nested families refuse changed ancestors, siblings, slots, byte spans and 
     root => { root.html += '<aside>Unrelated markup</aside>' },
     root => { root.children[1].description.id = 'different sibling' },
     root => { root.children[0].slot = 'different slot' },
+    root => { delete root.children[0].slot },
     root => { root.children[0].span.start-- },
     root => { root.children[0].span.end++ },
     root => { root.children[1].span.start-- },
     root => { root.children.reverse() },
+    root => {
+      const [selected, sibling] = root.children, bytes = Buffer.from(root.html)
+      root.html = bytes.subarray(0, selected.span.start).toString() + sibling.description.html + selected.description.html +
+        bytes.subarray(sibling.span.end).toString()
+      const start = selected.span.start, end = start + Buffer.byteLength(sibling.description.html)
+      sibling.span = { start, end }
+      selected.span = { start: end, end: end + Buffer.byteLength(selected.description.html) }
+    },
     root => { root.children[1].description.id = root.children[0].description.id },
     root => { root.children[0].description.name = 'Unrelated leaf metadata' },
   ]) {
@@ -288,8 +297,9 @@ function replacementFixture(rootTarget = false, nestedSource = false) {
   const replacement = { ...structuredClone(example), id: 'button/local', props: { ...example.props, label: 'Publish' } }
   let replacementPath
   if (nestedSource) {
-    const container = { id: 'choices/root', children: ['left', 'right'].map(id => ({ description: {
-      id, children: [{ description: id === 'right' ? replacement : { ...structuredClone(replacement), props: { ...replacement.props, label: 'Wrong branch' } } }],
+    const slots = [{ name: 'children', supported: true, trustedOnly: true, multiple: true, goType: '[]gomponents.Node' }]
+    const container = { id: 'choices/root', slots, children: ['left', 'right'].map(id => ({ slot: 'children', description: {
+      id, slots, children: [{ slot: 'children', description: id === 'right' ? replacement : { ...structuredClone(replacement), props: { ...replacement.props, label: 'Wrong branch' } } }],
     } })) }
     canonical.examples.push(container)
     replacementPath = ['choices/root', 'right', replacement.id]

@@ -85,6 +85,8 @@ function sourceAt(snapshot, path) {
     requireSource(Array.isArray(example.children), 'invalid-path', 'Definition source lacks composition records')
     const matches = example.children.filter(child => child?.description?.id === id)
     requireSource(matches.length === 1, 'invalid-path', 'Definition path must identify exactly one source child')
+    requireSource(typeof matches[0].slot === 'string' && matches[0].slot !== '', 'unsupported-scope',
+      'A derived component is not an independent source replacement', 'unsupported')
     example = matches[0].description
   }
   return example
@@ -247,7 +249,7 @@ function nestedTemplates(graph, master) {
       const local = metadata(node, false)
       if (local) {
         requireSource(Object.keys(local).length === 2 && typeof local.localId === 'string' && local.localId !== '' &&
-          typeof local.slot === 'string' && local.slot !== '', 'invalid-provenance', 'Nested templates need only relative source identity and slot')
+          typeof local.slot === 'string', 'invalid-provenance', 'Nested templates need only relative source identity and slot')
         result.push({ node, local })
       }
     } else {
@@ -258,11 +260,16 @@ function nestedTemplates(graph, master) {
   return result
 }
 
-function visitSource(graph, instance, snapshot, example, path, visit, { active = new Set(), replacement } = {}) {
+function visitSource(graph, instance, snapshot, example, path, visit, { active = new Set(), replacement, editable = true } = {}) {
   requireSource(!active.has(instance.id), 'invalid-binding', 'Cyclic source placement')
   if (replacement?.instance === instance) example = replacement.example
   const next = new Set(active).add(instance.id), result = readProps(graph, instance, snapshot, example)
-  visit(instance, path, result)
+  // An observed internal invocation has a real reusable component interface,
+  // but no independently replaceable source slot. Keep its derived inputs
+  // intact, including when inspecting a different child of the placed root.
+  requireSource(editable || Object.keys(result.props).length === 0, 'derived-source-value',
+    'Derived component values must be recomputed by their source owner', 'unsupported')
+  visit(instance, path, { ...result, editable, properties: editable ? result.properties : [] })
   requireSource(Array.isArray(example.children) && Array.isArray(example.opaqueSlots), 'invalid-source', 'Source composition records are required')
   const templates = nestedTemplates(graph, result.master), used = new Set(), identities = new Set()
   for (const occurrence of example.children) {
@@ -272,24 +279,26 @@ function visitSource(graph, instance, snapshot, example, path, visit, { active =
     identities.add(child.id)
     requireSource(example.opaqueSlots.length === 0 && object(occurrence.span) &&
       Number.isSafeInteger(occurrence.span.start) && Number.isSafeInteger(occurrence.span.end) &&
-      occurrence.span.start >= 0 && occurrence.span.end >= occurrence.span.start && typeof occurrence.slot === 'string' &&
-      occurrence.slot !== '', 'unsupported-scope', 'Nested source ownership must be observed and nonopaque', 'unsupported')
+      occurrence.span.start >= 0 && occurrence.span.end >= occurrence.span.start &&
+      (occurrence.slot === undefined || typeof occurrence.slot === 'string' && occurrence.slot !== ''),
+    'unsupported-scope', 'Nested source ownership must be observed and nonopaque', 'unsupported')
     requireSource(Array.isArray(example.slots), 'invalid-source', 'Source slot declarations are required')
     const slots = example.slots.filter(slot => slot?.name === occurrence.slot), slot = slots[0]
-    requireSource(slots.length === 1 && slot.supported === true && slot.trustedOnly === true &&
+    requireSource(occurrence.slot === undefined || slots.length === 1 && slot.supported === true && slot.trustedOnly === true &&
       (slot.goType === 'gomponents.Node' && slot.multiple === false || slot.goType === '[]gomponents.Node' && slot.multiple === true),
       'unsupported-scope', 'Nested source slots must support trusted composition', 'unsupported')
     // Asset-slot properties are an existing, separate native capability. Their
     // source descendants gain no string-proposal correspondence by association.
     if (result.slots.has(occurrence.slot)) continue
-    const matches = templates.filter(({ local }) => local.localId === child.id && local.slot === occurrence.slot)
+    const matches = templates.filter(({ local }) => local.localId === child.id && local.slot === (occurrence.slot ?? ''))
     requireSource(matches.length === 1, 'invalid-binding', 'One relative native template must match each source child')
     const { node, local } = matches[0], placed = mappedNode(graph, result.master, instance, node)
     const baseline = readProps(graph, node, snapshot, child)
     requireSource(Object.keys(baseline.props).length === 0, 'invalid-binding', 'Nested template values differ from the source baseline')
     requireSource(isDeepStrictEqual(metadata(placed), local), 'invalid-provenance', 'Placed relative correspondence differs from its template')
     used.add(node.id)
-    visitSource(graph, placed, snapshot, child, [...path, child.id], visit, { active: next, replacement })
+    visitSource(graph, placed, snapshot, child, [...path, child.id], visit,
+      { active: next, replacement, editable: editable && occurrence.slot !== undefined })
   }
   requireSource(used.size === templates.length, 'invalid-binding', 'Native relative templates exceed the source composition')
 }
@@ -373,7 +382,10 @@ export function extractSourceReplacement(graph, instance, snapshot) {
     const replacementExample = sourceAt(snapshot, definition.definitionPath)
     let selectedPath
     visitSource(graph, root, snapshot, example, origin.path, (node, path, result) => {
-      if (node === instance) selectedPath = path
+      if (node === instance) {
+        requireSource(result.editable, 'unsupported-scope', 'Derived source components have no independent replacement slot', 'unsupported')
+        selectedPath = path
+      }
       if (selectedPath && selectedPath.every((id, index) => path[index] === id)) {
         requireSource(Object.keys(result.props).length === 0, 'mixed-replacement-edits',
           'A replacement copies complete source inputs; additional native property edits require separate projection', 'unsupported')

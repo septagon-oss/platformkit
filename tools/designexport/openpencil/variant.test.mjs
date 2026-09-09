@@ -99,6 +99,44 @@ function fixture() {
   return graph
 }
 
+for (const rotate of [false, true]) test(`parent fill survives canonical sync while its template still owns placement: rotate=${rotate}`, () => {
+  const graph = new SceneGraph(), page = graph.getPages()[0]
+  const family = graph.createNode('COMPONENT_SET', page.id, { componentPropertyDefinitions: [
+    { id: '30:1', name: 'value', type: 'VARIANT', defaultValue: 'regular', variantOptions: ['regular', 'compact'] },
+  ] })
+  for (const value of ['regular', 'compact']) graph.createNode('COMPONENT', family.id, {
+    name: value, width: value === 'regular' ? 120 : 80, height: 24,
+    layoutMode: rotate && value === 'compact' ? 'HORIZONTAL' : 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
+    componentPropertyValues: { value }, variantPropSpecs: [{ propDefId: '30:1', value }],
+  })
+  const wrapper = graph.createNode('COMPONENT', page.id, { name: 'Placement owner',
+    width: 320, layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED' })
+  graph.createInstance(graph.getChildren(family.id)[0].id, wrapper.id, {
+    name: 'Fill slot', counterAxisSizing: 'FILL', layoutAlignSelf: 'STRETCH',
+  })
+  graph.createInstance(wrapper.id, page.id, { name: 'Placed owner' })
+  const slot = graph.getChildren(named(graph, 'Placed owner').id)[0], actions = createEditor({ graph })
+  try {
+    assert.equal(slot.counterAxisSizing, 'FILL')
+    const original = structuredClone(slot)
+    actions.setInstanceComponentProperty(slot.id, '30:1', 'compact')
+    const field = rotate ? 'primaryAxisSizing' : 'counterAxisSizing'
+    assert.equal(slot[field], 'FILL', 'the canonical variant cannot replace parent width fill')
+    graph.syncInstances(slot.componentId)
+    assert.equal(slot[field], 'FILL', 'canonical updates retain the same placement boundary')
+    actions.undoAction()
+    assert.equal(slot.counterAxisSizing, original.counterAxisSizing)
+    assert.deepEqual(slot.overrides, original.overrides)
+    const template = graph.getChildren(named(graph, 'Placement owner').id)[0]
+    graph.updateNode(template.id, { counterAxisSizing: 'HUG', layoutAlignSelf: 'AUTO' })
+    graph.syncInstances(named(graph, 'Placement owner').id)
+    assert.equal(slot.counterAxisSizing, 'HUG', 'fill is not a copied local override blocking its owner')
+    graph.updateNode(template.id, { counterAxisSizing: 'FILL', layoutAlignSelf: 'STRETCH' })
+    graph.syncInstances(named(graph, 'Placement owner').id)
+    assert.equal(slot.counterAxisSizing, 'FILL')
+  } finally { actions.replaceGraph(new SceneGraph()) }
+})
+
 function composedFixture(depth = 0) {
   const graph = fixture(), owner = named(graph, 'Choices')
   graph.updateNode(owner.id, { componentPropertyDefinitions: [...owner.componentPropertyDefinitions,

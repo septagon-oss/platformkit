@@ -666,6 +666,11 @@ type Note struct {
   Description string \`json:"description" ui:"widget:textarea"\`
 }
 func (Note) TableName() string { return "notes" }
+func choiceForm(p components.FormProps, children ...g.Node) g.Node {
+  summary := components.ExampleOf(components.ExampleInfo{ID: "source-summary", ComponentID: "pk-ui.component.text"},
+    components.TextProps{Content: "Source-owned album states", Color: "muted"}, components.Text)
+  return components.Form(p, append([]g.Node{summary.Node}, children...)...)
+}
 func main() {
   var input struct { Proposal *ui.PropsProposal; Dashed bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
@@ -676,7 +681,7 @@ func main() {
     components.SelectProps{Name: "stage", Label: "Stage", Value: "draft", Required: true, Placeholder: "Choose a stage",
       Options: []components.SelectOption{{Value: "draft", Label: "Draft"}, {Value: " ready,a ", Label: "Ready"}}}, components.Select)
   choices := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/choice-form", ComponentID: "pk-ui.component.form"},
-    components.FormProps{Label: "Album state", Action: "/albums"}, []g.Node{state.Node}, components.Form)
+    components.FormProps{Label: "Album state", Action: "/albums"}, []g.Node{state.Node}, choiceForm)
   examples = append(examples, choices)
   var extra ui.Extra
   if input.Dashed {
@@ -737,6 +742,9 @@ func main() {
     graph.createInstance(derived.master.id, placements.id, { name: 'Derived paragraph', x: 800, y: 48 })
     graph.updateNode(selections.find(item => item.exampleId === family).instance.id, { name: 'Editable family', x: 800, y: 400 })
     graph.updateNode(sourceNode(graph, choicePath).id, { name: 'Editable choice' })
+    const choiceSizing = node => [node.primaryAxisSizing, node.counterAxisSizing]
+    const sourceChoiceSizing = choiceSizing(sourceNode(graph, choicePath))
+    assert.ok(sourceChoiceSizing.includes('FILL'), 'the source form owns its nested choice width')
     graph.updateNode(sourceNode(graph, nestedPath).id, { name: 'Editable nested family' })
     graph.updateNode(sourceNode(graph, nestedPath.slice(0, -1)).id, { name: 'Editable Form actions' })
     const roleName = '--pk-role-fg-secondary', inputNameForRole = '--pk-color-text-primary'
@@ -947,7 +955,12 @@ func main() {
             const projected = project({ proposal: result.proposal })
             assert.notEqual(projected.sha256, source.sha256)
             if (path[0] === choiceForm) {
+              const summary = sourceNode(reopened, [choiceForm, 'source-summary'])
+              assert.equal(summary.type, 'INSTANCE', 'source-owned internal composition remains linked after browser saves')
+              assert.equal(reopened.getChildren(summary.id)[0].text, 'Source-owned album states')
+              assert.deepEqual(extractSourceProps(reopened, summary, source).properties, [])
               const selected = sourceNode(reopened, choicePath), pending = [selected], descendants = []
+              assert.deepEqual(choiceSizing(selected), sourceChoiceSizing, 'variant edits and worker saves retain parent-owned fill sizing')
               while (pending.length) {
                 const node = pending.pop(); descendants.push(node); pending.push(...reopened.getChildren(node.id))
               }

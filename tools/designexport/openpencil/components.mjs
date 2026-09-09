@@ -345,10 +345,11 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     for (const child of description.children ?? []) {
       const declarations = description.slots?.filter(declaration => declaration.name === child.slot) ?? []
       const declaration = declarations[0]
-      requireComponent(declarations.length === 1 && declaration.supported === true && declaration.trustedOnly === true && child.span &&
+      requireComponent(child.span &&
         Number.isSafeInteger(child.span.start) && Number.isSafeInteger(child.span.end) && child.span.start >= 0 && child.span.end >= child.span.start &&
-        (declaration.goType === 'gomponents.Node' && declaration.multiple === false ||
-          declaration.goType === '[]gomponents.Node' && declaration.multiple === true), 'composition needs observed, supported source slots')
+        (child.slot === undefined || declarations.length === 1 && declaration.supported === true && declaration.trustedOnly === true &&
+          (declaration.goType === 'gomponents.Node' && declaration.multiple === false ||
+            declaration.goType === '[]gomponents.Node' && declaration.multiple === true)), 'composition needs observed components and supported declared slots')
       describe(child.description, [...path, child.description.id], child.slot)
     }
   }
@@ -651,7 +652,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       const node = graph.createInstance(definition.id, parent.id, {
         ...current.placement, name: current.occurrence.description.name || current.occurrence.description.id,
         pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
-          localId: current.occurrence.description.id, slot: current.occurrence.slot,
+          localId: current.occurrence.description.id, slot: current.occurrence.slot ?? '',
         }) }],
       })
       geometry.push({ plan: current, node, parentPlan })

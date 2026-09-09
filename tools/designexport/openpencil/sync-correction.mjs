@@ -377,7 +377,19 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     const target = nodes.get(id), source = nodes.get(sourceId)
     if (!target || !source) throw new Error('Missing projected native sync instance')
     const overrides = ancestryOverrides(syncReadView(nodes), target)
-    nodes.set(id, syncProperties(source, target, INSTANCE_SYNC_PROPS, overrides, `${id}:`))
+    const effective = { ...source }
+    if (source.type === 'COMPONENT') {
+      // A canonical master owns intrinsic layout, not its occurrence's fill
+      // relationship to a parent. An enclosing INSTANCE template still owns
+      // that placement and can change it; do not invent a local override.
+      const mode = Object.hasOwn(overrides, `${id}:layoutMode`) ? target.layoutMode : source.layoutMode
+      for (const width of [true, false]) {
+        const before = width === (target.layoutMode === 'HORIZONTAL') ? 'primaryAxisSizing' : 'counterAxisSizing'
+        const after = width === (mode === 'HORIZONTAL') ? 'primaryAxisSizing' : 'counterAxisSizing'
+        if (target[before] === 'FILL') effective[after] = 'FILL'
+      }
+    }
+    nodes.set(id, syncProperties(effective, target, INSTANCE_SYNC_PROPS, overrides, `${id}:`))
     affected.add(id)
     children(sourceId, id, overrides)
     active.delete(id)

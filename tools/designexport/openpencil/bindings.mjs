@@ -41,15 +41,21 @@ export function sourceVariantContext(snapshot, path) {
       if (example.id !== path[depth]) return example
       if (depth === path.length - 1) { selected = example; return null }
       requireBinding(typeof example.html === 'string' && Array.isArray(example.children), 'variant ancestors require source composition')
+      const target = example.children.filter(child => child.description?.id === path[depth + 1])
+      requireBinding(target.length === 1 && typeof target[0].slot === 'string' && target[0].slot !== '',
+        'a derived component cannot own an independently projected variant')
       const bytes = Buffer.from(example.html), fragments = []
       let end = 0
-      for (const child of example.children) {
+      // Captured slots are declared before constructor-internal children, even
+      // when the latter render first. Mask rendered spans in byte order while
+      // retaining declaration order in the compared source context below.
+      for (const child of example.children.toSorted((a, b) => (a.span?.start ?? -1) - (b.span?.start ?? -1))) {
         const span = child.span
         requireBinding(span && Number.isSafeInteger(span.start) && Number.isSafeInteger(span.end) &&
           span.start >= end && span.end >= span.start && span.end <= bytes.length &&
           typeof child.description?.html === 'string' && bytes.subarray(span.start, span.end).equals(Buffer.from(child.description.html)),
         'variant ancestors require exact ordered source byte spans')
-        fragments.push(bytes.subarray(end, span.start).toString('base64'))
+        fragments.push({ child: child.description.id, before: bytes.subarray(end, span.start).toString('base64') })
         end = span.end
       }
       fragments.push(bytes.subarray(end).toString('base64'))
