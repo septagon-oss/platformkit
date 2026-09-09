@@ -177,8 +177,12 @@ test('capture observes actual text-control values and exact fonts without invent
     const result = await captureExample(browser, snapshot, snapshot.examples[0].id, { fonts: faces })
     const input = observed(result.roots).find(node => node.tag === 'input')
     assert.deepEqual(input.children, [])
-    assert.deepEqual(Object.keys(input.control).toSorted(), ['fonts', 'kind', 'placeholder', 'property', 'type', 'value'])
-    assert.deepEqual({ ...input.control, fonts: [] }, { kind: 'control', property: 'value', type: 'text', value, placeholder: '', fonts: [] })
+    assert.deepEqual(Object.keys(input.control).toSorted(), ['content', 'fonts', 'kind', 'placeholder', 'property', 'type', 'value'])
+    const { content, ...control } = input.control
+    assert.deepEqual({ ...control, fonts: [] }, { kind: 'control', property: 'value', type: 'text', value, placeholder: '', fonts: [] })
+    assert.ok(content.bounds.width > 0 && content.bounds.height > 0)
+    assert.equal(content.bounds.x - input.bounds.x, Number.parseFloat(input.style['padding-left']) + Number.parseFloat(input.style['border-left-width']))
+    assert.equal(content.rects.length, value === '' ? 0 : 1, 'actual ranges belong to the control, not invented DOM children')
     if (value === '') assert.deepEqual(input.control.fonts, [])
     else {
       assert.equal(input.control.fonts.length, 1)

@@ -122,6 +122,47 @@ func TestButtonTextRegionNamesItsActualProperty(t *testing.T) {
 	}
 }
 
+func TestAlertTextRegionsPreservePropertiesAndAnnouncements(t *testing.T) {
+	t.Parallel()
+	for _, tone := range []string{"info", "danger"} {
+		for _, value := range []string{"", `Review & <tag>"'<!--/pk-text:message-->`} {
+			props := c.AlertProps{Title: value, Message: value, Tone: tone, Dismissible: true, Bordered: true}
+			example := c.ExampleWithSlots(exampleInfo, props, c.AlertSlots{Actions: []g.Node{g.Text("Trusted action")}}, c.AlertWithSlots)
+			description := describeExample(t, example)
+			var escaped strings.Builder
+			if err := g.Text(value).Render(&escaped); err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range []string{"title", "message"} {
+				open, close := "<!--pk-text:"+field+"-->", "<!--/pk-text:"+field+"-->"
+				if field == "title" && value == "" {
+					if strings.Contains(description.HTML, open) {
+						t.Fatal("absent title advertised an editable text region")
+					}
+				} else if strings.Count(description.HTML, open) != 1 || !strings.Contains(description.HTML, open+escaped.String()+close) {
+					t.Fatalf("%s text region lost property identity or escaping: %s", field, description.HTML)
+				}
+			}
+			role, live := "status", "polite"
+			if tone == "danger" {
+				role, live = "alert", "assertive"
+			}
+			for _, want := range []string{`role="` + role + `"`, `aria-live="` + live + `"`, `aria-atomic="true"`, `aria-label="Dismiss notification"`, "Trusted action"} {
+				if !strings.Contains(description.HTML, want) {
+					t.Fatalf("annotation changed runtime semantics: missing %s", want)
+				}
+			}
+			changed, err := example.WithProps(json.RawMessage(`{"message":"Changed"}`))
+			if err != nil || !strings.Contains(describeExample(t, changed).HTML, "<!--pk-text:message-->Changed<!--/pk-text:message-->") {
+				t.Fatalf("message cannot be projected through its existing property: %v", err)
+			}
+			if describeExample(t, example).HTML != description.HTML {
+				t.Fatal("projection changed caller-owned source")
+			}
+		}
+	}
+}
+
 func TestButtonReplacedLabelHasNoTextRegion(t *testing.T) {
 	original := c.ExampleWithSlots(exampleInfo, c.ButtonProps{Label: "Save"}, c.ButtonSlots{}, c.ButtonWithSlots)
 	iconOnly, err := original.WithProps(json.RawMessage(`{"iconOnly":true}`))

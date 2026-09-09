@@ -6,7 +6,7 @@
   "scripts": {
     "generate": "node ./generate.mjs",
     "test": "node --import ./register.mjs --test *.test.mjs",
-    "test:browser": "node --import ./register.mjs --test browser/*.test.mjs",
+    "test:browser": "node --import ./register.mjs --test --test-concurrency=2 browser/*.test.mjs",
     "test:stock": "node --test native.test.mjs"
   },
   "dependencies": {

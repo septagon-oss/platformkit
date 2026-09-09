@@ -443,10 +443,10 @@ export async function captureExample(browser, snapshot, exampleId, {
                 }` })
               node.content = content.value
             }
-            if (node.type === 'textarea') {
+            if (node.type === 'textarea' || node.kind === 'control' && node.type === 'text') {
               const { node: control } = await session.send('DOM.describeNode', { nodeId, depth: -1, pierce: true })
               const editor = control.shadowRoots?.find(root => root.shadowRootType === 'user-agent')?.children?.at(-1)
-              if (editor?.localName !== 'div') throw new Error('Textarea requires an observed browser editing viewport')
+              if (editor?.localName !== 'div') throw new Error('Text control requires an observed browser editing viewport')
               const { object } = await session.send('DOM.resolveNode', { backendNodeId: editor.backendNodeId })
               const { result: content } = await session.send('Runtime.callFunctionOn', { objectId: object.objectId, returnByValue: true,
                 functionDeclaration: `function() {
@@ -467,9 +467,11 @@ export async function captureExample(browser, snapshot, exampleId, {
                   return { bounds, rects, advances: [...advances.values()] };
                 }` })
               node.content = content.value
-              const leaves = item => item.nodeType === 3 ? [item.backendNodeId] : (item.children ?? []).flatMap(leaves)
-              const { nodeIds } = await session.send('DOM.pushNodesByBackendIdsToFrontend', { backendNodeIds: leaves(editor) })
-              fontNodes = nodeIds
+              if (node.type === 'textarea') {
+                const leaves = item => item.nodeType === 3 ? [item.backendNodeId] : (item.children ?? []).flatMap(leaves)
+                const { nodeIds } = await session.send('DOM.pushNodesByBackendIdsToFrontend', { backendNodeIds: leaves(editor) })
+                fontNodes = nodeIds
+              }
             }
             const used = (await Promise.all(fontNodes.map(nodeId => session.send('CSS.getPlatformFontsForNode', { nodeId })))).flatMap(result => result.fonts)
             for (const font of used) {

@@ -240,7 +240,33 @@ export const corrections = Object.freeze({
         source = replace(source, `r.strokePaint.setAlphaf(stroke.opacity);\n\tr.strokePaint.setStrokeCap(${cap});`,
           `r.strokePaint.setAlphaf(stroke.opacity * color.a);\n\tr.strokePaint.setStrokeCap(${cap});`)
       }
-      return source
+      // Four independent lines lose rounded corners and double-paint alpha
+      // where sides overlap. Solid inside borders are one rounded ring.
+      return replace(source, 'function drawIndividualSideStrokes(r, canvas, node, align) {',
+        `function drawIndividualSideStrokes(r, canvas, node, align) {
+  if (align === "INSIDE" && !nodeHasSmoothCorners(node) && node.strokes.every(stroke => !stroke.dashPattern?.length)) {
+    const { width: w, height: h, borderTopWeight: t, borderRightWeight: rgt, borderBottomWeight: b, borderLeftWeight: l } = node;
+    const corners = node.independentCorners
+      ? [node.topLeftRadius, node.topRightRadius, node.bottomRightRadius, node.bottomLeftRadius]
+      : Array(4).fill(node.cornerRadius);
+    const [tl, tr, br, bl] = corners;
+    const scale = Math.min(1, w / (tl + tr || 1), w / (bl + br || 1), h / (tl + bl || 1), h / (tr + br || 1));
+    const radii = corners.map(radius => radius * scale);
+    const path = new r.ck.Path(), paint = r.strokePaint.copy();
+    try {
+      path.setFillType(r.ck.FillType.EvenOdd);
+      path.addRRect(new Float32Array([0, 0, w, h, ...radii.flatMap(radius => [radius, radius])]));
+      if (l + rgt < w && t + b < h) path.addRRect(new Float32Array([l, t, w - rgt, h - b,
+        Math.max(0, radii[0] - l), Math.max(0, radii[0] - t),
+        Math.max(0, radii[1] - rgt), Math.max(0, radii[1] - t),
+        Math.max(0, radii[2] - rgt), Math.max(0, radii[2] - b),
+        Math.max(0, radii[3] - l), Math.max(0, radii[3] - b)]));
+      paint.setStyle(r.ck.PaintStyle.Fill);
+      paint.setPathEffect(null);
+      canvas.drawPath(path, paint);
+    } finally { path.delete(); paint.delete(); }
+    return;
+  }`)
     },
   },
   '@open-pencil/core/dist/canvas/shadows.js': {

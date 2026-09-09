@@ -137,7 +137,7 @@ async function verifyBuild() {
   const provenance = await (await fetch(new URL('/platformkit-provenance.json', endpoint))).json()
   assert.equal(provenance.scope, 'generic-editor-without-packaged-design')
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
-    'Dockerfile', 'LICENSE', 'NOTICE', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'exporter-correction.mjs', 'font-correction.mjs',
+    'Dockerfile', 'LICENSE', 'NOTICE', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
     'scaling-correction.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
   ])

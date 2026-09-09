@@ -211,7 +211,12 @@ func fingerprinted(sheet *css.Sheet) Sheet {
 func base() *css.Sheet {
 	s := css.NewSheet()
 	v := func(name string) css.Value { return css.VarRef(name, "") }
-	s.Select("*, *::before, *::after", css.Decl("box-sizing", css.Literal("border-box")))
+	// Width utilities opt into a border; CSS otherwise defaults to style none.
+	// Start at zero so undecorated elements do not acquire a medium-width border.
+	s.Select("*, *::before, *::after",
+		css.Decl("box-sizing", css.Literal("border-box")),
+		css.Decl("border-width", css.Literal("0")),
+		css.Decl("border-style", css.Literal("solid")))
 	s.Select("html",
 		css.Decl("-webkit-text-size-adjust", css.Literal("100%")),
 		css.Decl("font-family", v("pk-font-body")),

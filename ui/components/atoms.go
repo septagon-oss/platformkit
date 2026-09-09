@@ -315,9 +315,9 @@ func AlertWithSlots(p AlertProps, slots AlertSlots) g.Node {
 	}
 	body := []g.Node{h.Class(clAlertBody.Compile())}
 	if p.Title != "" {
-		body = append(body, h.P(h.Class(clAlertTitle.Compile()), g.Text(p.Title)))
+		body = append(body, h.P(h.Class(clAlertTitle.Compile()), g.Raw("<!--pk-text:title-->"), g.Text(p.Title), g.Raw("<!--/pk-text:title-->")))
 	}
-	body = append(body, h.P(h.Class(clAlertMessage.Compile()), g.Text(p.Message)))
+	body = append(body, h.P(h.Class(clAlertMessage.Compile()), g.Raw("<!--pk-text:message-->"), g.Text(p.Message), g.Raw("<!--/pk-text:message-->")))
 
 	var children []g.Node
 	children = append(children, baseAttrs(p.ComponentProps)...)

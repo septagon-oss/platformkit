@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { corrections, correctSource, sdkVersion } from './corrections.mjs'
 import { chain } from './exporter-correction.mjs'
+import { editorFonts, bundleEditorFonts } from './editor-fonts.mjs'
 
 // Run only in the disposable Docker build stage. Application sources come
 // from the checksum-pinned archive; engine modules come from our npm lock.
@@ -13,6 +14,7 @@ const upstream = realpathSync(process.argv[2])
 const require = createRequire(import.meta.url)
 const upstreamRequire = createRequire(join(upstream, 'package.json'))
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
+const suppliedFonts = editorFonts(process.argv.slice(3), readFileSync)
 const engine = /^@open-pencil\/(core|fig|scene-graph|pen|kiwi)(\/.*)?$/
 const engineRoot = /\/packages\/(core|fig|scene-graph|pen|kiwi)\//
 const pinned = specifier => require.resolve(specifier)
@@ -79,6 +81,9 @@ function nativeBoundary() {
       const source = readFileSync(path, 'utf8')
       let result = correctSource(path, source)
       if (result !== null) seen.add(path.slice(adapter.length + '/node_modules/'.length))
+      if (path.endsWith('/@open-pencil/core/dist/text/fonts.js')) {
+        result = bundleEditorFonts(result, suppliedFonts, replaceOnce)
+      }
       // The published JS distribution retains two TypeScript worker URLs.
       // Correct them before Vite discovers worker entries, in both builds.
       if (path.endsWith('/@open-pencil/core/dist/io/formats/fig/read.js')) {
@@ -268,6 +273,11 @@ for (const [source, name] of [
   [join(upstream, 'LICENSE'), 'OpenPencil-LICENSE'],
   [join(adapter, 'LICENSE'), 'PlatformKit-LICENSE'], [join(adapter, 'NOTICE'), 'PlatformKit-NOTICE'],
 ]) copyFileSync(source, join(licenses, name))
+for (const file of suppliedFonts.files) {
+  const destination = join(upstream, 'dist', file.path)
+  mkdirSync(dirname(destination), { recursive: true })
+  writeFileSync(destination, file.bytes, { flag: 'wx' })
+}
 const inputs = Object.fromEntries(readdirSync(adapter).filter(name => name.endsWith('.mjs') ||
   ['package.json', 'package-lock.json', 'Dockerfile', 'nginx.conf', 'LICENSE', 'NOTICE'].includes(name))
   .sort().map(name => [name, sha256(readFileSync(join(adapter, name)))]))
@@ -277,6 +287,6 @@ writeFileSync(join(upstream, 'dist/platformkit-provenance.json'), JSON.stringify
   adapter: { inputs, correctedModules: [...seen].sort() },
   upstreamLockSHA256: sha256(readFileSync(join(upstream, 'bun.lock'))),
   dependencyLicenses: { path: dependencyLicenses, sha256: sha256(readFileSync(join(upstream, 'dist', dependencyLicenses))) },
-  designProfile: null, defaultDocument: null,
+  fontFaces: suppliedFonts.faces, designProfile: null, defaultDocument: null,
   scope: 'generic-editor-without-packaged-design',
 }, null, 2) + '\n', { flag: 'wx' })

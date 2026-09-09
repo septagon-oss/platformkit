@@ -95,8 +95,19 @@ func main() {
       for (const href of ['/packs/north', '/packs/coast']) {
         await page.keyboard.press('Tab')
         assert.equal(await page.locator(':focus').getAttribute('href'), href)
+        await page.locator(':focus').evaluate(async node => {
+          getComputedStyle(node).boxShadow
+          await new Promise(requestAnimationFrame)
+        })
       }
       await page.locator(':focus').evaluate(node => node.blur())
+      // Keyboard focus changes the actual source box-shadow. A loaded runner
+      // can paint between the Tab calls; compare its settled default, not a
+      // timing-dependent frame of the returning focus ring.
+      await page.waitForFunction(() => {
+        for (const node of document.querySelectorAll('[data-component=card]')) getComputedStyle(node).boxShadow
+        return document.getAnimations().every(animation => ['finished', 'idle'].includes(animation.playState))
+      }, undefined, { timeout: 5000 })
       image = ck.MakeImageFromEncoded(await page.screenshot())
       const format = { width, height, alphaType: ck.AlphaType.Unpremul, colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB }
       const sourcePixels = image.readPixels(0, 0, format)

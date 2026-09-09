@@ -20,6 +20,8 @@ func TestComposeCarriesTokensRolesBaseAndUtilities(t *testing.T) {
 		"--pk-color-surface-primary:", // the theme's tokens
 		"--pk-role-surface-brand:",    // the roles, in terms of them
 		"box-sizing: border-box",      // the base layer
+		"border-width: 0",             // width utilities opt in without accidental borders
+		"border-style: solid",         // CSS otherwise defaults to an invisible border
 		".inline-flex {",              // a utility a component declared
 	} {
 		if !strings.Contains(sheet, want) {

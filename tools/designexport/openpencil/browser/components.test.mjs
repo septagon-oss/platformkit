@@ -593,7 +593,7 @@ test('text-row borders reject unsupported styles and inconsistent aliases withou
     change(input.roots[0])
     const page = graph.addPage('Refused border'), before = structuredClone({ nodes: [...graph.getAllNodes()], variables: [...graph.variables] })
     const hook = getTextMeasurer()
-    await assert.rejects(materializeComponent(graph, page.id, snapshot, input, faces, renderer, collection.id), /border|paint/)
+    await assert.rejects(materializeComponent(graph, page.id, snapshot, input, faces, renderer, collection.id), /border|paint|geometry/)
     assert.deepEqual({ nodes: [...graph.getAllNodes()], variables: [...graph.variables] }, before)
     assert.equal(getTextMeasurer(), hook)
   }
@@ -1243,6 +1243,25 @@ test('real nested Form actions retain end alignment and source transport through
         master = graph.getNode(edited.componentId)
       }
     }
+  }
+})
+
+test('asymmetric input borders use the observed browser editing viewport through two saves', async () => {
+  const snapshot = formSource(), fonts = suppliedFormFaces()
+  snapshot.css += '\ninput[data-pk-value] { border-left-width: 2px; }'
+  const observed = await captureExample(browser, snapshot, formId, { fonts })
+  let { graph, collection } = buildFoundation(snapshot)
+  const page = graph.addPage('Asymmetric input')
+  await materializeComponent(graph, page.id, snapshot, observed, fonts, renderer, collection.id)
+  const control = observed.roots[0].children[0].children[1], bounds = control.control.content.bounds
+  assert.equal(control.style['border-left-width'], '2px')
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const native = [...graph.getAllNodes()].find(node => node.name === 'Source input')
+    assert.equal(native.borderLeftWeight, 2)
+    const viewport = graph.getChildren(native.id)[0]
+    for (const field of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(viewport[field] -
+      (bounds[field] - (field === 'x' || field === 'y' ? control.bounds[field] : 0))) <= 1 / 64)
+    if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
   }
 })
 

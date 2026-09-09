@@ -466,9 +466,11 @@ function swapInstanceComponent(graph, instanceId, componentId) {
 export function correctSyncGraph(source, replace) {
   // The SDK already distinguishes layout mutations from authored operations.
   // Computed positions must not masquerade as local descendant edits. Keep
-  // preexisting edit markers and dimension dirtiness required by FIG sizing.
+  // preexisting edit markers and changed dimensions required by FIG sizing.
+  // Repeated identical sizes are not edits: they would invalidate imported
+  // inline advances on the next layout pass, even while fonts are unavailable.
   source = replace(source, 'if (this.sourceMetadataPreservationDepth === 0) markSourceFieldsEdited(node, Object.keys(changes));',
-    'if (this.sourceMetadataPreservationDepth === 0) markSourceFieldsEdited(node, Object.keys(changes).filter(key => !this.isApplyingLayout || !["x", "y"].includes(key)));')
+    'if (this.sourceMetadataPreservationDepth === 0) markSourceFieldsEdited(node, Object.keys(changes).filter(key => !this.isApplyingLayout || !["x", "y"].includes(key) && (!["width", "height"].includes(key) || changes[key] !== node[key])));')
   const start = source.indexOf('function syncChildren(')
   const end = source.indexOf('function copyInstanceComponentProps(', start)
   const original = source.slice(start, end)
