@@ -289,10 +289,12 @@ function serializeAppearanceOverrides(context, instance, counter) {
       paddingLeft: 'stackHorizontalPadding', paddingRight: 'stackPaddingRight' };
     const paddingFields = Object.keys(padding).filter(owns);
     const sized = target !== instance && ['width', 'height'].some(owns);
-    if (fields.length || paddingFields.length || sized) {
+    const dashed = owns('dashPattern');
+    if (fields.length || paddingFields.length || sized || dashed) {
       const guidPath = target === instance ? { guids: [getOrCreateNodeGuid(context,
         resolveInstanceComponentId(context, instance.componentId), counter)] } : nativeOverridePath(context, instance, target, counter);
       const override = { guidPath };
+      if (dashed) override.dashPattern = [...target.dashPattern];
       if (sized) override.size = { x: target.width, y: target.height };
       for (const field of paddingFields) override[padding[field]] = target[field];
       // FIG's leading-padding override also sets the trailing edge when it
@@ -517,7 +519,7 @@ function buildSizeOverriddenCloneUpdates(source, clone) {
       const target = ctx.graph.getNode(targetId);
       const sizingSource = target?.type === 'INSTANCE' ? chain(ctx.graph,
         ctx.graph.getNode(patch.swapComponentId ?? target.componentId), 'componentId').at(-1) : null;
-      const ownedFields = ['fills', 'strokes', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'width', 'height']
+      const ownedFields = ['fills', 'strokes', 'dashPattern', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'width', 'height']
         .filter(field => Object.hasOwn(patch.props ?? {}, field) && (!['width', 'height'].includes(field) ||
           sizingSource && Math.fround(patch.props[field]) !== Math.fround(sizingSource[field] * (target.uniformScaleFactor ?? 1)) &&
           (target.layoutMode === 'NONE' || ((field === 'width') === (target.layoutMode === 'HORIZONTAL') ?

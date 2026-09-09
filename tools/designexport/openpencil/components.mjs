@@ -5,6 +5,7 @@ import { planIcon } from './icon-composition.mjs'
 import { computedColor as color } from './computed-color.mjs'
 import { observedPaint, sameColor, createPaintedNode, bindPaintExpressions } from './component-paints.mjs'
 import { planSourceGrid } from './source-grid.mjs'
+import { cssDashIntervals } from './border-correction.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
 const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
@@ -98,9 +99,14 @@ function planPresentation(node, paintFor, parentLayout = null) {
   const retained = borders.some((border, index) => border.width > 0 &&
     (color(border.color).a > 0 || Object.keys(borderPaints[index].boundVariables).length > 0 || borderPaints[index].expressionBindings))
   const active = borderPaints.filter(Boolean), strokes = retained ? active[0] : null
+  const radii = ['top-left', 'top-right', 'bottom-right', 'bottom-left'].map(corner => pixels(style[`border-${corner}-radius`]))
+  const dashed = retained && borders.every(border => border.style === 'dashed' && border.width === borders[0].width)
   if (retained) {
-    requireComponent(borders.every(border => border.width === 0 || border.style === 'solid' &&
-      sameColor(color(border.color), color(borders.find(item => item.width > 0).color))), 'solid borders with one shared paint required')
+    requireComponent(borders.every(border => border.width === 0 || (border.style === 'solid' || dashed) &&
+      sameColor(color(border.color), color(borders.find(item => item.width > 0).color))), 'solid or uniform dashed borders with one shared paint required')
+    if (dashed) requireComponent(radii.every(radius => radius === radii[0]) &&
+      [node.bounds.width, node.bounds.height].every(value => value > 2 * borders[0].width),
+    'dashed borders require uniform circular corners and a nonempty inner box')
     for (const borderPaint of active.slice(1)) requireComponent(JSON.stringify(borderPaint) ===
       JSON.stringify(strokes), 'border aliases must match on every side')
   }
@@ -113,10 +119,13 @@ function planPresentation(node, paintFor, parentLayout = null) {
   return {
     ...background, ...insets, opacity: Number(style.opacity), effects: boxShadow(node),
     independentCorners: true,
-    topLeftRadius: pixels(style['border-top-left-radius']), topRightRadius: pixels(style['border-top-right-radius']),
-    bottomLeftRadius: pixels(style['border-bottom-left-radius']), bottomRightRadius: pixels(style['border-bottom-right-radius']),
+    topLeftRadius: radii[0], topRightRadius: radii[1], bottomRightRadius: radii[2], bottomLeftRadius: radii[3],
     ...(strokes ? {
-      strokes: strokes.fills.map(fill => ({ ...fill, weight: Math.max(...borders.map(border => border.width)), align: 'INSIDE' })),
+      ...(dashed ? { cssBorder: { version: 1, style: 'dashed', weight: borders[0].width },
+        dashPattern: cssDashIntervals(borders[0].width) } : {}),
+      strokes: strokes.fills.map(fill => ({ ...fill, weight: Math.max(...borders.map(border => border.width)), align: 'INSIDE',
+        ...(dashed ? { dashPattern: cssDashIntervals(borders[0].width) } : {}),
+      })),
       ...(borders.some(border => border.width !== borders[0].width) ? {
         independentStrokeWeights: true,
         ...Object.fromEntries(sides.map((side, index) => [`border${side[0].toUpperCase()}${side.slice(1)}Weight`, borders[index].width])),

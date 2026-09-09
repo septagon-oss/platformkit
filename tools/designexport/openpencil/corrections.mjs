@@ -8,6 +8,7 @@ import { correctSyncGraph } from './sync-correction.mjs'
 import { correctGridLayout, correctGridApply, correctGridTrackMapping } from './grid-correction.mjs'
 import { correctGridNodeChange, correctGridImport, correctGridOverrides, correctGridActions } from './grid-fig-correction.mjs'
 import { correctVariantActions, correctVariantImport, correctVariantNodeChange } from './variant-correction.mjs'
+import { correctCSSBorders } from './border-correction.mjs'
 
 // Source hashes pin the exact upstream implementation, not just its version
 // label. A dependency upgrade requires a new review and the conformance suite.
@@ -120,6 +121,7 @@ export const corrections = Object.freeze({
           this.deletedNodeParents.set(id, node.parentId);
         }
         this.nodes.delete(id);`)
+      source = replace(source, 'const INSTANCE_SYNC_PROPS = [', 'const INSTANCE_SYNC_PROPS = [\n\t"dashPattern",')
       return correctUndoHistory(correctSyncGraph(correctScaleGraph(source, replace), replace), replace)
     },
   },
@@ -231,6 +233,10 @@ export const corrections = Object.freeze({
     transform: (source, replace) => replace(source, 'r.fillPaint.setAlphaf(fill.opacity);',
       'r.fillPaint.setAlphaf(fill.opacity * (fill.type === "SOLID" ? r.fillPaint.getColor()[3] : 1));'),
   },
+  '@open-pencil/core/dist/canvas/scene.js': {
+    sha256: '7d935160fff2f7ac19a6ef55bf05e920e813b880012251063027078370757123',
+    transform: correctCSSBorders,
+  },
   '@open-pencil/core/dist/canvas/strokes.js': {
     sha256: '8da58e7799f04db7dcf301b7033d4c113627e148e26f9c75b3533dfff1e7dc31',
     transform(source, replace) {
@@ -340,10 +346,18 @@ function sceneReferenceField(field) {
 `
 
 function correctImporter(source, replace) {
+  source = replace(source, 'if (targetId === nodeId && ctx.kiwiPropertyNodes.has(nodeId)) continue;',
+    'if (targetId === nodeId && ctx.kiwiPropertyNodes.has(nodeId) && ov.dashPattern === undefined) continue;')
+  source = replace(source, 'function preserveStrokeShapeProps(target, updates) {',
+    `function preserveStrokeShapeProps(target, updates) {
+      if (updates.dashPattern !== undefined && !updates.strokes) updates.strokes = copyStrokes(target.strokes);`)
+  source = replace(source, 'dashPattern: existing.dashPattern', 'dashPattern: updates.dashPattern ?? existing.dashPattern')
+  source = replace(source, 'dashPattern: target.dashPattern', 'dashPattern: updates.dashPattern ?? target.dashPattern')
   source = replace(source,
     'function convertOverrideToProps(ov) {\n\tconst updates = {};',
     referenceConversion + String.raw`function convertOverrideToProps(ov) {
   const updates = {};
+  if (ov.dashPattern !== undefined) updates.dashPattern = [...ov.dashPattern];
   if (ov.componentPropRefs) {
     updates.componentPropertyReferences = ov.componentPropRefs.map(ref => {
       if (!ref.defID) throw new Error('Native property reference has no definition ID');

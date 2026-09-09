@@ -218,7 +218,7 @@ adapter API, not the unfinished shared provider interface or a library publisher
 The text-row capability supports one explicitly bound, nonempty text region in a
 centered, unconstrained, nonwrapping horizontal flex container, optionally with
 named slots containing one canonical SVG each. Rows and composed frames share
-one planner for solid fills, same-paint solid borders, radii and padding, retaining
+one planner for solid fills, same-paint solid or uniform dashed borders, radii and padding, retaining
 transparent token-bound strokes and border insets. Direct aliases require matching palettes in every theme
 and retain source RGBA through legacy CSS alpha rounding. This is candidate evidence,
 not general CSS equivalence. Literal paints stay unbound. Unambiguous authored expressions
@@ -330,7 +330,7 @@ native modes and live links.
 
 Icon composition verifies canonical flat path/circle geometry, attributes and
 observed paints; grouped, transformed or potentially clipped SVGs are refused.
-Arbitrary nested content, differently painted or nonsolid border sides, outlines, filters,
+Arbitrary nested content, differently painted or unsupported border styles, outlines, filters,
 truncation and unimplemented sizing constraints remain unsupported. Text controls
 support empty values; text blocks and flex labels still need empty/collapsed-space
 participation semantics. Native properties accept those edits, but the converter
@@ -423,6 +423,17 @@ Use a fresh process for a different font revision. Fixture provenance and the
 complete OFL notice are recorded in [NOTICE](../../../NOTICE).
 
 ## Understand the correction boundary
+
+[CSS dashed borders](border-correction.mjs) fit dashes to resized edges, with uniform
+circular corners, one shared paint and a nonempty inner box. Their interpretation
+lives in the existing source correspondence; unrelated native borders are unchanged.
+Changing a native pattern, width or unsupported shape releases that interpretation.
+Native inheritance and explicit dash overrides survive two saves. Browser checks cover
+square, rounded and pill shapes, thin/thick strokes and transparency; they compare
+paint and dash placement, independently calibrate rounded-clip precision and classify
+partially covered antialiased edges. This is not byte-identical rasterization across
+Skia versions. Displaced, missing, fixed-pattern and recolored borders fail the check.
+Go-backed linked examples cover token ownership, copy edits, history and two saves.
 
 [register.mjs](register.mjs) checks the SDK versions and installs a process-local
 Node loader. [corrections.mjs](corrections.mjs) rejects changed upstream bytes.

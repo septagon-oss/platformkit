@@ -63,6 +63,10 @@ function syncProperties(source, target, keys, overrides, prefix = '') {
     if (Object.hasOwn(overrides, `${prefix}${key}`)) continue
     copyProp(changes, source, key)
   }
+  if (changes.strokes && (source.dashPattern.length || target.dashPattern.length ||
+      Object.hasOwn(overrides, `${prefix}dashPattern`))) changes.strokes = changes.strokes.map(stroke => ({ ...stroke,
+    dashPattern: [...(changes.dashPattern ?? target.dashPattern)],
+  }))
   if (!Object.hasOwn(overrides, `${prefix}boundVariables`)) {
     for (const field of ['fills', 'strokes']) {
       if (!Object.hasOwn(overrides, `${prefix}${field}`)) continue

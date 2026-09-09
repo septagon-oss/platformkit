@@ -135,9 +135,12 @@ async function verifyDownload(bytes, untouched, trailing, replacementGeometry, d
 
 async function verifyBuild() {
   const provenance = await (await fetch(new URL('/platformkit-provenance.json', endpoint))).json()
+  const notices = await (await fetch(new URL('/licenses/PlatformKit-NOTICE', endpoint))).text()
+  assert.equal(notices, readFileSync(new URL('../../../../NOTICE', import.meta.url), 'utf8'), 'shipped notices match the source')
+  assert.ok(notices.includes('Blink border geometry — BSD 3-Clause\n\nCopyright (C) 2013 Google Inc.'))
   assert.equal(provenance.scope, 'generic-editor-without-packaged-design')
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
-    'Dockerfile', 'LICENSE', 'NOTICE', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
+    'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'property-correction.mjs',
     'scaling-correction.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
   ])
@@ -637,13 +640,14 @@ const editorFontFixtures = [400, 500, 600].map(weight => {
   return { weight, bytes: new Uint8Array(OpenType.parse(figBuffer(woff)).toArrayBuffer()) }
 })
 
-for (const [field, choices, editFamilyCopy = true] of [
+for (const [field, choices, editFamilyCopy = true, dashed = false] of [
   ['tone', ['neutral', 'info', 'danger']], ['size', ['md', 'sm', 'lg']], ['size', ['md', 'xs', '2xl'], false],
+  ['tone', ['neutral', 'info', 'danger'], true, true],
 ])
-test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves: editFamilyCopy=${editFamilyCopy}`, { timeout: 120000 }, async t => {
+test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves: editFamilyCopy=${editFamilyCopy}, dashed=${dashed}`, { timeout: 120000 }, async t => {
   await verifyBuild()
   const hash = bytes => createHash('sha256').update(bytes).digest('hex')
-  const project = await sourceFixture(t, `package main
+  const exportSource = await sourceFixture(t, `package main
 import (
   "encoding/json"
   "os"
@@ -653,6 +657,7 @@ import (
   "github.com/septagon-oss/platformkit/kit/httpx"
   "github.com/septagon-oss/platformkit/ui"
   "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/css"
   "github.com/septagon-oss/platformkit/ui/screens"
 )
 type Note struct {
@@ -662,7 +667,7 @@ type Note struct {
 }
 func (Note) TableName() string { return "notes" }
 func main() {
-  var input struct { Proposal *ui.PropsProposal }
+  var input struct { Proposal *ui.PropsProposal; Dashed bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: crud.Fields[*Note]()}}
   form := screens.FormExample("fixture/generated-form", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note", nil, nil, "", true)
@@ -673,12 +678,19 @@ func main() {
   choices := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/choice-form", ComponentID: "pk-ui.component.form"},
     components.FormProps{Label: "Album state", Action: "/albums"}, []g.Node{state.Node}, components.Form)
   examples = append(examples, choices)
-  snapshot, err := ui.Export(design.Default(), examples)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal) }
+  var extra ui.Extra
+  if input.Dashed {
+    extra.Sheets = []*css.Sheet{css.NewSheet().Select("[data-component=button]",
+      css.Decl("border", css.Literal("1px dashed var(--pk-color-border-default)")),
+      css.Decl("border-radius", css.Literal("12px")))}
+  }
+  snapshot, err := ui.Export(design.Default(), examples, extra)
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal, extra) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
 `)
+  const project = input => exportSource({ ...input, dashed })
   const source = project({})
   const form = 'pk-ui.component.form/default', button = 'pk-ui.component.button/with-leading-icon'
   const paragraph = 'pk-ui.component.text/muted', secondary = 'pk-ui.component.button/secondary'
@@ -980,6 +992,13 @@ func main() {
               if (path[0] === secondary) {
                 assert.deepEqual([placed.strokes[0].weight, placed.strokes[0].align], [1, 'INSIDE'])
                 assert.equal(reopened.variables.get(placed.boundVariables['strokes/0/color']).name, '--pk-color-border-default')
+                assert.deepEqual(placed.dashPattern, dashed ? [3, 2] : [])
+                assert.deepEqual(placed.strokes[0].dashPattern, dashed ? [3, 2] : [])
+                if (dashed) {
+                  const master = chain(reopened, placed, 'componentId').at(-1)
+                  const origin = JSON.parse(master.pluginData.find(item => item.key === 'platformkit.source').value)
+                  assert.deepEqual(origin.cssBorder, { version: 1, style: 'dashed', weight: 1 })
+                }
               }
             }
           }
