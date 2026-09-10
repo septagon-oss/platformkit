@@ -55,7 +55,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The ancestry check below needs main and the tag, so it needs history.
           fetch-depth: 0
@@ -149,7 +149,7 @@ jobs:
       contents: write # gh release create
       packages: write # push to ghcr.io
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # `gh release create --generate-notes` compares against the previous
           # tag, so the whole history has to be here.
