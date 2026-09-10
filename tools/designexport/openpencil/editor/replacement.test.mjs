@@ -152,7 +152,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
-    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-binding-correction.mjs', 'variable-binding.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -794,6 +794,111 @@ test('numeric variables retain editor values, refusal feedback and two worker sa
           assert.deepEqual(['Untouched master', 'Untouched instance'].map(name => geometry(reopened, named(reopened, name))), untouched)
         }
         assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
+test('bound pixel tokens reflow linked consumers through keyboard edits and two worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), collection = graph.createCollection('Live dimensions')
+  graph.renameMode(collection.id, collection.defaultModeId, 'light')
+  graph.addMode(collection.id, 'live-dark', 'dark')
+  const base = graph.createVariable('Spacing', 'FLOAT', collection.id, 8)
+  base.valuesByMode['live-dark'] = 24
+  base.sourceToken = { version: 1, snapshot: 'b'.repeat(64), kind: 'scale', scale: 'spacing', key: '2', decimal: '8.00', unit: 'px' }
+  const alias = graph.createVariable('Gap alias', 'FLOAT', collection.id, { aliasId: base.id })
+  const pageId = graph.getPages()[0].id
+  const master = graph.createNode('COMPONENT', pageId, { name: 'Bound master',
+    layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG',
+    itemSpacing: 8, paddingLeft: 8, paddingRight: 8, paddingTop: 8, paddingBottom: 8 })
+  for (const name of ['First', 'Second']) graph.createNode('RECTANGLE', master.id, { name, width: 40, height: 24 })
+  graph.bindVariable(master.id, 'itemSpacing', alias.id)
+  graph.bindVariable(master.id, 'paddingLeft', alias.id)
+  computeLayout(graph, master.id)
+  graph.createInstance(master.id, pageId, { name: 'Light consumer', x: 200,
+    variableModes: { [collection.id]: collection.defaultModeId } })
+  graph.createInstance(master.id, pageId, { name: 'Dark consumer', x: 400,
+    variableModes: { [collection.id]: 'live-dark' } })
+  graph.createNode('RECTANGLE', pageId, { name: 'Unrelated geometry', x: 37, y: 217, width: 73, height: 29 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = geometry(baseline, named(baseline, 'Unrelated geometry'))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `live-dimensions-${cycle}.fig`)
+        const layer = page.getByRole('treeitem', { name: 'Light consumer Lock Hide', exact: true })
+        await layer.click()
+        const width = page.getByRole('spinbutton', { name: 'Width', exact: true })
+        await expect(width).toHaveAttribute('aria-valuenow', cycle === 0 ? '104' : '120')
+        await page.keyboard.press('Escape')
+        const open = page.getByRole('button', { name: 'Open variables', exact: true })
+        await open.click()
+        const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        const input = dialog.getByRole('textbox', { name: 'Spacing, light', exact: true })
+        const next = dialog.getByRole('textbox', { name: 'Spacing, dark', exact: true })
+        await expect(input).toHaveValue(cycle === 0 ? '8' : '16')
+        if (cycle === 0) {
+          for (let step = 0; step < 80 && !await input.evaluate(node => node === document.activeElement); step++) await page.keyboard.press('Tab')
+          await expect(input).toBeFocused()
+          for (const forcedColors of ['none', 'active']) {
+            await page.emulateMedia({ forcedColors })
+            assert.ok(await input.evaluate(node => node.matches(':focus-visible') &&
+              getComputedStyle(node).outlineStyle === 'auto' && parseFloat(getComputedStyle(node).outlineWidth) > 0))
+          }
+          await page.emulateMedia({ forcedColors: 'none' })
+          await input.fill('16')
+          await input.press('Tab')
+          await expect(next).toBeFocused()
+          await expect(dialog.getByRole('status')).toBeEmpty()
+          await input.fill('-1')
+          await input.press('Tab')
+          await expect(next).toBeFocused()
+          await expect(input).toHaveValue('16')
+          await expect(dialog.getByRole('status')).toContainText('Variables unchanged. Native numeric binding:')
+          await page.addScriptTag({ content: axe.source })
+          const audit = await dialog.evaluate(element => window.axe.run(element))
+          assert.deepEqual(audit.violations, [])
+          assert.deepEqual(audit.incomplete, [])
+        }
+        await dialog.getByRole('button', { name: 'Collection actions', exact: true }).focus()
+        await page.keyboard.press('Escape')
+        await expect(open).toBeFocused()
+        await layer.click()
+        await expect(width).toHaveAttribute('aria-valuenow', '120')
+        if (cycle === 0) {
+          await layer.click()
+          await page.keyboard.press('Control+z')
+          await expect(width).toHaveAttribute('aria-valuenow', '104')
+          await page.keyboard.press('Control+Shift+z')
+          await expect(width).toHaveAttribute('aria-valuenow', '120')
+        }
+        await page.getByRole('treeitem', { name: 'Dark consumer Lock Hide', exact: true }).click()
+        await expect(width).toHaveAttribute('aria-valuenow', '136')
+        if (cycle < 2) {
+          buffer = await saveDocument(page, errors, workers)
+          const saved = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const source = [...saved.variables.values()].find(variable => variable.name === 'Spacing')
+          const linked = [...saved.variables.values()].find(variable => variable.name === 'Gap alias')
+          assert.deepEqual(source.sourceToken, base.sourceToken)
+          assert.ok(Object.values(linked.valuesByMode).every(value => value.aliasId === source.id))
+          for (const [name, gap] of [['Bound master', 16], ['Light consumer', 16], ['Dark consumer', 24]]) {
+            const node = named(saved, name)
+            assert.equal(node.width, 88 + 2 * gap)
+            assert.equal(node.itemSpacing, gap)
+            assert.equal(node.paddingLeft, gap)
+            assert.equal(node.boundVariables.itemSpacing, linked.id)
+            assert.equal(node.boundVariables.paddingLeft, linked.id)
+            assert.deepEqual(saved.getChildren(node.id).map(child => child.x), [gap, 40 + 2 * gap], `${name}, save ${cycle}`)
+            if (node.type === 'INSTANCE') assert.equal(saved.getNode(node.componentId).name, 'Bound master')
+          }
+          assert.deepEqual(geometry(saved, named(saved, 'Unrelated geometry')), untouched)
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
         assert.deepEqual(errors, [])
       } finally { await context.close() }
     }

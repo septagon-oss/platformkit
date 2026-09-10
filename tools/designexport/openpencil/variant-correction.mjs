@@ -142,7 +142,7 @@ function changeVariantDefinition(ctx, componentSetId, propertyId, newName, remov
 export function correctVariantActions(source, replace) {
   source = 'import { isEqual } from "es-toolkit";\n' + source
   source = replace(source, 'import { reapplyInstanceComponentProperties } from "./properties.js";',
-    'import { reapplyInstanceComponentProperties, projectComponentPropertyChange } from "./properties.js";')
+    'import { reapplyInstanceComponentProperties, projectGraphChange } from "./properties.js";')
   source = replace(source, 'function createVariantActions(ctx) {', chain.toString() + '\n' + helpers + '\nfunction createVariantActions(ctx) {')
   const start = source.indexOf('\tfunction switchInstanceVariant('), end = source.indexOf('\treturn {', start)
   if (start < 0 || end <= start) throw new Error('Native variant: missing switch action boundary')
@@ -156,7 +156,7 @@ export function correctVariantActions(source, replace) {
     if (!target || target.id === component.id) return;
     const before = variantOccurrenceState(ctx, instance);
     function apply(componentId, expected, desired) {
-      projectComponentPropertyChange(ctx, planned => {
+      projectGraphChange(ctx, planned => {
         planned.graph.swapInstanceComponent(instanceId, componentId);
         reapplyInstanceComponentProperties(planned, instanceId);
         if (desired) restoreVariantOccurrence(planned, expected, desired);

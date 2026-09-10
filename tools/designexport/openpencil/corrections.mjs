@@ -11,6 +11,9 @@ import { correctVariantActions, correctVariantImport, correctVariantNodeChange }
 import { correctCSSBorders } from './border-correction.mjs'
 import { correctSourceOverflow } from './source-box.mjs'
 import { correctSourcePositionActions, correctSourcePositionImport, correctSourcePositionGraph } from './source-positioning.mjs'
+import { correctNumericGraph, correctNumericLayout, correctNumericLayoutApply, correctNumericEvents,
+  correctNumericImport, correctNumericExport, correctNumericValueActions, correctNumericModeActions,
+  correctNumericProjection, correctNumericBindingActions, correctNumericNodeActions, correctNumericNodeExport } from './variable-binding-correction.mjs'
 
 // Source hashes pin the exact upstream implementation, not just its version
 // label. A dependency upgrade requires a new review and the conformance suite.
@@ -25,6 +28,7 @@ export const corrections = Object.freeze({
     sha256: 'bdbb599d70a5cf92300c67c385ee0d269550d4eea9c637f608d85fa321e63ee7',
     transform: (source, replace) => {
       source = correctVariantNodeChange(correctGridNodeChange(correctScaleNodeChange(correctExporter(source, replace), replace), replace), replace)
+      source = correctNumericNodeExport(source, replace)
       return `import { sourceAbsoluteRecord } from ${JSON.stringify(fileURLToPath(new URL('./source-positioning.mjs', import.meta.url)))};\n` +
         source + '\nexport { serializeVariableModes, extractComponentPropertyAssignments };\n'
     },
@@ -53,12 +57,13 @@ export const corrections = Object.freeze({
       source = 'import { serializeVariableModes } from "@open-pencil/fig/node-change";\n' + source
       // Variable descriptions have a native FIG field, independent of names.
       source = replace(source, 'name: variable.name,', 'name: variable.name,\n\t\t\tdescription: variable.description,')
-      return replace(source, 'for (const entry of canvasEntries) nodeChanges.push(entry.canvasNc);',
+      source = replace(source, 'for (const entry of canvasEntries) nodeChanges.push(entry.canvasNc);',
         `for (const entry of canvasEntries) {
           const modes = entry.page.variableModes && serializeVariableModes(entry.page, varIdToGuid, modeIdToGuid);
           if (modes) entry.canvasNc.variableModeBySetMap = modes;
           nodeChanges.push(entry.canvasNc);
         }`)
+      return correctNumericExport(source, replace)
     },
   },
   '@open-pencil/core/dist/kiwi/fig/import.js': {
@@ -96,7 +101,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/fig/dist/instance-overrides.js': {
     sha256: '5efd3f221660fbbed3d60879f187cb946e391bc1556f80213961d4804b027eb0',
-    transform: (source, replace) => correctSourcePositionImport(correctGridOverrides(correctScaleImport(correctInstanceImporter(correctImporter(source, replace), replace), replace), replace), replace),
+    transform: (source, replace) => correctNumericImport(correctSourcePositionImport(correctGridOverrides(correctScaleImport(correctInstanceImporter(correctImporter(source, replace), replace), replace), replace), replace), replace),
   },
   '@open-pencil/scene-graph/dist/types.js': {
     sha256: '79dcc003679545dae0cfeadfdbb68dc10c6e92b85468d344ac89a14cbbdfe8e6',
@@ -162,7 +167,7 @@ export const corrections = Object.freeze({
         }
         this.nodes.delete(id);`)
       source = replace(source, 'const INSTANCE_SYNC_PROPS = [', 'const INSTANCE_SYNC_PROPS = [\n\t"dashPattern",')
-      return correctUndoHistory(correctSyncGraph(correctSourcePositionGraph(correctScaleGraph(source, replace), replace), replace), replace)
+      return correctNumericGraph(correctUndoHistory(correctSyncGraph(correctSourcePositionGraph(correctScaleGraph(source, replace), replace), replace), replace), replace)
     },
   },
   '@open-pencil/scene-graph/dist/chunks/copy.js': {
@@ -171,7 +176,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/editor/components/properties.js': {
     sha256: '7bc49a01f5148053123559f7e4a523317a7ea61339429607dd2fd338243ed123',
-    transform: (source, replace) => correctPropertyActions(correctPropertyTarget(source, replace), replace),
+    transform: (source, replace) => correctNumericProjection(correctPropertyActions(correctPropertyTarget(source, replace), replace), replace),
   },
   '@open-pencil/core/dist/editor/components/variants.js': {
     sha256: 'b2b6ddf2575a44470f5143ed75e999a878190ad658020b6c01958210d05ef4d9',
@@ -256,15 +261,16 @@ export const corrections = Object.freeze({
         'setNativeVariableValue(ctx.graph, variable, modeId, newValue);')
       source = replace(source, 'if (v) v.valuesByMode[modeId] = structuredClone(newValue);',
         'if (v) setNativeVariableValue(ctx.graph, v, modeId, newValue);')
-      return replace(source, 'if (v) v.valuesByMode[modeId] = structuredClone(prevValue);',
+      source = replace(source, 'if (v) v.valuesByMode[modeId] = structuredClone(prevValue);',
         'if (v) setNativeVariableValue(ctx.graph, v, modeId, prevValue, prevPresent);')
+      return correctNumericModeActions(correctNumericValueActions(source, replace, './components/properties.js'), replace)
     },
   },
   '@open-pencil/core/dist/figma-api/index.js': {
     sha256: '81ad3ed7376c9866dad1d3ec3778d00129b3eb24cc63db827b8a9f3cf17198b6',
-    transform: (source, replace) => `import { setCheckedVariableValue as setNativeVariableValue } from ${numberHelper};\n` +
+    transform: (source, replace) => correctNumericValueActions(`import { setCheckedVariableValue as setNativeVariableValue } from ${numberHelper};\n` +
       replace(source, 'variable.valuesByMode[modeId] = value;',
-        'setNativeVariableValue(this.graph, variable, modeId, value);'),
+        'setNativeVariableValue(this.graph, variable, modeId, value);'), replace, '../editor/components/properties.js'),
   },
   '@open-pencil/core/dist/editor/text/auto-resize.js': {
     sha256: '9cab5aafe825afa0d7f959536b8fe61da620a535051f6b4bee5ae31e74b0fc1a',
@@ -276,9 +282,9 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/editor/graph-events.js': {
     sha256: 'd8bda42ef584b716444c24c8c1dce4aeacd44a35c44267b5b132a71eeb471e5a',
-    transform: (source, replace) => replace(source,
+    transform: (source, replace) => correctNumericEvents(replace(source,
       'deleted: (id) => {\n\t\t\t\toptions.emitEditorEvent("node:deleted", id);\n\t\t\t\tonNodeStructureChanged(id);',
-      'deleted: (id, parentId) => {\n\t\t\t\toptions.emitEditorEvent("node:deleted", id);\n\t\t\t\tonNodeStructureChanged(parentId ?? id);'),
+      'deleted: (id, parentId) => {\n\t\t\t\toptions.emitEditorEvent("node:deleted", id);\n\t\t\t\tonNodeStructureChanged(parentId ?? id);'), replace),
   },
   '@open-pencil/core/dist/editor/create.js': {
     sha256: '3d164478f09a94567cdd35e7a0c1b3d175a95afcb312695f18b284d756fc4f26',
@@ -286,15 +292,19 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/editor/nodes.js': {
     sha256: '658a69b330f927b31cc525ec4389d6913e4ea04b9db8ce9d0688ead725ca51a5',
-    transform: (source, replace) => correctGridActions(correctSourcePositionActions(source, replace), replace),
+    transform: (source, replace) => correctNumericNodeActions(correctGridActions(correctSourcePositionActions(source, replace), replace), replace),
+  },
+  '@open-pencil/core/dist/editor/variable-bindings.js': {
+    sha256: 'b08aa2649b689ef0749618cf1eb8009f7bc77f68c4bb0f58741c4e1e29c389b7',
+    transform: correctNumericBindingActions,
   },
   '@open-pencil/core/dist/layout.js': {
     sha256: '358130698d8aa61bfcad65e4695679ed3883aac9efbb048df5a09cbe98f2b299',
-    transform: (source, replace) => correctMeasuredLayout(correctGridLayout(correctLayout(source, replace), replace), replace),
+    transform: (source, replace) => correctNumericLayout(correctMeasuredLayout(correctGridLayout(correctLayout(source, replace), replace), replace), replace),
   },
   '@open-pencil/core/dist/layout/apply.js': {
     sha256: 'a02c896a0f808fd3ccb24ca6a8c09975ca7ef06e2555bc6313b54091e37e8c8d',
-    transform: (source, replace) => correctGridApply(correctLayoutApply(source, replace), replace),
+    transform: (source, replace) => correctNumericLayoutApply(correctGridApply(correctLayoutApply(source, replace), replace), replace),
   },
   '@open-pencil/core/dist/layout/yoga-helpers.js': {
     sha256: '24a80fac2b5649055876204e4f4b8df1761bcdee01601ecc2df808b8bfadc584',

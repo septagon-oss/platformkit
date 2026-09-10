@@ -17,7 +17,7 @@ RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY tools/designexport/openpencil/*-correction.mjs tools/designexport/openpencil/corrections.mjs tools/designexport/openpencil/build-editor.mjs ./
 COPY tools/designexport/openpencil/editor-fonts.mjs tools/designexport/openpencil/fonts.mjs tools/designexport/openpencil/source-positioning.mjs tools/designexport/openpencil/source-box.mjs ./
 COPY tools/designexport/openpencil/variable-color.mjs tools/designexport/openpencil/variable-number.mjs tools/designexport/openpencil/variable-source.mjs tools/designexport/openpencil/variable-modes.mjs tools/designexport/openpencil/color-expression.mjs tools/designexport/openpencil/computed-color.mjs ./
-COPY tools/designexport/openpencil/variable-history.mjs ./
+COPY tools/designexport/openpencil/variable-history.mjs tools/designexport/openpencil/variable-binding.mjs ./
 COPY tools/designexport/openpencil/Dockerfile tools/designexport/openpencil/nginx.conf LICENSE NOTICE ./
 WORKDIR /upstream
 # These published packages omit their license files. The Yoga revision is the

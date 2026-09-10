@@ -1,4 +1,5 @@
 import { setNativeVariableValue } from './variable-color.mjs'
+import { planNumericBindings, applyNumericBindings } from './variable-binding.mjs'
 
 const reject = message => { throw new Error(`Native number: ${message}`) }
 const fields = (value, names) => value && typeof value === 'object' && !Array.isArray(value) &&
@@ -73,6 +74,7 @@ function candidate(graph, variables) {
   const result = Object.create(graph)
   result.variables = variables
   validateNumericVariables(result)
+  return result
 }
 
 // Compose the existing colour/value setter without changing its meaning.
@@ -83,8 +85,9 @@ export function setCheckedVariableValue(graph, variable, modeId, value, present 
   else delete valuesByMode[modeId]
   const variables = new Map(graph.variables)
   variables.set(variable.id, { ...variable, valuesByMode })
-  candidate(graph, variables)
+  const plan = planNumericBindings(candidate(graph, variables))
   setNativeVariableValue(graph, variable, modeId, value, present)
+  applyNumericBindings(graph, plan)
 }
 
 export function validateNumericRemoval(graph, ids) {

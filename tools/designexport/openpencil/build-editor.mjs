@@ -238,7 +238,7 @@ const selectedValue = computed({
   const variableError = ref('')
   function checkedVariableAction<T>(action: () => T): T | undefined {
     try { return action() } catch (error) {
-      if (!(error instanceof Error) || !/^(Native CSS color|CSS color expression|Native number|Native variable mode):/.test(error.message)) throw error
+      if (!(error instanceof Error) || !/^(Native CSS color|CSS color expression|Native number|Native numeric binding|Native variable mode):/.test(error.message)) throw error
       variableError.value = 'Variables unchanged. ' + error.message
     }
   }`,

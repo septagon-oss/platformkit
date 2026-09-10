@@ -1,8 +1,9 @@
 import { validateNumericVariables } from './variable-number.mjs'
 import { validateCSSColors, validateResolvedColors } from './variable-color.mjs'
+import { isNumericBindingField } from './variable-binding.mjs'
 
 const reject = message => { throw new Error(`Native variable history: ${message}`) }
-const bindingFlag = key => /(^|:)boundVariables$/.test(key)
+const bindingFlag = key => /(^|:)boundVariables$/.test(key) || isNumericBindingField(key.slice(key.lastIndexOf(':') + 1))
 const same = (a, b) => Object.keys(a).length === Object.keys(b).length &&
   Object.entries(a).every(([key, value]) => Object.hasOwn(b, key) && b[key] === value)
 const bindingState = node => ({ parentId: node.parentId, componentId: node.componentId, type: node.type,

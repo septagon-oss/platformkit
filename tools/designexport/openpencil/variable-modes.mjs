@@ -1,5 +1,6 @@
 import { validateCSSColors, validateResolvedColors } from './variable-color.mjs'
 import { validateNumericVariables } from './variable-number.mjs'
+import { planNumericBindings, applyNumericBindings } from './variable-binding.mjs'
 
 const reject = message => { throw new Error(`Native variable mode: ${message}`) }
 const draftOwner = Symbol('detached variable mode owner')
@@ -55,6 +56,7 @@ export function changeVariableModes(graph, collectionId, change) {
   validateNumericVariables(candidate)
   validateCSSColors(candidate)
   validateResolvedColors(candidate)
+  const numericPlan = planNumericBindings(candidate)
   collection.modes = next.modes
   collection.defaultModeId = next.defaultModeId
   for (const id of collection.variableIds) {
@@ -63,6 +65,7 @@ export function changeVariableModes(graph, collectionId, change) {
   }
   if (candidate.activeMode.has(collectionId)) graph.activeMode.set(collectionId, candidate.activeMode.get(collectionId))
   else graph.activeMode.delete(collectionId)
+  applyNumericBindings(graph, numericPlan)
   return result
 }
 

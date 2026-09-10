@@ -5,15 +5,15 @@ import { fileURLToPath } from 'node:url'
 const helpers = String.raw`
 // Stage node and layout effects through the same SDK operations. Measurement
 // failure must precede live graph notifications, deletions and history changes.
-function projectComponentPropertyChange(ctx, change) {
+function projectGraphChange(ctx, change, resources = {}, commitResources = () => {}) {
   const graph = ctx.graph, projected = new SceneGraph();
   projected.nodes = structuredClone(graph.nodes);
   projected.rootId = graph.rootId;
   projected.instanceIndex = structuredClone(graph.instanceIndex);
   projected.deletedNodeParents = structuredClone(graph.deletedNodeParents);
   // These resources are read-only inputs to node/layout operations.
-  for (const field of ["images", "variables", "variableCollections", "activeMode"]) projected[field] = graph[field];
-  change({ graph: projected, ...createLayoutRunner(() => projected), withoutComponentSync: operation => operation() });
+  for (const field of ["images", "variables", "variableCollections", "activeMode"]) projected[field] = resources[field] ?? graph[field];
+  const result = change({ graph: projected, ...createLayoutRunner(() => projected), withoutComponentSync: operation => operation() });
   const created = new Set(), removed = new Set();
   for (const [id, node] of projected.nodes) {
     const original = graph.getNode(id);
@@ -23,7 +23,9 @@ function projectComponentPropertyChange(ctx, change) {
   for (const id of graph.nodes.keys()) if (!projected.nodes.has(id)) removed.add(id);
   // Preserve live handles and the synchronizer's native ID remapping; unchanged
   // nodes are shared back into the plan and emit no spurious invalidations.
+  commitResources();
   applyNativeSync(graph, { nodes: projected.nodes, created, removed });
+  return result;
 }
 
 function propertyHistoryScope(ctx, target) {
@@ -162,7 +164,7 @@ export function correctPropertyActions(source, replaceOnce) {
     'import { createLayoutRunner } from "../layout-runner.js";\n' +
     'import { textAutoResizeChanges } from "../text/auto-resize.js";\n' + source
   source = replaceOnce(source, 'export { createComponentPropertyActions, reapplyInstanceComponentProperties };',
-    'export { createComponentPropertyActions, reapplyInstanceComponentProperties, projectComponentPropertyChange };')
+    'export { createComponentPropertyActions, reapplyInstanceComponentProperties, projectGraphChange };')
   source = replaceOnce(source, 'function targetValue(target) {', 'function targetValue(ctx, target) {')
   source = replaceOnce(source, 'return target.source.componentId ?? target.node.componentId ?? "";',
     'return chain(ctx.graph, target.node, "componentId").at(-1)?.id ?? "";')

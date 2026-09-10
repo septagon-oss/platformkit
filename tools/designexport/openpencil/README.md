@@ -64,9 +64,10 @@ authenticate supplied hashes or replace the Go producer's source contract valida
 [Token metadata](variable-source.mjs) retains the captured source identity, snapshot,
 unit and original scalar decimal independently of native names and edited values.
 It is baseline evidence, not source-write authority or acceptance of a native edit by
-the Go source contract. Colour formulas reuse the existing evaluator and linked icons;
-numeric storage does not yet establish spacing, radius or typography bindings.
-Native components and layout remain on their existing v1 observation path.
+the Go source contract. Colour formulas reuse the existing evaluator and linked icons.
+Qualified native pixel consumers are described below; source-produced components
+and layout still use their v1 observation path. Numeric storage alone does not
+establish source-token-to-component correspondence or typography bindings.
 
 To include components, install Chromium as described below and append repeated
 `--example ID` selections and `--font FAMILY WEIGHT STYLE /absolute/font.woff`
@@ -167,7 +168,39 @@ are refused. Native tests cover aliases, mode fallbacks and metadata integrity. 
 built-editor numeric test additionally covers keyboard focus, visible outlines,
 refusal feedback, history and two actual worker saves without changing component
 geometry. Live screen-reader announcements and a full accessibility audit remain
-unverified. Numeric component/layout bindings are not qualified by these checks.
+unverified. Storage precision and layout consumption have separate checks.
+
+[Native pixel bindings](variable-binding.mjs) resolve flex gaps, four padding edges,
+uniform rectangular radii and explicitly fixed rectangular box dimensions through
+the existing node-aware resolver. Aliases retain their references; inherited and
+local modes select each occurrence's value. Source-backed dependencies must be
+absolute pixels. Negative values, incompatible units, intrinsic/fill-owned sizes,
+conflicting size limits and independent corners refuse before binding. Yoga and
+FIG geometry still use binary32 precision; the variable's binary64 value and its
+source decimal are separate records, not promises of exact layout arithmetic.
+
+Ordinary editor value, binding, node-mode and collection-mode actions stage numeric
+and layout effects through the shared detached graph projection. Measurement or
+validation failure leaves live values, geometry, events and retryable history
+unchanged. Derived changes do not acquire literal instance overrides. Explicit
+unbind freezes the effective value as an authored literal; rebind releases it.
+Collection removal and restoration preserve distinct occurrence values and links.
+Editing a bound numeric literal requires an explicit unbind first.
+
+Run `node --import ./register.mjs --test variable-binding.test.mjs` here for live
+reflow, both flex directions, fixed boxes, alias and mode ownership, Skia pixels,
+failure injection, history, instance independence and two native saves. The editor
+check below additionally edits a source-identified pixel token by keyboard, reads
+live linked dimensions, rejects a negative value and checks history and two worker
+saves. Its token-dialog audit covers names, contrast, focus and refusal feedback;
+actual screen-reader announcements remain unverified.
+
+This is a provider consumer boundary, not a second source token map. It does not
+infer references from equal pixel values or migrate the component exporter to v2.
+Typography, contextual units, grid tracks, motion and shared-style bindings remain
+outside this qualification, as do raw graph writes and arbitrary event callbacks.
+The existing enum-contract migration and complete generated-library gates are
+separate unfinished work; these focused checks do not establish production readiness.
 
 [Collection mode edits](variable-modes.mjs) run the pinned graph operations on a
 detached owner, validating the resulting numeric and colour dependencies before
