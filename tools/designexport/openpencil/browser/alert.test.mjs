@@ -56,7 +56,7 @@ async function borderPixelsAndSemantics(browser, ck, graph, snapshot, expected, 
   } finally { image?.delete(); draw.destroy(); await page.close() }
 }
 
-test('real refusal forms inherit an editable Alert with its source icon offset and border through two saves', async t => {
+test('real refusal forms inherit a centered editable Alert with optional consumer margins through two saves', async t => {
   const run = await sourceFixture(t, `package main
 import (
   "encoding/json"
@@ -66,10 +66,14 @@ import (
   "github.com/septagon-oss/platformkit/kit/httpx"
   "github.com/septagon-oss/platformkit/ui"
   "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/css"
   "github.com/septagon-oss/platformkit/ui/screens"
 )
 func main() {
-  var input struct { Proposal *ui.PropsProposal }
+  var input struct {
+    Proposal *ui.PropsProposal
+    IconMargin bool
+  }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes",
     Schema: crud.Schema{Fields: []crud.Field{{Name: "title", Type: crud.TypeString, Required: true}}}}
@@ -79,21 +83,29 @@ func main() {
     screens.FormExample("fixture/conflict", resource, screens.Options{Root: "/admin"}, "/admin/notes/1", "Edit note",
       map[string]any{"title": "Field notes"}, nil, "A record already uses one of these values.", false),
   }
-  snapshot, err := ui.Export(design.Default(), examples)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal) }
+  var extras []ui.Extra
+  if input.IconMargin {
+    sheet := css.NewSheet()
+    sheet.Select("[data-alert-icon]", css.Decl("margin-top", css.Literal("2px")))
+    extras = append(extras, ui.Extra{Sheets: []*css.Sheet{sheet}})
+  }
+  snapshot, err := ui.Export(design.Default(), examples, extras...)
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal, extras...) }
   if err != nil { panic(err) }; if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
 `)
-  const snapshot = run({}), fonts = suppliedFonts([400, 500, 600, 700])
+  const fonts = suppliedFonts([400, 500, 600, 700])
   const browser = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
   const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
   try {
-    for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+    for (const IconMargin of [false, true]) for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
+      const snapshot = run({ IconMargin })
       const options = { examples: snapshot.examples.map(example => example.id), fonts, browser, renderer, mode, viewport: { width, height: 900 } }
       const observation = await captureExample(browser, snapshot, 'fixture/validation', options)
       const alert = observation.roots[0].children[0]
       assert.equal(alert.style['border-left-width'], '4px', 'the actual source accent must be retained')
-      assert.equal(alert.children[0].style['margin-top'], '2px')
+      assert.equal(alert.style['align-items'], 'center')
+      assert.equal(alert.children[0].style['margin-top'], IconMargin ? '2px' : '0px')
       let { graph } = await buildComponentDocument(snapshot, options)
       // Baseline the editable file's float32 geometry, not the generator's
       // double-precision SVG coordinates, before checking master isolation.
@@ -121,7 +133,7 @@ func main() {
       editor.undoAction(); assert.equal(extractSourceProps(graph, target(), snapshot).status, 'no-supported-changes')
       editor.redoAction()
       const proposal = { baseSHA256: snapshot.sha256, path: ['fixture/validation', 'error'], props: { message } }
-      const changed = run({ proposal }), expected = (await captureExample(browser, changed, 'fixture/validation', options)).roots[0]
+      const changed = run({ proposal, IconMargin }), expected = (await captureExample(browser, changed, 'fixture/validation', options)).roots[0]
       for (let cycle = 0; cycle < 3; cycle++) {
         assert.deepEqual(extractSourceProps(graph, target(), snapshot).proposal, proposal)
         assert.equal(extractSourceProps(graph, placed(graph, 'fixture/conflict'), snapshot).status, 'no-supported-changes')
@@ -129,7 +141,10 @@ func main() {
           .map(child => [child.name, child.text, child.x, child.y, child.width, child.height]), children)
         assert.ok(Math.abs(placed(graph, 'fixture/validation').height - expected.bounds.height) <= 1 / 64)
         assert.ok(Math.abs(target().height - expected.children[0].bounds.height) <= 1 / 64)
-        const [margin, body] = graph.getChildren(target().id), icon = graph.getChildren(margin.id)[0]
+        const [box, body] = graph.getChildren(target().id), margin = IconMargin ? box : null
+        const icon = margin ? graph.getChildren(margin.id)[0] : box
+        const iconCenter = icon.y + (margin?.y ?? 0) + icon.height / 2 - (IconMargin ? 1 : 0)
+        assert.ok(Math.abs(iconCenter - body.y - body.height / 2) <= 1 / 64, 'Alert centers retain the source margin')
         for (const [node, source, parent] of [[icon, expected.children[0].children[0], margin], [body, expected.children[0].children[1], null]]) {
           for (const field of ['x', 'y', 'width', 'height']) {
             const position = field === 'x' || field === 'y'
@@ -143,7 +158,7 @@ func main() {
       }
       assert.deepEqual(snapshot, original)
     }
-    const observation = await captureExample(browser, snapshot, 'fixture/validation', { fonts })
+    const snapshot = run({}), observation = await captureExample(browser, snapshot, 'fixture/validation', { fonts })
     for (const change of [
       alert => { alert.children[0].style['margin-top'] = '-2px' },
       alert => { alert.children[0].style['margin-left'] = 'auto' },
