@@ -1,9 +1,16 @@
 # Release PlatformKit
 
 A release publishes a reviewed commit from `main` as a versioned Go module,
-container image and GitHub release. Publishing requires the repository owner's
-authorization. This page describes the repeatable release procedure; it does
-not provision infrastructure or migrate a production database.
+container image and release notes. Publishing requires the repository owner's
+authorization. This page describes preparation and publication evidence; it
+does not provision infrastructure or migrate a production database.
+
+GitHub Actions publication is currently disabled. The retained
+[release workflow](.github/workflows/release.yml) does not run merely because
+its file exists. The active [verification workflow](.gitea/workflows/ci.yml)
+tests source and local editor images without publishing. Before creating a
+release, agree its publication mechanism and destinations with the owner;
+do not enable automation or grant runners publication credentials implicitly.
 
 ## Prepare the release
 
@@ -20,8 +27,10 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 A failed or unavailable check is not a pass. Resolve vulnerability findings or
 record a reviewed assessment of reachability and mitigation before publishing.
-The CI workflow runs vulnerability analysis; the release workflow currently
-runs `make check` and `make e2e`, so do not assume the tag repeats every CI step.
+Verify the active CI result for the exact release commit. An absent GitHub
+check is not a passing result, and pushing a tag does not rerun these gates.
+Editor artifacts also require the native, browser and built-editor checks in
+the [design tooling guide](tools/designexport/openpencil/README.md).
 
 Keep applied migration files unchanged. For a schema change, verify the upgrade
 path and decide whether old processes can remain running. Follow
@@ -39,10 +48,12 @@ The actual source and package checks are already part of `make check`.
 
 ## Publish an approved version
 
-Confirm the release commit has reached `main` and choose the reviewed version.
-The following uses `v1.2.3` as an example, not as the next release:
+Confirm the release commit has reached `main`, check it out with a clean tree
+and choose the reviewed version. Inspect the actual push destinations before
+publishing. The following uses `v1.2.3` as an example, not as the next release:
 
 ```sh
+git remote get-url --push --all origin
 git tag -s v1.2.3 -m "PlatformKit 1.2.3"
 git push origin refs/tags/v1.2.3
 ```
@@ -51,19 +62,22 @@ Use an annotated tag with `-a` only if the owner explicitly chooses an unsigned
 release. Push the selected tag, not every local tag. Do not move or replace a
 published tag; publish a new version for a correction. Repository rulesets and
 signing configuration are external state and must be checked by the owner.
+Verify the tag and its peeled commit at each intended destination. A partial
+multi-destination push is not a synchronized release. Pushing the tag exposes
+the Go module version; it does not publish the container or release assets.
 
 ## Verify publication
 
-[.github/workflows/release.yml](.github/workflows/release.yml) is authoritative.
-It rejects a tag outside `main`'s history and tests the tagged tree before
-building [deploy/Dockerfile](deploy/Dockerfile). It pushes to
-`ghcr.io/septagon-oss/platformkit`, attaches an SPDX SBOM and records the image
-digest in the GitHub release. A prerelease tag does not advance `latest`.
+Use the explicitly approved publisher to build [deploy/Dockerfile](deploy/Dockerfile)
+from the verified commit and publish to the agreed registry. The retained
+workflow documents the former publisher, not evidence that an image exists.
+Keep prereleases separate from `latest` and include release notes, the exact
+source commit, immutable image digest and an SPDX SBOM of the published image.
 
-Confirm the workflow succeeded, the intended tag and commit match, and the
-release contains the expected image digest and SBOM. Check package visibility
-from the intended consumer's access context; repository visibility alone does
-not establish image access.
+Verify those artifacts at their destinations and confirm their source matches
+the reviewed tag. Check image and module access from the intended consumer's
+context; repository visibility alone does not establish artifact access.
+Until the publisher is approved and these checks pass, publication is unfinished.
 
 ## Update consumers
 
