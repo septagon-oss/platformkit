@@ -212,7 +212,7 @@ const selectedValue = computed({
           'const value = variable.valuesByMode[mode.modeId]',
           `const value = variable.valuesByMode[mode.modeId]
       if (value && typeof value === 'object' && 'cssColor' in value) {
-        return h('span', { class: 'font-mono text-xs text-muted' }, options.formatModeValue(variable, mode.modeId))
+        return h('span', { class: 'font-mono text-xs text-surface' }, options.formatModeValue(variable, mode.modeId))
       }`,
           "'flex size-5 cursor-pointer items-center justify-center rounded border-none bg-transparent text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-surface'",
           "'flex size-6 cursor-pointer items-center justify-center rounded border-none bg-transparent text-muted hover:text-surface'",
@@ -256,12 +256,22 @@ const selectedValue = computed({
     setDefaultMode: (id: string) => checkedVariableAction(() => collectionActions.setDefaultMode(id)),
     updateVariableValue: (id: string, modeId: string, value: VariableValue) =>
       checkedVariableAction(() => variableActions.updateVariableValue(id, modeId, value))`],
+        'src/components/ColorPicker/ColorInput.vue': ['8cf39a99c75e377a25f8e020ac50e8d158bdd865a827858f01af063bee80340a',
+          '<span v-else class="min-w-0 flex-1 truncate font-mono text-xs text-muted">',
+          '<span v-else class="min-w-0 flex-1 truncate font-mono text-xs text-surface">'],
         'src/components/properties/VariablesSection.vue': ['5e566f51c71bee2c77d1902d5d1f0d7f9d5f30e4b6a0db6a9b2ad410fe5f9175',
           '<IconButton :label="panels.openVariables"', '<IconButton class="min-h-6 min-w-6" :label="panels.openVariables"'],
         'src/components/variables/VariablesDialog.vue': ['d8f09a9aefffceb59356cddf38208ad6e25976ebf2e641f08c1eeff6c2657cbe',
-          "import { watch, type Component } from 'vue'", "import { computed, nextTick, type Component } from 'vue'",
+          'text-xs whitespace-nowrap text-muted data-[state=active]:bg-hover data-[state=active]:text-surface',
+          'text-xs whitespace-nowrap text-surface data-[state=active]:bg-hover data-[state=active]:text-surface',
+          'text-left text-[11px] font-medium text-muted', 'text-left text-[11px] font-medium text-surface',
+          'placeholder:text-muted', 'placeholder:text-surface',
+          '<span class="text-xs text-muted">{{ panels.createVariable }}</span>',
+          '<span class="text-xs text-surface">{{ panels.createVariable }}</span>',
+          "import { watch, type Component } from 'vue'", "import { computed, nextTick, useId, type Component } from 'vue'",
           "const collectionInput = templateRef<HTMLInputElement>('collectionInput')",
           `const collectionMenu = templateRef<HTMLButtonElement>('collectionMenu')
+const emptyMessageId = useId()
 let pendingCollectionRename: string | undefined
 function onCollectionMenuClose(event: Event) {
   // A selected item still belongs to the closing menu's focus trap. Start
@@ -343,7 +353,16 @@ async function commitCollectionRename(event: FocusEvent) {
     </div>`,
           'data-test-id="variables-collection-menu"', 'data-test-id="variables-collection-menu" ref="collectionMenu" aria-label="Collection actions"',
           'data-test-id="variables-add-collection"', 'data-test-id="variables-add-collection" :aria-label="dialogs.createCollection"',
-          'data-test-id="variables-search-input"', 'data-test-id="variables-search-input" :aria-label="dialogs.search"',
+          'data-test-id="variables-search-input"',
+          `data-test-id="variables-search-input" :aria-label="dialogs.search"
+                :aria-describedby="!ctx.variables.value.length ? emptyMessageId + '-' + ctx.activeCollectionId.value : undefined"`,
+          '              <tbody>',
+          `              <tbody>
+                <tr v-if="!ctx.table.getRowModel().rows.length">
+                  <td :colspan="ctx.table.getVisibleLeafColumns().length + 1" class="px-4 py-6 text-sm text-surface">
+                    <p :id="emptyMessageId + '-' + col.id">{{ panels.noVariablesFound }}</p>
+                  </td>
+                </tr>`,
           'data-test-id="variables-add-mode"', 'data-test-id="variables-add-mode" :aria-label="dialogs.addMode"'],
         'src/app/shell/keyboard/registry.ts': ['5df738b1929c454d61c3665d8794ed0488cf8f712ae3211b5eeeaeedbca51cd0',
           'hasOpenDismissableLayer() ||',
@@ -429,7 +448,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 11) throw new Error('Browser omitted a required editor control correction')
+if (correctedControls.size !== 12) throw new Error('Browser omitted a required editor control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

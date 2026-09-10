@@ -192,10 +192,16 @@ history and two worker saves retain token source identities and linked icons.
 The existing double-click entry remains available; blur commits retain the browser's
 chosen Tab destination. The table's actions column has an accessible heading.
 
-A bounded variables-dialog accessibility audit still finds low-contrast table
-text (`#888888` on `#2a2a2a`, 4.04:1 against 4.5:1). Browser colour preferences
-do not change the editor's dark interface. Contrast, live screen-reader testing
-and the wider editor audit remain open.
+The typed-token table uses the editor's existing readable foreground role for
+headings, values and instructions; this does not change source palette tokens.
+Its test-only axe check covers loaded, renamed, refused-edit, filtered,
+empty-result and empty-collection states using the source-produced fixture.
+Empty results retain the table's column structure and describe the search field.
+The pinned closed colour popovers still expose empty controls references: the
+test keeps that manual-review gap explicit and refuses other inconclusive checks.
+Browser colour preferences do not change the editor's dark interface. Wider
+editor accessibility, open-popover audits, zoom and live screen readers remain
+unverified; these bounded checks are not an editor-wide accessibility sign-off.
 
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release

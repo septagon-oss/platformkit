@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import OpenType from 'opentype.js'
+import axe from 'axe-core'
 import { chromium } from 'playwright'
 import { expect } from 'playwright/test'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -212,6 +213,75 @@ test('source-produced typed tokens retain their baseline through editor edits an
         assert.deepEqual(errors, [])
       } finally { await context.close() }
     }
+  } finally { await browser.close() }
+})
+
+test('typed token table keeps readable labels and values across its editing states', { timeout: 120000 }, async t => {
+  await verifyBuild()
+  const run = await sourceTokenFixture(t), input = decodeSnapshot(Buffer.from(run({})))
+  const { graph } = buildFoundation(input.snapshot, input)
+  graph.createCollection('Other tokens')
+  const buffer = Buffer.from(await exportFigFile(graph))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+    try {
+      const { page, errors } = await openDocument(context, buffer, 'token-contrast.fig')
+      await page.getByRole('button', { name: 'Open variables', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+      await expect(dialog.getByRole('textbox', { name: 'spacing/1, light', exact: true })).toHaveValue('0.1')
+      await page.addScriptTag({ content: axe.source })
+      const audit = async state => {
+        const result = await dialog.evaluate(element => window.axe.run(element))
+        assert.deepEqual(result.violations.map(rule => ({ id: rule.id,
+          nodes: rule.nodes.map(node => ({ target: node.target, reason: node.failureSummary })) })), [], state)
+        assert.ok(result.passes.some(rule => rule.id === 'color-contrast'), 'contrast was actually evaluated')
+        // The pinned closed colour popovers expose an empty controls reference.
+        // Keep this manual-review gap explicit; no other uncertainty is admitted.
+        for (const rule of result.incomplete) {
+          assert.equal(rule.id, 'aria-valid-attr-value')
+          for (const node of rule.nodes) {
+            assert.equal(node.target.length, 1)
+            assert.match(node.failureSummary, /Unable to determine if aria-controls referenced ID exists/)
+            const trigger = page.locator(node.target[0])
+            await expect(trigger).toHaveAttribute('aria-controls', '')
+            await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+            await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+          }
+        }
+      }
+      await audit('loaded tokens, aliases, derived colours and inactive collection label')
+      const menu = dialog.getByRole('button', { name: 'Collection actions', exact: true })
+      await menu.press('Enter')
+      await page.getByRole('menuitem', { name: 'Rename collection', exact: true }).press('Enter')
+      await expect(dialog.getByRole('textbox', { name: 'Rename collection: Foundation', exact: true })).toBeFocused()
+      await audit('collection rename')
+      await page.keyboard.press('Escape')
+      await expect(menu).toBeFocused()
+      const number = dialog.getByRole('textbox', { name: 'spacing/1, light', exact: true })
+      await number.fill('12px')
+      await number.press('Tab')
+      await expect(dialog.getByRole('status')).toContainText('Variables unchanged. Native number:')
+      await expect(number).toHaveValue('0.1')
+      await audit('refused numeric edit')
+      await dialog.getByRole('button', { name: 'Dismiss variable message', exact: true }).press('Enter')
+      const search = dialog.getByRole('textbox', { name: 'Search…', exact: true })
+      await search.fill('spacing')
+      await expect(dialog.locator('[data-test-id="variable-row"]')).toHaveCount(1)
+      await audit('filtered tokens')
+      await search.fill('no matching token')
+      await expect(dialog.locator('[data-test-id="variable-row"]')).toHaveCount(0)
+      await expect(dialog.getByRole('cell', { name: 'No variables found', exact: true })).toBeVisible()
+      await expect(search).toHaveAccessibleDescription('No variables found')
+      await audit('empty result')
+      await search.fill('')
+      await dialog.getByRole('tab', { name: 'Foundation', exact: true }).press('ArrowRight')
+      await expect(dialog.getByRole('tab', { name: 'Other tokens', exact: true })).toHaveAttribute('aria-selected', 'true')
+      await expect(dialog.getByRole('cell', { name: 'No variables found', exact: true })).toBeVisible()
+      await audit('empty collection')
+      assert.deepEqual(errors, [])
+      t.diagnostic('Closed colour-popover controls references and live screen-reader behavior still require manual review.')
+    } finally { await context.close() }
   } finally { await browser.close() }
 })
 
