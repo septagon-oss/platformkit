@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/contracts/tasktest"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
@@ -30,7 +31,7 @@ var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 func TestServiceConforms(t *testing.T) {
 	tasktest.RunService(t, func(t *testing.T, run func(tasktest.Fixture)) {
 		_, conn := dbtest.Schema(t)
-		svc := internal.NewService()
+		svc := task.NewService()
 		// One transaction per case, rolled back on the way out: a test keeps
 		// nothing, and the commands are called exactly as a request handler
 		// calls them — inside a transaction somebody else opened.
