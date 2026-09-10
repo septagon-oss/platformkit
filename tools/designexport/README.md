@@ -47,8 +47,10 @@ For a standalone token/asset selection, products use
 [ui.ExportTokens](../../ui/export_tokens.go) without capturing components, CSS or
 icons. Validate any selected subset, then use `DesignExport.WithTokens` to attach
 it to a product capture when needed. This opt-in leaves default v1 exports
-unchanged. The current native adapter does not accept v2; this command is for
-source-contract inspection, not DTCG files or an updated editable library.
+unchanged. The [native adapter](openpencil/README.md#generate-a-design-document)
+accepts an explicitly selected v2 colour/numeric subset, not this complete Core
+selection. This command inspects the source contract; it does not produce DTCG
+files or a complete editable library.
 
 For DTCG interchange, call `TokenExport.DTCG(mode)` on an explicitly selected
 package. The [runnable palette/family example](../../ui/export_dtcg_test.go)

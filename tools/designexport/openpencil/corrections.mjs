@@ -16,6 +16,8 @@ import { correctSourcePositionActions, correctSourcePositionImport, correctSourc
 // label. A dependency upgrade requires a new review and the conformance suite.
 export const sdkVersion = '0.14.0'
 const colorHelper = JSON.stringify(fileURLToPath(new URL('./variable-color.mjs', import.meta.url)))
+const numberHelper = JSON.stringify(fileURLToPath(new URL('./variable-number.mjs', import.meta.url)))
+const tokenHelper = JSON.stringify(fileURLToPath(new URL('./variable-source.mjs', import.meta.url)))
 export const corrections = Object.freeze({
   '@open-pencil/fig/dist/node-change2.js': {
     sha256: 'bdbb599d70a5cf92300c67c385ee0d269550d4eea9c637f608d85fa321e63ee7',
@@ -33,10 +35,14 @@ export const corrections = Object.freeze({
     sha256: '084acd6250329f95a0f3c92df1f863dab0e59fed559264eb4976c79ebee05d55',
     transform(source, replace) {
       source = `import { serializeCSSColors } from ${colorHelper};\n` + source
+      source = `import { serializeNumbers, validateNumericVariables } from ${numberHelper};\n` + source
+      source = `import { serializeTokenOrigin } from ${tokenHelper};\n` + source
+      source = replace(source, 'const graph = deserializeSceneGraph(structuredClone(serializeSceneGraph(sourceGraph)));',
+        'validateNumericVariables(sourceGraph);\n\tconst graph = deserializeSceneGraph(structuredClone(serializeSceneGraph(sourceGraph)));')
       source = replace(source, 'variableData: variableValueToKiwi(value, variable.type, varIdToGuid)',
         'variableData: variableValueToKiwi(value?.cssColor ? graph.resolveVariable(variable.id, modeId) : value, variable.type, varIdToGuid)')
       source = replace(source, 'if (variable.key) nc.key = variable.key;',
-        'nc.pluginData = serializeCSSColors(graph, variable, varIdToGuid, modeIdToGuid);\n\t\tif (variable.key) nc.key = variable.key;')
+        'nc.pluginData = [...serializeCSSColors(graph, variable, varIdToGuid, modeIdToGuid), ...serializeNumbers(variable, varIdToGuid, modeIdToGuid), ...serializeTokenOrigin(variable, varIdToGuid)];\n\t\tif (variable.key) nc.key = variable.key;')
       // Pages take a separate export path; reuse the native mode serializer
       // after collection and mode GUIDs have been assigned, just like frames.
       source = 'import { serializeVariableModes } from "@open-pencil/fig/node-change";\n' + source
@@ -55,10 +61,13 @@ export const corrections = Object.freeze({
     transform(source, replace) {
       source = correctVariantImport(correctGridImport(source, replace), replace)
       source = `import { restoreCSSColors, validateCSSColors } from ${colorHelper};\n` + source
-      source = replace(source, '\n\t\t\tvaluesByMode,', '\n\t\t\tvaluesByMode: restoreCSSColors(nc, type, valuesByMode),')
+      source = `import { restoreNumbers, validateNumericVariables } from ${numberHelper};\n` + source
+      source = `import { restoreTokenOrigin } from ${tokenHelper};\n` + source
+      source = replace(source, '\n\t\t\tvaluesByMode,',
+        '\n\t\t\tvaluesByMode: restoreNumbers(nc, type, restoreCSSColors(nc, type, valuesByMode), graph.variableCollections.get(collectionId)),')
       source = replace(source, 'importVariableEntries(changeMap, parentMap, graph, assetRefs);',
-        'importVariableEntries(changeMap, parentMap, graph, assetRefs);\n\tvalidateCSSColors(graph);')
-      source = replace(source, 'description: "",', 'description: typeof nc.description === "string" ? nc.description : "",')
+        'importVariableEntries(changeMap, parentMap, graph, assetRefs);\n\tvalidateCSSColors(graph);\n\tvalidateNumericVariables(graph);')
+      source = replace(source, 'description: "",', 'description: typeof nc.description === "string" ? nc.description : "",\n\t\t\tsourceToken: restoreTokenOrigin(nc, type),')
       source = replace(source, 'function applyImportedCanvasMetadata(page, canvasNc) {',
         'function applyImportedCanvasMetadata(page, canvasNc) {\n\tpage.variableModes = nodeChangeToProps(canvasNc, []).variableModes;')
       // Updating the native link must also update the graph's instance index.
@@ -83,9 +92,11 @@ export const corrections = Object.freeze({
     sha256: '79dcc003679545dae0cfeadfdbb68dc10c6e92b85468d344ac89a14cbbdfe8e6',
     transform(source, replace) {
       source = `import { resolveCSSColor, validateCSSColorRemoval } from ${colorHelper};\n` + source
+      source = `import { validateNumericRemoval } from ${numberHelper};\n` + source
       source = replace(source, 'function removeVariable(graph, id) {',
         `function removeVariable(graph, id) {
           if (!graph.variables.has(id)) return;
+          validateNumericRemoval(graph, [id]);
           validateCSSColorRemoval(graph, [id]);
           removeVariableUnchecked(graph, id);
         }
@@ -93,6 +104,7 @@ export const corrections = Object.freeze({
       source = replace(source,
         'if (collection) for (const varId of Array.from(collection.variableIds)) removeVariable(graph, varId);',
         `if (collection) {
+          validateNumericRemoval(graph, collection.variableIds);
           validateCSSColorRemoval(graph, collection.variableIds);
           for (const varId of Array.from(collection.variableIds)) removeVariableUnchecked(graph, varId);
         }`)
@@ -145,7 +157,7 @@ export const corrections = Object.freeze({
   '@open-pencil/core/dist/editor/variables.js': {
     sha256: '95e406a14d6bf2f1057b09f31b8bf01b560d8a2dfc83cdd0fe62063e10923f47',
     transform(source, replace) {
-      source = `import { setNativeVariableValue } from ${colorHelper};\n` + source
+      source = `import { setCheckedVariableValue as setNativeVariableValue } from ${numberHelper};\n` + source
       source = replace(source, 'const prevValue = structuredClone(variable.valuesByMode[modeId]);',
         'const prevPresent = Object.hasOwn(variable.valuesByMode, modeId);\n' +
         '\t\tconst prevValue = structuredClone(variable.valuesByMode[modeId]);')
@@ -159,7 +171,7 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/figma-api/index.js': {
     sha256: '81ad3ed7376c9866dad1d3ec3778d00129b3eb24cc63db827b8a9f3cf17198b6',
-    transform: (source, replace) => `import { setNativeVariableValue } from ${colorHelper};\n` +
+    transform: (source, replace) => `import { setCheckedVariableValue as setNativeVariableValue } from ${numberHelper};\n` +
       replace(source, 'variable.valuesByMode[modeId] = value;',
         'setNativeVariableValue(this.graph, variable, modeId, value);'),
   },

@@ -151,12 +151,56 @@ const selectedValue = computed({
     @keydown.ctrl.enter.prevent="($event.target as HTMLTextAreaElement).blur()"
     @keydown.meta.enter.prevent="($event.target as HTMLTextAreaElement).blur()"`],
         'packages/vue/src/variables/helpers.ts': ['64956a42ec74f537186b528baf0379f2d2bd445c833df8bcf4e48fa0c90cec8e',
+          "import { colorToHexRaw, parseColor }", "import { parseNativeNumber } from " + JSON.stringify(join(adapter, 'variable-number.mjs')) + "\nimport { colorToHexRaw, parseColor }",
+          `      const num = Number.parseFloat(raw)
+      return Number.isNaN(num) ? undefined : num`, '      return parseNativeNumber(raw)',
           'const value = variable.valuesByMode[modeId]',
           `const value = variable.valuesByMode[modeId]
+    if (Object.is(value, -0)) return '-0'
     if (value && typeof value === 'object' && 'cssColor' in value) {
       return 'Derived #' + colorToHexRaw(editor.graph.resolveVariable(variable.id, modeId))
     }`],
         'packages/vue/src/variables/table/helpers.ts': ['50328f508e780665677e575098dd34ebf01e8e77973036d82d1351a54b736b52',
+          `      return h(
+        EditableRoot,
+        {
+          defaultValue: options.formatModeValue(variable, mode.modeId),
+          class: 'min-w-0 flex-1',
+          onSubmit: (submitted: string | null | undefined) =>
+            submitted && commitValueEdit(options, variable, mode.modeId, submitted)
+        },
+        () =>
+          h(EditableArea, { class: 'flex' }, () => [
+            h(EditablePreview, {
+              class: 'min-w-0 flex-1 cursor-text truncate font-mono text-xs text-muted'
+            }),
+            h(EditableInput, {
+              class:
+                'min-w-0 flex-1 rounded border border-border bg-surface/10 px-1 py-0.5 font-mono text-xs text-surface outline-none'
+            })
+          ])
+      )`,
+          `      // Native change commits when focus moves to any sibling cell. The
+      // upstream editable layer treats later cells as overlays and skips it.
+      return h('input', {
+        value: options.formatModeValue(variable, mode.modeId),
+        'aria-label': variable.name + ', ' + mode.name,
+        class: 'w-full min-w-0 rounded border border-border bg-surface/10 px-1 py-0.5 font-mono text-xs text-surface',
+        onChange: (event: Event) => {
+          const input = event.target as HTMLInputElement
+          commitValueEdit(options, variable, mode.modeId, input.value)
+          input.value = options.formatModeValue(variable, mode.modeId)
+        },
+        onKeydown: (event: KeyboardEvent) => {
+          if (event.isComposing) return
+          const input = event.target as HTMLInputElement
+          if (event.key === 'Enter') { event.preventDefault(); input.blur() }
+          if (event.key === 'Escape') {
+            event.preventDefault(); event.stopPropagation()
+            input.value = options.formatModeValue(variable, mode.modeId)
+          }
+        }
+      })`,
           'const value = variable.valuesByMode[mode.modeId]',
           `const value = variable.valuesByMode[mode.modeId]
       if (value && typeof value === 'object' && 'cssColor' in value) {
@@ -173,15 +217,19 @@ const selectedValue = computed({
   const variableError = ref('')
   function checkedVariableAction(action: () => void) {
     try { action() } catch (error) {
-      if (!(error instanceof Error) || !/^(Native CSS color|CSS color expression):/.test(error.message)) throw error
-      variableError.value = 'Variables unchanged. This change would break a colour dependency. ' +
-        'Update the dependent colours before removing or replacing their input. ' + error.message
+      if (!(error instanceof Error) || !/^(Native CSS color|CSS color expression|Native number):/.test(error.message)) throw error
+      variableError.value = 'Variables unchanged. ' + error.message
     }
   }`,
           '    ...variableActions',
           `    ...variableActions,
     variableError,
     dismissVariableError: () => { variableError.value = '' },
+    parseVariableValue: (variable: Variable, raw: string) => {
+      let value: VariableValue | undefined
+      checkedVariableAction(() => { value = variableActions.parseVariableValue(variable, raw) })
+      return value
+    },
     removeVariable: (id: string) => checkedVariableAction(() => variableActions.removeVariable(id)),
     removeCollection: (id: string) => checkedVariableAction(() => collectionActions.removeCollection(id)),
     updateVariableValue: (id: string, modeId: string, value: VariableValue) =>
@@ -220,7 +268,7 @@ textarea:focus-visible { outline: revert; outline-offset: 2px; }
 </style>\n`
         if (path.endsWith('/VariablesDialog.vue')) source += `
 <style scoped>
-:deep(button:focus-visible) { outline: revert; outline-offset: 2px; }
+:deep(button:focus-visible), :deep(input:focus-visible) { outline: revert; outline-offset: 2px; }
 </style>\n`
         return { code: source, map: null }
       }

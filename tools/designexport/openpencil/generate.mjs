@@ -5,6 +5,7 @@ import { createReadStream } from 'node:fs'
 import { link, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { decodeSnapshot } from './source-tokens.mjs'
 
 // Load SDK consumers only after the version-checked correction hook is active,
 // including when this CLI is invoked directly instead of through npm.
@@ -68,16 +69,19 @@ async function readSnapshot(input, description = 'stdin') {
     chunks.push(chunk)
   }
   try {
-    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)))
-  } catch {
-    throw new Error(`Expected one UTF-8 JSON design-export snapshot on ${description}`)
+    return decodeSnapshot(Buffer.concat(chunks))
+  } catch (error) {
+    throw new Error(`Expected one UTF-8 JSON design-export snapshot on ${description}: ${error.message}`)
   }
 }
 
-async function documentBytes(snapshot, selection) {
+async function documentBytes(snapshot, selection, scalarSpellings) {
   if (!selection.examples.length) {
-    const bytes = await exportFigFile(buildFoundation(snapshot).graph)
-    await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    let { graph } = buildFoundation(snapshot, { scalarSpellings }), bytes
+    for (let save = 0; save < 2; save++) {
+      bytes = await exportFigFile(graph)
+      graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+    }
     return bytes
   }
   const [{ chromium }, { SkiaRenderer }, { initCanvasKit }, { buildComponentDocument, verifyComponentDocument }, { validateFonts }] = await Promise.all([
@@ -90,7 +94,7 @@ async function documentBytes(snapshot, selection) {
   })))
   const variants = []
   for (const { snapshotPath, ...variant } of selection.variants) {
-    variants.push({ ...variant, snapshot: await readSnapshot(createReadStream(snapshotPath), snapshotPath) })
+    variants.push({ ...variant, snapshot: (await readSnapshot(createReadStream(snapshotPath), snapshotPath)).snapshot })
   }
   let browser, renderer
   try {
@@ -121,11 +125,11 @@ async function generate(args) {
   if (within !== '..' && !within.startsWith(`..${sep}`) && !isAbsolute(within)) {
     throw new Error('Generated documents must be outside the workspace, including symlink destinations')
   }
-  const snapshot = selection.snapshotStdin ? await readSnapshot(process.stdin) : JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
-    cwd: repository, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120_000,
+  const { snapshot, scalarSpellings } = selection.snapshotStdin ? await readSnapshot(process.stdin) : decodeSnapshot(execFileSync('go', ['run', './tools/designexport'], {
+    cwd: repository, maxBuffer: 32 * 1024 * 1024, timeout: 120_000,
   }))
   // Reopen and validate before any output is staged or published.
-  const bytes = await documentBytes(snapshot, selection)
+  const bytes = await documentBytes(snapshot, selection, scalarSpellings)
   const temporary = await mkdtemp(join(parent, '.platformkit-design-'))
   try {
     const staged = join(temporary, 'document.fig')

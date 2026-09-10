@@ -162,8 +162,11 @@ including transparent inputs; the admitted operation is narrower than general CS
 Only hex RGB/RGBA and `transparent` literals are currently resolvable. Other
 trusted theme CSS still renders through the existing path but is not certified
 by this source contract. Names use ASCII custom-property identities. The source
-projection can be included in v2 snapshots but is not consumed by native adapters;
-it does not establish native editing, interchange, layout or asset availability.
+projection can be included in v2 snapshots. The
+[OpenPencil token path](tools/designexport/openpencil/README.md#generate-a-design-document)
+admits a bounded selection of colours, aliases, mixes and numeric scales; it reuses
+linked icons and retains source evidence separately from native values. The source
+contract alone establishes neither that native support nor layout or asset availability.
 
 [ui.ExportTokens](ui/export_tokens.go) composes the existing colour, fallback
 family, scale, shadow and timing owners without components or I/O. Select
@@ -187,7 +190,7 @@ unknown layout remains unknown when it is requested. Earlier layout-only v2
 snapshots retain their admission rules, and the narrower `CheckLayoutContract`
 still refuses token features. Ordinary `Export` output remains unchanged.
 Consumers must explicitly support the token feature before using these values;
-native-library migration remains separate.
+native component and layout migration remain separate.
 
 [TokenExport.DTCG](ui/export_dtcg.go) projects one explicit mode into the
 [DTCG 2025.10 format](https://www.designtokens.org/tr/2025.10/format/) and

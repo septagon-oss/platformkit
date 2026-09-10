@@ -21,7 +21,8 @@ import { materializeComponent } from '../components.mjs'
 import { extractSourceProps } from '../source-changes.mjs'
 import { chain } from '../exporter-correction.mjs'
 import { captureExample } from '../browser/capture.mjs'
-import { sourceFixture, exportCore, emptyStateFixture } from '../browser/fixtures.test.mjs'
+import { sourceFixture, exportCore, emptyStateFixture, sourceTokenFixture } from '../browser/fixtures.test.mjs'
+import { decodeSnapshot } from '../source-tokens.mjs'
 
 const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL)
 assert.ok(endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', 'openpencil'].includes(endpoint.hostname),
@@ -150,7 +151,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
-    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -158,6 +159,167 @@ async function verifyBuild() {
     assert.equal(createHash('sha256').update(readFileSync(new URL(path, import.meta.url))).digest('hex'), digest, name)
   }
 }
+
+test('source-produced typed tokens retain their baseline through editor edits and two worker saves', { timeout: 120000 }, async t => {
+  await verifyBuild()
+  const run = await sourceTokenFixture(t), input = decodeSnapshot(Buffer.from(run({})))
+  const built = buildFoundation(input.snapshot, input)
+  let buffer = Buffer.from(await exportFigFile(built.graph))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `typed-source-${cycle}.fig`)
+        await page.getByRole('button', { name: 'Open variables', exact: true }).click()
+        const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        const value = dialog.getByRole('textbox', { name: 'spacing/1, light', exact: true })
+        const dark = dialog.getByRole('textbox', { name: 'spacing/1, dark', exact: true })
+        await expect(value).toHaveValue(cycle === 0 ? '0.1' : '0.1234567890123456')
+        await expect(dark).toHaveValue('0.1')
+        if (cycle === 0) {
+          await value.fill('0.1234567890123456')
+          await value.press('Tab')
+          await expect(dark).toBeFocused()
+          await expect(dialog.getByRole('status')).toBeEmpty()
+        }
+        await dialog.getByRole('button', { name: 'Collection actions', exact: true }).focus()
+        await page.keyboard.press('Escape')
+        await expect(dialog).toBeHidden()
+        if (cycle < 2) {
+          buffer = await saveDocument(page, errors, workers)
+          const graph = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const variable = name => [...graph.variables.values()].find(variable => variable.name === name)
+          const spacing = variable('spacing/1'), primary = variable('--pk-color-text-primary')
+          assert.deepEqual(spacing.sourceToken, { version: 1, snapshot: input.snapshot.sha256,
+            kind: 'scale', scale: 'spacing', key: '1', decimal: '0.1000', unit: 'px' })
+          assert.equal(graph.resolveVariable(spacing.id), 0.1234567890123456)
+          assert.deepEqual(primary.sourceToken, { version: 1, snapshot: input.snapshot.sha256,
+            kind: 'color', name: '--pk-color-text-primary' })
+          const aliases = Object.values(variable('--selected-ink').valuesByMode)
+          assert.ok(aliases.every(value => value.aliasId === primary.id))
+          assert.equal(graph.resolveVariable(variable('--selected-mix').id).a, 0.25)
+          const masters = named(graph, 'Icon masters')
+          assert.equal(graph.getChildren(masters.id).length, input.snapshot.icons.length)
+          for (const mode of ['light', 'dark']) for (const instance of graph.getChildren(named(graph, mode).id)) {
+            assert.equal(instance.type, 'INSTANCE')
+            assert.equal(graph.getNode(instance.componentId).parentId, masters.id)
+            assert.ok(graph.getChildren(instance.id).some(vector => Object.values(vector.boundVariables).includes(primary.id)))
+          }
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
+test('numeric variables retain editor values, refusal feedback and two worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), collection = graph.createCollection('Numeric tokens')
+  graph.renameMode(collection.id, collection.defaultModeId, 'light')
+  graph.addMode(collection.id, 'numeric-dark', 'dark')
+  const value = graph.createVariable('Precise value', 'FLOAT', collection.id, 0.1)
+  value.valuesByMode['numeric-dark'] = 16777217
+  graph.createVariable('Linked value', 'FLOAT', collection.id, { aliasId: value.id })
+  graph.createVariable('Tiny value', 'FLOAT', collection.id, 1e-50)
+  graph.createVariable('Negative zero', 'FLOAT', collection.id, -0)
+  const master = graph.createNode('COMPONENT', graph.getPages()[0].id, { name: 'Untouched master', width: 32, height: 32 })
+  graph.createInstance(master.id, graph.getPages()[0].id, { name: 'Untouched instance', x: 80 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Untouched master', 'Untouched instance'].map(name => geometry(baseline, named(baseline, name)))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `numbers-${cycle}.fig`)
+        const open = page.getByRole('button', { name: 'Open variables', exact: true })
+        await open.click()
+        const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        const input = dialog.getByRole('textbox', { name: 'Precise value, light', exact: true })
+        const next = dialog.getByRole('textbox', { name: 'Precise value, dark', exact: true })
+        const tabTo = async target => {
+          for (let step = 0; step < 100 && !await target.evaluate(node => node === document.activeElement); step++) {
+            await page.keyboard.press('Tab')
+          }
+          await expect(target).toBeFocused()
+        }
+        const expected = cycle === 0 ? '0.1' : '0.1234567890123456'
+        await expect(input).toHaveValue(expected)
+        await expect(dialog.getByRole('textbox', { name: 'Negative zero, light', exact: true })).toHaveValue('-0')
+        await expect(dialog.getByRole('textbox', { name: 'Tiny value, light', exact: true })).toHaveValue('1e-50')
+        if (cycle === 2) {
+          const tiny = dialog.getByRole('textbox', { name: 'Tiny value, light', exact: true })
+          await tiny.fill('1e-40')
+          await tiny.press('Enter')
+          await expect(tiny).not.toBeFocused()
+          await dialog.getByRole('button', { name: 'Collection actions', exact: true }).focus()
+          await page.keyboard.press('Escape')
+          await open.click()
+          await expect(tiny).toHaveValue('1e-40')
+          await expect(dialog.getByRole('status')).toBeEmpty()
+        }
+        if (cycle === 0) {
+          await tabTo(input)
+          assert.ok(await input.evaluate(node => {
+            const style = getComputedStyle(node)
+            return node.matches(':focus-visible') && style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0
+          }), 'the keyboard-focused numeric field has a visible native outline')
+          await input.fill('0.1234567890123456')
+          await input.press('Tab')
+          await expect(next).toBeFocused()
+          await expect(input).toHaveValue('0.1234567890123456')
+          for (const invalid of ['1e39', '12px', '1e-999', '9007199254740993', '']) {
+            await page.keyboard.press('Shift+Tab')
+            await expect(input).toBeFocused()
+            await input.fill(invalid)
+            await input.press('Tab')
+            await expect(next).toBeFocused()
+            await expect(dialog.getByRole('status')).toContainText('Variables unchanged. Native number:')
+            await expect(input).toHaveValue('0.1234567890123456')
+          }
+          await page.keyboard.press('Shift+Tab')
+          await input.fill('0.75')
+          await input.press('Escape')
+          await expect(input).toHaveValue('0.1234567890123456')
+          await expect(dialog).toBeVisible()
+          const dismiss = dialog.getByRole('button', { name: 'Dismiss variable message', exact: true })
+          await tabTo(dismiss)
+          await page.keyboard.press('Enter')
+          await expect(dialog.getByRole('status')).toBeEmpty()
+          await expect(dialog.getByRole('button', { name: 'Collection actions', exact: true })).toBeFocused()
+          await page.keyboard.press('Escape')
+          await page.keyboard.press('Control+z')
+          await open.click()
+          await expect(input).toHaveValue('0.1')
+          await page.keyboard.press('Escape')
+          await page.keyboard.press('Control+Shift+z')
+          await open.click()
+          await expect(input).toHaveValue('0.1234567890123456')
+        }
+        await page.keyboard.press('Escape')
+        if (cycle < 2) {
+          buffer = await saveDocument(page, errors, workers)
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+          const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const variable = name => [...reopened.variables.values()].find(variable => variable.name === name)
+          const precise = variable('Precise value'), col = reopened.variableCollections.get(precise.collectionId)
+          assert.equal(reopened.resolveVariable(precise.id), 0.1234567890123456)
+          assert.equal(reopened.resolveVariable(precise.id, col.modes.find(mode => mode.name === 'dark').modeId), 16777217)
+          assert.equal(reopened.resolveVariable(variable('Linked value').id), 0.1234567890123456)
+          assert.equal(reopened.resolveVariable(variable('Tiny value').id), 1e-50)
+          assert.ok(Object.is(reopened.resolveVariable(variable('Negative zero').id), -0))
+          assert.deepEqual(['Untouched master', 'Untouched instance'].map(name => geometry(reopened, named(reopened, name))), untouched)
+        }
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
 
 test('oversized source words remain editable through keyboard history and two browser worker saves', { timeout: 120000 }, async t => {
   await verifyBuild()

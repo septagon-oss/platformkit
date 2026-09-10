@@ -36,6 +36,52 @@ export function suppliedFonts(weights) {
   })
 }
 
+// Return encoded source JSON as a string so the caller exercises its own
+// lossless Scalar decoder instead of this fixture's ordinary JSON.parse.
+export function sourceTokenFixture(t) {
+  return sourceFixture(t, `package main
+import (
+  "encoding/json"
+  "os"
+  "slices"
+  "github.com/septagon-oss/platformkit/design"
+  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/style"
+)
+func main() {
+  theme := design.Default()
+  tokens, err := ui.ExportTokens(theme, "light", "dark")
+  if err != nil { panic(err) }
+  for i := range tokens.Modes {
+    tokens.Modes[i].Fonts = nil
+    tokens.Modes[i].Colors = slices.DeleteFunc(tokens.Modes[i].Colors, func(token design.Token) bool {
+      return !slices.Contains([]string{"--pk-color-text-primary", "--pk-color-surface-canvas"}, token.Name)
+    })
+  }
+  tokens.Colors = []design.ColorToken{
+    {Name: "--selected-ink", Value: design.ColorValue{Reference: "--pk-color-text-primary"}},
+    {Name: "--selected-mix", Value: design.ColorValue{Mix: &design.ColorMix{
+      First: design.ColorValue{Reference: "--selected-ink"}, FirstPercent: 25,
+      Second: design.ColorValue{Literal: "transparent"},
+    }}},
+  }
+  tokens.Scales = []style.ScaleValue{
+    {Scale: "spacing", Key: "1", Number: &style.Scalar{Value: json.Number("0.1000"), Unit: "px"}},
+    {Scale: "leading", Key: "normal", Number: &style.Scalar{Value: json.Number("1.5"), Unit: ""}},
+  }
+  tokens.Shadows, tokens.Easings, tokens.Transitions = nil, nil, nil
+  base, err := ui.Export(theme, nil)
+  if err != nil { panic(err) }
+  snapshot, err := base.WithTokens(tokens)
+  if err != nil { panic(err) }
+  if err := snapshot.CheckSourceContract("source-tokens.v1"); err != nil { panic(err) }
+  encoded, err := json.Marshal(snapshot)
+  if err != nil { panic(err) }
+  if err := json.NewEncoder(os.Stdout).Encode(string(encoded)); err != nil { panic(err) }
+}
+`)
+}
+
 // The browser and shipped-editor checks exercise the same real constructor;
 // neither replaces its paragraphs, constraints, optional slots or source props.
 export function emptyStateFixture(t) {

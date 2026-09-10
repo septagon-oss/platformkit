@@ -9,12 +9,11 @@ The generator packages tokens, icons and explicitly selected experimental native
 components, using supplied-font validation, browser observations and a pinned
 SDK correction layer. Product pages and flows are not converted yet; this is not a
 complete published component library or the finished shared provider interface.
-With IBM Plex Sans 400/500/600/700, headless Chromium (`--font-render-hinting=none`),
-light mode and a 1280×900 viewport, capture accepts 107 of 109 gallery examples;
-the two Video examples refuse because media capture is unsupported.
-Native construction accepts 27: six Alerts, eleven Buttons, three Inputs, two Selects, Form, Grid,
-two Text examples and invalid Textarea; the coverage test reports 80 refusals. These are measured guards, not proof of
-complete typography, visual, interaction or provider support.
+The [coverage test](browser/text.test.mjs) reports each admitted or refused example
+with its reason, using IBM Plex Sans 400/500/600/700, headless Chromium
+(`--font-render-hinting=none`), light mode and a 1280×900 viewport. Run
+`npm run test:browser` for the current inventory. These measured checks do not
+establish complete typography, visual, interaction or provider support.
 
 Consumers can configure `design.Theme.Typography` before `ui.Export`; empty roles
 retain the default stacks. In a separate profile with display set to IBM Plex Sans
@@ -37,6 +36,38 @@ hashes do not verify freshness against current source. Use an absolute `.fig` pa
 with an existing parent outside the workspace; files and symlinks are never overwritten.
 Publication, deployment and applying source proposals are separate operations.
 
+For typed tokens, the producer first selects a dependency-closed `ui.TokenExport`
+and attaches it with `DesignExport.WithTokens`. Pipe that v2 snapshot into the same
+`--snapshot-stdin` command without component options. The adapter admits exactly
+`source-tokens.v1`: selected light/dark colours, native aliases, premultiplied sRGB
+blends, `px` scale values and explicitly unitless leading, line-height or font weight.
+It validates every requested feature, token dependency and selected icon before
+allocating native IDs. Scale-only selections may omit icons and theme modes.
+
+Ordered fallback fonts, contextual units, keywords, shadows, motion and selected
+asset/face records refuse the whole request. Assets still use the separate
+[font-delivery bridge](#deliver-source-backed-font-assets). The full default
+`designexport --tokens both` selection therefore does **not** produce a complete
+native library. A producer must select its subset explicitly; this adapter neither
+filters one automatically nor downgrades a v2 request to a v1 consumer.
+
+JavaScript callers use `decodeSnapshot(bytes)` from [source-tokens.mjs](source-tokens.mjs),
+then `buildFoundation(decoded.snapshot, decoded)`. The bounded UTF-8 decoder returns
+ordinary snapshot data and identity-addressed `scalarSpellings` records
+(`{scale, key, decimal}`), rejecting duplicate JSON fields.
+Keep that pair together: `JSON.parse` alone has already lost authored decimal spelling.
+The pure `planSourceTokens(snapshot, scalarSpellings)` checks source selection and
+conversion. `buildFoundation` also exercises the pinned native resolver on detached
+records before allocating IDs, including its expression limits. These checks do not
+authenticate supplied hashes or replace the Go producer's source contract validation.
+
+[Token metadata](variable-source.mjs) retains the captured source identity, snapshot,
+unit and original scalar decimal independently of native names and edited values.
+It is baseline evidence, not source-write authority or acceptance of a native edit by
+the Go source contract. Colour formulas reuse the existing evaluator and linked icons;
+numeric storage does not yet establish spacing, radius or typography bindings.
+Native components and layout remain on their existing v1 observation path.
+
 To include components, install Chromium as described below and append repeated
 `--example ID` selections and `--font FAMILY WEIGHT STYLE /absolute/font.woff`
 arguments. Quote family names containing spaces; supply every required static face
@@ -53,7 +84,7 @@ profile; defaults are light and 1280×900. Every requested example must pass or 
 file is created. Construction and source correspondence are checked across two
 saves. Ordered layout is repeatable; native IDs and FIG bytes are not.
 
-Open the FIG and inspect Foundation: 22 colors, three CSS font-family strings,
+For the default v1 output, inspect Foundation: 22 colors, three CSS font-family strings,
 27 icon masters and 54 mode-bound light/dark previews. These strings are not
 installed fonts or native text styles. Component definitions and Editable source
 instances occupy separate pages; edit the latter's native properties. Each root
@@ -71,7 +102,7 @@ all state masters in `components`; `master` and `instance` retain the baseline.
 It returns foundation and definition/placement handles. [buildFoundation](foundation.mjs) supplies the shared
 `{ graph, collection, icons }`; `prepareIcon` validates glyphs without creating nodes.
 
-Supported inputs are the existing light/dark token contract, literal hexadecimal
+Legacy v1 inputs are the existing light/dark token contract, literal hexadecimal
 colors, font-family strings and the canonical path/circle SVG glyphs with group
 transforms and supported solid paints. Unsupported tokens, elements or attributes
 fail explicitly. Nested SVG viewports, invisible shapes and transformed strokes
@@ -109,6 +140,25 @@ The variables dialog keeps a refused operation's explanation until dismissed and
 retains keyboard focus. Deletion buttons have names and remain visible without hover.
 This does not certify successful deletion's undo restoration, mode-changing operations,
 raw graph mutation or unrestricted formula creation; those remain separate safety work.
+
+[Numeric variables](variable-number.mjs) retain the editor's finite binary64 values
+alongside ordinary binary32 FIG fallbacks. Versioned metadata preserves decimals,
+tiny values and signed zero through two saves; numeric aliases remain native aliases.
+Import refuses incomplete or changed metadata and incompatible fallbacks. Other
+editors may discard this extension, and changes within one binary32 rounding interval
+cannot be detected. An old file without metadata retains only its existing fallback
+precision. This is not preservation of an authored source-token decimal spelling.
+
+Value cells use labelled native inputs: Tab or Enter commits, Escape cancels a draft,
+and a refused edit restores the committed value without consuming undo/redo history.
+Number input requires a complete decimal representable by the editor without decimal
+rounding and with a finite FIG fallback; `12px`, overflow and underflow below binary64
+are refused. Native tests cover aliases, mode fallbacks and metadata integrity. The
+built-editor numeric test additionally covers keyboard focus, visible outlines,
+refusal feedback, history and two actual worker saves without changing component
+geometry. Live screen-reader announcements and a full accessibility audit remain
+unverified. Mode-changing operations and numeric component/layout bindings are not
+qualified by these checks; the current native file path requires the default mode first.
 
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release
