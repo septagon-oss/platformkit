@@ -34,6 +34,25 @@ func run(args []string, input io.Reader, output io.Writer) error {
 }
 
 func projectSnapshot(args []string, input io.Reader) (ui.DesignExport, error) {
+	if len(args) != 0 && args[0] == "--tokens" {
+		if len(args) != 2 || !slices.Contains([]string{"light", "dark", "both"}, args[1]) {
+			return ui.DesignExport{}, fmt.Errorf("designexport: usage: designexport --tokens light|dark|both")
+		}
+		modes := []string{args[1]}
+		if args[1] == "both" {
+			modes = []string{"light", "dark"}
+		}
+		theme := design.Default()
+		tokens, err := ui.ExportTokens(theme, modes...)
+		if err != nil {
+			return ui.DesignExport{}, err
+		}
+		base, err := ui.Export(theme, nil)
+		if err != nil {
+			return ui.DesignExport{}, err
+		}
+		return base.WithTokens(tokens)
+	}
 	if len(args) == 1 && (args[0] == "--proposal" || args[0] == "--replacement") {
 		body, err := readInput(input)
 		if err != nil {
@@ -71,7 +90,7 @@ func projectExamples(args []string, input io.Reader) ([]components.Example, erro
 		return examples, nil
 	}
 	if (len(args) != 2 && len(args) != 3) || args[0] != "--example" || args[1] == "" || (len(args) == 3 && args[2] != "--props") {
-		return nil, fmt.Errorf("designexport: usage: designexport [--example ID [--props] | --proposal | --replacement]; edit flags read one JSON object from stdin")
+		return nil, fmt.Errorf("designexport: usage: designexport [--example ID [--props] | --proposal | --replacement | --tokens light|dark|both]; edit flags read one JSON object from stdin")
 	}
 	index := slices.IndexFunc(examples, func(example components.Example) bool { return example.ID == args[1] })
 	if index < 0 {

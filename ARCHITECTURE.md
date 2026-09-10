@@ -139,8 +139,8 @@ digests and provenance; each asset carries its own license evidence.
 components or layout. `Asset.VerifyBytes` checks supplied asset and notice digests
 without I/O. Neither check establishes usable fonts or redistribution rights.
 The existing native font validator still owns format, face and glyph checks;
-Core can describe weights or formats that a provider refuses. These projections
-are not yet composed into snapshots, interchange or the editor delivery inputs.
+Core can describe weights or formats that a provider refuses. Snapshots may carry
+this metadata; interchange and physical editor delivery remain separate work.
 
 [style.RoleColors](ui/style/emission_roles.go) projects those same role definitions
 as explicit literals, references and two-input sRGB mixes. `RoleVars` renders
@@ -154,8 +154,32 @@ including transparent inputs; the admitted operation is narrower than general CS
 Only hex RGB/RGBA and `transparent` literals are currently resolvable. Other
 trusted theme CSS still renders through the existing path but is not certified
 by this source contract. Names use ASCII custom-property identities. The source
-projection is not yet included in v2 snapshots or consumed by native adapters;
+projection can be included in v2 snapshots but is not consumed by native adapters;
 it does not establish native editing, interchange, layout or asset availability.
+
+[ui.ExportTokens](ui/export_tokens.go) composes the existing colour, fallback
+family, scale, shadow and timing owners without components or I/O. Select
+`light`, `dark` or both explicitly; output follows selector order. Theme token
+kinds other than colour and font family, including semantic shape dimensions,
+are outside this typed projection. Its `TokenExport.Validate` permits detached,
+dependency-closed subsets and caller-supplied asset metadata. Selected modes
+must expose the same colour/font identities. Shared colour references resolve
+in each mode, and transition timing must be present in the selected values,
+not merely known to a source owner. Asset-only or scale-only selections need
+no mode, layout or assertion that fallback fonts are installed.
+
+[DesignExport.WithTokens](ui/export_source.go) attaches that selection to an
+existing capture, producing a detached v2 snapshot with `source-tokens.v1` and
+a new content hash. Selected theme values and overlapping measurements must agree
+with the original capture; the operation neither edits source nor certifies
+equality to rendered CSS.
+`CheckSourceContract` checks the whole required-feature envelope before
+dispatching to the token and layout owners. Token-only captures need no layout;
+unknown layout remains unknown when it is requested. Earlier layout-only v2
+snapshots retain their admission rules, and the narrower `CheckLayoutContract`
+still refuses token features. Ordinary `Export` output remains unchanged.
+Consumers must explicitly support the token feature before using these values;
+this is not yet DTCG interchange or a native-library migration.
 
 [ui/icon](ui/icon/) owns icons. [ui/components](ui/components/) provides typed
 Go functions returning HTML and declares the classes those functions can emit.

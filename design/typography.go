@@ -56,7 +56,7 @@ func (t Theme) FontFamilies() ([]FontFamilyToken, error) {
 		if token.Type != "fontFamily" {
 			continue
 		}
-		families, err := fontFamilies(token.Value)
+		families, err := ParseFontFamilies(token.Value)
 		if err != nil {
 			return nil, fmt.Errorf("font family token %s: %w", token.Name, err)
 		}
@@ -71,7 +71,10 @@ var fontIdentifier = regexp.MustCompile(`^(--|-?[a-zA-Z_\x{80}-\x{10ffff}])[-a-z
 
 const fontWhitespace = " \t\n\r\f"
 
-func fontFamilies(value string) ([]FontFamily, error) {
+// ParseFontFamilies decodes the same admitted fallback-stack subset used by
+// Theme.FontFamilies. It returns detached names or an error with no partial list;
+// callers binding a typed projection to a CSS token need not parse it again.
+func ParseFontFamilies(value string) ([]FontFamily, error) {
 	if !utf8.ValidString(value) || strings.ContainsAny(value, "\\\x00") {
 		return nil, fmt.Errorf("invalid encoding or unsupported CSS escape")
 	}

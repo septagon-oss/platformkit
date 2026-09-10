@@ -27,6 +27,29 @@ Products call [ui.Export](../../ui/export.go) with their own palette, bound
 examples and stylesheet additions. Core's IDs come from
 [Gallery](../../ui/components/gallery.go); labels and grouping are not identities.
 
+## Inspect typed foundation values
+
+Opt into the source-token contract with an explicit mode selection:
+
+```sh
+go run ./tools/designexport --tokens both
+```
+
+Use `light` or `dark` to select one mode. This writes a v2 foundation snapshot
+with `source-tokens.v1`, typed colour references, ordered font families, scales,
+shadows and timing declarations. It includes the normal CSS, icons and both
+legacy theme records, but no component examples; the typed selection alone is
+mode-scoped. Other theme token kinds, including semantic shape dimensions, are
+not part of this typed projection. No fonts are bundled and stdin is not read.
+The command cannot be combined with edit or example-selection flags.
+
+For a standalone token/asset selection, products use
+[ui.ExportTokens](../../ui/export_tokens.go) without capturing components, CSS or
+icons. Validate any selected subset, then use `DesignExport.WithTokens` to attach
+it to a product capture when needed. This opt-in leaves default v1 exports
+unchanged. The current native adapter does not accept v2; these values are for
+source-contract inspection, not yet DTCG files or an updated editable library.
+
 ## Project a property edit
 
 Add `--props` to read a typed property patch from stdin:

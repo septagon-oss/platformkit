@@ -24,6 +24,7 @@ type DesignExport struct {
 	Schema           string                          `json:"schema"`
 	RequiredFeatures []string                        `json:"requiredFeatures,omitempty"`
 	Measurements     []style.Measurement             `json:"measurements,omitempty"`
+	SourceTokens     *TokenExport                    `json:"sourceTokens,omitempty"`
 	SHA256           string                          `json:"sha256,omitempty"`
 	FontPolicy       string                          `json:"fontPolicy"`
 	Notices          string                          `json:"notices"`
