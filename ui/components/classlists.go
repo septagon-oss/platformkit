@@ -210,7 +210,7 @@ var (
 
 	// Alert.
 	clAlertBase = style.New().
-			Display(style.DisplayFlex).Items(style.ItemsStart).Gap(style.S3).Rounded(style.RadiusLG).
+			Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S3).Rounded(style.RadiusLG).
 			Border(style.Border1)
 	clAlertRegular  = style.New().Padding(style.S4)
 	clAlertCompact  = style.New().PaddingX(style.S3).PaddingY(style.S2)
@@ -228,7 +228,7 @@ var (
 	clAlertMessage = style.New().FontSize(style.TextSM)
 	clAlertBody    = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1).Flex1()
 	clAlertIcon    = style.New().
-			MarginTop(style.S0_5).Display(style.DisplayFlex).Height(style.S9).Width(style.S9).
+			Display(style.DisplayFlex).Height(style.S9).Width(style.S9).
 			FlexShrink0().Items(style.ItemsCenter).Justify(style.JustifyCenter).Rounded(style.RadiusFull)
 	clAlertActions = style.New().MarginTop(style.S3).Display(style.DisplayFlex).FlexWrap().
 			Items(style.ItemsCenter).Gap(style.S3).FontSize(style.TextSM)

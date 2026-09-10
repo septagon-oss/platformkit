@@ -41,7 +41,9 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// source property metadata and semantic shape tokens intentionally change v1 content.
 	// Cascade-order repair separates the theme and role :root blocks. Compared
 	// with the prior CSS owner, all declarations and non-CSS source fields agree.
-	if legacy.SHA256 != "f93616e5588d6192c65548734fddbd595f053701d4cb6874240b85e9425e05d7" {
+	// Alert alignment centers its icon, text and dismiss action; only the seven
+	// Alert examples change from that baseline, with identical generated CSS.
+	if legacy.SHA256 != "c1dd0db8bc435dd57e03a09fc8587ca1dc3f27e8df3d1269b1a236aa608046e7" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

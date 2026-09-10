@@ -130,6 +130,94 @@ test('deferred dialogs open on swap, take the panel name, and clear on dismissal
   expect(requests).toBe(2);
 });
 
+async function modalEditor(page: Page, swap: string, clearOnClose = true) {
+  const formSource = snapshot.examples.find((entry: { id: string }) => entry.id === 'pk-ui.component.modal/form').html;
+  await specimen(page, 'pk-ui.component.modal/default',
+    '<button data-modal-open="confirm-modal">Edit record</button>', '', { open: false, clearOnClose });
+  const fields = '<label for="record-name">Name</label><input id="record-name" name="name" value="Draft"><button type="submit">Save record</button>';
+  // Keep ModalForm's exported contract when composing the request fixture.
+  await page.evaluate(({ formSource, fields, swap }) => {
+    const body = document.querySelector('[data-modal-body]')!;
+    body.innerHTML = formSource;
+    const form = body.querySelector('form')!;
+    form.innerHTML = fields;
+    form.id = 'record-form';
+    form.setAttribute('hx-post', '/__save_modal');
+    form.setAttribute('hx-swap', swap);
+    (window as any).htmx.process(form);
+  }, { formSource, fields, swap });
+  const opener = page.getByRole('button', { name: 'Edit record', exact: true });
+  await opener.click();
+  return { fields, opener, dialog: page.getByRole('dialog', { name: 'Archive', exact: true }), form: page.locator('#record-form') };
+}
+
+for (const swap of ['innerHTML', 'outerHTML']) {
+  test(`modal saves retain validation and failures, then close after success with ${swap}`, async ({ page }) => {
+    const { fields, opener, dialog, form } = await modalEditor(page, swap);
+    const formHTML = await form.evaluate(element => element.outerHTML);
+    let status = 422;
+    await page.route('**/__save_modal', route => {
+      let body = '<p>Saved</p>';
+      if (status === 422) {
+        body = swap === 'outerHTML'
+          ? formHTML.replace('</form>', '<p role="alert">Name needs correction</p></form>')
+          : fields + '<p role="alert">Name needs correction</p>';
+      }
+      return route.fulfill({ status, contentType: 'text/html', body });
+    });
+    let completed = 0;
+    await page.exposeFunction('modalRequestCompleted', () => { completed++; });
+    await page.evaluate(() => document.addEventListener('htmx:afterRequest', () => (window as any).modalRequestCompleted()));
+    await form.getByRole('button', { name: 'Save record' }).click();
+    await expect.poll(() => completed).toBe(1);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('alert')).toHaveText('Name needs correction');
+    await dialog.getByLabel('Name').fill('Corrected draft');
+    for (const failure of [403, 500]) {
+      status = failure;
+      await form.getByRole('button', { name: 'Save record' }).click();
+      await expect.poll(() => completed).toBe(failure === 403 ? 2 : 3);
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByLabel('Name')).toHaveValue('Corrected draft');
+    }
+    status = 200;
+    await form.getByRole('button', { name: 'Save record' }).click();
+    await expect.poll(() => completed).toBe(4);
+    await expect(dialog).toBeHidden();
+    await expect(page.locator('#confirm-modal')).toBeEmpty();
+    await expect(opener).toBeFocused();
+  });
+}
+
+test('a late save cannot close a reopened modal, while its own 204 save can', async ({ page }) => {
+  const { opener, dialog, form } = await modalEditor(page, 'outerHTML', false);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let sent = 0;
+  let completed = 0;
+  await page.exposeFunction('modalRequestCompleted', () => { completed++; });
+  await page.evaluate(() => document.addEventListener('htmx:afterRequest', () => (window as any).modalRequestCompleted()));
+  await page.route('**/__save_modal', async route => {
+    sent++;
+    await pending;
+    await route.fulfill({ status: 204 });
+  });
+  await form.getByRole('button', { name: 'Save record' }).click();
+  await expect.poll(() => sent).toBe(1);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await opener.click();
+  await dialog.getByLabel('Name').fill('New opening draft');
+  release();
+  await expect.poll(() => completed).toBe(1);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Name')).toHaveValue('New opening draft');
+  await form.getByRole('button', { name: 'Save record' }).click();
+  await expect.poll(() => completed).toBe(2);
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+});
+
 test('field and status enhancements reflect their native state', async ({ page }) => {
   await specimen(page, 'pk-ui.component.checkbox/indeterminate');
   const checkbox = page.getByRole('checkbox', { name: 'Some' });

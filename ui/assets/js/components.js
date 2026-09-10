@@ -2,6 +2,8 @@
 (function () {
   const ready = new WeakSet();
   const triggers = new WeakMap();
+  const openings = new WeakMap();
+  const modalRequests = new WeakMap();
   const own = (root, selector) => [...root.querySelectorAll(selector)]
     .filter(el => el.closest('[data-controller="tabs"]') === root);
 
@@ -47,6 +49,7 @@
     dialog.setAttribute('aria-hidden', 'false');
     dialog.dataset.state = 'open';
     dialog.showModal();
+    openings.set(dialog, {});
     const first = dialog.querySelector('[autofocus]') || dialog.querySelector('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]');
     (first || dialog).focus();
   }
@@ -100,6 +103,7 @@
       dialog.addEventListener('close', () => {
         // Ignore a queued close event after the same dialog has reopened.
         if (dialog.open) return;
+        openings.delete(dialog);
         dialog.dataset.state = 'closed';
         dialog.setAttribute('aria-hidden', 'true');
         if (dialog.dataset.htmxModalClearOnCloseValue === 'true') dialog.replaceChildren();
@@ -176,10 +180,23 @@
     const dialog = event.target;
     if (dialog.matches('dialog[data-component="modal"]') && dialog.dataset.action?.includes('htmx:afterSettle->htmx-modal#show')) show(dialog, document.activeElement);
   });
+  document.addEventListener('htmx:beforeRequest', event => {
+    const form = event.detail.requestConfig?.elt ?? event.detail.elt;
+    if (!form?.matches('form[data-action*="htmx-modal#closeOnSuccess"]')) return;
+    const dialog = form.closest('dialog[data-component="modal"]');
+    // An outerHTML response removes the form before completion is dispatched.
+    if (dialog) modalRequests.set(event.detail.xhr, { dialog, opening: openings.get(dialog) });
+  });
   document.addEventListener('htmx:afterRequest', event => {
-    if (event.detail.successful && event.target.matches('form[data-action*="htmx-modal#closeOnSuccess"]')) {
-      event.target.closest('dialog[data-component="modal"]')?.close();
-    }
+    const { xhr, successful } = event.detail;
+    const request = modalRequests.get(xhr);
+    modalRequests.delete(xhr);
+    if (!request) return;
+    const { dialog, opening } = request;
+    // HTMX also marks swapped 422 validation responses as successful.
+    // A late save from a previous opening must not dismiss a reopened dialog.
+    if (successful && xhr.status >= 200 && xhr.status < 300 && dialog.isConnected &&
+        dialog.open && openings.get(dialog) === opening) dialog.close();
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

@@ -44,6 +44,9 @@ trigger. Set the root's `ID` to `server-modal`, `Deferred: true` and
 `OpenOnSwap: true`. The root opens after the swap settles and clears on close.
 The explicit swap keeps the dialog root; the application otherwise defaults to
 replacing the target element. Give multiple tabs or dialogs distinct IDs.
+`ModalForm` closes its owning dialog after a successful 2xx response, including
+when the response replaces the form. Validation and failed requests keep it open;
+a delayed response from an earlier opening cannot close a reopened dialog.
 
 `Section`, `SectionHeader` and `Hero` compose the existing components. `Heading`
 separates semantic `Level` from visual `Size`; `Grid` accepts `SM`, `MD` and `LG`
