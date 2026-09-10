@@ -199,6 +199,21 @@ and required features as well as the existing source content, without timestamps
 or provider IDs. The existing native adapter remains v1-only and rejects v2;
 complete component migration and native translation are subsequent work.
 
+The v2 export also requires `source-measurements.v1`. Its detached measurements
+project the existing [style scale owner](ui/style/measurements.go): numeric
+spacing steps, font sizes, their paired line heights and font weights. Scale
+and key form the reference; Flex's gap names the `spacing` key. Numbers retain
+their decimal source encoding. Units are `px`, `rem`, or explicitly empty for
+a unitless number; a line-height multiplier is not a pixel length. The layout
+preflight requires unique, valid measurements and every referenced gap when
+that feature is present; a dependency-closed subset need not carry unused scales.
+Earlier v2 declaration-only snapshots remain recognizable without inventing
+measurements, and consumers that do not understand a required feature refuse it.
+These values come from the same tables/functions as CSS, not another registry.
+They do not configure a second palette or certify consumer overrides. Layout
+keywords such as `auto` and `full`, remaining scales, DTCG interchange, semantic
+alias graphs and licensed font delivery are outside this first measurement scope.
+
 [ui.ProjectProps](ui/proposal.go) and [ui.ProjectReplacement](ui/replacement.go)
 accept the base export hash and exact occurrence ID segments. Properties use a
 typed patch; replacement selects another root or nested source occurrence from

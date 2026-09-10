@@ -56,10 +56,10 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	payload, _ := json.Marshal(first)
 	hash := sha256.Sum256(payload)
 	if claimed != hex.EncodeToString(hash[:]) || first.Schema != "platformkit.design-export.v2" ||
-		!reflect.DeepEqual(first.RequiredFeatures, []string{"source-flex-declarations.v1"}) {
+		!reflect.DeepEqual(first.RequiredFeatures, []string{"source-flex-declarations.v1", "source-measurements.v1"}) {
 		t.Fatal("v2 did not hash its entire versioned content")
 	}
-	if !errors.Is(first.CheckLayoutContract("source-flex-declarations.v1"), ui.ErrLayoutUnknown) {
+	if !errors.Is(first.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"), ui.ErrLayoutUnknown) {
 		t.Fatal("gallery contains unmigrated components, not complete portable layout")
 	}
 }
@@ -86,7 +86,7 @@ func TestSourceLayoutUsesResolvedConstructorValues(t *testing.T) {
 					t.Fatalf("declared value lacks constructor/stylesheet evidence: %s", class)
 				}
 			}
-			if err := doc.CheckLayoutContract("source-flex-declarations.v1"); err != nil {
+			if err := doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"); err != nil {
 				t.Fatalf("required admitted example rejected: %v", err)
 			}
 		})
@@ -103,7 +103,7 @@ func TestSourceLayoutRetainsOccurrenceOwnershipAndInterface(t *testing.T) {
 		nested.Description.Layout.Flex.Direction != "col" || nested.Description.Layout.Flex.Gap != "2" {
 		t.Fatal("layout capture lost nested source ownership")
 	}
-	if err := doc.CheckLayoutContract("source-flex-declarations.v1"); err != nil {
+	if err := doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"); err != nil {
 		t.Fatal(err)
 	}
 	changed, err := root.WithProps(json.RawMessage(`{"gap":"8"}`))
@@ -123,7 +123,7 @@ func TestSourceLayoutUnknownOverridesAndUnobservedChildren(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := layoutExport(t, []c.Example{layoutExample("root", c.FlexProps{ComponentProps: props})})
-			if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1"), ui.ErrLayoutUnknown) || doc.Examples[0].Layout.Flex != nil {
+			if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"), ui.ErrLayoutUnknown) || doc.Examples[0].Layout.Flex != nil {
 				t.Fatal("escape hatch received a known layout")
 			}
 		})
@@ -136,7 +136,7 @@ func TestSourceLayoutUnknownOverridesAndUnobservedChildren(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := layoutExport(t, []c.Example{root})
-			if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1"), ui.ErrLayoutUnknown) {
+			if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"), ui.ErrLayoutUnknown) {
 				t.Fatal("unknown ownership was accepted as complete declared layout")
 			}
 			if name == "unobserved" && (doc.Examples[0].Children[0].Span != nil || doc.Examples[0].Children[0].Description.Layout.Flex != nil) {
@@ -153,13 +153,13 @@ func TestSourceLayoutUnknownOverridesAndUnobservedChildren(t *testing.T) {
 			write(sheet)
 		}
 		doc := layoutExport(t, []c.Example{layoutExample("root", c.FlexProps{}, child.Node)}, ui.Extra{Sheets: []*css.Sheet{sheet}})
-		if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1"), ui.ErrLayoutUnknown) ||
+		if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"), ui.ErrLayoutUnknown) ||
 			doc.Examples[0].Layout.Flex != nil || doc.Examples[0].Children[0].Description.Layout.Flex != nil {
 			t.Fatal("consumer stylesheet retained an invalidated claim")
 		}
 	}
 	doc := layoutExport(t, []c.Example{child}, ui.Extra{Lists: []style.ClassList{style.New().Gap(style.S4)}, Sheets: []*css.Sheet{nil, css.NewSheet()}})
-	if err := doc.CheckLayoutContract("source-flex-declarations.v1"); err != nil {
+	if err := doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"); err != nil {
 		t.Fatalf("identical owned utility/empty sheet is not an override: %v", err)
 	}
 }
@@ -185,7 +185,7 @@ func TestSourceLayoutRefusesUnknownVersionsFeaturesAndMalformedDeclarations(t *t
 			}
 			change(&doc)
 			before, _ := json.Marshal(doc)
-			if err := doc.CheckLayoutContract("source-flex-declarations.v1", "future.v1"); !errors.Is(err, ui.ErrLayoutUnsupported) {
+			if err := doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1", "future.v1"); !errors.Is(err, ui.ErrLayoutUnsupported) {
 				t.Fatalf("unsupported contract accepted: %v", err)
 			}
 			after, _ := json.Marshal(doc)
@@ -198,7 +198,7 @@ func TestSourceLayoutRefusesUnknownVersionsFeaturesAndMalformedDeclarations(t *t
 		t.Fatal("consumer lacking the required feature was accepted")
 	}
 	base.Examples[0].Layout = nil
-	if !errors.Is(base.CheckLayoutContract("source-flex-declarations.v1"), ui.ErrLayoutUnknown) {
+	if !errors.Is(base.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"), ui.ErrLayoutUnknown) {
 		t.Fatal("missing layout was interpreted as a default")
 	}
 }

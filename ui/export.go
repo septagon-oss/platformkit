@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/icon"
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // DesignExport is a snapshot of captured Go invocations and observed children, not a language
@@ -22,6 +23,7 @@ import (
 type DesignExport struct {
 	Schema           string                          `json:"schema"`
 	RequiredFeatures []string                        `json:"requiredFeatures,omitempty"`
+	Measurements     []style.Measurement             `json:"measurements,omitempty"`
 	SHA256           string                          `json:"sha256,omitempty"`
 	FontPolicy       string                          `json:"fontPolicy"`
 	Notices          string                          `json:"notices"`
@@ -78,7 +80,12 @@ func export(theme design.Pair, examples []components.Example, layout bool, extra
 	}
 	if layout {
 		out.Schema = "platformkit.design-export.v2"
-		out.RequiredFeatures = []string{"source-flex-declarations.v1"}
+		out.RequiredFeatures = []string{"source-flex-declarations.v1", "source-measurements.v1"}
+		measurements, err := style.Measurements()
+		if err != nil {
+			return DesignExport{}, fmt.Errorf("design export: %w", err)
+		}
+		out.Measurements = measurements
 	}
 	type componentContract struct {
 		exampleID   string

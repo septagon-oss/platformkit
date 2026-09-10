@@ -40,10 +40,24 @@ func invalidateLayout(examples []components.ExampleDescription) {
 // Unknown source is distinct from an unsupported version/feature/value. Callers
 // must separately prove the requested projection before performing effects.
 func (d DesignExport) CheckLayoutContract(supported ...string) error {
-	const feature = "source-flex-declarations.v1"
-	if d.Schema != "platformkit.design-export.v2" || len(d.RequiredFeatures) != 1 ||
-		d.RequiredFeatures[0] != feature || !slices.Contains(supported, feature) {
+	const layoutFeature, measureFeature = "source-flex-declarations.v1", "source-measurements.v1"
+	if d.Schema != "platformkit.design-export.v2" || !slices.Contains(d.RequiredFeatures, layoutFeature) {
 		return fmt.Errorf("%w: schema or required features", ErrLayoutUnsupported)
+	}
+	required := map[string]bool{}
+	for _, feature := range d.RequiredFeatures {
+		if required[feature] || (feature != layoutFeature && feature != measureFeature) || !slices.Contains(supported, feature) {
+			return fmt.Errorf("%w: required feature %q", ErrLayoutUnsupported, feature)
+		}
+		required[feature] = true
+	}
+	measurements := map[string]bool{}
+	for _, measure := range d.Measurements {
+		key := measure.Scale + "/" + measure.Key
+		if !required[measureFeature] || measurements[key] || measure.Validate() != nil {
+			return fmt.Errorf("%w: measurement %q", ErrLayoutUnsupported, key)
+		}
+		measurements[key] = true
 	}
 	var check func(components.ExampleDescription, []string) error
 	check = func(example components.ExampleDescription, parent []string) error {
@@ -64,6 +78,9 @@ func (d DesignExport) CheckLayoutContract(supported ...string) error {
 		}
 		if len(example.OpaqueSlots) != 0 {
 			return fmt.Errorf("%w at %q: opaque slots", ErrLayoutUnknown, path)
+		}
+		if required[measureFeature] && !measurements["spacing/"+string(flow.Gap)] {
+			return fmt.Errorf("%w at %q: gap measurement %q", ErrLayoutUnknown, path, flow.Gap)
 		}
 		for _, child := range example.Children {
 			if child.Span == nil || child.Slot == "" {

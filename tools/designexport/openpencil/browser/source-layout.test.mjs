@@ -41,6 +41,9 @@ func main() {
   for (const [input, declared, computed] of cases) {
     const snapshot = source(input), before = structuredClone(snapshot)
     assert.deepEqual(snapshot.examples[0].layout, { kind: 'flex', flex: declared })
+    assert.deepEqual(snapshot.requiredFeatures, ['source-flex-declarations.v1', 'source-measurements.v1'])
+    const gap = snapshot.measurements.find(m => m.scale === 'spacing' && m.key === declared.gap)
+    assert.deepEqual(gap, { scale: 'spacing', key: declared.gap, value: declared.gap === '4' ? 1 : 0.5, unit: 'rem' })
     assert.throws(() => buildFoundation(snapshot), /unsupported snapshot schema/)
     assert.deepEqual(snapshot, before, 'legacy adapter refuses the new contract unchanged')
     for (const width of [320, 1280]) for (const theme of ['light', 'dark']) {
