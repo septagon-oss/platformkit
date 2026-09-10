@@ -32,7 +32,11 @@ type Page struct {
 	ContentType string `header:"Content-Type"`
 	Location    string `header:"Location"`
 	HXRedirect  string `header:"HX-Redirect"`
-	Body        []byte
+	// Isolated previews and private representations set their own response policy.
+	ContentSecurityPolicy string `header:"Content-Security-Policy"`
+	FrameOptions          string `header:"X-Frame-Options"`
+	CacheControl          string `header:"Cache-Control"`
+	Body                  []byte
 }
 
 // HTMLContentType is what every Page carries. It is exported because a handler

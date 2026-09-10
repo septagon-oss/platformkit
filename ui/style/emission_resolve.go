@@ -9,8 +9,10 @@ package style
 // closed here instead of emitting a wrong rule.
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -584,6 +586,10 @@ func needsChildCombinator(base string) bool {
 // unsupported state prefixes fail closed with an error naming the class.
 func Rules(classes ...string) (*css.Sheet, error) {
 	s := css.NewSheet()
+	// Narrow layouts must precede wider overrides. Alphabetical class order
+	// places lg before sm, making the small-screen rule win on desktop.
+	classes = slices.Clone(classes)
+	slices.SortStableFunc(classes, func(a, b string) int { return cmp.Compare(breakpointWidth(a), breakpointWidth(b)) })
 	for _, class := range classes {
 		if class == "" {
 			continue
@@ -593,6 +599,20 @@ func Rules(classes ...string) (*css.Sheet, error) {
 		}
 	}
 	return s, nil
+}
+
+func breakpointWidth(class string) int {
+	width := 0
+	for prefix := range strings.SplitSeq(class, ":") {
+		if value, ok := breakpoints[prefix]; ok {
+			var err error
+			width, err = strconv.Atoi(strings.TrimSuffix(value, "px"))
+			if err != nil {
+				panic("style: source breakpoint must be an integer pixel width: " + value)
+			}
+		}
+	}
+	return width
 }
 
 func addClassRule(s *css.Sheet, class string) error {

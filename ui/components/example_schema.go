@@ -16,6 +16,26 @@ type exampleField struct {
 	omit     bool
 	zero     bool
 	optional bool // A nil anonymous pointer omits its promoted fields.
+	choices  string
+	doc      string
+}
+
+func (f exampleField) validateChoice(raw []byte) error {
+	if f.choices == "" {
+		return nil
+	}
+	value := string(raw)
+	if f.typ.Kind() == reflect.String {
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return err
+		}
+	} else {
+		value = strings.TrimSpace(value)
+	}
+	if !slices.Contains(strings.Split(f.choices, ","), value) {
+		return fmt.Errorf("property %q must be one of %q", f.name, strings.Split(f.choices, ","))
+	}
+	return nil
 }
 
 func exampleFields(typ reflect.Type) ([]exampleField, error) {
@@ -62,7 +82,7 @@ func exampleFields(typ reflect.Type) ([]exampleField, error) {
 			if slices.Contains(flags, "string") {
 				return fmt.Errorf("JSON string coercion on %q is unsupported", name)
 			}
-			fields = append(fields, exampleField{name, field.Type, index, slices.Contains(flags, "omitempty"), slices.Contains(flags, "omitzero"), optional})
+			fields = append(fields, exampleField{name, field.Type, index, slices.Contains(flags, "omitempty"), slices.Contains(flags, "omitzero"), optional, field.Tag.Get("enum"), field.Tag.Get("doc")})
 		}
 		return nil
 	}
@@ -140,6 +160,22 @@ func (b exampleSchemaBuilder) build(typ reflect.Type, definition bool) (map[stri
 			property, err := b.build(field.typ, false)
 			if err != nil {
 				return nil, fmt.Errorf("property %q: %w", field.name, err)
+			}
+			if field.doc != "" {
+				property["description"] = field.doc
+			}
+			if field.choices != "" {
+				var choices []any
+				for choice := range strings.SplitSeq(field.choices, ",") {
+					var value any = choice
+					if field.typ.Kind() != reflect.String {
+						if err := json.Unmarshal([]byte(choice), &value); err != nil {
+							return nil, fmt.Errorf("invalid enum for %s: %w", field.name, err)
+						}
+					}
+					choices = append(choices, value)
+				}
+				property["enum"] = choices
 			}
 			// A definite omitted string is its Go zero, not a renderer default.
 			if (field.omit || field.zero) && !field.optional && field.typ.Kind() == reflect.String && property["type"] == "string" {

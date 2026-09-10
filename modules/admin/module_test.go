@@ -158,7 +158,7 @@ func mount(t *testing.T) chi.Router { return mountAs(t, caller{}) }
 
 // mountAs is mount for a caller who holds less, which is what the guards on the
 // generated screens and on the dashboard's cards are tested with.
-func mountAs(t *testing.T, authorize httpx.Authorizer) chi.Router {
+func mountAs(t *testing.T, authorize httpx.Authorizer, configure ...func(*admin.Deps)) chi.Router {
 	t.Helper()
 	adminDB, app := dbtest.Schema(t)
 	if _, err := adminDB.ExecContext(t.Context(), ddl+plansDDL); err != nil {
@@ -210,7 +210,11 @@ func mountAs(t *testing.T, authorize httpx.Authorizer) chi.Router {
 		},
 		Routes: func(api *httpx.API) { plans.Mount(api) },
 	}
-	shell := admin.Module(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: authorize})
+	deps := admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: authorize}
+	for _, apply := range configure {
+		apply(&deps)
+	}
+	shell := admin.Module(deps)
 	if err := module.Validate([]module.Module{notes, catalogue, shell}); err != nil {
 		t.Fatalf("the composition is invalid: %v", err)
 	}
@@ -444,7 +448,11 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 		"/admin/notes/notes": app, "/admin/notes/notes/new": app,
 		"/admin/_gallery": both,
 	} {
-		_, body, _ := call(t, router, http.MethodGet, path, "")
+		at := host
+		if path == "/admin/_gallery" {
+			at = operatorHost
+		}
+		_, body, _ := callAt(t, router, at, http.MethodGet, path, "")
 		var missing []string
 		for _, m := range regexp.MustCompile(`class="([^"]*)"`).FindAllStringSubmatch(body, -1) {
 			for _, class := range strings.Fields(m[1]) {
@@ -458,7 +466,7 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 		}
 	}
 	// And the second sheet is linked exactly where its classes are rendered.
-	_, gallery, _ := call(t, router, http.MethodGet, "/admin/_gallery", "")
+	_, gallery, _ := callAt(t, router, operatorHost, http.MethodGet, "/admin/_gallery?example=pk-ui.component.badge/outline", "")
 	if !strings.Contains(gallery, "/admin/assets/gallery.css?v="+ui.Gallery().Fingerprint) {
 		t.Error("the gallery does not link the sheet its own components need")
 	}
@@ -487,8 +495,8 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 	}
 	// And it narrows: one group is that group and not the other nine, so a
 	// person looking for a badge is not handed a hundred components.
-	_, one, _ := call(t, router, http.MethodGet, "/admin/_gallery?group=Status", "")
-	if !strings.Contains(one, "pk-ui.component.badge/outline") || strings.Contains(one, "pk-ui.component.modal/default") {
+	_, one, _ := callAt(t, router, operatorHost, http.MethodGet, "/admin/_gallery?group=Status", "")
+	if !strings.Contains(one, "pk-ui.component.badge%2Foutline") || strings.Contains(one, "pk-ui.component.modal/default") {
 		t.Error("the gallery does not narrow to one group")
 	}
 }

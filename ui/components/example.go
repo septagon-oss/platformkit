@@ -164,6 +164,9 @@ func (e Example) WithProps(patch json.RawMessage) (Example, error) {
 			return Example{}, fmt.Errorf("unknown or internal property %q", name)
 		}
 		field := fields[index]
+		if err := field.validateChoice(raw); err != nil {
+			return Example{}, err
+		}
 		value, err := decodeExampleValue(raw, field.typ)
 		if err != nil {
 			return Example{}, fmt.Errorf("property %q: %w", name, err)
@@ -346,6 +349,9 @@ func decodeExampleValue(raw []byte, typ reflect.Type) (reflect.Value, error) {
 			i := slices.IndexFunc(fields, func(f exampleField) bool { return f.name == name })
 			if i < 0 {
 				return out, fmt.Errorf("unknown or internal property %q", name)
+			}
+			if err := fields[i].validateChoice(data); err != nil {
+				return out, err
 			}
 			value, err := decodeExampleValue(data, fields[i].typ)
 			if err != nil {

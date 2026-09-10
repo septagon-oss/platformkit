@@ -70,11 +70,10 @@ func (b Breakpoint) Prefix() string {
 	return string(b) + ":"
 }
 
-// The two breakpoints this application lays out at. Three more were declared
-// and nothing ever named one; a component that needs md:, xl: or 2xl: adds it
-// back where it uses it.
+// The breakpoints exposed by responsive component properties.
 const (
 	BreakpointSM Breakpoint = "sm" // >= 640px
+	BreakpointMD Breakpoint = "md" // >= 768px
 	BreakpointLG Breakpoint = "lg" // >= 1024px
 )
 

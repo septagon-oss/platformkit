@@ -31,7 +31,8 @@ type Shell struct {
 	Token     tenancy.SystemToken
 	// Theme is the installation's two palettes: the one thing about the look of
 	// this shell that belongs to whoever runs it. See design.Pair.
-	Theme design.Pair
+	Theme     design.Pair
+	Storybook func(context.Context) (ui.Storybook, error)
 }
 
 // adminRoot is where the shell lives; every path below is built from it, so
@@ -93,7 +94,7 @@ func Mount(api *httpx.API, s Shell) {
 			Brand: brand, Assets: assetPrefix, Stylesheet: sheet,
 			Scripts: ui.Controllers, SignIn: loginPath,
 		},
-		Frame:     frame(nav, s.Authorize),
+		Frame:     frame(nav, s.Authorize, s.storybook),
 		Tag:       "admin",
 		Back:      adminRoot,
 		BackLabel: "Back to the dashboard",
@@ -114,11 +115,19 @@ func Mount(api *httpx.API, s Shell) {
 // stylesheet's dark rules are behind prefers-color-scheme, so a person whose
 // system is dark gets dark, and the inline snippet page.Serve adds sets the
 // attribute only when they have chosen one for themselves.
-func frame(nav page.Navigation, authorize httpx.Authorizer) page.Frame {
+func frame(nav page.Navigation, authorize httpx.Authorizer, storybook func(context.Context) (ui.Storybook, error)) page.Frame {
 	return func(ctx context.Context, r page.Request, body []g.Node) g.Node {
+		gallery := false
+		if r.SignedIn && authorize != nil {
+			allowed, err := authorize.Allowed(ctx, r.Tenant, tenancy.Grant{Permission: "gallery:read"})
+			if err == nil && allowed {
+				_, err = storybook(ctx)
+				gallery = err == nil
+			}
+		}
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
-				Sidebar: []g.Node{sidebar(nav.Visible(ctx, r.Tenant, authorize), r)},
+				Sidebar: []g.Node{sidebar(nav.Visible(ctx, r.Tenant, authorize), r, gallery)},
 				Header:  header(r),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
@@ -133,19 +142,14 @@ func frame(nav page.Navigation, authorize httpx.Authorizer) page.Frame {
 // two pages about the installation. What the caller may reach is decided
 // before this is called — see page.Navigation.Visible — so this renders a
 // list and hides nothing of its own.
-func sidebar(visible []module.NavEntry, r page.Request) g.Node {
+func sidebar(visible []module.NavEntry, r page.Request, gallery bool) g.Node {
 	items := []components.SidebarItem{{Label: "Dashboard", Href: adminRoot, Icon: "gear"}}
 	for _, entry := range visible {
 		items = append(items, components.SidebarItem{Label: entry.Label, Href: entry.Path, Icon: "file-text"})
 	}
 	items = append(items, components.SidebarItem{Label: "Health", Href: healthPath, Icon: "check-circle"})
-	// The component gallery is the installation's design system and not a
-	// tenant's data, so it is offered where that is somebody's business: the
-	// operator's own tenant. A customer's administrator was being handed a link
-	// to a hundred and five specimens of somebody else's toolkit. The route
-	// stays reachable — it holds nothing but this application's own components
-	// rendered with sample values — it is simply not advertised.
-	if r.Tenant.Operator {
+	// Use the same permission and composition selection as the direct routes.
+	if gallery {
 		items = append(items, components.SidebarItem{Label: "Components", Href: galleryPath, Icon: "info"})
 	}
 	// BrandLabel rather than the Brand slot: the sidebar is inverted, and the

@@ -68,10 +68,9 @@ func Flex(p FlexProps, children ...g.Node) g.Node {
 	return withLayout(h.Div(nodes...), p.ComponentProps, flow)
 }
 
-// Grid renders GridProps; Columns outside 1..12 fall back to 1.
-func Grid(p GridProps, children ...g.Node) g.Node {
+func gridColumns(value string) int {
 	cols := 1
-	switch p.Columns {
+	switch value {
 	case "2":
 		cols = 2
 	case "3":
@@ -83,7 +82,23 @@ func Grid(p GridProps, children ...g.Node) g.Node {
 	case "12":
 		cols = 12
 	}
-	cl := clGrid.GridCols(cols).Gap(gapOr(p.Gap, style.S4))
+	return cols
+}
+
+// Grid renders a base column count with optional overrides at named breakpoints.
+// An omitted override inherits the preceding width. Unsupported counts use one.
+func Grid(p GridProps, children ...g.Node) g.Node {
+	cl := clGrid.GridCols(gridColumns(p.Columns)).Gap(gapOr(p.Gap, style.S4))
+	for _, override := range []struct {
+		at    style.Breakpoint
+		value string
+	}{{style.BreakpointSM, p.SM}, {style.BreakpointMD, p.MD}, {style.BreakpointLG, p.LG}} {
+		if override.value != "" {
+			cl = cl.Breakpoint(override.at, func(c style.ClassList) style.ClassList {
+				return c.GridCols(gridColumns(override.value))
+			})
+		}
+	}
 	nodes := baseAttrs(p.ComponentProps)
 	nodes = append(nodes, classes(cl.Compile(), p.Class))
 	nodes = append(nodes, children...)

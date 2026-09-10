@@ -56,11 +56,11 @@ type ButtonProps struct {
 	HTMXProps
 
 	Label     string `json:"label"`
-	Href      string `json:"href,omitempty"`    // renders an anchor with button styling when set
-	Variant   string `json:"variant,omitempty"` // primary, secondary, outline, ghost, link
-	Tone      string `json:"tone,omitempty"`    // neutral, brand, success, warning, danger, info
-	Size      string `json:"size,omitempty"`    // xs, sm, md, lg, xl, 2xl
-	Type      string `json:"type,omitempty"`    // button, submit, reset
+	Href      string `json:"href,omitempty"`                                                   // renders an anchor with button styling when set
+	Variant   string `json:"variant,omitempty" enum:",primary,secondary,outline,ghost,link"`   // primary, secondary, outline, ghost, link
+	Tone      string `json:"tone,omitempty" enum:",neutral,brand,success,warning,danger,info"` // neutral, brand, success, warning, danger, info
+	Size      string `json:"size,omitempty" enum:",xs,sm,md,lg,xl,2xl"`                        // xs, sm, md, lg, xl, 2xl
+	Type      string `json:"type,omitempty" enum:",button,submit,reset"`                       // button, submit, reset
 	Loading   bool   `json:"loading,omitempty"`
 	FullWidth bool   `json:"fullWidth,omitempty"`
 	IconOnly  bool   `json:"iconOnly,omitempty"`
@@ -73,11 +73,11 @@ type BadgeProps struct {
 	ComponentProps
 
 	Label       string `json:"label"`
-	Variant     string `json:"variant,omitempty"` // primary, secondary, outline
-	Tone        string `json:"tone,omitempty"`    // neutral, brand, success, warning, danger, info
-	Size        string `json:"size,omitempty"`    // xs, sm, md, lg, xl, 2xl
-	Dot         bool   `json:"dot,omitempty"`     // show status dot before the label
-	Count       int    `json:"count,omitempty"`   // positive count, visually capped to 99+
+	Variant     string `json:"variant,omitempty"`                                                // primary, secondary, outline
+	Tone        string `json:"tone,omitempty" enum:",neutral,brand,success,warning,danger,info"` // neutral, brand, success, warning, danger, info
+	Size        string `json:"size,omitempty" enum:",xs,sm,md,lg,xl,2xl"`                        // xs, sm, md, lg, xl, 2xl
+	Dot         bool   `json:"dot,omitempty"`                                                    // show status dot before the label
+	Count       int    `json:"count,omitempty"`                                                  // positive count, visually capped to 99+
 	Removable   bool   `json:"removable,omitempty"`
 	RemoveLabel string `json:"removeLabel,omitempty"` // localized remove-button label
 	Live        bool   `json:"live,omitempty"`        // polite status announcement
@@ -231,7 +231,8 @@ type HeadingProps struct {
 	ComponentProps
 
 	Text     string `json:"text"`
-	Level    int    `json:"level"`            // 1-6
+	Level    int    `json:"level" enum:"0,1,2,3,4,5,6" doc:"Semantic heading level; zero uses h2."`
+	Size     int    `json:"size,omitzero" enum:"0,1,2,3,4,5,6" doc:"Visual heading scale, independent of level; zero follows level."`
 	Anchor   string `json:"anchor,omitempty"` // optional anchor ID
 	Truncate bool   `json:"truncate,omitempty"`
 }
@@ -321,7 +322,10 @@ type SkeletonProps struct {
 type GridProps struct {
 	ComponentProps
 
-	Columns string `json:"columns,omitempty"` // Tailwind grid-cols value
+	Columns string `json:"columns,omitempty" enum:",1,2,3,4,6,12" doc:"Base column count; empty uses one column."`
+	SM      string `json:"sm,omitempty" enum:",1,2,3,4,6,12" doc:"Column count from the small breakpoint."`
+	MD      string `json:"md,omitempty" enum:",1,2,3,4,6,12" doc:"Column count from the medium breakpoint."`
+	LG      string `json:"lg,omitempty" enum:",1,2,3,4,6,12" doc:"Column count from the large breakpoint."`
 	Gap     string `json:"gap,omitempty"`
 }
 

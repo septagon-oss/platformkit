@@ -92,7 +92,7 @@ var (
 	clButtonBase = style.New().
 			Display(style.DisplayInlineFlex).Items(style.ItemsCenter).Justify(style.JustifyCenter).
 			Gap(style.S2).FontWeight(style.FontSemibold).
-			Rounded(style.RadiusMD).Border(style.Border1).BorderStyle(style.BorderSolid).
+			Border(style.Border1).BorderStyle(style.BorderSolid).
 			Cursor(style.CursorPointer).
 			Transition(style.TransitionColors).
 			On(style.StateDisabled, func(c style.ClassList) style.ClassList {
@@ -309,7 +309,7 @@ var (
 			BgOpacity(style.SurfaceOverlay, string(style.Opacity50)).Transition(style.TransitionOpacity)
 	clModalPanel = style.New().Position(style.PositionRelative).Display(style.DisplayFlex).
 			FlexDir(style.FlexCol).Width(style.SFull).MaxHeightViewport(style.VH85).
-			Overflow(style.OverflowHidden).Rounded(style.Radius2XL).
+			Overflow(style.OverflowHidden).
 			Border(style.Border1).BorderColor(style.BorderPrimary).
 			Bg(style.SurfacePrimary).Shadow(style.Shadow2XL).TextAlign(style.TextLeft)
 	clModalPanelSize = map[string]style.ClassList{
@@ -552,7 +552,7 @@ var (
 	// skeleton projections; the smaller fragments let CardWithSlots own
 	// section padding and variants without a private downstream style stack.
 	clCardFrame = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S2).
-			Rounded(style.RadiusLG).Bg(style.SurfacePrimary).Overflow(style.OverflowHidden)
+			Bg(style.SurfacePrimary).Overflow(style.OverflowHidden)
 	clCardSectioned    = style.New().Gap(style.S0)
 	clCardBorder       = style.New().Border(style.Border1).BorderColor(style.BorderPrimary)
 	clCardPadNone      = style.New().Padding(style.S0)
@@ -837,6 +837,9 @@ func ShellClassLists() []style.ClassList {
 	}
 	for _, n := range []int{1, 2, 3, 4, 6, 12} {
 		out = append(out, style.New().GridCols(n))
+		for _, at := range []style.Breakpoint{style.BreakpointSM, style.BreakpointMD, style.BreakpointLG} {
+			out = append(out, style.New().Breakpoint(at, func(c style.ClassList) style.ClassList { return c.GridCols(n) }))
+		}
 	}
 	for justification := range maps.Values(justifyContent) {
 		out = append(out, style.New().Justify(justification))

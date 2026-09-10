@@ -942,6 +942,8 @@ func Checkbox(p CheckboxProps) g.Node {
 		g.Attr("data-component", "checkbox"),
 		g.Attr("data-controller", "checkbox"),
 		g.Attr("data-checkbox-indeterminate-value", indeterminate),
+		g.Attr("data-checkbox-active-classes", clCheckboxIndicatorActive.Compile()),
+		g.Attr("data-checkbox-inactive-classes", clCheckboxIndicatorIdle.Compile()),
 		g.Attr("data-state", state),
 	}
 	if id != "" {
@@ -1188,7 +1190,11 @@ func headingWithText(p HeadingProps, text g.Node) g.Node {
 	if level < 1 || level > 6 {
 		level = 2
 	}
-	cl := clHeadingBase.Merge(clHeadingLevel[level])
+	size := p.Size
+	if size < 1 || size > 6 {
+		size = level
+	}
+	cl := clHeadingBase.Merge(clHeadingLevel[size])
 	if p.Truncate {
 		cl = cl.Merge(clTruncate)
 	}

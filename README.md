@@ -28,6 +28,8 @@ Open [the sign-in page](http://platformkit.localhost:8080/admin/login) and use
 Keep that password: it is shown only when the administrator is first created.
 After signing in, explore the administration screens and the
 [component gallery](http://platformkit.localhost:8080/admin/_gallery).
+Product applications configure [tenant storybooks](modules/admin/README.md) to
+show only the examples selected for the signed-in tenant.
 
 Use `platformkit.localhost` in your browser because the host identifies the
 tenant. Stop with Ctrl+C; starting again from the same directory reuses your

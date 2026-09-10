@@ -406,7 +406,7 @@ func TestModalOwnsAccessibleOverlayAndServerBehaviorContract(t *testing.T) {
 		`data-htmx-modal-close-on-escape-value="true"`, `data-htmx-modal-clear-on-close-value="false"`,
 		`data-state="open"`, `role="dialog"`, `aria-modal="true"`, `aria-hidden="false"`,
 		`aria-labelledby="archive-modal-title"`, `id="archive-modal-title"`,
-		`data-action="htmx:afterSwap-&gt;htmx-modal#show"`, `data-modal-backdrop`,
+		`data-action="htmx:afterSettle-&gt;htmx-modal#show"`, `data-modal-backdrop`,
 		`data-action="click-&gt;htmx-modal#close"`, `data-modal-panel`, `tabindex="-1"`,
 		`max-w-3xl`, `aria-label="Close archive dialog"`, `data-pk-icon="x"`,
 		`data-modal-separator="header"`, `data-modal-body`, `Rich body`,
@@ -473,7 +473,7 @@ func TestModalDeferredRootAndPanelFragmentsShareOneControllerContract(t *testing
 	for _, fragment := range []string{
 		`id="entity-form-modal"`, `data-controller="htmx-modal"`,
 		`data-htmx-modal-clear-on-close-value="true"`,
-		`data-action="htmx:afterSwap-&gt;htmx-modal#show click-&gt;htmx-modal#backdropClick"`,
+		`data-action="htmx:afterSettle-&gt;htmx-modal#show click-&gt;htmx-modal#backdropClick"`,
 		`hidden`, `style="display:none"`,
 	} {
 		if !strings.Contains(rootHTML, fragment) {
@@ -1224,7 +1224,7 @@ func TestTabsOwnCanonicalPanelsAndRejectIconMarkup(t *testing.T) {
 		`data-tabs-active-tab-value="safe"`,
 		`data-action="click-&gt;tabs#activate"`,
 		`role="tabpanel"`,
-		`hx-trigger="tabs:activate from:this once"`,
+		`hx-trigger="tabs:activate once"`,
 		`aria-disabled="true"`,
 	} {
 		if !strings.Contains(html, fragment) {

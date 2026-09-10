@@ -37,7 +37,7 @@ function checkGraph(graph) {
   const collection = collections[0]
   assert.equal(collection.name, 'Foundation')
   assert.deepEqual(collection.modes.map(mode => mode.name).sort(), ['dark', 'light'])
-  assert.equal(graph.variables.size, 25)
+  assert.equal(graph.variables.size, 28)
   assert.deepEqual(metadata(named(graph, 'Foundation', graph.getPages()[0]), 'platformkit.source'), {
     schema: snapshot.schema, sha256: snapshot.sha256, fontPolicy: snapshot.fontPolicy,
     notices: snapshot.notices, scope: 'tokens-and-icons',
@@ -55,7 +55,7 @@ function checkGraph(graph) {
       const variable = variables[0]
       assert.equal(variable.type, token.type === 'color' ? 'COLOR' : 'STRING')
       const value = variable.valuesByMode[mode.modeId]
-      if (token.type === 'fontFamily') assert.equal(value, token.value)
+      if (token.type !== 'color') assert.equal(value, token.value)
       else {
         const channels = token.value.slice(1).match(/../g).map(hex => parseInt(hex, 16) / 255)
         for (const [index, channel] of ['r', 'g', 'b'].entries()) {
@@ -184,6 +184,24 @@ test('native foreground follows changed tokens while literal paints remain indep
       mixed = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
     }
   }
+})
+
+test('shape variables preserve contextual CSS values without inventing pixel dimensions', async () => {
+  const source = structuredClone(snapshot)
+  const values = ['calc(1rem + 2px)', '20%']
+  source.themes.forEach((theme, i) => { theme.tokens.find(token => token.name === '--pk-radius-button').value = values[i] })
+  const before = structuredClone(source)
+  let { graph } = buildFoundation(source)
+  const bytes = await exportFigFile(graph)
+  graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+  const variable = [...graph.variables.values()].find(value => value.name === '--pk-radius-button')
+  const collection = [...graph.variableCollections.values()][0]
+  assert.equal(variable.type, 'STRING')
+  for (const [i, theme] of source.themes.entries()) {
+    const mode = collection.modes.find(value => value.name === theme.mode)
+    assert.equal(variable.valuesByMode[mode.modeId], values[i])
+  }
+  assert.deepEqual(source, before)
 })
 
 test('malformed foundation inputs are refused without changing their caller-owned data', () => {

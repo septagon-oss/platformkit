@@ -29,7 +29,9 @@ function indexed(items, key, label) {
 
 function tokenValue(token) {
   requireValue(typeof token.value === 'string' && token.value.trim() !== '', `empty token: ${token.name}`)
-  if (token.type === 'fontFamily') return token.value
+  // Dimensions retain CSS units and expressions as strings. Component geometry
+  // is captured from the browser; this variable is not an inferred pixel value.
+  if (token.type === 'fontFamily' || token.type === 'dimension') return token.value
   requireValue(token.type === 'color' && hex.test(token.value), `unsupported token: ${token.name}`)
   return parseColor(token.value)
 }

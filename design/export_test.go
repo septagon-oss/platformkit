@@ -31,8 +31,8 @@ func TestExportedTokensAreTheDeclarationsTheStylesheetEmits(t *testing.T) {
 			}
 		}
 	}
-	if got := strings.Count(css, "--pk-"); got != 3*22+3 {
-		t.Errorf("the stylesheet declares %d custom properties; the export has 22 colours and 3 font stacks", got)
+	if got := strings.Count(css, "--pk-"); got != 3*25+3 {
+		t.Errorf("the stylesheet declares %d custom properties; the export has 22 colours, 3 shapes and 3 font stacks", got)
 	}
 }
 
@@ -46,8 +46,8 @@ func TestExportedTokenIdentitiesAndTypes(t *testing.T) {
 	}
 	for _, theme := range design.Default().Both() {
 		tokens := theme.Tokens()
-		if len(tokens) != 25 {
-			t.Fatalf("%s exports %d tokens, want 22 colors and 3 font stacks", theme.Name, len(tokens))
+		if len(tokens) != 28 {
+			t.Fatalf("%s exports %d tokens, want 22 colors, 3 shapes and 3 font stacks", theme.Name, len(tokens))
 		}
 		for i, name := range colors {
 			if token := tokens[i]; token.Name != "--pk-color-"+name || token.Type != "color" || !hex.MatchString(token.Value) {
@@ -59,8 +59,8 @@ func TestExportedTokenIdentitiesAndTypes(t *testing.T) {
 			{Name: "--pk-font-body", Type: "fontFamily", Value: `"IBM Plex Sans", Aptos, "Helvetica Neue", sans-serif`},
 			{Name: "--pk-font-mono", Type: "fontFamily", Value: `"IBM Plex Mono", "SFMono-Regular", Consolas, monospace`},
 		}
-		if !slices.Equal(tokens[22:], wantFonts) {
-			t.Errorf("%s changed its exported font stacks: %+v", theme.Name, tokens[22:])
+		if !slices.Equal(tokens[22:25], wantFonts) {
+			t.Errorf("%s changed its exported font stacks: %+v", theme.Name, tokens[22:25])
 		}
 	}
 }
@@ -107,8 +107,8 @@ func TestTypographyOverridesUseTheExistingTokensAndThemeCascade(t *testing.T) {
 			{Name: "--pk-font-mono", Type: "fontFamily", Value: `"Example Mono", monospace`},
 		}
 		tokens := palette.Tokens()
-		if !slices.Equal(tokens[22:], want) {
-			t.Fatalf("typography override or per-role fallback lost: %+v", tokens[22:])
+		if !slices.Equal(tokens[22:25], want) {
+			t.Fatalf("typography override or per-role fallback lost: %+v", tokens[22:25])
 		}
 		tokens[22].Value = "not a mutation of the theme"
 		if palette.Tokens()[22].Value != want[0].Value {

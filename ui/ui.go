@@ -1,4 +1,4 @@
-// Package ui is the browser half of the application: one stylesheet and four
+// Package ui is the browser half of the application: one stylesheet and small browser
 // controllers, served as static files beside the API.
 //
 // # The stylesheet is a Go value
@@ -45,17 +45,16 @@ var scripts embed.FS
 // rather than in the shell that writes the <script> tags, so that "how much
 // JavaScript is there" is answered by reading one slice.
 //
-// htmx is first because the others configure it. There are four of ours and
-// they are the four interactions a server-rendered application cannot express:
-// a theme that must survive a reload, a validation error that must not cost a
-// page, a destructive action that must be confirmed, and a sign-in form that
-// posts to a JSON route.
+// htmx is first because the others configure it. The remaining scripts enhance
+// themes, requests, confirmation, sign-in, component interaction and gallery controls.
 var Controllers = []string{
 	"htmx.min.js",
 	"htmx-config.js",
 	"theme.js",
 	"confirm.js",
 	"session.js",
+	"components.js",
+	"gallery.js",
 }
 
 // Sheet is a composed stylesheet: the bytes a browser downloads and the first
@@ -125,32 +124,8 @@ var Gallery = sync.OnceValue(func() Sheet {
 	if err != nil {
 		panic("ui: the gallery declares a class the style engine cannot render: " + err.Error())
 	}
-	return fingerprinted(css.NewSheet().Merge(rules).Merge(specimens()))
+	return fingerprinted(css.NewSheet().Merge(rules))
 })
-
-// specimens frames each example so an overlay is shown rather than presented.
-// A modal renders `position: fixed; inset: 0`, which is right everywhere except
-// here: on a page a hundred components long, one of them covering the viewport
-// is the page gone. A transform makes the frame the containing block for fixed
-// descendants — the rule CSS has for exactly this — so a modal fills its own
-// card and the rest of the page stays reachable.
-//
-// The selectors are the attributes the gallery page puts on a specimen. They
-// are written by hand rather than composed from the utility alphabet because
-// they are about the page and not about a component: no component asks to be
-// contained.
-func specimens() *css.Sheet {
-	s := css.NewSheet()
-	s.Select("[data-gallery-example]",
-		css.Decl("position", css.Literal("relative")),
-		css.Decl("transform", css.Literal("translateZ(0)")),
-		css.Decl("overflow", css.Literal("hidden")),
-		css.Decl("border-radius", css.Literal("0.5rem")))
-	// An overlay has no size of its own: it fills what contains it, and what
-	// contains it is now this.
-	s.Select("[data-gallery-overlay]", css.Decl("min-height", css.Literal("20rem")))
-	return s
-}
 
 // Assets is the tree a shell serves under its asset prefix: app.css is the
 // sheet it composed, gallery.css is Gallery, js/ is Controllers, and then any
@@ -244,6 +219,10 @@ func base() *css.Sheet {
 	// is how a defect hides. Every button this application renders declares its
 	// own surface, so the default is no surface at all.
 	s.Select("button", css.Decl("background-color", css.Literal("transparent")))
+	s.Select("[hidden]", css.Decl("display", css.Literal("none !important")))
+	s.Select("[data-component=button]", css.Decl("border-radius", v("pk-radius-button")))
+	s.Select("[data-component=card]", css.Decl("border-radius", v("pk-radius-card")))
+	s.Select("[data-modal-panel]", css.Decl("border-radius", v("pk-radius-modal")))
 	s.Select("table", css.Decl("border-collapse", css.Literal("collapse")))
 	// A navigation list is not a bulleted list. The marker inherits the
 	// document's text colour rather than the link's, so on the inverted sidebar
@@ -256,6 +235,13 @@ func base() *css.Sheet {
 	s.Select("a", css.Decl("color", css.Literal("inherit")), css.Decl("text-decoration", css.Literal("none")))
 	s.Select("img, svg", css.Decl("display", css.Literal("block")), css.Decl("max-width", css.Literal("100%")))
 	s.Select("dialog::backdrop", css.Decl("background", css.Literal("rgb(0 0 0 / 0.45)")))
+	s.Select("dialog[data-component=modal]",
+		css.Decl("width", css.Literal("100%")), css.Decl("height", css.Literal("100%")),
+		css.Decl("max-width", css.Literal("none")), css.Decl("max-height", css.Literal("none")),
+		css.Decl("margin", css.Literal("0")), css.Decl("border", css.Literal("0")),
+		css.Decl("background", css.Literal("transparent")), css.Decl("color", css.Literal("inherit")))
+	s.Select("dialog[data-component=modal]:not([open])", css.Decl("display", css.Literal("none")))
+	s.Select("dialog[data-component=modal]::backdrop", css.Decl("background", css.Literal("transparent")))
 	s.Media("(prefers-reduced-motion: reduce)", func(inner *css.Sheet) {
 		// Override ordinary utility and consumer rules while retaining completion
 		// events for declared animations and transitions. A nonzero duration must

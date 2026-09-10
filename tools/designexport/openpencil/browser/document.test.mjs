@@ -387,7 +387,7 @@ test('document packages exact selections, foundation handles and ordered nonover
     assert.equal(getTextMeasurer(), previous)
     assert.notEqual(definitions.id, placements.id)
     assert.equal(graph.getPages().length, 3)
-    assert.equal(graph.variables.size, 25)
+    assert.equal(graph.variables.size, 28)
     assert.equal(built.icons.size, 27)
     assert.deepEqual(selections.map(item => item.exampleId), selected)
     const components = selections.flatMap(item => item.components)

@@ -31,6 +31,9 @@ type Theme struct {
 
 	// Zero fields retain the default font stacks. This value loads no assets.
 	Typography Typography
+	// Shape supplies trusted CSS lengths for the main component surfaces.
+	// Zero fields preserve the shipped appearance.
+	Shape Shape
 
 	// The three surfaces, from the page behind everything to the raised card.
 	SurfaceCanvas  string
@@ -214,17 +217,18 @@ func (t Theme) Tokens() []Token {
 		out = append(out, Token{Name: "--pk-color-" + p[0], Type: "color", Value: p[1]})
 	}
 	fonts := t.Typography.resolved()
-	return append(out,
+	out = append(out,
 		Token{Name: "--pk-font-display", Type: "fontFamily", Value: fonts.Display},
 		Token{Name: "--pk-font-body", Type: "fontFamily", Value: fonts.Body},
 		Token{Name: "--pk-font-mono", Type: "fontFamily", Value: fonts.Mono},
 	)
+	return append(out, t.Shape.tokens()...)
 }
 
 func (t Theme) declarations(includeFonts bool) []css.Declaration {
 	var out []css.Declaration
 	for _, token := range t.Tokens() {
-		if token.Type == "color" || includeFonts {
+		if token.Type != "fontFamily" || includeFonts {
 			out = append(out, css.Decl(token.Name, css.Literal(token.Value)))
 		}
 	}

@@ -2,15 +2,11 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -19,7 +15,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
-	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
@@ -51,10 +46,7 @@ func (p pages) mount(api *httpx.API) {
 			return healthPage(checks(ctx)), nil
 		})
 
-	page.Serve(api, p.shell, page.Route{ID: "admin-gallery", Method: http.MethodGet, Path: galleryPath, Summary: "The component gallery"},
-		httpx.SignedIn(), func(_ context.Context, _ page.Request, in *galleryInput) (page.View, error) {
-			return gallery(in.Group), nil
-		})
+	p.mountGallery(api)
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -212,102 +204,6 @@ func checks(ctx context.Context) []result {
 
 // galleryInput is which group to show. Empty is all of them, which is the page
 // the class-closure test reads.
-type galleryInput struct {
-	Group string `query:"group" doc:"Only this group of components"`
-}
-
-// gallery renders every component once, from the package's own exported list,
-// with what a person needs in order to ask for one: the id the design export
-// names it by, every property its Props type takes, and the value this example
-// gave each. It is not a fixture: ui/components' tests render the same list to
-// prove every class it emits has a rule, so this page and that test cannot
-// disagree about what exists, and components.Documentation reads the same
-// schema ui.Export publishes, so the page cannot describe a property the
-// component does not take.
-//
-// It is the one page that links the second stylesheet: the components below are
-// the ones no other screen renders, so their rules are not in app.css and every
-// other page is that much smaller.
-func gallery(only string) page.View {
-	// A group nobody has is no filter at all. Without this the page echoes
-	// whatever was in the query string back as "0 of them, in <that>", which is
-	// an attacker's sentence on somebody else's screen even once it is escaped.
-	if only != "" && !slices.Contains(components.GalleryGroups(), only) {
-		only = ""
-	}
-	var body []g.Node
-	group := ""
-	shown := 0
-	for _, example := range components.Gallery() {
-		if only != "" && example.Group != only {
-			continue
-		}
-		shown++
-		if example.Group != group {
-			group = example.Group
-			body = append(body, components.Heading(components.HeadingProps{
-				Text: group, Level: 2, Anchor: anchor(group)}))
-		}
-		body = append(body,
-			components.Card(components.CardProps{Title: example.Name}),
-			h.Div(g.Attr("data-gallery-example", example.Name),
-				// Only the specimens that actually fill their container are
-				// given one to fill: a close button in the Overlay group is
-				// still a button, and twenty rems of nothing around it is a
-				// worse page, not a more consistent one.
-				g.If(overlay(example.ID), g.Attr("data-gallery-overlay", "")), example.Node),
-			components.Documentation(example))
-	}
-	subtitle := "Every component this application renders, once each, with the properties it takes."
-	if only != "" {
-		subtitle = fmt.Sprintf("%d of them, in %s.", shown, only)
-	}
-	return page.View{
-		Title: "Components",
-		Head:  []g.Node{h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.Gallery().Fingerprint))},
-		Body: []g.Node{
-			components.Toolbar(components.ToolbarProps{Title: "Components", Subtitle: subtitle}),
-			groupLinks(only),
-			components.Stack(components.StackProps{Gap: "6"}, body...),
-		},
-	}
-}
-
-// groupLinks narrows the page to one group, which is how a page a hundred
-// specimens long is read: nobody scrolls it looking for a badge. The groups are
-// the gallery's own, so a new one appears here without a second edit, and the
-// unfiltered page stays reachable because it is the one the class-closure test
-// reads.
-func groupLinks(only string) g.Node {
-	links := []g.Node{groupLink("All", "", only)}
-	for _, group := range components.GalleryGroups() {
-		links = append(links, groupLink(group, group, only))
-	}
-	return components.Flex(components.FlexProps{Direction: "row", Wrap: true, Gap: "3"}, links...)
-}
-
-func groupLink(label, group, only string) g.Node {
-	at := galleryPath
-	if group != "" {
-		at += "?group=" + url.QueryEscape(group)
-	}
-	if group == only {
-		return components.Badge(components.BadgeProps{Label: label, Variant: "outline"})
-	}
-	return components.Link(components.LinkProps{Label: label, Href: at})
-}
-
-// overlay is an example that renders over its whole container rather than
-// taking the size of its own content.
-func overlay(id string) bool {
-	return strings.HasPrefix(id, "pk-ui.component.modal/") && !strings.HasSuffix(id, "-button")
-}
-
-// anchor is a group's name as a fragment: lower case, one word.
-func anchor(group string) string {
-	return "group-" + strings.ToLower(strings.ReplaceAll(group, " ", "-"))
-}
-
 // tenants is the switcher: every tenant of this installation and the host each
 // is served at, for a person who administers more than one.
 //

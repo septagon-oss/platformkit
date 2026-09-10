@@ -81,7 +81,7 @@ func ModalWithSlots(p ModalProps, slots ModalSlots) g.Node {
 
 	actions := make([]string, 0, 2)
 	if p.OpenOnSwap {
-		actions = append(actions, "htmx:afterSwap->htmx-modal#show")
+		actions = append(actions, "htmx:afterSettle->htmx-modal#show")
 	}
 	if p.Deferred && defaultTrue(p.CloseOnOverlay) && !p.Disabled {
 		actions = append(actions, "click->htmx-modal#backdropClick")
@@ -90,7 +90,7 @@ func ModalWithSlots(p ModalProps, slots ModalSlots) g.Node {
 		root = append(root, g.Attr("data-action", strings.Join(actions, " ")))
 	}
 	if p.Deferred {
-		return h.Div(root...)
+		return h.Dialog(root...)
 	}
 
 	root = append(root, h.Role("dialog"), g.Attr("aria-modal", "true"))
@@ -113,11 +113,14 @@ func ModalWithSlots(p ModalProps, slots ModalSlots) g.Node {
 		root = append(root, h.Div(overlay...))
 	}
 	root = append(root, modalPanel(p, slots, false, size))
-	return h.Div(root...)
+	if open {
+		root = append(root, g.Attr("open"))
+	}
+	return h.Dialog(root...)
 }
 
 // ModalPanelWithSlots renders the panel fragment returned by an HTMX endpoint.
-// It is a complete dialog because its deferred parent is only a swap target.
+// It carries the accessible name the native deferred dialog adopts when opened.
 func ModalPanelWithSlots(p ModalProps, slots ModalSlots) g.Node {
 	return modalPanel(p, slots, true, modalSize(p.Size))
 }
@@ -1513,7 +1516,7 @@ func TabsWithSlots(p TabsProps, slots TabsSlots) g.Node {
 			panel = append(panel,
 				g.Attr("data-tabs-lazy", "true"),
 				g.Attr("hx-get", hxGet),
-				g.Attr("hx-trigger", "tabs:activate from:this once"),
+				g.Attr("hx-trigger", "tabs:activate once"),
 				g.Attr("hx-swap", "innerHTML"),
 				h.Div(h.Class(clTabsLazy.Compile()),
 					h.Span(h.Class(clTabsLazyLabel.Compile()), g.Text(fallbackText(p.LoadingLabel, "Loading...")))),

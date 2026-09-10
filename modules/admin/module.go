@@ -18,11 +18,13 @@
 package admin
 
 import (
+	"context"
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/admin/internal"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	"github.com/septagon-oss/platformkit/ui"
 )
 
 // Deps is what the shell cannot make for itself.
@@ -48,19 +50,26 @@ type Deps struct {
 	// changes nothing else, because every rule above the tokens is written in
 	// terms of a role. See design.Pair.
 	Theme design.Pair
+
+	// Storybook selects and authorizes the composition for the resolved tenant
+	// and principal in ctx. Return an error to deny access; never select from a
+	// query parameter or fall back to another tenant. Nil exposes Core only to
+	// the operator tenant. Empty Examples stays empty. Every gallery endpoint
+	// also requires PermissionGalleryRead before calling this function.
+	Storybook func(context.Context) (ui.Storybook, error)
 }
+
+const PermissionGalleryRead = "gallery:read"
 
 // Module is the manifest.
 //
-// It declares no permissions and no events: every page is guarded by a
-// permission the module that owns the data defined, which is the point — a
-// screen that could be reached by somebody the API would refuse is a screen
-// that leaks. It declares no nav entry either, because the shell is not a
-// destination.
+// It declares gallery:read for the selected design composition. Other pages
+// use the permissions of the modules that own their data. It declares neither
+// events nor a navigation entry of its own.
 func Module(deps Deps) module.Module {
 	return module.Module{
 		Name:          "admin",
-		Permissions:   nil,
+		Permissions:   []module.Permission{{Key: PermissionGalleryRead}},
 		Events:        nil,
 		Nav:           nil,
 		Jobs:          nil,
@@ -71,6 +80,7 @@ func Module(deps Deps) module.Module {
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
 				Theme:     theme(deps.Theme),
+				Storybook: deps.Storybook,
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.

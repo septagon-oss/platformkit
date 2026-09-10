@@ -17,6 +17,7 @@ package components
 import (
 	"cmp"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -34,6 +35,11 @@ func Gallery() []Example {
 		return ExampleInfo{ID: id, ComponentID: componentID, Group: group, Name: name}
 	}
 	return []Example{
+		ExampleOf(info("pk-ui.component.heading/display", "Sections", "Heading / independent size"), HeadingProps{Text: "A section with presence", Level: 2, Size: 1}, Heading),
+		ExampleOf(info("pk-ui.component.section-header/default", "Sections", "Section header"), SectionHeaderProps{Eyebrow: "Your workspace", Title: "Everything in its place", Description: "A shared introduction for composed pages.", Level: 2}, SectionHeader),
+		ExampleWithSlots(info("pk-ui.component.section/default", "Sections", "Section"), SectionProps{MaxWidth: "lg"}, SectionSlots{Header: []g.Node{Heading(HeadingProps{Text: "Latest activity", Level: 2})}, Body: []g.Node{Text(TextProps{Content: "Compose your own content inside a shared section."})}}, Section),
+		ExampleWithSlots(info("pk-ui.component.hero/default", "Sections", "Hero"), HeroProps{SectionHeaderProps: SectionHeaderProps{Eyebrow: "PlatformKit", Title: "Build your next workspace", Description: "Shared components. Your composition."}}, HeroSlots{Actions: []g.Node{Button(ButtonProps{Label: "Get started"})}, Media: []g.Node{Card(CardProps{Title: "One composition", Description: "This region accepts your product's media or content."})}}, Hero),
+		ExampleWithChildren(info("pk-ui.component.grid/responsive", "Sections", "Grid / responsive"), GridProps{Columns: "1", SM: "2", LG: "3", Gap: "4"}, []g.Node{Card(CardProps{Title: "Plan"}), Card(CardProps{Title: "Build"}), Card(CardProps{Title: "Review"})}, Grid),
 		ExampleOf(info("pk-ui.component.video/default", "Media", "Video / captions"), VideoProps{Label: "Recorded instruction", Sources: []VideoSource{{Src: "/example.mp4", Type: "video/mp4"}}, Tracks: []VideoTrack{{Src: "/example.vtt", Language: "en", Label: "English", Default: true}}}, Video),
 		ExampleOf(info("pk-ui.component.video/disabled", "Media", "Video / unavailable"), VideoProps{ComponentProps: ComponentProps{Disabled: true}, Label: "Recording unavailable"}, Video),
 		ExampleOf(info("pk-ui.component.heading/1", "Type", "Heading / 1"), HeadingProps{Text: "Page title", Level: 1}, Heading),
@@ -339,6 +345,8 @@ func Documentation(e Example) g.Node {
 			{Key: "name", Label: "Property", Primary: true},
 			{Key: "type", Label: "Type"},
 			{Key: "value", Label: "This example"},
+			{Key: "choices", Label: "Allowed values"},
+			{Key: "description", Label: "Description"},
 		}}))
 	}
 	var named []string
@@ -367,8 +375,10 @@ func propertyRows(d ExampleDescription) []TableRow {
 	// so the type is read from either shape or the column would be blank for
 	// exactly the properties whose absence means something.
 	type propertyType struct {
-		Type  string `json:"type"`
-		AnyOf []struct {
+		Type        any    `json:"type"`
+		Enum        []any  `json:"enum"`
+		Description string `json:"description"`
+		AnyOf       []struct {
 			Type string `json:"type"`
 		} `json:"anyOf"`
 	}
@@ -392,7 +402,14 @@ func propertyRows(d ExampleDescription) []TableRow {
 	rows := make([]TableRow, 0, len(names))
 	for _, name := range names {
 		property := schema.Properties[name]
-		kind := property.Type
+		kind, _ := property.Type.(string)
+		if types, ok := property.Type.([]any); ok {
+			var names []string
+			for _, typ := range types {
+				names = append(names, fmt.Sprint(typ))
+			}
+			kind = strings.Join(names, " or ")
+		}
 		for _, one := range property.AnyOf {
 			if kind == "" && one.Type != "null" {
 				kind = one.Type + ", or the default"
@@ -407,7 +424,15 @@ func propertyRows(d ExampleDescription) []TableRow {
 				value = string(raw)
 			}
 		}
-		rows = append(rows, TableRow{ID: name, Cells: map[string]any{"name": name, "type": kind, "value": value}})
+		var choices []string
+		for _, choice := range property.Enum {
+			text := fmt.Sprint(choice)
+			if text == "" {
+				text = "default"
+			}
+			choices = append(choices, text)
+		}
+		rows = append(rows, TableRow{ID: name, Cells: map[string]any{"name": name, "type": kind, "value": value, "choices": strings.Join(choices, ", "), "description": property.Description}})
 	}
 	return rows
 }

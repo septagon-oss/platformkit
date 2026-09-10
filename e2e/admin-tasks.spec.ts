@@ -74,26 +74,26 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
 test('the typed gallery retains native controls at desktop and narrow widths', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/admin/_gallery');
-  const primary = page.locator('[data-gallery-example="Button / primary"] button');
-  const emailField = page.locator('[data-gallery-example="Input / email"] input');
   for (const width of [1280, 320]) {
     await page.setViewportSize({ width, height: 900 });
+    await page.goto('/admin/_gallery/preview?example=pk-ui.component.button/primary');
+    const primary = page.getByRole('button', { name: 'Save', exact: true });
     await expect(primary).toBeVisible();
-    await expect(primary).toHaveAccessibleName('Save');
     await expect(primary).toHaveAttribute('type', 'button');
-    await expect(emailField).toHaveAccessibleName(/Email/);
+    await page.goto('/admin/_gallery/preview?example=pk-ui.component.input/email');
+    const emailField = page.getByRole('textbox', { name: /Email/ });
+    await expect(emailField).toBeVisible();
     await expect(emailField).toHaveAttribute('type', 'email');
   }
-  await expect(page.locator('[data-gallery-example="Button / with icon"] svg')).toHaveAttribute('aria-hidden', 'true');
+  await page.goto('/admin/_gallery/preview?example=pk-ui.component.button/with-icon');
+  await expect(page.locator('button svg')).toHaveAttribute('aria-hidden', 'true');
   expect(errors).toEqual([]);
 });
 
 test('a disabled gallery link refuses keyboard, pointer and HTMX activation', async ({ page }) => {
-  await page.goto('/admin/_gallery');
+  await page.goto('/admin/_gallery/preview?example=pk-ui.component.button/disabled-link');
   expect(await page.evaluate(() => 'htmx' in window)).toBe(true);
-  const disabled = page.locator('[data-gallery-example="Button / disabled link"]')
-    .getByRole('link', { name: 'Unavailable', exact: true });
+  const disabled = page.getByRole('link', { name: 'Unavailable', exact: true });
   await expect(disabled).toHaveAttribute('role', 'link');
   await expect(disabled).toHaveAttribute('aria-disabled', 'true');
   await expect(disabled).toHaveAttribute('tabindex', '-1');
@@ -123,11 +123,8 @@ test('a disabled gallery link refuses keyboard, pointer and HTMX activation', as
 
   // Complete an enabled navigation before inspecting requests. The structural
   // guards above, not an immediate URL check or a sleep, establish inactivity.
-  // The gallery renders its modal examples open, and an open modal's backdrop
-  // covers the page, so the pointer cannot reach this link: activate it the
-  // way the disabled link was activated, through the DOM.
-  const enabled = page.locator('[data-gallery-example="Button / as link"]')
-    .getByRole('link', { name: 'Open', exact: true });
+  await page.goto('/admin/_gallery/preview?example=pk-ui.component.button/as-link');
+  const enabled = page.getByRole('link', { name: 'Open', exact: true });
   await expect(enabled).toHaveAttribute('href', '/somewhere');
   await enabled.evaluate(node => (node as HTMLElement).click());
   await expect(page).toHaveURL(/\/somewhere$/);
