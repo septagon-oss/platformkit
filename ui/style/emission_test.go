@@ -39,7 +39,11 @@ func TestRoleVarsReferenceRealThemeTokens(t *testing.T) {
 	t.Parallel()
 	themed := design.CSS(design.Light(), design.Dark()).CSS()
 	for role, value := range roleValues() {
-		for rest := value; ; {
+		rendered, err := value.CSS()
+		if err != nil {
+			t.Fatalf("role %q has invalid source meaning: %v", role, err)
+		}
+		for rest := rendered; ; {
 			i := strings.Index(rest, "var(--pk-color-")
 			if i < 0 {
 				break

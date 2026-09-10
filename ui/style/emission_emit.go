@@ -28,14 +28,12 @@ import (
 // reference. Serve it after the theme's token block and before the utilities.
 func RoleVars() *css.Sheet {
 	s := css.NewSheet()
-	roles := roleValues()
-	names := make([]string, 0, len(roles))
-	for c := range roles {
-		names = append(names, string(c))
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		s.Var("pk-role-"+n, roles[Color(n)])
+	for _, role := range RoleColors() {
+		value, err := role.Value.CSS()
+		if err != nil {
+			panic("invalid source colour role " + role.Name + ": " + err.Error())
+		}
+		s.Var(strings.TrimPrefix(role.Name, "--"), value)
 	}
 	s.Keyframes("pk-spin", func(kb *css.Keyframes) {
 		kb.At("from", css.Decl("transform", css.Literal("rotate(0deg)")))

@@ -1,12 +1,10 @@
 // Package design is the application's colours and type, as the two themes it
 // ships and the custom properties they render to.
 //
-// A theme is a struct of named roles, not a token graph. The previous design
-// system expressed the same twenty-two values as a DTCG document with a
-// parser, a resolver, an alias graph, nine layer kinds and a validator — 2,200
-// lines to answer "what colour is the accent". This is the answer: a struct
-// literal per theme, rendered to `--pk-color-*` custom properties that
-// ui/style's semantic roles are written in terms of.
+// A theme is a struct of named values, rendered to --pk-color-* custom
+// properties. ui/style owns the semantic role declarations above those values;
+// ColorValue preserves their literals, references and existing sRGB mixes for
+// CSS and source projection. Theme remains the palette configuration seam.
 //
 // That indirection is the whole point of having themes at all. A component
 // names a role (`style.SurfaceBrand`); the role is a `--pk-role-*` property

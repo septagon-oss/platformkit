@@ -123,6 +123,21 @@ and mono fallback stacks; empty fields retain the defaults. Supply the same valu
 on both themes for shared type, and deliver licensed font assets separately.
 Components name semantic roles, roles resolve to tokens, and themes supply values.
 
+[style.RoleColors](ui/style/emission_roles.go) projects those same role definitions
+as explicit literals, references and two-input sRGB mixes. `RoleVars` renders
+them to the existing CSS; there is no second role table. Compose one selected
+theme's `Tokens()` with these declarations through
+[design.ResolveColors](design/colors.go) to obtain fresh RGBA values. This pure
+check requires complete references and rejects duplicates, wrong-type targets,
+cycles and unsupported literals without partial output. Equal colours retain
+different identities. Mixes use [premultiplied alpha](https://www.w3.org/TR/2026/WD-css-color-5-20260908/#color-mix),
+including transparent inputs; the admitted operation is narrower than general CSS.
+Only hex RGB/RGBA and `transparent` literals are currently resolvable. Other
+trusted theme CSS still renders through the existing path but is not certified
+by this source contract. Names use ASCII custom-property identities. The source
+projection is not yet included in v2 snapshots or consumed by native adapters;
+it does not establish native editing, interchange, layout or asset availability.
+
 [ui/icon](ui/icon/) owns icons. [ui/components](ui/components/) provides typed
 Go functions returning HTML and declares the classes those functions can emit.
 [ui/style](ui/style/) resolves the declarations to CSS.
@@ -211,8 +226,9 @@ Earlier v2 declaration-only snapshots remain recognizable without inventing
 measurements, and consumers that do not understand a required feature refuse it.
 These values come from the same tables/functions as CSS, not another registry.
 They do not configure a second palette or certify consumer overrides. Layout
-keywords such as `auto` and `full`, remaining scales, DTCG interchange, semantic
-alias graphs and licensed font delivery are outside this first measurement scope.
+keywords such as `auto` and `full`, remaining scales, DTCG interchange and licensed
+font delivery are outside this first measurement scope. The separate source
+colour declarations above do not change this snapshot contract.
 
 [ui.ProjectProps](ui/proposal.go) and [ui.ProjectReplacement](ui/replacement.go)
 accept the base export hash and exact occurrence ID segments. Properties use a

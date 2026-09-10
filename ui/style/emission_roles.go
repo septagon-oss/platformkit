@@ -1,41 +1,47 @@
 package style
 
-// roles.go owns the single mapping from tw's semantic color roles to the
+// emission_roles.go owns the single mapping from semantic color roles to the
 // design system's theme tokens. Utility rules never reference theme tokens
 // directly: they reference --pk-role-* variables, and this file emits those
 // variables from --pk-* token variables (or derives them with color-mix when
 // the theme has no dedicated token). Retheming therefore never touches the
 // utility rules — a different theme changes the values behind the same roles.
 
-import ()
+import (
+	"maps"
+	"slices"
 
-// tokenVar renders a var() reference to a pk-design token custom property.
-func tokenVar(path string) string { return "var(--pk-color-" + path + ")" }
+	"github.com/septagon-oss/platformkit/design"
+)
 
-// mix derives a tint: pct% of colorA over colorB, in sRGB. Used for the soft,
-// hover, and disabled roles the theme intentionally does not enumerate.
-func mix(a string, pct string, b string) string {
-	return "color-mix(in srgb, " + a + " " + pct + "%, " + b + ")"
+func tokenVar(path string) design.ColorValue {
+	return design.ColorValue{Reference: "--pk-color-" + path}
 }
 
-// roleValues maps every Color to its CSS value in terms of theme token
+// mix records pct% of colorA mixed with its complement of colorB, in sRGB.
+// Used for the soft, hover, and disabled roles the theme does not enumerate.
+func mix(a design.ColorValue, pct float64, b design.ColorValue) design.ColorValue {
+	return design.ColorValue{Mix: &design.ColorMix{First: a, FirstPercent: pct, Second: b}}
+}
+
+// roleValues maps every Color to its source value in terms of theme token
 // variables. TestRoleMapCoversEveryColor pins this to AllColors(), so a new
-// role in tw fails the build of this package's tests until it is mapped here.
-func roleValues() map[Color]string {
+// role fails this package's tests until it is mapped here.
+func roleValues() map[Color]design.ColorValue {
 	surfacePrimary := tokenVar("surface-primary")
 	textPrimary := tokenVar("text-primary")
 	textMuted := tokenVar("text-muted")
 	accent := tokenVar("accent-default")
 	focus := tokenVar("focus")
 
-	return map[Color]string{
+	return map[Color]design.ColorValue{
 		// Surfaces.
 		SurfacePrimary:     surfacePrimary,
 		SurfaceSecondary:   tokenVar("surface-canvas"),
 		SurfaceTertiary:    tokenVar("surface-muted"),
 		SurfaceBrand:       accent,
 		SurfaceBrandHover:  tokenVar("accent-hover"),
-		SurfaceBrandSoft:   mix(accent, "12", surfacePrimary),
+		SurfaceBrandSoft:   mix(accent, 12, surfacePrimary),
 		SurfaceSuccess:     tokenVar("status-ok"),
 		SurfaceSuccessSoft: tokenVar("status-okbg"),
 		SurfaceWarning:     tokenVar("status-warning"),
@@ -45,24 +51,24 @@ func roleValues() map[Color]string {
 		SurfaceInfo:        tokenVar("status-info"),
 		SurfaceInfoSoft:    tokenVar("status-infobg"),
 		SurfaceDisabled:    tokenVar("surface-muted"),
-		SurfaceHover:       mix(textPrimary, "4", surfacePrimary),
-		SurfaceActive:      mix(textPrimary, "8", surfacePrimary),
-		SurfaceOverlay:     mix(tokenVar("sidebar-bg"), "55", "transparent"),
+		SurfaceHover:       mix(textPrimary, 4, surfacePrimary),
+		SurfaceActive:      mix(textPrimary, 8, surfacePrimary),
+		SurfaceOverlay:     mix(tokenVar("sidebar-bg"), 55, design.ColorValue{Literal: "transparent"}),
 		SurfaceInverse:     tokenVar("sidebar-bg"),
 
 		// Foreground.
 		FgPrimary:     textPrimary,
-		FgSecondary:   mix(textPrimary, "78", surfacePrimary),
-		FgTertiary:    mix(textPrimary, "60", surfacePrimary),
+		FgSecondary:   mix(textPrimary, 78, surfacePrimary),
+		FgTertiary:    mix(textPrimary, 60, surfacePrimary),
 		FgMuted:       textMuted,
-		FgPlaceholder: mix(textMuted, "70", surfacePrimary),
+		FgPlaceholder: mix(textMuted, 70, surfacePrimary),
 		FgBrand:       accent,
 		FgOnBrand:     tokenVar("accent-on"),
 		FgSuccess:     tokenVar("status-ok"),
 		FgWarning:     tokenVar("status-warning"),
 		FgDanger:      tokenVar("status-danger"),
 		FgInfo:        tokenVar("status-info"),
-		FgDisabled:    mix(textMuted, "55", surfacePrimary),
+		FgDisabled:    mix(textMuted, 55, surfacePrimary),
 		FgOnSurface:   textPrimary,
 		FgOnInverse:   tokenVar("sidebar-text"),
 		FgLink:        accent,
@@ -70,7 +76,7 @@ func roleValues() map[Color]string {
 
 		// Borders.
 		BorderPrimary:   tokenVar("border-default"),
-		BorderSecondary: mix(tokenVar("border-default"), "60", surfacePrimary),
+		BorderSecondary: mix(tokenVar("border-default"), 60, surfacePrimary),
 		BorderBrand:     accent,
 		BorderSuccess:   tokenVar("status-ok"),
 		BorderWarning:   tokenVar("status-warning"),
@@ -83,10 +89,22 @@ func roleValues() map[Color]string {
 		RingDanger: tokenVar("status-danger"),
 
 		// Neutrals.
-		ColorTransparent: "transparent",
-		ColorWhite:       "#ffffff",
-		ColorBlack:       "#000000",
+		ColorTransparent: {Literal: "transparent"},
+		ColorWhite:       {Literal: "#ffffff"},
+		ColorBlack:       {Literal: "#000000"},
 	}
+}
+
+// RoleColors projects fresh, ordered declarations from the same source values
+// as RoleVars. Resolve them with one selected Theme.Tokens() using
+// design.ResolveColors; no mode, palette or native support is inferred here.
+func RoleColors() []design.ColorToken {
+	roles := roleValues()
+	out := make([]design.ColorToken, 0, len(roles))
+	for _, name := range slices.Sorted(maps.Keys(roles)) {
+		out = append(out, design.ColorToken{Name: "--pk-role-" + string(name), Value: roles[name]})
+	}
+	return out
 }
 
 // roleVar renders the var() reference utility rules use for a color role.
