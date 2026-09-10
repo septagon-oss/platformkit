@@ -6,6 +6,8 @@ import (
 	"math"
 	"slices"
 	"strings"
+
+	"github.com/septagon-oss/platformkit/design"
 )
 
 // Measurement projects a named value from the existing numeric style scales.
@@ -24,7 +26,7 @@ type Measurement struct {
 // authority to change the stylesheet or introduce a new scale/key.
 func (m Measurement) Validate() error {
 	n, err := m.Value.Float64()
-	valid := err == nil && json.Valid([]byte(m.Value)) && !math.IsInf(n, 0) && n >= 0
+	valid := err == nil && json.Valid([]byte(m.Value)) && !math.IsInf(n, 0) && n >= 0 && !negativeNumber(m.Value)
 	length := m.Unit == "px" || m.Unit == "rem"
 	switch m.Scale {
 	case "spacing":
@@ -34,7 +36,7 @@ func (m Measurement) Validate() error {
 	case "line-height":
 		valid = valid && (length || m.Unit == "") && slices.Contains(AllFontSizes(), FontSize(m.Key))
 	case "font-weight":
-		valid = valid && m.Unit == "" && n >= 1 && n <= 1000 && slices.Contains(AllFontWeights(), FontWeight(m.Key))
+		valid = valid && m.Unit == "" && design.ValidateFontWeight(m.Value) == nil && slices.Contains(AllFontWeights(), FontWeight(m.Key))
 	default:
 		valid = false
 	}
@@ -42,6 +44,20 @@ func (m Measurement) Validate() error {
 		return fmt.Errorf("style: invalid measurement %q/%q", m.Scale, m.Key)
 	}
 	return nil
+}
+
+// After numeric syntax validation, determine the exact sign of the decimal
+// mantissa. A nonzero negative value can underflow to -0 in float64, but an
+// authored negative zero remains zero regardless of its exponent.
+func negativeNumber(value json.Number) bool {
+	text := string(value)
+	if !strings.HasPrefix(text, "-") {
+		return false
+	}
+	if i := strings.IndexAny(text, "eE"); i >= 0 {
+		text = text[:i]
+	}
+	return strings.ContainsAny(text, "123456789")
 }
 
 // Measurements projects the same functions/tables used by CSS emission. It

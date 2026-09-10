@@ -38,7 +38,7 @@ func (v ShadowValue) Validate() error {
 		}
 		if layer.Blur != (Scalar{}) {
 			n, ok := layer.Blur.number("px", "rem", "em", "ch", "vw")
-			valid = valid && ok && n >= 0
+			valid = valid && ok && n >= 0 && !negativeNumber(layer.Blur.Value)
 		}
 		if layer.Spread != (Scalar{}) {
 			_, ok := layer.Spread.number("px", "rem", "em", "ch", "vw")

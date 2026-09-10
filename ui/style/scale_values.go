@@ -41,27 +41,28 @@ func (v ScaleValue) Validate() error {
 			(v.Scale == "max-width" && v.Key == "none" && v.Keyword == "none")
 	} else if v.Keyword == "" {
 		n, length := v.Number.number("px", "rem", "em", "ch", "vw")
+		nonnegative := n >= 0 && !negativeNumber(v.Number.Value)
 		switch v.Scale {
 		case "tracking":
 			valid = length && trackings[v.Key] != ""
 		case "leading":
 			_, unitless := v.Number.number("")
-			valid = unitless && n >= 0 && leadings[v.Key] != ""
+			valid = unitless && nonnegative && leadings[v.Key] != ""
 		case "radius":
-			valid = length && n >= 0 && slices.Contains(AllRadii(), Radius(v.Key))
+			valid = length && nonnegative && slices.Contains(AllRadii(), Radius(v.Key))
 		case "max-width":
 			_, dimension := v.Number.number("px", "rem", "em", "ch", "vw", "%")
-			valid = dimension && n >= 0 && v.Key != "none" && maxWidths[v.Key] != ""
+			valid = dimension && nonnegative && v.Key != "none" && maxWidths[v.Key] != ""
 		case "breakpoint":
 			_, dimension := v.Number.number("px", "rem", "em")
-			valid = dimension && n >= 0 && breakpoints[v.Key] != ""
+			valid = dimension && nonnegative && breakpoints[v.Key] != ""
 		case "duration":
 			_, time := v.Number.number("ms", "s")
-			valid = time && n >= 0 && slices.Contains(AllDurations(), Duration(v.Key))
+			valid = time && nonnegative && slices.Contains(AllDurations(), Duration(v.Key))
 		case "spacing":
 			if v.Key == "full" {
 				_, percentage := v.Number.number("%")
-				valid = percentage && n >= 0
+				valid = percentage && nonnegative
 				break
 			}
 			fallthrough

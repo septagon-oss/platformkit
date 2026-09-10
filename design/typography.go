@@ -1,11 +1,31 @@
 package design
 
 import (
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 )
+
+// ValidateFontWeight checks an explicit JSON number in the inclusive CSS/DTCG
+// domain 1..1000. Decimal boundary checks are exact; provider step restrictions
+// and physical font metadata are separate concerns.
+func ValidateFontWeight(weight json.Number) error {
+	n, err := weight.Float64()
+	if err != nil || !json.Valid([]byte(weight)) || !(n >= 1 && n <= 1000) {
+		return fmt.Errorf("font weight %q requires a finite number from 1 to 1000", weight)
+	}
+	// A decimal just outside a boundary can round into range in float64.
+	if n == 1 || n == 1000 {
+		exact, ok := new(big.Rat).SetString(string(weight))
+		if !ok || exact.Cmp(big.NewRat(1, 1)) < 0 || exact.Cmp(big.NewRat(1000, 1)) > 0 {
+			return fmt.Errorf("font weight %q is outside 1 to 1000", weight)
+		}
+	}
+	return nil
+}
 
 // FontFamily names either a literal family or a generic fallback. A quoted
 // CSS family such as "serif" is a literal name, not the generic serif family.

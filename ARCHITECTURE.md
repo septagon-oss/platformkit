@@ -132,6 +132,10 @@ functions and system/context keywords are refused without partial output.
 The comparable theme and its trusted CSS rendering remain unchanged.
 `FontFamilyToken.Validate` checks detached identities and ordered family values;
 it does not reinterpret literal names as CSS or certify available font files.
+`ValidateFontWeight` supplies the shared numeric domain for face metadata and
+style measurements, including exact decimal checks at the 1 and 1000 boundaries.
+Nonnegative scale and blur checks retain the decimal sign even on float underflow;
+authored negative zero remains zero, and signed offsets/tracking remain valid.
 
 [Asset and FontFace](design/assets.go) describe caller-owned identities, formats,
 digests and provenance; each asset carries its own license evidence.
@@ -179,7 +183,29 @@ unknown layout remains unknown when it is requested. Earlier layout-only v2
 snapshots retain their admission rules, and the narrower `CheckLayoutContract`
 still refuses token features. Ordinary `Export` output remains unchanged.
 Consumers must explicitly support the token feature before using these values;
-this is not yet DTCG interchange or a native-library migration.
+native-library migration remains separate.
+
+[TokenExport.DTCG](ui/export_dtcg.go) projects one explicit mode into the
+[DTCG 2025.10 format](https://www.designtokens.org/tr/2025.10/format/) and
+[sRGB colour representation](https://www.designtokens.org/tr/2025.10/color/#srgb).
+An empty mode is valid only for mode-independent selections. The whole source
+selection is validated first. Aliases remain references; compatible dimensions,
+weights, durations, curves and layered shadows keep their typed values.
+Contextual units, keywords, reference-like literal family names and source
+transition declarations return no document, with every projection refusal
+reported. No unsupported token is silently filtered out.
+
+Successful output can still have diagnostics: mixes become resolved colours,
+font names lose their literal/generic discriminator, linear keywords become
+equivalent curves and omitted shadow lengths become explicit zero px. The
+`dev.septagon.platformkit` extension profile `dtcg-2025.10.v1` records the mode
+and diagnostics at the root, and `sourcePath` plus the original `source` value
+on each token. Asset/face evidence remains root metadata, not font bytes or a
+standard asset token. Names escape `%`, `.`, `{`, `}` and `$` as percent-encoded
+bytes, so `0.5` becomes `0%2E5` without colliding with an already escaped name.
+This is output-only interchange, not a resolver, registry or universal round
+trip. DTCG is a Community Group report, not a W3C Recommendation; source Go
+remains authoritative and consumers must review diagnostics before using files.
 
 [ui/icon](ui/icon/) owns icons. [ui/components](ui/components/) provides typed
 Go functions returning HTML and declares the classes those functions can emit.

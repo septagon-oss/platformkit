@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"math"
-	"math/big"
 	"mime"
 	"regexp"
 	"strings"
@@ -110,17 +108,8 @@ func ValidateAssets(assets []Asset, faces []FontFace) error {
 			strings.IndexFunc(face.Family, unicode.IsControl) >= 0 || !evidenceText(face.PostScriptName) {
 			return fmt.Errorf("face %q requires a literal family and physical PostScript name", face.ID)
 		}
-		weight, err := face.Weight.Float64()
-		if !json.Valid([]byte(face.Weight)) || err != nil || math.IsNaN(weight) || math.IsInf(weight, 0) || weight < 1 || weight > 1000 {
-			return fmt.Errorf("face %q requires a finite numeric weight from 1 to 1000", face.ID)
-		}
-		// A decimal just outside either boundary can round into range in
-		// float64. Check those boundary values before retaining the source.
-		if weight == 1 || weight == 1000 {
-			exact, ok := new(big.Rat).SetString(string(face.Weight))
-			if !ok || exact.Cmp(big.NewRat(1, 1)) < 0 || exact.Cmp(big.NewRat(1000, 1)) > 0 {
-				return fmt.Errorf("face %q weight is outside 1 to 1000", face.ID)
-			}
+		if err := ValidateFontWeight(face.Weight); err != nil {
+			return fmt.Errorf("face %q: %w", face.ID, err)
 		}
 		if face.Style != "normal" && face.Style != "italic" {
 			return fmt.Errorf("face %q requires explicit normal or italic style in the static profile", face.ID)

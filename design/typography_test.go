@@ -9,6 +9,20 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 )
 
+func TestFontWeightUsesExactSharedNumericDomain(t *testing.T) {
+	t.Parallel()
+	for _, weight := range []json.Number{"1", "1e3", "1000.000", "650.5", "1.00000000000000001", "999.99999999999999999"} {
+		if err := design.ValidateFontWeight(weight); err != nil {
+			t.Fatalf("valid numeric weight %s: %v", weight, err)
+		}
+	}
+	for _, weight := range []json.Number{"", "null", "NaN", "1e999", "+400", "0400", "1001", "0", "1000.00000000000000001", "0.99999999999999999999"} {
+		if err := design.ValidateFontWeight(weight); err == nil {
+			t.Fatalf("invalid numeric weight %s admitted", weight)
+		}
+	}
+}
+
 func TestFontFamiliesPreserveOrderedMeaningAndExistingIdentities(t *testing.T) {
 	t.Parallel()
 	want := []design.FontFamilyToken{
