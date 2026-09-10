@@ -81,7 +81,8 @@ try {
   const pkg = require('storybook/package.json');
   const cli = resolve(dirname(require.resolve('storybook/package.json')), typeof pkg.bin === 'string' ? pkg.bin : pkg.bin.storybook);
   execFileSync(process.execPath, [cli, 'build', '--config-dir', work, '--output-dir', output, '--disable-telemetry'],
-    { cwd: here, stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, STORYBOOK_DISABLE_TELEMETRY: '1' } });
+    { cwd: here, stdio: ['ignore', 'inherit', 'inherit'],
+      env: { ...process.env, STORYBOOK_DISABLE_TELEMETRY: '1', CACHE_DIR: resolve(work, 'storybook-cache') } });
   await writeFile(resolve(output, 'platformkit.json'), JSON.stringify({ sha256: snapshot.sha256 }));
 } finally {
   await rm(work, { recursive: true, force: true });
