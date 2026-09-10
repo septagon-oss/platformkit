@@ -230,13 +230,17 @@ func resolveParametric(class string) ([]decl, bool) {
 		{prefix: "tracking-", lookup: trackings, props: []string{"letter-spacing"}},
 		{prefix: "leading-", lookup: leadings, props: []string{"line-height"}},
 		{prefix: "max-w-", lookup: maxWidths, props: []string{"max-width"}},
-		{prefix: "ease-", lookup: easings, props: []string{"transition-timing-function"}},
 	}
 	for _, t := range table {
 		if strings.HasPrefix(class, t.prefix) {
 			if v, ok := t.lookup[strings.TrimPrefix(class, t.prefix)]; ok {
 				return []decl{{t.props[0], v}}, true
 			}
+		}
+	}
+	if key, ok := strings.CutPrefix(class, "ease-"); ok {
+		if value, exists := easings[key]; exists {
+			return []decl{{"transition-timing-function", value.css()}}, true
 		}
 	}
 
@@ -293,8 +297,8 @@ func resolveParametric(class string) ([]decl, bool) {
 		}
 	}
 	if s := strings.TrimPrefix(class, "duration-"); s != class {
-		if _, err := strconv.Atoi(s); err == nil {
-			return []decl{{"transition-duration", s + "ms"}}, true
+		if value, ok := durationCSS(s); ok {
+			return []decl{{"transition-duration", value}}, true
 		}
 	}
 	if s := strings.TrimPrefix(class, "list-"); s != class {
@@ -325,10 +329,11 @@ func resolveParametric(class string) ([]decl, bool) {
 			if s == "none" {
 				return []decl{{"transition-property", "none"}}, true
 			}
+			duration, _ := durationCSS(string(transitionDuration))
 			return []decl{
 				{"transition-property", props},
-				{"transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"},
-				{"transition-duration", "150ms"},
+				{"transition-timing-function", easings[string(transitionEasing)].css()},
+				{"transition-duration", duration},
 			}, true
 		}
 	}
@@ -414,7 +419,11 @@ func resolveRounded(class string) ([]decl, bool) {
 }
 
 func shadowDecls(size string) []decl {
-	return []decl{{"box-shadow", shadows[size]}}
+	var layers []string
+	for _, layer := range shadows[size] {
+		layers = append(layers, layer.css())
+	}
+	return []decl{{"box-shadow", strings.Join(layers, ", ")}}
 }
 
 func resolveBorder(class string) ([]decl, bool) {

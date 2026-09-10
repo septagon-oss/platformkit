@@ -30,6 +30,18 @@ func TestRoleMapCoversEveryColor(t *testing.T) {
 	}
 }
 
+func TestCSSIdentifierEscaping(t *testing.T) {
+	for input, want := range map[string]string{
+		"2xl:block": `\32 xl\:block`, "-2": `-\32 `, "12": `\31 2`, "-": `\-`,
+		"bg-brand/50": `bg-brand\/50`, "w-[0.5px]": `w-\[0\.5px\]`, "--accent": "--accent",
+		"café": "café", "a\nb": `a\a b`, "a\x00b": "a\ufffdb", "a\\b": `a\\b`, "": "",
+	} {
+		if got := escapeClass(input); got != want {
+			t.Errorf("escapeClass(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 // TestRoleVarsReferenceRealThemeTokens is the naming contract with package
 // design: every --pk-color-* property a role is written in terms of has to be
 // one the themes actually declare. The two files are the only place the naming

@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+func durationCSS(value string) (string, bool) {
+	_, err := strconv.Atoi(value)
+	return value + "ms", err == nil
+}
+
 // spacingCSS translates a Spacing suffix ("px", "0", "4", …) into a CSS
 // length: px → 1px, n → n×0.25rem. Returns ok=false for unknown suffixes.
 func spacingCSS(suffix string) (string, bool) {
@@ -121,15 +126,15 @@ var radii = map[string]string{
 }
 
 // shadows: the "base" constant compiles to a bare "shadow" (empty suffix).
-var shadows = map[string]string{
-	"sm":    "0 1px 2px 0 rgb(0 0 0 / 0.05)",
-	"":      "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
-	"md":    "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-	"lg":    "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
-	"xl":    "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
-	"2xl":   "0 25px 50px -12px rgb(0 0 0 / 0.25)",
-	"inner": "inset 0 2px 4px 0 rgb(0 0 0 / 0.05)",
-	"none":  "0 0 #0000",
+var shadows = map[string][]ShadowLayer{
+	"sm":    {shadowLayer(0, 1, 2, 0, 0.05, false)},
+	"":      {shadowLayer(0, 1, 3, 0, 0.1, false), shadowLayer(0, 1, 2, -1, 0.1, false)},
+	"md":    {shadowLayer(0, 4, 6, -1, 0.1, false), shadowLayer(0, 2, 4, -2, 0.1, false)},
+	"lg":    {shadowLayer(0, 10, 15, -3, 0.1, false), shadowLayer(0, 4, 6, -4, 0.1, false)},
+	"xl":    {shadowLayer(0, 20, 25, -5, 0.1, false), shadowLayer(0, 8, 10, -6, 0.1, false)},
+	"2xl":   {shadowLayer(0, 25, 50, -12, 0.25, false)},
+	"inner": {shadowLayer(0, 2, 4, 0, 0.05, true)},
+	"none":  {{OffsetX: Scalar{Value: "0", Unit: "px"}, OffsetY: Scalar{Value: "0", Unit: "px"}}},
 }
 
 var maxWidths = map[string]string{
@@ -139,14 +144,21 @@ var maxWidths = map[string]string{
 	"none": "none", "screen": "100vw",
 }
 
-var easings = map[string]string{
-	"linear": "linear", "in": "cubic-bezier(0.4, 0, 1, 1)",
-	"out": "cubic-bezier(0, 0, 0.2, 1)", "in-out": "cubic-bezier(0.4, 0, 0.2, 1)",
+var easings = map[string]EasingValue{
+	"linear": {Keyword: "linear"},
+	"in":     {CubicBezier: &[4]float64{0.4, 0, 1, 1}},
+	"out":    {CubicBezier: &[4]float64{0, 0, 0.2, 1}},
+	"in-out": {CubicBezier: &[4]float64{0.4, 0, 0.2, 1}},
 }
+
+const (
+	transitionDuration = Duration150
+	transitionEasing   = EaseInOut
+)
 
 // transitions: the property groups behind transition-<kind>. Every group
 // shares the standard duration/easing defaults; duration-* and ease-*
-// override them via the custom properties set here.
+// emit separate declarations governed by the usual CSS cascade.
 var transitionProps = map[string]string{
 	"none": "none",
 	"all":  "all",
@@ -188,9 +200,24 @@ func stateSelector(state, escapedClass string) (string, bool) {
 	return "", false
 }
 
-// escapeClass escapes the characters legal in tw class names but not in CSS
-// identifiers, so a compiled class can appear verbatim in a selector.
+// escapeClass serializes a CSS identifier. Punctuation escaping alone is not
+// enough: numeric prefixes such as 2xl need a leading code-point escape.
 func escapeClass(class string) string {
-	r := strings.NewReplacer(":", "\\:", "/", "\\/", "[", "\\[", "]", "\\]", ".", "\\.")
-	return r.Replace(class)
+	var out strings.Builder
+	for i, c := range class {
+		switch {
+		case c == 0:
+			out.WriteRune('\ufffd')
+		case c < 32 || c == 127 || (c >= '0' && c <= '9' && (i == 0 || (i == 1 && class[0] == '-'))):
+			out.WriteString("\\" + strconv.FormatInt(int64(c), 16) + " ")
+		case c == '-' && len(class) == 1:
+			out.WriteString("\\-")
+		case c >= 128 || c == '-' || c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'):
+			out.WriteRune(c)
+		default:
+			out.WriteByte('\\')
+			out.WriteRune(c)
+		}
+	}
+	return out.String()
 }

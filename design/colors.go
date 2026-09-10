@@ -40,6 +40,16 @@ type ColorToken struct {
 // Channels are not rounded to bytes. An entirely transparent mix is zero.
 type SRGBA [4]float64
 
+// Validate checks finite, normalized physical channels without quantization.
+func (c SRGBA) Validate() error {
+	for _, channel := range c {
+		if math.IsNaN(channel) || channel < 0 || channel > 1 {
+			return fmt.Errorf("invalid sRGB channel %g", channel)
+		}
+	}
+	return nil
+}
+
 var colorName = regexp.MustCompile(`^--[a-zA-Z0-9_-]+$`)
 
 // CSS validates and emits the source expression without resolving references.

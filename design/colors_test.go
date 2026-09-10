@@ -34,6 +34,23 @@ func TestColorValuesPreserveAuthoredCSS(t *testing.T) {
 	}
 }
 
+func TestSRGBAValidatesPhysicalChannels(t *testing.T) {
+	for _, color := range []design.SRGBA{{}, {1, 1, 1, 1}, {0.2, 0.3, 0.4, 0.05}} {
+		if err := color.Validate(); err != nil {
+			t.Fatalf("valid sRGB colour refused: %v", err)
+		}
+	}
+	for i := range 4 {
+		for _, invalid := range []float64{-0.1, 1.1, math.NaN(), math.Inf(1)} {
+			color := design.SRGBA{0, 0, 0, 1}
+			color[i] = invalid
+			if color.Validate() == nil {
+				t.Fatalf("invalid sRGB channel accepted: %v", color)
+			}
+		}
+	}
+}
+
 func TestColorResolutionUsesPremultipliedSRGB(t *testing.T) {
 	// Independent channel arithmetic, not a second call to the implementation.
 	for _, tc := range []struct {

@@ -123,6 +123,23 @@ and mono fallback stacks; empty fields retain the defaults. Supply the same valu
 on both themes for shared type, and deliver licensed font assets separately.
 Components name semantic roles, roles resolve to tokens, and themes supply values.
 
+[Theme.FontFamilies](design/typography.go) projects those existing token identities
+as ordered literal or generic family names. It follows the admitted
+[CSS Fonts syntax](https://www.w3.org/TR/2026/WD-css-fonts-4-20260907/#font-family-name-syntax):
+quoted commas remain inside one name, quoted `"serif"` is not a generic fallback,
+and unquoted identifier whitespace becomes a single space. Escapes, comments,
+functions and system/context keywords are refused without partial output.
+The comparable theme and its trusted CSS rendering remain unchanged.
+
+[Asset and FontFace](design/assets.go) describe caller-owned identities, formats,
+digests and provenance; each asset carries its own license evidence.
+`ValidateAssets` checks the selected metadata and references without requiring
+components or layout. `Asset.VerifyBytes` checks supplied asset and notice digests
+without I/O. Neither check establishes usable fonts or redistribution rights.
+The existing native font validator still owns format, face and glyph checks;
+Core can describe weights or formats that a provider refuses. These projections
+are not yet composed into snapshots, interchange or the editor delivery inputs.
+
 [style.RoleColors](ui/style/emission_roles.go) projects those same role definitions
 as explicit literals, references and two-input sRGB mixes. `RoleVars` renders
 them to the existing CSS; there is no second role table. Compose one selected
@@ -229,6 +246,26 @@ They do not configure a second palette or certify consumer overrides. Layout
 keywords such as `auto` and `full`, remaining scales, DTCG interchange and licensed
 font delivery are outside this first measurement scope. The separate source
 colour declarations above do not change this snapshot contract.
+
+[ScaleValues](ui/style/scale_values.go) extends the source projection with
+spacing keywords, tracking, leading, radii, maximum widths, breakpoints and
+duration steps. Numbers retain their decimal source and explicit units; `auto`
+and `none` are keywords, not zero lengths. Font-relative, root-relative,
+viewport and percentage values require their actual layout context before
+conversion. Every supported breakpoint remains declared, including inactive
+ones. Numeric prefixes such as `2xl` use escaped CSS identifiers so the browser
+can apply those rules. The earlier `Measurements` API and its v1 validation
+domain are unchanged.
+[ShadowValues](ui/style/shadow_values.go) preserves ordered layers, inset/outset,
+signed offsets/spread, nonnegative blur, optional lengths and precise RGBA alpha.
+[EasingValues and TransitionValues](ui/style/timing_values.go) preserve cubic
+control points, property order and references to the duration/easing scales.
+`transition-none` has no timing declarations. These fresh values share the
+existing CSS owners; they are not another configuration layer. Their validation
+checks source shape, not equality to default values or permission to edit source.
+The browser checks exercise contextual units, responsive boundaries, shadow
+layers and transition declarations. Snapshot/interchange integration, native
+support and animation/keyframe projection remain separate unfinished work.
 
 [ui.ProjectProps](ui/proposal.go) and [ui.ProjectReplacement](ui/replacement.go)
 accept the base export hash and exact occurrence ID segments. Properties use a
