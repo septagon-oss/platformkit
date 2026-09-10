@@ -179,10 +179,11 @@ test('gallery edits use typed properties, viewport controls, and an isolated liv
   const preview = page.frameLocator('iframe');
   await expect(preview.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
   await page.getByLabel('label', { exact: true }).fill('Preview purchase');
+  await expect(preview.getByRole('button', { name: 'Preview purchase', exact: true })).toBeVisible();
+  await expect(page.getByLabel('label', { exact: true })).toBeFocused();
   await page.getByLabel('variant', { exact: true }).selectOption('outline');
-  await page.getByLabel('Preview theme', { exact: true }).selectOption('dark');
-  await page.getByLabel('Preview width', { exact: true }).selectOption('320');
-  await page.getByRole('button', { name: 'Apply preview' }).click();
+  await page.getByRole('combobox', { name: 'Preview theme', exact: true }).selectOption('dark');
+  await page.getByRole('combobox', { name: 'Preview width', exact: true }).selectOption('320');
   await expect(preview.getByRole('button', { name: 'Preview purchase', exact: true })).toHaveAttribute('data-variant', 'outline');
   await expect(preview.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('iframe')).toHaveCSS('width', '320px');
@@ -204,4 +205,40 @@ test('gallery edits use typed properties, viewport controls, and an isolated liv
   expect(await page.evaluate(() => {
     try { localStorage.getItem('platformkit-theme'); return false; } catch { return true; }
   })).toBe(true);
+});
+
+test('gallery controls retain invalid drafts and recover without losing the preview', async ({ page }) => {
+  await page.goto('/admin/login');
+  await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
+  await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto('/admin/_gallery?example=pk-ui.component.select/default');
+  const preview = page.frameLocator('iframe');
+  const options = page.getByLabel('options (JSON)', { exact: true });
+  await options.fill('[');
+  await expect(options).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByRole('status')).toContainText('Enter valid JSON for options');
+  await expect(preview.getByRole('combobox', { name: 'Kind', exact: true })).toHaveValue('post');
+  await expect(options).toBeFocused();
+  await options.fill('[{"label":"Latest option","value":"post"}]');
+  await expect(preview.getByRole('combobox', { name: 'Kind', exact: true }).locator('option')).toHaveText(['Latest option']);
+  await expect(options).not.toHaveAttribute('aria-invalid');
+
+  await page.goto('/admin/_gallery?example=pk-ui.component.button/primary');
+  await page.getByLabel('disabled', { exact: true }).selectOption('true');
+  await expect(preview.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.getByLabel('disabled', { exact: true }).selectOption('false');
+  await expect(preview.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+
+  // A failed render preserves the last good component and the editable draft.
+  await page.route('**/admin/_gallery?**', route => route.fulfill({ status: 422, body: 'Invalid properties' }), { times: 1 });
+  await page.getByLabel('label', { exact: true }).fill('Retry purchase');
+  await expect(page.getByRole('status')).toContainText('Preview could not be updated (422)');
+  await expect(preview.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+  await expect(page.getByLabel('label', { exact: true })).toHaveValue('Retry purchase');
+  await page.getByRole('button', { name: 'Apply preview' }).click();
+  await expect(preview.getByRole('button', { name: 'Retry purchase', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(preview.getByRole('button', { name: 'Retry purchase', exact: true })).toBeVisible();
 });

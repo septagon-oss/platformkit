@@ -110,8 +110,8 @@ func storybookExample(example components.Example, path, group, props, mode, widt
 		h.Input(h.Type("hidden"), h.Name("example"), h.Value(example.ID)),
 		h.Input(h.Type("hidden"), h.Name("group"), h.Value(group)),
 		h.Input(h.Type("hidden"), h.Name("props"), h.Value(props)),
-		components.Select(components.SelectProps{Name: "theme", Label: "Preview theme", Value: mode, Options: []components.SelectOption{{Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"}, {Value: "system", Label: "System"}}}),
-		components.Select(components.SelectProps{Name: "width", Label: "Preview width", Value: width, Options: []components.SelectOption{{Value: "fit", Label: "Fit available space"}, {Value: "320", Label: "Phone · 320px"}, {Value: "768", Label: "Tablet · 768px"}, {Value: "1280", Label: "Desktop · 1280px"}}}),
+		components.Select(components.SelectProps{Name: "theme", Label: "Preview theme", Value: mode, Required: true, Options: []components.SelectOption{{Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"}, {Value: "system", Label: "System"}}}),
+		components.Select(components.SelectProps{Name: "width", Label: "Preview width", Value: width, Required: true, Options: []components.SelectOption{{Value: "fit", Label: "Fit available space"}, {Value: "320", Label: "Phone · 320px"}, {Value: "768", Label: "Tablet · 768px"}, {Value: "1280", Label: "Desktop · 1280px"}}}),
 	}
 	if d.PropsEditable {
 		form = append(form, propertyControls(d)...)
@@ -128,9 +128,9 @@ func storybookExample(example components.Example, path, group, props, mode, widt
 		components.Heading(components.HeadingProps{Text: example.Name, Level: 2}),
 		components.Text(components.TextProps{Content: "Preview interactions stay local. Network requests and form submissions are disabled.", Size: "sm", Color: "muted"}),
 		h.Div(g.Attr("data-gallery-viewport", ""), h.IFrame(h.Title(example.Name+" preview"), h.Src(preview), g.Attr("sandbox", "allow-scripts"), g.Attr("data-gallery-width", width))),
-		components.Link(components.LinkProps{Label: "Open preview", Href: preview, External: true}),
+		components.Link(components.LinkProps{ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-gallery-preview-link": ""}}, Label: "Open preview", Href: preview, External: true}),
 		h.Details(h.Open(), h.Summary(g.Text("Preview controls")), h.Form(form...)),
-		h.Div(h.Role("status"), g.Attr("data-gallery-status", "")), snippet,
+		h.Div(h.ID("pk-gallery-status"), h.Role("status"), g.Attr("data-gallery-status", "")), snippet,
 		h.Details(h.Summary(g.Text("Properties and slots")), components.Documentation(example)))), nil
 }
 

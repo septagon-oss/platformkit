@@ -1,9 +1,10 @@
-# Tenant storybooks
+# Tenant component galleries
 
 The admin module serves the interactive gallery at `/admin/_gallery`. Sign in
 with `gallery:read` (included by the administrator's wildcard). The default
 composition shows Core examples only on the operator tenant. Customer tenants
 receive 403 until the application supplies `admin.Deps.Storybook`.
+This is a Go-rendered component explorer; it does not run Storybook.js.
 
 The application composition owns this selector. Read the tenant and principal
 already established in `context.Context`; select examples from the same resolved
@@ -23,7 +24,9 @@ same authorization or embed them in the examples. The shared public asset tree
 contains the installation stylesheet and framework scripts, so tenant-specific
 assets and CSS must not be placed there.
 
-Choose an example, change its typed controls, and select **Apply preview**. The
+Choose an example and change its typed controls. The preview updates automatically
+after typing pauses or a selection changes, keeping focus in the controls. Invalid
+input preserves the last valid preview; **Apply preview** retries an update. The
 server patches the captured Go invocation; property types, declared allowed values
 and documentation come from its Props. **Go properties** copies the current Go
 declaration. Pass it to the component constructor, adding documented slots in
