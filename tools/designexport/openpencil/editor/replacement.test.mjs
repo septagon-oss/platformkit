@@ -236,19 +236,7 @@ test('typed token table keeps readable labels and values across its editing stat
         assert.deepEqual(result.violations.map(rule => ({ id: rule.id,
           nodes: rule.nodes.map(node => ({ target: node.target, reason: node.failureSummary })) })), [], state)
         assert.ok(result.passes.some(rule => rule.id === 'color-contrast'), 'contrast was actually evaluated')
-        // The pinned closed colour popovers expose an empty controls reference.
-        // Keep this manual-review gap explicit; no other uncertainty is admitted.
-        for (const rule of result.incomplete) {
-          assert.equal(rule.id, 'aria-valid-attr-value')
-          for (const node of rule.nodes) {
-            assert.equal(node.target.length, 1)
-            assert.match(node.failureSummary, /Unable to determine if aria-controls referenced ID exists/)
-            const trigger = page.locator(node.target[0])
-            await expect(trigger).toHaveAttribute('aria-controls', '')
-            await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
-            await expect(trigger).toHaveAttribute('aria-expanded', 'false')
-          }
-        }
+        assert.deepEqual(result.incomplete, [], `${state}: no inconclusive checks`)
       }
       await audit('loaded tokens, aliases, derived colours and inactive collection label')
       const menu = dialog.getByRole('button', { name: 'Collection actions', exact: true })
@@ -280,8 +268,121 @@ test('typed token table keeps readable labels and values across its editing stat
       await expect(dialog.getByRole('cell', { name: 'No variables found', exact: true })).toBeVisible()
       await audit('empty collection')
       assert.deepEqual(errors, [])
-      t.diagnostic('Closed colour-popover controls references and live screen-reader behavior still require manual review.')
+      t.diagnostic('Live screen-reader behavior still requires manual review.')
     } finally { await context.close() }
+  } finally { await browser.close() }
+})
+
+test('source token colour pickers retain named keyboard editing, history and two worker saves', { timeout: 120000 }, async t => {
+  await verifyBuild()
+  const run = await sourceTokenFixture(t), input = decodeSnapshot(Buffer.from(run({})))
+  const { graph } = buildFoundation(input.snapshot, input)
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const original = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const structure = owner => [...owner.getAllNodes()].map(node => ({
+    name: node.name, type: node.type, parent: owner.getNode(node.parentId)?.name,
+    component: owner.getNode(node.componentId)?.name,
+    box: [node.x, node.y, node.width, node.height], vectors: node.vectorNetwork,
+    bindings: Object.fromEntries(Object.entries(node.boundVariables).map(([field, id]) => [field, owner.variables.get(id)?.name])),
+  }))
+  const baseline = structure(original), values = { light: [21, 34, 31], dark: [238, 243, 236] }
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `source-picker-${cycle}.fig`)
+        await page.getByRole('button', { name: 'Open variables', exact: true }).click()
+        const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        const mode = cycle === 1 ? 'dark' : 'light', name = `Edit color: --pk-color-text-primary, ${mode}`
+        const trigger = dialog.getByRole('button', { name, exact: true })
+        await expect(trigger).not.toHaveAttribute('aria-controls')
+        await trigger.press('Enter')
+        const picker = page.getByRole('dialog', { name, exact: true })
+        await expect(picker).toBeVisible()
+        await expect(trigger).toHaveAttribute('aria-controls', await picker.getAttribute('id'))
+        await expect(picker.getByRole('slider', { name: 'Saturation, Brightness', exact: true })).toBeFocused()
+        await page.addScriptTag({ content: axe.source })
+        const tabTo = async (target, key = 'Tab') => {
+          for (let step = 0; step < 30 && !await target.evaluate(node => node === document.activeElement); step++) {
+            await page.keyboard.press(key)
+          }
+          await expect(target).toBeFocused()
+          for (const forcedColors of ['none', 'active']) {
+            await page.emulateMedia({ forcedColors })
+            const focus = await target.evaluate(node => ({ visible: node.matches(':focus-visible'),
+              outline: getComputedStyle(node).outlineStyle, width: parseFloat(getComputedStyle(node).outlineWidth) }))
+            assert.ok(focus.visible && focus.outline === 'auto' && focus.width > 0, JSON.stringify({ forcedColors, focus, target: await target.ariaSnapshot() }))
+          }
+          await page.emulateMedia({ forcedColors: 'none' })
+        }
+        const format = picker.getByRole('combobox', { name: 'Color format', exact: true })
+        for (const [index, [label, fields]] of [
+          ['HSL', ['HSL hue', 'HSL saturation', 'HSL lightness']],
+          ['HSB', ['HSB hue', 'HSB saturation', 'HSB brightness']],
+          ['RGB', ['Red', 'Green', 'Blue']],
+        ].entries()) {
+          await tabTo(format, index ? 'Shift+Tab' : 'Tab')
+          await format.press('Enter')
+          await page.getByRole('option', { name: label, exact: true }).press('Enter')
+          await expect(format).toBeFocused()
+          for (const field of fields) await expect(picker.getByRole('spinbutton', { name: field, exact: true })).toBeVisible()
+          const result = await picker.evaluate(element => window.axe.run(element))
+          assert.deepEqual(result.violations.map(rule => ({ id: rule.id, nodes: rule.nodes.map(node => node.failureSummary) })), [], label)
+          assert.deepEqual(result.incomplete, [], `${label}: no inconclusive checks`)
+          const sliders = picker.locator('[data-slot="slider"]')
+          await expect(sliders).toHaveCount(label === 'RGB' ? 2 : 4)
+          const labelsFit = await sliders.evaluateAll(sliders => sliders.every(slider => {
+            const range = document.createRange()
+            range.selectNodeContents(slider.previousElementSibling)
+            return range.getBoundingClientRect().right <= slider.getBoundingClientRect().left
+          }))
+          assert.ok(labelsFit, `${label}: slider labels must not overlap their tracks`)
+          const controls = await picker.getByRole('slider').or(picker.getByRole('spinbutton')).all()
+          // Non-modal popovers allow Tab to leave; walk backwards to earlier controls.
+          for (const [index, control] of controls.entries()) await tabTo(control, index ? 'Tab' : 'Shift+Tab')
+        }
+        for (const [index, channel] of ['Red', 'Green', 'Blue'].entries()) {
+          await expect(picker.getByRole('spinbutton', { name: channel, exact: true })).toHaveValue(String(values[mode][index]))
+        }
+        const red = picker.getByRole('spinbutton', { name: 'Red', exact: true })
+        await tabTo(red, 'Shift+Tab')
+        if (cycle < 2) {
+          await red.press('ArrowUp')
+          values[mode][0]++
+          await expect(red).toHaveValue(String(values[mode][0]))
+        }
+        await red.press('Escape')
+        await expect(picker).toBeHidden()
+        await expect(trigger).toBeFocused()
+        await expect(trigger).not.toHaveAttribute('aria-controls')
+        await expect(dialog).toBeVisible()
+        await trigger.press('Escape')
+        if (cycle < 2) {
+          await page.keyboard.press('Control+z')
+          await page.getByRole('button', { name: 'Open variables', exact: true }).press('Enter')
+          await trigger.press('Enter')
+          await expect(red).toHaveValue(String(values[mode][0] - 1))
+          await red.press('Escape')
+          await trigger.press('Escape')
+          await page.keyboard.press('Control+Shift+z')
+          buffer = await saveDocument(page, errors, workers)
+          const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const variables = [...reopened.variables.values()], ink = variables.find(item => item.name === '--pk-color-text-primary')
+          assert.deepEqual(ink.sourceToken, { version: 1, snapshot: input.snapshot.sha256, kind: 'color', name: ink.name })
+          const alias = variables.find(item => item.name === '--selected-ink'), mix = variables.find(item => item.name === '--selected-mix')
+          for (const selected of reopened.variableCollections.get(ink.collectionId).modes) {
+            const [r, g, b] = values[selected.name].map(value => Math.fround(value / 255))
+            assert.deepEqual(reopened.resolveVariable(ink.id, selected.modeId), { r, g, b, a: 1 })
+            assert.deepEqual(alias.valuesByMode[selected.modeId], { aliasId: ink.id })
+            assert.deepEqual(reopened.resolveVariable(mix.id, selected.modeId), { r, g, b, a: 0.25 })
+          }
+          assert.deepEqual(structure(reopened), baseline, 'linked icon masters, instances, geometry and binding identities')
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
   } finally { await browser.close() }
 })
 
@@ -1026,7 +1127,7 @@ test('derived native colors follow keyboard palette edits and survive two browse
         await page.keyboard.press('Enter')
         await expect(dialog.getByRole('status')).toHaveText('')
         if (cycle === 0) {
-          const picker = dialog.getByRole('row').filter({ hasText: 'Ink' }).getByRole('button', { name: 'Edit color', exact: true })
+          const picker = dialog.getByRole('button', { name: 'Edit color: Ink, Mode 1', exact: true })
           await tabTo(picker)
           await page.keyboard.press('Enter')
           const red = page.getByRole('spinbutton', { name: 'Red', exact: true })

@@ -197,10 +197,15 @@ headings, values and instructions; this does not change source palette tokens.
 Its test-only axe check covers loaded, renamed, refused-edit, filtered,
 empty-result and empty-collection states using the source-produced fixture.
 Empty results retain the table's column structure and describe the search field.
-The pinned closed colour popovers still expose empty controls references: the
-test keeps that manual-review gap explicit and refuses other inconclusive checks.
+Colour swatches name their variable and mode. RGB, HSL and HSB controls have
+named fields and a format selector; slider labels fit beside their tracks. The
+shared popup primitive exposes its controls reference only while open. Keyboard
+edits in both modes retain source identities, aliases, linked icon structure,
+history and two worker saves. The table and these picker states require a clean
+axe result, including no inconclusive checks; keyboard focus is also checked
+with normal and forced colours. Existing parsers still own colour conversion.
 Browser colour preferences do not change the editor's dark interface. Wider
-editor accessibility, open-popover audits, zoom and live screen readers remain
+editor accessibility, OkHCL controls, zoom and live screen readers remain
 unverified; these bounded checks are not an editor-wide accessibility sign-off.
 
 `npm run test:stock` deliberately omits the corrections. It reproduces the

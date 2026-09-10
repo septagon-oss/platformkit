@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { corrections, correctSource, sdkVersion } from './corrections.mjs'
 import { chain } from './exporter-correction.mjs'
@@ -58,6 +58,7 @@ const configFile = join(upstream, 'platformkit.vite.config.ts')
 writeFileSync(configFile, configSource, { flag: 'wx' })
 const { build, loadConfigFromFile } = await import(pathToFileURL(upstreamRequire.resolve('vite')))
 const { config } = await loadConfigFromFile({ command: 'build', mode: 'production' }, configFile)
+const popoverTrigger = relative(upstream, join(dirname(upstreamRequire.resolve('reka-ui')), 'Popover/PopoverTrigger.js'))
 
 const seen = new Set()
 let correctedNudgeKeys = false
@@ -161,6 +162,8 @@ const selectedValue = computed({
       return 'Derived #' + colorToHexRaw(editor.graph.resolveVariable(variable.id, modeId))
     }`],
         'packages/vue/src/variables/table/helpers.ts': ['50328f508e780665677e575098dd34ebf01e8e77973036d82d1351a54b736b52',
+          'return h(options.ColorInput, {\n          color: value,',
+          'return h(options.ColorInput, {\n          label: `Edit color: ${variable.name}, ${mode.name}`,\n          color: value,',
           "    header: '',", "    header: () => h('span', { class: 'sr-only' }, 'Actions'),",
           `  if (newName && newName !== variable.name) {
     options.renameVariable(variable.id, newName)
@@ -257,8 +260,39 @@ const selectedValue = computed({
     updateVariableValue: (id: string, modeId: string, value: VariableValue) =>
       checkedVariableAction(() => variableActions.updateVariableValue(id, modeId, value))`],
         'src/components/ColorPicker/ColorInput.vue': ['8cf39a99c75e377a25f8e020ac50e8d158bdd865a827858f01af063bee80340a',
+          '  editable = false,', "  editable = false,\n  label = 'Edit color',",
+          '  editable?: boolean', '  editable?: boolean\n  label?: string',
+          '<ColorPicker :color="color"', '<ColorPicker :label="label" :color="color"',
           '<span v-else class="min-w-0 flex-1 truncate font-mono text-xs text-muted">',
           '<span v-else class="min-w-0 flex-1 truncate font-mono text-xs text-surface">'],
+        'src/components/ColorPicker/ColorPicker.vue': ['6e5cd950098cb3bd44212df502074eb69e943dbf429ac47d86b72e6fb5151b00',
+          'const { color, okhcl = null } = defineProps<{ color: Color; okhcl?: OkHCLControls | null }>()',
+          "const { color, label = 'Edit color', okhcl = null } = defineProps<{ color: Color; label?: string; okhcl?: OkHCLControls | null }>()",
+          ':color="color"', ':color="color"\n    :label="label"',
+          "swatch: 'size-5", "swatch: 'size-6"],
+        // The primitive owns this relationship and its lazy content identity.
+        // Consumer attributes are overwritten by its internal as-child slot.
+        [popoverTrigger]: ['e4c409d310c4ee2a53d7b4c95fe697519ee01bb09a395d0b5c5abb7bf12975fa',
+          '"aria-controls": unref(rootContext).contentId,',
+          '"aria-controls": unref(rootContext).open.value ? unref(rootContext).contentId || void 0 : void 0,'],
+        'src/components/color-picker-panel/FormatControls.vue': ['4234dcc5c2a20317118bbb031433f6cb438d3d98d3e15b7d62130bdc859012b0',
+          'data-test-id="color-format-select"', 'data-test-id="color-format-select"\n      label="Color format"'],
+        'src/theme/color-slider.ts': ['3a683f6b9543981f6bf12a04a080f5fb20ece8eae8179b770b9f76e2afbc0686',
+          "label: 'w-7", "label: 'w-14",
+          'text-[10px] font-medium text-muted', 'text-[10px] font-medium text-surface',
+          ' outline-none ring-offset-1 focus-visible:ring-2 focus-visible:ring-primary', ''],
+        'src/components/color-picker-panel/StandardColorSlider.vue': ['a9392bf8bfcec4ec6be4665bc3999a8fbede1eac2759e5b11603af510e7e0cf5'],
+        // Retain both existing channel parsers; supply their omitted names.
+        ...Object.fromEntries([
+          ['HslFields.vue', 'd01c3313bca682f87d386184802fc12d3379296d55c86e9a2bf4a44fe94d7eca', 'hsl', [['h', 'HSL hue'], ['s', 'HSL saturation'], ['l', 'HSL lightness']]],
+          ['HsbFields.vue', '84215eff2027c2b38683f4e101e6783531d73f1a4b5273343fbaef545b5e736a', 'hsb', [['h', 'HSB hue'], ['s', 'HSB saturation'], ['b', 'HSB brightness']]],
+        ].map(([file, digest, space, fields]) => [`src/components/color-picker-panel/${file}`, [digest,
+          ...fields.flatMap(([channel, label]) => {
+            const value = `:value="Math.round(ctx.${space}Color.${channel}${space === 'hsl' ? ' ?? 0' : ''})"`
+            return [value, `aria-label="${label}"\n      ${value}`]
+          }),
+          'text-[10px] leading-4 text-muted', 'text-[10px] leading-4 text-surface',
+        ]])),
         'src/components/properties/VariablesSection.vue': ['5e566f51c71bee2c77d1902d5d1f0d7f9d5f30e4b6a0db6a9b2ad410fe5f9175',
           '<IconButton :label="panels.openVariables"', '<IconButton class="min-h-6 min-w-6" :label="panels.openVariables"'],
         'src/components/variables/VariablesDialog.vue': ['d8f09a9aefffceb59356cddf38208ad6e25976ebf2e641f08c1eeff6c2657cbe',
@@ -404,6 +438,11 @@ textarea:focus-visible { outline: revert; outline-offset: 2px; }
 <style scoped>
 :deep(button:focus-visible), :deep(input:focus-visible) { outline: revert; outline-offset: 2px; }
 </style>\n`
+        if (path.endsWith('/FormatControls.vue') || path.endsWith('/StandardColorSlider.vue')) source += `
+<style scoped>
+:deep(button:focus-visible), :deep(input:focus-visible),
+:deep([role="slider"]:focus-visible), :deep([role="spinbutton"]:focus-visible) { outline: revert; outline-offset: -2px; }
+</style>\n`
         return { code: source, map: null }
       }
       if (id === join(upstream, 'src/app/shell/keyboard/nudging.ts')) {
@@ -448,7 +487,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 12) throw new Error('Browser omitted a required editor control correction')
+if (correctedControls.size !== 19) throw new Error('Browser omitted a required editor control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)
