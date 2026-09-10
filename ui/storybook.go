@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net/url"
 	"slices"
@@ -24,6 +25,9 @@ type Storybook struct {
 	Theme    design.Pair
 	Examples []components.Example
 	Extra    []Extra
+	// Files is an optional, immutable Storybook.js build produced from Export
+	// of this exact composition. All files are served through gallery authorization.
+	Files fs.FS
 }
 
 // Validate refuses ambiguous identities. Empty collections stay empty.
@@ -93,6 +97,7 @@ func StorybookPage(b Storybook, path, group string, selected components.Example,
 	return h.Div(g.Attr("data-gallery", ""),
 		components.Stack(components.StackProps{Gap: "6"},
 			components.SectionHeader(components.SectionHeaderProps{Title: b.Title, Level: 1, Description: "Explore components, adjust their properties, and test light, dark, and responsive layouts."}),
+			g.If(b.Files != nil, components.Link(components.LinkProps{Label: "Open Storybook", Href: path + "/storybook/index.html"})),
 			components.Flex(components.FlexProps{Wrap: true, Gap: "3"}, links...),
 			components.Link(components.LinkProps{Label: "Download design export", Href: path + "/export"}),
 			h.Div(g.Attr("data-gallery-layout", ""), index, detail))), nil

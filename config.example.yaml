@@ -19,6 +19,9 @@ server:
   #
   # The JSON Schema route stays either way, because response bodies link to it.
   docs: false
+  # Optional immutable Storybook.js build for the operator tenant. Build it with
+  # ui/storybook/README.md; customer catalogs are selected in Go composition.
+  storybook_dir: ""
   # How long a client has to send a whole request. It is a key rather than a
   # constant because the one thing it has to accommodate is a deployment's own
   # files.max_bytes over somebody's connection: thirty seconds is right for a

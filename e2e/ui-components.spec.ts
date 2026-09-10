@@ -257,6 +257,57 @@ test('the enhanced source examples pass automated accessibility checks in both t
   }
 });
 
+test('confirmation cancels and reopens without losing handlers or sending duplicate requests', async ({ page }) => {
+  let requests = 0;
+  await page.route('**/__confirm-action', route => {
+    requests++;
+    return route.fulfill({ status: 204 });
+  });
+  await specimen(page, 'pk-ui.component.confirmdialog/default',
+    '<button hx-post="/__confirm-action" hx-confirm="Archive this item?" hx-swap="none" data-confirm-label="Archive">Archive item</button>' +
+    '<button data-confirm="Continue?">Default confirmation</button>');
+  const trigger = page.getByRole('button', { name: 'Archive item', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Delete this row?' });
+  await trigger.click();
+  await dialog.getByRole('button', { name: 'Keep' }).click();
+  await trigger.click();
+  await page.keyboard.press('Escape');
+  expect(requests).toBe(0);
+  await trigger.click();
+  await dialog.getByRole('button', { name: 'Archive', exact: true }).click();
+  await expect.poll(() => requests).toBe(1);
+  await expect(trigger).toBeFocused();
+  await page.getByRole('button', { name: 'Default confirmation' }).click();
+  await expect(dialog.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Keep' }).click();
+  expect(requests).toBe(1);
+});
+
+test('confirmation preview opens, cancels, accepts, and restores focus with a custom ID', async ({ page }) => {
+  await page.goto('/admin/login');
+  await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
+  await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.waitForURL('**/admin');
+  const props = encodeURIComponent(JSON.stringify({ AcceptLabel: 'Proceed' }));
+  await page.goto(`/admin/_gallery/preview?example=pk-ui.component.confirmdialog/default&props=${props}`);
+  const opener = page.getByRole('button', { name: 'Open confirmation' });
+  const dialog = page.getByRole('dialog', { name: 'Delete this row?' });
+  // ID is a trusted Go property, not a browser-editable prop. The controller
+  // must still find the single page dialog when its owner gives it another ID.
+  await page.locator('dialog').evaluate(element => { element.id = 'custom-confirm'; });
+  for (const decision of ['Escape', 'Keep', 'Proceed']) {
+    await opener.focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Keep' })).toBeFocused();
+    if (decision === 'Escape') await page.keyboard.press('Escape');
+    else await dialog.getByRole('button', { name: decision }).click();
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+  }
+});
+
 test('gallery edits use typed properties, viewport controls, and an isolated live preview', async ({ page }) => {
   await page.goto('/admin/login');
   await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);

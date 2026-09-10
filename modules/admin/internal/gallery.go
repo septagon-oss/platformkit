@@ -82,6 +82,7 @@ func galleryExample(book ui.Storybook, in *galleryInput) (components.Example, er
 }
 
 func (p pages) mountGallery(api *httpx.API) {
+	p.mountStorybook(api)
 	auth := httpx.Permission("gallery:read")
 	page.Serve(api, p.shell, page.Route{ID: "admin-gallery", Method: http.MethodGet, Path: galleryPath, Summary: "The tenant's component gallery"},
 		auth, func(ctx context.Context, _ page.Request, in *galleryInput) (page.View, error) {
@@ -137,7 +138,9 @@ func galleryPreview(book ui.Storybook, example components.Example, mode string) 
 	attrs = append(attrs, h.Head(h.Meta(h.Charset("utf-8")), h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
 		h.TitleEl(g.Text(example.Name)), h.StyleEl(g.Raw(string(sheet.Body))),
 		h.Script(h.Src(assetPrefix+"/js/htmx.min.js"), g.Attr("defer")),
-		h.Script(h.Src(assetPrefix+"/js/components.js"), g.Attr("defer"))),
+		h.Script(h.Src(assetPrefix+"/js/components.js"), g.Attr("defer")),
+		h.Script(h.Src(assetPrefix+"/js/confirm.js"), g.Attr("defer")),
+		h.Script(h.Src(assetPrefix+"/js/gallery-preview.js"), g.Attr("defer"))),
 		h.Body(h.Main(h.Style("padding:1.5rem"), example.Node)))
 	out, err := httpx.Document(h.HTML(attrs...), http.StatusOK)
 	if err != nil {

@@ -30,6 +30,8 @@ After signing in, explore the administration screens and the
 [component gallery](http://platformkit.localhost:8080/admin/_gallery).
 Product applications configure [tenant storybooks](modules/admin/README.md) to
 show only the examples selected for the signed-in tenant.
+An optional [Storybook.js adapter](ui/storybook/README.md) adds Storybook's native
+navigation and controls while rendering these same Go components.
 
 Use `platformkit.localhost` in your browser because the host identifies the
 tenant. Stop with Ctrl+C; starting again from the same directory reuses your

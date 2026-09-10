@@ -4,7 +4,8 @@ The admin module serves the interactive gallery at `/admin/_gallery`. Sign in
 with `gallery:read` (included by the administrator's wildcard). The default
 composition shows Core examples only on the operator tenant. Customer tenants
 receive 403 until the application supplies `admin.Deps.Storybook`.
-This is a Go-rendered component explorer; it does not run Storybook.js.
+The Go explorer works without a JavaScript build. To run actual Storybook.js,
+follow the [Storybook adapter instructions](../../ui/storybook/README.md).
 
 The application composition owns this selector. Read the tenant and principal
 already established in `context.Context`; select examples from the same resolved
@@ -16,7 +17,9 @@ An empty example collection remains empty, including for the operator.
 
 Never choose a tenant from a query parameter, accept arbitrary example definitions
 from the browser, or return the union of every tenant's examples and hide links.
-The selector is authoritative for the index, `/preview`, `/export` and navigation.
+The selector is authoritative for the index, `/preview`, `/export`, navigation
+and every file under `/storybook/`. Its optional `Files` contains an immutable
+Storybook.js build for exactly that composition; mismatched builds are refused.
 Direct requests for unpublished example IDs return 404. The endpoints require
 the gallery permission before selecting content; responses containing the selected
 composition are not cached. Keep private assets in application routes with the

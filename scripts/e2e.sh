@@ -56,6 +56,14 @@ trap cleanup EXIT
 # holding the port and the next run would drive the previous run's build.
 go build -o "$work/platformkit" ./apps/platformkit
 
+# Exercise the real Storybook build behind the same authenticated application.
+[ -d ui/storybook/node_modules ] || npm --prefix ui/storybook ci --no-audit --no-fund
+go run ./tools/designexport >"$work/storybook.json"
+if ! npm --prefix ui/storybook run build -- "$work/storybook" <"$work/storybook.json" >"$work/storybook.log" 2>&1; then
+	cat "$work/storybook.log" >&2
+	exit 1
+fi
+
 echo "e2e: a database of its own"
 psql_admin -c "CREATE DATABASE $database;" >/dev/null
 created=true
@@ -71,6 +79,7 @@ server:
   addr: "127.0.0.1:$port"
   public_host: "localhost:$port"
   docs: false
+  storybook_dir: "$work/storybook"
 database:
   url: "$(swap "$app_url")"
   migrate_url: "$(swap "$admin_url")"

@@ -9,7 +9,8 @@
 // It is a native <dialog>, so the focus trap, the Escape key, the backdrop and
 // the inertness of everything behind it are the browser's, not ours.
 (function () {
-  const dialog = () => document.getElementById("pk-confirm");
+  const dialog = () => document.querySelector("[data-confirm-message]")?.closest("dialog");
+  const labels = new WeakMap();
 
   function ask(message, label, onYes) {
     const el = dialog();
@@ -17,26 +18,36 @@
       if (window.confirm(message)) onYes();
       return;
     }
+    if (el.open) return;
     el.querySelector("[data-confirm-message]").textContent = message;
     const yes = el.querySelector("[data-confirm-accept]");
     // Cancel closes the dialog from here rather than from an onclick on the
     // button: the content security policy admits no inline handler, so an
     // attribute would have been a button that did nothing.
     const no = el.querySelector("[data-confirm-cancel]");
-    if (label) yes.textContent = label;
-    let accepted = false;
-    const accept = () => {
-      accepted = true;
-      el.close();
-    };
-    const cancel = () => el.close();
-    yes.addEventListener("click", accept, { once: true });
-    if (no) no.addEventListener("click", cancel, { once: true });
-    el.addEventListener("close", function () {
+    if (!labels.has(yes)) labels.set(yes, yes.textContent);
+    yes.textContent = label || labels.get(yes);
+    let settled = false;
+    function finish(accepted) {
+      if (settled) return;
+      settled = true;
+      // Clean up synchronously: the browser queues close events, and a person
+      // can reopen the dialog before the preceding close event is delivered.
       yes.removeEventListener("click", accept);
       if (no) no.removeEventListener("click", cancel);
+      el.removeEventListener("cancel", escape);
+      el.removeEventListener("close", closed);
+      el.close();
       if (accepted) onYes();
-    }, { once: true });
+    }
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    const escape = event => { event.preventDefault(); cancel(); };
+    const closed = () => { if (!el.open) cancel(); };
+    yes.addEventListener("click", accept);
+    if (no) no.addEventListener("click", cancel);
+    el.addEventListener("cancel", escape);
+    el.addEventListener("close", closed);
     el.showModal();
   }
 

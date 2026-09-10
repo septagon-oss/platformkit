@@ -15,11 +15,12 @@
 // to add fourteen class lists, and appended its resolution to the kernel's
 // bytes, so a shared utility had two rules.
 //
-// # There is no framework
+// # Application controllers
 //
 // htmx is vendored, minified, under its MIT licence, and it is the only
-// third-party byte the browser runs. Everything else is the controllers in
-// assets/js, listed in Controllers.
+// third-party script in application pages. The optional Storybook.js development
+// interface is built separately under ui/storybook and served through authorization.
+// The application enhancements live in assets/js, listed in Controllers.
 package ui
 
 import (

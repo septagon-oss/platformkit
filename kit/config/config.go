@@ -47,6 +47,9 @@ type Server struct {
 	// withholding during one. It defaults to false, so a deployment that says
 	// nothing says no.
 	Docs bool `yaml:"docs"`
+	// StorybookDir opts the operator tenant into a locally built Storybook.js.
+	// Product applications select private builds through admin.Deps.Storybook.
+	StorybookDir string `yaml:"storybook_dir"`
 
 	// ReadTimeout is how long a client has to send a whole request. It is a
 	// key rather than a constant because the one number it has to accommodate

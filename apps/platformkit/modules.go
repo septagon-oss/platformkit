@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"os"
 
 	"github.com/google/uuid"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
@@ -27,6 +31,8 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
+	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/components"
 )
 
 // composition is the application: every module it is made of, and the values
@@ -139,10 +145,24 @@ func compose(cfg config.Config) composition {
 	// that changes when they do: everything above the tokens is written in
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
-		Modules: mods, Authorize: auths, Tenants: tenants, Theme: design.Default()}))
+		Modules: mods, Authorize: auths, Tenants: tenants, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir)}))
 
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
 		notify: notify, mail: mail, plans: plans}
+}
+
+func operatorStorybook(dir string) func(context.Context) (ui.Storybook, error) {
+	if dir == "" {
+		return nil
+	}
+	book := ui.Storybook{Title: "Components", Theme: design.Default(), Examples: components.Gallery(), Files: os.DirFS(dir)}
+	return func(ctx context.Context) (ui.Storybook, error) {
+		tenant, ok := tenancy.FromContext(ctx)
+		if !ok || !tenant.Operator {
+			return ui.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available for this tenant.")
+		}
+		return book, nil
+	}
 }
 
 // mailer is the one choice this application makes about mail: the SMTP sender
