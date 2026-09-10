@@ -17,6 +17,7 @@ package css
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -117,49 +118,32 @@ func (r Rule) CSS() string {
 	return b.String()
 }
 
-// Sheet is an ordered, deduplicated collection of rules and at-rules. It is
-// built by one goroutine and then rendered; it carries no lock, because the
-// application builds its stylesheet once.
+// Sheet keeps top-level rules in contribution order, followed by at-rules.
+// Only adjacent equal selectors share a block; declarations retain CSS cascade
+// order. It is built by one goroutine and carries no lock.
 type Sheet struct {
 	rules   []*Rule
-	index   map[string]int
 	atRules []atRule
 }
 
 // NewSheet returns an empty Sheet.
-func NewSheet() *Sheet { return &Sheet{index: map[string]int{}} }
+func NewSheet() *Sheet { return new(Sheet) }
 
-// AddRule adds a rule, merging into an existing one with the same selector so
-// that two components contributing to one selector do not produce two blocks.
+// AddRule copies a contribution without moving it across another selector.
+// Combining nonadjacent rules changes equal-specificity precedence. Removing
+// repeated declarations also loses !important, fallbacks and shorthand order.
 func (s *Sheet) AddRule(r Rule) *Sheet {
-	if i, ok := s.index[r.Selector]; ok {
-		s.rules[i].Decls = merge(s.rules[i].Decls, r.Decls)
+	if i := len(s.rules) - 1; i >= 0 && s.rules[i].Selector == r.Selector {
+		s.rules[i].Decls = append(s.rules[i].Decls, r.Decls...)
 		return s
 	}
 	cp := r
+	cp.Decls = slices.Clone(r.Decls)
 	s.rules = append(s.rules, &cp)
-	s.index[r.Selector] = len(s.rules) - 1
 	return s
 }
 
-// merge is last-write-wins per property.
-func merge(into, from []Declaration) []Declaration {
-	at := map[string]int{}
-	for i, d := range into {
-		at[d.Property] = i
-	}
-	for _, d := range from {
-		if i, ok := at[d.Property]; ok {
-			into[i] = d
-			continue
-		}
-		at[d.Property] = len(into)
-		into = append(into, d)
-	}
-	return into
-}
-
-// Var declares a custom property in :root. Re-declaring one replaces it.
+// Var contributes a custom property to :root under the ordinary CSS cascade.
 func (s *Sheet) Var(name, value string) *Sheet {
 	if !validVarName(name) {
 		panic(fmt.Sprintf("css: invalid var name %q", name))
@@ -179,21 +163,20 @@ func (s *Sheet) Merge(other *Sheet) *Sheet {
 		return s
 	}
 	for _, r := range other.rules {
-		s.AddRule(Rule{Selector: r.Selector, Decls: append([]Declaration(nil), r.Decls...)})
+		s.AddRule(*r)
 	}
 	s.atRules = append(s.atRules, other.atRules...)
 	return s
 }
 
-// Rules is every top-level rule, in insertion order. It is read by the test
-// that proves every class a component declares resolves to something.
+// Rules returns detached top-level rules and declarations in insertion order.
 func (s *Sheet) Rules() []Rule {
 	if s == nil {
 		return nil
 	}
 	out := make([]Rule, 0, len(s.rules))
 	for _, r := range s.rules {
-		out = append(out, *r)
+		out = append(out, Rule{Selector: r.Selector, Decls: slices.Clone(r.Decls)})
 	}
 	return out
 }

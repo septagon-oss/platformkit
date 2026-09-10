@@ -218,6 +218,14 @@ Go functions returning HTML and declares the classes those functions can emit.
 classes and rules into a stylesheet value. Deleting a component should not
 leave an independently maintained stylesheet behind.
 
+[css.Sheet](ui/css/css.go) retains ordinary rule contribution order; only
+adjacent equal selectors share a block. Repeated declarations remain ordered
+so the browser can apply priorities, fallbacks and shorthand semantics. A later
+consumer override must not be merged into an earlier rule ahead of utilities,
+nor carry unrelated earlier declarations forward. Shared utility deduplication
+belongs to the style owner, before emission. The existing at-rule group still
+renders after ordinary rules; this is not an arbitrary CSS parser or minifier.
+
 [Gallery](ui/components/gallery.go) captures the existing constructor calls with
 stable identities, typed properties and named Go slots. Passing a captured
 example's `.Node` into another constructor retains its source identity without

@@ -20,7 +20,7 @@ func TestRuleRendersCustomPropertiesFirstAndSorted(t *testing.T) {
 	}
 }
 
-func TestAddRuleMergesOneSelectorLastWriteWins(t *testing.T) {
+func TestAdjacentSelectorContributionsKeepDeclarationOrder(t *testing.T) {
 	t.Parallel()
 	s := css.NewSheet()
 	s.Select(".a", css.Decl("color", css.Literal("red")), css.Decl("margin", css.Literal("0")))
@@ -28,9 +28,72 @@ func TestAddRuleMergesOneSelectorLastWriteWins(t *testing.T) {
 	if n := len(s.Rules()); n != 1 {
 		t.Fatalf("two contributions to one selector made %d rules, want 1", n)
 	}
-	out := s.CSS()
-	if strings.Contains(out, "red") || !strings.Contains(out, "blue") || !strings.Contains(out, "margin") {
-		t.Fatalf("merge lost or kept the wrong declaration:\n%s", out)
+	want := ".a {\n  color: red;\n  margin: 0;\n  color: blue;\n}"
+	if got := s.CSS(); got != want {
+		t.Fatalf("adjacent contributions must retain CSS declaration order:\n%s", got)
+	}
+}
+
+func TestSelectorContributionsDoNotCrossInterveningRules(t *testing.T) {
+	t.Parallel()
+	first := css.NewSheet().Select(".a", css.Decl("color", css.Literal("red")), css.Decl("background", css.Literal("white")))
+	middle := css.NewSheet().Select(".b", css.Decl("color", css.Literal("green")), css.Decl("background", css.Literal("black")))
+	last := css.NewSheet().Select(".a", css.Decl("color", css.Literal("blue")))
+	originals := []string{first.CSS(), middle.CSS(), last.CSS()}
+	want := ".a {\n  color: red;\n  background: white;\n}\n\n.b {\n  color: green;\n  background: black;\n}\n\n.a {\n  color: blue;\n}"
+	for _, sheet := range []*css.Sheet{
+		css.NewSheet().Merge(first).Merge(middle).Merge(last),
+		css.NewSheet().Merge(first).Merge(css.NewSheet().Merge(middle).Merge(last)),
+		css.NewSheet().Select(".a", first.Rules()[0].Decls...).Select(".b", middle.Rules()[0].Decls...).Select(".a", last.Rules()[0].Decls...),
+	} {
+		if got := sheet.CSS(); got != want {
+			t.Fatalf("a later colour override must not move before .b or promote the earlier background:\n%s", got)
+		}
+	}
+	for i, sheet := range []*css.Sheet{first, middle, last} {
+		if sheet.CSS() != originals[i] {
+			t.Fatalf("composition changed input sheet %d", i)
+		}
+	}
+}
+
+func TestAdjacentDeclarationsRetainPriorityFallbacksAndShorthands(t *testing.T) {
+	t.Parallel()
+	for _, declarations := range [][]css.Declaration{
+		{css.Decl("color", css.Literal("red !important")), css.Decl("color", css.Literal("blue"))},
+		{css.Decl("color", css.Literal("red")), css.Decl("color", css.Literal("not-a-color"))},
+		{css.Decl("margin-left", css.Literal("7px")), css.Decl("margin", css.Literal("0")), css.Decl("margin-left", css.Literal("5px"))},
+	} {
+		sheet := css.NewSheet()
+		for _, declaration := range declarations {
+			sheet.Select(".a", declaration)
+		}
+		want := (css.Rule{Selector: ".a", Decls: declarations}).CSS()
+		if got := sheet.CSS(); got != want {
+			t.Fatalf("only the browser can decide declaration validity and priority; got:\n%s\nwant:\n%s", got, want)
+		}
+	}
+}
+
+func TestSheetOwnsItsDeclarationsAndReturnsDetachedRules(t *testing.T) {
+	t.Parallel()
+	input := []css.Declaration{css.Decl("color", css.Literal("red"))}
+	sheet := css.NewSheet().Select(".a", input...)
+	input[0] = css.Decl("color", css.Literal("blue"))
+	want := ".a {\n  color: red;\n}"
+	if sheet.CSS() != want {
+		t.Fatal("editing a caller declaration changed the sheet")
+	}
+	rules := sheet.Rules()
+	rules[0].Selector = ".other"
+	rules[0].Decls[0] = css.Decl("color", css.Literal("green"))
+	if sheet.CSS() != want {
+		t.Fatal("editing a returned rule changed the sheet")
+	}
+	copy := css.NewSheet().Merge(sheet)
+	sheet.Select(".a", css.Decl("color", css.Literal("black")))
+	if copy.CSS() != want {
+		t.Fatal("later input changes changed a composed sheet")
 	}
 }
 

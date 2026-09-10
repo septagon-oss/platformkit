@@ -65,6 +65,24 @@ func TestComposeResolvesAConsumersListsAndRulesOnce(t *testing.T) {
 	}
 }
 
+func TestComposeKeepsConsumerOverridesAfterSharedUtilities(t *testing.T) {
+	t.Parallel()
+	extra := css.NewSheet().
+		Select("[data-component=button]", css.Decl("border", css.Literal("1px dashed red"))).
+		Select("[data-component=card]", css.Decl("box-shadow", css.Literal("inset 0 1px 2px black")))
+	before := extra.CSS()
+	body := string(ui.Compose(design.Default(), ui.Extra{Sheets: []*css.Sheet{extra}}).Body)
+	for _, pair := range [][2]string{{".border-transparent {", "[data-component=button] {"}, {".shadow {", "[data-component=card] {"}} {
+		utility, override := strings.Index(body, pair[0]), strings.LastIndex(body, pair[1])
+		if utility < 0 || override <= utility {
+			t.Fatalf("consumer rule %s must remain after utility %s", pair[1], pair[0])
+		}
+	}
+	if extra.CSS() != before {
+		t.Fatal("composing the application changed consumer declarations")
+	}
+}
+
 func TestGalleryIsTheDifference(t *testing.T) {
 	t.Parallel()
 	app, gallery := string(ui.Compose(design.Default()).Body), string(ui.Gallery().Body)

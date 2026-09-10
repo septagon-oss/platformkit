@@ -39,7 +39,9 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	}
 	// UI gallery revision: native modal roots, responsive rules, shared sections,
 	// source property metadata and semantic shape tokens intentionally change v1 content.
-	if legacy.SHA256 != "c790621c3b833a9ca45b42826ad263f5389fd4626ca5649f536553c10344d80f" {
+	// Cascade-order repair separates the theme and role :root blocks. Compared
+	// with the prior CSS owner, all declarations and non-CSS source fields agree.
+	if legacy.SHA256 != "f93616e5588d6192c65548734fddbd595f053701d4cb6874240b85e9425e05d7" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
