@@ -15,10 +15,34 @@ type FontFamily struct {
 	Generic bool   `json:"generic,omitzero"`
 }
 
+// Validate checks typed family meaning without parsing Name as CSS. Literal
+// punctuation and whitespace remain part of the name; generic keywords use
+// canonical ASCII lowercase. This checks no installed faces or font assets.
+func (f FontFamily) Validate() error {
+	if f.Name == "" || !utf8.ValidString(f.Name) || strings.ContainsAny(f.Name, "\x00\n\r\f") ||
+		(f.Generic && (!fontGeneric(f.Name) || f.Name != fontKeyword(f.Name))) {
+		return fmt.Errorf("invalid typed font family %q", f.Name)
+	}
+	return nil
+}
+
 // FontFamilyToken preserves an existing theme token's ordered fallback list.
 type FontFamilyToken struct {
 	Name     string       `json:"name"`
 	Families []FontFamily `json:"families"`
+}
+
+// Validate requires a CSS custom-property identity and ordered family values.
+func (t FontFamilyToken) Validate() error {
+	if _, err := (ColorValue{Reference: t.Name}).CSS(); err != nil || len(t.Families) == 0 {
+		return fmt.Errorf("invalid font family token %q", t.Name)
+	}
+	for _, family := range t.Families {
+		if err := family.Validate(); err != nil {
+			return fmt.Errorf("font family token %s: %w", t.Name, err)
+		}
+	}
+	return nil
 }
 
 // FontFamilies projects the same resolved typography that Tokens and CSS use.

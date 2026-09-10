@@ -110,3 +110,60 @@ func TestFontFamilyWireMeaningIsExplicit(t *testing.T) {
 		t.Fatalf("ordered family wire contract = %s, %v", got, err)
 	}
 }
+
+func TestTypedFontFamiliesValidateWithoutReinterpretingLiteralNames(t *testing.T) {
+	t.Parallel()
+	for _, family := range []design.FontFamily{
+		{Name: "Example, Sans"}, {Name: "serif"}, {Name: "  Spaced  Name  "},
+		{Name: `Name\With"Punctuation`}, {Name: "ui-serİf"}, {Name: "serif", Generic: true},
+	} {
+		before := family
+		if err := family.Validate(); err != nil || family != before {
+			t.Fatalf("valid literal or canonical generic refused or changed: %#v, %v", family, err)
+		}
+	}
+	for _, family := range []design.FontFamily{
+		{}, {Name: ""}, {Name: "\xff"}, {Name: "Nul\x00Name"}, {Name: "New\nLine"},
+		{Name: "New\rLine"}, {Name: "New\fLine"}, {Name: "Unknown", Generic: true},
+		{Name: "SeRiF", Generic: true}, {Name: "ui-serİf", Generic: true}, {Name: "generic(kai)", Generic: true},
+	} {
+		before := family
+		if err := family.Validate(); err == nil || family != before {
+			t.Fatalf("invalid typed family accepted or changed: %#v, %v", family, err)
+		}
+	}
+	for _, theme := range design.Default().Both() {
+		families, err := theme.FontFamilies()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, token := range families {
+			for _, family := range token.Families {
+				if err := family.Validate(); err != nil {
+					t.Fatalf("owner projected an invalid typed family: %s: %v", token.Name, err)
+				}
+			}
+		}
+	}
+}
+
+func TestTypedFontFamilyTokenRequiresIdentityAndCompleteOrderedValues(t *testing.T) {
+	t.Parallel()
+	valid := design.FontFamilyToken{Name: "--pk-font-body", Families: []design.FontFamily{{Name: "serif"}, {Name: "serif", Generic: true}, {Name: "serif"}}}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("ordered repeated names are valid and must not be deduplicated: %v", err)
+	}
+	for _, token := range []design.FontFamilyToken{
+		{Name: "--pk-font-body"}, {Name: "font.body", Families: valid.Families},
+		{Name: "--pk-font-body", Families: []design.FontFamily{{Name: "Valid"}, {Name: "future", Generic: true}}},
+	} {
+		before, _ := json.Marshal(token)
+		if err := token.Validate(); err == nil {
+			t.Fatalf("invalid family token admitted: %#v", token)
+		}
+		after, _ := json.Marshal(token)
+		if string(before) != string(after) {
+			t.Fatal("typed token validation mutated input")
+		}
+	}
+}

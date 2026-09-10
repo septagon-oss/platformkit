@@ -130,6 +130,8 @@ quoted commas remain inside one name, quoted `"serif"` is not a generic fallback
 and unquoted identifier whitespace becomes a single space. Escapes, comments,
 functions and system/context keywords are refused without partial output.
 The comparable theme and its trusted CSS rendering remain unchanged.
+`FontFamilyToken.Validate` checks detached identities and ordered family values;
+it does not reinterpret literal names as CSS or certify available font files.
 
 [Asset and FontFace](design/assets.go) describe caller-owned identities, formats,
 digests and provenance; each asset carries its own license evidence.
