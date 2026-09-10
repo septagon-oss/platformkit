@@ -14,7 +14,7 @@ const upstream = realpathSync(process.argv[2])
 const require = createRequire(import.meta.url)
 const upstreamRequire = createRequire(join(upstream, 'package.json'))
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
-const suppliedFonts = editorFonts(process.argv.slice(3), readFileSync)
+const suppliedFonts = editorFonts(process.argv.slice(3), readFileSync, realpathSync)
 const engine = /^@open-pencil\/(core|fig|scene-graph|pen|kiwi)(\/.*)?$/
 const engineRoot = /\/packages\/(core|fig|scene-graph|pen|kiwi)\//
 const pinned = specifier => require.resolve(specifier)
@@ -39,6 +39,10 @@ function replaceOnce(source, before, after) {
   if (source.split(before).length !== 2) throw new Error(`Browser build anchor changed: ${before}`)
   return source.replace(before, after)
 }
+
+// Check the existing loader/picker and stock-face collisions before even the
+// disposable Vite configuration is written, not only during its later transform.
+bundleEditorFonts(readFileSync(join(dirname(pinned('@open-pencil/core/text')), 'fonts.js'), 'utf8'), suppliedFonts, replaceOnce)
 
 // Keep upstream's UI configuration, excluding desktop/dev automation and PWA
 // installation. Neither belongs in this static, digest-promoted browser image.

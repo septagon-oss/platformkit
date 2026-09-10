@@ -143,8 +143,12 @@ digests and provenance; each asset carries its own license evidence.
 components or layout. `Asset.VerifyBytes` checks supplied asset and notice digests
 without I/O. Neither check establishes usable fonts or redistribution rights.
 The existing native font validator still owns format, face and glyph checks;
-Core can describe weights or formats that a provider refuses. Snapshots may carry
-this metadata; interchange and physical editor delivery remain separate work.
+Core can describe weights or formats that a provider refuses. Snapshots carry
+this metadata; DTCG retains it as extension evidence, not embedded files.
+The [editor bundler](tools/designexport/openpencil/README.md#deliver-source-backed-font-assets)
+can bind selected records to explicit local files, verify each asset and notice,
+then reuse the provider's existing loader. It neither chooses product typography
+nor establishes application delivery or redistribution rights.
 
 [style.RoleColors](ui/style/emission_roles.go) projects those same role definitions
 as explicit literals, references and two-input sRGB mixes. `RoleVars` renders
@@ -316,8 +320,9 @@ control points, property order and references to the duration/easing scales.
 existing CSS owners; they are not another configuration layer. Their validation
 checks source shape, not equality to default values or permission to edit source.
 The browser checks exercise contextual units, responsive boundaries, shadow
-layers and transition declarations. Snapshot/interchange integration, native
-support and animation/keyframe projection remain separate unfinished work.
+layers and transition declarations. Token snapshots retain these declarations;
+DTCG projects only its admitted subset and reports losses or refusals explicitly.
+Native support and animation/keyframe projection remain unfinished work.
 
 [ui.ProjectProps](ui/proposal.go) and [ui.ProjectReplacement](ui/replacement.go)
 accept the base export hash and exact occurrence ID segments. Properties use a

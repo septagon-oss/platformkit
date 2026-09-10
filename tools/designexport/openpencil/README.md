@@ -435,6 +435,43 @@ different bytes because the SDK caches FIG font digests by that identity.
 Use a fresh process for a different font revision. Fixture provenance and the
 complete OFL notice are recorded in [NOTICE](../../../NOTICE).
 
+### Deliver source-backed font assets
+
+[editor-fonts.mjs](editor-fonts.mjs) also accepts a caller-owned delivery manifest
+through the existing builder. In a disposable `build-inputs` container, supply
+an absolute manifest path and its package directory, then run:
+
+```sh
+node /adapter/build-editor.mjs /upstream --font-assets /owned/fonts.json
+```
+
+This writes the static editor to `/upstream/dist`; it does not publish or deploy.
+The UTF-8 JSON object has exactly `schema`, `assets`, `faces` and `files` fields.
+Use schema `platformkit.font-delivery.v1`. `assets` and `faces` are selected
+[Core Asset and FontFace records](../../../design/assets.go), unchanged from
+their source projection. Each `files` entry is `{ "asset": "selected-asset-id",
+"font": "fonts/regular.woff", "notice": "licenses/OFL.txt" }`.
+Every selected asset needs a face and exactly one binding; unknown fields,
+duplicate identities and unselected bindings are refused.
+
+Bindings are portable relative paths beneath the manifest directory. Absolute
+paths, traversal and symlinks escaping that directory are refused before asset
+reads. Keep that caller-owned package immutable for the build. Provenance
+`source` fields are evidence, never download instructions. The bundler verifies
+the declared asset and individual notice digests, nonblank UTF-8 notices,
+actual static TTF/OTF/WOFF format, family, style, weight and PostScript name.
+This provider requires literal integer weights 100–900 in steps of 100; Core's
+wider numeric domain does not imply editor support.
+
+All font preflight completes before build output. Validated bytes extend the
+same SDK bundled loader and picker; stock faces cannot be replaced. Equal files
+share content-addressed paths, while each provenance face retains `sourceAsset`
+and `sourceFace` alongside its physical hashes and notice path. These inputs
+cannot be mixed with the legacy `--font`/`--font-license` preview arguments.
+The default Docker target remains unchanged. This boundary proves selected
+font delivery, not glyph coverage for arbitrary text, a native token library,
+application font hosting or permission to redistribute the supplied assets.
+
 ## Understand the correction boundary
 
 [CSS dashed borders](border-correction.mjs) fit dashes to resized edges, with uniform
