@@ -10,6 +10,22 @@ export function validateResolvedColor(color) {
   }
 }
 
+export function validateResolvedColors(graph) {
+  const contexts = new Set([...graph.variableCollections.values()].flatMap(owner => owner.modes.map(mode => mode.modeId)))
+  for (const variable of graph.variables.values()) {
+    if (variable.type !== 'COLOR') continue
+    const owner = graph.variableCollections.get(variable.collectionId)
+    if (!owner?.variableIds.includes(variable.id) || !Object.hasOwn(variable.valuesByMode, owner.defaultModeId)) reject('color default or owner missing')
+    for (const [mode, value] of Object.entries(variable.valuesByMode)) {
+      if (!owner.modes.some(item => item.modeId === mode)) reject('unknown native mode')
+      if (record(value) && 'aliasId' in value) {
+        if (Object.keys(value).length !== 1 || graph.variables.get(value.aliasId)?.type !== 'COLOR') reject('color aliases require a COLOR target')
+      } else if (!record(value) || !('cssColor' in value)) validateResolvedColor(value)
+    }
+    for (const mode of contexts) validateResolvedColor(graph.resolveVariable(variable.id, mode))
+  }
+}
+
 // The expression is authored CSS, not a native expression language. Only its
 // external custom-property inputs become ordinary native alias identities.
 function mapInputs(formula, mapAlias) {
@@ -120,4 +136,7 @@ export function validateCSSColorRemoval(graph, ids) {
   const variables = new Map(graph.variables)
   for (const id of ids) variables.delete(id)
   validateCandidate(graph, variables)
+  const candidate = Object.create(graph)
+  candidate.variables = variables
+  validateResolvedColors(candidate)
 }

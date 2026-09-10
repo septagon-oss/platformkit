@@ -1,4 +1,4 @@
-import { validateCSSColors, validateResolvedColor } from './variable-color.mjs'
+import { validateCSSColors, validateResolvedColors } from './variable-color.mjs'
 import { validateNumericVariables } from './variable-number.mjs'
 
 const reject = message => { throw new Error(`Native variable mode: ${message}`) }
@@ -54,13 +54,7 @@ export function changeVariableModes(graph, collectionId, change) {
   validateCollection(next)
   validateNumericVariables(candidate)
   validateCSSColors(candidate)
-  const contexts = new Set([...candidate.variableCollections.values()].flatMap(owner => owner.modes.map(mode => mode.modeId)))
-  for (const variable of candidate.variables.values()) {
-    if (variable.type !== 'COLOR') continue
-    const owner = candidate.variableCollections.get(variable.collectionId)
-    if (!Object.hasOwn(variable.valuesByMode, owner?.defaultModeId)) reject('color default value missing')
-    for (const mode of contexts) validateResolvedColor(candidate.resolveVariable(variable.id, mode))
-  }
+  validateResolvedColors(candidate)
   collection.modes = next.modes
   collection.defaultModeId = next.defaultModeId
   for (const id of collection.variableIds) {

@@ -138,8 +138,18 @@ internal dependency closure can be removed together. Cross-collection mode fallb
 refused edits, retained redo entries and two FIG saves have independent native tests.
 The variables dialog keeps a refused operation's explanation until dismissed and
 retains keyboard focus. Deletion buttons have names and remain visible without hover.
-This does not certify successful variable/collection deletion's undo restoration,
-raw graph mutation or unrestricted formula creation; those remain separate safety work.
+
+[Variable and collection deletion history](variable-history.mjs) retains detached
+values, source records, collection order, active selection and affected bindings
+and instance override flags. Undo validates the complete restoration before any
+live write or notification; lost dependencies, reused identities and conflicting
+bindings refuse without consuming history. Unrelated geometry, variables and
+override fields remain intact. Redo records its current deletion effects rather
+than sharing a mutable snapshot with the graph. Numeric and colour aliases use
+their existing validators, including plain colour dependencies. Linked icon
+bindings survive restoration and two actual editor worker saves. The undo stack
+itself is session state, not FIG content. Raw graph mutation, arbitrary event
+callbacks and unrestricted formula creation remain outside this qualification.
 
 [Numeric variables](variable-number.mjs) retain the editor's finite binary64 values
 alongside ordinary binary32 FIG fallbacks. Versioned metadata preserves decimals,

@@ -19,6 +19,7 @@ const colorHelper = JSON.stringify(fileURLToPath(new URL('./variable-color.mjs',
 const numberHelper = JSON.stringify(fileURLToPath(new URL('./variable-number.mjs', import.meta.url)))
 const tokenHelper = JSON.stringify(fileURLToPath(new URL('./variable-source.mjs', import.meta.url)))
 const modeHelper = JSON.stringify(fileURLToPath(new URL('./variable-modes.mjs', import.meta.url)))
+const historyHelper = JSON.stringify(fileURLToPath(new URL('./variable-history.mjs', import.meta.url)))
 export const corrections = Object.freeze({
   '@open-pencil/fig/dist/node-change2.js': {
     sha256: 'bdbb599d70a5cf92300c67c385ee0d269550d4eea9c637f608d85fa321e63ee7',
@@ -123,8 +124,11 @@ export const corrections = Object.freeze({
       source = replace(source,
         'if (collection) for (const varId of Array.from(collection.variableIds)) removeVariable(graph, varId);',
         `if (collection) {
-          validateNumericRemoval(graph, collection.variableIds);
-          validateCSSColorRemoval(graph, collection.variableIds);
+          const candidate = Object.create(graph);
+          candidate.variableCollections = new Map(graph.variableCollections);
+          candidate.variableCollections.delete(id);
+          validateNumericRemoval(candidate, collection.variableIds);
+          validateCSSColorRemoval(candidate, collection.variableIds);
           for (const varId of Array.from(collection.variableIds)) removeVariableUnchecked(graph, varId);
         }`)
       source = replace(source, 'function resolveVariable(graph, variableId, modeId, visited) {',
@@ -178,6 +182,28 @@ export const corrections = Object.freeze({
     transform(source, replace) {
       source = `import { setCheckedVariableValue as setNativeVariableValue } from ${numberHelper};\n` + source
       source = `import { changeVariableModes, captureModeValues, restoreModeValues, restoreDefaultMode } from ${modeHelper};\n` + source
+      source = `import { removeVariablesWithHistory, restoreRemovedVariables } from ${historyHelper};\n` + source
+      for (const [kind, whole] of [['Variable', false], ['Collection', true]]) {
+        const start = source.indexOf(`\tfunction remove${kind}(id) {`)
+        const end = source.indexOf('\n\tfunction ', start + 1)
+        if (start < 0 || end < 0) throw new Error('Pinned variable removal action missing')
+        source = replace(source, source.slice(start, end), `\tfunction remove${kind}(id) {
+          if (!ctx.graph.${whole ? 'variableCollections' : 'variables'}.has(id)) return;
+          let receipt = removeVariablesWithHistory(ctx.graph, id, ${whole});
+          ctx.undo.push({
+            label: "Remove ${kind.toLowerCase()}",
+            forward: () => {
+              receipt = removeVariablesWithHistory(ctx.graph, id, ${whole});
+              ctx.requestRender();
+            },
+            inverse: () => {
+              restoreRemovedVariables(ctx.graph, receipt);
+              ctx.requestRender();
+            }
+          });
+          ctx.requestRender();
+        }`)
+      }
       // Redo replays captured mode values, not a new copy of a subsequently
       // edited default/source mode. Restore the whole candidate before checking.
       for (const [label, args] of [['Add mode', 'collectionId, modeId, modeName'],

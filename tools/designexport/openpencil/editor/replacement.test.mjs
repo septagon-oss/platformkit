@@ -151,7 +151,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
-    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -209,6 +209,86 @@ test('source-produced typed tokens retain their baseline through editor edits an
           assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
         }
         assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
+test('token deletion restores linked icons, keyboard navigation and source identity through two worker saves', { timeout: 120000 }, async t => {
+  await verifyBuild()
+  const run = await sourceTokenFixture(t), input = decodeSnapshot(Buffer.from(run({})))
+  const built = buildFoundation(input.snapshot, input)
+  let buffer = Buffer.from(await exportFigFile(built.graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Icon masters', 'light', 'dark'].map(name => geometry(baseline, named(baseline, name)))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `deletion-${cycle}.fig`)
+        if (cycle === 2) await page.emulateMedia({ forcedColors: 'active' })
+        const open = page.getByRole('button', { name: 'Open variables', exact: true })
+        const tabTo = async target => {
+          for (let step = 0; step < 150 && !await target.evaluate(node => node === document.activeElement); step++) await page.keyboard.press('Tab')
+          await expect(target).toBeFocused()
+          assert.ok(await target.evaluate(node => {
+            const css = getComputedStyle(node)
+            return node.matches(':focus-visible') && css.outlineStyle !== 'none' && parseFloat(css.outlineWidth) > 0
+          }))
+        }
+        await tabTo(open)
+        await page.keyboard.press('Enter')
+        const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        const menu = dialog.getByRole('button', { name: 'Collection actions', exact: true })
+        const spacing = dialog.getByRole('textbox', { name: 'spacing/1, light', exact: true })
+        if (cycle === 0) {
+          const remove = dialog.getByRole('button', { name: 'Delete spacing/1', exact: true })
+          await tabTo(remove)
+          const size = await remove.boundingBox()
+          assert.ok(size.width >= 24 && size.height >= 24)
+          await page.keyboard.press('Space')
+          await expect(spacing).toHaveCount(0)
+          // The existing modal focus scope falls back to its owning dialog
+          // when the focused row disappears; no second focus manager is needed.
+          await expect(dialog).toBeFocused()
+          await page.keyboard.press('Escape')
+          await expect(dialog).toBeHidden()
+          await page.keyboard.press('Control+z')
+          await tabTo(open)
+          await page.keyboard.press('Enter')
+          await expect(spacing).toHaveValue('0.1')
+          await tabTo(menu)
+          await page.keyboard.press('Space')
+          await page.keyboard.press('End')
+          await expect(page.getByRole('menuitem', { name: 'Delete collection', exact: true })).toBeFocused()
+          await page.keyboard.press('Enter')
+          await expect(spacing).toHaveCount(0)
+          assert.ok(await dialog.evaluate(node => node.contains(document.activeElement)), 'deletion retains focus inside the dialog')
+          await page.keyboard.press('Escape')
+          await expect(dialog).toBeHidden()
+          await page.keyboard.press('Control+z')
+          await tabTo(open)
+          await page.keyboard.press('Enter')
+        }
+        await expect(spacing).toHaveValue('0.1')
+        await expect(dialog.getByRole('textbox', { name: 'leading/normal, dark', exact: true })).toHaveValue('1.5')
+        await expect(dialog.getByRole('status')).toBeEmpty()
+        await tabTo(menu)
+        await page.keyboard.press('Escape')
+        await expect(dialog).toBeHidden()
+        if (cycle < 2) {
+          buffer = await saveDocument(page, errors, workers)
+          const graph = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          assert.deepEqual(['Icon masters', 'light', 'dark'].map(name => geometry(graph, named(graph, name))), untouched)
+          const token = [...graph.variables.values()].find(variable => variable.name === 'spacing/1')
+          assert.deepEqual(token.sourceToken, { version: 1, snapshot: input.snapshot.sha256,
+            kind: 'scale', scale: 'spacing', key: '1', decimal: '0.1000', unit: 'px' })
+          assert.equal(graph.resolveVariable(token.id), 0.1)
+          for (const node of graph.nodes.values()) assert.ok(!Object.keys(node.overrides).some(key => /(^|:)boundVariables$/.test(key)))
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
         assert.deepEqual(errors, [])
       } finally { await context.close() }
     }

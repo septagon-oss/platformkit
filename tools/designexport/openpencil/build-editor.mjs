@@ -255,6 +255,8 @@ const selectedValue = computed({
     setDefaultMode: (id: string) => checkedVariableAction(() => collectionActions.setDefaultMode(id)),
     updateVariableValue: (id: string, modeId: string, value: VariableValue) =>
       checkedVariableAction(() => variableActions.updateVariableValue(id, modeId, value))`],
+        'src/components/properties/VariablesSection.vue': ['5e566f51c71bee2c77d1902d5d1f0d7f9d5f30e4b6a0db6a9b2ad410fe5f9175',
+          '<IconButton :label="panels.openVariables"', '<IconButton class="min-h-6 min-w-6" :label="panels.openVariables"'],
         'src/components/variables/VariablesDialog.vue': ['d8f09a9aefffceb59356cddf38208ad6e25976ebf2e641f08c1eeff6c2657cbe',
           "const collectionInput = templateRef<HTMLInputElement>('collectionInput')",
           "const collectionMenu = templateRef<HTMLButtonElement>('collectionMenu')\nconst collectionInput = templateRef<HTMLInputElement>('collectionInput')",
@@ -311,11 +313,11 @@ textarea:focus-visible { outline: revert; outline-offset: 2px; }
             ':ref="setModeInput" :aria-label="\'Rename \' + String(header.column.columnDef.header) + \' mode\'"')
           source = replaceOnce(source, '<DropdownMenuContent :class="menuCls.content">',
             '<DropdownMenuContent :class="menuCls.content" @close-auto-focus="ctx.modeRename.editingId.value && $event.preventDefault()">')
-          source += `
+        }
+        if (path.endsWith('/VariablesDialog.vue') || path.endsWith('/VariablesSection.vue')) source += `
 <style scoped>
 :deep(button:focus-visible), :deep(input:focus-visible) { outline: revert; outline-offset: 2px; }
 </style>\n`
-        }
         return { code: source, map: null }
       }
       if (id === join(upstream, 'src/app/shell/keyboard/nudging.ts')) {
@@ -360,7 +362,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 10) throw new Error('Browser omitted a required editor control correction')
+if (correctedControls.size !== 11) throw new Error('Browser omitted a required editor control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)
