@@ -42,6 +42,11 @@ func (n *exampleNode) renderBody(w io.Writer) error {
 	if node == nil {
 		return fmt.Errorf("example %q rendered a nil node", e.ID)
 	}
+	if recorder, ok := w.(*exampleRecorder); ok && recorder.layout {
+		if owned, ok := node.(*layoutNode); ok {
+			recorder.current.description.Layout = new(owned.layout)
+		}
+	}
 	return node.Render(w)
 }
 
@@ -69,6 +74,10 @@ func (e Example) validateCapture() error {
 // supported slots containing unbound, non-nil Go nodes; neither their complete
 // contents nor their rendering correspondence can be inferred from this record.
 func (e Example) Describe() (ExampleDescription, error) {
+	return e.describe(false)
+}
+
+func (e Example) describe(layout bool) (ExampleDescription, error) {
 	if err := e.validateCapture(); err != nil {
 		return ExampleDescription{}, err
 	}
@@ -76,7 +85,7 @@ func (e Example) Describe() (ExampleDescription, error) {
 	if err != nil {
 		return ExampleDescription{}, err
 	}
-	recorder := &exampleRecorder{current: root, active: map[*exampleNode]bool{}}
+	recorder := &exampleRecorder{current: root, active: map[*exampleNode]bool{}, layout: layout}
 	if e.bound == nil {
 		root.observed = true
 		err = e.Node.Render(recorder)
@@ -91,7 +100,7 @@ func (e Example) Describe() (ExampleDescription, error) {
 	if err != nil {
 		return ExampleDescription{}, err
 	}
-	return root.describe(recorder.output.String()), nil
+	return root.describe(recorder.output.String(), layout), nil
 }
 
 type exampleRecord struct {
@@ -177,13 +186,16 @@ func (r *exampleRecord) add(child *exampleRecord) error {
 	return nil
 }
 
-func (r *exampleRecord) describe(html string) ExampleDescription {
+func (r *exampleRecord) describe(html string, layout bool) ExampleDescription {
 	description := r.description
+	if layout && (description.Layout == nil || len(description.OpaqueSlots) != 0) {
+		description.Layout = &LayoutDescription{Kind: "unknown", Reason: "unobserved, unmigrated or opaque source"}
+	}
 	if r.observed {
 		description.HTML = html[r.start:r.end]
 	}
 	for _, child := range r.children {
-		occurrence := ChildOccurrence{Description: child.describe(html), Slot: child.slot}
+		occurrence := ChildOccurrence{Description: child.describe(html, layout), Slot: child.slot}
 		if child.observed {
 			occurrence.Span = &HTMLSpan{Start: child.start - r.start, End: child.end - r.start}
 		}
@@ -200,6 +212,7 @@ type exampleRecorder struct {
 	active  map[*exampleNode]bool
 	closed  bool
 	failure error
+	layout  bool
 }
 
 func (r *exampleRecorder) Write(data []byte) (int, error) {

@@ -167,6 +167,38 @@ behavior; the snapshot itself is neither another registry nor a JSON runtime
 engine for constructing pages. Products own their source identities; Core's
 `pk-ui.component.` prefix is a namespace, not a repository reference.
 
+`ExportWithLayout` opts into `platformkit.design-export.v2`; `Export` and
+`Example.Describe` retain the v1 observation contract and its bytes.
+`Example.DescribeWithLayout` records source-owned root declarations from the
+same resolved values that Stack and Flex render. The required feature
+`source-flex-declarations.v1` covers direction, governed gap step, alignment,
+justification and wrapping, not sizing, typography, child placement or editing.
+Gap names a [style spacing step](ui/style/spacing.go), not a pixel measurement
+or a new design token. `normal` explicitly means CSS initial alignment;
+missing layout means unknown, never an inferred default.
+
+The [layout contract check](ui/export_layout.go) is a pure, all-occurrence
+preflight on source-generated Go values, not an untrusted JSON decoder or hash
+authenticator. Unknown versions/features and malformed declarations are unsupported;
+unmigrated, unobserved or unowned layout is unknown. These are distinct errors.
+The initial admitted examples are directly captured Stack/Flex trees with
+bound children and no escape hatches. Unknown child layout prevents acceptance
+of the whole tree. A successful preflight establishes only the declared feature,
+not native support, visual equivalence, accessibility or source-write authority.
+Providers still owe independent rendering and requested-edit checks, including
+the containing source path. They must refuse before mutation if those fail.
+
+Consumer classes, attributes, hidden roots and opaque slots cannot earn a known
+layout declaration. Nonempty extra sheets invalidate declarations throughout
+the snapshot, including inactive media rules: no second CSS interpreter tries
+to prove which selectors might apply. This deliberately conservative boundary
+can later narrow through an owned resolution path, not one screenshot.
+Occurrence layout does not change `SameInterface`; replacement compatibility
+and projection support remain separate questions. The v2 hash covers layout
+and required features as well as the existing source content, without timestamps
+or provider IDs. The existing native adapter remains v1-only and rejects v2;
+complete component migration and native translation are subsequent work.
+
 [ui.ProjectProps](ui/proposal.go) and [ui.ProjectReplacement](ui/replacement.go)
 accept the base export hash and exact occurrence ID segments. Properties use a
 typed patch; replacement selects another root or nested source occurrence from

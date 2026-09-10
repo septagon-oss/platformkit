@@ -31,37 +31,41 @@ var justifyContent = map[string]style.Justify{
 
 // Stack renders StackProps: a vertical flex column.
 func Stack(p StackProps, children ...g.Node) g.Node {
-	cl := clStack.Gap(gapOr(p.Gap, style.S4))
+	flow := FlexLayout{Direction: style.FlexCol, Gap: gapOr(p.Gap, style.S4), Align: "normal", Justify: "normal"}
+	cl := clFlex.FlexDir(flow.Direction).Gap(flow.Gap)
 	if a, ok := alignItems[p.Align]; ok {
-		cl = cl.Items(a)
+		flow.Align = a
+		cl = cl.Items(flow.Align)
 	}
 	nodes := baseAttrs(p.ComponentProps)
 	nodes = append(nodes, classes(cl.Compile(), p.Class))
 	nodes = append(nodes, children...)
-	return h.Div(nodes...)
+	return withLayout(h.Div(nodes...), p.ComponentProps, flow)
 }
 
 // Flex renders FlexProps.
 func Flex(p FlexProps, children ...g.Node) g.Node {
-	cl := clFlex.Gap(gapOr(p.Gap, style.S4))
+	flow := FlexLayout{Direction: style.FlexRow, Gap: gapOr(p.Gap, style.S4), Align: "normal", Justify: "normal", Wrap: p.Wrap}
+	cl := clFlex.Gap(flow.Gap)
 	if p.Direction == "col" || p.Direction == "column" {
-		cl = cl.FlexDir(style.FlexCol)
-	} else {
-		cl = cl.FlexDir(style.FlexRow)
+		flow.Direction = style.FlexCol
 	}
-	if p.Wrap {
+	cl = cl.FlexDir(flow.Direction)
+	if flow.Wrap {
 		cl = cl.FlexWrap()
 	}
 	if a, ok := alignItems[p.Align]; ok {
-		cl = cl.Items(a)
+		flow.Align = a
+		cl = cl.Items(flow.Align)
 	}
 	if j, ok := justifyContent[p.Justify]; ok {
-		cl = cl.Justify(j)
+		flow.Justify = j
+		cl = cl.Justify(flow.Justify)
 	}
 	nodes := baseAttrs(p.ComponentProps)
 	nodes = append(nodes, classes(cl.Compile(), p.Class))
 	nodes = append(nodes, children...)
-	return h.Div(nodes...)
+	return withLayout(h.Div(nodes...), p.ComponentProps, flow)
 }
 
 // Grid renders GridProps; Columns outside 1..12 fall back to 1.

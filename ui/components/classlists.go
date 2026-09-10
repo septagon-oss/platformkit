@@ -483,7 +483,6 @@ var (
 		Merge(clFocusRing)
 
 	// Layouts.
-	clStack     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol)
 	clFlex      = style.New().Display(style.DisplayFlex)
 	clGrid      = style.New().Display(style.DisplayGrid)
 	clContainer = style.New().MarginX(style.SAuto).Width(style.SFull).PaddingX(style.S4)
@@ -775,7 +774,7 @@ func ShellClassLists() []style.ClassList {
 		clCheckboxIndicatorActive, clCheckboxCheckmark, clCheckboxBar, clCheckboxLabel,
 		clHeadingBase, clSpinner, clVideo,
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
-		clStack, clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
+		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clDetailList, clDetailHeader, clDetailTitle, clDetailDescription,
 		clDetailItems, clDetailRow, clDetailRowSeparated, clDetailTerm,
 		clDetailTermDescription, clDetailValue,

@@ -39,14 +39,15 @@ type Example struct {
 // PropsEditable and slot support describe Go APIs, not native/editor readiness.
 type ExampleDescription struct {
 	ExampleInfo
-	PropsEditable bool              `json:"propsEditable"`
-	Reason        string            `json:"reason,omitempty"`
-	Props         json.RawMessage   `json:"props"`
-	Schema        json.RawMessage   `json:"schema"`
-	Slots         []SlotDescription `json:"slots"`
-	HTML          string            `json:"html"`
-	Children      []ChildOccurrence `json:"children"`
-	OpaqueSlots   []string          `json:"opaqueSlots"`
+	PropsEditable bool               `json:"propsEditable"`
+	Reason        string             `json:"reason,omitempty"`
+	Props         json.RawMessage    `json:"props"`
+	Schema        json.RawMessage    `json:"schema"`
+	Slots         []SlotDescription  `json:"slots"`
+	HTML          string             `json:"html"`
+	Children      []ChildOccurrence  `json:"children"`
+	OpaqueSlots   []string           `json:"opaqueSlots"`
+	Layout        *LayoutDescription `json:"layout,omitempty"`
 }
 
 // SlotDescription advertises the actual field type. Supported replacements

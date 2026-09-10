@@ -20,14 +20,15 @@ import (
 // executes it. PropsEditable and slot support describe the Go example API, not
 // native editor support, accessibility approval or production readiness.
 type DesignExport struct {
-	Schema     string                          `json:"schema"`
-	SHA256     string                          `json:"sha256,omitempty"`
-	FontPolicy string                          `json:"fontPolicy"`
-	Notices    string                          `json:"notices"`
-	Themes     []ThemeExport                   `json:"themes"`
-	Icons      []IconExport                    `json:"icons"`
-	Examples   []components.ExampleDescription `json:"examples"`
-	CSS        string                          `json:"css"`
+	Schema           string                          `json:"schema"`
+	RequiredFeatures []string                        `json:"requiredFeatures,omitempty"`
+	SHA256           string                          `json:"sha256,omitempty"`
+	FontPolicy       string                          `json:"fontPolicy"`
+	Notices          string                          `json:"notices"`
+	Themes           []ThemeExport                   `json:"themes"`
+	Icons            []IconExport                    `json:"icons"`
+	Examples         []components.ExampleDescription `json:"examples"`
+	CSS              string                          `json:"css"`
 }
 
 // ThemeExport separates the CSS selector's stable mode from its display name.
@@ -62,6 +63,10 @@ var designNotices string
 // digest covers encoding/json's compact output with SHA256 omitted; it changes
 // with the exported content, not timestamps or unrelated repository edits.
 func Export(theme design.Pair, examples []components.Example, extra ...Extra) (DesignExport, error) {
+	return export(theme, examples, false, extra...)
+}
+
+func export(theme design.Pair, examples []components.Example, layout bool, extra ...Extra) (DesignExport, error) {
 	out := DesignExport{
 		Schema: "platformkit.design-export.v1", FontPolicy: "system-fallback-stacks", Notices: designNotices,
 		Themes: []ThemeExport{
@@ -70,6 +75,10 @@ func Export(theme design.Pair, examples []components.Example, extra ...Extra) (D
 		},
 		Icons:    []IconExport{},
 		Examples: []components.ExampleDescription{},
+	}
+	if layout {
+		out.Schema = "platformkit.design-export.v2"
+		out.RequiredFeatures = []string{"source-flex-declarations.v1"}
 	}
 	type componentContract struct {
 		exampleID   string
@@ -101,7 +110,11 @@ func Export(theme design.Pair, examples []components.Example, extra ...Extra) (D
 			return DesignExport{}, fmt.Errorf("design export: duplicate example ID %q", example.ID)
 		}
 		seen[example.ID] = true
-		description, err := example.Describe()
+		describe := example.Describe
+		if layout {
+			describe = example.DescribeWithLayout
+		}
+		description, err := describe()
 		if err != nil {
 			return DesignExport{}, fmt.Errorf("design export %s: %w", example.ID, err)
 		}
@@ -122,6 +135,17 @@ func Export(theme design.Pair, examples []components.Example, extra ...Extra) (D
 	// consumer addition. The exported sheet can render every gallery example.
 	all := append([]Extra{{Lists: components.ClassLists()}}, extra...)
 	out.CSS = string(Compose(theme, all...).Body)
+	if layout {
+		overridden := false
+		for _, e := range extra {
+			for _, sheet := range e.Sheets {
+				overridden = overridden || sheet.CSS() != ""
+			}
+		}
+		if overridden {
+			invalidateLayout(out.Examples)
+		}
+	}
 	payload, err := json.Marshal(out)
 	if err != nil {
 		return DesignExport{}, fmt.Errorf("design export: encode snapshot: %w", err)
