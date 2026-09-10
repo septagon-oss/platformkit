@@ -7,7 +7,11 @@ package components
 // always backed by a rule. TestRenderedClassesAreDeclared closes the loop
 // from the other side.
 
-import "github.com/septagon-oss/platformkit/ui/style"
+import (
+	"maps"
+
+	"github.com/septagon-oss/platformkit/ui/style"
+)
 
 // hoverBg returns a hover-state background modifier.
 func hoverBg(c style.Color) func(style.ClassList) style.ClassList {
@@ -835,11 +839,12 @@ func ShellClassLists() []style.ClassList {
 	for _, n := range []int{1, 2, 3, 4, 6, 12} {
 		out = append(out, style.New().GridCols(n))
 	}
+	for justification := range maps.Values(justifyContent) {
+		out = append(out, style.New().Justify(justification))
+	}
 	out = append(out,
 		style.New().Items(style.ItemsStart), style.New().Items(style.ItemsCenter),
 		style.New().Items(style.ItemsEnd), style.New().Items(style.ItemsStretch),
-		style.New().Justify(style.JustifyStart), style.New().Justify(style.JustifyCenter),
-		style.New().Justify(style.JustifyEnd), style.New().Justify(style.JustifyBetween),
 		style.New().FlexDir(style.FlexRow), style.New().FlexDir(style.FlexCol), style.New().FlexWrap(),
 		style.New().MaxWScaled(style.MaxWSM), style.New().MaxWScaled(style.MaxWMD),
 		style.New().MaxWScaled(style.MaxWLG), style.New().MaxWScaled(style.MaxWXL),

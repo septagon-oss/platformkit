@@ -32,6 +32,37 @@ func gallery() []g.Node {
 	return out
 }
 
+func TestFlexJustificationRendersItsDeclaredCSSAndPreservesChildren(t *testing.T) {
+	t.Parallel()
+	sheet, err := style.For(ClassLists()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ prop, css string }{
+		{"start", "flex-start"}, {"center", "center"}, {"end", "flex-end"},
+		{"between", "space-between"}, {"around", "space-around"}, {"", ""}, {"unknown", ""},
+	} {
+		t.Run("justify="+tc.prop, func(t *testing.T) {
+			html := renderNodeToString(t, Flex(FlexProps{Justify: tc.prop}, h.Button(g.Text("First")), h.Button(g.Text("Second"))))
+			if !strings.HasSuffix(html, "<button>First</button><button>Second</button></div>") {
+				t.Fatal("layout changed native child semantics or source order")
+			}
+			if tc.css == "" {
+				if strings.Contains(html, "justify-") {
+					t.Fatal("omitted or unknown justification must retain its existing default")
+				}
+				return
+			}
+			if !strings.Contains(html, "justify-"+tc.prop) {
+				t.Errorf("documented justification %q was ignored", tc.prop)
+			}
+			if !strings.Contains(sheet.CSS(), ".justify-"+tc.prop+" {\n  justify-content: "+tc.css+";\n}") {
+				t.Errorf("justification %q has no matching declaration in the component stylesheet", tc.prop)
+			}
+		})
+	}
+}
+
 func TestIconRendersAccessibleEditableSVG(t *testing.T) {
 	t.Parallel()
 

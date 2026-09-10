@@ -26,6 +26,7 @@ var alignItems = map[string]style.Items{
 var justifyContent = map[string]style.Justify{
 	"start": style.JustifyStart, "center": style.JustifyCenter,
 	"end": style.JustifyEnd, "between": style.JustifyBetween,
+	"around": style.JustifyAround,
 }
 
 // Stack renders StackProps: a vertical flex column.
