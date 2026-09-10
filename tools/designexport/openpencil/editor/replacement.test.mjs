@@ -136,6 +136,9 @@ async function verifyDownload(bytes, untouched, trailing, replacementGeometry, d
 
 async function verifyBuild() {
   const provenance = await (await fetch(new URL('/platformkit-provenance.json', endpoint))).json()
+  const dependencies = await (await fetch(new URL('/licenses/bundled-dependencies.json', endpoint))).json()
+  assert.deepEqual(dependencies.filter(item => item.name === '@ai-sdk/provider-utils').map(item => item.version),
+    ['4.0.33'], 'the emitted dependency report contains only the patched provider-utils version')
   const notices = await (await fetch(new URL('/licenses/PlatformKit-NOTICE', endpoint))).text()
   assert.equal(notices, readFileSync(new URL('../../../../NOTICE', import.meta.url), 'utf8'), 'shipped notices match the source')
   assert.ok(notices.includes('Blink border geometry — BSD 3-Clause\n\nCopyright (C) 2013 Google Inc.'))

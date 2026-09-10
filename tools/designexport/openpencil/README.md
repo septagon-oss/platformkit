@@ -617,6 +617,17 @@ PNG relationships and bytes, unchanged source nodes, and explicit failure states
 Both published ESM and CommonJS builds are exercised. The supplied PNG callback
 tests the image boundary, not browser rasterization or PowerPoint visual fidelity.
 
+The browser's AI provider imports use `@ai-sdk/provider-utils@4.0.33` through
+the existing direct-dependency boundary. The upstream UI lock alone selects
+older response readers affected by [unbounded response bodies](https://github.com/advisories/GHSA-866g-f22w-33x8),
+which an adapter-only audit could not see. JSON success, JSON error and status
+error tests require ordinary responses to work and oversized bodies to cancel
+at the header or first over-limit chunk. Built-editor checks require the patched
+version in the emitted dependency report. The upstream default is 2 GiB, not a
+browser-appropriate memory budget; a smaller application limit remains undefined.
+These checks exclude binary and streaming-event readers. This does not clear the separate
+upstream lock audit or establish complete browser dependency reachability.
+
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
 or editor release. Active CI enforces this gate after the locked install and
 before the native tests. The adapter's npm-locked tree currently passes with zero reported
