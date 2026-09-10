@@ -215,6 +215,108 @@ test('source-produced typed tokens retain their baseline through editor edits an
   } finally { await browser.close() }
 })
 
+test('collection rename keeps its labelled tab, keyboard focus and token identity through two worker saves', { timeout: 120000 }, async t => {
+  await verifyBuild()
+  const run = await sourceTokenFixture(t), input = decodeSnapshot(Buffer.from(run({})))
+  const { graph } = buildFoundation(input.snapshot, input)
+  graph.createCollection('Other tokens')
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Icon masters', 'light', 'dark'].map(name => geometry(baseline, named(baseline, name)))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `collection-name-${cycle}.fig`)
+        if (cycle === 2) await page.emulateMedia({ forcedColors: 'active' })
+        const open = page.getByRole('button', { name: 'Open variables', exact: true })
+        const tabTo = async target => {
+          for (let step = 0; step < 150 && !await target.evaluate(node => node === document.activeElement); step++) await page.keyboard.press('Tab')
+          await expect(target).toBeFocused()
+        }
+        await tabTo(open)
+        await page.keyboard.press('Enter')
+        const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        const menu = dialog.getByRole('button', { name: 'Collection actions', exact: true })
+        await expect(dialog.getByRole('columnheader', { name: 'Actions', exact: true })).toHaveCount(1)
+        const startRename = async name => {
+          await tabTo(menu)
+          await page.keyboard.press('Enter')
+          await expect(page.getByRole('menuitem', { name: 'Rename collection', exact: true })).toBeFocused()
+          await page.keyboard.press('Enter')
+          const field = dialog.getByRole('textbox', { name: 'Rename collection: ' + name, exact: true })
+          await expect(field, JSON.stringify(errors)).toBeFocused()
+          await expect(field).toHaveValue(name)
+          assert.ok(await field.evaluate(node => node.matches(':focus-visible') && getComputedStyle(node).outlineStyle !== 'none'))
+          await expect(dialog.getByRole('tablist').getByRole('textbox')).toHaveCount(0)
+          await expect(dialog.getByRole('tab', { name, exact: true })).toHaveAttribute('aria-selected', 'true')
+          await expect(dialog.getByRole('tabpanel', { name, exact: true })).toBeVisible()
+          return field
+        }
+        const name = cycle === 0 ? 'Foundation' : 'Design tokens'
+        let field = await startRename(name)
+        await field.fill('Cancelled collection')
+        await page.keyboard.press('Escape')
+        await expect(dialog).toBeVisible()
+        await expect(field).toHaveCount(0)
+        await expect(menu).toBeFocused()
+        await expect(dialog.getByRole('tab', { name, exact: true })).toBeVisible()
+        if (cycle === 1) {
+          // Keep the existing pointer entry and ordinary blur-commit route.
+          await dialog.getByRole('tab', { name, exact: true }).dblclick()
+          field = dialog.getByRole('textbox', { name: 'Rename collection: ' + name, exact: true })
+          await expect(field).toBeFocused()
+          await field.fill('  ' + name + '  ')
+          await page.keyboard.press('Tab')
+          await expect(field).toHaveCount(0)
+          await expect(dialog.getByRole('tabpanel', { name, exact: true })).toBeFocused()
+          field = await startRename(name)
+          await page.keyboard.press('Shift+Tab')
+          await expect(field).toHaveCount(0)
+          await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused()
+        }
+        if (cycle === 0) {
+          field = await startRename(name)
+          await field.fill('Design tokens')
+          await page.keyboard.press('Enter')
+          await expect(menu).toBeFocused()
+          await expect(dialog.getByRole('tabpanel', { name: 'Design tokens', exact: true })).toBeVisible()
+          await page.keyboard.press('Escape')
+          await expect(dialog).toBeHidden()
+          await page.keyboard.press('Control+z')
+          await tabTo(open)
+          await page.keyboard.press('Enter')
+          await expect(dialog.getByRole('tabpanel', { name: 'Foundation', exact: true })).toBeVisible()
+          await tabTo(menu)
+          await page.keyboard.press('Escape')
+          await page.keyboard.press('Control+Shift+z')
+          await tabTo(open)
+          await page.keyboard.press('Enter')
+        }
+        await expect(dialog.getByRole('tab', { name: 'Other tokens', exact: true })).toBeVisible()
+        await expect(dialog.getByRole('tabpanel', { name: 'Design tokens', exact: true })).toBeVisible()
+        await expect(dialog.getByRole('textbox', { name: 'spacing/1, light', exact: true })).toHaveValue('0.1')
+        await tabTo(menu)
+        await page.keyboard.press('Escape')
+        await expect(dialog).toBeHidden()
+        if (cycle < 2) {
+          buffer = await saveDocument(page, errors, workers)
+          const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const token = [...reopened.variables.values()].find(variable => variable.name === 'spacing/1')
+          assert.deepEqual([...reopened.variableCollections.values()].map(collection => collection.name), ['Design tokens', 'Other tokens'])
+          assert.equal(reopened.resolveVariable(token.id), 0.1)
+          assert.deepEqual(token.sourceToken, { version: 1, snapshot: input.snapshot.sha256,
+            kind: 'scale', scale: 'spacing', key: '1', decimal: '0.1000', unit: 'px' })
+          assert.deepEqual(['Icon masters', 'light', 'dark'].map(name => geometry(reopened, named(reopened, name))), untouched)
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
 test('token deletion restores linked icons, keyboard navigation and source identity through two worker saves', { timeout: 120000 }, async t => {
   await verifyBuild()
   const run = await sourceTokenFixture(t), input = decodeSnapshot(Buffer.from(run({})))

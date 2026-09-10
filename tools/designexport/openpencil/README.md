@@ -185,6 +185,18 @@ Tabbing across a short token name no longer commits a rename; intentional leaf
 renames preserve its group prefix. Inherited numeric values display their resolved
 value with an accessible explanation, without materializing an override on focus.
 
+Collection renaming keeps the selected tab and its panel label mounted. A separate
+labelled input opens after the collection menu releases focus; Enter commits and
+Escape cancels only the rename, returning focus to collection actions. Keyboard
+history and two worker saves retain token source identities and linked icons.
+The existing double-click entry remains available; blur commits retain the browser's
+chosen Tab destination. The table's actions column has an accessible heading.
+
+A bounded variables-dialog accessibility audit still finds low-contrast table
+text (`#888888` on `#2a2a2a`, 4.04:1 against 4.5:1). Browser colour preferences
+do not change the editor's dark interface. Contrast, live screen-reader testing
+and the wider editor audit remain open.
+
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release
 gate that should be made green by removing assertions.

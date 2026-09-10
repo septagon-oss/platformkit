@@ -161,6 +161,7 @@ const selectedValue = computed({
       return 'Derived #' + colorToHexRaw(editor.graph.resolveVariable(variable.id, modeId))
     }`],
         'packages/vue/src/variables/table/helpers.ts': ['50328f508e780665677e575098dd34ebf01e8e77973036d82d1351a54b736b52',
+          "    header: '',", "    header: () => h('span', { class: 'sr-only' }, 'Actions'),",
           `  if (newName && newName !== variable.name) {
     options.renameVariable(variable.id, newName)
   }`,
@@ -258,8 +259,74 @@ const selectedValue = computed({
         'src/components/properties/VariablesSection.vue': ['5e566f51c71bee2c77d1902d5d1f0d7f9d5f30e4b6a0db6a9b2ad410fe5f9175',
           '<IconButton :label="panels.openVariables"', '<IconButton class="min-h-6 min-w-6" :label="panels.openVariables"'],
         'src/components/variables/VariablesDialog.vue': ['d8f09a9aefffceb59356cddf38208ad6e25976ebf2e641f08c1eeff6c2657cbe',
+          "import { watch, type Component } from 'vue'", "import { computed, nextTick, type Component } from 'vue'",
           "const collectionInput = templateRef<HTMLInputElement>('collectionInput')",
-          "const collectionMenu = templateRef<HTMLButtonElement>('collectionMenu')\nconst collectionInput = templateRef<HTMLInputElement>('collectionInput')",
+          `const collectionMenu = templateRef<HTMLButtonElement>('collectionMenu')
+let pendingCollectionRename: string | undefined
+function onCollectionMenuClose(event: Event) {
+  // A selected item still belongs to the closing menu's focus trap. Start
+  // the rename at its lifecycle handoff, not during selection or on a timer.
+  const id = pendingCollectionRename
+  pendingCollectionRename = undefined
+  if (!id) return
+  event.preventDefault()
+  ctx.startRenameCollection(id)
+}
+function setCollectionInput(value: unknown) {
+  void ctx.collectionRename.focusInput(value instanceof HTMLInputElement ? value : null)
+}
+const renamingCollection = computed(() => ctx.collections.value.find(collection => collection.id === ctx.collectionRename.editingId.value))
+async function onCollectionRenameKeydown(event: KeyboardEvent) {
+  if (event.isComposing || !['Enter', 'Escape'].includes(event.code)) return
+  event.preventDefault()
+  event.stopPropagation()
+  ctx.collectionRename.onKeydown(event)
+  await nextTick()
+  collectionMenu.value?.focus()
+}
+async function commitCollectionRename(event: FocusEvent) {
+  const id = ctx.collectionRename.editingId.value
+  if (!id) return
+  const next = event.relatedTarget
+  const dialog = event.target instanceof Element ? event.target.closest('[role="dialog"]') : null
+  ctx.collectionRename.commit(id, event)
+  await nextTick()
+  // The modal's removal fallback can replace the browser's chosen Tab target.
+  // Retain that destination, but never steal a subsequent focus change.
+  if (next instanceof HTMLElement && next.isConnected && dialog?.contains(next) && document.activeElement === dialog) next.focus()
+}`,
+          `watch(collectionInput, (input) => {
+  void ctx.collectionRename.focusInput(input)
+})`, '',
+          `              <input
+                v-if="ctx.collectionRename.editingId.value === col.id"
+                ref="collectionInput"
+                class="w-24 rounded border border-accent bg-input px-2 py-0.5 text-xs text-surface outline-none"
+                :value="col.name"
+                @blur="ctx.collectionRename.commit(col.id, $event)"
+                @keydown="ctx.collectionRename.onKeydown"
+              />
+              <TabsTrigger
+                v-else`, `              <TabsTrigger`,
+          `        <TabsContent
+          v-for="col in ctx.collections.value"`,
+          `        <label v-if="renamingCollection" class="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-xs text-surface">
+          <span>{{ dialogs.renameCollection }}: {{ renamingCollection.name }}</span>
+          <input :ref="setCollectionInput" type="text"
+            class="min-w-0 flex-1 rounded border border-accent bg-input px-2 py-1 text-xs text-surface"
+            :value="renamingCollection.name"
+            @blur="commitCollectionRename"
+            @keydown="onCollectionRenameKeydown" />
+        </label>
+        <TabsContent
+          v-for="col in ctx.collections.value"`,
+          `                <DropdownMenuContent
+                  side="bottom"`,
+          `                <DropdownMenuContent
+                  @close-auto-focus="onCollectionMenuClose"
+                  side="bottom"`,
+          '@select="ctx.startRenameCollection(ctx.activeCollectionId.value)"',
+          '@select="pendingCollectionRename = ctx.activeCollectionId.value"',
           "const modeInput = templateRef<HTMLInputElement>('modeInput')",
           `function setModeInput(value: unknown) {
   void ctx.modeRename.focusInput(value instanceof HTMLInputElement ? value : null)
