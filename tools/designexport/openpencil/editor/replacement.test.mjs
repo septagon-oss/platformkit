@@ -151,7 +151,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
-    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-color.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -209,6 +209,132 @@ test('source-produced typed tokens retain their baseline through editor edits an
           assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
         }
         assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
+test('mode actions retain typed token identity, keyboard history and two worker saves', { timeout: 120000 }, async t => {
+  await verifyBuild()
+  const run = await sourceTokenFixture(t), input = decodeSnapshot(Buffer.from(run({})))
+  const { graph, collection } = buildFoundation(input.snapshot, input)
+  const sparse = graph.createVariable('Sparse', 'FLOAT', collection.id, 1e-50)
+  delete sparse.valuesByMode[collection.modes[1].modeId]
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Icon masters', 'light', 'dark'].map(name => geometry(baseline, named(baseline, name)))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `modes-${cycle}.fig`)
+        const open = page.getByRole('button', { name: 'Open variables', exact: true })
+        await open.click()
+        const dialog = page.getByRole('dialog', { name: 'Local variables', exact: true })
+        const modeButton = name => dialog.getByRole('button', { name: new RegExp('^' + name + ' mode actions') })
+        const tabTo = async target => {
+          for (let step = 0; step < 150 && !await target.evaluate(node => node === document.activeElement); step++) {
+            await page.keyboard.press('Tab')
+          }
+          await expect(target).toBeFocused()
+        }
+        const selectModeAction = async (name, action) => {
+          const button = modeButton(name)
+          await tabTo(button)
+          assert.ok(await button.evaluate(node => {
+            const style = getComputedStyle(node)
+            return node.matches(':focus-visible') && style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0
+          }))
+          await button.press('Enter')
+          const item = page.getByRole('menuitem', { name: action })
+          await expect(item).toBeVisible()
+          for (let step = 0; step < 8 && !await item.evaluate(node => node === document.activeElement); step++) {
+            await page.keyboard.press('ArrowDown')
+          }
+          await expect(item).toBeFocused()
+          await page.keyboard.press('Enter')
+        }
+        const closeDialog = async () => {
+          await dialog.getByRole('button', { name: 'Collection actions', exact: true }).focus()
+          await page.keyboard.press('Escape')
+          await expect(dialog).toBeHidden()
+        }
+        if (cycle === 0) {
+          // A default cannot be removed or changed while a numeric dependent
+          // has only that default value. The failure must not consume redo.
+          const spacing = dialog.getByRole('textbox', { name: 'spacing/1, light', exact: true })
+          await spacing.fill('0.2')
+          await spacing.press('Tab')
+          await closeDialog()
+          await page.keyboard.press('Control+z')
+          await open.click()
+          await selectModeAction('light', /Delete mode/i)
+          await expect(dialog.getByRole('status')).toContainText('numeric default value missing')
+          await expect(modeButton('light')).toHaveAttribute('data-default', 'true')
+          await tabTo(dialog.getByRole('button', { name: 'Dismiss variable message', exact: true }))
+          await page.keyboard.press('Enter')
+          await closeDialog()
+          await page.keyboard.press('Control+Shift+z')
+          await open.click()
+          await expect(spacing).toHaveValue('0.2')
+          const darkValue = dialog.getByRole('textbox', { name: 'Sparse, dark', exact: true })
+          await expect(darkValue).toHaveValue('1e-50')
+          await expect(darkValue).toHaveAttribute('aria-description', 'Uses the default mode value until edited')
+          await darkValue.fill('2e-50')
+          await darkValue.press('Tab')
+          await selectModeAction('dark', /default/i)
+          await expect(modeButton('dark')).toHaveAttribute('data-default', 'true')
+          await selectModeAction('dark', /Duplicate mode/i)
+          await expect(modeButton('dark copy')).toBeVisible()
+          await selectModeAction('dark copy', /Delete mode/i)
+          await expect(modeButton('dark copy')).toHaveCount(0)
+          await closeDialog()
+          await page.keyboard.press('Control+z')
+          await open.click()
+          await expect(modeButton('dark copy')).toBeVisible()
+          await expect(dialog.getByRole('textbox', { name: 'Sparse, dark copy', exact: true })).toHaveValue('2e-50')
+          await selectModeAction('dark copy', /Rename mode/i)
+          const rename = dialog.getByRole('textbox', { name: 'Rename dark copy mode', exact: true })
+          await expect(rename, JSON.stringify(errors)).toBeFocused()
+          await rename.fill('Contrast')
+          await rename.press('Enter')
+          await expect(modeButton('Contrast')).toBeVisible()
+        }
+        await expect(modeButton('dark')).toHaveAttribute('data-default', 'true')
+        await expect(dialog.getByRole('textbox', { name: 'spacing/1, light', exact: true })).toHaveValue('0.2')
+        await expect(dialog.getByRole('textbox', { name: 'spacing/1, dark', exact: true })).toHaveValue('0.1')
+        await expect(dialog.getByRole('textbox', { name: 'spacing/1, Contrast', exact: true })).toHaveValue('0.1')
+        await expect(dialog.getByRole('status')).toBeEmpty()
+        if (cycle > 0) {
+          if (cycle === 2) await page.emulateMedia({ forcedColors: 'active' })
+          const button = modeButton('dark')
+          await tabTo(button)
+          assert.ok(await button.evaluate(node => {
+            const style = getComputedStyle(node)
+            return node.matches(':focus-visible') && style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0
+          }))
+          await button.press('Enter')
+          await expect(page.getByRole('menuitem', { name: /Duplicate mode/i })).toBeVisible()
+          await page.keyboard.press('Escape')
+          await expect(button).toBeFocused()
+          await expect(dialog).toBeVisible()
+        }
+        await closeDialog()
+        if (cycle < 2) {
+          buffer = await saveDocument(page, errors, workers)
+          const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const token = [...reopened.variables.values()].find(variable => variable.name === 'spacing/1')
+          const owner = reopened.variableCollections.get(token.collectionId)
+          assert.deepEqual(owner.modes.map(mode => mode.name), ['light', 'dark', 'Contrast'])
+          assert.equal(owner.modes.find(mode => mode.name === 'dark').modeId, owner.defaultModeId)
+          assert.equal(reopened.resolveVariable(token.id, 'foreign-mode'), 0.1)
+          assert.deepEqual(token.sourceToken, { version: 1, snapshot: input.snapshot.sha256,
+            kind: 'scale', scale: 'spacing', key: '1', decimal: '0.1000', unit: 'px' })
+          assert.deepEqual(['Icon masters', 'light', 'dark'].map(name => geometry(reopened, named(reopened, name))), untouched)
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
         assert.deepEqual(errors, [])
       } finally { await context.close() }
     }

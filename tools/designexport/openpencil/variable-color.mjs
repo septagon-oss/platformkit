@@ -4,6 +4,12 @@ const reject = message => { throw new Error(`Native CSS color: ${message}`) }
 const record = value => value && typeof value === 'object' && !Array.isArray(value)
 const channels = ['r', 'g', 'b', 'a']
 
+export function validateResolvedColor(color) {
+  if (!record(color) || !channels.every(key => Number.isFinite(color[key]) && color[key] >= 0 && color[key] <= 1)) {
+    reject('unresolved native color')
+  }
+}
+
 // The expression is authored CSS, not a native expression language. Only its
 // external custom-property inputs become ordinary native alias identities.
 function mapInputs(formula, mapAlias) {
@@ -24,9 +30,7 @@ function mapInputs(formula, mapAlias) {
 export function resolveCSSColor(formula, resolveAlias) {
   const mapped = mapInputs(formula, id => {
     const color = resolveAlias(id)
-    if (!record(color) || !channels.every(key => Number.isFinite(color[key]) && color[key] >= 0 && color[key] <= 1)) {
-      reject(`unresolved native color: ${id}`)
-    }
+    validateResolvedColor(color)
     return color
   })
   return resolveColorExpression(mapped.value, name => Object.hasOwn(mapped.customProperties, name) ?

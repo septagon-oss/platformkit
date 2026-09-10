@@ -48,9 +48,8 @@ export function validateNumericVariables(graph) {
     const collection = graph.variableCollections.get(variable.collectionId)
     if (!collection?.variableIds.includes(variable.id) || owners.get(variable.id) !== 1) reject('numeric collection ownership missing or ambiguous')
     const modes = new Set(collection.modes.map(mode => mode.modeId))
-    if (!modes.size || modes.size !== collection.modes.length ||
-        !modes.has(collection.defaultModeId) || collection.defaultModeId !== collection.modes[0].modeId) {
-      reject('unique modes with the default first are required by the native file path')
+    if (!modes.size || modes.size !== collection.modes.length || !modes.has(collection.defaultModeId)) {
+      reject('unique modes with an owned default are required by the native file path')
     }
     if (!variable.valuesByMode || !Object.hasOwn(variable.valuesByMode, collection.defaultModeId)) reject('numeric default value missing')
     for (const [mode, value] of Object.entries(variable.valuesByMode)) {

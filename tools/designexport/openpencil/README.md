@@ -138,7 +138,7 @@ internal dependency closure can be removed together. Cross-collection mode fallb
 refused edits, retained redo entries and two FIG saves have independent native tests.
 The variables dialog keeps a refused operation's explanation until dismissed and
 retains keyboard focus. Deletion buttons have names and remain visible without hover.
-This does not certify successful deletion's undo restoration, mode-changing operations,
+This does not certify successful variable/collection deletion's undo restoration,
 raw graph mutation or unrestricted formula creation; those remain separate safety work.
 
 [Numeric variables](variable-number.mjs) retain the editor's finite binary64 values
@@ -157,8 +157,23 @@ are refused. Native tests cover aliases, mode fallbacks and metadata integrity. 
 built-editor numeric test additionally covers keyboard focus, visible outlines,
 refusal feedback, history and two actual worker saves without changing component
 geometry. Live screen-reader announcements and a full accessibility audit remain
-unverified. Mode-changing operations and numeric component/layout bindings are not
-qualified by these checks; the current native file path requires the default mode first.
+unverified. Numeric component/layout bindings are not qualified by these checks.
+
+[Collection mode edits](variable-modes.mjs) run the pinned graph operations on a
+detached owner, validating the resulting numeric and colour dependencies before
+live writes. Add, duplicate, remove and default-mode history retain captured values,
+including absent values; stale or dependency-breaking operations refuse without
+consuming history. Undo preserves an independently changed active-mode selection.
+The native wire order selects the default, while `sortPosition` preserves visible
+column order, so a nonfirst default survives both saves without another metadata
+format. Legacy mode lists without positions retain their original order; mixed or
+duplicate positions refuse. Active-mode selection itself remains session state.
+
+Mode headers are keyboard-operable menu buttons, and mode changes update the
+existing scene-derived table. Value-only edits retain its cell renderers and focus.
+Tabbing across a short token name no longer commits a rename; intentional leaf
+renames preserve its group prefix. Inherited numeric values display their resolved
+value with an accessible explanation, without materializing an override on focus.
 
 `npm run test:stock` deliberately omits the corrections. It reproduces the
 upstream native failures and is expected to exit nonzero; it is not a release

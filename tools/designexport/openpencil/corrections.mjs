@@ -18,6 +18,7 @@ export const sdkVersion = '0.14.0'
 const colorHelper = JSON.stringify(fileURLToPath(new URL('./variable-color.mjs', import.meta.url)))
 const numberHelper = JSON.stringify(fileURLToPath(new URL('./variable-number.mjs', import.meta.url)))
 const tokenHelper = JSON.stringify(fileURLToPath(new URL('./variable-source.mjs', import.meta.url)))
+const modeHelper = JSON.stringify(fileURLToPath(new URL('./variable-modes.mjs', import.meta.url)))
 export const corrections = Object.freeze({
   '@open-pencil/fig/dist/node-change2.js': {
     sha256: 'bdbb599d70a5cf92300c67c385ee0d269550d4eea9c637f608d85fa321e63ee7',
@@ -37,6 +38,9 @@ export const corrections = Object.freeze({
       source = `import { serializeCSSColors } from ${colorHelper};\n` + source
       source = `import { serializeNumbers, validateNumericVariables } from ${numberHelper};\n` + source
       source = `import { serializeTokenOrigin } from ${tokenHelper};\n` + source
+      source = `import { exportModeOrder } from ${modeHelper};\n` + source
+      source = replace(source, 'variableSetModes: col.modes.map((m, i) => {',
+        'variableSetModes: exportModeOrder(col).map(({ mode: m, index: i }) => {')
       source = replace(source, 'const graph = deserializeSceneGraph(structuredClone(serializeSceneGraph(sourceGraph)));',
         'validateNumericVariables(sourceGraph);\n\tconst graph = deserializeSceneGraph(structuredClone(serializeSceneGraph(sourceGraph)));')
       source = replace(source, 'variableData: variableValueToKiwi(value, variable.type, varIdToGuid)',
@@ -63,6 +67,11 @@ export const corrections = Object.freeze({
       source = `import { restoreCSSColors, validateCSSColors } from ${colorHelper};\n` + source
       source = `import { restoreNumbers, validateNumericVariables } from ${numberHelper};\n` + source
       source = `import { restoreTokenOrigin } from ${tokenHelper};\n` + source
+      source = `import { importModeOrder } from ${modeHelper};\n` + source
+      source = replace(source, 'const modes = (nc.variableSetModes ?? []).map((m) => {',
+        'const modes = importModeOrder(nc.variableSetModes ?? []).map((m) => {')
+      source = replace(source, 'defaultModeId: modes[0].modeId,',
+        'defaultModeId: nc.variableSetModes?.length ? guidToString(nc.variableSetModes[0].id) : modes[0].modeId,')
       source = replace(source, '\n\t\t\tvaluesByMode,',
         '\n\t\t\tvaluesByMode: restoreNumbers(nc, type, restoreCSSColors(nc, type, valuesByMode), graph.variableCollections.get(collectionId)),')
       source = replace(source, 'importVariableEntries(changeMap, parentMap, graph, assetRefs);',
@@ -93,6 +102,16 @@ export const corrections = Object.freeze({
     transform(source, replace) {
       source = `import { resolveCSSColor, validateCSSColorRemoval } from ${colorHelper};\n` + source
       source = `import { validateNumericRemoval } from ${numberHelper};\n` + source
+      source = `import { changeVariableModes } from ${modeHelper};\n` + source
+      for (const [name, args] of [['addMode', 'collectionId, modeId, name, sourceMode'],
+        ['removeMode', 'collectionId, modeId'], ['setDefaultMode', 'collectionId, modeId']]) {
+        source = replace(source, `function ${name}(graph, ${args}) {`,
+          `function ${name}(graph, ${args}) {
+            ${name === 'addMode' ? '' : `if (graph.variableCollections.has(collectionId) && !graph.variableCollections.get(collectionId).modes.some(mode => mode.modeId === modeId)) throw new Error("Native variable mode: unknown mode");`}
+            return changeVariableModes(graph, collectionId, candidate => ${name}Unchecked(candidate, ${args}));
+          }
+          function ${name}Unchecked(graph, ${args}) {`)
+      }
       source = replace(source, 'function removeVariable(graph, id) {',
         `function removeVariable(graph, id) {
           if (!graph.variables.has(id)) return;
@@ -158,6 +177,52 @@ export const corrections = Object.freeze({
     sha256: '95e406a14d6bf2f1057b09f31b8bf01b560d8a2dfc83cdd0fe62063e10923f47',
     transform(source, replace) {
       source = `import { setCheckedVariableValue as setNativeVariableValue } from ${numberHelper};\n` + source
+      source = `import { changeVariableModes, captureModeValues, restoreModeValues, restoreDefaultMode } from ${modeHelper};\n` + source
+      // Redo replays captured mode values, not a new copy of a subsequently
+      // edited default/source mode. Restore the whole candidate before checking.
+      for (const [label, args] of [['Add mode', 'collectionId, modeId, modeName'],
+        ['Duplicate mode', 'collectionId, modeId, modeName, sourceModeId']]) {
+        source = replace(source, `ctx.graph.addMode(${args});\n\t\tctx.undo.push({\n\t\t\tlabel: "${label}",`,
+          `ctx.graph.addMode(${args});
+          const addedValues = captureModeValues(ctx.graph, collectionId, modeId);
+          ctx.undo.push({
+            label: "${label}",`)
+        source = replace(source, `\t\t\tforward: () => {\n\t\t\t\tctx.graph.addMode(${args});`,
+          `\t\t\tforward: () => {\n\t\t\t\tchangeVariableModes(ctx.graph, collectionId, graph => {
+            graph.addMode(${args});
+            restoreModeValues(graph, collectionId, modeId, addedValues);
+          });`)
+      }
+      source = replace(source, 'const wasDefault = collection.defaultModeId === modeId;',
+        'const wasDefault = collection.defaultModeId === modeId;\n\t\tconst previousActive = ctx.graph.activeMode.get(collectionId);')
+      source = replace(source, 'ctx.graph.removeMode(collectionId, modeId);\n\t\tctx.undo.push({',
+        `ctx.graph.removeMode(collectionId, modeId);
+        const removedDefault = collection.defaultModeId;
+        const removedActive = ctx.graph.activeMode.get(collectionId);
+        ctx.undo.push({`)
+      source = replace(source, `const valueSnapshots = /* @__PURE__ */ new Map();
+\t\tfor (const varId of collection.variableIds) {
+\t\t\tconst v = ctx.graph.variables.get(varId);
+\t\t\tif (v?.valuesByMode[modeId] !== void 0) valueSnapshots.set(varId, structuredClone(v.valuesByMode[modeId]));
+\t\t}`, 'const valueSnapshots = captureModeValues(ctx.graph, collectionId, modeId);')
+      source = replace(source, `\t\t\t\tctx.graph.addMode(collectionId, modeId, modeName);
+\t\t\t\tconst col = ctx.graph.variableCollections.get(collectionId);`,
+        `\t\t\t\tchangeVariableModes(ctx.graph, collectionId, graph => {
+          graph.addMode(collectionId, modeId, modeName);
+          const col = graph.variableCollections.get(collectionId);`)
+      source = replace(source, `\t\t\t\tfor (const [varId, value] of valueSnapshots) {
+\t\t\t\t\tconst v = ctx.graph.variables.get(varId);
+\t\t\t\t\tif (v) v.valuesByMode[modeId] = structuredClone(value);
+\t\t\t\t}
+\t\t\t\tif (wasDefault) ctx.graph.setDefaultMode(collectionId, modeId);`,
+        `          restoreModeValues(graph, collectionId, modeId, valueSnapshots);
+          if (wasDefault) restoreDefaultMode(graph, collectionId, removedDefault, modeId);
+          if (previousActive === modeId && graph.activeMode.get(collectionId) === removedActive) graph.activeMode.set(collectionId, previousActive);
+        });`)
+      source = replace(source, '\t\t\t\tctx.graph.setDefaultMode(collectionId, modeId);',
+        '\t\t\t\trestoreDefaultMode(ctx.graph, collectionId, prevDefault, modeId);')
+      source = replace(source, '\t\t\t\tctx.graph.setDefaultMode(collectionId, prevDefault);',
+        '\t\t\t\trestoreDefaultMode(ctx.graph, collectionId, modeId, prevDefault);')
       source = replace(source, 'const prevValue = structuredClone(variable.valuesByMode[modeId]);',
         'const prevPresent = Object.hasOwn(variable.valuesByMode, modeId);\n' +
         '\t\tconst prevValue = structuredClone(variable.valuesByMode[modeId]);')

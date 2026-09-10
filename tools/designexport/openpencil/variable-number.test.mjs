@@ -213,7 +213,7 @@ test('numeric graph validation refuses ambiguous ownership and mode fallbacks', 
     (graph, base, collection) => collection.variableIds.push(base.id),
     (graph, base) => graph.createCollection('Conflicting owner').variableIds.push(base.id),
     (graph, base, collection) => collection.modes.push(collection.modes[0]),
-    (graph, base, collection) => { collection.defaultModeId = collection.modes[1].modeId },
+    (graph, base, collection) => { collection.defaultModeId = 'missing-mode' },
     (graph, base, collection) => { delete base.valuesByMode[collection.defaultModeId] },
   ]) {
     const graph = fixture(), base = named(graph, 'Base'), collection = graph.variableCollections.get(base.collectionId)

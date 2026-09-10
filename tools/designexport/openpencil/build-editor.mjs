@@ -155,12 +155,18 @@ const selectedValue = computed({
           `      const num = Number.parseFloat(raw)
       return Number.isNaN(num) ? undefined : num`, '      return parseNativeNumber(raw)',
           'const value = variable.valuesByMode[modeId]',
-          `const value = variable.valuesByMode[modeId]
+          `const value = Object.hasOwn(variable.valuesByMode, modeId) ? variable.valuesByMode[modeId] : editor.graph.resolveVariable(variable.id, modeId)
     if (Object.is(value, -0)) return '-0'
     if (value && typeof value === 'object' && 'cssColor' in value) {
       return 'Derived #' + colorToHexRaw(editor.graph.resolveVariable(variable.id, modeId))
     }`],
         'packages/vue/src/variables/table/helpers.ts': ['50328f508e780665677e575098dd34ebf01e8e77973036d82d1351a54b736b52',
+          `  if (newName && newName !== variable.name) {
+    options.renameVariable(variable.id, newName)
+  }`,
+          `  const prefix = variable.name.slice(0, variable.name.lastIndexOf('/') + 1)
+  const name = newName.includes('/') ? newName : prefix + newName
+  if (newName && name !== variable.name) options.renameVariable(variable.id, name)`,
           `      return h(
         EditableRoot,
         {
@@ -185,6 +191,7 @@ const selectedValue = computed({
       return h('input', {
         value: options.formatModeValue(variable, mode.modeId),
         'aria-label': variable.name + ', ' + mode.name,
+        'aria-description': Object.hasOwn(variable.valuesByMode, mode.modeId) ? undefined : 'Uses the default mode value until edited',
         class: 'w-full min-w-0 rounded border border-border bg-surface/10 px-1 py-0.5 font-mono text-xs text-surface',
         onChange: (event: Event) => {
           const input = event.target as HTMLInputElement
@@ -212,12 +219,22 @@ const selectedValue = computed({
           "'aria-label': 'Delete ' + row.original.name,\n          onClick: () => options.removeVariable(row.original.id)"],
         'packages/vue/src/variables/use.ts': ['75e76700f882d4dc6b80615977363b9a061a08067a0cc61fffb4472234b81f47',
           "import type { Variable }", "import type { Variable, VariableValue }",
+          'const activeCollection = computed(() => editor.getCollection(activeCollectionId.value) ?? null)',
+          'const activeCollection = useSceneComputed(() => editor.getCollection(activeCollectionId.value) ?? null)',
+          'const activeModes = computed(() => activeCollection.value?.modes ?? [])',
+          `const observedModes = useSceneComputed(() => activeCollection.value?.modes.map(mode => ({ ...mode })) ?? [])
+  const activeModes = computed((previous?: typeof observedModes.value) => {
+    const modes = observedModes.value
+    // Keep cell renderers and focus stable when only a variable value changes.
+    return previous?.length === modes.length && previous.every((mode, index) =>
+      mode.modeId === modes[index].modeId && mode.name === modes[index].name) ? previous : modes
+  })`,
           "  const searchTerm = ref('')",
           `  const searchTerm = ref('')
   const variableError = ref('')
-  function checkedVariableAction(action: () => void) {
-    try { action() } catch (error) {
-      if (!(error instanceof Error) || !/^(Native CSS color|CSS color expression|Native number):/.test(error.message)) throw error
+  function checkedVariableAction<T>(action: () => T): T | undefined {
+    try { return action() } catch (error) {
+      if (!(error instanceof Error) || !/^(Native CSS color|CSS color expression|Native number|Native variable mode):/.test(error.message)) throw error
       variableError.value = 'Variables unchanged. ' + error.message
     }
   }`,
@@ -232,11 +249,22 @@ const selectedValue = computed({
     },
     removeVariable: (id: string) => checkedVariableAction(() => variableActions.removeVariable(id)),
     removeCollection: (id: string) => checkedVariableAction(() => collectionActions.removeCollection(id)),
+    addMode: () => checkedVariableAction(() => collectionActions.addMode()),
+    removeMode: (id: string) => checkedVariableAction(() => collectionActions.removeMode(id)),
+    duplicateMode: (id: string) => checkedVariableAction(() => collectionActions.duplicateMode(id)),
+    setDefaultMode: (id: string) => checkedVariableAction(() => collectionActions.setDefaultMode(id)),
     updateVariableValue: (id: string, modeId: string, value: VariableValue) =>
       checkedVariableAction(() => variableActions.updateVariableValue(id, modeId, value))`],
         'src/components/variables/VariablesDialog.vue': ['d8f09a9aefffceb59356cddf38208ad6e25976ebf2e641f08c1eeff6c2657cbe',
           "const collectionInput = templateRef<HTMLInputElement>('collectionInput')",
           "const collectionMenu = templateRef<HTMLButtonElement>('collectionMenu')\nconst collectionInput = templateRef<HTMLInputElement>('collectionInput')",
+          "const modeInput = templateRef<HTMLInputElement>('modeInput')",
+          `function setModeInput(value: unknown) {
+  void ctx.modeRename.focusInput(value instanceof HTMLInputElement ? value : null)
+}`,
+          `watch(modeInput, (input) => {
+  void ctx.modeRename.focusInput(input)
+})`, '',
           '    <DialogTitle class="sr-only">{{ dialogs.localVariables }}</DialogTitle>',
           `    <DialogTitle class="sr-only">{{ dialogs.localVariables }}</DialogTitle>
     <div class="shrink-0 px-4">
@@ -266,10 +294,28 @@ const selectedValue = computed({
 <style scoped>
 textarea:focus-visible { outline: revert; outline-offset: 2px; }
 </style>\n`
-        if (path.endsWith('/VariablesDialog.vue')) source += `
+        if (path.endsWith('/VariablesDialog.vue')) {
+          // Mode actions use the same menu components as collection actions.
+          // A right-click-only span has no ordinary keyboard activation path.
+          for (const part of ['Content', 'Item', 'Portal', 'Root', 'Separator', 'Trigger']) {
+            source = replaceOnce(source, '  ContextMenu' + part + ',\n', '')
+            source = source.replaceAll('ContextMenu' + part, 'DropdownMenu' + part)
+          }
+          source = replaceOnce(source, '<span\n                            :data-default=',
+            `<button type="button" class="min-h-6 cursor-pointer border-none bg-transparent p-0 text-left"
+                            :aria-label="String(header.column.columnDef.header) + ' mode actions' + (getModeId(header.column.id) === col.defaultModeId ? ', default' : '')"
+                            :data-default=`)
+          source = replaceOnce(source, '{{ header.column.columnDef.header }}\n                          </span>',
+            '{{ header.column.columnDef.header }}\n                          </button>')
+          source = replaceOnce(source, 'ref="modeInput"',
+            ':ref="setModeInput" :aria-label="\'Rename \' + String(header.column.columnDef.header) + \' mode\'"')
+          source = replaceOnce(source, '<DropdownMenuContent :class="menuCls.content">',
+            '<DropdownMenuContent :class="menuCls.content" @close-auto-focus="ctx.modeRename.editingId.value && $event.preventDefault()">')
+          source += `
 <style scoped>
 :deep(button:focus-visible), :deep(input:focus-visible) { outline: revert; outline-offset: 2px; }
 </style>\n`
+        }
         return { code: source, map: null }
       }
       if (id === join(upstream, 'src/app/shell/keyboard/nudging.ts')) {
