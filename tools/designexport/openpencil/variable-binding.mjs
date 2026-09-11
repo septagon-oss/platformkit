@@ -195,10 +195,36 @@ export function ownVariableModes(graph, node) {
 }
 
 function ownInstanceField(graph, node, field, owned) {
+  const scope = instanceField(graph, node, field)
+  if (!scope) return
+  if (owned) scope.owner.overrides[scope.key] = true
+  else delete scope.owner.overrides[scope.key]
+}
+
+function instanceField(graph, node, field) {
   let owner = node
   while (owner && owner.type !== 'INSTANCE') owner = graph.getNode(owner.parentId)
-  if (!owner) return
-  const key = owner.id === node.id ? field : `${node.id}:${field}`
-  if (owned) owner.overrides[key] = true
-  else delete owner.overrides[key]
+  return owner ? { owner, key: owner.id === node.id ? field : `${node.id}:${field}` } : null
+}
+
+// A copied nonempty mode map can still be inherited. History must retain the
+// native ownership key independently, without snapshotting unrelated overrides.
+export function variableModeOwnership(graph, node) {
+  const scope = instanceField(graph, node, 'variableModes')
+  if (!scope) return null
+  const { owner, key } = scope
+  return { ownerId: owner.id, key, present: Object.hasOwn(owner.overrides, key), value: structuredClone(owner.overrides[key]) }
+}
+
+export function restoreVariableModeOwnership(graph, id, snapshot) {
+  if (snapshot === undefined) return
+  const node = graph.getNode(id)
+  if (!node) reject('mode history target no longer exists')
+  const scope = instanceField(graph, node, 'variableModes')
+  if ((scope?.owner.id ?? null) !== (snapshot?.ownerId ?? null) || (scope?.key ?? null) !== (snapshot?.key ?? null)) {
+    reject('mode history owner changed')
+  }
+  if (!scope) return
+  if (snapshot.present) scope.owner.overrides[scope.key] = structuredClone(snapshot.value)
+  else delete scope.owner.overrides[scope.key]
 }

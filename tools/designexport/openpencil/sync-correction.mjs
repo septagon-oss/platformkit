@@ -22,6 +22,18 @@ function syncSourceOccurrence(nodes, target, visiting = new Set()) {
   return sourceChild(syncReadView(nodes), sourceParent, target, overrides)
 }
 
+function inheritedVariableModes(nodes, target, visiting = new Set()) {
+  if (visiting.has(target.id)) throw new Error('Cyclic native mode inheritance')
+  const overrides = ancestryOverrides(syncReadView(nodes), target)
+  if (Object.hasOwn(overrides, `${target.id}:variableModes`)) return target.variableModes
+  const source = syncSourceOccurrence(nodes, target)
+  return source ? inheritedVariableModes(nodes, source, new Set(visiting).add(target.id)) : target.variableModes
+}
+
+// Import and mode-history replay need the synchronizer's exact occurrence
+// correspondence, but must not synchronize unrelated appearance or geometry.
+export const nativeModeHelpers = [syncReadView, syncSourceOccurrence, inheritedVariableModes].map(fn => fn.toString()).join('\n')
+
 function syncReconciliation(nodes, source, target, overrides, deletedParents) {
   const matches = new Map(), local = [], removed = []
   const lineageView = syncReadView(nodes, deletedParents)

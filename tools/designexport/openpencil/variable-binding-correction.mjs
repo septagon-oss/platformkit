@@ -1,4 +1,6 @@
 import { fileURLToPath } from 'node:url'
+import { lineageHelpers } from './exporter-correction.mjs'
+import { nativeModeHelpers } from './sync-correction.mjs'
 
 const helper = JSON.stringify(fileURLToPath(new URL('./variable-binding.mjs', import.meta.url)))
 
@@ -76,6 +78,7 @@ export function correctNumericEvents(source, replace) {
 }
 
 export function correctNumericImport(source, replace) {
+  source = nativeModeHelpers + '\n' + source
   source = `import { isNumericBindingField, applyNumericBindings, ownVariableModes } from ${helper};\n` + source
   source = 'import { extractVariableModes } from "./node-change2.js";\n' + source
   source = replace(source, '\tapplyOverridePaints(ov, updates);',
@@ -85,6 +88,11 @@ export function correctNumericImport(source, replace) {
     `function applyResolvedNumericBindings(graph, activeNodeIds) {
       for (const node of overrideCandidates(graph, activeNodeIds)) {
         if (node.source.fig?.rawNodeFields?.variableModeBySetMap) ownVariableModes(graph, node);
+      }
+      for (const node of overrideCandidates(graph, activeNodeIds)) {
+        const variableModes = inheritedVariableModes(graph.nodes, node);
+        if (variableModes !== node.variableModes) graph.preserveSourceMetadataDuring(() =>
+          graph.updateNode(node.id, { variableModes: structuredClone(variableModes) }));
       }
       applyNumericBindings(graph);`)
   return replace(source, 'if (Array.isArray(variableId)) continue;\n\t\t\tconst value = graph.resolveNumberVariableForNode(node.id, variableId);',
@@ -212,17 +220,31 @@ export function correctNumericBindingActions(source, replace) {
 }
 
 export function correctNumericNodeActions(source, replace) {
+  source = lineageHelpers + '\n' + nativeModeHelpers + '\n' + source
   source = 'import { projectGraphChange } from "./components/properties.js";\n' + source
-  source = `import { planNumericNodeUpdate, planNumericBindings } from ${helper};\n` + source
+  source = `import { planNumericNodeUpdate, planNumericBindings, variableModeOwnership, restoreVariableModeOwnership } from ${helper};\n` + source
   const pattern = /ctx\.graph\.updateNode\(id, (nextChanges|previous)\);/g
   const matches = [...source.matchAll(pattern)]
   if (matches.length !== 4) throw new Error('Pinned numeric node actions changed')
   source = source.replaceAll(pattern, (_, changes) => `updateNumericNode(id, ${changes});`)
+  source = replace(source, 'const previous = pick(node, Object.keys(nextChanges));',
+    'const previous = pick(node, Object.keys(nextChanges));\n' +
+    '    const modeOwnershipBefore = Object.hasOwn(nextChanges, "variableModes") ? variableModeOwnership(ctx.graph, node) : undefined;')
+  source = replace(source, '\t\tctx.undo.push({',
+    '    const modeOwnershipAfter = modeOwnershipBefore === undefined ? undefined : variableModeOwnership(ctx.graph, node);\n\t\tctx.undo.push({')
+  for (const [changes, snapshot] of [['nextChanges', 'modeOwnershipAfter'], ['previous', 'modeOwnershipBefore']]) {
+    source = replace(source, `\t\t\t\tupdateNumericNode(id, ${changes});`,
+      `\t\t\t\tupdateNumericNode(id, ${changes}, ${snapshot});`)
+  }
   return replace(source, 'function createNodeActions(ctx) {', `function createNodeActions(ctx) {
-    function updateNumericNode(id, changes) {
-      if (!planNumericNodeUpdate(ctx.graph, id, changes)) return ctx.graph.updateNode(id, changes);
+    function updateNumericNode(id, changes, ownership) {
+      if (!planNumericNodeUpdate(ctx.graph, id, changes) && ownership === undefined) return ctx.graph.updateNode(id, changes);
       projectGraphChange(ctx, planned => {
         planned.graph.updateNode(id, changes);
+        restoreVariableModeOwnership(planned.graph, id, ownership);
+        if (Object.hasOwn(changes, "variableModes") && variableModeOwnership(planned.graph, planned.graph.getNode(id))?.present === false)
+          planned.graph.preserveSourceMetadataDuring(() =>
+          planned.graph.updateNode(id, { variableModes: structuredClone(inheritedVariableModes(planned.graph.nodes, planned.graph.getNode(id))) }));
         for (const root of planNumericBindings(planned.graph).roots) planned.runLayoutForNode(root);
         planned.runLayoutForNode(id);
       });

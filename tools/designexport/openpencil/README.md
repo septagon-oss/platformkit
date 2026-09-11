@@ -187,6 +187,16 @@ unbind freezes the effective value as an authored literal; rebind releases it.
 Collection removal and restoration preserve distinct occurrence values and links.
 Editing a bound numeric literal requires an explicit unbind first.
 
+Node-mode history retains native override ownership separately from the copied
+mode value. Undo restores whether the selection was inherited or explicit.
+Clearing a local selection, or undoing its creation, resumes the current source
+mode. Redo restores the recorded ownership, including an explicit selection
+whose value equals the inherited one.
+Import uses the same native source correspondence without synchronizing unrelated
+appearance. Tests cover standalone and nested instances, descendant override keys,
+changed or missing owners, measurement refusal and two saves. Unrelated override
+keys survive history; the undo stack itself is not stored in the file.
+
 Run `node --import ./register.mjs --test variable-binding.test.mjs` here for live
 reflow, both flex directions, fixed boxes, alias and mode ownership, Skia pixels,
 failure injection, history, instance independence and two native saves. The editor

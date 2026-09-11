@@ -522,3 +522,177 @@ test('a saved master and its instances reopen with current child positions befor
     layout(graph, 'Dark', 24)
   }
 })
+
+function modeHistoryFixture(placement) {
+  const graph = fixture(), master = named(graph, 'Bound'), base = variable(graph, 'Spacing')
+  const page = graph.getPages()[0], collection = graph.variableCollections.get(base.collectionId)
+  graph.updateNode(master.id, { variableModes: { [collection.id]: collection.defaultModeId } })
+  let source = master
+  if (placement !== 'descendant') master.type = 'COMPONENT'
+  if (placement !== 'instance') {
+    source = graph.createNode('COMPONENT', page.id, { name: 'Mode wrapper', width: 300, height: 180 })
+    if (placement === 'descendant') graph.reparentNode(master.id, source.id)
+    else graph.createInstance(master.id, source.id, { name: 'Nested spacing' })
+  }
+  graph.createInstance(source.id, page.id, { name: 'Mode target' })
+  graph.createInstance(source.id, page.id, { name: 'Mode explicit' })
+  const explicit = modeHistoryTarget(graph, placement, 'Mode explicit').target
+  graph.updateNode(explicit.id, { variableModes: { ...master.variableModes } })
+  computeAllLayouts(graph)
+  return graph
+}
+
+function modeHistoryTarget(graph, placement, name = 'Mode target') {
+  const root = named(graph, name), target = placement === 'instance' ? root : graph.getChildren(root.id)[0]
+  const owner = target.type === 'INSTANCE' ? target : root
+  return { target, owner, key: owner.id === target.id ? 'variableModes' : `${target.id}:variableModes` }
+}
+
+for (const placement of ['instance', 'nested instance', 'descendant']) {
+  test(`local mode history restores ${placement} inheritance through two saves`, async () => {
+    let graph = modeHistoryFixture(placement)
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const editor = createEditor({ graph }), master = named(graph, 'Bound'), base = variable(graph, 'Spacing')
+      const collection = graph.variableCollections.get(base.collectionId)
+      const { target, owner, key } = modeHistoryTarget(graph, placement)
+      const beforeMode = master.variableModes[collection.id]
+      const nextMode = collection.modes.find(mode => mode.modeId !== beforeMode).modeId
+      const beforeValue = base.valuesByMode[beforeMode], nextValue = base.valuesByMode[nextMode]
+      const check = (value, owned) => {
+        assert.deepEqual([target.itemSpacing, target.paddingLeft, target.width], [value, value, 88 + 2 * value])
+        assert.deepEqual(graph.getChildren(target.id).map(node => node.x), [value, 40 + 2 * value])
+        assert.equal(Object.hasOwn(owner.overrides, key), owned, `${placement}: mode ownership`)
+        assert.equal(modeHistoryTarget(graph, placement, 'Mode explicit').target.itemSpacing, 8)
+      }
+      check(beforeValue, false)
+      editor.updateNodeWithUndo(target.id, { variableModes: { [collection.id]: nextMode } })
+      await settle(graph)
+      check(nextValue, true)
+      // History owns only its mode key, including on an ancestor instance.
+      const opacityKey = owner.id === target.id ? 'opacity' : `${target.id}:opacity`
+      owner.overrides[opacityKey] = true
+      editor.undoAction()
+      await settle(graph)
+      check(beforeValue, false)
+      assert.equal(owner.overrides[opacityKey], true)
+      editor.redoAction()
+      await settle(graph)
+      check(nextValue, true)
+      editor.undoAction()
+      await settle(graph)
+      editor.updateNode(master.id, { variableModes: { [collection.id]: nextMode } })
+      await settle(graph)
+      check(nextValue, false)
+      if (cycle < 2) graph = await reopen(graph)
+    }
+  })
+}
+
+test('selecting the inherited mode explicitly still has reversible ownership', async () => {
+  const graph = modeHistoryFixture('instance'), editor = createEditor({ graph })
+  const { target, owner, key } = modeHistoryTarget(graph, 'instance')
+  editor.updateNodeWithUndo(target.id, { variableModes: { ...target.variableModes } })
+  await settle(graph)
+  assert.equal(owner.overrides[key], true)
+  editor.undoAction()
+  await settle(graph)
+  assert.equal(Object.hasOwn(owner.overrides, key), false)
+  editor.redoAction()
+  await settle(graph)
+  assert.equal(owner.overrides[key], true)
+})
+
+for (const placement of ['instance', 'nested instance', 'descendant']) {
+  test(`undo resumes the current master mode for the ${placement}, not a stale copied value`, async () => {
+    const graph = modeHistoryFixture(placement), editor = createEditor({ graph }), base = variable(graph, 'Spacing')
+    const { target, owner, key } = modeHistoryTarget(graph, placement)
+    const dark = { [base.collectionId]: 'binding-dark' }
+    editor.updateNodeWithUndo(target.id, { variableModes: dark })
+    editor.updateNode(named(graph, 'Bound').id, { variableModes: dark })
+    await settle(graph)
+    editor.undoAction()
+    await settle(graph)
+    assert.equal(Object.hasOwn(owner.overrides, key), false)
+    assert.deepEqual([target.paddingLeft, target.itemSpacing, target.width], [24, 24, 136])
+    editor.redoAction()
+    await settle(graph)
+    assert.equal(owner.overrides[key], true)
+    assert.deepEqual([target.paddingLeft, target.itemSpacing, target.width], [24, 24, 136])
+  })
+
+  test(`clearing the ${placement} mode resumes inheritance and retains its previous explicit history`, async () => {
+    const graph = modeHistoryFixture(placement), editor = createEditor({ graph }), base = variable(graph, 'Spacing')
+    const { target, owner, key } = modeHistoryTarget(graph, placement, 'Mode explicit')
+    editor.updateNode(named(graph, 'Bound').id, { variableModes: { [base.collectionId]: 'binding-dark' } })
+    await settle(graph)
+    assert.equal(target.itemSpacing, 8)
+    editor.updateNodeWithUndo(target.id, { variableModes: {} })
+    assert.deepEqual([target.paddingLeft, target.itemSpacing, target.width], [24, 24, 136])
+    await settle(graph)
+    assert.equal(Object.hasOwn(owner.overrides, key), false)
+    assert.deepEqual([target.paddingLeft, target.itemSpacing, target.width], [24, 24, 136])
+    editor.undoAction()
+    await settle(graph)
+    assert.equal(owner.overrides[key], true)
+    assert.equal(target.itemSpacing, 8)
+    editor.redoAction()
+    await settle(graph)
+    assert.equal(Object.hasOwn(owner.overrides, key), false)
+    assert.equal(target.itemSpacing, 24)
+  })
+}
+
+for (const missing of [false, true]) {
+  test(`mode history refuses a ${missing ? 'missing target' : 'changed override owner'} without consuming the entry`, async () => {
+    const graph = modeHistoryFixture('descendant'), editor = createEditor({ graph }), base = variable(graph, 'Spacing')
+    const { target, owner } = modeHistoryTarget(graph, 'descendant')
+    editor.updateNodeWithUndo(target.id, { variableModes: { [base.collectionId]: 'binding-dark' } })
+    await settle(graph)
+    if (missing) graph.deleteNode(target.id)
+    else graph.reparentNode(target.id, graph.getPages()[0].id)
+    const before = state(graph)
+    let events = 0
+    graph.emitter.on('node:updated', () => events++)
+    editor.onEditorEvent('render:requested', () => events++)
+    assert.throws(() => editor.undoAction(), /mode history (target no longer exists|owner changed)/)
+    assert.deepEqual(state(graph), before)
+    assert.equal(events, 0)
+    if (!missing) {
+      graph.reparentNode(target.id, owner.id)
+      await settle(graph)
+      editor.undoAction()
+      await settle(graph)
+      assert.equal(Object.hasOwn(owner.overrides, `${target.id}:variableModes`), false)
+      assert.equal(target.itemSpacing, 8)
+    } else await settle(graph)
+  })
+}
+
+for (const direction of ['undo', 'redo']) {
+  test(`local mode ${direction} retains ownership and retryable history when measurement fails`, async () => {
+    const graph = modeHistoryFixture('instance'), editor = createEditor({ graph })
+    const { target, owner, key } = modeHistoryTarget(graph, 'instance'), base = variable(graph, 'Spacing')
+    const previous = getTextMeasurer(), measure = node => ({ width: node.text.length * 5, height: 24 })
+    graph.createNode('TEXT', target.id, { text: 'Measured', width: 40, height: 24, textAutoResize: 'WIDTH_AND_HEIGHT' })
+    setTextMeasurer(measure)
+    try {
+      await settle(graph)
+      editor.updateNodeWithUndo(target.id, { variableModes: { [base.collectionId]: 'binding-dark' } })
+      if (direction === 'redo') editor.undoAction()
+      await settle(graph)
+      const before = state(graph)
+      let events = 0
+      graph.emitter.on('node:updated', () => events++)
+      editor.onEditorEvent('render:requested', () => events++)
+      setTextMeasurer(() => { throw new Error('Mode history measurement refused') })
+      assert.throws(() => editor[`${direction}Action`](), /Mode history measurement refused/)
+      assert.deepEqual(state(graph), before)
+      assert.equal(events, 0)
+      setTextMeasurer(measure)
+      editor[`${direction}Action`]()
+      await settle(graph)
+      assert.equal(Object.hasOwn(owner.overrides, key), direction === 'redo')
+      assert.equal(target.itemSpacing, direction === 'redo' ? 24 : 8)
+    } finally { setTextMeasurer(previous) }
+  })
+}
