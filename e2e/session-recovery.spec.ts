@@ -219,7 +219,8 @@ test('an account changed in another tab cannot receive the original form write',
   expect(await matchingTasks(request, title)).toHaveLength(1);
 });
 
-test('a recovery notice survives validation replacement and repeated real refusals', async ({ page, request }) => {
+for (const width of [1280, 390]) test(`a recovery notice survives validation replacement and repeated real refusals at ${width}px`, async ({ page, request }) => {
+  await page.setViewportSize({ width, height: 900 });
   await page.goto(`${tasks}/new`);
   const title = 'Retain the notice across the validation swap';
   const field = page.getByRole('textbox', { name: 'Title', exact: true });
@@ -255,6 +256,7 @@ test('a recovery notice survives validation replacement and repeated real refusa
   await field.fill('   ');
   await submit(422);
   await expect(field).toHaveAttribute('aria-invalid', 'true');
+  await expect(field).toBeFocused();
   await expect(notice).toBeHidden();
   expect(await oldForm.evaluate(node => node.isConnected)).toBe(false);
   expect(await retainedNotice.evaluate(node => node.isConnected)).toBe(true);
@@ -271,6 +273,59 @@ test('a recovery notice survives validation replacement and repeated real refusa
   expect(await matchingTasks(request, title)).toEqual([]);
   await oldForm.dispose();
   await retainedNotice.dispose();
+});
+
+test('settled validation focuses one available field inside its own fragment', async ({ page }) => {
+  await page.goto(`${tasks}/new`);
+  // Exercise the shipped event handler with synthetic DOM fixtures. The real
+  // server-refusal cases above prove the HTTP integration independently.
+  const focused = await page.evaluate(() => {
+    const fixture = document.createElement('section');
+    fixture.innerHTML = `
+      <label>Unrelated<input id="focus-unrelated" aria-invalid="true"></label>
+      <form id="focus-fragment">
+        <input type="hidden" aria-invalid="true">
+        <input disabled aria-invalid="true" aria-label="Disabled">
+        <fieldset disabled><input aria-invalid="true" aria-label="Disabled fieldset"></fieldset>
+        <div hidden><input aria-invalid="true" aria-label="Hidden"></div>
+        <div inert><input aria-invalid="true" aria-label="Inert"></div>
+        <div style="visibility:hidden"><input aria-invalid="true" aria-label="Invisible"></div>
+        <label>First<input id="focus-first" aria-invalid="true"></label>
+        <label>Second<textarea id="focus-second" aria-invalid="true"></textarea></label>
+        <label>Choice<select id="focus-choice" aria-invalid="true"><option>One</option></select></label>
+      </form>
+      <form id="focus-unavailable"><input disabled aria-invalid="true" aria-label="Unavailable"></form>
+    `;
+    document.body.append(fixture);
+    const active: string[] = [];
+    const element = (id: string) => document.getElementById(id)!;
+    const settle = (elt: Element, xhr: { status: number }) => {
+      document.body.dispatchEvent(new CustomEvent('htmx:afterSettle', { detail: { elt, xhr } }));
+      active.push(document.activeElement?.id ?? '');
+    };
+    try {
+      element('focus-unrelated').focus();
+      for (const status of [200, 204, 403, 500]) settle(element('focus-fragment'), { status });
+      const detached = document.createElement('form');
+      detached.innerHTML = '<input aria-invalid="true" aria-label="Detached">';
+      settle(detached, { status: 422 });
+      const refused = { status: 422 };
+      settle(element('focus-fragment'), refused);
+      settle(element('focus-second'), refused);
+      settle(element('focus-second'), { status: 422 });
+      settle(element('focus-choice'), { status: 422 });
+      const later = { status: 422 };
+      settle(element('focus-unavailable'), later);
+      settle(element('focus-first'), later);
+      return active;
+    } finally {
+      fixture.remove();
+    }
+  });
+  expect(focused).toEqual([
+    'focus-unrelated', 'focus-unrelated', 'focus-unrelated', 'focus-unrelated', 'focus-unrelated',
+    'focus-first', 'focus-first', 'focus-second', 'focus-choice', 'focus-choice', 'focus-first',
+  ]);
 });
 
 test('a committed write with a lost response is reported as uncertain and never replayed', async ({ page, request }) => {

@@ -63,6 +63,24 @@
     }
   });
 
+  const focusedRefusals = new WeakSet();
+  document.body.addEventListener("htmx:afterSettle", function (event) {
+    const { xhr, elt } = event.detail;
+    if (xhr?.status !== 422 || focusedRefusals.has(xhr) || !(elt instanceof Element) || !elt.isConnected) return;
+    // The settled fragment, not the whole page, owns these field errors.
+    // Native focus skips disabled, hidden and inert controls; keep looking if
+    // one cannot receive focus. A multi-root swap announces only one field.
+    const selector = 'input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"]';
+    const fields = elt.matches(selector) ? [elt] : elt.querySelectorAll(selector);
+    for (const field of fields) {
+      field.focus();
+      if (document.activeElement === field) {
+        focusedRefusals.add(xhr);
+        break;
+      }
+    }
+  });
+
   document.body.addEventListener("htmx:afterRequest", function (event) {
     const id = event.detail.xhr && event.detail.xhr.getResponseHeader("X-Request-ID");
     if (id && event.detail.failed) {
