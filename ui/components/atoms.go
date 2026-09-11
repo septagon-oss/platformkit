@@ -526,6 +526,9 @@ func inputFieldWithSlots(
 		fieldClass = fieldClass.Merge(clFieldWrapFull)
 	}
 	field := []g.Node{h.Class(fieldClass.Compile()), g.Attr("data-component", componentName)}
+	if typ == "hidden" {
+		field = append(field, h.Hidden(""))
+	}
 	if p.Label != "" {
 		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
 			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),

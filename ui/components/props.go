@@ -103,7 +103,9 @@ type InputProps struct {
 	HTMXProps
 
 	Name string `json:"name"`
-	Type string `json:"type,omitempty"` // text, email, password, number, tel, url, search, date, time, file
+	// A hidden input keeps its native form value while hiding the entire field,
+	// including any label, icons and supporting text, from layout and focus.
+	Type string `json:"type,omitempty"` // text, email, password, number, tel, url, search, date, time, file, hidden
 	// Value is what the control starts with. A file input never carries one:
 	// no browser lets a page choose a file for somebody.
 	Value        string `json:"value,omitempty"`
