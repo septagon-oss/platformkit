@@ -197,6 +197,17 @@ appearance. Tests cover standalone and nested instances, descendant override key
 changed or missing owners, measurement refusal and two saves. Unrelated override
 keys survive history; the undo stack itself is not stored in the file.
 
+The pinned editor sidebar edits variable values and collection definitions, but has
+no layer or page mode selector. The node-mode/history tests above exercise SDK
+actions; they do not establish click-through mode authoring in the shipped editor.
+Instance ownership currently applies to the complete `variableModes` map.
+Independent per-collection overrides and resets, retaining the other collections'
+source inheritance, remain unqualified. A picker must distinguish authored
+selections from resolved values; copying a resolved map would pin inherited
+selections too. Specify and verify that distinction through the existing native
+actions and FIG fields before exposing the controls, including keyboard use,
+focus restoration, refused changes and two worker saves.
+
 Run `node --import ./register.mjs --test variable-binding.test.mjs` here for live
 reflow, both flex directions, fixed boxes, alias and mode ownership, Skia pixels,
 failure injection, history, instance independence and two native saves. The editor
