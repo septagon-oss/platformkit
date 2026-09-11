@@ -355,6 +355,12 @@ nor supplies authentication, effect rollback or persistent compare-and-swap.
 A caller that persists changes owns its atomic revision check. Native IDs and
 provider SDK types do not enter this operation; native replacement fidelity is separate.
 
+[RequestNoticeExamples](ui/page/page.go) captures the recovery content that
+`page.Document` already serves, retaining its Stack, Alert and Link contracts.
+Consumers may include those notices in source compositions; the document still
+owns their hidden wrappers and the request controller owns when they appear.
+Capturing a notice does not execute recovery or establish a connected prototype.
+
 [tools/designexport/openpencil](tools/designexport/openpencil/) owns native
 adapter tooling, not another component catalog. Its version- and source-checked
 SDK corrections operate on build/process inputs without modifying an installed

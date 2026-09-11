@@ -128,6 +128,21 @@ func requestNotices(c Chrome) g.Node {
 		return nil
 	}
 	var nodes []g.Node
+	for _, example := range RequestNoticeExamples(c.SignIn) {
+		nodes = append(nodes, h.Div(h.ID(example.ID), h.Hidden(""), h.Lang("en"), g.Attr("data-request-notice", ""), example.Node))
+	}
+	return g.Group(nodes)
+}
+
+// RequestNoticeExamples captures the visible content Document serves for request
+// failures. IDs retain the controller's existing notice identities; Stack, Alert
+// and Link keep their shared typed interfaces. The hidden, English-language DOM
+// wrapper remains Document's responsibility. A consumer may include these values
+// in its own export or composition without adding a second notice catalog.
+// These are presentation candidates, not request classification, automatic retry,
+// source persistence or an executable prototype. Only a local sign-in link is used.
+func RequestNoticeExamples(signIn string) []components.Example {
+	var examples []components.Example
 	for _, notice := range []struct {
 		kind, title, message string
 		signin               bool
@@ -137,14 +152,20 @@ func requestNotices(c Chrome) g.Node {
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
 		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
 	} {
-		nodes = append(nodes, h.Div(h.ID("pk-auth-"+notice.kind), h.Hidden(""), h.Lang("en"), g.Attr("data-request-notice", ""),
-			components.Stack(components.StackProps{Gap: "3"},
-				components.Alert(components.AlertProps{Tone: "danger", Title: notice.title, Message: notice.message, Bordered: true}),
-				g.If(notice.signin && httpx.LocalPath(c.SignIn), components.Link(components.LinkProps{
-					Label: "Sign in (opens a new tab)", Href: c.SignIn, External: true})),
-			)))
+		body := []g.Node{components.ExampleWithSlots(
+			components.ExampleInfo{ID: "message", ComponentID: "pk-ui.component.alert"},
+			components.AlertProps{Tone: "danger", Title: notice.title, Message: notice.message, Bordered: true},
+			components.AlertSlots{}, components.AlertWithSlots).Node}
+		if notice.signin && httpx.LocalPath(signIn) {
+			body = append(body, components.ExampleOf(
+				components.ExampleInfo{ID: "sign-in", ComponentID: "pk-ui.component.link"},
+				components.LinkProps{Label: "Sign in (opens a new tab)", Href: signIn, External: true}, components.Link).Node)
+		}
+		examples = append(examples, components.ExampleWithChildren(
+			components.ExampleInfo{ID: "pk-auth-" + notice.kind, ComponentID: "pk-ui.component.stack", Group: "Request recovery", Name: notice.title},
+			components.StackProps{Gap: "3"}, body, components.Stack))
 	}
-	return g.Group(nodes)
+	return examples
 }
 
 // head is every page's head: the stylesheet with its fingerprint, the inline
