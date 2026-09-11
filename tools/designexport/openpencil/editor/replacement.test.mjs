@@ -144,13 +144,15 @@ async function verifyBuild() {
   const notices = await (await fetch(new URL('/licenses/PlatformKit-NOTICE', endpoint))).text()
   assert.equal(notices, readFileSync(new URL('../../../../NOTICE', import.meta.url), 'utf8'), 'shipped notices match the source')
   assert.ok(notices.includes('Blink border geometry — BSD 3-Clause\n\nCopyright (C) 2013 Google Inc.'))
+  const underlineNotice = await (await fetch(new URL('/licenses/Blink-underline-NOTICE', endpoint))).text()
+  assert.equal(underlineNotice, readFileSync(new URL('../Blink-underline-NOTICE', import.meta.url), 'utf8'))
   for (const [file, digest] of [
     ['UnicodeTrie-LICENSE', 'e59138ecbc0b770010b0781905e2bcc181e4f0735494c58fd9681b24f0246187'],
     ['Unicode-LICENSE', 'e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96'],
   ]) assert.equal(hash(new Uint8Array(await (await fetch(new URL(`/licenses/${file}`, endpoint))).arrayBuffer())), digest)
   assert.equal(provenance.scope, 'generic-editor-without-packaged-design')
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
-    'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
+    'Blink-underline-NOTICE', 'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
     'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'underline-correction.mjs', 'variable-binding-correction.mjs', 'variable-binding.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-mode-control-correction.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
   ])

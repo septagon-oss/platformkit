@@ -503,6 +503,7 @@ mkdirSync(licenses, { recursive: true })
 for (const [source, name] of [
   [join(upstream, 'LICENSE'), 'OpenPencil-LICENSE'],
   [join(adapter, 'LICENSE'), 'PlatformKit-LICENSE'], [join(adapter, 'NOTICE'), 'PlatformKit-NOTICE'],
+  [join(adapter, 'Blink-underline-NOTICE'), 'Blink-underline-NOTICE'],
 ]) copyFileSync(source, join(licenses, name))
 for (const file of suppliedFonts.files) {
   const destination = join(upstream, 'dist', file.path)
@@ -510,7 +511,7 @@ for (const file of suppliedFonts.files) {
   writeFileSync(destination, file.bytes, { flag: 'wx' })
 }
 const inputs = Object.fromEntries(readdirSync(adapter).filter(name => name.endsWith('.mjs') ||
-  ['package.json', 'package-lock.json', 'Dockerfile', 'nginx.conf', 'LICENSE', 'NOTICE'].includes(name))
+  ['package.json', 'package-lock.json', 'Dockerfile', 'nginx.conf', 'LICENSE', 'NOTICE', 'Blink-underline-NOTICE'].includes(name))
   .sort().map(name => [name, sha256(readFileSync(join(adapter, name)))]))
 writeFileSync(join(upstream, 'dist/platformkit-provenance.json'), JSON.stringify({
   schema: 'platformkit.openpencil.provenance.v1',

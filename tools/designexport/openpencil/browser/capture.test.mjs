@@ -211,6 +211,34 @@ test('capture retains text presentation that native construction must not silent
   assert.equal(style['font-synthesis-style'], 'none', 'style synthesis remains disabled by inheritance')
 })
 
+test('capture retains underline geometry and colour provenance without inventing CSS inheritance', async () => {
+  const id = 'pk-ui.component.link/external', token = '--pk-color-text-primary'
+  for (const mode of ['light', 'dark']) for (const literal of [false, true]) {
+    const snapshot = projection(id, { label: 'Typography gyjp' })
+    const colour = snapshot.themes.find(theme => theme.mode === mode).tokens.find(item => item.name === token).value
+    snapshot.css += `\na[href] { text-decoration: underline wavy ${literal ? colour : `var(${token})`};
+      text-decoration-thickness: 12.5%; text-underline-offset: -0.5px;
+      text-decoration-skip-ink: none; text-underline-position: under; }
+      a > span { color: #123456; text-decoration: none; }`
+    const before = structuredClone(snapshot)
+    const root = (await captureExample(browser, snapshot, id, { fonts: faces, mode })).roots[0]
+    const expected = { 'text-decoration-line': 'underline', 'text-decoration-style': 'wavy',
+      'text-decoration-thickness': '12.5%', 'text-underline-offset': '-0.5px',
+      'text-decoration-skip-ink': 'none', 'text-underline-position': 'under' }
+    assert.deepEqual(Object.fromEntries(Object.keys(expected).map(key => [key, root.style[key]])), expected)
+    assert.deepEqual(computedColor(root.style['text-decoration-color']), resolveColorExpression(colour, () => undefined))
+    assert.deepEqual(root.paintSources['text-decoration-color'], {
+      tokens: literal ? [] : [token], directCandidate: literal ? null : token,
+    }, 'equal baseline colours do not establish equal token ownership')
+    const adornment = root.children.find(child => child.tag === 'span')
+    assert.equal(adornment.style['text-decoration-line'], 'none', 'computed decoration is not an inherited property')
+    assert.equal(adornment.style['text-decoration-color'], 'rgb(18, 52, 86)')
+    assert.deepEqual(adornment.paintSources['text-decoration-color'], { tokens: [], directCandidate: null })
+    assert.equal(adornment.style['text-underline-offset'], '-0.5px', 'offset does inherit; the decorating box still owns its line')
+    assert.deepEqual(snapshot, before, 'observing decorations leaves the source snapshot unchanged')
+  }
+})
+
 // Independent DOM measurements remove the source annotations entirely.
 // No capture traversal or layout helper is reused.
 async function originalLayout(snapshot, id, mode, size = viewport, fonts = []) {
@@ -362,6 +390,7 @@ test('paint capture observes alpha-only dependencies without turning them into l
       const capture = await captureExample(browser, snapshot, withIcon, { mode, fonts: faces })
       const root = capture.roots[0], paints = [
         root.paintSources.color, root.paintSources['background-color'],
+        root.paintSources['text-decoration-color'],
         ...['top', 'right', 'bottom', 'left'].map(side => root.paintSources[`border-${side}-color`]),
         ...observed(root.children).filter(node => node.tag === 'path').map(node => node.paintSources.fill),
       ]
@@ -402,9 +431,11 @@ test('capture retains uniquely witnessed authored color expressions without a se
     assert.equal(root.style['background-color'], original.backgroundColor)
     const vector = observed(root.children).find(node => node.tag === 'path')
     assert.deepEqual(vector.paintSources.fill.expressionCandidate, paint.expressionCandidate, 'currentColor retains the same authored relationship')
+    assert.deepEqual(root.paintSources['text-decoration-color'].expressionCandidate, paint.expressionCandidate)
     paint.expressionCandidate.customProperties['--product-paper'] = 'transparent'
     assert.equal(root.paintSources.color.expressionCandidate.customProperties['--product-paper'], `var(${surface})`, 'paint records are caller-owned, not shared mutable definitions')
     assert.equal(vector.paintSources.fill.expressionCandidate.customProperties['--product-paper'], `var(${surface})`)
+    assert.equal(root.paintSources['text-decoration-color'].expressionCandidate.customProperties['--product-paper'], `var(${surface})`)
     assert.deepEqual(snapshot, before)
     assert.deepEqual(Object.keys(badge.paintSources.color).toSorted(), ['directCandidate', 'tokens'], 'direct aliases keep their existing evidence')
   }

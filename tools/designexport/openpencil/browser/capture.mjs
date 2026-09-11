@@ -180,9 +180,11 @@ export async function captureExample(browser, snapshot, exampleId, {
         'justify-items', 'justify-self', 'grid-auto-flow', 'grid-template-areas',
         'grid-column-start', 'grid-column-end', 'grid-row-start', 'grid-row-end',
         'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
-        'font-synthesis-weight', 'font-synthesis-style',
+        'font-synthesis-weight', 'font-synthesis-style', 'vertical-align',
         'font-feature-settings', 'font-variation-settings', 'font-variant-numeric', 'line-height', 'letter-spacing', 'aspect-ratio',
         'white-space', 'text-align', 'text-transform', 'text-decoration-line',
+        'text-decoration-color', 'text-decoration-style', 'text-decoration-thickness',
+        'text-decoration-skip-ink', 'text-underline-offset', 'text-underline-position',
         'overflow-wrap', 'word-break', 'line-break', 'hyphens', 'text-wrap-style',
         'text-indent', 'text-shadow', 'word-spacing', 'writing-mode', 'direction',
         'overflow-x', 'overflow-y', 'outline-style', 'outline-width', 'outline-color',
@@ -318,7 +320,7 @@ export async function captureExample(browser, snapshot, exampleId, {
         return out
       }
       const roots = children(document.body)
-      const paints = ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color', 'fill', 'stroke', 'box-shadow']
+      const paints = ['color', 'text-decoration-color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color', 'fill', 'stroke', 'box-shadow']
       const values = () => elements.map(node => {
         const computed = getComputedStyle(node)
         return paints.map(paint => computed.getPropertyValue(paint))

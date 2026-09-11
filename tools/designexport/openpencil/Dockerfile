@@ -19,6 +19,7 @@ COPY tools/designexport/openpencil/editor-fonts.mjs tools/designexport/openpenci
 COPY tools/designexport/openpencil/variable-color.mjs tools/designexport/openpencil/variable-number.mjs tools/designexport/openpencil/variable-source.mjs tools/designexport/openpencil/variable-modes.mjs tools/designexport/openpencil/color-expression.mjs tools/designexport/openpencil/computed-color.mjs ./
 COPY tools/designexport/openpencil/variable-history.mjs tools/designexport/openpencil/variable-binding.mjs ./
 COPY tools/designexport/openpencil/Dockerfile tools/designexport/openpencil/nginx.conf LICENSE NOTICE ./
+COPY tools/designexport/openpencil/Blink-underline-NOTICE ./
 WORKDIR /upstream
 # These published packages omit their license files. The Yoga revision is the
 # package's gitHead. Provider-utils 4.0.33 uses its tagged root notice.

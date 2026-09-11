@@ -8,6 +8,7 @@ import { planSourceGrid } from './source-grid.mjs'
 import { planSourceAbsolute } from './source-positioning.mjs'
 import { planSourceBox } from './source-box.mjs'
 import { cssDashIntervals } from './border-correction.mjs'
+import { sourceUnderlines } from './source-underlines.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
 const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
@@ -95,7 +96,7 @@ function planPresentation(node, paintFor, parentLayout = null) {
     color(style['outline-color']).a === 0, 'visible outlines require further conversion')
   requireComponent((parentLayout === 'flex' ? [] : parentLayout === 'block' ? ['right', 'left'] : ['top', 'right', 'bottom', 'left']).every(side => pixels(style[`margin-${side}`]) === 0),
     'external margins require further layout conversion')
-  requireComponent(style['text-transform'] === 'none' && style['text-decoration-line'] === 'none' &&
+  requireComponent(style['text-transform'] === 'none' && ['none', 'underline'].includes(style['text-decoration-line']) &&
     style['font-feature-settings'] === 'normal' && style['font-variation-settings'] === 'normal' &&
     style['font-stretch'] === '100%', 'text transformations require further conversion')
   const sides = ['top', 'right', 'bottom', 'left']
@@ -230,7 +231,8 @@ async function materializeOccurrence(graph, parentId, snapshot, observation, fac
 
 async function materializeTextRow(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, definitionPath, iconTargets = [], pending, placement = {}) {
   const style = root.style
-  const presentation = planPresentation(root, (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))
+  const paintFor = (node, property) => observedPaint(graph, collection, snapshot, observation, node, property)
+  const presentation = planPresentation(root, paintFor), underlineFor = sourceUnderlines(observation, paintFor)
   requireComponent(['inline-flex', 'flex'].includes(style.display) && style['flex-direction'] === 'row' &&
     style['flex-wrap'] === 'nowrap' && style['justify-content'] === 'center' && style['align-items'] === 'center',
   'centered, nonwrapping row layout required')
@@ -267,7 +269,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
     const face = matches[0]
     requireComponent(observation.fontFaces.some(item => item.family === face.family && item.weight === face.weight &&
       item.style === face.style && item.sha256 === face.sha256), 'observed and supplied font bytes differ')
-    return { region, face }
+    return { region, face, underline: underlineFor(root, face, { text: region.text }) }
   })
   const masterProps = {
     name: example.name || example.id, width: root.bounds.width, height: root.bounds.height,
@@ -296,11 +298,11 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       if (icon) {
         nativeNode = constructIcon(graph, master.id, icon, region.name, pending)
       } else {
-        const { face } = texts.find(text => text.region === region)
+        const { face, underline } = texts.find(text => text.region === region)
         nativeNode = createPaintedNode(graph, 'TEXT', master.id, {
           name: region.property, text: region.text, width: region.bounds.width, height: lineHeight,
           fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
-          fontSize, lineHeight, letterSpacing, fontFeatures: numericFeatures(style), textAutoResize: 'WIDTH_AND_HEIGHT', ...structuredClone(textPaint),
+          fontSize, lineHeight, letterSpacing, fontFeatures: numericFeatures(style), textAutoResize: 'WIDTH_AND_HEIGHT', ...underline, ...structuredClone(textPaint),
           pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
             schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
           }) }],
@@ -363,6 +365,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
   }
   describe(example, root.source.path, root.source.slot)
   const paintFor = (node, property) => observedPaint(graph, collection, snapshot, observation, node, property)
+  const underlineFor = sourceUnderlines(observation, paintFor)
   const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1 / 64
 
   function text(region, node, { control = false, wrapping = false } = {}) {
@@ -396,6 +399,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic', fontSize, lineHeight,
       letterSpacing: style['letter-spacing'] === 'normal' ? 0 : pixels(style['letter-spacing']), fontFeatures: numericFeatures(style),
       textAutoResize: wrapping ? 'HEIGHT' : 'WIDTH_AND_HEIGHT',
+      ...underlineFor(node, face, { control, text: value }),
       ...(control ? { layoutPositioning: 'ABSOLUTE', x: 0, y: 0 } : {}),
       ...paintFor(node, 'color'),
     } }

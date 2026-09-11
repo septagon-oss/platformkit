@@ -129,7 +129,32 @@ They do not open your documents or connect to an editor. Native checks supplemen
 CanvasKit checks light/dark icon pixels and supplied-font shaping without a GPU.
 [Native underlines](browser/underline.test.mjs) cover offset, pixel thickness and
 ink-skipping for untransformed static-font text. [Preview checks](preview/fonts.test.mjs)
-exercise editing and worker saves; CSS Link conversion remains refused.
+exercise native and Go-source underline editing and two worker saves.
+[Source underline conversion](source-underlines.mjs) follows one decorating box
+through ordinary inline descendants; child `text-decoration: none` does not cancel it.
+Solid underlines retain the exact text-colour dependency, including palette edits.
+Different colour dependencies, stacked decorations, mixed fonts/baselines, controls,
+non-solid styles and `from-font`/`under` positioning remain refused. Automatic ink
+skipping currently admits Latin text and common punctuation/symbols; other scripts need
+their browser-specific exclusion policy. Caller-supplied static fonts are mandatory.
+
+[CSS conformance](browser/source-underlines.test.mjs) checks real Core Button/link
+and Text/Underline output, px/percentage offsets and thickness, wrapping, palette
+history and two FIG saves. Run it locally with
+`node --import ./register.mjs --test browser/source-underlines.test.mjs` from this directory.
+It compares underline rows and interiors with Chromium, separately accounting for
+glyph rasterization and one-pixel horizontal edges; this is not exact glyph-pixel equivalence.
+The conversion follows pinned Chromium's [geometry](https://chromium.googlesource.com/chromium/src/+/151.0.7922.34/third_party/blink/renderer/core/paint/text_decoration_info.cc)
+and [ink-skipping](https://chromium.googlesource.com/chromium/src/+/151.0.7922.34/third_party/blink/renderer/core/paint/text_painter.cc).
+Nominal thickness stays in the existing source record because its rounded native
+value cannot reproduce the gaps. Native font/underline-style edits leave that CSS
+projection instead of being overwritten. Core Link is not yet admitted end to end:
+its constructor lacks label markers, standalone inline-root layout needs conversion,
+and the external arrow uses a system fallback outside the supplied fonts. The adapter
+does not synthesize source ownership or substitute a glyph.
+The [Blink notice](Blink-underline-NOTICE) ships under the editor's `/licenses/`
+and in build provenance without changing the Go export's notice text or digest.
+
 Experimental [color variables](variable-color.mjs) reuse authored CSS and native input IDs.
 Palette edits, modes and history retain formulas in versioned FIG plugin data alongside
 resolved COLOR fallbacks. Changed external fallbacks, missing inputs and cycles refuse.

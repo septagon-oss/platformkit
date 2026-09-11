@@ -10,8 +10,9 @@ import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { parseFigBuffer } from '@open-pencil/fig'
 import { buildComponentDocument } from '../document.mjs'
-import { suppliedFonts, sourceFixture } from '../browser/fixtures.test.mjs'
+import { suppliedFonts, sourceFixture, underlineFixture } from '../browser/fixtures.test.mjs'
 import { loadFonts } from '../fonts.mjs'
+import { extractSourceProps } from '../source-changes.mjs'
 
 const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL)
 assert.ok(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', 'openpencil-preview'].includes(endpoint.hostname))
@@ -23,7 +24,7 @@ const descendants = (graph, node) => graph.getChildren(node.id).flatMap(child =>
 const definitionGeometry = (graph, node) => descendants(graph, node).filter(child => child.parentId === node.id || child.type === 'TEXT')
   .map(child => [child.name, child.text, child.x, child.y, child.width, child.height])
 
-test('native underline paint survives preview property editing, history and two worker saves', { timeout: 120000 }, async () => {
+for (const kind of ['native', 'source']) test(`${kind} underline paint survives preview property editing, history and two worker saves`, { timeout: 120000 }, async t => {
   const provenance = await (await fetch(new URL('/platformkit-provenance.json', endpoint))).json()
   for (const name of ['underline-correction.mjs', 'paragraph-correction.mjs', 'corrections.mjs']) {
     assert.equal(provenance.adapter.inputs[name], hash(readFileSync(new URL(`../${name}`, import.meta.url))))
@@ -31,16 +32,34 @@ test('native underline paint survives preview property editing, history and two 
   const fonts = suppliedFonts([400])
   assert.ok(provenance.fontFaces.some(face => face.sha256 === fonts[0].sha256))
   await loadFonts(fonts, [{ family: 'IBM Plex Sans', weight: 400, style: 'normal', text: 'Typography gyjp Remember gyjp' }])
-  const ck = await initCanvasKit(), graph = new SceneGraph(), definitions = graph.addPage('Definitions')
-  const master = graph.createNode('COMPONENT', definitions.id, { name: 'Underline master', width: 380, height: 140,
-    componentPropertyDefinitions: [{ id: '30:1', name: 'Label', type: 'TEXT', defaultValue: 'Typography gyjp' }] })
-  const text = graph.createNode('TEXT', master.id, { name: 'Native linked text', text: 'Typography gyjp', x: 20, y: 30,
-    width: 330, height: 80, fontFamily: 'IBM Plex Sans', fontWeight: 400, fontSize: 24, lineHeight: 40,
-    textDecoration: 'UNDERLINE', textDecorationThickness: 2, textUnderlineOffset: 8, textDecorationSkipInk: false,
-    textDecorationFills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, visible: true, opacity: 1 }],
-    fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true, opacity: 1 }],
-    componentPropertyReferences: [{ propertyId: '30:1', field: 'TEXT' }] })
-  graph.createInstance(master.id, graph.getPages()[0].id, { name: 'Edited underline' })
+  const ck = await initCanvasKit()
+  let graph = new SceneGraph(), source, snapshot, input, text, field = 'Label', initial = 'Typography gyjp'
+  if (kind === 'native') {
+    const definitions = graph.addPage('Definitions')
+    const master = graph.createNode('COMPONENT', definitions.id, { name: 'Underline master', width: 380, height: 140,
+      componentPropertyDefinitions: [{ id: '30:1', name: 'Label', type: 'TEXT', defaultValue: 'Typography gyjp' }] })
+    text = graph.createNode('TEXT', master.id, { name: 'Native linked text', text: initial, x: 20, y: 30,
+      width: 330, height: 80, fontFamily: 'IBM Plex Sans', fontWeight: 400, fontSize: 24, lineHeight: 40,
+      textDecoration: 'UNDERLINE', textDecorationThickness: 2, textUnderlineOffset: 8, textDecorationSkipInk: false,
+      textDecorationFills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, visible: true, opacity: 1 }],
+      fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true, opacity: 1 }],
+      componentPropertyReferences: [{ propertyId: '30:1', field: 'TEXT' }] })
+    graph.createInstance(master.id, graph.getPages()[0].id, { name: 'Edited underline' })
+  } else {
+    source = await underlineFixture(t)
+    field = 'label'; initial = 'Remember memories'
+    input = { Kind: 'button', Content: initial, Style: { color: '#f00', 'text-decoration-color': '#f00', 'font-weight': '400' } }
+    snapshot = source(input)
+    const capture = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
+    const renderer = new SkiaRenderer(ck, ck.MakeSurface(640, 240))
+    try {
+      const built = await buildComponentDocument(snapshot, { examples: ['underlined'], fonts, browser: capture, renderer })
+      graph = built.graph
+      graph.updateNode(built.selections[0].master.id, { name: 'Underline master' })
+      graph.updateNode(built.selections[0].instance.id, { name: 'Edited underline' })
+      text = descendants(graph, built.selections[0].master).find(node => node.type === 'TEXT')
+    } finally { renderer.destroy(); await capture.close() }
+  }
   const browser = await chromium.launch({ headless: true, channel: 'chromium', args: [
     '--enable-automation', '--font-render-hinting=none', '--use-gl=angle', '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader', '--disable-blink-features=FileSystemAccessLocal',
@@ -53,8 +72,15 @@ test('native underline paint survives preview property editing, history and two 
     try {
       const pixels = image.readPixels(0, 0, { width: image.width(), height: image.height(), colorType: ck.ColorType.RGBA_8888,
         alphaType: ck.AlphaType.Unpremul, colorSpace: ck.ColorSpace.SRGB }), red = []
-      for (let i = 0; i < pixels.length; i += 4) if (pixels[i] > pixels[i + 1] + 30 && pixels[i] > pixels[i + 2] + 30) red.push(i, pixels[i], pixels[i + 1], pixels[i + 2])
+      let run = 0, longest = 0
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (i / 4 % image.width() === 0) run = 0
+        if (pixels[i] > pixels[i + 1] + 30 && pixels[i] > pixels[i + 2] + 30) {
+          red.push(i, pixels[i], pixels[i + 1], pixels[i + 2]); longest = Math.max(longest, ++run)
+        } else run = 0
+      }
       assert.ok(red.length > 100, 'the editor must paint the underline, not just store its settings')
+      if (kind === 'source') assert.ok(longest > 40, 'source underline paints a continuous line beyond individual glyph strokes')
       return hash(JSON.stringify(red))
     } finally { image.delete() }
   }
@@ -70,9 +96,14 @@ test('native underline paint survives preview property editing, history and two 
         await page.getByRole('menuitem', { name: 'File', exact: true }).click()
         const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: 'Open… Ctrl+O', exact: true }).click()])
         await chooser.setFiles({ name: 'underline.fig', mimeType: 'application/octet-stream', buffer })
+        if (kind === 'source') {
+          await page.getByRole('button', { name: 'Editable source instances', exact: true }).click()
+          await page.getByRole('treeitem', { name: 'Editable source instances Lock Hide', exact: true }).click()
+          await page.keyboard.press('ArrowRight')
+        }
         const selected = page.getByRole('treeitem', { name: 'Edited underline Lock Hide', exact: true })
         await selected.click()
-        const label = page.getByRole('textbox', { name: 'Label', exact: true }), value = cycle ? 'Remember gyjp' : 'Typography gyjp'
+        const label = page.getByRole('textbox', { name: field, exact: true }), value = cycle ? 'Remember gyjp' : initial
         await expect(label).toHaveValue(value)
         await expect.poll(() => page.evaluate(() => [...document.fonts].some(face => face.family === 'IBM Plex Sans' && face.weight === '400' && face.status === 'loaded'))).toBe(true)
         const current = await ink(page)
@@ -100,6 +131,12 @@ test('native underline paint survives preview property editing, history and two 
         assert.equal(copied.text, 'Remember gyjp'); assert.equal(original.text, text.text)
         for (const key of ['fontFamily', 'fontWeight', 'textDecoration', 'textDecorationThickness', 'textUnderlineOffset', 'textDecorationSkipInk']) {
           assert.equal(copied[key], text[key]); assert.equal(original[key], text[key])
+        }
+        if (kind === 'source') {
+          const proposal = extractSourceProps(reopened, instance, snapshot).proposal
+          assert.equal(source({ ...input, Proposal: proposal }).examples[0].props.label, 'Remember gyjp')
+          const record = node => JSON.parse(node.pluginData.find(item => item.key === 'platformkit.source').value).cssUnderline
+          assert.deepEqual(record(copied), record(text), 'worker retains the source ink-skipping evidence')
         }
       } finally { await context.close() }
     }

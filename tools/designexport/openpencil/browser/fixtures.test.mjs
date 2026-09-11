@@ -82,6 +82,59 @@ func main() {
 `)
 }
 
+export function underlineFixture(t) {
+  return sourceFixture(t, `package main
+import (
+  "encoding/json"
+  "maps"
+  "os"
+  "slices"
+  "github.com/septagon-oss/platformkit/design"
+  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/css"
+)
+func main() {
+  var input struct {
+    Kind, Content string
+    External bool
+    Style, DescendantStyle map[string]string
+    Proposal *ui.PropsProposal
+  }
+  if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
+  info := components.ExampleInfo{ID:"underlined", ComponentID:"pk-ui.component.button"}
+  common := components.ComponentProps{ID:"subject"}
+  example := components.ExampleOf(info, components.ButtonProps{ComponentProps:common, Label:input.Content, Variant:"link"}, components.Button)
+  switch input.Kind {
+  case "text":
+    info.ComponentID = "pk-ui.component.text"
+    example = components.ExampleOf(info, components.TextProps{ComponentProps:common, Content:input.Content, Underline:true}, components.Text)
+  case "link":
+    info.ComponentID = "pk-ui.component.link"
+    example = components.ExampleOf(info, components.LinkProps{ComponentProps:common, Label:input.Content, Href:"/account/sign-in", External:input.External}, components.Link)
+  }
+  sheet := css.NewSheet()
+  for _, name := range slices.Sorted(maps.Keys(input.Style)) {
+    sheet.Select("#subject", css.Decl(name, css.Literal(input.Style[name])))
+  }
+  for _, name := range slices.Sorted(maps.Keys(input.DescendantStyle)) {
+    sheet.Select("#subject span", css.Decl(name, css.Literal(input.DescendantStyle[name])))
+  }
+  examples := []components.Example{example}
+  extra := ui.Extra{Sheets:[]*css.Sheet{sheet}}
+  var snapshot ui.DesignExport
+  var err error
+  if input.Proposal == nil {
+    snapshot, err = ui.Export(design.Default(), examples, extra)
+  } else {
+    _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal, extra)
+  }
+  if err != nil { panic(err) }
+  if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
+}
+`)
+}
+
 // The browser and shipped-editor checks exercise the same real constructor;
 // neither replaces its paragraphs, constraints, optional slots or source props.
 export function emptyStateFixture(t) {
