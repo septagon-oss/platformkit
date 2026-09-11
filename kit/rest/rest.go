@@ -208,21 +208,8 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, err
 			}
-			e, err := crud.GetForUpdate[T](tx, in.ID)
+			e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body)
 			if err != nil {
-				return nil, Fault(err)
-			}
-			columns, err := merge(e, schema.Fields, s.Immutable, in.Body)
-			if err != nil {
-				return nil, Fault(err)
-			}
-			// Only the columns the body named, plus the stamp. Writing the
-			// whole row would put every field back to what this request read,
-			// which loses a concurrent patch of a field it never mentioned.
-			if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
-				return nil, Fault(err)
-			}
-			if err := s.emit(ctx, tx, Updated, e, nil); err != nil {
 				return nil, Fault(err)
 			}
 			return &Item[T]{Body: e}, nil
@@ -235,21 +222,42 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err != nil {
 				return nil, err
 			}
-			// The row is locked first so that a delete of something this tenant
-			// does not have is a 404, and so that the hook and the event carry
-			// what was deleted rather than only its id.
-			e, err := crud.GetForUpdate[T](tx, in.ID)
-			if err != nil {
-				return nil, Fault(err)
-			}
-			if err := crud.Delete[T](tx, in.ID, s.SoftDelete); err != nil {
-				return nil, Fault(err)
-			}
-			if err := s.emit(ctx, tx, Deleted, e, s.AfterDelete); err != nil {
+			if _, err := s.deleteRow(ctx, tx, in.ID); err != nil {
 				return nil, Fault(err)
 			}
 			return nil, nil
 		})
+}
+
+// JSON routes and in-process resources share these mutations. The row lock
+// must precede the merge and validation; locking only at the write leaves
+// responses, hooks and events based on a stale snapshot after contention.
+func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any) (T, error) {
+	e, err := crud.GetForUpdate[T](tx, id)
+	if err != nil {
+		return e, err
+	}
+	columns, err := merge(e, fields, s.Immutable, values)
+	if err != nil {
+		return e, err
+	}
+	// Write only the submitted columns and timestamp. Untouched fields retain
+	// the preceding committed values used by validation and the emitted event.
+	if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
+		return e, err
+	}
+	return e, s.emit(ctx, tx, Updated, e, nil)
+}
+
+func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	e, err := crud.GetForUpdate[T](tx, id)
+	if err != nil {
+		return e, err
+	}
+	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
+		return e, err
+	}
+	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
 }
 
 // CommandOptions is what a command may differ from its Spec in. It is a struct

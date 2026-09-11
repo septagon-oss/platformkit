@@ -113,7 +113,7 @@ func mount(t *testing.T, s rest.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
 
 // mountAs is mount for a caller who does not hold everything, which is what the
 // resource closures' own authorization is tested with.
-func mountAs(t *testing.T, s rest.Spec[*Task], authorize httpx.Authorizer) (*httpx.API, chi.Router, *sql.DB) {
+func mountAs[T crud.Entity](t *testing.T, s rest.Spec[T], authorize httpx.Authorizer) (*httpx.API, chi.Router, *sql.DB) {
 	t.Helper()
 	admin, app := dbtest.Schema(t)
 	if _, err := admin.ExecContext(t.Context(), ddl); err != nil {

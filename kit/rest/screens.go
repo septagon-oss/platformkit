@@ -103,32 +103,12 @@ func (s Spec[T]) resource() httpx.Resource {
 		},
 		Update: func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error) {
 			return each(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
-				e, err := crud.Get[T](tx, id)
-				if err != nil {
-					return e, err
-				}
-				// merge is the PATCH route's own: read-only and Immutable
-				// fields are refused here exactly as they are over HTTP.
-				columns, err := merge(e, schema.Fields, s.Immutable, values)
-				if err != nil {
-					return e, err
-				}
-				if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
-					return e, err
-				}
-				return e, s.emit(ctx, tx, Updated, e, nil)
+				return s.updateRow(ctx, tx, id, schema.Fields, values)
 			})
 		},
 		Delete: func(ctx context.Context, id uuid.UUID) error {
 			_, err := each(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
-				e, err := crud.Get[T](tx, id)
-				if err != nil {
-					return e, err
-				}
-				if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
-					return e, err
-				}
-				return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
+				return s.deleteRow(ctx, tx, id)
 			})
 			return err
 		},

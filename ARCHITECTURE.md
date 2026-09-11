@@ -87,6 +87,10 @@ describes the constraint.
 A service records events in its transaction. [kit/events](kit/events/) delivers
 the committed outbox through the selected transport and claims each event for
 a subscription in the handler's transaction.
+[Spec](kit/rest/rest.go) shares update and delete mutations between JSON routes
+and registered resource closures. Both lock the live row before merging,
+validation, hooks and event snapshots. This serializes server-side decisions;
+it does not reject an old form based on the revision its user originally saw.
 [kit/app](kit/app/app.go) defaults to an in-memory transport for the combined
 `all` role and JetStream for separate `web` and `worker` roles, unless the
 application supplies a transport. An all-in-one local run therefore does not
