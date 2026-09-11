@@ -109,9 +109,13 @@ function refreshPropertyLayout(ctx, target) {
         target.node.textAutoResize === "HEIGHT" && ownSourceLayoutScope(target.node) === "source-composition-layout")) {
       ctx.graph.updateNode(target.node.id, textAutoResizeChanges(target.node, { text: target.node.text }, true));
     }
-    for (let node = target.node; node && node.type !== "CANVAS"; node = node.parentId ? ctx.graph.getNode(node.parentId) : null) {
-      ctx.graph.updateNode(node.id, { figmaDerivedLayout: null });
-    }
+    // Invalidating derived geometry is not an authored edit to every ancestor.
+    // An imported, non-layout board may already have no cache to invalidate.
+    ctx.graph.preserveSourceMetadataDuring(() => {
+      for (let node = target.node; node && node.type !== "CANVAS"; node = node.parentId ? ctx.graph.getNode(node.parentId) : null) {
+        if (node.figmaDerivedLayout) ctx.graph.updateNode(node.id, { figmaDerivedLayout: null });
+      }
+    });
     if (ownSourceLayoutScope(target.node) === "source-composition-layout") {
       // Intrinsic paragraph edits can resize the entire containing row. Saved
       // sibling line boxes are derived too; history already owns this scope.

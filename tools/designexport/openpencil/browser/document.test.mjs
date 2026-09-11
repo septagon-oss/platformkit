@@ -75,6 +75,39 @@ function vertical(nodes) {
   }
 }
 
+test('text edits in reopened documents leave unrelated boards and source edit marks unchanged', async () => {
+  const id = 'pk-ui.component.button/primary'
+  const built = await buildComponentDocument(snapshot, options({ examples: [id] }))
+  let graph = built.graph
+  for (let cycle = 0; cycle < 2; cycle++) {
+    graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  }
+  const instance = placed(graph, id), master = chain(graph, instance, 'componentId').at(-1)
+  const board = graph.getNode(instance.parentId)
+  assert.equal(board.layoutMode, 'NONE')
+  assert.equal(board.figmaDerivedLayout, null)
+  assert.deepEqual(board.source.editedFields, [])
+  const editor = createEditor({ graph }); editor.setCanvasKit(ck, renderer)
+  const before = structuredClone([...graph.getAllNodes()])
+  editor.setInstanceComponentProperty(instance.id, property(graph, instance, 'label'), 'Save these memories')
+  const after = structuredClone([...graph.getAllNodes()])
+  const changedIds = new Set([instance.id, ...graph.getChildren(instance.id).map(node => node.id)])
+  for (const node of before.filter(node => !changedIds.has(node.id))) {
+    assert.deepEqual(graph.getNode(node.id), node, `unrelated node ${node.name} must remain unchanged`)
+  }
+  assert.deepEqual(master, before.find(node => node.id === master.id))
+  editor.undoAction(); await Promise.resolve()
+  assert.deepEqual([...graph.getAllNodes()], before)
+  editor.redoAction(); await Promise.resolve()
+  assert.deepEqual([...graph.getAllNodes()], after)
+  for (let cycle = 0; cycle < 3; cycle++) {
+    assert.deepEqual(extractSourceProps(graph, placed(graph, id), snapshot).proposal, {
+      baseSHA256: snapshot.sha256, path: [id], props: { label: 'Save these memories' },
+    })
+    if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  }
+})
+
 for (const [field, choices] of [
   ['tone', ['info', 'danger']],
   ['size', ['sm', 'lg']],

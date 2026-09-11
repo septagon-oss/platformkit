@@ -390,6 +390,10 @@ Construction rejects geometry differences over 1/64 CSS pixel, removing created
 nodes and restoring the caller's measurement hook. Measurement failures return
 through Yoga before being rethrown, keeping its WebAssembly state reusable.
 
+Text-property edits invalidate derived geometry without marking unaffected boards
+as authored changes. The [document regression](browser/document.test.mjs) reopens
+before editing and checks board/master isolation, exact history and two more saves.
+
 Observed constructor-internal captures retain linked masters without becoming
 replaceable slots. Their derived property values must remain at the source
 baseline, including beneath further nested components. Source extraction offers
