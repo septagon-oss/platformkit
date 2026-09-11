@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import OpenType from 'opentype.js'
 import { fontManager, weightToStyle } from '@open-pencil/core/text'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
-import { fontMetadata } from './font-correction.mjs'
+import { fontFamilyNames, fontMetadata } from './font-correction.mjs'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 
@@ -64,7 +64,7 @@ export async function loadFonts(faces, requirements) {
     const typeface = ck.Typeface.MakeFreeTypeFaceFromData(face.bytes.buffer)
     if (!typeface) throw new Error(`CanvasKit cannot decode font: ${faceKey(face)}`)
     try {
-      if (typeface.getFamilyName() !== face.internalFamily) throw new Error('CanvasKit font family mismatch')
+      if (!fontFamilyNames(OpenType.parse(face.bytes.buffer)).includes(typeface.getFamilyName())) throw new Error('CanvasKit font family mismatch')
       for (const requirement of requirements.filter(item => faceKey(item) === faceKey(face))) {
         const text = requirement.text.replace(/[\r\n\t]/gu, '')
         if ([...typeface.getGlyphIDs(text)].includes(0)) throw new Error(`CanvasKit font glyph missing: ${faceKey(face)}`)

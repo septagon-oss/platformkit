@@ -148,10 +148,11 @@ The conversion follows pinned Chromium's [geometry](https://chromium.googlesourc
 and [ink-skipping](https://chromium.googlesource.com/chromium/src/+/151.0.7922.34/third_party/blink/renderer/core/paint/text_painter.cc).
 Nominal thickness stays in the existing source record because its rounded native
 value cannot reproduce the gaps. Native font/underline-style edits leave that CSS
-projection instead of being overwritten. Core Link is not yet admitted end to end:
-its constructor lacks label markers, standalone inline-root layout needs conversion,
-and the external arrow uses a system fallback outside the supplied fonts. The adapter
-does not synthesize source ownership or substitute a glyph.
+projection instead of being overwritten. Core Link label editing still needs its
+source-owned markers; standalone inline conversion still needs correct wrapping.
+[Recovery-notice checks](browser/request-notices.test.mjs) use complete font faces
+for the real arrow. Message edits and two saves cover all four notices in both
+themes at 320px/1280px; they do not execute recovery or establish a connected flow.
 The [Blink notice](Blink-underline-NOTICE) ships under the editor's `/licenses/`
 and in build provenance without changing the Go export's notice text or digest.
 
@@ -608,8 +609,12 @@ the supplied bytes in the existing SDK font manager. It does not resolve CSS
 fallback stacks or download fonts. WOFF2 and variable fonts are refused until
 both the shaping and FIG-outline paths support them.
 
-The locked IBM Plex Sans fixtures cover 400/500/600 Latin faces: exact bytes,
+The locked IBM Plex Sans fixtures cover 400/500/600/700 Latin faces: exact bytes,
 native shaping, Chromium face selection and pixels across two saves.
+Native family validation accepts legacy or typographic names from the same verified bytes.
+The [complete-font preview check](preview/complete-fonts.test.mjs) requires a separate
+editor build with `--font` selecting Regular/SemiBold from `@ibm/plex-sans@1.0.0`'s
+`fonts/complete/woff/` and `--font-license` selecting its `LICENSE.txt`; it has no install hook.
 The OpenType correction retains Node outlines. The browser's local-font fallback
 checks binary family/weight/style metadata when legacy display names fail SDK
 lookup; unreadable, mismatched or ambiguous candidates do not select a face.

@@ -5,6 +5,12 @@ function fontNames(font, field) {
   return [...new Set(Object.values(font.names).flatMap(platform => Object.values(platform[field] ?? {})))]
 }
 
+// A renderer may expose either naming generation from the same font bytes.
+// Do not substitute the caller's CSS alias or infer a family from a style name.
+export function fontFamilyNames(font) {
+  return [...new Set([...fontNames(font, 'fontFamily'), ...fontNames(font, 'preferredFamily')])]
+}
+
 // Binary metadata is shared by supplied-font validation and the browser's
 // local-font fallback. Display names only narrow candidates; they are not proof.
 export function fontMetadata(font, face) {

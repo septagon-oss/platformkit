@@ -1,10 +1,12 @@
 // Test-only source and font fixtures; kept in the design-test budget.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { editorFonts } from '../editor-fonts.mjs'
 
 // Shared process setup, not an expected-result oracle. Every call runs the
 // owning Go exporter with fresh inputs; assertions remain in the calling test.
@@ -34,6 +36,16 @@ export function suppliedFonts(weights) {
     const bytes = readFileSync(new URL(`../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff`, import.meta.url))
     return { family: 'IBM Plex Sans', weight, style: 'normal', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
   })
+}
+
+// Complete, licensed static faces include the real external-link arrow omitted
+// from the Latin fixtures. Use a separate native process for different bytes.
+export function completePlexFonts() {
+  const path = name => fileURLToPath(new URL(`../node_modules/@ibm/plex-sans/${name}`, import.meta.url))
+  const args = [['Regular', 400], ['SemiBold', 600]].flatMap(([name, weight]) =>
+    ['--font', 'IBM Plex Sans', String(weight), 'normal', path(`fonts/complete/woff/IBMPlexSans-${name}.woff`)])
+  const packaged = editorFonts([...args, '--font-license', path('LICENSE.txt')], readFileSync, realpathSync)
+  return packaged.faces.map(face => ({ ...face, bytes: packaged.files.find(file => file.path === face.path).bytes }))
 }
 
 // Return encoded source JSON as a string so the caller exercises its own

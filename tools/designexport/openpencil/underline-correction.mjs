@@ -28,6 +28,7 @@
  */
 import { weightToStyle } from '@open-pencil/scene-graph'
 import { ownSourceLayoutRecord } from './layout-correction.mjs'
+import { fontFamilyNames } from './font-correction.mjs'
 
 const decorated = new WeakMap()
 const encoder = new TextEncoder()
@@ -58,7 +59,7 @@ function rangesFor(node, fontFor, colorFor) {
       if (![thickness, offset].every(Number.isFinite) || thickness < 0) return false
       underline = { thickness, offset, skipInk: style.textDecorationSkipInk !== false,
         style: style.textDecorationStyle, color: colorFor(style),
-        families: new Set(Object.values(font.names).flatMap(names => Object.values(names.fontFamily ?? {}))) }
+        families: new Set(fontFamilyNames(font)) }
       if (source?.version === 1 && Number.isFinite(Math.fround(source.nominalThickness)) && source.nominalThickness >= 1 &&
           Math.floor(source.nominalThickness) === thickness && style.textDecorationStyle === 'SOLID' &&
           source.native && ['fontFamily', 'fontWeight', 'fontSize', 'italic', 'textDecoration', 'textDecorationStyle',
