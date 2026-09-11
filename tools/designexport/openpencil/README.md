@@ -5,10 +5,10 @@ This directory owns the native boundary of the existing
 typed examples and stylesheet remain the source of truth. There is no second
 component registry, page language or client-specific library here.
 
-The generator packages tokens, icons and explicitly selected experimental native
-components, using supplied-font validation, browser observations and a pinned
-SDK correction layer. Product pages and flows are not converted yet; this is not a
-complete published component library or the finished shared provider interface.
+The generator packages tokens, icons and selected experimental components, forms
+and page compositions through supplied-font validation, browser observations and
+a pinned SDK correction layer. Full-library gates remain unfinished; connected
+prototypes, a published product library and the shared provider interface are not ready.
 The [coverage test](browser/text.test.mjs) reports each admitted or refused example
 with its reason, using IBM Plex Sans 400/500/600/700, headless Chromium
 (`--font-render-hinting=none`), light mode and a 1280×900 viewport. Run
@@ -445,10 +445,11 @@ Stretch insets, stacking and transformed/scrolling containing blocks remain refu
 Generated refusal forms inherit Alert text, icon offsets and rounded independent
 border widths through edits and two saves at 320/1280px in both themes. Text inputs
 also require an observed browser editing viewport, not inferred content offsets.
-Linked Form, block and configured-font Toolbar/Stack/Text fixtures cover both themes at
-320/1280px, copy edits, isolation, history and two saves. Private copy keeps its owner's properties.
-Toolbar's named header/body slots retain heading semantics and a keyboard-focusable link.
-This synthetic page has no navigation chrome, artwork or prototype transitions.
+Linked Form, block and configured-font Toolbar/Stack/Text fixtures cover copy edits,
+isolation, history and two saves at 320/1280px in both themes. The
+[Toolbar test](browser/toolbar.test.mjs) places Header/Body slots on its page fixture,
+not Toolbar; its linked Button has no action-label reflow coverage. Long-label edits
+can mis-size nested or competing buttons. These fixtures have no prototype transitions.
 Configured-font Card pages also compose Heading, Stack and Grid; title/description
 edits retain linked ownership and content-driven grid height after two saves.
 Single literal zero-spread box shadows retain native effects. Straight-edge samples
