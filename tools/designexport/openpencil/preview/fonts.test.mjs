@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
 import { expect } from 'playwright/test'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
+import { SceneGraph } from '@open-pencil/scene-graph'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { parseFigBuffer } from '@open-pencil/fig'
 import { buildComponentDocument } from '../document.mjs'
 import { suppliedFonts, sourceFixture } from '../browser/fixtures.test.mjs'
+import { loadFonts } from '../fonts.mjs'
 
 const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL)
 assert.ok(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', 'openpencil-preview'].includes(endpoint.hostname))
@@ -19,6 +22,89 @@ const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name =
 const descendants = (graph, node) => graph.getChildren(node.id).flatMap(child => [child, ...descendants(graph, child)])
 const definitionGeometry = (graph, node) => descendants(graph, node).filter(child => child.parentId === node.id || child.type === 'TEXT')
   .map(child => [child.name, child.text, child.x, child.y, child.width, child.height])
+
+test('native underline paint survives preview property editing, history and two worker saves', { timeout: 120000 }, async () => {
+  const provenance = await (await fetch(new URL('/platformkit-provenance.json', endpoint))).json()
+  for (const name of ['underline-correction.mjs', 'paragraph-correction.mjs', 'corrections.mjs']) {
+    assert.equal(provenance.adapter.inputs[name], hash(readFileSync(new URL(`../${name}`, import.meta.url))))
+  }
+  const fonts = suppliedFonts([400])
+  assert.ok(provenance.fontFaces.some(face => face.sha256 === fonts[0].sha256))
+  await loadFonts(fonts, [{ family: 'IBM Plex Sans', weight: 400, style: 'normal', text: 'Typography gyjp Remember gyjp' }])
+  const ck = await initCanvasKit(), graph = new SceneGraph(), definitions = graph.addPage('Definitions')
+  const master = graph.createNode('COMPONENT', definitions.id, { name: 'Underline master', width: 380, height: 140,
+    componentPropertyDefinitions: [{ id: '30:1', name: 'Label', type: 'TEXT', defaultValue: 'Typography gyjp' }] })
+  const text = graph.createNode('TEXT', master.id, { name: 'Native linked text', text: 'Typography gyjp', x: 20, y: 30,
+    width: 330, height: 80, fontFamily: 'IBM Plex Sans', fontWeight: 400, fontSize: 24, lineHeight: 40,
+    textDecoration: 'UNDERLINE', textDecorationThickness: 2, textUnderlineOffset: 8, textDecorationSkipInk: false,
+    textDecorationFills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, visible: true, opacity: 1 }],
+    fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true, opacity: 1 }],
+    componentPropertyReferences: [{ propertyId: '30:1', field: 'TEXT' }] })
+  graph.createInstance(master.id, graph.getPages()[0].id, { name: 'Edited underline' })
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: [
+    '--enable-automation', '--font-render-hinting=none', '--use-gl=angle', '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader', '--disable-blink-features=FileSystemAccessLocal',
+    ...(endpoint.hostname === 'openpencil-preview' ? [`--unsafely-treat-insecure-origin-as-secure=${endpoint.origin}`] : []),
+  ] })
+  async function ink(page) {
+    const image = ck.MakeImageFromEncoded(await page.locator('[data-test-id="canvas-element"]').screenshot({
+      style: '[data-test-id="toolbar"] { visibility: hidden !important; }',
+    }))
+    try {
+      const pixels = image.readPixels(0, 0, { width: image.width(), height: image.height(), colorType: ck.ColorType.RGBA_8888,
+        alphaType: ck.AlphaType.Unpremul, colorSpace: ck.ColorSpace.SRGB }), red = []
+      for (let i = 0; i < pixels.length; i += 4) if (pixels[i] > pixels[i + 1] + 30 && pixels[i] > pixels[i + 2] + 30) red.push(i, pixels[i], pixels[i + 1], pixels[i + 2])
+      assert.ok(red.length > 100, 'the editor must paint the underline, not just store its settings')
+      return hash(JSON.stringify(red))
+    } finally { image.delete() }
+  }
+  let buffer = Buffer.from(await exportFigFile(graph)), previous
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: [] })
+      try {
+        const page = await context.newPage(), errors = [], workers = []
+        page.on('pageerror', error => errors.push(error.message))
+        page.on('worker', worker => workers.push(worker.url()))
+        await page.goto(endpoint.href)
+        await page.getByRole('menuitem', { name: 'File', exact: true }).click()
+        const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: 'Open… Ctrl+O', exact: true }).click()])
+        await chooser.setFiles({ name: 'underline.fig', mimeType: 'application/octet-stream', buffer })
+        const selected = page.getByRole('treeitem', { name: 'Edited underline Lock Hide', exact: true })
+        await selected.click()
+        const label = page.getByRole('textbox', { name: 'Label', exact: true }), value = cycle ? 'Remember gyjp' : 'Typography gyjp'
+        await expect(label).toHaveValue(value)
+        await expect.poll(() => page.evaluate(() => [...document.fonts].some(face => face.family === 'IBM Plex Sans' && face.weight === '400' && face.status === 'loaded'))).toBe(true)
+        const current = await ink(page)
+        if (previous) assert.equal(current, previous, `worker save ${cycle} retains the painted underline`)
+        if (cycle === 0) {
+          await label.fill('Remember gyjp'); await label.press('Tab'); await selected.click()
+          const edited = await ink(page)
+          assert.notEqual(edited, current)
+          await page.keyboard.press('Control+z'); await expect(label).toHaveValue(value)
+          assert.equal(await ink(page), current)
+          await page.keyboard.press('Control+Shift+z'); await expect(label).toHaveValue('Remember gyjp')
+          assert.equal(await ink(page), edited)
+        }
+        previous = await ink(page)
+        assert.deepEqual(errors, [])
+        if (cycle === 2) continue
+        const [download] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+s')])
+        const chunks = []
+        for await (const chunk of await download.createReadStream()) chunks.push(chunk)
+        buffer = Buffer.concat(chunks)
+        assert.ok(workers.some(url => /export-worker/.test(url)))
+        const reopened = await parseFigFile(arrayBuffer(buffer), { populate: 'all' }), instance = named(reopened, 'Edited underline')
+        assert.equal(instance.type, 'INSTANCE')
+        const copied = reopened.getChildren(instance.id)[0], original = reopened.getChildren(named(reopened, 'Underline master').id)[0]
+        assert.equal(copied.text, 'Remember gyjp'); assert.equal(original.text, text.text)
+        for (const key of ['fontFamily', 'fontWeight', 'textDecoration', 'textDecorationThickness', 'textUnderlineOffset', 'textDecorationSkipInk']) {
+          assert.equal(copied[key], text[key]); assert.equal(original[key], text[key])
+        }
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
 
 // Inspect actual editor-canvas pixels, not just text stored in the scene graph.
 // This fixture has one green button; its interior paint locates it without

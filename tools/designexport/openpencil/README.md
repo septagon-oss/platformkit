@@ -126,7 +126,10 @@ The tests create disposable scene graphs and FIG buffers in memory; CLI cases
 write only to automatically removed temporary directories outside the workspace.
 They do not open your documents or connect to an editor. Native checks supplement
 `make check`, covering variable descriptions, links, provenance and two FIG saves.
-CanvasKit verifies light/dark icon pixels without a GPU; supplied-font tests cover shaping.
+CanvasKit checks light/dark icon pixels and supplied-font shaping without a GPU.
+[Native underlines](browser/underline.test.mjs) cover offset, pixel thickness and
+ink-skipping for untransformed static-font text. [Preview checks](preview/fonts.test.mjs)
+exercise editing and worker saves; CSS Link conversion remains refused.
 Experimental [color variables](variable-color.mjs) reuse authored CSS and native input IDs.
 Palette edits, modes and history retain formulas in versioned FIG plugin data alongside
 resolved COLOR fallbacks. Changed external fallbacks, missing inputs and cycles refuse.

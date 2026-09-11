@@ -1,5 +1,6 @@
 import { Rules } from '@cto.af/linebreak'
 import { ownSourceLayoutRecord } from './layout-correction.mjs'
+import { drawUnderlinedParagraph } from './underline-correction.mjs'
 
 const paragraphs = new WeakMap()
 const breaks = new Rules()
@@ -140,6 +141,6 @@ export function sourceParagraph(node, make) {
 
 export function drawSourceParagraph(canvas, paragraph, x, y) {
   const state = paragraphs.get(paragraph)
-  if (!state) return canvas.drawParagraph(paragraph, x, y)
-  for (const item of state.lines) canvas.drawParagraph(item.paragraph, x + item.x, y + item.y)
+  if (!state) return drawUnderlinedParagraph(canvas, paragraph, x, y)
+  for (const item of state.lines) drawUnderlinedParagraph(canvas, item.paragraph, x + item.x, y + item.y)
 }
