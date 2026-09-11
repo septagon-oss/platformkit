@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { corrections, correctSource, sdkVersion } from './corrections.mjs'
 import { chain } from './exporter-correction.mjs'
 import { editorFonts, bundleEditorFonts } from './editor-fonts.mjs'
+import { correctModeControls } from './variable-mode-control-correction.mjs'
 
 // Run only in the disposable Docker build stage. Application sources come
 // from the checksum-pinned archive; engine modules come from our npm lock.
@@ -293,6 +294,10 @@ const selectedValue = computed({
           }),
           'text-[10px] leading-4 text-muted', 'text-[10px] leading-4 text-surface',
         ]])),
+        'src/components/DesignPanel.vue': ['e58908fa400acf057844c4de8cd09e374d7b806b97111541195c182312d3ae33',
+          '    <ComponentPropertiesSection />', '    <VariablesSection @open-dialog="variablesOpen = true" />\n    <ComponentPropertiesSection />',
+          '    <ComponentPropertiesSection v-if="node.type === \'INSTANCE\'" />',
+          '    <VariablesSection @open-dialog="variablesOpen = true" />\n    <ComponentPropertiesSection v-if="node.type === \'INSTANCE\'" />'],
         'src/components/properties/VariablesSection.vue': ['5e566f51c71bee2c77d1902d5d1f0d7f9d5f30e4b6a0db6a9b2ad410fe5f9175',
           '<IconButton :label="panels.openVariables"', '<IconButton class="min-h-6 min-w-6" :label="panels.openVariables"'],
         'src/components/variables/VariablesDialog.vue': ['d8f09a9aefffceb59356cddf38208ad6e25976ebf2e641f08c1eeff6c2657cbe',
@@ -412,6 +417,7 @@ async function commitCollectionRename(event: FocusEvent) {
         if (sha256(source) !== digest) throw new Error('Editor control source changed: ' + path)
         correctedControls.add(path)
         for (let index = 0; index < edits.length; index += 2) source = replaceOnce(source, edits[index], edits[index + 1])
+        if (path.endsWith('/VariablesSection.vue')) source = correctModeControls(source, replaceOnce, join(adapter, 'variable-binding.mjs'))
         if (path.endsWith('/ComponentPropertyTextField.vue')) source += `
 <style scoped>
 textarea:focus-visible { outline: revert; outline-offset: 2px; }
@@ -487,7 +493,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 19) throw new Error('Browser omitted a required editor control correction')
+if (correctedControls.size !== 20) throw new Error('Browser omitted a required editor control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

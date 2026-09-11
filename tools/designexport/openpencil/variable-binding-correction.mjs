@@ -1,11 +1,29 @@
 import { fileURLToPath } from 'node:url'
-import { lineageHelpers } from './exporter-correction.mjs'
-import { nativeModeHelpers } from './sync-correction.mjs'
 
 const helper = JSON.stringify(fileURLToPath(new URL('./variable-binding.mjs', import.meta.url)))
 
 export function correctNumericGraph(source, replace) {
   source = `import { planNumericBinding, planNumericNodeUpdate, planNumericActiveMode, applyNumericBindings, ownNumericLiteral, ownVariableModes } from ${helper};\n` + source
+  source = replace(source, 'getNodeVariableModeId(nodeId, collectionId) {', `
+  getNodeExplicitVariableModes(nodeId) {
+    const node = this.getNode(nodeId);
+    if (!node) throw new Error('Native variable mode: target no longer exists');
+    return structuredClone(explicitVariableModes(this.nodes, node));
+  }
+  getNodeVariableModeId(nodeId, collectionId) {`)
+  source = replace(source, 'let node = graph.nodes.get(nodeId);\n\twhile (node) {\n\t\tconst modeId = node.variableModes[collectionId];',
+    `let node = graph.nodes.get(nodeId);
+    const seen = new Set();
+    while (node) {
+      if (seen.has(node.id)) throw new Error('Native variable mode: cyclic mode ancestry');
+      seen.add(node.id);
+      const modeId = inheritedVariableModes(graph.nodes, node)[collectionId];`)
+  source = replace(source, 'const preferredModeId = modeId ?? getActiveModeId(graph, variable.collectionId);',
+    `const preferredModeId = work.nodeId === undefined ? modeId ?? getActiveModeId(graph, variable.collectionId) :
+      getNodeVariableModeId(graph, work.nodeId, variable.collectionId);`)
+  const nodeResolver = 'resolveVariable(graph, variableId, getNodeVariableModeId(graph, nodeId, variable.collectionId))'
+  if (source.split(nodeResolver).length !== 3) throw new Error('Pinned node variable resolvers changed')
+  source = source.replaceAll(nodeResolver, 'resolveVariable(graph, variableId, undefined, undefined, { remaining: 4096, nodeId })')
   source = replace(source, 'function bindVariable(graph, nodeId, field, variableId) {', `
 function bindVariable(graph, nodeId, field, variableId) {
   const plan = planNumericBinding(graph, nodeId, field, variableId);
@@ -78,7 +96,6 @@ export function correctNumericEvents(source, replace) {
 }
 
 export function correctNumericImport(source, replace) {
-  source = nativeModeHelpers + '\n' + source
   source = `import { isNumericBindingField, applyNumericBindings, ownVariableModes } from ${helper};\n` + source
   source = 'import { extractVariableModes } from "./node-change2.js";\n' + source
   source = replace(source, '\tapplyOverridePaints(ov, updates);',
@@ -89,17 +106,17 @@ export function correctNumericImport(source, replace) {
       for (const node of overrideCandidates(graph, activeNodeIds)) {
         if (node.source.fig?.rawNodeFields?.variableModeBySetMap) ownVariableModes(graph, node);
       }
-      for (const node of overrideCandidates(graph, activeNodeIds)) {
-        const variableModes = inheritedVariableModes(graph.nodes, node);
-        if (variableModes !== node.variableModes) graph.preserveSourceMetadataDuring(() =>
-          graph.updateNode(node.id, { variableModes: structuredClone(variableModes) }));
-      }
       applyNumericBindings(graph);`)
   return replace(source, 'if (Array.isArray(variableId)) continue;\n\t\t\tconst value = graph.resolveNumberVariableForNode(node.id, variableId);',
     'if (Array.isArray(variableId) || isNumericBindingField(field)) continue;\n\t\t\tconst value = graph.resolveNumberVariableForNode(node.id, variableId);')
 }
 
 export function correctNumericNodeExport(source, replace) {
+  source = `import { isNumericBindingField } from ${helper};\n` + source
+  // Bound freeform children also need their derived size on the wire. Their
+  // mode choice is not a literal size override and must not pin a HUG axis.
+  source = replace(source, "parent.layoutMode !== 'NONE' && target.layoutPositioning !== 'ABSOLUTE' && target.visible",
+    "(parent.layoutMode !== 'NONE' && target.layoutPositioning !== 'ABSOLUTE' || Object.keys(target.boundVariables).some(isNumericBindingField)) && target.visible")
   source = replace(source, 'const variableModeBySetMap = serializeVariableModes(node, context.varIdToGuid, context.modeIdToGuid);',
     `const variableModeBySetMap = node.type === 'INSTANCE' && !node.overrides.variableModes ? undefined :
       serializeVariableModes(node, context.varIdToGuid, context.modeIdToGuid);
@@ -220,7 +237,6 @@ export function correctNumericBindingActions(source, replace) {
 }
 
 export function correctNumericNodeActions(source, replace) {
-  source = lineageHelpers + '\n' + nativeModeHelpers + '\n' + source
   source = 'import { projectGraphChange } from "./components/properties.js";\n' + source
   source = `import { planNumericNodeUpdate, planNumericBindings, variableModeOwnership, restoreVariableModeOwnership } from ${helper};\n` + source
   const pattern = /ctx\.graph\.updateNode\(id, (nextChanges|previous)\);/g
@@ -238,13 +254,11 @@ export function correctNumericNodeActions(source, replace) {
   }
   return replace(source, 'function createNodeActions(ctx) {', `function createNodeActions(ctx) {
     function updateNumericNode(id, changes, ownership) {
+      if (ownership?.present === false) changes = { ...changes, variableModes: {} };
       if (!planNumericNodeUpdate(ctx.graph, id, changes) && ownership === undefined) return ctx.graph.updateNode(id, changes);
       projectGraphChange(ctx, planned => {
         planned.graph.updateNode(id, changes);
         restoreVariableModeOwnership(planned.graph, id, ownership);
-        if (Object.hasOwn(changes, "variableModes") && variableModeOwnership(planned.graph, planned.graph.getNode(id))?.present === false)
-          planned.graph.preserveSourceMetadataDuring(() =>
-          planned.graph.updateNode(id, { variableModes: structuredClone(inheritedVariableModes(planned.graph.nodes, planned.graph.getNode(id))) }));
         for (const root of planNumericBindings(planned.graph).roots) planned.runLayoutForNode(root);
         planned.runLayoutForNode(id);
       });

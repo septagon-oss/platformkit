@@ -19,20 +19,22 @@ function syncSourceOccurrence(nodes, target, visiting = new Set()) {
   if (!sourceParent) return nodes.get(target.componentId)
   const overrides = ancestryOverrides(syncReadView(nodes), parent)
   if (Object.hasOwn(overrides, `${target.id}:componentId`)) return nodes.get(target.componentId)
+  if (!target.componentId && !Object.hasOwn(overrides, `${target.id}:sourceComponentId`)) return
   return sourceChild(syncReadView(nodes), sourceParent, target, overrides)
+}
+
+function explicitVariableModes(nodes, target) {
+  const source = syncSourceOccurrence(nodes, target)
+  const overrides = ancestryOverrides(syncReadView(nodes), target)
+  return source && !Object.hasOwn(overrides, `${target.id}:variableModes`) ? {} : target.variableModes
 }
 
 function inheritedVariableModes(nodes, target, visiting = new Set()) {
   if (visiting.has(target.id)) throw new Error('Cyclic native mode inheritance')
-  const overrides = ancestryOverrides(syncReadView(nodes), target)
-  if (Object.hasOwn(overrides, `${target.id}:variableModes`)) return target.variableModes
   const source = syncSourceOccurrence(nodes, target)
-  return source ? inheritedVariableModes(nodes, source, new Set(visiting).add(target.id)) : target.variableModes
+  return source ? { ...inheritedVariableModes(nodes, source, new Set(visiting).add(target.id)),
+    ...explicitVariableModes(nodes, target) } : target.variableModes
 }
-
-// Import and mode-history replay need the synchronizer's exact occurrence
-// correspondence, but must not synchronize unrelated appearance or geometry.
-export const nativeModeHelpers = [syncReadView, syncSourceOccurrence, inheritedVariableModes].map(fn => fn.toString()).join('\n')
 
 function syncReconciliation(nodes, source, target, overrides, deletedParents) {
   const matches = new Map(), local = [], removed = []
@@ -517,7 +519,7 @@ export function correctSyncGraph(source, replace) {
   const syncStart = source.indexOf('function syncInstances(')
   const syncEnd = source.indexOf('function detachInstance(', syncStart)
   if (swapStart < 0 || syncStart < swapStart || syncEnd < 0) throw new Error('Native sync instance anchor changed')
-  const helpers = [syncReadView, syncSourceOccurrence, syncReconciliation, syncProperties, syncRemapOverrides,
+  const helpers = [syncReadView, syncSourceOccurrence, explicitVariableModes, inheritedVariableModes, syncReconciliation, syncProperties, syncRemapOverrides,
     syncReplacementOccurrence, syncPaintRoles, syncRoleBindings, syncVariantCorrespondence, syncApplyPaintRoles,
     planNativeSync, applyNativeSync, syncInstances, swapInstanceComponent].map(fn => fn.toString()).join('\n')
   return replace(source, source.slice(swapStart, syncEnd),

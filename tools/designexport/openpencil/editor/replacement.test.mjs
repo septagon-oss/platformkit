@@ -152,7 +152,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
-    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-binding-correction.mjs', 'variable-binding.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'variable-binding-correction.mjs', 'variable-binding.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-mode-control-correction.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -792,6 +792,152 @@ test('numeric variables retain editor values, refusal feedback and two worker sa
           assert.equal(reopened.resolveVariable(variable('Tiny value').id), 1e-50)
           assert.ok(Object.is(reopened.resolveVariable(variable('Negative zero').id), -0))
           assert.deepEqual(['Untouched master', 'Untouched instance'].map(name => geometry(reopened, named(reopened, name))), untouched)
+        }
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
+for (const nested of [false, true]) test(`page and ${nested ? 'nested' : 'root'} layer mode controls retain inheritance, refusal and two worker saves`, { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), padding = graph.createCollection('Padding modes'), gaps = graph.createCollection('Gap modes')
+  graph.renameMode(padding.id, padding.defaultModeId, 'Compact')
+  graph.addMode(padding.id, 'invalid-padding', 'Invalid')
+  graph.addMode(padding.id, 'comfortable-padding', 'Comfortable')
+  graph.renameMode(gaps.id, gaps.defaultModeId, 'Compact')
+  graph.addMode(gaps.id, 'spacious-gap', 'Spacious')
+  const left = graph.createVariable('Left padding', 'FLOAT', padding.id, 16)
+  left.valuesByMode['invalid-padding'] = -8
+  left.valuesByMode['comfortable-padding'] = 24
+  const gap = graph.createVariable('Mode gap', 'FLOAT', gaps.id, 12)
+  gap.valuesByMode['spacious-gap'] = 32
+  const pageId = graph.getPages()[0].id
+  const master = graph.createNode('COMPONENT', pageId, { name: 'Mode master',
+    layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG',
+    paddingLeft: 16, paddingRight: 8, paddingTop: 8, paddingBottom: 8, itemSpacing: 12,
+    variableModes: { [padding.id]: padding.defaultModeId } })
+  for (const name of ['First', 'Second']) graph.createNode('RECTANGLE', master.id, { name, width: 40, height: 24 })
+  graph.bindVariable(master.id, 'paddingLeft', left.id)
+  graph.bindVariable(master.id, 'itemSpacing', gap.id)
+  computeLayout(graph, master.id)
+  if (nested) {
+    const wrapper = graph.createNode('COMPONENT', pageId, { name: 'Wrapper master', width: 300, height: 100, y: 100 })
+    graph.createInstance(master.id, wrapper.id, { name: 'Mode consumer' })
+    graph.createInstance(wrapper.id, pageId, { name: 'Mode wrapper', x: 350, y: 150 })
+  } else graph.createInstance(master.id, pageId, { name: 'Mode consumer', x: 350 })
+  graph.createInstance(master.id, pageId, { name: 'Mode sibling', x: 550 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: cycle === 2 ? 1280 : 1440, height: 1000 }, hasTouch: cycle === 2 })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `mode-controls-${nested}-${cycle}.fig`)
+        if (cycle === 2) await page.emulateMedia({ forcedColors: 'active' })
+        const controls = page.getByRole('group', { name: 'Page modes', exact: true })
+        const tabTo = async target => {
+          for (let step = 0; step < 180 && !await target.evaluate(node => node === document.activeElement); step++) await page.keyboard.press('Tab')
+          await expect(target).toBeFocused()
+          assert.ok(await target.evaluate(node => node.matches(':focus-visible') && getComputedStyle(node).outlineStyle !== 'none'))
+        }
+        const pageGap = controls.getByRole('combobox', { name: 'Gap modes', exact: true })
+        await expect(pageGap).toBeVisible()
+        if (cycle === 0) {
+          await tabTo(pageGap)
+          await page.keyboard.press('End')
+        }
+        await expect(pageGap.locator('option:checked')).toHaveText('Spacious')
+        if (nested) {
+          await page.getByRole('treeitem', { name: 'Mode wrapper Lock Hide', exact: true }).click()
+          await page.keyboard.press('ArrowRight')
+        }
+        const layer = page.getByRole('treeitem', { name: 'Mode consumer Lock Hide', exact: true })
+        await layer.click()
+        const group = page.getByRole('group', { name: 'Layer modes', exact: true })
+        const select = group.getByRole('combobox', { name: 'Padding modes', exact: true })
+        const other = group.getByRole('combobox', { name: 'Gap modes', exact: true })
+        const width = page.getByRole('spinbutton', { name: 'Width', exact: true })
+        await expect(other).toHaveValue('')
+        await expect(other).toHaveAccessibleDescription('Inherited: Spacious')
+        await expect(width).toHaveAttribute('aria-valuenow', cycle === 0 ? '136' : '144')
+        await tabTo(select)
+        if (cycle === 0) {
+          await page.keyboard.press('End')
+          await expect(width).toHaveAttribute('aria-valuenow', '144')
+          await expect(select.locator('option:checked')).toHaveText('Comfortable')
+          await page.keyboard.press('ArrowUp')
+          await expect(select).toBeFocused()
+          await expect(select.locator('option:checked')).toHaveText('Comfortable')
+          await expect(select).toHaveAttribute('aria-invalid', 'true')
+          await expect(select).toHaveAccessibleDescription(/Mode change refused.*Previous choices were kept/)
+          await expect(width).toHaveAttribute('aria-valuenow', '144')
+          await page.addScriptTag({ content: axe.source })
+          const audit = await group.evaluate(element => window.axe.run(element))
+          assert.deepEqual(audit.violations, [])
+          assert.deepEqual(audit.incomplete, [])
+          await page.keyboard.press('Control+z')
+          await expect(width).toHaveAttribute('aria-valuenow', '136')
+          await expect(select).toHaveValue('')
+          await expect(select).not.toHaveAttribute('aria-invalid', 'true')
+          await page.keyboard.press('Control+Shift+z')
+          await expect(width).toHaveAttribute('aria-valuenow', '144')
+          await tabTo(select)
+          await page.keyboard.press('Home')
+          await expect(width).toHaveAttribute('aria-valuenow', '136')
+          await page.keyboard.press('Tab')
+          await expect(other).toBeFocused()
+          await page.keyboard.press('ArrowDown')
+          await expect(width).toHaveAttribute('aria-valuenow', '116')
+          await page.keyboard.press('Tab')
+          const reset = group.getByRole('button', { name: 'Reset all mode overrides', exact: true })
+          await expect(reset).toBeFocused()
+          await page.keyboard.press('Enter')
+          await expect(select).toBeFocused()
+          await expect(reset).toBeDisabled()
+          await expect(other).toHaveValue('')
+          await expect(width).toHaveAttribute('aria-valuenow', '136')
+          await page.keyboard.press('ArrowDown')
+          await expect(select).toHaveAccessibleDescription('Explicit: Compact')
+          await expect(reset).toBeEnabled()
+          await expect(width).toHaveAttribute('aria-valuenow', '136')
+          await page.keyboard.press('Control+z')
+          await expect(select).toHaveValue('')
+          await expect(reset).toBeDisabled()
+          await page.keyboard.press('Control+Shift+z')
+          await expect(select).toHaveAccessibleDescription('Explicit: Compact')
+          await page.keyboard.press('End')
+          await expect(width).toHaveAttribute('aria-valuenow', '144')
+        }
+        await expect(select.locator('option:checked')).toHaveText('Comfortable')
+        await expect(other).toHaveValue('')
+        assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), cycle === 2)
+        const size = await select.boundingBox()
+        assert.ok(size.width >= 24 && size.height >= (cycle === 2 ? 44 : 40), `Mode control dimensions: ${JSON.stringify(size)}`)
+        const resetSize = await group.getByRole('button', { name: 'Reset all mode overrides', exact: true }).boundingBox()
+        assert.ok(resetSize.width >= 24 && resetSize.height >= (cycle === 2 ? 44 : 40))
+        assert.ok(await group.evaluate(node => node.scrollWidth <= node.clientWidth))
+        if (cycle < 2) {
+          buffer = await saveDocument(page, errors, workers)
+          const saved = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const target = nested ? saved.getChildren(named(saved, 'Mode wrapper').id)[0] : named(saved, 'Mode consumer')
+          const source = saved.getNode(target.componentId), token = [...saved.variables.values()].find(value => value.name === 'Left padding')
+          assert.deepEqual(Object.keys(saved.getNodeExplicitVariableModes(target.id)), [token.collectionId])
+          assert.deepEqual([target.paddingLeft, target.itemSpacing, target.width], [24, 32, 144])
+          assert.deepEqual([source.paddingLeft, source.itemSpacing, source.width], [16, 32, 136])
+          assert.deepEqual([named(saved, 'Mode sibling').paddingLeft, named(saved, 'Mode sibling').width], [16, 136])
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
+        if (cycle === 2) {
+          await layer.click()
+          await page.getByRole('treeitem', { name: 'Mode sibling Lock Hide', exact: true }).click({ modifiers: ['Control'] })
+          await expect(page.getByText('Select one layer to edit its modes.', { exact: true })).toBeVisible()
+          await expect(group).toHaveCount(0)
+          await expect(controls).toHaveCount(0)
+          await layer.click()
+          await expect(select.locator('option:checked')).toHaveText('Comfortable')
+          await expect(other).toHaveAccessibleDescription('Inherited: Spacious')
         }
         assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
         assert.deepEqual(errors, [])
@@ -1532,6 +1678,8 @@ for (const depth of [1, 2]) test(`nested property picker retains native ownershi
       try {
         const { page, errors, workers } = await openDocument(context, buffer, `nested-${depth}-${cycle}.fig`)
         await page.getByRole('button', { name: 'Nested replacement', exact: true }).click()
+        await page.evaluate(() => new Promise(requestAnimationFrame))
+        assert.deepEqual(errors, [], 'opening the lazy page')
         await page.getByRole('treeitem', { name: /^Edited instance / }).click()
         for (let level = depth; level > 0; level--) {
           await page.keyboard.press('ArrowRight')
@@ -1539,12 +1687,17 @@ for (const depth of [1, 2]) test(`nested property picker retains native ownershi
         }
         const control = page.getByRole('combobox', { name: 'Leading icon', exact: true })
         await control.getByText(cycle ? 'x' : 'plus', { exact: true }).waitFor()
+        assert.deepEqual(errors, [], 'selecting the nested owner')
         if (cycle === 0) {
           await control.click()
           await page.getByRole('option', { name: 'x', exact: true }).click()
           await control.getByText('x', { exact: true }).waitFor()
+          await page.evaluate(() => new Promise(requestAnimationFrame))
+          assert.deepEqual(errors, [], 'applying the replacement')
           await page.keyboard.press('Control+z')
           await control.getByText('plus', { exact: true }).waitFor()
+          await page.evaluate(() => new Promise(requestAnimationFrame))
+          assert.deepEqual(errors, [], 'undoing the replacement')
           await page.keyboard.press('Control+Shift+z')
           await control.getByText('x', { exact: true }).waitFor()
         }

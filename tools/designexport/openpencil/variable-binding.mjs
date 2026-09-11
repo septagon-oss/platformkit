@@ -10,13 +10,6 @@ const reject = message => { throw new Error(`Native numeric binding: ${message}`
 function valueFor(graph, node, field, id) {
   const variable = graph.variables.get(id)
   if (variable?.type !== 'FLOAT') reject(`${node.name}.${field} requires a FLOAT variable`)
-  const seen = new Set()
-  for (let ancestor = node; ancestor; ancestor = graph.getNode(ancestor.parentId)) {
-    if (seen.has(ancestor.id)) reject('cyclic mode ancestry')
-    seen.add(ancestor.id)
-    const mode = ancestor.variableModes[variable.collectionId]
-    if (mode !== undefined) validateMode(graph, variable.collectionId, mode)
-  }
   if (spacing.has(field) && !['HORIZONTAL', 'VERTICAL'].includes(node.layoutMode)) {
     reject(`${node.name}.${field} requires a flex container`)
   }
@@ -45,6 +38,7 @@ function valueFor(graph, node, field, id) {
     if (input.sourceToken && (input.sourceToken.kind !== 'scale' || input.sourceToken.unit !== 'px')) {
       reject(`${node.name}.${field} requires absolute-pixel dependencies`)
     }
+    validateMode(graph, input.collectionId, graph.getNodeVariableModeId(node.id, input.collectionId))
     return input
   } }
   const value = reader.resolveNumberVariableForNode(node.id, id)
@@ -62,6 +56,19 @@ function validateMode(graph, collectionId, modeId) {
   if (!graph.variableCollections.get(collectionId)?.modes.some(mode => mode.modeId === modeId)) {
     reject('mode must belong to its collection')
   }
+}
+
+// Change one authored collection choice, never the resolved source/ancestor
+// map. null means inherit; an explicit default is still an authored choice.
+export function nodeModeChoice(graph, id, collectionId, modeId) {
+  if (typeof collectionId !== 'string' || !collectionId) reject('mode collection identity is required')
+  const modes = graph.getNodeExplicitVariableModes(id)
+  if (modeId === null) delete modes[collectionId]
+  else {
+    validateMode(graph, collectionId, modeId)
+    modes[collectionId] = modeId
+  }
+  return modes
 }
 
 function affectedLayout(graph, bound) {
@@ -153,6 +160,12 @@ export function planNumericNodeUpdate(graph, id, changes) {
   if (graph.isApplyingLayout || graph.sourceMetadataPreservationDepth > 0 || graph.instanceSyncDepth > 0) return
   const node = graph.getNode(id)
   if (!node) return
+  if (Object.hasOwn(changes, 'variableModes')) {
+    const modes = changes.variableModes
+    if (!modes || typeof modes !== 'object' || Array.isArray(modes) ||
+        ![Object.prototype, null].includes(Object.getPrototypeOf(modes))) reject('mode selections must be a collection map')
+    for (const [collection, mode] of Object.entries(modes)) validateMode(graph, collection, mode)
+  }
   for (const [field, value] of Object.entries(changes)) {
     if (isNumericBindingField(field) && node.boundVariables[field] && value !== undefined && !Object.is(node[field], value)) {
       reject(`unbind ${node.name}.${field} before editing its literal value`)
@@ -163,6 +176,11 @@ export function planNumericNodeUpdate(graph, id, changes) {
     .some(field => Object.hasOwn(changes, field))) return
   const candidate = Object.create(graph)
   candidate.nodes = new Map(graph.nodes).set(id, { ...node, ...changes })
+  if (Object.hasOwn(changes, 'variableModes')) {
+    const scope = instanceField(candidate, candidate.getNode(id), 'variableModes')
+    if (scope) candidate.nodes.set(scope.owner.id, { ...scope.owner, overrides: { ...scope.owner.overrides } })
+    ownVariableModes(candidate, candidate.getNode(id))
+  }
   return planNumericBindings(candidate)
 }
 

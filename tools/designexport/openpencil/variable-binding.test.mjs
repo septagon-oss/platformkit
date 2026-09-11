@@ -8,6 +8,8 @@ import { parseFigBuffer } from '@open-pencil/fig'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { nodeModeChoice } from './variable-binding.mjs'
+import { sourceChildren } from './exporter-correction.mjs'
 
 const named = (graph, name) => [...graph.nodes.values()].find(node => node.name === name)
 const variable = (graph, name) => [...graph.variables.values()].find(value => value.name === name)
@@ -547,6 +549,203 @@ function modeHistoryTarget(graph, placement, name = 'Mode target') {
   const owner = target.type === 'INSTANCE' ? target : root
   return { target, owner, key: owner.id === target.id ? 'variableModes' : `${target.id}:variableModes` }
 }
+
+async function independentModeFixture(placement) {
+  const graph = modeHistoryFixture(placement), editor = createEditor({ graph })
+  const collection = graph.createCollection('Independent spacing')
+  graph.renameMode(collection.id, collection.defaultModeId, 'compact')
+  graph.addMode(collection.id, 'independent-wide', 'wide')
+  const gap = graph.createVariable('Independent gap', 'FLOAT', collection.id, 12)
+  gap.valuesByMode['independent-wide'] = 32
+  const master = named(graph, 'Bound')
+  graph.bindVariable(master.id, 'itemSpacing', gap.id)
+  graph.updateNode(master.id, { variableModes: { ...master.variableModes, [collection.id]: collection.defaultModeId } })
+  await settle(graph)
+  return { graph, editor }
+}
+
+for (const placement of ['instance', 'nested instance', 'descendant']) {
+  test(`per-collection ${placement} choices retain other inheritance, history and two FIG saves`, async () => {
+    let { graph, editor } = await independentModeFixture(placement)
+    const base = variable(graph, 'Spacing'), gap = variable(graph, 'Independent gap')
+    const target = modeHistoryTarget(graph, placement).target, master = named(graph, 'Bound')
+    const baseDefault = graph.variableCollections.get(base.collectionId).defaultModeId
+    const gapDefault = graph.variableCollections.get(gap.collectionId).defaultModeId
+    const unrelated = structuredClone(named(graph, 'Unrelated'))
+    const check = (padding, spacing) => {
+      assert.deepEqual([target.paddingLeft, target.itemSpacing, target.width], [padding, spacing, 88 + padding + spacing])
+      assert.equal(modeHistoryTarget(graph, placement, 'Mode explicit').target.paddingLeft, 8)
+      assert.deepEqual(named(graph, 'Unrelated'), unrelated)
+    }
+    check(8, 12)
+    editor.updateNodeWithUndo(target.id, { variableModes: { [base.collectionId]: 'binding-dark' } })
+    // A later source change must reach the other collection, including after
+    // undo. It is deliberately not another entry on this editor's history.
+    graph.updateNode(master.id, { variableModes: { [base.collectionId]: baseDefault, [gap.collectionId]: 'independent-wide' } })
+    await settle(graph)
+    check(24, 32)
+    editor.undoAction()
+    await settle(graph)
+    check(8, 32)
+    editor.redoAction()
+    await settle(graph)
+    check(24, 32)
+    assert.deepEqual(target.variableModes, { [base.collectionId]: 'binding-dark' }, 'resolved modes are not authored choices')
+
+    editor.updateNodeWithUndo(target.id, { variableModes: { [base.collectionId]: 'binding-dark', [gap.collectionId]: gapDefault } })
+    await settle(graph)
+    check(24, 12)
+    editor.updateNodeWithUndo(target.id, { variableModes: { [gap.collectionId]: gapDefault } })
+    await settle(graph)
+    check(8, 12)
+    graph.updateNode(master.id, { variableModes: { [base.collectionId]: 'binding-dark', [gap.collectionId]: 'independent-wide' } })
+    await settle(graph)
+    check(24, 12)
+    editor.undoAction()
+    await settle(graph)
+    check(24, 12)
+    graph.updateNode(master.id, { variableModes: { [base.collectionId]: baseDefault, [gap.collectionId]: 'independent-wide' } })
+    await settle(graph)
+    check(24, 12)
+    editor.redoAction()
+    await settle(graph)
+    check(8, 12)
+
+    for (let cycle = 0; cycle < 2; cycle++) {
+      graph = await reopen(graph)
+      editor = createEditor({ graph })
+      const current = modeHistoryTarget(graph, placement).target
+      const spacing = variable(graph, 'Independent gap'), padding = variable(graph, 'Spacing')
+      const compact = graph.variableCollections.get(spacing.collectionId).defaultModeId
+      assert.deepEqual(current.variableModes, { [spacing.collectionId]: compact })
+      assert.deepEqual([current.paddingLeft, current.itemSpacing, current.width], [8, 12, 108])
+      const dark = graph.variableCollections.get(padding.collectionId).modes.find(mode => mode.name === 'dark').modeId
+      const source = named(graph, 'Bound')
+      editor.updateNodeWithUndo(source.id, { variableModes: { ...source.variableModes, [padding.collectionId]: dark } })
+      await settle(graph)
+      assert.deepEqual([current.paddingLeft, current.itemSpacing, current.width], [24, 12, 124])
+      editor.undoAction()
+      await settle(graph)
+    }
+  })
+}
+
+test('node mode edits reject invalid unbound selections without mutation or history', () => {
+  const graph = new SceneGraph(), editor = createEditor({ graph })
+  const collection = graph.createCollection('Unbound modes'), page = graph.getPages()[0]
+  for (const variableModes of [null, [], { missing: 'missing' }, { [collection.id]: 'missing' }, { [collection.id]: 12 }]) {
+    const before = state(graph), undo = editor.undo.canUndo
+    assert.throws(() => editor.updateNodeWithUndo(page.id, { variableModes }), /Native.*mode/i)
+    assert.deepEqual(state(graph), before)
+    assert.equal(editor.undo.canUndo, undo)
+  }
+})
+
+test('one collection choice copies authored selections, not inherited values or caller-owned maps', async () => {
+  const { graph, editor } = await independentModeFixture('nested instance')
+  const target = modeHistoryTarget(graph, 'nested instance').target
+  const base = variable(graph, 'Spacing'), gap = variable(graph, 'Independent gap')
+  const before = state(graph)
+  assert.deepEqual(graph.getNodeExplicitVariableModes(target.id), {})
+  const choice = nodeModeChoice(graph, target.id, gap.collectionId, 'independent-wide')
+  assert.deepEqual(choice, { [gap.collectionId]: 'independent-wide' })
+  assert.deepEqual(state(graph), before)
+  choice[base.collectionId] = 'binding-dark'
+  assert.deepEqual(state(graph), before)
+  editor.updateNodeWithUndo(target.id, { variableModes: choice })
+  const reset = nodeModeChoice(graph, target.id, base.collectionId, null)
+  assert.deepEqual(reset, { [gap.collectionId]: 'independent-wide' })
+  assert.deepEqual(graph.getNodeExplicitVariableModes(target.id), choice)
+  assert.throws(() => nodeModeChoice(graph, target.id, gap.collectionId, 'binding-dark'), /mode must belong/)
+  assert.throws(() => nodeModeChoice(graph, 'missing', gap.collectionId, null), /target no longer exists/)
+})
+
+test('numeric and colour aliases resolve each dependency in its own collection mode through two saves', async () => {
+  let graph = new SceneGraph()
+  const aliases = graph.createCollection('Alias modes'), values = graph.createCollection('Value modes')
+  graph.addMode(values.id, 'value-wide', 'wide')
+  const number = graph.createVariable('Context number', 'FLOAT', values.id, 16)
+  const color = graph.createVariable('Context colour', 'COLOR', values.id, { r: 1, g: 0, b: 0, a: 1 })
+  number.valuesByMode['value-wide'] = 48
+  color.valuesByMode['value-wide'] = { r: 0, g: 1, b: 0, a: 1 }
+  const numberAlias = graph.createVariable('Cross-collection number', 'FLOAT', aliases.id, { aliasId: number.id })
+  const colorAlias = graph.createVariable('Cross-collection colour', 'COLOR', aliases.id, { aliasId: color.id })
+  const page = graph.getPages()[0]
+  graph.updateNode(page.id, { variableModes: { [values.id]: 'value-wide' } })
+  const node = graph.createNode('RECTANGLE', page.id, { name: 'Context box', width: 16, height: 24,
+    variableModes: { [aliases.id]: aliases.defaultModeId },
+    fills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, opacity: 1, visible: true, blendMode: 'NORMAL' }] })
+  graph.bindVariable(node.id, 'width', numberAlias.id)
+  graph.bindVariable(node.id, 'fills/0/color', colorAlias.id)
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const current = named(graph, 'Context box'), nextNumber = variable(graph, 'Cross-collection number')
+    const nextColor = variable(graph, 'Cross-collection colour'), value = variable(graph, 'Context number')
+    assert.equal(current.width, 48)
+    assert.equal(graph.resolveNumberVariableForNode(current.id, nextNumber.id), 48)
+    assert.deepEqual(graph.resolveColorVariableForNode(current.id, nextColor.id), { r: 0, g: 1, b: 0, a: 1 })
+    const editor = createEditor({ graph }), collection = graph.variableCollections.get(value.collectionId)
+    editor.updateNodeWithUndo(current.id, { variableModes: nodeModeChoice(graph, current.id, collection.id, collection.defaultModeId) })
+    assert.equal(current.width, 16)
+    assert.deepEqual(graph.resolveColorVariableForNode(current.id, nextColor.id), { r: 1, g: 0, b: 0, a: 1 })
+    editor.undoAction()
+    assert.equal(current.width, 48)
+    if (cycle < 2) graph = await reopen(graph)
+  }
+})
+
+test('canonical child correspondence refuses duplicate source occurrences without selecting by name or position', () => {
+  const graph = new SceneGraph(), page = graph.getPages()[0]
+  const master = graph.createNode('COMPONENT', page.id)
+  const shape = graph.createNode('RECTANGLE', master.id, { name: 'Glyph' })
+  const source = graph.createInstance(master.id, page.id), target = graph.createInstance(master.id, page.id)
+  const sourceChild = graph.getChildren(source.id)[0], targetChild = graph.getChildren(target.id)[0]
+  assert.equal(sourceChildren(graph, source, target, {}).get(targetChild.id), sourceChild)
+  graph.createNode('RECTANGLE', source.id, { name: 'Different name', componentId: shape.id })
+  const before = state(graph)
+  assert.throws(() => sourceChildren(graph, source, target, {}), /Ambiguous or missing native source identity/)
+  assert.deepEqual(state(graph), before)
+})
+
+for (const depth of [1, 2]) test(`nested colour mode correspondence survives swap undo and two saves: depth=${depth}`, async () => {
+  let graph = new SceneGraph()
+  const page = graph.getPages()[0], collection = graph.createCollection('Glyph modes')
+  graph.addMode(collection.id, 'green-glyph', 'Green')
+  const color = graph.createVariable('Glyph colour', 'COLOR', collection.id, { r: 1, g: 0, b: 0, a: 1 })
+  color.valuesByMode['green-glyph'] = { r: 0, g: 1, b: 0, a: 1 }
+  const glyphs = ['Original glyph', 'Replacement glyph'].map(name => {
+    const master = graph.createNode('COMPONENT', page.id, { name, width: 24, height: 24 })
+    const shape = graph.createNode('RECTANGLE', master.id, { width: 24, height: 24,
+      fills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, opacity: 1, visible: true, blendMode: 'NORMAL' }] })
+    graph.bindVariable(shape.id, 'fills/0/color', color.id)
+    return master
+  })
+  const master = graph.createNode('COMPONENT', page.id, { name: 'Glyph owner', width: 64, height: 32,
+    componentPropertyDefinitions: [{ id: '91:1', name: 'Leading glyph', type: 'INSTANCE_SWAP', defaultValue: glyphs[0].id }] })
+  graph.createInstance(glyphs[0].id, master.id, { variableModes: { [collection.id]: 'green-glyph' },
+    componentPropertyReferences: [{ propertyId: '91:1', field: 'INSTANCE_SWAP' }] })
+  graph.createInstance(glyphs[0].id, master.id, { x: 32 })
+  let outer = master
+  for (let level = 1; level <= depth; level++) {
+    const wrapper = graph.createNode('COMPONENT', page.id, { name: `Glyph wrapper ${level}`, width: 64, height: 32 })
+    graph.createInstance(outer.id, wrapper.id)
+    outer = wrapper
+  }
+  graph.createInstance(outer.id, page.id, { name: 'Placed glyphs' })
+  graph = await reopen(graph)
+  for (let cycle = 0; cycle < 3; cycle++) {
+    let owner = named(graph, 'Placed glyphs')
+    for (let level = 0; level < depth; level++) owner = graph.getChildren(owner.id)[0]
+    const editor = createEditor({ graph })
+    editor.setInstanceComponentProperty(owner.id, '91:1', named(graph, 'Replacement glyph').id)
+    editor.undoAction()
+    const [leading, trailing] = graph.getChildren(owner.id)
+    for (const [instance, expected] of [[leading, { r: 0, g: 1, b: 0, a: 1 }], [trailing, { r: 1, g: 0, b: 0, a: 1 }]]) {
+      const shape = graph.getChildren(instance.id)[0]
+      assert.deepEqual(graph.resolveColorVariableForNode(shape.id, shape.boundVariables['fills/0/color']), expected)
+    }
+    if (cycle < 2) graph = await reopen(graph)
+  }
+})
 
 for (const placement of ['instance', 'nested instance', 'descendant']) {
   test(`local mode history restores ${placement} inheritance through two saves`, async () => {

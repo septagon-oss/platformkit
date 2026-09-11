@@ -197,16 +197,20 @@ appearance. Tests cover standalone and nested instances, descendant override key
 changed or missing owners, measurement refusal and two saves. Unrelated override
 keys survive history; the undo stack itself is not stored in the file.
 
-The pinned editor sidebar edits variable values and collection definitions, but has
-no layer or page mode selector. The node-mode/history tests above exercise SDK
-actions; they do not establish click-through mode authoring in the shipped editor.
-Instance ownership currently applies to the complete `variableModes` map.
-Independent per-collection overrides and resets, retaining the other collections'
-source inheritance, remain unqualified. A picker must distinguish authored
-selections from resolved values; copying a resolved map would pin inherited
-selections too. Specify and verify that distinction through the existing native
-actions and FIG fields before exposing the controls, including keyboard use,
-focus restoration, refused changes and two worker saves.
+The corrected sidebar exposes **Page modes** with no layer selected and **Layer
+modes** for one selected layer. Choose a mode per collection, or **Auto (inherit)**
+to remove only that collection's local choice. An explicit default remains authored,
+even when it matches the inherited value. **Reset all mode overrides** restores
+inheritance for every collection on that target; multiple selection cannot edit
+modes. Each picker labels its current value as inherited or explicit.
+
+Native ownership records only authored choices, not the resolved map. Other
+collections keep following the source occurrence and physical ancestry through
+the shared resolver, including cross-collection aliases. The controls use ordinary
+node actions and native FIG fields. Built-editor tests cover keyboard selection,
+refusal feedback, reset focus, undo/redo and two worker saves for root and nested
+instances. Nested token-driven sizes reopen through native derived geometry without
+acquiring literal size overrides. Live screen-reader announcements remain unverified.
 
 Run `node --import ./register.mjs --test variable-binding.test.mjs` here for live
 reflow, both flex directions, fixed boxes, alias and mode ownership, Skia pixels,

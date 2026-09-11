@@ -21,16 +21,15 @@ function sourceChild(graph, source, child, overrides) {
   const direct = chain(graph, graph.getNode(sourceId), 'componentId')
     .find(node => node.parentId === source.id && source.childIds.includes(node.id))
   if (direct) return direct
-  if (explicit !== undefined) {
-    // An inner property names its canonical slot, while a containing instance
-    // can synchronize through a cloned occurrence of that same slot.
-    const declared = graph.getNode(explicit)
-    const owns = chain(graph, source, 'componentId').some(node => node.id === declared.parentId)
-    const matches = owns ? source.childIds.map(id => graph.getNode(id)).filter(node =>
-      node && chain(graph, node, 'componentId').some(link => link.id === explicit)) : []
-    if (matches.length === 1) return matches[0]
-    throw new Error('Invalid explicit native source identity')
-  }
+  // Explicit slots and children recreated by swap undo can name the canonical
+  // child of a cloned source occurrence. Require an exact, unique reverse link;
+  // never infer correspondence from a shared name or sibling position.
+  const declared = graph.getNode(sourceId)
+  const owns = chain(graph, source, 'componentId').some(node => node.id === declared.parentId)
+  const corresponding = owns ? source.childIds.map(id => graph.getNode(id)).filter(node =>
+    node && chain(graph, node, 'componentId').some(link => link.id === sourceId)) : []
+  if (corresponding.length === 1) return corresponding[0]
+  if (explicit !== undefined) throw new Error('Invalid explicit native source identity')
   // Import can flatten nested INSTANCE.componentId, while descendants still
   // link through the exact original nested instance. Project those witnesses.
   const matches = new Set()
