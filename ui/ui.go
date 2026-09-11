@@ -244,7 +244,7 @@ func base() *css.Sheet {
 	// is how a defect hides. Every button this application renders declares its
 	// own surface, so the default is no surface at all.
 	s.Select("button", css.Decl("background-color", css.Literal("transparent")))
-	s.Select("[hidden]", css.Decl("display", css.Literal("none !important")))
+	s.Select("[data-component=input][hidden]", css.Decl("display", css.Literal("none !important")))
 	s.Select("table", css.Decl("border-collapse", css.Literal("collapse")))
 	// A navigation list is not a bulleted list. The marker inherits the
 	// document's text colour rather than the link's, so on the inverted sidebar

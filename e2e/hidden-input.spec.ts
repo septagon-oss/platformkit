@@ -22,8 +22,9 @@ for (const javaScriptEnabled of [true, false]) {
     try {
       const page = await context.newPage();
       await page.route('**/__hidden_input', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
-        <html lang="en"><head><meta charset="utf-8"><title>Hidden field composition</title><style>${hidden.css}</style></head>
-        <body><form id="review"><div style="display:flex;flex-direction:column;gap:24px">
+        <html lang="en"><head><meta charset="utf-8"><title>Hidden field composition</title><style>${hidden.css}
+        @media print { #print-details { display: block; } }</style></head>
+        <body><p id="print-details" hidden>Details for printing</p><form id="review"><div style="display:flex;flex-direction:column;gap:24px">
         <button type="button" id="before">Before</button>${hidden.html}${normalized.html}${disabled.html}
         <button type="submit" id="after">Confirm</button></div></form></body></html>` }));
       await page.goto(new URL('/__hidden_input', process.env.PLATFORMKIT_E2E_URL ?? 'http://localhost:8099').href);
@@ -40,6 +41,10 @@ for (const javaScriptEnabled of [true, false]) {
       const entries = await page.evaluate(() => Array.from(new FormData(document.querySelector<HTMLFormElement>('#review')!).entries()));
       expect(entries).toEqual([['command', token], ['revision', '0']]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect(page.getByText('Details for printing', { exact: true })).toBeHidden();
+      await page.emulateMedia({ media: 'print' });
+      await expect(page.getByText('Details for printing', { exact: true })).toBeVisible();
+      await expect(page.getByText('Hidden command', { exact: true })).toBeHidden();
     } finally { await context.close(); }
   });
 }
