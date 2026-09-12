@@ -84,9 +84,9 @@ func TestTokenSelectionKeepsIndependentPackagesAndEqualIdentities(t *testing.T) 
 	asset := design.Asset{ID: "a", SHA256: strings.Repeat("a", 64), MediaType: "font/woff2", Source: "owner:a",
 		License: design.LicenseEvidence{ID: "LicenseRef-Owner", SHA256: strings.Repeat("b", 64), Source: "owner:notice"}}
 	for name, selection := range map[string]ui.TokenExport{
-		"empty":                         {},
-		"scales without modes":          {Scales: selectedTokens().Scales},
-		"assets without fonts or modes": {Assets: []design.Asset{asset}},
+		"empty":                                   {},
+		"scales without modes":                    {Scales: selectedTokens().Scales},
+		"assets without fonts or modes":           {Assets: []design.Asset{asset}},
 		"static metadata outside provider subset": {Assets: []design.Asset{asset}, Faces: []design.FontFace{{ID: "a", Asset: "a", Family: "Body", PostScriptName: "Body-Regular", Weight: "650.5", Style: "normal"}}},
 		"none needs no timing":                    {Transitions: []style.TransitionValue{{Key: "none", Properties: []string{"none"}}}},
 	} {
