@@ -331,25 +331,38 @@ func SignIn(op *huma.Operation, path string) {
 // a 303 to a login page where it expected a 403 has to guess what happened —
 // the JSON routes keep problem+json exactly as they are.
 //
-// The next parameter is this request's own path, which is where the guard is:
-// it is a value the router produced, not one the caller sent, and it is escaped
-// on the way out. modules/admin's login page validates it a second time, which
-// is the one that matters, because that page is also reachable directly.
+// The next parameter retains this request's path and query, so signing in does
+// not discard the page's filters or selection. Both destinations must satisfy
+// the kernel's local-path rule before next is escaped into the redirect. The
+// sign-in page must validate next again because it is also reachable directly.
 func signInFor(ctx huma.Context) (string, bool) {
 	op := ctx.Operation()
 	if ctx.Method() != http.MethodGet || op == nil || op.Extensions == nil {
 		return "", false
 	}
 	to, ok := op.Extensions[SignInExtension].(string)
-	if !ok || to == "" || !strings.Contains(ctx.Header("Accept"), "text/html") {
+	if !ok || !LocalPath(to) || !strings.Contains(ctx.Header("Accept"), "text/html") {
 		return "", false
 	}
-	here := ctx.URL().Path
-	if here == to {
+	requestURL := ctx.URL()
+	target, err := url.Parse(to)
+	if err != nil || requestURL.Path == target.Path {
 		return "", false
 	}
-	if here != "" {
-		to += "?next=" + url.QueryEscape(here)
+	// Validate the decoded path's structure without treating a literal percent
+	// as a URL escape. EscapedPath then preserves encoded path boundaries.
+	if !LocalPath(strings.ReplaceAll(requestURL.Path, "%", "%25")) {
+		return "", false
 	}
-	return to, true
+	here := requestURL.EscapedPath()
+	if requestURL.RawQuery != "" {
+		here += "?" + requestURL.RawQuery
+	}
+	if !LocalPath(here) {
+		return "", false
+	}
+	query := target.Query()
+	query.Set("next", here)
+	target.RawQuery = query.Encode()
+	return target.String(), true
 }

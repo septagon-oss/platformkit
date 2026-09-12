@@ -230,6 +230,17 @@ The browser uses vendored htmx and the controllers under
 The theme follows the operating system until the user explicitly chooses one.
 That choice is stored locally and restored before first paint.
 
+Account pages compose shared Form, Input, Button and Alert components. The existing
+`session.js` accepts `data-login-form` or `data-auth-form="register|forgot|reset"`;
+forms supply an API action, local `data-next`, and hidden `data-auth-error` (alert)
+and `data-auth-message` (status) feedback. Registration sends email/displayName
+for emailed password setup; it does not replace password-first verification.
+Reset forms use a password named `new` and `page.View.Sensitive` for response
+`no-store` and `no-referrer`; the controller removes the query token from browser
+history and retains it only in memory. Incoming URL log redaction is separate.
+Failed writes retain input without replay. Shared sign-out feedback remains
+visible outside account menus; branding and page composition belong downstream.
+
 ## Keep delivery boundaries explicit
 
 A downstream application pins the public module and adds its own composition.
