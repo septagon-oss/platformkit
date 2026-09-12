@@ -340,20 +340,23 @@ DTCG projects only its admitted subset and reports losses or refusals explicitly
 Native support and animation/keyframe projection remain unfinished work.
 
 [ui.ProjectProps](ui/proposal.go) and [ui.ProjectReplacement](ui/replacement.go)
-accept the base export hash and exact occurrence ID segments. Properties use a
-typed patch; replacement selects another root or nested source occurrence from
-that base. `SameInterface` shares export's component identity, schema and slot
-comparison. Replacement keeps destination metadata and copies all source inputs
-and its renderer, without merging overrides. Overlapping paths read immutable
-base inputs; self-replacement is permitted. `At`, `WithPropsAt` and
-`WithReplacementAt` share non-rendering traversal, rebuilding only owning slots.
-Projection requires observed, directly owned source and target occurrences and
-revalidates the destination after rendering. Opaque ancestors and retained-old
-capture aliases are refused; opaque callbacks and buffers cannot be certified.
-Conditional projection runs trusted constructors twice; it neither saves source
-nor supplies authentication, effect rollback or persistent compare-and-swap.
-A caller that persists changes owns its atomic revision check. Native IDs and
-provider SDK types do not enter this operation; native replacement fidelity is separate.
+accept a base export hash and exact occurrence ID segments. Typed patches change
+properties; replacement copies a compatible invocation's inputs and renderer,
+retaining destination metadata. `SameInterface` compares component identity,
+schema and slots. Traversal rebuilds owning slots from immutable base inputs;
+self-replacement is permitted. Projection requires observed, directly owned
+occurrences and revalidates after rendering. Opaque ancestors and retained-old
+capture aliases are refused. These operations run trusted constructors in memory;
+they provide no authentication, effect rollback or persistence.
+
+[ui/source](ui/source/source.go) adds development-time persistence for existing
+keyed string literals. The caller supplies its Go producer and an explicit call
+position with a file hash. Typed AST edits must rebuild to the full proposed
+export; source/build revisions are rechecked before one atomic file replacement.
+No ID registry or provider type enters this boundary. Unix advisory locks serialize
+cooperating writers, but cannot exclude an unrelated editor's final rename race.
+The [tooling guide](tools/designexport/README.md#persist-a-string-property) owns
+prerequisites, review/apply commands and limits; child insertion remains separate.
 
 [RequestNoticeExamples](ui/page/page.go) captures the recovery content that
 `page.Document` already serves, retaining its Stack, Alert and Link contracts.
