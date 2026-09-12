@@ -3,10 +3,40 @@ import { test } from 'node:test'
 import { SceneGraph } from '@open-pencil/scene-graph'
 import { computeAllLayouts, computeLayout, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { configureSourceFlex } from './source-flex.mjs'
 
 const source = scope => ({ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
   schema: 'platformkit.design-export.v1', scope,
 }) })
+
+test('intrinsic source flex restores failed tree construction and respects native ownership and unknown metadata', () => {
+  const graph = new SceneGraph(), marker = source('source-composition-layout')
+  const metadata = extra => [{ ...marker, value: JSON.stringify({ ...JSON.parse(marker.value), ...extra }) }]
+  const flex = { version: 1, shrink: 1, autoMinimum: true }
+  const root = graph.createNode('FRAME', graph.getPages()[0].id, {
+    layoutMode: 'HORIZONTAL', width: 50, primaryAxisSizing: 'FIXED', counterAxisSizing: 'HUG', pluginData: [marker],
+  })
+  const row = graph.createNode('FRAME', root.id, {
+    layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG', pluginData: metadata({ cssFlex: flex }),
+  })
+  graph.createNode('TEXT', row.id, { text: 'Hello world', textAutoResize: 'WIDTH_AND_HEIGHT', pluginData: metadata({ textWrap: 'normal-v1' }) })
+  const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
+  try {
+    setTextMeasurer(() => { throw new Error('Intrinsic measurement unavailable') })
+    for (let i = 0; i < 1024; i++) {
+      assert.throws(() => computeLayout(graph, root.id), /Intrinsic measurement unavailable/)
+      assert.deepEqual([...graph.getAllNodes()], before)
+    }
+    setTextMeasurer((node, width) => ({ width: width === 0 ? 60 : 100, height: 20 }))
+    computeLayout(graph, root.id)
+    assert.equal(row.width, 60, 'min-content overflow survives repeated failures')
+    for (const changes of [{ primaryAxisSizing: 'FIXED' }, { layoutGrow: 1 }, { pluginData: metadata({ cssFlex: { ...flex, version: 2 } }) },
+      { pluginData: metadata({ cssFlex: { ...flex, shrink: '1' } }) }, { pluginData: [marker, marker] }, { pluginData: [] }]) {
+      configureSourceFlex(new Proxy({}, { get() { assert.fail('must retain ordinary native sizing') } }), graph,
+        { ...row, ...changes }, root, getTextMeasurer())
+    }
+  } finally { setTextMeasurer(previous) }
+})
 
 test('source space-between keeps its minimum gap while ordinary native rows keep automatic spacing', async () => {
   const composition = source('source-composition-observed-aliases'), frame = source('source-composition-layout')

@@ -7,6 +7,7 @@ import { observedPaint, sameColor, createPaintedNode, bindPaintExpressions } fro
 import { planSourceGrid } from './source-grid.mjs'
 import { planSourceAbsolute } from './source-positioning.mjs'
 import { planSourceBox } from './source-box.mjs'
+import { planSourceFlex } from './source-flex.mjs'
 import { cssDashIntervals } from './border-correction.mjs'
 import { sourceUnderlines } from './source-underlines.mjs'
 
@@ -255,7 +256,10 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
     return [region, planIcon(graph, assets[0], svg, targets[0].master, collection.id,
       (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))]
   }))
-  requireComponent(style['white-space'] === 'normal', 'text-row whitespace requires further conversion')
+  const alignment = { start: 'LEFT', left: 'LEFT', center: 'CENTER', end: 'RIGHT', right: 'RIGHT' }[style['text-align']]
+  requireComponent(style['white-space'] === 'normal' && alignment && ['overflow-wrap', 'word-break'].every(key => style[key] === 'normal') &&
+    style['line-break'] === 'auto' && style.hyphens === 'manual' && style['text-wrap-style'] === 'auto',
+  'text rows require ordinary Unicode line breaking and supported alignment')
   const supplied = validateFonts(faces)
   const fontSize = pixels(style['font-size']), lineHeight = pixels(style['line-height'])
   requireComponent(fontSize > 0 && lineHeight > 0, 'positive text metrics required')
@@ -275,7 +279,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
     name: example.name || example.id, width: root.bounds.width, height: root.bounds.height,
     layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG',
     primaryAxisAlign: 'CENTER', counterAxisAlign: 'CENTER', layoutWrap: 'NO_WRAP',
-    itemSpacing: pixels(style['column-gap']), counterAxisSpacing: pixels(style['row-gap']), ...presentation,
+    itemSpacing: pixels(style['column-gap']), counterAxisSpacing: pixels(style['row-gap']), ...presentation, ...planSourceFlex(root),
     pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
       schema: snapshot.schema, sha256: snapshot.sha256, exampleId: example.id, componentId: example.componentId,
       mode: observation.mode, scope: icons.size ? 'text-and-icon-component-observed-aliases' : 'text-component-observed-aliases',
@@ -302,9 +306,10 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
         nativeNode = createPaintedNode(graph, 'TEXT', master.id, {
           name: region.property, text: region.text, width: region.bounds.width, height: lineHeight,
           fontFamily: face.family, fontWeight: face.weight, italic: face.style === 'italic',
+          textDirection: 'LTR', textAlignHorizontal: alignment,
           fontSize, lineHeight, letterSpacing, fontFeatures: numericFeatures(style), textAutoResize: 'WIDTH_AND_HEIGHT', ...underline, ...structuredClone(textPaint),
           pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
-            schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',
+            schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout', textWrap: 'normal-v1',
           }) }],
         }, pending)
       }
@@ -617,11 +622,12 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         primaryAxisSizing: vertical && !fixedHeight ? 'HUG' : 'FIXED', counterAxisSizing: vertical || fixedHeight ? 'FIXED' : 'HUG',
         primaryAxisAlign: justify, counterAxisAlign: align, layoutWrap: wrapping ? 'WRAP' : 'NO_WRAP',
         itemSpacing: gap(vertical ? 'row' : 'column'),
-        counterAxisSpacing: gap(vertical ? 'column' : 'row'), ...native,
+        counterAxisSpacing: gap(vertical ? 'column' : 'row'), ...native, ...planSourceFlex(node),
       } }
       for (const child of plan.children) {
         if (child.positioned) continue
         const childStyle = child.observation.style
+        if (child.native?.cssFlex && (!vertical || align !== 'STRETCH')) child.placement = { primaryAxisSizing: 'HUG' }
         if (!vertical && child.blockFlow) {
           requireComponent(wrapping && child.observation.sizing.width === 'auto',
             'intrinsic blocks require automatic width in a wrapping row')

@@ -57,6 +57,7 @@ export function editedSourceLayout(graph, frame) {
 // Layout owns temporary Yoga objects. Release them at that boundary even when
 // measurement or nested layout throws.
 export function correctLayout(source, replace) {
+  source = `import { configureSourceFlex, configureSourceRowText } from ${JSON.stringify(fileURLToPath(new URL('./source-flex.mjs', import.meta.url)))};\n` + source
   source = `import { sourceAspectRatio, settleSourceAspectRatios } from ${JSON.stringify(fileURLToPath(new URL('./source-box.mjs', import.meta.url)))};\n` + source
   source = `import { sourceLayoutScope, sourceCompositionLayout, editedSourceLayout, layoutNodes } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   // A child laid out independently still uses its parent-resolved fill size.
@@ -85,6 +86,12 @@ function intrinsicSourceWidth(graph, node) {
 }
 
 function configureTextLeaf(yogaChild, child, parent, fixedDerivedMainAxis = false, graph) {`)
+  source = replace(source, 'const autoResize = child.textAutoResize;',
+    'const autoResize = child.textAutoResize;\n' +
+    '\tif (configureSourceRowText(yogaChild, graph, child, parent, getTextMeasurer(), MeasureMode)) return;')
+  source = replace(source, 'configureAutoLayoutChildSizing(yogaChild, child, parent, graph, widthSizing, heightSizing);',
+    'configureAutoLayoutChildSizing(yogaChild, child, parent, graph, widthSizing, heightSizing);\n' +
+    '\tconfigureSourceFlex(yogaChild, graph, child, parent, getTextMeasurer());')
   source = replace(source, 'function configureFlexContainer(yogaNode, node, direction) {',
     'function configureFlexContainer(yogaNode, node, direction, graph) {\n' +
     '\tconst ratio = sourceAspectRatio(graph, node);\n\tif (ratio !== undefined) yogaNode.setAspectRatio(ratio);')
@@ -208,9 +215,10 @@ export function correctMeasuredLayout(source, replace) {
   }
   source = replace(source, 'function computeLayoutMeasured(graph, frameId) {', String.raw`
 function computeLayoutMeasured(graph, frameId) {
-  const failures = [];
+  const failures = [], allocated = [];
   function createLayoutNode() {
     const node = createYogaNode(), setMeasure = node.setMeasureFunc.bind(node);
+    allocated.push(node);
     node.setMeasureFunc = measure => setMeasure((...args) => {
       if (!failures.length) {
         try { return measure(...args); } catch (error) { failures.push(error); }
@@ -218,6 +226,17 @@ function computeLayoutMeasured(graph, frameId) {
       return { width: 0, height: 0 };
     });
     return node;
+  }`)
+  // Intrinsic premeasurement can fail while constructing a tree, before its
+  // root is returned. Own every allocation, including not-yet-attached children.
+  source = replace(source,
+    'const yogaRoot = buildYogaTree(graph, frame, rootDirection, createLayoutNode);',
+    String.raw`let yogaRoot;
+  try {
+    yogaRoot = buildYogaTree(graph, frame, rootDirection, createLayoutNode);
+  } catch (error) {
+    for (const node of allocated.reverse()) node.free();
+    throw error;
   }`)
   return replace(source,
     '    yogaRoot.calculateLayout(void 0, void 0, yogaDirection);\n' +

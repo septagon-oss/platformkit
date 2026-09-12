@@ -445,18 +445,18 @@ Stretch insets, stacking and transformed/scrolling containing blocks remain refu
 Generated refusal forms inherit Alert text, icon offsets and rounded independent
 border widths through edits and two saves at 320/1280px in both themes. Text inputs
 also require an observed browser editing viewport, not inferred content offsets.
-Linked Form, block and configured-font Toolbar/Stack/Text fixtures cover copy edits,
-isolation, history and two saves at 320/1280px in both themes. The
-[Toolbar test](browser/toolbar.test.mjs) places Header/Body slots on its page fixture,
-not Toolbar; its linked Button has no action-label reflow coverage. Long-label edits
-can mis-size nested or competing buttons. These fixtures have no prototype transitions.
+Linked Form, block and configured-font Toolbar/Stack/Text fixtures cover copy
+edits, isolation, history and two saves. Header/Body in the [Toolbar test](browser/toolbar.test.mjs)
+belong to its page fixture, not Toolbar. [Intrinsic action checks](browser/intrinsic-flex.test.mjs)
+cover nested and competing buttons, label alignment, history and two saves at
+320/390/1280px in both themes; these fixtures have no prototype transitions.
 Configured-font Card pages also compose Heading, Stack and Grid; title/description
 edits retain linked ownership and content-driven grid height after two saves.
 Single literal zero-spread box shadows retain native effects. Straight-edge samples
 match Chromium within one channel value for opaque, translucent and transparent
 cards in both themes at 320/1280px. Inset, multiple, spread and token-dependent
 shadows remain refusals; artwork, hover presentation and rounded-edge pixels are unverified.
-Nonwrapping intrinsic rows and submission are not modeled; default display-font fidelity is unverified.
+Initially multiline actions and submission remain unsupported; default display-font fidelity is unverified.
 Input values stay unwrapped; fixed-row Textarea values wrap inside a clipping viewport.
 LFs, blank lines, clearing and measured edits survive two saves; failures roll back history.
 Text-property fields accept Enter for newlines and Ctrl+Enter to commit.

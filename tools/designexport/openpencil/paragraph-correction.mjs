@@ -12,8 +12,7 @@ const shiftedRect = (rect, x, y) => Float32Array.from(rect, (value, i) => value 
 // provider boundary so measurement, paint, selection and hit testing agree.
 // Break opportunities come from UAX #14, advances and glyphs from native Skia.
 export function sourceParagraph(node, make) {
-  if (ownSourceLayoutRecord(node)?.textWrap !== 'normal-v1' || !node.text ||
-      node.textAutoResize === 'WIDTH_AND_HEIGHT') return make(node)
+  if (ownSourceLayoutRecord(node)?.textWrap !== 'normal-v1' || !node.text) return make(node)
   // These authored native changes leave the converter's proven CSS subset.
   // Preserve native editing instead of applying an incompatible line model.
   if (/[\r\n\t\u00ad]/u.test(node.text) || node.textDirection === 'RTL' ||
