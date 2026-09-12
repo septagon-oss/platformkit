@@ -66,6 +66,10 @@ Use [resource-based screens](ui/screens/) for record management, and compose
 Components use semantic design tokens, so a [theme](design/) can change colors
 and typography without changing the page's structure.
 
+[Page localization](ui/page/README.md) composes module-owned messages through
+Go's x/text catalogs. The reference sign-in page includes English and Portuguese;
+additional screens supply their own messages through the same page contract.
+
 The web interface is server-rendered, with HTMX for interactions.
 [ui.Compose](ui/ui.go) produces the stylesheet from shared components and your
 own declarations; there is no separate CSS build step.

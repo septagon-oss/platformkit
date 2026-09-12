@@ -34,6 +34,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // Spec is one entity's presence in the application: five routes, two
@@ -483,6 +484,10 @@ func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 // wrote its own would be a second opinion about what a 404 means.
 func Fault(err error) error {
 	switch {
+	case errors.Is(err, tenancy.ErrPolicyUnavailable), errors.Is(err, tenancy.ErrInvalidPolicyRequest):
+		return problem.New(http.StatusServiceUnavailable, "POLICY_UNAVAILABLE: authorization is temporarily unavailable")
+	case errors.Is(err, tenancy.ErrPolicyDenied):
+		return problem.New(http.StatusForbidden, "POLICY_DENIED: this action is not allowed")
 	case errors.Is(err, crud.ErrNotFound):
 		return problem.NotFound("no such row, or none this tenant may see")
 	case errors.Is(err, crud.ErrInvalid):

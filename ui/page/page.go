@@ -66,6 +66,9 @@ type Request struct {
 	// Principal is who is calling, and SignedIn says whether anybody is.
 	Principal tenancy.Principal
 	SignedIn  bool
+	// Locale is present when the shell composes Messages. It belongs to this
+	// request, including its selected content language and x/text formatter.
+	Locale *Locale
 	// Inline are the nonce-bearing inline scripts this response may run, built
 	// by Serve with httpx.Script. A renderer cannot make one: it has no nonce.
 	Inline []g.Node

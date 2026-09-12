@@ -37,6 +37,8 @@ type Page struct {
 	FrameOptions          string `header:"X-Frame-Options"`
 	CacheControl          string `header:"Cache-Control"`
 	ReferrerPolicy        string `header:"Referrer-Policy"`
+	ContentLanguage       string `header:"Content-Language"`
+	Vary                  string `header:"Vary"`
 	Body                  []byte
 }
 

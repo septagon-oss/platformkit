@@ -19,12 +19,15 @@ package admin
 
 import (
 	"context"
+
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/admin/internal"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/page"
+	"golang.org/x/text/message/catalog"
 )
 
 // Deps is what the shell cannot make for itself.
@@ -50,6 +53,11 @@ type Deps struct {
 	// changes nothing else, because every rule above the tokens is written in
 	// terms of a role. See design.Pair.
 	Theme design.Pair
+	// Messages and Locale opt the sign-in page into translated copy. Compose
+	// Messages() or an application catalog before mounting. Other pages keep
+	// their authored language. Locale selects a preference before the browser.
+	Messages catalog.Catalog
+	Locale   func(context.Context, page.Request) string
 
 	// Storybook selects and authorizes the composition for the resolved tenant
 	// and principal in ctx. Return an error to deny access; never select from a
@@ -81,6 +89,8 @@ func Module(deps Deps) module.Module {
 				Tenants:   deps.Tenants,
 				Theme:     theme(deps.Theme),
 				Storybook: deps.Storybook,
+				Messages:  deps.Messages,
+				Locale:    deps.Locale,
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.

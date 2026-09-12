@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
 )
@@ -23,6 +24,16 @@ import (
 // a fourth positional argument. Every module follows this, and an empty Deps is
 // a module that needs nothing.
 type Deps struct {
+	// Service shares one lifecycle implementation with product callers. A
+	// policy-enabled composition supplies NewServiceWithPolicy here and hands
+	// the same service to its other modules.
+	Service contracts.Service
+
+	// Policy optionally refines assignment and resolution for the locked task.
+	// Existing route grants still apply. System SLA maintenance is independent.
+	// Supply either Policy or a preconfigured Service, never both.
+	Policy tenancy.Policy
+
 	// Tenants is how the SLA sweep reaches active tenants. The application
 	// supplies tenant/contracts.Active over its tenant service.
 	Tenants jobs.TenantLister
@@ -67,11 +78,33 @@ var permissions = []module.Permission{
 	{Key: contracts.PermissionTaskUpdate},
 }
 
-// Module is the manifest. The implementation is constructed here, in one line,
-// and handed to the two places that use it, so this module's own wiring is
-// visible in the file that declares it.
-func Module(deps Deps) module.Module {
+// NewService constructs task lifecycle commands for application composition.
+// Pass the returned value through Deps.Service to share it with task routes.
+func NewService() contracts.Service { return internal.NewService() }
+
+// NewServiceWithPolicy adds resource decisions to assignment and resolution.
+// The caller still owns route grants, current identity and tenant transactions.
+func NewServiceWithPolicy(policy tenancy.Policy) contracts.Service {
+	if policy == nil {
+		panic("task: a policy-enabled service requires a policy provider")
+	}
 	svc := internal.NewService()
+	svc.Policy = policy
+	return svc
+}
+
+// Module mounts one shared lifecycle implementation for routes and jobs.
+func Module(deps Deps) module.Module {
+	svc := deps.Service
+	if deps.Policy != nil {
+		if svc != nil {
+			panic("task: configure policy on the shared service or supply Policy, not both")
+		}
+		svc = NewServiceWithPolicy(deps.Policy)
+	}
+	if svc == nil {
+		svc = NewService()
+	}
 	every := deps.SweepEvery
 	if every == 0 {
 		every = sweepEvery

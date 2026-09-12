@@ -95,6 +95,15 @@ public, signed-in or permission-based access; boot validation rejects missing
 or unknown requirements. Operator permissions are separate from tenant
 permissions.
 
+Services can additionally require a tenant-qualified
+[`tenancy.Policy`](kit/tenancy/policy.go) decision after loading current resource
+facts. The [Topaz adapter and task example](modules/auth/policies/README.md)
+show opt-in assignment and resolution checks shared by HTTP and direct service
+callers. Denial and provider failure remain distinct; either refuses mutation.
+These checks refine existing grants and domain rules. They do not add policy
+filtering to generated lists, directory synchronization or automatic client
+adoption.
+
 [kit/db](kit/db/) owns transaction entry and tenant database settings.
 `db.Tx[db.Tenant]` and `db.Tx[db.System]` distinguish tenant and system work
 in Go. PostgreSQL row-level security enforces isolation for tenant tables under

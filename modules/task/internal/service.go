@@ -13,14 +13,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 )
 
-// Service is the task lifecycle. It has no fields: everything a command needs
-// arrives with the transaction it is given, which is what lets one instance
-// serve a request, a job and an event handler at once, and what makes the whole
-// module constructible with no dependency graph at all.
-type Service struct{}
+// Service owns task transitions. Optional policy decisions use the locked task
+// and the current principal; they never replace the lifecycle's state checks.
+type Service struct{ Policy tenancy.Policy }
 
 // NewService returns the lifecycle commands. It takes nothing, on purpose: see
 // the type. module.go constructs it.
@@ -37,6 +36,9 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 	}
 	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.authorize(ctx, tx, task, "task:assign", assignee); err != nil {
 		return nil, err
 	}
 	if task.Status == contracts.StatusResolved || task.Status == contracts.StatusClosed {
@@ -68,6 +70,9 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 	resolution = strings.TrimSpace(resolution)
 	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.authorize(ctx, tx, task, "task:resolve", uuid.Nil); err != nil {
 		return nil, err
 	}
 	if task.Status == contracts.StatusClosed {

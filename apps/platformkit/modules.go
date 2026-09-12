@@ -145,7 +145,8 @@ func compose(cfg config.Config) composition {
 	// that changes when they do: everything above the tokens is written in
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
-		Modules: mods, Authorize: auths, Tenants: tenants, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir)}))
+		Modules: mods, Authorize: auths, Tenants: tenants, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
+		Messages: admin.Messages(), Locale: loginLocale}))
 
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
 		notify: notify, mail: mail, plans: plans}
