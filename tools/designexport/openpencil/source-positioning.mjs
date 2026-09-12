@@ -137,7 +137,8 @@ export function correctSourcePositionGraph(source, replace) {
   return replace(source, mark, `
     if (!this.isApplyingLayout && this.sourceMetadataPreservationDepth === 0 && sourceAbsoluteRecord(node) &&
         ["x", "y"].some(field => Object.hasOwn(changes, field) && changes[field] !== node[field])) {
-      changes = { ...changes, pluginData: reanchorSourceAbsolute({ ...node, ...changes }, this.getNode(node.parentId), changes) };
+      const position = Object.fromEntries(Object.entries(changes).filter(([field, value]) => ["x", "y"].includes(field) && value !== node[field]));
+      changes = { ...changes, pluginData: reanchorSourceAbsolute({ ...node, ...changes }, this.getNode(node.parentId), position) };
     }
     ${mark}`)
 }

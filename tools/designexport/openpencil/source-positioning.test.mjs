@@ -170,7 +170,8 @@ test('linked placements retain exact fractional insets and native moves through 
       assert.equal(named('Edited').componentId, named('Master').id)
       if (moved && cycle === 1) {
         const editor = createEditor({ graph })
-        editor.updateNodeWithUndo(badge('Edited').id, { y: 7.123456789 }, 'Move after import')
+        editor.updateNodeWithUndo(badge('Edited').id, { x: badge('Edited').x, y: 7.123456789 }, 'Move after import')
+        assert.deepEqual(sourceAbsoluteRecord(badge('Edited')).horizontal, expected.horizontal, 'an unchanged coordinate does not reauthor its anchor')
         editor.undoAction()
         assert.deepEqual(sourceAbsoluteRecord(badge('Edited')), expected, 'post-import undo restores exact authored anchors')
         editor.redoAction()
