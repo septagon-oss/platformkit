@@ -591,7 +591,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         if (child.style?.position === 'absolute') {
           const position = planSourceAbsolute(child, node)
           const content = element(child, owner, false, 'absolute')
-          if (position.cssPosition.autoSize) content.placement = { counterAxisSizing: 'FILL' }
+          if (position.cssPosition.autoSize) content.placement = { counterAxisSizing: 'FILL', layoutAlignSelf: 'STRETCH' }
           return { kind: 'frame', positioned: true, observation: child, children: [content], native: {
             name: 'Source absolute placement', ...position, fills: [],
             layoutMode: 'VERTICAL', primaryAxisSizing: position.cssPosition.autoSize ? 'HUG' : 'FIXED', counterAxisSizing: 'FIXED',

@@ -84,6 +84,14 @@ export function ancestryOverrides(graph, target) {
 export const lineageHelpers = [chain, sourceChild, sourceChildren, scopedOverrides, ancestryOverrides].map(fn => fn.toString()).join('\n')
 
 const exporterHelpers = String.raw`
+function sourcePlacementTransform(context, node) {
+  // Retain unedited affine terms; invert the importer's center-based position
+  // convention at the current size instead of accumulating bounding-box drift.
+  const transform = effectiveFigmaSourcePayload(node).rawTransform ?? context.computeExportTransform(node);
+  const position = convertFigmaTransformProps({ transform, size: { x: node.width, y: node.height } });
+  return { ...transform, m02: transform.m02 + (node.x - position.x), m12: transform.m12 + (node.y - position.y) };
+}
+
 function serializeEditedLayout(node, nc, graph) {
   // Keep untouched FIG layout encodings, including implicit sizing and older
   // alignment aliases. Only changed native fields use the SDK's current encoding.
@@ -294,9 +302,9 @@ function serializeAppearanceOverrides(context, instance, counter) {
       const guidPath = target === instance ? { guids: [getOrCreateNodeGuid(context,
         resolveInstanceComponentId(context, instance.componentId), counter)] } : nativeOverridePath(context, instance, target, counter);
       const override = { guidPath };
-      if (positioned) override.transform = context.computeExportTransform(target);
+      if (positioned) override.transform = sourcePlacementTransform(context, target);
       if (dashed) override.dashPattern = [...target.dashPattern];
-      if (sized) override.size = { x: target.width, y: target.height };
+      if (sized || positioned) override.size = { x: target.width, y: target.height };
       for (const field of paddingFields) override[padding[field]] = target[field];
       // FIG's leading-padding override also sets the trailing edge when it
       // is absent. Preserve the actual opposite edge explicitly.
@@ -338,6 +346,12 @@ function replaceSection(source, start, end, replacement) {
 }
 
 export function correctExporter(source, replaceOnce) {
+  // Source layout derives these values without claiming authored geometry edits.
+  // A FIG imported before text growth or parent resizing still has stale raw data.
+  source = replaceOnce(source, 'function exportNodeSize(node) {',
+    'function exportNodeSize(node) {\n  if (sourceAbsoluteRecord(node)) return { x: node.width, y: node.height };')
+  source = replaceOnce(source, 'function exportNodeTransform(context, node) {',
+    'function exportNodeTransform(context, node) {\n  if (sourceAbsoluteRecord(node)) return sourcePlacementTransform(context, node);')
   // Native bindings resolve at render time. Import must not replace an authored
   // fallback with the default-mode value and turn a binding-only edit into paint
   // ownership; mode changes and subsequent glyph replacement need both intact.

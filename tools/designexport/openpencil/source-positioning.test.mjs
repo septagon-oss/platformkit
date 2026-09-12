@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
 import { planSourceAbsolute } from './source-positioning.mjs'
 import { SceneGraph } from '@open-pencil/scene-graph'
-import { computeLayout } from '@open-pencil/core/layout'
+import { computeLayout, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { fontManager } from '@open-pencil/core/text'
+import { SkiaRenderer } from '@open-pencil/core/canvas'
+import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
+import { nodeChangeToProps } from '@open-pencil/fig/node-change'
+
+const data = record => [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+  schema: 'platformkit.design-export.v1', scope: 'source-composition-layout', ...record,
+}) }]
 
 function fixture(horizontal = 'left', vertical = 'top') {
   const parent = { style: { position: 'relative', display: 'flex', transform: 'none', translate: 'none', rotate: 'none', scale: 'none',
@@ -37,19 +46,21 @@ test('absolute placement derives all four corners from authored insets and the p
 
 test('source absolute layout stays out of flow and releases explicitly edited axes through two saves', async () => {
   let graph = new SceneGraph()
-  const data = record => [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
-    schema: 'platformkit.design-export.v1', scope: 'source-composition-layout', ...record,
-  }) }]
   const root = graph.createNode('FRAME', graph.getPages()[0].id, { name: 'Parent', width: 240, height: 20,
     layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED', pluginData: data({}) })
   graph.createNode('RECTANGLE', root.id, { name: 'Flow', width: 20, height: 20 })
   const { cssPosition, ...placement } = planSourceAbsolute(fixture('right', 'bottom').node, fixture('right', 'bottom').parent)
-  graph.createNode('FRAME', root.id, { name: 'Positioned', ...placement, layoutMode: 'VERTICAL',
+  const positioned = graph.createNode('FRAME', root.id, { name: 'Positioned', ...placement, layoutMode: 'VERTICAL',
     primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED', pluginData: data({ cssPosition }) })
+  const content = graph.createNode('FRAME', positioned.id, { name: 'Private fill', layoutMode: 'VERTICAL',
+    primaryAxisSizing: 'HUG', counterAxisSizing: 'FILL', layoutAlignSelf: 'STRETCH', pluginData: data({}) })
+  graph.createNode('RECTANGLE', content.id, { width: 20, height: 20 })
   graph.createNode('RECTANGLE', root.id, { name: 'Ordinary absolute', x: 5, y: 6, width: 900, height: 900, layoutPositioning: 'ABSOLUTE' })
   const named = name => [...graph.getAllNodes()].find(node => node.name === name)
   for (let cycle = 0; cycle < 3; cycle++) {
+    assert.equal(named('Private fill').counterAxisSizing, 'FILL', 'private frame sizing survives import before layout')
     computeLayout(graph, named('Parent').id)
+    assert.equal(named('Private fill').width, 40, 'private content fills the positioned parent, not the outer flow')
     assert.equal(named('Parent').height, 20)
     assert.equal(named('Positioned').x, 187.75)
     assert.equal(named('Positioned').y, -6.5, 'overflow does not inflate the parent')
@@ -63,6 +74,112 @@ test('source absolute layout stays out of flow and releases explicitly edited ax
     editor.redoAction(); assert.equal(named('Positioned').x, 55)
     editor.undoAction(); assert.deepEqual([...graph.getAllNodes()], before)
     if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  }
+})
+
+test('automatic absolute frames save current derived geometry after native text and parent edits', async t => {
+  const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1))
+  const previous = getTextMeasurer()
+  t.after(() => { setTextMeasurer(previous); renderer.destroy() })
+  fontManager.markLoaded('Inter', 'Regular', Uint8Array.from(readFileSync(
+    new URL('./node_modules/@open-pencil/core/assets/Inter-Regular.ttf', import.meta.url))).buffer)
+  await renderer.loadFonts()
+  setTextMeasurer((node, width) => renderer.measureTextNode(node, width))
+  let graph = new SceneGraph()
+  const page = graph.getPages()[0]
+  const master = graph.createNode('COMPONENT', page.id, {
+    name: 'Badge master', width: 80, height: 24, layoutMode: 'VERTICAL',
+    primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED', counterAxisAlign: 'STRETCH',
+    paddingLeft: 6, paddingRight: 6, paddingTop: 2, paddingBottom: 2, pluginData: data({}),
+    componentPropertyDefinitions: [{ id: '88:1', name: 'Label', type: 'TEXT', defaultValue: '7' }],
+  })
+  graph.createNode('TEXT', master.id, {
+    text: '7', width: 68, height: 20, fontFamily: 'Inter', fontWeight: 400, fontSize: 14, lineHeight: 20,
+    textAutoResize: 'HEIGHT', textDirection: 'LTR', textAlignHorizontal: 'LEFT', layoutAlignSelf: 'STRETCH',
+    pluginData: data({ textWrap: 'normal-v1' }), componentPropertyReferences: [{ propertyId: '88:1', field: 'TEXT' }],
+  })
+  const root = graph.createNode('FRAME', page.id, {
+    name: 'Parent', width: 320, height: 160, layoutMode: 'HORIZONTAL',
+    primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED', pluginData: data({}),
+  })
+  const wrapper = graph.createNode('FRAME', root.id, {
+    name: 'Automatic placement', width: 80, height: 24, layoutMode: 'VERTICAL',
+    primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED', layoutPositioning: 'ABSOLUTE',
+    horizontalConstraint: 'MAX', verticalConstraint: 'MAX', pluginData: data({ cssPosition: {
+      version: 1, horizontal: { edge: 'right', inset: 12.25 }, vertical: { edge: 'bottom', inset: 2.5 },
+      autoSize: { oppositeBorder: 3 },
+    } }),
+  })
+  graph.createInstance(master.id, wrapper.id, { counterAxisSizing: 'FILL', layoutAlignSelf: 'STRETCH' })
+  graph.createNode('RECTANGLE', root.id, {
+    name: 'Ordinary absolute', x: 5, y: 6, width: 10, height: 12, layoutPositioning: 'ABSOLUTE',
+  })
+  computeLayout(graph, master.id)
+  computeLayout(graph, root.id)
+  const roundtrip = async () => parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  const initial = await exportFigFile(graph)
+  const named = name => [...graph.getAllNodes()].find(node => node.name === name)
+  const geometry = node => [node.x, node.y, node.width, node.height]
+  for (const [label, width, expected] of [
+    ['99', null, [278.375, 133.5, 29.375, 24]],
+    ['Available for exchange with another collector in this album collection', 319, [3, 113.5, 303.75, 44]],
+  ]) {
+    // Import first: stale raw geometry exists only after the initial FIG roundtrip.
+    graph = await parseFigFile(initial.slice().buffer, { populate: 'all' })
+    const content = graph.getChildren(named('Automatic placement').id)[0]
+    const definition = graph.getNode(content.componentId).componentPropertyDefinitions[0]
+    const editor = createEditor({ graph })
+    editor.setCanvasKit(ck, renderer)
+    editor.setInstanceComponentProperty(content.id, definition.id, label)
+    if (width !== null) editor.updateNodeWithUndo(named('Parent').id, { width }, 'Resize')
+    for (let cycle = 0; cycle < 3; cycle++) {
+      assert.deepEqual(geometry(named('Automatic placement')), expected, `save ${cycle}: current source geometry for ${label}`)
+      assert.deepEqual(geometry(named('Ordinary absolute')), [5, 6, 10, 12], `save ${cycle}: unmarked geometry is preserved`)
+      if (cycle < 2) graph = await roundtrip()
+    }
+  }
+})
+
+test('source placement saves preserve imported affine terms and explicitly edited native rotation', async () => {
+  let graph = new SceneGraph(), serial = 100
+  const transforms = [
+    { m00: Math.cos(Math.PI / 6), m01: -.5, m02: 30, m10: .5, m11: Math.cos(Math.PI / 6), m12: 40 },
+    { m00: 1, m01: .5, m02: 30, m10: 0, m11: 1, m12: 40 },
+    { m00: -1, m01: 0, m02: 30, m10: 0, m11: 1, m12: 40 },
+  ]
+  for (const marked of [false, true]) for (const [index, transform] of transforms.entries()) {
+    graph.createNode('FRAME', graph.getPages()[0].id, {
+      ...nodeChangeToProps({ guid: { sessionID: 88, localID: serial++ }, type: 'FRAME',
+        name: `${marked}/${index}`, size: { x: 40, y: 24 }, transform, stackPositioning: 'ABSOLUTE' }, []),
+      pluginData: marked ? data({ cssPosition: {
+        version: 1, horizontal: { edge: 'left', inset: 30 }, vertical: { edge: 'top', inset: 40 },
+      } }) : [],
+    })
+  }
+  const frames = () => graph.getChildren(graph.getPages()[0].id)
+  const geometry = () => frames().map(node => ({
+    name: node.name, values: ['x', 'y', 'width', 'height', 'rotation'].map(field => node[field]), flipX: node.flipX,
+  }))
+  for (const edited of [false, true]) {
+    if (edited) for (const node of frames().filter(node => node.name.startsWith('true/'))) {
+      createEditor({ graph }).updateNodeWithUndo(node.id, { rotation: 60, width: 70, height: 33 }, 'Rotate and resize')
+    }
+    const before = geometry()
+    for (let save = 0; save < 2; save++) {
+      graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+      for (const actual of geometry()) {
+        const expected = before.find(node => node.name === actual.name)
+        assert.equal(actual.flipX, expected.flipX)
+        actual.values.forEach((value, i) => assert.ok(Math.abs(value - expected.values[i]) < 1e-5,
+          `${actual.name}/${edited}/${save}/${i}: ${value} versus ${expected.values[i]}`))
+      }
+      if (!edited) for (const node of frames()) {
+        const original = transforms[Number(node.name.split('/')[1])]
+        for (const field of ['m00', 'm01', 'm10', 'm11']) {
+          assert.ok(Math.abs(node.source.fig.rawTransform[field] - original[field]) < 1e-7, `${node.name}: preserve ${field}`)
+        }
+      }
+    }
   }
 })
 

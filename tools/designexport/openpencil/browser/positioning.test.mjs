@@ -73,6 +73,16 @@ func main() {
   const root = graph => [...graph.getAllNodes()].find(node => origin(node)?.path?.[0] === id)
   const child = (graph, localId) => [...graph.getAllNodes()].find(node => origin(node)?.localId === localId &&
     chain(graph, node, 'parentId').includes(root(graph)))
+  function preserved(graph) {
+    const geometry = node => ({
+      ...Object.fromEntries(['name', 'type', 'x', 'y', 'width', 'height', 'text', 'primaryAxisSizing',
+        'counterAxisSizing', 'layoutAlignSelf'].map(field => [field, node[field]])),
+      component: node.componentId ? origin(chain(graph, node, 'componentId').at(-1)) : null,
+      children: graph.getChildren(node.id).map(geometry),
+    })
+    return [...graph.getAllNodes()].filter(node => node.type === 'COMPONENT' || node.name === 'Unchanged placement')
+      .map(geometry).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+  }
   function matches(graph, observed) {
     const placed = root(graph)
     for (const element of observed.children) {
@@ -120,6 +130,14 @@ func main() {
       const correspondence = verifyComponentDocument(graph, snapshot, [id])
       graph.createInstance(built.selections[0].master.id, built.placements.id, { name: 'Unchanged placement', x: 1500 })
       for (let cycle = 0; cycle < 3; cycle++) {
+        if (auto) {
+          const placements = [...graph.getAllNodes()].filter(node => origin(node)?.cssPosition?.autoSize)
+          assert.ok(placements.length >= 12, 'check all four corners in the master and both placed instances')
+          for (const placement of placements) {
+            const content = graph.getChildren(placement.id)[0]
+            assert.equal(content.counterAxisSizing, 'FILL', `save ${cycle}: ${placement.name} retains parent-owned width`)
+          }
+        }
         setTextMeasurer((node, maxWidth) => renderer.measureTextNode(node, maxWidth))
         for (const width of [1280, 390, 320]) {
           graph.updateNode(root(graph).id, { width })
@@ -130,13 +148,21 @@ func main() {
         const before = structuredClone([...graph.getAllNodes()]), badge = child(graph, 'corner3')
         const caption = auto ? badge : graph.getChildren(badge.id).find(node => origin(node)?.localId === 'caption')
         const definition = chain(graph, caption, 'componentId').at(-1).componentPropertyDefinitions.find(item => item.name === 'content')
+        const untouched = preserved(await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' }))
         for (const copy of auto ? ['99', 'Available for exchange with another collector in this album collection', '1234567890'.repeat(12)] : ['99']) {
           editor.setInstanceComponentProperty(caption.id, definition.id, copy)
           const result = extractSourceProps(graph, caption, snapshot)
           assert.equal(result.status, 'proposal')
           assert.deepEqual(result.proposal.path, auto ? [id, 'corner3'] : [id, 'corner3', 'caption'])
           const projected = run({ auto, proposal: result.proposal })
-          matches(graph, (await captureExample(browser, projected, id, options)).roots[0])
+          const observed = (await captureExample(browser, projected, id, options)).roots[0]
+          matches(graph, observed)
+          let saved = graph
+          for (let save = 0; save < 2; save++) {
+            saved = await parseFigFile((await exportFigFile(saved)).slice().buffer, { populate: 'all' })
+            matches(saved, observed)
+            assert.deepEqual(preserved(saved), untouched, `save ${save}: masters, sibling and their component links remain unchanged`)
+          }
           for (const node of before.filter(node => chain(graph, node, 'parentId').some(parent =>
             parent.type === 'COMPONENT' || parent.name === 'Unchanged placement'))) assert.deepEqual(graph.getNode(node.id), node)
           editor.undoAction(); assert.deepEqual([...graph.getAllNodes()], before)

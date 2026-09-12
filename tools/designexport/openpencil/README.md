@@ -441,6 +441,13 @@ Nonnegative flex margins use private margin-box frames; fixed border-box sizes a
 zero-basis horizontal fill keep reusable children independent of their placement.
 Trailing fixed flex boxes and nonempty auto-sized text badges use parent-owned edge anchors;
 width-led aspect ratios, padding-edge hidden overflow and tabular numbers retain source layout through two saves.
+[Automatic text badges](browser/positioning.test.mjs) declare native stretch alongside fill width, preserving
+that ownership for linked content and private frames after reopening. Regenerate
+older artifacts missing this setting; import does not infer it from saved sizes.
+Saving [source-owned anchors](source-positioning.test.mjs) also preserves their current
+size and position after label or parent edits, including placements in standalone frames.
+Changing native constraint modes inside linked placements is not yet save-safe;
+coordinate edits retain their new edge inset, but releasing an anchor needs further work.
 Stretch insets, stacking and transformed/scrolling containing blocks remain refused; artwork conversion is unfinished.
 Generated refusal forms inherit Alert text, icon offsets and rounded independent
 border widths through edits and two saves at 320/1280px in both themes. Text inputs
