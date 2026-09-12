@@ -104,6 +104,8 @@ func (j *jetstream) Publish(ctx context.Context, ev Event) error {
 // ladder itself.
 func ackWait() time.Duration { return backoff[0] }
 
+// Handler attempts are capped in Subscribe. Unlimited broker redelivery keeps
+// terminal-record failures recoverable; delayed NAKs prevent a retry storm.
 // wanted is the consumer this code asks for. It is one value because the
 // subscription below and reconcile have to ask for the same thing: two lists of
 // the same settings is how a consumer comes to differ from the code that
@@ -111,7 +113,7 @@ func ackWait() time.Duration { return backoff[0] }
 func wanted(durable, name string) []nats.SubOpt {
 	return []nats.SubOpt{
 		nats.Durable(durable), nats.ManualAck(), nats.AckExplicit(), nats.DeliverAll(),
-		nats.AckWait(ackWait()), nats.MaxDeliver(maxDeliveries), nats.BackOff(backoff),
+		nats.AckWait(ackWait()), nats.MaxDeliver(-1), nats.BackOff(backoff),
 		nats.BindStream(stream),
 	}
 }
@@ -218,9 +220,9 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 		changed = append(changed, fmt.Sprintf("ack_wait %s to %s", info.Config.AckWait, ackWait()))
 		want.AckWait = ackWait()
 	}
-	if info.Config.MaxDeliver != maxDeliveries {
-		changed = append(changed, fmt.Sprintf("max_deliver %d to %d", info.Config.MaxDeliver, maxDeliveries))
-		want.MaxDeliver = maxDeliveries
+	if info.Config.MaxDeliver != -1 {
+		changed = append(changed, fmt.Sprintf("max_deliver %d to %d", info.Config.MaxDeliver, -1))
+		want.MaxDeliver = -1
 	}
 	if !slices.Equal(info.Config.BackOff, backoff) {
 		changed = append(changed, fmt.Sprintf("backoff %v to %v", info.Config.BackOff, backoff))
@@ -284,25 +286,35 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Si
 			_ = msg.Term()
 			return
 		}
-		err := sink.Handle(ctx, ev)
-		if err == nil {
-			_ = msg.Ack()
+		meta, err := msg.Metadata()
+		if err != nil {
+			slog.ErrorContext(ctx, "events: delivery metadata unavailable", "error", err)
+			_ = msg.NakWithDelay(backoff[len(backoff)-1])
 			return
 		}
-		// Nak alone, with no delivery cap, is what turned one poison event into
-		// a redelivery storm: the server has nothing to wait for and hands it
-		// straight back. MaxDeliver and BackOff below bound that, and this is
-		// the end of the ladder — terminate the message so it stops coming, and
-		// record it, because an event that is simply dropped is an integration
-		// that failed silently.
-		if last := exhausted(msg); last {
-			_ = msg.Term()
-			sink.Dead(ctx, ev, err)
-			return
+		// Broker retries remain available after the handler cap, including across
+		// restarts. Those deliveries retry only terminal persistence, never the
+		// provider action. The last handler cause is logged before recording; a
+		// restarted delivery may no longer have it.
+		err = errors.New("delivery attempts exhausted; last handler error unavailable on redelivery")
+		if meta.NumDelivered <= uint64(maxDeliveries) {
+			err = sink.Handle(ctx, ev)
+			if err == nil {
+				_ = msg.Ack()
+				return
+			}
 		}
-		slog.WarnContext(ctx, "events: handler failed, redelivering",
-			"event", ev.Name, "id", ev.ID, "error", err)
-		_ = msg.Nak()
+		if meta.NumDelivered >= uint64(maxDeliveries) {
+			slog.ErrorContext(ctx, "events: recording terminal failure", "event", ev.Name, "id", ev.ID, "error", err)
+			if err = sink.Dead(ctx, ev, err); err == nil {
+				_ = msg.Term()
+				return
+			}
+		}
+		wait := backoff[min(meta.NumDelivered, uint64(len(backoff)))-1]
+		slog.WarnContext(ctx, "events: delivery unfinished, retrying",
+			"event", ev.Name, "id", ev.ID, "in", wait, "error", err)
+		_ = msg.NakWithDelay(wait)
 	}, wanted(durable, name)...)
 	if err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
@@ -315,15 +327,6 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Si
 		_ = sub.Drain()
 	}()
 	return nil
-}
-
-// exhausted reports whether this was the last delivery JetStream will make.
-// Metadata is unavailable on a message that did not come from a stream, and the
-// safe reading of "I cannot tell" is that there are more attempts to come —
-// terminating on a doubt would drop an event that was going to succeed.
-func exhausted(msg *nats.Msg) bool {
-	meta, err := msg.Metadata()
-	return err == nil && meta.NumDelivered >= uint64(maxDeliveries)
 }
 
 // Close releases the connection. It is not part of Transport, because the

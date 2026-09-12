@@ -100,21 +100,12 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 	return moved, err
 }
 
-// Purge deletes published rows older than a week, and the handled marks of the
-// same age. kit/jobs calls it hourly in the worker role. Unpublished rows are
-// never touched, however old: a row that has not gone out is a queue entry, not
-// history.
-//
-// The two windows are one window on purpose. A mark exists to recognise a
-// redelivery of its own event, and an event whose outbox row is gone cannot be
-// relayed again, so a mark older than the row it guards guards nothing. The
-// exact residue is an event a transport still holds unacknowledged a week after
-// the outbox forgot it, which JetStream's own limits make a deployment choice
-// rather than a possibility this code can rule out.
-//
-// The cutoff is computed by the database and not by Go: a worker whose clock
-// has drifted would otherwise delete a different week's rows than its neighbour.
-// Dead letters are never purged; a row there is an alert somebody has to read.
+// Purge removes published outbox history after a week. Unpublished rows remain
+// recoverable regardless of age. An old handling claim remains while either its
+// outbox row or terminal failure record exists: losing that claim would replay
+// completed work when the pending row is relayed. Dead letters and their claims
+// require explicit operator review; they are never automatically purged.
+// The database clock supplies the cutoff for all workers.
 func Purge(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, purgeToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		age := fmt.Sprintf("%d seconds", int(keep.Seconds()))
@@ -122,7 +113,9 @@ func Purge(ctx context.Context, conn *db.Conn) error {
 			" WHERE published_at IS NOT NULL AND published_at < now() - ?::interval", age).Error; err != nil {
 			return fmt.Errorf("events: purge: %w", err)
 		}
-		if err := tx.DB().Exec("DELETE FROM "+handled+" WHERE handled_at < now() - ?::interval", age).Error; err != nil {
+		if err := tx.DB().Exec("DELETE FROM "+handled+" h WHERE handled_at < now() - ?::interval"+
+			" AND NOT EXISTS (SELECT 1 FROM "+table+" o WHERE o.id = h.event_id)"+
+			" AND NOT EXISTS (SELECT 1 FROM "+deadLetters+" d WHERE d.event_id = h.event_id AND d.durable = h.durable)", age).Error; err != nil {
 			return fmt.Errorf("events: purge the handled marks: %w", err)
 		}
 		return nil

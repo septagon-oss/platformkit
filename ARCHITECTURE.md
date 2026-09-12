@@ -93,8 +93,11 @@ validation, hooks and event snapshots. This serializes server-side decisions;
 it does not reject an old form based on the revision its user originally saw.
 [kit/app](kit/app/app.go) defaults to an in-memory transport for the combined
 `all` role and JetStream for separate `web` and `worker` roles, unless the
-application supplies a transport. An all-in-one local run therefore does not
-prove broker delivery or durability across process restarts.
+application supplies a transport. Memory waits for committed handling or a
+terminal record before acknowledging publication; unfinished rows recover from
+PostgreSQL after a restart. This does not establish the broker deployment's
+durability. Terminal recording remains retryable after the handler attempt cap;
+[ADR 0004](docs/adr/0004-events-are-the-job-queue.md) defines recovery and retention.
 
 JetStream delivery is at least once. Database claims prevent repeated committed
 handling; external effects still need the provider's own idempotency contract.

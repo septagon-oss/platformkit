@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -40,16 +39,10 @@ const (
 	deadLetters = "platformkit_dead_letters" // 000005
 )
 
-// maxDeliveries bounds how many times one event is handed to one subscription
-// before both transports give up on it: a poison event — one that fails for a
-// reason no retry can fix — would otherwise come back forever and spend the
-// worker on it. The last attempt terminates the message and writes a row to
-// platformkit_dead_letters instead.
-//
-// backoff is the wait before each redelivery, so it is one shorter than
-// maxDeliveries: the first delivery does not wait. Both are variables rather
-// than constants only so that internal_test.go can run the whole ladder in
-// milliseconds; nothing outside this package can see them.
+// maxDeliveries bounds handler attempts, not terminal-record persistence.
+// Once exhausted, transports retry recording the failure until it commits or
+// their context ends. The broker retains that recovery work across restarts.
+// backoff bounds the retry rate; tests shorten the ladder, not its shape.
 var (
 	maxDeliveries = 5
 	backoff       = []time.Duration{time.Second, 5 * time.Second, 15 * time.Second, 30 * time.Second}
@@ -154,11 +147,9 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 // acknowledgement of the event and rolls back with a redelivery.
 type Handler func(ctx context.Context, tx db.Tx[db.Tenant], ev Event) error
 
-// Transport carries events between processes. There are two implementations
-// and no third: Memory for a single-process run and its tests, JetStream for a
-// fleet. Both deliver at least once, both give up after maxDeliveries, and both
-// dead-letter what they gave up on — a transport that agreed with the other
-// about everything except when to stop would be two policies, not one.
+// Transport carries committed events. Publish may return nil only after the
+// event is durably accepted by the broker or every local subscription has
+// completed handling or terminal recording. An error leaves the outbox pending.
 type Transport interface {
 	Publish(ctx context.Context, ev Event) error
 	// Subscribe delivers every event called name to sink until ctx is done.
@@ -167,16 +158,14 @@ type Transport interface {
 	Subscribe(ctx context.Context, durable, name string, sink Sink) error
 }
 
-// Sink is what a transport does with one event. Handle runs the handler and an
-// error from it is a negative acknowledgement, so the event comes back; Dead is
-// called instead once the transport has stopped bringing it back.
-//
-// It is a struct rather than a second parameter because the two belong to one
-// subscription, and a transport that had only Handle could only choose between
-// losing a poison event and retrying it forever.
+// Sink handles a delivery or records its terminal failure. Dead must return
+// persistence failures: a transport must retain recovery work until it succeeds.
+// Successful handling and terminal recording both finish the subscription's
+// claim, so acknowledgment loss does not repeat committed database handling.
+// External effects still require provider idempotency when a transaction fails.
 type Sink struct {
 	Handle func(ctx context.Context, ev Event) error
-	Dead   func(ctx context.Context, ev Event, cause error)
+	Dead   func(ctx context.Context, ev Event, cause error) error
 }
 
 // Subscription is one module's interest in one event. A module lists its
@@ -229,11 +218,8 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 					return h(ctx, tx, ev)
 				})
 			},
-			Dead: func(ctx context.Context, ev Event, cause error) {
-				if err := deadLetter(ctx, conn, ev, durable, cause); err != nil {
-					slog.ErrorContext(ctx, "events: could not record a dead letter",
-						"event", ev.Name, "id", ev.ID, "durable", durable, "error", err)
-				}
+			Dead: func(ctx context.Context, ev Event, cause error) error {
+				return deadLetter(ctx, conn, ev, durable, cause)
 			},
 		}
 		if err := t.Subscribe(ctx, durable, s.Name, sink); err != nil {
@@ -266,49 +252,35 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 // event are therefore serialized rather than concurrent, and the timeout is
 // what keeps "serialized" from meaning "stuck".
 func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable string) (bool, error) {
-	res := tx.DB().Exec("INSERT INTO "+handled+" (event_id, durable, tenant_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
-		id, durable, db.TenantOf(tx).ID)
+	// Older releases wrote dead letters without a claim. They are terminal too.
+	res := tx.DB().Exec("INSERT INTO "+handled+" (event_id, durable, tenant_id) SELECT ?, ?, ?"+
+		" WHERE NOT EXISTS (SELECT 1 FROM "+deadLetters+" WHERE event_id = ? AND durable = ?) ON CONFLICT DO NOTHING",
+		id, durable, db.TenantOf(tx).ID, id, durable)
 	if res.Error != nil {
 		return false, fmt.Errorf("events: claim %s for %s: %w", id, durable, res.Error)
 	}
 	return res.RowsAffected == 1, nil
 }
 
-// handlerTimeout bounds one delivery. It is shorter than the JetStream
-// acknowledgement deadline (ackWait), because a handler that is still running
-// when that passes has its event redelivered while its own transaction is still
-// open. The claim in platformkit_handled turns that overlap into a wait rather
-// than into two concurrent handlers — see claim — so this constant is also the
-// bound on how long a redelivery blocks: a handler that runs to this timeout is
-// a handler that has held every later delivery of the same event for as long.
-// That is why it is a bound on the handler and not only a deadline for the
-// transport.
+// handlerTimeout bounds each transaction and any wait on another delivery's
+// claim. Broker redeliveries may overlap it; the claim serializes their effects.
 const handlerTimeout = 25 * time.Second
 
-// deadLetter records an event that no number of redeliveries could get handled,
-// with the last error, and says so in the log. A row is an alert and not a
-// queue: nothing redelivers from that table.
-//
-// It leaves no claim, and that has a consequence worth stating. Every attempt
-// rolled its claim back with its work, so platformkit_handled holds nothing for
-// this event and this subscription. Exactly-once handling is therefore a
-// promise about deliveries the transport makes, not about the outbox row: if
-// the row were relayed again — by an operator replaying it, or by a purge that
-// had not yet reached it after the transport forgot the message — the handler
-// would run again, from the top, however many times it already failed. The
-// dead-letter row is what an operator reads before deciding whether that is
-// what they want.
-//
-// ON CONFLICT DO NOTHING because a transport may hand the same exhausted event
-// over more than once, and the first account of the failure is the useful one.
+// deadLetter atomically claims a terminal outcome and records its cause. The
+// same unique claim serializes this with successful or concurrent handling.
+// A failed insert rolls back the claim; a lost acknowledgment of successful
+// work cannot create a false dead letter. An explicit operator replay must
+// remove the terminal claim as well as review the failure; relaying alone
+// deliberately cannot repeat a consequential action.
 func deadLetter(ctx context.Context, conn *db.Conn, ev Event, durable string, cause error) error {
-	slog.ErrorContext(ctx, "events: giving up on an event",
-		"event", ev.Name, "id", ev.ID, "durable", durable, "attempts", maxDeliveries, "error", cause)
-	// WithoutCancel: this runs on the way out of a failed delivery, and a
-	// cancelled worker context would lose the only record of it.
-	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
+	defer cancel()
 	return db.RunSystem(ctx, conn, deadLetterToken, func(_ context.Context, tx db.Tx[db.System]) error {
-		return tx.DB().Exec("INSERT INTO "+deadLetters+" (event_id, durable, tenant_id, name, error) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
-			ev.ID, durable, ev.TenantID, ev.Name, cause.Error()).Error
+		return tx.DB().Exec(`WITH claimed AS (
+   INSERT INTO `+handled+` (event_id, durable, tenant_id) VALUES (?, ?, ?)
+   ON CONFLICT DO NOTHING RETURNING event_id
+  ) INSERT INTO `+deadLetters+` (event_id, durable, tenant_id, name, error)
+   SELECT event_id, ?, ?, ?, ? FROM claimed ON CONFLICT DO NOTHING`,
+			ev.ID, durable, ev.TenantID, durable, ev.TenantID, ev.Name, cause.Error()).Error
 	})
 }

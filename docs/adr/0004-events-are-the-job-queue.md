@@ -24,18 +24,20 @@ instance in the cluster runs a job per tick.
 ## Consequences
 
 - Delivery is at-least-once. The relay publishes and then stamps `published_at`,
-  because the other order loses events and this one repeats them.
-- Handling is exactly-once, and the kernel does it rather than each handler.
-  `Consume` claims `(Event.ID, durable)` in `platformkit_handled` inside the
-  handler's own transaction, before the handler runs; a redelivery finds the
-  claim taken and skips. The claim and the handler's writes commit together, so
-  a handler that fails rolls its claim back with its work and sees the event
-  again, and one that succeeded never runs twice. The key includes the
-  subscription because two modules interested in one event are two pieces of
-  work. A handler is still free to be idempotent on its own terms — this closes
-  the redelivery hole, not every hole — and the marks are purged on the same
-  week-long window as the outbox rows they recognise, because a mark that
-  outlives its event guards nothing.
+  because the other order loses events and this one repeats them. Memory waits
+  for committed handling or terminal recording; JetStream waits for durable
+  broker acceptance. A short relay deadline leaves incomplete local work
+  unstamped while its subscription continues on the worker context. Memory retry
+  counts are process-local until terminal recording commits; a restart before
+  that commit can retry the handler. JetStream retains its broker delivery count.
+- Committed database handling is deduplicated while its completion record is
+  retained. `Consume` claims `(Event.ID, durable)` in `platformkit_handled`
+  inside the handler's transaction; redelivery skips an existing claim or dead
+  letter. Failure rolls the claim back with the work so it can retry. The key
+  includes the subscription because two interested modules are two pieces of
+  work. Old marks remain while their outbox row or terminal failure record
+  exists. An external effect accepted before a failed database commit still
+  needs provider idempotency.
 - Enqueueing cannot fail separately from the write it belongs to: both are one
   `INSERT` in one transaction. Ordering is per stream, not per aggregate.
 - A durable consumer is shared by every worker replica, through a JetStream
@@ -52,12 +54,15 @@ instance in the cluster runs a job per tick.
   retention and storage cannot be changed on a live stream, and a stream — unlike
   a consumer — cannot be recreated without throwing away the messages in it, so
   those two refuse the boot instead.
-- Retries are the transport's: an error nacks and the event comes back, slower
-  each time, and both transports stop after `maxDeliveries` — the message is
-  terminated and one row goes to `platformkit_dead_letters` with the last error.
-  Nothing redelivers from that table; a row in it is an alert. Without the cap a
-  poison event is a redelivery storm, and dropping it silently is an integration
-  that failed with nobody to tell.
+- Handler attempts are bounded by `maxDeliveries`. Terminal recording atomically
+  claims completion and writes `platformkit_dead_letters`; a failed write rolls
+  both back. Broker redeliveries beyond the cap retry only terminal recording,
+  with backoff, and terminate after it commits. Broker delivery counts include
+  attempts that crash or wait before a handler starts. After a restart the last
+  handler error may be unavailable; the record states that limitation.
+  Dead letters and their claims remain until explicit operator review; relaying
+  alone does not replay them. The stream still has its configured seven-day
+  retention; terminal retry does not establish unbounded broker retention.
 - The relay takes no advisory lock, because `FOR UPDATE SKIP LOCKED` is already
   the concurrency control and a lock would only make one blocked relay stop
   every replica's relay. Every other periodic job does take one; `jobs.Job` says
@@ -68,6 +73,10 @@ instance in the cluster runs a job per tick.
   neither does one row's: the helper hands over the tenant on a context and the
   connection, so the job opens a transaction per row, and the errors are joined
   so it still reports as failed. Partial progress is the intended outcome.
+
+`Sink.Dead` returns an error so transports can retain failed terminal recording.
+Custom transport adapters must forward that error; adopting this source API
+change includes updating their wrappers and testing recovery.
 
 ## Evidence
 

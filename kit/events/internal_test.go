@@ -7,10 +7,12 @@ package events
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -98,9 +100,8 @@ func TestAPoisonEventIsDeadLetteredAndStopsComingBack(t *testing.T) {
 }
 
 // TestJetStreamStopsRedeliveringAPoisonEvent is the same policy on the other
-// transport, against the NATS `make up` starts. Without nats.MaxDeliver a bare
-// Nak is handed straight back by the server, so one poison event became a
-// redelivery storm measured in thousands per second.
+// transport, against the NATS `make up` starts. The handler cap and delayed
+// NAKs bound work while terminal recording remains recoverable.
 func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	url := os.Getenv("PLATFORMKIT_TEST_NATS_URL")
 	if url == "" {
@@ -163,7 +164,7 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	if attempts != maxDeliveries {
-		t.Errorf("the handler ran %d times, want %d; the cap is nats.MaxDeliver", attempts, maxDeliveries)
+		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", attempts, maxDeliveries)
 	}
 }
 
@@ -194,7 +195,7 @@ func TestADriftedConsumerIsReconciled(t *testing.T) {
 	seen := make(chan Event, 1)
 	if err := transport.Subscribe(t.Context(), durable, name, Sink{
 		Handle: func(_ context.Context, ev Event) error { seen <- ev; return nil },
-		Dead:   func(context.Context, Event, error) {},
+		Dead:   func(context.Context, Event, error) error { return nil },
 	}); err != nil {
 		t.Fatalf("subscribe to a drifted consumer: %v", err)
 	}
@@ -206,8 +207,8 @@ func TestADriftedConsumerIsReconciled(t *testing.T) {
 	if info.Config.AckWait != ackWait() {
 		t.Errorf("ack_wait is %v, want %v", info.Config.AckWait, ackWait())
 	}
-	if info.Config.MaxDeliver != maxDeliveries {
-		t.Errorf("max_deliver is %d, want %d", info.Config.MaxDeliver, maxDeliveries)
+	if info.Config.MaxDeliver != -1 {
+		t.Errorf("max_deliver is %d, want %d", info.Config.MaxDeliver, -1)
 	}
 	if !slices.Equal(info.Config.BackOff, backoff) {
 		t.Errorf("backoff is %v, want %v", info.Config.BackOff, backoff)
@@ -239,7 +240,7 @@ func TestAConsumerNATSCannotUpdateIsRecreated(t *testing.T) {
 	seen := make(chan Event, 1)
 	if err := transport.Subscribe(t.Context(), durable, name, Sink{
 		Handle: func(_ context.Context, ev Event) error { seen <- ev; return nil },
-		Dead:   func(context.Context, Event, error) {},
+		Dead:   func(context.Context, Event, error) error { return nil },
 	}); err != nil {
 		t.Fatalf("subscribe over a pull consumer: %v", err)
 	}
@@ -339,7 +340,7 @@ func TestTwoWorkersShareOneDurable(t *testing.T) {
 	for worker := range workers {
 		err := transport.Subscribe(t.Context(), durable, name, Sink{
 			Handle: func(_ context.Context, _ Event) error { seen <- worker; return nil },
-			Dead:   func(context.Context, Event, error) {},
+			Dead:   func(context.Context, Event, error) error { return nil },
 		})
 		if err != nil {
 			t.Fatalf("worker %d subscribing to durable %s: %v", worker, durable, err)
@@ -393,7 +394,7 @@ func TestADriftedStreamIsReconciled(t *testing.T) {
 	seen := make(chan Event, 1)
 	err := transport.Subscribe(t.Context(), durable, name, Sink{
 		Handle: func(_ context.Context, ev Event) error { seen <- ev; return nil },
-		Dead:   func(context.Context, Event, error) {},
+		Dead:   func(context.Context, Event, error) error { return nil },
 	})
 	if err != nil {
 		t.Fatalf("subscribe against a drifted stream: %v", err)
@@ -411,4 +412,298 @@ func TestADriftedStreamIsReconciled(t *testing.T) {
 	}
 	// And the subject space it was narrowed away from carries an event again.
 	deliver(t, transport, seen, name)
+}
+
+// A relay deadline does not acknowledge a handler that is still running. Its
+// transaction can finish after the pass ends, or roll back when the worker dies.
+func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
+	for _, restart := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restart=%t", restart), func(t *testing.T) {
+			admin, conn := dbtest.Schema(t)
+			worker, stop := context.WithCancel(t.Context())
+			defer stop()
+			tenant := tenancy.Tenant{ID: uuid.New()}
+			name := "source.changed"
+			entered, release := make(chan struct{}), make(chan struct{})
+			transport := Memory()
+			handler := func(ctx context.Context, tx db.Tx[db.Tenant], _ Event) error {
+				if err := Publish(ctx, tx, "effect.completed", nil); err != nil {
+					return err
+				}
+				close(entered)
+				select {
+				case <-release:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			if err := Consume(worker, conn, transport, []Subscription{{Module: "effect", Name: name, Handler: handler}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				return Publish(ctx, tx, name, nil)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			pass, cancel := context.WithCancel(t.Context())
+			result := make(chan error, 1)
+			go func() { result <- Relay(pass, conn, transport) }()
+			select {
+			case <-entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("handler did not start")
+			}
+			cancel()
+			if err := <-result; err == nil {
+				t.Error("relay acknowledged an unfinished handler")
+			}
+			var pending bool
+			if err := admin.QueryRowContext(t.Context(), "SELECT published_at IS NULL FROM platformkit_outbox WHERE name=$1", name).Scan(&pending); err != nil || !pending {
+				t.Errorf("unfinished event pending=%t: %v", pending, err)
+			}
+			if restart {
+				stop()
+				transport = Memory()
+				handler = func(ctx context.Context, tx db.Tx[db.Tenant], _ Event) error {
+					return Publish(ctx, tx, "effect.completed", nil)
+				}
+				if err := Consume(t.Context(), conn, transport, []Subscription{{Module: "effect", Name: name, Handler: handler}}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				close(release)
+			}
+			finish, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			if err := Relay(finish, conn, transport); err != nil {
+				t.Fatal(err)
+			}
+			var completed int
+			if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil || completed != 1 {
+				t.Fatalf("committed child events=%d, want 1: %v", completed, err)
+			}
+		})
+	}
+}
+
+func TestTerminalRecordingCommitsItsClaimAtomically(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	ev := Event{ID: uuid.New(), TenantID: uuid.New(), Name: "source.changed"}
+	sub := Subscription{Module: "effect", Name: ev.Name}
+	durable := sub.durable()
+	cause := errors.New("handler failed")
+	if _, err := admin.ExecContext(t.Context(), "ALTER TABLE platformkit_dead_letters ADD CONSTRAINT unavailable CHECK (false) NOT VALID"); err != nil {
+		t.Fatal(err)
+	}
+	if err := deadLetter(t.Context(), conn, ev, durable, cause); err == nil {
+		t.Fatal("terminal recording hid the database failure")
+	}
+	var claims int
+	if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_handled").Scan(&claims); err != nil || claims != 0 {
+		t.Fatalf("failed recording kept %d claims: %v", claims, err)
+	}
+	if _, err := admin.ExecContext(t.Context(), "ALTER TABLE platformkit_dead_letters DROP CONSTRAINT unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	if err := deadLetter(t.Context(), conn, ev, durable, cause); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_handled").Scan(&claims); err != nil || claims != 1 {
+		t.Errorf("successful terminal recording kept %d claims, want 1: %v", claims, err)
+	}
+	// A lost acknowledgment of successful work must not turn it into failure.
+	completed := Event{ID: uuid.New(), TenantID: ev.TenantID, Name: ev.Name}
+	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: ev.TenantID}), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		_, err := claim(tx, completed.ID, durable)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := deadLetter(t.Context(), conn, completed, durable, cause); err != nil {
+		t.Fatal(err)
+	}
+	var failures int
+	if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_dead_letters").Scan(&failures); err != nil || failures != 1 {
+		t.Errorf("recorded failures=%d, want only the exhausted event: %v", failures, err)
+	}
+	// Retain terminal claims even after the ordinary history window expires.
+	if _, err := admin.ExecContext(t.Context(), "UPDATE platformkit_handled SET handled_at = now() - interval '8 days'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.ExecContext(t.Context(), "INSERT INTO platformkit_outbox (id,tenant_id,name,payload) VALUES ($1,$2,$3,'null')", completed.ID, completed.TenantID, completed.Name); err != nil {
+		t.Fatal(err)
+	}
+	if err := Purge(t.Context(), conn); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_handled WHERE event_id=$1", ev.ID).Scan(&claims); err != nil || claims != 1 {
+		t.Errorf("purge removed the terminal claim: remaining=%d error=%v", claims, err)
+	}
+	if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_handled WHERE event_id=$1", completed.ID).Scan(&claims); err != nil || claims != 1 {
+		t.Errorf("purge removed the claim of an unpublished outbox row: remaining=%d error=%v", claims, err)
+	}
+	// Re-enter the real consumer after terminal acknowledgment loss. Its handler
+	// must not run again, including after purge.
+	var runs atomic.Int64
+	transport := Memory()
+	sub.Handler = func(context.Context, db.Tx[db.Tenant], Event) error { runs.Add(1); return nil }
+	if err := Consume(t.Context(), conn, transport, []Subscription{sub}); err != nil {
+		t.Fatal(err)
+	}
+	if err := transport.Publish(t.Context(), ev); err != nil {
+		t.Fatal(err)
+	}
+	if got := runs.Load(); got != 0 {
+		t.Errorf("terminal redelivery ran the handler %d times", got)
+	}
+	// Upgrade compatibility: previous releases persisted the failure without a
+	// completion claim. Its handler must remain stopped when the new code starts.
+	legacy := uuid.New()
+	if _, err := admin.ExecContext(t.Context(), "INSERT INTO platformkit_dead_letters (event_id,durable,tenant_id,name,error) VALUES ($1,$2,$3,$4,'old failure')", legacy, durable, ev.TenantID, ev.Name); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: ev.TenantID}), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		first, err := claim(tx, legacy, durable)
+		if first {
+			t.Error("legacy terminal event was claimed for handling again")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestJetStreamRetriesTerminalRecordingAfterRestart(t *testing.T) {
+	fast(t)
+	admin, conn := dbtest.Schema(t)
+	if _, err := admin.ExecContext(t.Context(), `CREATE SEQUENCE terminal_attempts;
+  ALTER TABLE platformkit_dead_letters ADD CONSTRAINT unavailable CHECK (nextval('terminal_attempts') < 0) NOT VALID`); err != nil {
+		t.Fatal(err)
+	}
+	transport, js := jetstreamForTest(t)
+	_, name := uniqueDurable(t)
+	worker, stop := context.WithCancel(t.Context())
+	defer stop()
+	var attempts atomic.Int64
+	subscription := Subscription{Module: "effect", Name: name, Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
+		attempts.Add(1)
+		return errors.New("permanent provider refusal")
+	}}
+	t.Cleanup(func() { _ = js.DeleteConsumer(stream, subscription.durable()) })
+	if err := Consume(worker, conn, transport, []Subscription{subscription}); err != nil {
+		t.Fatal(err)
+	}
+	ev := Event{ID: uuid.New(), Name: name, TenantID: uuid.New(), Payload: []byte(`null`)}
+	if err := transport.Publish(t.Context(), ev); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		info, err := js.ConsumerInfo(stream, subscription.durable())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var tried bool
+		if err := admin.QueryRowContext(t.Context(), "SELECT is_called FROM terminal_attempts").Scan(&tried); err != nil {
+			t.Fatal(err)
+		}
+		if tried && info.Delivered.Consumer >= uint64(maxDeliveries+1) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("terminal recording cannot retry: deliveries=%d pending=%d", info.Delivered.Consumer, info.NumAckPending)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	stop()
+	_ = transport.(interface{ Close() error }).Close()
+	if _, err := admin.ExecContext(t.Context(), "ALTER TABLE platformkit_dead_letters DROP CONSTRAINT unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	transport, _ = jetstreamForTest(t)
+	if err := Consume(t.Context(), conn, transport, []Subscription{subscription}); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(3 * time.Second)
+	for {
+		var failures int
+		if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_dead_letters").Scan(&failures); err != nil {
+			t.Fatal(err)
+		}
+		info, err := js.ConsumerInfo(stream, subscription.durable())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if failures == 1 && info.NumAckPending == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("restart did not finish terminal recording: failures=%d pending=%d", failures, info.NumAckPending)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := attempts.Load(); got > int64(maxDeliveries) {
+		t.Fatalf("terminal recovery replayed provider handler: attempts=%d, cap=%d", got, maxDeliveries)
+	}
+}
+
+func TestMemoryRetriesTerminalRecordingWithoutReplayingTheHandler(t *testing.T) {
+	fast(t)
+	admin, conn := dbtest.Schema(t)
+	if _, err := admin.ExecContext(t.Context(), `CREATE SEQUENCE terminal_attempts;
+		ALTER TABLE platformkit_dead_letters ADD CONSTRAINT unavailable CHECK (nextval('terminal_attempts') < 0) NOT VALID`); err != nil {
+		t.Fatal(err)
+	}
+	transport := Memory()
+	var attempts atomic.Int64
+	sub := Subscription{Module: "effect", Name: "source.changed", Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
+		attempts.Add(1)
+		return errors.New("permanent provider refusal")
+	}}
+	if err := Consume(t.Context(), conn, transport, []Subscription{sub}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New()}), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return Publish(ctx, tx, sub.Name, nil)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pass, cancel := context.WithCancel(t.Context())
+	result := make(chan error, 1)
+	go func() { result <- Relay(pass, conn, transport) }()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var tried bool
+		if err := admin.QueryRowContext(t.Context(), "SELECT is_called FROM terminal_attempts").Scan(&tried); err != nil {
+			t.Fatal(err)
+		}
+		if tried {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("terminal persistence was not attempted")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-result; err == nil {
+		t.Error("relay acknowledged a failed terminal write")
+	}
+	if _, err := admin.ExecContext(t.Context(), "ALTER TABLE platformkit_dead_letters DROP CONSTRAINT unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	finish, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if err := Relay(finish, conn, transport); err != nil {
+		t.Fatal(err)
+	}
+	var failures int
+	if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_dead_letters").Scan(&failures); err != nil || failures != 1 {
+		t.Fatalf("terminal recovery recorded %d failures: %v", failures, err)
+	}
+	if got := attempts.Load(); got != int64(maxDeliveries) {
+		t.Fatalf("handler attempts=%d, want %d; retries must only persist the terminal outcome", got, maxDeliveries)
+	}
 }
