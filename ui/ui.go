@@ -45,17 +45,18 @@ var scripts embed.FS
 // rather than in the shell that writes the <script> tags, so that "how much
 // JavaScript is there" is answered by reading one slice.
 //
-// htmx is first because the others configure it. There are four of ours and
-// they are the four interactions a server-rendered application cannot express:
+// htmx is first because the others configure it. There are five of ours and
+// they are the five interactions a server-rendered application cannot express:
 // a theme that must survive a reload, a validation error that must not cost a
 // page, a destructive action that must be confirmed, and a sign-in form that
-// posts to a JSON route.
+// posts to a JSON route, and native controls with an indeterminate property.
 var Controllers = []string{
 	"htmx.min.js",
 	"htmx-config.js",
 	"theme.js",
 	"confirm.js",
 	"session.js",
+	"components.js",
 }
 
 // Sheet is a composed stylesheet: the bytes a browser downloads and the first
@@ -245,6 +246,44 @@ func base() *css.Sheet {
 	// own surface, so the default is no surface at all.
 	s.Select("button", css.Decl("background-color", css.Literal("transparent")))
 	s.Select("[data-component=input][hidden], [data-component=alert][hidden]", css.Decl("display", css.Literal("none !important")))
+	// A native checkbox owns value and keyboard state. Its projected indicator
+	// follows the input even without JavaScript and after native form reset.
+	s.Select("[data-component=checkbox]:has(> input:enabled)",
+		css.Decl("opacity", css.Literal("1")), css.Decl("cursor", css.Literal("pointer")))
+	s.Select("[data-component=checkbox][hidden]", css.Decl("display", css.Literal("none !important")))
+	s.Select("[data-component=checkbox] > [data-checkbox-box]",
+		css.Decl("background-color", v("pk-color-surface-primary")),
+		css.Decl("border-color", v("pk-color-border-default")),
+		css.Decl("color", v("pk-color-accent-on")))
+	s.Select("[data-component=checkbox] > input:is(:checked,:indeterminate) + [data-checkbox-box]",
+		css.Decl("background-color", v("pk-color-accent-default")),
+		css.Decl("border-color", v("pk-color-accent-default")))
+	s.Select("[data-component=checkbox] [data-checkbox-checkmark], [data-component=checkbox] [data-checkbox-bar]",
+		css.Decl("display", css.Literal("none !important")))
+	s.Select("[data-component=checkbox] > input:checked:not(:indeterminate) + [data-checkbox-box] [data-checkbox-checkmark], [data-component=checkbox] > input:indeterminate + [data-checkbox-box] [data-checkbox-bar]",
+		css.Decl("display", css.Literal("block !important")))
+	s.Select("[data-component=checkbox] [data-checkbox-bar]", css.Decl("background-color", css.Literal("currentColor")))
+	s.Select("[data-component=checkbox] > input:focus-visible + [data-checkbox-box]",
+		css.Decl("outline", css.Literal("2px solid var(--pk-color-focus)")),
+		css.Decl("outline-offset", css.Literal("2px")))
+	s.Select("[data-component=checkbox]:has(> input:disabled)",
+		css.Decl("opacity", css.Literal("0.5")), css.Decl("cursor", css.Literal("not-allowed")))
+	s.Media("(forced-colors: active)", func(s *css.Sheet) {
+		s.Select("[data-component=checkbox] > [data-checkbox-box]",
+			css.Decl("forced-color-adjust", css.Literal("none")),
+			css.Decl("background-color", css.Literal("Canvas")),
+			css.Decl("border-color", css.Literal("CanvasText")),
+			css.Decl("color", css.Literal("CanvasText")))
+		s.Select("[data-component=checkbox] > input:focus-visible + [data-checkbox-box]",
+			css.Decl("outline-color", css.Literal("Highlight")))
+		s.Select("[data-component=checkbox] > input:is(:checked,:indeterminate) + [data-checkbox-box]",
+			css.Decl("background-color", css.Literal("Highlight")),
+			css.Decl("border-color", css.Literal("Highlight")),
+			css.Decl("color", css.Literal("HighlightText")))
+		s.Select("[data-component=checkbox]:has(> input:disabled)", css.Decl("opacity", css.Literal("1")))
+		s.Select("[data-component=checkbox] > input:disabled + [data-checkbox-box]",
+			css.Decl("border-color", css.Literal("GrayText")))
+	})
 	s.Select("table", css.Decl("border-collapse", css.Literal("collapse")))
 	// A navigation list is not a bulleted list. The marker inherits the
 	// document's text colour rather than the link's, so on the inverted sidebar

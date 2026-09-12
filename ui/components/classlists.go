@@ -349,8 +349,8 @@ var (
 			Border(style.Border1).BorderColor(style.BorderPrimary).
 			Cursor(style.CursorPointer).Merge(clFocusRing)
 
-	clCheckboxRoot = style.New().Display(style.DisplayInlineFlex).Items(style.ItemsStart).
-			Gap(style.S3).Cursor(style.CursorPointer)
+	clCheckboxRoot = style.New().Position(style.PositionRelative).Display(style.DisplayInlineFlex).Items(style.ItemsStart).
+			MinHeight(style.S6).MinWidth(style.S6).MaxWScaled(style.MaxWFull).Gap(style.S3).Cursor(style.CursorPointer)
 	clCheckboxRootDisabled = style.New().Cursor(style.CursorNotAllowed).Opacity(style.Opacity50)
 	clCheckboxInput        = style.New().Position(style.PositionAbsolute).
 				Height(style.SPX).Width(style.SPX).MinHeight(style.S0).MinWidth(style.S0).
@@ -366,7 +366,7 @@ var (
 	clCheckboxCheckmark = style.New().Height(style.S3).Width(style.S3)
 	clCheckboxBar       = style.New().Height(style.S0_5).Width(style.S2_5).
 				Rounded(style.RadiusFull).Bg(style.SurfacePrimary)
-	clCheckboxLabel = style.New().Truncate().PaddingTop(style.S0_5).
+	clCheckboxLabel = style.New().MinWidth(style.S0).BreakWords().PaddingTop(style.S0_5).
 			FontSize(style.TextSM).TextColor(style.FgPrimary)
 
 	// Text and headings.
