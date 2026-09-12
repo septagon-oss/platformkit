@@ -448,10 +448,10 @@ Saving [source-owned anchors](source-positioning.test.mjs) preserves current geo
 and exact inset metadata after label or parent edits. An encoded-geometry witness
 distinguishes FIG rounding from external transform edits; changed transforms and
 older files without the record reanchor from their native coordinates.
-`updateNodeWithUndo` restores exact anchors; other history paths remain unqualified.
-The coordinate panel rounds its interaction baseline: typed-edit undo and cancel
-can replace fractions with integers. Nudge and alignment history omit the original
-source anchor record. These paths need shared snapshot ownership before qualification.
+`updateNodeWithUndo` is verified only in isolation: undo can erase interleaved axes
+or edit markers and lose appearance on save. Missing-parent and layout failures are
+not atomic. Panel rounding can lose fractions; nudge/alignment/drag omit source anchors.
+These paths need field-owned capture and atomic replay, including cancel, before qualification.
 Changing native constraint modes inside linked placements is not yet save-safe;
 coordinate edits retain their new edge inset, but releasing an anchor needs further work.
 Stretch insets, stacking and transformed/scrolling containing blocks remain refused; artwork conversion is unfinished.
