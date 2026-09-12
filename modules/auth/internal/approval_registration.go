@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -25,7 +24,7 @@ func RegisterApprovalRegistrationRoutes(api *httpx.API, svc *Service, policy con
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
 		Errors:     []int{http.StatusForbidden, http.StatusTooManyRequests},
 		Extensions: map[string]any{httpx.EventsExtension: []string{user.EventRegistrationPending}},
-	}, httpx.Public(), func(ctx context.Context, in *approvalRegistrationInput) (*doneOutput, error) {
+	}, httpx.Public(), func(ctx context.Context, in *passwordRegistrationInput) (*doneOutput, error) {
 		r, _ := httpx.RequestFrom(ctx)
 		if !httpx.SameSite(r) {
 			return nil, problem.New(http.StatusForbidden, "request an account from the registration page itself")
@@ -33,13 +32,8 @@ func RegisterApprovalRegistrationRoutes(api *httpx.API, svc *Service, policy con
 		if !svc.MayAsk(ctx, ClientOf(r).IP) {
 			return nil, problem.New(http.StatusTooManyRequests, "too many account requests from this address; wait and try again")
 		}
-		switch {
-		case !in.Body.TermsAccepted:
-			return nil, problem.New(http.StatusUnprocessableEntity, "accept the terms before requesting an account")
-		case in.Body.Password != in.Body.Confirmation:
-			return nil, problem.New(http.StatusUnprocessableEntity, "the password and confirmation must match")
-		case strings.TrimSpace(in.Body.DisplayName) == "":
-			return nil, problem.New(http.StatusUnprocessableEntity, "enter your full name")
+		if err := in.validate(); err != nil {
+			return nil, err
 		}
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -59,14 +53,4 @@ func RegisterApprovalRegistrationRoutes(api *httpx.API, svc *Service, policy con
 		}
 		return done(), nil
 	})
-}
-
-type approvalRegistrationInput struct {
-	Body struct {
-		Email         string `json:"email" minLength:"1" maxLength:"320" format:"email" doc:"Your email address"`
-		DisplayName   string `json:"displayName" minLength:"1" maxLength:"200" doc:"Your full name"`
-		Password      string `json:"password" minLength:"12" maxLength:"256" writeOnly:"true" doc:"At least twelve characters; spaces are allowed"`
-		Confirmation  string `json:"confirmation" minLength:"12" maxLength:"256" writeOnly:"true" doc:"Repeat the password exactly"`
-		TermsAccepted bool   `json:"termsAccepted" doc:"You have read and accept this application's terms"`
-	}
 }

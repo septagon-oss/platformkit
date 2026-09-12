@@ -1,9 +1,10 @@
 // Authentication forms use the existing JSON API; auth alone owns credentials,
 // cookies and password tokens. Products compose their own fields and copy.
-// data-login-form remains supported. data-auth-form selects register, forgot or
-// reset, with data-auth-error and data-auth-message feedback inside the form.
-// Registration sends email/displayName and requests an emailed password setup;
-// it does not implement approval registration, email verification or MFA.
+// data-login-form remains supported. data-auth-form selects register, forgot,
+// reset, register-password, verify-email or resend-verification. Feedback uses
+// data-auth-error and data-auth-message inside the form. register requests an
+// emailed password setup; register-password submits credentials for a separate
+// email-verification lifecycle. The composed auth API owns the signup policy.
 (function () {
   const signin = document.documentElement.getAttribute("data-signin");
   const sessionError = document.querySelector("[data-session-error]");
@@ -40,13 +41,13 @@
 
   for (const form of document.querySelectorAll("[data-login-form], [data-auth-form]")) {
     const kind = form.hasAttribute("data-login-form") ? "login" : form.getAttribute("data-auth-form");
-    if (!["login", "register", "forgot", "reset"].includes(kind)) continue;
+    if (!["login", "register", "forgot", "reset", "register-password", "verify-email", "resend-verification"].includes(kind)) continue;
     const error = form.querySelector("[data-login-error], [data-auth-error]") || sessionError;
     const message = form.querySelector("[data-auth-message]");
     // Copy may be localized by the composing product without changing behavior.
     const success = message?.textContent.trim();
     let token = "";
-    if (kind === "reset") {
+    if (kind === "reset" || kind === "verify-email") {
       const url = new URL(window.location.href);
       const tokens = url.searchParams.getAll("token");
       token = tokens.length === 1 ? tokens[0] : "";
@@ -57,8 +58,10 @@
     form.addEventListener("submit", async function (event) {
       event.preventDefault();
       if (pending.has(form) || !form.reportValidity()) return;
-      if (kind === "reset" && !token) {
-        announce(error, "This password link is missing or invalid. Request a new link.");
+      if ((kind === "reset" || kind === "verify-email") && !token) {
+        announce(error, kind === "verify-email"
+          ? "This verification link is missing or invalid. Request a new link."
+          : "This password link is missing or invalid. Request a new link.");
         return;
       }
       pending.add(form);
@@ -73,14 +76,23 @@
         let body = { email: data.get("email") };
         if (kind === "login") body.password = data.get("password");
         if (kind === "register") body.displayName = data.get("displayName");
+        if (kind === "register-password") {
+          body = { ...body, displayName: data.get("displayName"), password: data.get("password"),
+            confirmation: data.get("confirmation"), termsAccepted: data.has("termsAccepted") };
+        }
         if (kind === "reset") body = { token, new: data.get("new") };
+        if (kind === "verify-email") body = { token };
         const response = await post(form.getAttribute("action"), body);
         if (response.ok) {
-          if (kind === "login" || kind === "reset") {
+          if (["login", "reset", "register-password", "verify-email"].includes(kind)) {
             token = "";
-            for (const input of form.querySelectorAll('input[type="password"]')) input.value = "";
+            for (const input of form.querySelectorAll("input")) {
+              if (input.type === "password" || ["password", "confirmation", "new"].includes(input.name)) input.value = "";
+            }
+          }
+          if (["login", "reset", "verify-email"].includes(kind)) {
             const next = local(form.getAttribute("data-next"));
-            window.location.assign(next?.href || (kind === "reset" && local(signin)?.href) || "/");
+            window.location.assign(next?.href || (["reset", "verify-email"].includes(kind) && local(signin)?.href) || "/");
           } else {
             announce(message, success || "If this address can receive an account email, a link will be sent. Check your inbox.");
           }

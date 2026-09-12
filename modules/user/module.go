@@ -90,6 +90,7 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 			contracts.EventInvited, contracts.EventPasswordSet,
 			contracts.EventRolesSet, contracts.EventDeactivated,
 			contracts.EventRegistrationPending, contracts.EventRegistrationApproved,
+			contracts.EventRegistrationUnverified, contracts.EventEmailVerified,
 		},
 		Nav: []module.NavEntry{
 			{Label: "Users", Path: "/admin/user/users", Permission: contracts.PermissionUserRead},
@@ -103,16 +104,16 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 	}
 }
 
-// refuseLifecycleOnCreate keeps roles and pending credentials behind their
-// owner commands. Public signup cannot create a pending row through generic CRUD.
+// refuseLifecycleOnCreate keeps roles and password registrations behind their
+// owner commands. Public signup cannot manufacture their state through generic CRUD.
 //
 // The hook runs inside the request's transaction, after the row and its event,
 // so returning an error rolls the whole create back and the caller gets a 422.
 // The PATCH route is guarded by spec.Immutable instead; a create cannot be,
 // because there is no row yet to refuse a change to.
 func refuseLifecycleOnCreate(_ context.Context, _ db.Tx[db.Tenant], u *contracts.User) error {
-	if u.Status == contracts.StatusPending {
-		return fmt.Errorf("%w: pending accounts must be created by the registration service", crud.ErrInvalid)
+	if u.Status == contracts.StatusPending || u.Status == contracts.StatusUnverified {
+		return fmt.Errorf("%w: password registrations must be created by the registration service", crud.ErrInvalid)
 	}
 	if len(u.Roles) == 0 {
 		return nil

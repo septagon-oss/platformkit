@@ -50,6 +50,26 @@ overwrite credentials or roles. Credentials never enter the event outbox.
 This mode shares the recovery request limit and needs no email delivery. A
 client still composes its terms guidance, pending-success page and review UI.
 
+Password-first mailbox confirmation is a third, exclusive opt-in through
+`auth.Deps.EmailRegistration`, with the user registrar and trusted initial roles.
+Its registration form accepts the same credentials and consent, stores an
+`unverified` account and queues a credential-free event. Auth's worker delivers a
+24-hour link at `/auth/verify-email`; the application composes that page, signup,
+resend, legal guidance and sign-in. The shared [form controller](ui/assets/js/session.js)
+supports `register-password`, `verify-email` and `resend-verification` forms.
+Opening a link does not consume it, and confirmation creates no session.
+
+`POST /api/v1/auth/verify-email` consumes an auth-owned digest and calls
+`VerifyEmail` in one tenant transaction. It checks the current canonical email,
+password-bearing unverified state and expiry after waiting for concurrent work;
+activation preserves the chosen password and roles. Password setup, recovery and
+operator approval cannot satisfy this gate. `POST /api/v1/auth/resend-verification`
+shares the IP request budget and reserves one request per tenant/mailbox per
+minute before lookup, with the same acknowledgment for unknown and cooled
+addresses. Recipient-counter failures refuse delivery. Rotation and consumption
+share a per-user lock; a new delivered link replaces its predecessor. Transport
+errors are sanitized before the existing outbox retry mechanism retains them.
+
 A module has three parts. `contracts/` defines its entities, public service,
 events, permissions and conformance suite. `internal/` contains its
 implementation. `module.go` declares the constructor and manifest.

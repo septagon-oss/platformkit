@@ -37,13 +37,17 @@ type Deps struct {
 
 	// Registration opts this composition into public member signup with emailed
 	// password setup. Mailer and Hosts must be configured before requests can
-	// be accepted. Without either registration capability, signup is disabled.
+	// be accepted. Without a registration capability, signup is disabled.
 	Registration contracts.RegistrationUsers
 
 	// ApprovalRegistration accepts a password, confirmation and terms consent
 	// and keeps the account pending for review. Initial roles are application
 	// defaults. It needs no mail delivery and cannot coexist with Registration.
 	ApprovalRegistration *contracts.ApprovalRegistration
+
+	// EmailRegistration accepts a password and requires independent mailbox
+	// confirmation. It needs email delivery and excludes both modes above.
+	EmailRegistration *contracts.EmailRegistration
 
 	// Notify is how somebody is told, inside the application, that a link was
 	// sent. It never carries the link: the notice points at /auth/reset and the
@@ -86,6 +90,16 @@ type Deps struct {
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
 func Module(deps Deps) (contracts.Auth, module.Module) {
+	if deps.EmailRegistration != nil {
+		if deps.Registration != nil || deps.ApprovalRegistration != nil {
+			panic("auth: choose only one registration lifecycle")
+		}
+		policy, err := deps.EmailRegistration.Checked()
+		if err != nil {
+			panic(err)
+		}
+		deps.EmailRegistration = &policy
+	}
 	if deps.ApprovalRegistration != nil {
 		if deps.Registration != nil {
 			panic("auth: choose emailed password setup or approval-required registration")
@@ -150,6 +164,9 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			if deps.ApprovalRegistration != nil {
 				internal.RegisterApprovalRegistrationRoutes(api, svc, *deps.ApprovalRegistration)
 			}
+			if deps.EmailRegistration != nil {
+				internal.RegisterEmailRegistrationRoutes(api, svc, *deps.EmailRegistration)
+			}
 			if deps.OIDC.Issuer != "" {
 				internal.RegisterOIDCRoutes(api, svc, deps.Users,
 					internal.NewProvider(deps.OIDC, cookies, secure))
@@ -158,6 +175,9 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 	}
 	if deps.Registration != nil {
 		manifest.Subscriptions = append(manifest.Subscriptions, internal.RegistrationSubscription(svc, deps.Registration))
+	}
+	if deps.EmailRegistration != nil {
+		manifest.Subscriptions = append(manifest.Subscriptions, internal.VerificationSubscriptions(svc)...)
 	}
 	return svc, manifest
 }

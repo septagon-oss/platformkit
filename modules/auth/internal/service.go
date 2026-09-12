@@ -311,7 +311,13 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if tokens.Error != nil {
 		return 0, fmt.Errorf("auth: purge the password tokens: %w", tokens.Error)
 	}
-	return sessions.RowsAffected + tokens.RowsAffected, nil
+	verifications := tx.DB().Exec(
+		"DELETE FROM verification_tokens WHERE token_hash IN ("+
+			"SELECT token_hash FROM verification_tokens WHERE expires_at <= clock_timestamp() LIMIT ?)", purgeBatch)
+	if verifications.Error != nil {
+		return 0, fmt.Errorf("auth: purge email verifications: %w", verifications.Error)
+	}
+	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason

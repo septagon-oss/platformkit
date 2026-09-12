@@ -37,6 +37,7 @@ func RunService(t *testing.T, h Harness) {
 	t.Helper()
 	all := cases()
 	maps.Copy(all, registrationCases())
+	maps.Copy(all, verificationCases())
 	for name, run := range all {
 		t.Run(name, func(t *testing.T) {
 			h(t, func(f Fixture) { run(t, f) })
