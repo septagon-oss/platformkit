@@ -80,34 +80,22 @@ func (s Singleton[T]) Mount(api *httpx.API) {
 		api.RegisterResource(s.resource())
 	}
 
-	httpx.Register(api, s.op("read", http.MethodGet, s.Path, "Read this tenant's "+s.Entity, "", nil),
-		httpx.Permission(s.Read), func(ctx context.Context, _ *struct{}) (*Item[T], error) {
-			out, err := s.load(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return &Item[T]{Body: out}, nil
-		})
+	Operation(api, s.op("read", http.MethodGet, s.Path, "Read this tenant's "+s.Entity, "", nil),
+		httpx.Permission(s.Read), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, _ *struct{}) (T, error) {
+			return s.Load(ctx, tx)
+		}, OperationOptions{})
 
 	if s.Write != "" {
 		var events []string
 		if s.Event != "" {
 			events = []string{s.Event}
 		}
-		httpx.Register(api, s.op("save", http.MethodPut, s.Path, "Save this tenant's "+s.Entity,
+		Operation(api, s.op("save", http.MethodPut, s.Path, "Save this tenant's "+s.Entity,
 			"The whole of it: a PUT replaces what is there. Saving what is already stored publishes nothing.", events),
-			httpx.Permission(s.Write), func(ctx context.Context, in *bodyInput[T]) (*Item[T], error) {
-				tx, err := transaction(ctx)
-				if err != nil {
-					return nil, err
-				}
+			httpx.Permission(s.Write), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *bodyInput[T]) (T, error) {
 				crud.Reset(in.Body) // the four fields the server owns, whatever a body said
-				out, err := s.Save(ctx, tx, in.Body)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				return &Item[T]{Body: out}, nil
-			})
+				return s.Save(ctx, tx, in.Body)
+			}, OperationOptions{})
 	}
 
 	if !s.Public {

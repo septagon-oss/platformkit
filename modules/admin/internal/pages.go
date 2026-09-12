@@ -8,7 +8,6 @@ import (
 
 	g "maragu.dev/gomponents"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -106,24 +105,19 @@ func login(ctx context.Context) page.View {
 // caller may read, with the count its own list route would report, and the
 // health of the instance.
 //
-// Readable is asked before the card is built rather than after the count came
-// back empty: a card saying "— tasks" for something a person may not look at is
-// still a card telling them it exists. The kernel refuses the list either way —
-// see httpx.RegisterResource — so this is what the refusal should look like on
-// a page, not the thing that makes it safe.
+// The guarded count makes one authorization decision and loads no entity rows.
+// A refused or unavailable count produces no card, including its resource name.
 func (p pages) dashboard(ctx context.Context) page.View {
 	cards := make([]g.Node, 0, len(p.resources))
 	for _, r := range p.resources {
-		if !r.Readable(ctx) {
+		if r.Count == nil {
 			continue
 		}
-		count := "—"
-		// The count is the resource's own list, asking for no rows: the total
-		// is what a page carries beside them, so this is one COUNT and not a
-		// page of data thrown away.
-		if _, total, err := r.List(ctx, crud.Query{Limit: 1}); err == nil {
-			count = strconv.FormatInt(total, 10)
+		total, err := r.Count(ctx)
+		if err != nil {
+			continue
 		}
+		count := strconv.FormatInt(total, 10)
 		cards = append(cards, components.Card(components.CardProps{
 			Title: count + " " + rest.Humanize(r.Entity) + "s", Description: "In " + r.Module,
 			Clickable: true, Href: screens.Path(r, opts),

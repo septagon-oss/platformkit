@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -116,6 +117,10 @@ func (t *Task) IsOverdue(now time.Time) bool {
 // door it came through. It normalises as well as refuses: a title that differs
 // only in whitespace is the same title, and two callers must not disagree.
 func (t *Task) Validate(context.Context) error {
+	// Match the JSON schema and varchar limit in characters, before normalization.
+	if utf8.RuneCountInString(t.Title) > 200 {
+		return fmt.Errorf("title must have at most 200 characters")
+	}
 	t.Title = strings.TrimSpace(t.Title)
 	if t.Title == "" {
 		return fmt.Errorf("a task needs a title")

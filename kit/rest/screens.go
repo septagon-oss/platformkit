@@ -59,6 +59,14 @@ func (s Spec[T]) resource() httpx.Resource {
 		Read: s.Read, Write: s.Write, OperatorWrite: s.OperatorWrite,
 		Immutable: s.Immutable, Schema: schema,
 
+		Count: func(ctx context.Context) (int64, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return 0, err
+			}
+			total, err := crud.Count[T](tx)
+			return total, Fault(err)
+		},
 		List: func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error) {
 			tx, err := transaction(ctx)
 			if err != nil {
@@ -95,11 +103,7 @@ func (s Spec[T]) resource() httpx.Resource {
 				if err != nil {
 					return e, err
 				}
-				crud.Reset(e) // the four fields the server owns, whatever a form sent
-				if err := crud.Create(ctx, tx, e); err != nil {
-					return e, err
-				}
-				return e, s.emit(ctx, tx, Created, e, s.AfterCreate)
+				return s.createRow(ctx, tx, e)
 			})
 		},
 		Update: func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error) {

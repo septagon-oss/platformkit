@@ -27,7 +27,7 @@ import (
 )
 
 // Resource is one entity as a screen sees it: what it is called, where its API
-// lives, which permissions guard it, what shape it has, and the five operations
+// lives, which permissions guard it, what shape it has, and its operations
 // bound to its type.
 //
 // The operations are closures because generics do not survive the trip: a
@@ -64,13 +64,16 @@ type Resource struct {
 	// See rest.Singleton.
 	Singleton bool
 
+	// Count reads the total without a page. Registration guards it with Read
+	// and supplies a List-based fallback for resources with custom loading.
+	Count  func(ctx context.Context) (int64, error)
 	List   func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error)
 	Get    func(ctx context.Context, id uuid.UUID) (map[string]any, error)
 	Create func(ctx context.Context, values map[string]any) (map[string]any, error)
 	Update func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error)
 	Delete func(ctx context.Context, id uuid.UUID) error
 
-	// may is the authorization the five closures above carry, installed by
+	// may is the authorization the closures above carry, installed by
 	// RegisterResource. It is unexported because only this package may fill it
 	// in: a Resource built anywhere else is unguarded until it is registered,
 	// and registering is the only way anything can obtain one.
@@ -134,10 +137,8 @@ func (r Resource) mayUse(ctx context.Context, a Auth) bool {
 }
 
 // Readable reports whether the caller in ctx holds this resource's Read
-// permission. A page that lists resources — the dashboard — asks it before it
-// renders a card, so a person is not shown a count of something they may not
-// look at. It is the same question the closures ask; this is only the form that
-// answers without producing an error to swallow.
+// permission. Use it to decide whether to show navigation; operations already
+// carry their own guard and need no preceding Readable check.
 func (r Resource) Readable(ctx context.Context) bool {
 	return r.allowed(ctx, tenancy.Grant{Permission: r.Read})
 }
@@ -165,14 +166,14 @@ func (r Resource) allowed(ctx context.Context, g tenancy.Grant) bool {
 }
 
 // RegisterResource records a resource, with this API's authorization wrapped
-// around each of its five operations. kit/rest calls it from Spec.Mount, in the
+// around each of its operations. kit/rest calls it from Spec.Mount, in the
 // same breath as the routes, so a resource and its API cannot disagree about a
 // permission or a path.
 //
 // The wrapping is here rather than in kit/rest because this is where the
 // Authorizer is: a Resource is the entity without its routes, and the routes
 // are where the permission used to live. A hand-written page holds a Resource
-// and calls List on it directly — the dashboard does — so a closure that did
+// and calls an operation directly, so a closure that did
 // not ask would be a page that reads past the permission whenever whoever wrote
 // it forgot to. Now forgetting is not available.
 func (a *API) RegisterResource(r Resource) {
@@ -182,12 +183,27 @@ func (a *API) RegisterResource(r Resource) {
 	a.resources = append(a.resources, r)
 }
 
-// guard returns r with its five closures behind the two permissions it
-// declares: Read for the list and the read, Write for the three writes. The
+// guard returns r with its closures behind the two permissions it
+// declares: Read for count/list/get, Write for the three writes. The
 // same pairing the routes declare, from the same two fields.
 func (a *API) guard(r Resource) Resource {
 	list, get, create, update, remove := r.List, r.Get, r.Create, r.Update, r.Delete
 	r.may = a.may
+	count := r.Count
+	if count == nil && list != nil {
+		count = func(ctx context.Context) (int64, error) {
+			_, total, err := list(ctx, crud.Query{Limit: 1})
+			return total, err
+		}
+	}
+	if count != nil {
+		r.Count = func(ctx context.Context) (int64, error) {
+			if err := a.may(ctx, tenancy.Grant{Permission: r.Read}); err != nil {
+				return 0, err
+			}
+			return count(ctx)
+		}
+	}
 	if list != nil {
 		r.List = func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error) {
 			if err := a.may(ctx, tenancy.Grant{Permission: r.Read}); err != nil {

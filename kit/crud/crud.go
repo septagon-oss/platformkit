@@ -144,6 +144,13 @@ func get[T Entity](query *gorm.DB, id uuid.UUID) (T, error) {
 	return e, nil
 }
 
+// Count returns the total live rows visible to this tenant without loading a page.
+func Count[T Entity](tx db.Tx[db.Tenant]) (int64, error) {
+	var total int64
+	err := tx.DB().Model(blank[T]()).Where("deleted_at IS NULL").Count(&total).Error
+	return total, Classify(err)
+}
+
 // List reads a page of this tenant's rows and the total the page came from.
 // The order always ends in the id, so two pages of equal-keyed rows do not
 // overlap or skip.

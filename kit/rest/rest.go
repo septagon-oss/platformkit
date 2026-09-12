@@ -176,12 +176,8 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			if err := refuseImmutable(in.RawBody, s.Immutable); err != nil {
 				return nil, Fault(err)
 			}
-			e := in.Body
-			crud.Reset(e) // whatever the caller sent for the read-only fields
-			if err := crud.Create(ctx, tx, e); err != nil {
-				return nil, Fault(err)
-			}
-			if err := s.emit(ctx, tx, Created, e, s.AfterCreate); err != nil {
+			e, err := s.createRow(ctx, tx, in.Body)
+			if err != nil {
 				return nil, Fault(err)
 			}
 			return &Item[T]{Body: e}, nil
@@ -229,7 +225,16 @@ func (s Spec[T]) Mount(api *httpx.API) {
 		})
 }
 
-// JSON routes and in-process resources share these mutations. The row lock
+// JSON routes and in-process resources share their write orchestration.
+func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	crud.Reset(e) // IDs, tenancy and timestamps belong to the server at both doors.
+	if err := crud.Create(ctx, tx, e); err != nil {
+		return e, err
+	}
+	return e, s.emit(ctx, tx, Created, e, s.AfterCreate)
+}
+
+// The row lock
 // must precede the merge and validation; locking only at the write leaves
 // responses, hooks and events based on a stale snapshot after contention.
 func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any) (T, error) {
@@ -336,30 +341,22 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 	// type is what tells huma whether there is a path parameter to bind. That
 	// is the irreducible half of the difference; everything above it and the
 	// answer below are shared.
-	answer := func(ctx context.Context, id uuid.UUID, body *I) (*Item[T], error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
+	answer := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *I) (T, error) {
 		var in I
 		if body != nil {
 			in = *body
 		}
-		e, err := run(ctx, tx, id, in)
-		if err != nil {
-			return nil, Fault(err)
-		}
-		return &Item[T]{Body: e}, nil
+		return run(ctx, tx, id, in)
 	}
 	if opts.Collection {
-		httpx.Register(api, op, auth, func(ctx context.Context, in *collectionInput[I]) (*Item[T], error) {
-			return answer(ctx, uuid.Nil, in.Body)
-		})
+		Operation(api, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (T, error) {
+			return answer(ctx, tx, uuid.Nil, in.Body)
+		}, OperationOptions{})
 		return
 	}
-	httpx.Register(api, op, auth, func(ctx context.Context, in *commandInput[I]) (*Item[T], error) {
-		return answer(ctx, in.ID, in.Body)
-	})
+	Operation(api, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (T, error) {
+		return answer(ctx, tx, in.ID, in.Body)
+	}, OperationOptions{})
 }
 
 // commandInput is a command's path id and its body. The body is a pointer
