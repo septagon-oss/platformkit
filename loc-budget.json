@@ -142,7 +142,7 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 18200
+      "max": 18242
     },
     {
       "name": "markdown",
