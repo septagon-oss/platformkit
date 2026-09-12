@@ -142,14 +142,14 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 18242
+      "max": 18542
     },
     {
       "name": "markdown",
       "suffixes": [
         ".md"
       ],
-      "max": 2790
+      "max": 2810
     }
   ]
 }
