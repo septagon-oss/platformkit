@@ -30,15 +30,20 @@ func (r ApprovalRegistration) Checked() (ApprovalRegistration, error) {
 	if r.Users == nil || len(r.Roles) == 0 {
 		return r, fmt.Errorf("auth: approval registration requires a registrar and initial roles")
 	}
-	r.Roles = slices.Clone(r.Roles)
-	for i, role := range r.Roles {
+	var err error
+	r.Roles, err = checkedRegistrationRoles(r.Roles)
+	return r, err
+}
+
+func checkedRegistrationRoles(roles []string) ([]string, error) {
+	roles = slices.Clone(roles)
+	for i, role := range roles {
 		name, err := ValidRoleName(role)
 		if err != nil {
-			return r, err
+			return nil, err
 		}
-		r.Roles[i] = name
+		roles[i] = name
 	}
-	slices.Sort(r.Roles)
-	r.Roles = slices.Compact(r.Roles)
-	return r, nil
+	slices.Sort(roles)
+	return slices.Compact(roles), nil
 }

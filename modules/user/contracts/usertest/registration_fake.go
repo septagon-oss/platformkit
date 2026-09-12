@@ -14,7 +14,15 @@ import (
 )
 
 func (f *Fake) RegisterPending(ctx context.Context, _ db.Tx[db.Tenant], in contracts.PendingRegistration) (*contracts.User, error) {
-	u := &contracts.User{Email: in.Email, DisplayName: in.DisplayName, Status: contracts.StatusPending, Roles: Normalise(in.Roles)}
+	return f.registerPassword(ctx, in, contracts.StatusPending, contracts.EventRegistrationPending)
+}
+
+func (f *Fake) RegisterUnverified(ctx context.Context, _ db.Tx[db.Tenant], in contracts.PasswordRegistration) (*contracts.User, error) {
+	return f.registerPassword(ctx, in, contracts.StatusUnverified, contracts.EventRegistrationUnverified)
+}
+
+func (f *Fake) registerPassword(ctx context.Context, in contracts.PasswordRegistration, status, event string) (*contracts.User, error) {
+	u := &contracts.User{Email: in.Email, DisplayName: in.DisplayName, Status: status, Roles: Normalise(in.Roles)}
 	if err := u.Validate(ctx); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
@@ -31,7 +39,23 @@ func (f *Fake) RegisterPending(ctx context.Context, _ db.Tx[db.Tenant], in contr
 	}
 	u.ID, u.CreatedAt, u.UpdatedAt, u.PasswordHash = uuid.New(), db.Now(), db.Now(), hash
 	f.users[u.ID] = *u
-	f.published = append(f.published, contracts.EventRegistrationPending)
+	f.published = append(f.published, event)
+	return f.get(u.ID)
+}
+
+func (f *Fake) VerifyEmail(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, expectedEmail string) (*contracts.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, err := f.get(id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status != contracts.StatusUnverified || u.PasswordHash == "" || u.Email != strings.ToLower(strings.TrimSpace(expectedEmail)) {
+		return nil, fmt.Errorf("%w: only an unverified registration at the expected email can be verified", crud.ErrConflict)
+	}
+	u.Status, u.UpdatedAt = contracts.StatusActive, db.Now()
+	f.users[id] = *u
+	f.published = append(f.published, contracts.EventEmailVerified)
 	return f.get(u.ID)
 }
 

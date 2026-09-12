@@ -34,16 +34,18 @@ import (
 )
 
 // A user is invited before password setup, pending while awaiting approval,
-// active once they can sign in, and inactive when that access is removed. Deleting is
+// unverified while awaiting mailbox confirmation, active once they can sign in,
+// and inactive when that access is removed. Deleting is
 // kit/crud's soft delete, which keeps the row and releases the address.
 const (
-	StatusInvited  = "invited"
-	StatusPending  = "pending"
-	StatusActive   = "active"
-	StatusInactive = "inactive"
+	StatusInvited    = "invited"
+	StatusPending    = "pending"
+	StatusUnverified = "unverified"
+	StatusActive     = "active"
+	StatusInactive   = "inactive"
 )
 
-var statuses = []string{StatusInvited, StatusPending, StatusActive, StatusInactive}
+var statuses = []string{StatusInvited, StatusPending, StatusUnverified, StatusActive, StatusInactive}
 
 // MinPasswordLength is the shortest password this application accepts. Length
 // is the only rule: composition rules push people towards Passw0rd! and a
@@ -89,7 +91,7 @@ type User struct {
 
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
-	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,active,inactive" ui:"widget:select" doc:"Lifecycle state" default:"invited" required:"false"`
+	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" doc:"Lifecycle state" default:"invited" required:"false"`
 
 	// Roles are the names of the roles this person holds. What a name grants is
 	// the auth module's business, which is why this is a list of strings and
@@ -141,14 +143,14 @@ func (u *User) Validate(context.Context) error {
 }
 
 // Service is the user lifecycle: explicit commands generic CRUD cannot safely
-// infer, including pending registration and approval, plus tenant-scoped reads.
+// infer, including password registration and activation, plus tenant-scoped reads.
 //
 // Every command takes the caller's transaction rather than opening one, so the
 // state change and its event commit together. The errors are kit/crud's:
 // ErrNotFound, ErrInvalid, ErrConflict.
 //
-// Each command is idempotent when repeated with the same argument: the callers
-// that retry — a browser, a redelivered event — must not each produce an event.
+// Commands document their retry behavior. An unchanged idempotent command emits
+// no event; verification replay conflicts rather than asserting fresh proof.
 type Service interface {
 	Registrations
 	// Invite creates a user with no password, in status invited, and publishes
@@ -156,7 +158,7 @@ type Service interface {
 	Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*User, error)
 
 	// SetPassword hashes and stores a password for an invited or active user.
-	// Pending and inactive users conflict; password setup cannot bypass approval. The
+	// Pending, unverified and inactive users conflict; setup cannot bypass activation. The
 	// same password again is still a write and still an event: a person who
 	// changes their password to what it already was has still done it.
 	SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, password string) error

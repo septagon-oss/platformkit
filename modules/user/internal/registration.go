@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -13,7 +14,23 @@ import (
 )
 
 func (s *Service) RegisterPending(ctx context.Context, tx db.Tx[db.Tenant], in contracts.PendingRegistration) (*contracts.User, error) {
-	u := &contracts.User{Email: in.Email, DisplayName: in.DisplayName, Status: contracts.StatusPending, Roles: normalise(in.Roles)}
+	u, err := s.registerPassword(ctx, tx, in, contracts.StatusPending)
+	if err != nil {
+		return nil, err
+	}
+	return u, events.Publish(ctx, tx, contracts.EventRegistrationPending, contracts.RegistrationPending{UserID: u.ID, At: db.Now()})
+}
+
+func (s *Service) RegisterUnverified(ctx context.Context, tx db.Tx[db.Tenant], in contracts.PasswordRegistration) (*contracts.User, error) {
+	u, err := s.registerPassword(ctx, tx, in, contracts.StatusUnverified)
+	if err != nil {
+		return nil, err
+	}
+	return u, events.Publish(ctx, tx, contracts.EventRegistrationUnverified, contracts.RegistrationUnverified{UserID: u.ID, Email: u.Email, At: db.Now()})
+}
+
+func (s *Service) registerPassword(ctx context.Context, tx db.Tx[db.Tenant], in contracts.PasswordRegistration, status string) (*contracts.User, error) {
+	u := &contracts.User{Email: in.Email, DisplayName: in.DisplayName, Status: status, Roles: normalise(in.Roles)}
 	if err := u.Validate(ctx); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
@@ -38,8 +55,22 @@ func (s *Service) RegisterPending(ctx context.Context, tx db.Tx[db.Tenant], in c
 	if created.RowsAffected == 0 {
 		return nil, contracts.ErrRegistrationExists
 	}
-	// This is not an invitation: no password link may activate this account.
-	return u, events.Publish(ctx, tx, contracts.EventRegistrationPending, contracts.RegistrationPending{UserID: u.ID, At: db.Now()})
+	return u, nil
+}
+
+func (s *Service) VerifyEmail(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, expectedEmail string) (*contracts.User, error) {
+	u, err := lockedUser(tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status != contracts.StatusUnverified || u.PasswordHash == "" || u.Email != strings.ToLower(strings.TrimSpace(expectedEmail)) {
+		return nil, fmt.Errorf("%w: only an unverified registration at the expected email can be verified", crud.ErrConflict)
+	}
+	u.Status = contracts.StatusActive
+	if err := crud.Update(ctx, tx, u, "status", "updated_at"); err != nil {
+		return nil, err
+	}
+	return u, events.Publish(ctx, tx, contracts.EventEmailVerified, contracts.EmailVerified{UserID: u.ID, Email: u.Email, At: db.Now()})
 }
 
 func (s *Service) PendingRegistrations(_ context.Context, tx db.Tx[db.Tenant], limit, offset int) (contracts.RegistrationPage, error) {

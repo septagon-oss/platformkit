@@ -65,15 +65,18 @@ func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Ha
 		r := read(ctx, s.Chrome)
 		v, err := handler(ctx, r, in)
 		if err != nil {
-			var to httpx.SeeOther
-			if errors.As(err, &to) {
-				return nil, err
+			if to, ok := errors.AsType[httpx.SeeOther](err); ok {
+				out := httpx.Redirect(ctx, string(to))
+				applyPrivacy(out, v.Sensitive)
+				return out, nil
 			}
 			status, detail := refusal(err)
 			if status >= http.StatusInternalServerError {
 				return nil, err
 			}
-			v = Fault(status, detail, s.Back, s.BackLabel)
+			fault := Fault(status, detail, s.Back, s.BackLabel)
+			fault.Sensitive = v.Sensitive
+			v = fault
 		}
 		status := v.Status
 		if status == 0 {
@@ -85,8 +88,20 @@ func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Ha
 		} else {
 			body = s.Frame(ctx, r, v.Body)
 		}
-		return httpx.Document(Document(s.Chrome, r, v, body), status)
+		out, err := httpx.Document(Document(s.Chrome, r, v, body), status)
+		if err != nil {
+			return nil, err
+		}
+		applyPrivacy(out, v.Sensitive)
+		return out, nil
 	})
+}
+
+func applyPrivacy(out *httpx.Page, sensitive bool) {
+	if sensitive {
+		out.CacheControl = "no-store"
+		out.ReferrerPolicy = "no-referrer"
+	}
 }
 
 // read is the one place a page learns about its caller.

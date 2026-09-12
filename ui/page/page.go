@@ -77,6 +77,11 @@ type View struct {
 	Title  string
 	Status int
 	Bare   bool
+	// Sensitive prevents caching and sends no referrer on this document's
+	// outgoing requests, including assets loaded before scripts run. Use it
+	// for pages carrying password links or other private URL credentials.
+	// It does not redact the incoming URL from application or proxy logs.
+	Sensitive bool
 	// Language is the BCP 47 tag of the rendered copy, such as "pt-PT".
 	// Empty uses Chrome.Attrs["lang"], or English when no default is set.
 	// The application selects and translates the content; this field only
