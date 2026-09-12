@@ -12,6 +12,7 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -156,16 +157,26 @@ func decode[T crud.Entity](values map[string]any) (T, error) {
 // by the schema rather than by guesswork: a number field arrives as a number, a
 // checkbox that was not ticked arrives as false rather than as missing, and a
 // blank optional field is left out so a nullable column stays null instead of
-// becoming the zero time.
+// becoming the zero time. UpdateValues also handles clearing existing values.
 //
 // refuse names the fields that must not appear at all — the Immutable ones, on
 // a create, which the form does not render. A create is the one door where a
 // command's field is otherwise writable, so a value arriving for one did not
 // come from the form this function serves, and it is refused with a field error
 // rather than dropped: dropping it would store something other than what was
-// sent and say nothing. The JSON create keeps its documented behaviour, which
-// is that Immutable is about a patch; this is the form's own promise.
+// sent and say nothing. The JSON create enforces the same Immutable contract.
 func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, error) {
+	return formValues(body, fields, refuse, false)
+}
+
+// UpdateValues reads an edit form, retaining submitted blank text, empty lists
+// and null optional instants while omitting absent and command-owned fields.
+func UpdateValues(body []byte, fields []crud.Field, immutable []string) (map[string]any, error) {
+	values, err := formValues(body, fields, nil, true)
+	return Writable(values, immutable), err
+}
+
+func formValues(body []byte, fields []crud.Field, refuse []string, update bool) (map[string]any, error) {
 	form, err := url.ParseQuery(string(body))
 	if err != nil {
 		return nil, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
@@ -193,6 +204,18 @@ func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, 
 		}
 		text := strings.TrimSpace(raw[0])
 		if text == "" {
+			if update {
+				switch f.Type {
+				case crud.TypeString, crud.TypeText:
+					out[f.Name] = ""
+				case crud.TypeList:
+					out[f.Name] = []string{}
+				case crud.TypeTime:
+					if !f.Required {
+						out[f.Name] = nil
+					}
+				}
+			}
 			continue
 		}
 		switch f.Type {
@@ -209,15 +232,18 @@ func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, 
 			}
 			out[f.Name] = n
 		case crud.TypeTime:
-			// A datetime-local control sends "2026-09-02T14:30" and the API
-			// speaks RFC 3339, so the zone the browser did not send is UTC.
-			if len(text) == 16 {
-				text += ":00"
+			// Browser-local values use UTC; explicit offsets retain their instant.
+			at, err := time.Parse(time.RFC3339Nano, text)
+			if err != nil {
+				at, err = time.Parse("2006-01-02T15:04:05", text)
 			}
-			if !strings.HasSuffix(text, "Z") && !strings.Contains(text[10:], "+") {
-				text += "Z"
+			if err != nil {
+				at, err = time.Parse("2006-01-02T15:04", text)
 			}
-			out[f.Name] = text
+			if err != nil {
+				return nil, invalid(f.Name, "is not a time")
+			}
+			out[f.Name] = at.Format(time.RFC3339Nano)
 		case crud.TypeList:
 			parts := strings.Split(text, ",")
 			list := make([]string, 0, len(parts))
@@ -227,6 +253,18 @@ func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, 
 				}
 			}
 			out[f.Name] = list
+			if f.Elem == crud.TypeInt || f.Elem == crud.TypeFloat || f.Elem == crud.TypeBool {
+				typed := make([]any, 0, len(list))
+				for _, value := range list {
+					item, err := coerce(crud.Field{Name: f.Name, Type: f.Elem}, value)
+					number, numeric := item.(float64)
+					if err != nil || (numeric && (math.IsNaN(number) || math.IsInf(number, 0))) {
+						return nil, invalid(f.Name, "contains an invalid "+string(f.Elem))
+					}
+					typed = append(typed, item)
+				}
+				out[f.Name] = typed
+			}
 		default:
 			out[f.Name] = text
 		}

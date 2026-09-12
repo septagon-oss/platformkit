@@ -102,9 +102,9 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 	page.Serve(api, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: at + "/{id}", Summary: "Update a " + r.Entity}, write,
 		func(ctx context.Context, _ page.Request, in *itemFormInput) (page.View, error) {
 			item := at + "/" + in.ID.String()
-			sent, err := rest.Values(in.RawBody, r.Schema.Fields, nil)
+			sent, err := rest.UpdateValues(in.RawBody, r.Schema.Fields, r.Immutable)
 			if err == nil {
-				if _, err = r.Update(ctx, in.ID, rest.Writable(sent, r.Immutable)); err == nil {
+				if _, err = r.Update(ctx, in.ID, sent); err == nil {
 					return page.View{}, httpx.SeeOther(item)
 				}
 			}

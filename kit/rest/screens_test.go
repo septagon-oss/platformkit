@@ -2,11 +2,13 @@ package rest_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -119,6 +121,20 @@ func TestTheResourceOperationsAreTheRoutesWithoutTheHTTP(t *testing.T) {
 		}
 		if _, err := r.Update(ctx, id, map[string]any{"createdAt": "2020-01-01T00:00:00Z"}); err == nil {
 			fail("Update wrote a read-only field")
+		}
+		if _, err := r.Update(ctx, id, map[string]any{"notes": "Remove this", "dueAt": "2026-09-12T14:30:00Z"}); err != nil {
+			fail("setting optional fields: %v", err)
+		}
+		cleared, err := rest.UpdateValues([]byte("notes=&dueAt="), r.Schema.Fields, nil)
+		if err != nil {
+			fail("reading cleared controls: %v", err)
+		}
+		if _, err := r.Update(ctx, id, cleared); err != nil {
+			fail("clearing optional fields: %v", err)
+		}
+		got, err = r.Get(ctx, id)
+		if err != nil || rest.Text(got["notes"]) != "" || got["dueAt"] != nil || got["title"] != created["title"] {
+			fail("cleared controls did not persist or changed an absent field: %v, %v", got, err)
 		}
 
 		if err := r.Delete(ctx, id); err != nil {
@@ -269,6 +285,96 @@ func TestValuesTypesAFormBySchemaAndRefusesWhatTheFormDidNotOffer(t *testing.T) 
 	kept := rest.Writable(map[string]any{"title": "Chiller", "priority": int64(9)}, []string{"priority"})
 	if _, still := kept["priority"]; still || kept["title"] != "Chiller" {
 		t.Errorf("Writable = %v", kept)
+	}
+}
+
+func TestUpdateValuesDistinguishesClearedAbsentAndImmutableFields(t *testing.T) {
+	t.Parallel()
+	fields := []crud.Field{
+		{Name: "description", Type: crud.TypeText}, {Name: "dueAt", Type: crud.TypeTime},
+		{Name: "tags", Type: crud.TypeList, Elem: crud.TypeString}, {Name: "title", Type: crud.TypeString},
+		{Name: "resolution", Type: crud.TypeString}, {Name: "createdAt", Type: crud.TypeTime, ReadOnly: true},
+	}
+	// New entities and commands retain the existing omission/default contract.
+	create, err := rest.Values([]byte("description=&dueAt=&tags="), fields, nil)
+	if err != nil || len(create) != 0 {
+		t.Fatalf("blank create values changed: %v, %v", create, err)
+	}
+	got, err := rest.UpdateValues([]byte("description=&dueAt=&tags=&resolution=forged&createdAt="), fields, []string{"resolution"})
+	wire, _ := json.Marshal(got)
+	if err != nil || string(wire) != `{"description":"","dueAt":null,"tags":[]}` {
+		t.Fatalf("edit should clear only the editable fields it carried: %s, %v", wire, err)
+	}
+}
+
+func TestValuesValidateInstantsWithoutPanicking(t *testing.T) {
+	t.Parallel()
+	fields := []crud.Field{{Name: "dueAt", Type: crud.TypeTime}}
+	for _, input := range []string{"x", "2026-09-12", "2026-02-30T10:00", "2026-09-12T25:00", "2026-09-12T10:00:00Zjunk"} {
+		t.Run(input, func(t *testing.T) {
+			_, err := rest.Values([]byte("dueAt="+input), fields, nil)
+			p, ok := err.(*problem.Problem)
+			if !ok || p.Status != http.StatusUnprocessableEntity {
+				t.Fatalf("invalid instant = %v, want a 422", err)
+			}
+			if errs, _ := rest.FieldErrors(err, fields); errs["dueAt"] == "" {
+				t.Fatal("the invalid instant did not identify its control")
+			}
+		})
+	}
+	for input, want := range map[string]string{
+		"2026-09-12T14:30": "2026-09-12T14:30:00Z", "2026-09-12T14:30:15": "2026-09-12T14:30:15Z",
+		"2026-09-12T14:30:15.123Z": "2026-09-12T14:30:15.123Z", "2026-09-12T14:30:00-04:00": "2026-09-12T14:30:00-04:00",
+		"2026-09-12T14:30:00%2B05:30": "2026-09-12T14:30:00+05:30",
+	} {
+		got, err := rest.Values([]byte("dueAt="+input), fields, nil)
+		if err != nil {
+			t.Fatalf("valid instant %q: %v", input, err)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, got["dueAt"].(string)); err != nil {
+			t.Fatalf("instant %q is not on the API wire: %v", got["dueAt"], err)
+		}
+		if got["dueAt"] != want {
+			t.Fatalf("instant %q became %q, want %q", input, got["dueAt"], want)
+		}
+	}
+}
+
+func TestValuesPreserveTypedListElementsAndClearLists(t *testing.T) {
+	t.Parallel()
+	fields := []crud.Field{
+		{Name: "counts", Type: crud.TypeList, Elem: crud.TypeInt},
+		{Name: "ratios", Type: crud.TypeList, Elem: crud.TypeFloat},
+		{Name: "enabled", Type: crud.TypeList, Elem: crud.TypeBool},
+	}
+	got, err := rest.Values([]byte("counts=1,+-2&ratios=0.25,+-1.5&enabled=true,+false"), fields, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Counts  []int     `json:"counts"`
+		Ratios  []float64 `json:"ratios"`
+		Enabled []bool    `json:"enabled"`
+	}
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatalf("form values cannot reach their typed command argument: %v", err)
+	}
+	if fmt.Sprint(decoded) != "{[1 -2] [0.25 -1.5] [true false]}" {
+		t.Fatalf("typed values changed: %s", wire)
+	}
+	for _, input := range []string{"counts=1,2.5", "ratios=0.5,soon", "ratios=NaN", "ratios=Inf", "enabled=true,maybe"} {
+		if _, err := rest.Values([]byte(input), fields, nil); err == nil {
+			t.Errorf("invalid list %q was accepted", input)
+		}
+	}
+	got, err = rest.UpdateValues([]byte("counts="), fields, nil)
+	wire, _ = json.Marshal(got)
+	if err != nil || string(wire) != `{"counts":[]}` {
+		t.Fatalf("clearing a list = %s, %v", wire, err)
 	}
 }
 
