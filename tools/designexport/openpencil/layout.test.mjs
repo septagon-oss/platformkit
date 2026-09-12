@@ -19,7 +19,7 @@ test('intrinsic source flex restores failed tree construction and respects nativ
   const row = graph.createNode('FRAME', root.id, {
     layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG', pluginData: metadata({ cssFlex: flex }),
   })
-  graph.createNode('TEXT', row.id, { text: 'Hello world', textAutoResize: 'WIDTH_AND_HEIGHT', pluginData: metadata({ textWrap: 'normal-v1' }) })
+  const text = graph.createNode('TEXT', row.id, { text: 'Hello world', textAutoResize: 'WIDTH_AND_HEIGHT', pluginData: metadata({ textWrap: 'normal-v1' }) })
   const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
   try {
     setTextMeasurer(() => { throw new Error('Intrinsic measurement unavailable') })
@@ -30,6 +30,11 @@ test('intrinsic source flex restores failed tree construction and respects nativ
     setTextMeasurer((node, width) => ({ width: width === 0 ? 60 : 100, height: 20 }))
     computeLayout(graph, root.id)
     assert.equal(row.width, 60, 'min-content overflow survives repeated failures')
+    graph.updateNode(row.id, { minWidth: 300 })
+    graph.updateNode(text.id, { layoutGrow: 1 })
+    computeLayout(graph, root.id)
+    assert.equal(row.width, 300)
+    assert.equal(text.width, 300, 'authored text grow retains ordinary native fill behavior')
     for (const changes of [{ primaryAxisSizing: 'FIXED' }, { layoutGrow: 1 }, { pluginData: metadata({ cssFlex: { ...flex, version: 2 } }) },
       { pluginData: metadata({ cssFlex: { ...flex, shrink: '1' } }) }, { pluginData: [marker, marker] }, { pluginData: [] }]) {
       configureSourceFlex(new Proxy({}, { get() { assert.fail('must retain ordinary native sizing') } }), graph,

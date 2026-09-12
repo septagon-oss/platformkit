@@ -58,7 +58,7 @@ export function configureSourceFlex(yoga, graph, node, parent, measure) {
 }
 
 export function configureSourceRowText(yoga, graph, node, parent, measure, modes) {
-  if (!autoSourceText(node) || !sourceFlex(graph, parent) || node.figmaDerivedLayout) return false
+  if (!autoSourceText(node) || !sourceFlex(graph, parent) || node.layoutGrow !== 0 || node.figmaDerivedLayout) return false
   const natural = measureText(measure, node).width, minimum = measureText(measure, node, 0).width
   yoga.setMinWidth(minimum)
   yoga.setFlexShrink(1) // The source's anonymous text flex item has the CSS initial value.
