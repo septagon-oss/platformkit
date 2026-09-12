@@ -448,10 +448,16 @@ Saving [source-owned anchors](source-positioning.test.mjs) preserves current geo
 and exact inset metadata after label or parent edits. An encoded-geometry witness
 distinguishes FIG rounding from external transform edits; changed transforms and
 older files without the record reanchor from their native coordinates.
-`updateNodeWithUndo` is verified only in isolation: undo can erase interleaved axes
-or edit markers and lose appearance on save. Missing-parent and layout failures are
-not atomic. Panel rounding can lose fractions; nudge/alignment/drag omit source anchors.
-These paths need field-owned capture and atomic replay, including cancel, before qualification.
+[Coordinate history](source-position-history.test.mjs) captures only operation-owned fields;
+undo, redo and cancel preserve independent axes, edit markers and opaque plugin data.
+Stale references, missing parents and projected layout failures refuse before mutation.
+Native checks cover nudges, alignment, distribution, move commits and standalone reparenting;
+reparenting source-positioned descendants of linked instances is refused.
+[Single- and mixed-selection X/Y checks](editor/position-history.test.mjs) cover fractional values,
+pointer and keyboard editing, cancellation, grouped history and worker save/reopen/save.
+Independent opacity and nonreserved plugin data persist with positioned occurrences.
+Actual canvas-drag gestures and screen-reader behavior remain unqualified;
+exceptions from subscribers during live publication are outside the replay atomicity guarantee.
 Changing native constraint modes inside linked placements is not yet save-safe;
 coordinate edits retain their new edge inset, but releasing an anchor needs further work.
 Stretch insets, stacking and transformed/scrolling containing blocks remain refused; artwork conversion is unfinished.

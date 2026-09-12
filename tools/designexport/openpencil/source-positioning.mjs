@@ -127,14 +127,30 @@ export function importSourceAbsolute(node, parent, position, fields) {
   const witness = sourcePositionWireGeometry(saved), current = sourcePositionWireGeometry(fields)
   // An external editor may change native geometry without updating our record.
   // Compare encoded values exactly, not geometric tolerances or inferred edits.
-  if (JSON.stringify(witness) !== JSON.stringify(current)) return reanchorSourceAbsolute({ ...node, ...position }, parent, position)
-  return sourceAbsoluteData(node, record)
+  const resolved = JSON.stringify(witness) === JSON.stringify(current) ? record :
+    sourceAbsoluteRecord({ ...node, pluginData: reanchorSourceAbsolute({ ...node, ...position }, parent, position) })
+  const foreign = fields.pluginData.filter(item => !['platformkit', 'open-pencil'].includes(item.pluginID))
+  const key = item => JSON.stringify([item.pluginID ?? item.pluginId, item.key])
+  requirePosition(foreign.every(item => ['pluginID', 'key', 'value'].every(field => typeof item[field] === 'string')) &&
+    new Set(foreign.map(key)).size === foreign.length, 'override requires unique opaque plugin entries')
+  const entriesByKey = new Map(foreign.map(item => [key(item), { pluginId: item.pluginID, key: item.key, value: item.value }]))
+  const pluginData = node.pluginData.map(item => entriesByKey.get(key(item)) ?? item)
+  for (const [id, item] of entriesByKey) if (!pluginData.some(existing => key(existing) === id)) pluginData.push(item)
+  return sourceAbsoluteData({ ...node, pluginData }, resolved)
 }
 
 export function correctSourcePositionGraph(source, replace) {
   source = `import { sourceAbsoluteRecord, reanchorSourceAbsolute } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   const mark = 'if (this.sourceMetadataPreservationDepth === 0) markSourceFieldsEdited(node, Object.keys(changes));'
+  source = replace(source, '\t\tconst oldParentId = node.parentId;', `
+    if (!this.instanceSyncDepth && this.sourceMetadataPreservationDepth === 0 && sourceAbsoluteRecord(node)) {
+      for (let owner = oldParent; owner; owner = this.getNode(owner.parentId)) {
+        if (owner.type === "INSTANCE") throw new Error("Native component: source absolute reparent changes a linked instance definition");
+      }
+    }
+    const oldParentId = node.parentId;`)
   return replace(source, mark, `
+    if (sourceAbsoluteRecord(node)) changes = Object.fromEntries(Object.entries(changes).filter(([field, value]) => !["x", "y"].includes(field) || value !== node[field]));
     if (!this.isApplyingLayout && this.sourceMetadataPreservationDepth === 0 && sourceAbsoluteRecord(node) &&
         ["x", "y"].some(field => Object.hasOwn(changes, field) && changes[field] !== node[field])) {
       const position = Object.fromEntries(Object.entries(changes).filter(([field, value]) => ["x", "y"].includes(field) && value !== node[field]));
@@ -154,19 +170,40 @@ export function correctSourcePositionImport(source, replace) {
     '\t\t\t\tprops.pluginData = importSourceAbsolute(target, ctx.graph.getNode(target.parentId), props, fields);\n\t\t\t}\n\t\t}')
 }
 
-// Coordinate history owns edit marks and exact anchors. Reconstructing a prior
-// anchor from imported binary32 coordinates would make undo itself an edit.
+const historyModule = () => JSON.stringify(fileURLToPath(new URL('./source-position-history.mjs', import.meta.url)))
+
+// Position edits use the same staged graph owner as native property edits.
 export function correctSourcePositionActions(source, replace) {
-  source = `import { sourceAbsoluteRecord, sourceAbsoluteData } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
-  source = replace(source, 'const previous = pick(node, Object.keys(nextChanges));',
-    'const previous = pick(node, Object.keys(nextChanges));\n' +
-    '\t\tconst positionSourceBefore = sourceAbsoluteRecord(node) && ["x", "y", "horizontalConstraint", "verticalConstraint"].some(field => Object.hasOwn(nextChanges, field)) ? structuredClone({ source: node.source, position: sourceAbsoluteRecord(node) }) : null;')
-  source = replace(source, '\t\tctx.runLayoutForNode(id);\n\t\tctx.undo.push({',
-    '\t\tctx.runLayoutForNode(id);\n\t\tconst positionSourceAfter = positionSourceBefore ? structuredClone({ source: node.source, position: sourceAbsoluteRecord(node) }) : null;\n\t\tctx.undo.push({')
-  for (const [changes, state] of [['nextChanges', 'positionSourceAfter'], ['previous', 'positionSourceBefore']]) {
-    source = replace(source, `\t\t\t\tctx.graph.updateNode(id, ${changes});`,
-      `\t\t\t\tctx.graph.updateNode(id, ${changes});\n` +
-      `\t\t\t\tif (${state}) ctx.graph.preserveSourceMetadataDuring(() => ctx.graph.updateNode(id, { source: structuredClone(${state}.source), pluginData: sourceAbsoluteData(ctx.graph.getNode(id), ${state}.position) }));`)
-  }
-  return source
+  source = `import { isPositionEdit, updatePositionNode } from ${historyModule()};\n` + source
+  source = replace(source, '\t\t});\n\t\tupdateNumericNode(id, nextChanges);',
+    '\t\t});\n\t\tif (isPositionEdit(node, nextChanges)) return updatePositionNode(ctx, id, nextChanges, null, projectGraphChange);\n\t\tupdateNumericNode(id, nextChanges);')
+  return replace(source, '\t\tconst previous = pick(node, Object.keys(nextChanges));',
+    '\t\tif (isPositionEdit(node, nextChanges)) return updatePositionNode(ctx, id, nextChanges, label, projectGraphChange);\n\t\tconst previous = pick(node, Object.keys(nextChanges));')
+}
+
+export function correctPositionHistory(source, replace) {
+  source = `import { captureNodeUpdate, commitPositionMove } from ${historyModule()};\nimport { projectGraphChange } from "../components/properties.js";\n` + source
+  source = replace(source, '\t\t\ty: node.y\n', '\t\t\ty: node.y, history: captureNodeUpdate(ctx, id, ["x", "y"])\n')
+  return replace(source, source.slice(source.indexOf('function pushPositionUndo('), source.indexOf('//#endregion')),
+    'function pushPositionUndo(ctx, label, originals) {\n\tcommitPositionMove(ctx, label, originals, projectGraphChange);\n}\n')
+}
+
+export function correctPositionNudge(source, replace) {
+  const start = '\t\t\tnudgeOriginals = /* @__PURE__ */ new Map();', end = '\n\t\tfor (const id of movable) {'
+  return replace(source, source.slice(source.indexOf(start), source.indexOf(end)),
+    '\t\t\tnudgeOriginals = collectNodePositions(ctx, movable);\n\t\t}')
+}
+
+export function correctPositionUndo(source, replace) {
+  source = `import { captureNodeUpdate, cancelNodeUpdate, commitNodeReceipt, commitPositionMove, cancelPositionMove, updatePositionMove, isPositionEdit } from ${historyModule()};\nimport { projectGraphChange } from "./components/properties.js";\n` + source
+  source = replace(source, source.slice(source.indexOf('\tfunction commitMove('), source.indexOf('\tfunction commitDuplicateMove(')),
+    '\tfunction commitMove(originals, label = "Move") {\n\t\tcommitPositionMove(ctx, label, originals, projectGraphChange);\n\t}\n' +
+    '\tfunction commitMoveWithReparent(originals) {\n\t\tcommitMove(originals);\n\t}\n')
+  source = replace(source, 'function commitNodeUpdate(nodeId, previous, label = "Update") {',
+    'function commitNodeUpdate(nodeId, previous, label = "Update", receipt) {\n' +
+    '\t\tif (receipt) return commitNodeReceipt(ctx, nodeId, receipt, label, projectGraphChange);\n' +
+    '\t\tif (isPositionEdit(ctx.graph.getNode(nodeId), previous)) throw new Error("Native position history: coordinate commit requires its initial receipt");')
+  return replace(source, '\t\tcommitNodeUpdate,',
+    '\t\tcommitNodeUpdate,\n\t\tcaptureNodeUpdate: (id, fields) => captureNodeUpdate(ctx, id, fields),\n\t\tcancelNodeUpdate: receipt => cancelNodeUpdate(ctx, receipt, projectGraphChange),\n' +
+    '\t\tcancelMove: originals => cancelPositionMove(ctx, originals, projectGraphChange),\n\t\tupdatePositionMove: (originals, changes) => updatePositionMove(ctx, originals, changes, projectGraphChange),')
 }

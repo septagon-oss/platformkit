@@ -298,7 +298,8 @@ function serializeAppearanceOverrides(context, instance, counter) {
     const sized = target !== instance && ['width', 'height'].some(owns);
     const dashed = owns('dashPattern');
     const positioned = target !== instance && sourceAbsoluteRecord(target);
-    if (fields.length || paddingFields.length || sized || dashed || positioned) {
+    const opacity = target !== instance && (owns('opacity') || target.source.editedFields.includes('opacity'));
+    if (fields.length || paddingFields.length || sized || dashed || positioned || opacity) {
       const guidPath = target === instance ? { guids: [getOrCreateNodeGuid(context,
         resolveInstanceComponentId(context, instance.componentId), counter)] } : nativeOverridePath(context, instance, target, counter);
       const override = { guidPath };
@@ -310,6 +311,13 @@ function serializeAppearanceOverrides(context, instance, counter) {
           schema: 'platformkit.design-export.v1', scope: 'source-composition-layout', cssPosition: positioned,
           wireGeometry: sourcePositionWireGeometry({ transform: override.transform, size: { x: target.width, y: target.height } })
         }) }];
+        for (const item of target.pluginData) if (!['platformkit', 'open-pencil'].includes(item.pluginId)) {
+          override.pluginData.push({ pluginID: item.pluginId, key: item.key, value: item.value });
+        }
+      }
+      if (opacity) {
+        if (!Number.isFinite(target.opacity) || target.opacity < 0 || target.opacity > 1) throw new Error('Native opacity override requires a fraction');
+        override.opacity = target.opacity;
       }
       if (dashed) override.dashPattern = [...target.dashPattern];
       if (sized || positioned) override.size = { x: target.width, y: target.height };

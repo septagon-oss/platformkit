@@ -105,6 +105,90 @@ function nativeBoundary() {
     },
     transform(source, id) {
       const controlCorrections = {
+        'packages/vue/src/primitives/PositionControls/PositionControlsRoot.vue': ['8ba3fbb631f728cbab7b20fa08f402e9d6977a4fc4af8fac659f6eda6959dd67',
+          'Math.round(node.value?.x ?? 0)', '(node.value?.x ?? 0)',
+          'Math.round(node.value?.y ?? 0)', '(node.value?.y ?? 0)',
+          '  commitProp,\n  node,', '  commitProp,\n  beginProp,\n  endProp,\n  node,',
+          'const actions = {\n  updateProp,', 'const actions = {\n  beginProp,\n  endProp,\n  updateProp,'],
+        'packages/vue/src/controls/node-props/use.ts': ['6f9d354574fbf86fee93f11c01e85ab6297e43e790485b0b336b5e5565100e5e',
+          'const { updateProp, commitProp } = createNodePropScrubActions(store)',
+          'const { updateProp, commitProp, beginProp, endProp } = createNodePropScrubActions(store)',
+          '    commitProp\n', '    commitProp,\n    beginProp,\n    endProp\n'],
+        'packages/vue/src/controls/node-props/helpers.ts': ['fc493d32390fa0244d470e499a19d37ebf324748bbb8e9ca133100096d2d2360',
+          'export function createNodePropScrubActions(store: Editor) {',
+          `export function createNodePropScrubActions(store: Editor) {
+  const interactions = new Map<string, Map<string, { history: unknown }>>()
+  function endProp(key: string, committed: boolean) {
+    if (committed) return
+    const originals = interactions.get(key)
+    if (!committed && originals) store.cancelMove(originals)
+    interactions.delete(key)
+  }
+  function beginProp(key: string) {
+    endProp(key, false)
+    interactions.set(key, new Map(store.getSelectedNodes().map(node =>
+      [node.id, { history: store.captureNodeUpdate(node.id, [key]) }])))
+  }`,
+          '  function updateProp(key: string, value: number | string) {',
+          `  function updateProp(key: string, value: number | string) {
+    const originals = interactions.get(key)
+    if (originals) {
+      store.updatePositionMove(originals, { [key]: value })
+      return
+    }`,
+          '  function commitProp(key: string, _value: number | string, previous: number | string) {',
+          `  function commitProp(key: string, _value: number | string, previous: number | string) {
+    const originals = interactions.get(key)
+    if (originals) {
+      store.commitMove(originals, \`Change \${key}\`)
+      interactions.delete(key)
+      return
+    }`,
+          '  return { updateProp, commitProp }', '  return { updateProp, commitProp, beginProp, endProp }'],
+        'src/components/properties/PositionSection.vue': ['ced05f7da0d5c1ab912594d99df7243f51a2026d625a6fad3af45e440f242961',
+          'v-slot="{ active, isMulti, xValue,', 'v-slot="{ active, isMulti, ids, xValue,',
+          ...['x', 'y'].flatMap(key => [
+            `data-property="${key}"`, `data-property="${key}" :key="'${key}:' + ids.join(',')"`,
+            `@commit="(v: number, p: number) => actions.commitProp('${key}', v, p)"`,
+            `@commit="(v: number, p: number) => actions.commitProp('${key}', v, p)"
+            @interaction-start="actions.beginProp('${key}')"
+            @interaction-end="(committed: boolean) => actions.endProp('${key}', committed)"`,
+          ])],
+        'src/components/inputs/NumberField.vue': ['07d894dae872206b6582b75c7be86369a09fb1adce78977af046a655ad927470',
+          "  'editing-change': [editing: boolean]",
+          "  'editing-change': [editing: boolean]\n  'interaction-start': []\n  'interaction-end': [committed: boolean]",
+          '    @invalid="',
+          `    @interaction-start="emit('interaction-start')"
+    @interaction-end="emit('interaction-end', $event)"
+    @invalid="`],
+        'packages/vue/src/primitives/NumberField/NumberFieldRoot.vue': ['ceb4c3c704b6bbe555275b48455652fd34af2ed87aa6ed4297838e5ee1bfdbac',
+          'const emit = defineEmits<NumberFieldRootEmits>()',
+          `const emit = defineEmits<NumberFieldRootEmits & {
+  (event: 'interaction-start'): void
+  (event: 'interaction-end', committed: boolean): void
+}>()`,
+          'function beginInteraction() {', "function beginInteraction() {\n  emit('interaction-start')",
+          '  const expression = draftValue.value',
+          `  const expression = draftValue.value
+  if (!interactionStartedMixed && expression === String(interactionStartValue)) {
+    cancelEdit()
+    return
+  }`,
+          'function finishCommit(value: number) {',
+          `function finishCommit(value: number) {
+  if (value === interactionStartValue && !interactionStartedMixed) {
+    restoreInteractionValue()
+    editing.value = false
+    binding?.actions.cancelMutation()
+    return
+  }`,
+          'if (next !== interactionStartValue)', 'if (next !== interactionStartValue || interactionStartedMixed)',
+          'onBeforeUnmount(stopScrubListeners)',
+          "onBeforeUnmount(() => { stopScrubListeners(); emit('interaction-end', false) })"],
+        'packages/vue/src/shared/input/select/move.ts': ['ebfa0ef0f575e34afd6e6fc4a920885fd6ac399eee6f0d8498a075509b687796',
+          '        parentId: node.parentId ?? editor.state.currentPageId',
+          `        parentId: node.parentId ?? editor.state.currentPageId,
+        ...{ history: editor.captureNodeUpdate(id, ['x', 'y']) }`],
         'packages/vue/src/controls/component-props/use.ts': ['c9430929645a8981f4ef669f4deb039dcbfc5a96a25969a4eba0bf6e6f398f86',
           'function variantOptions(', chain.toString() + '\n\nfunction variantOptions(',
           'const component = instance.componentId ? editor.graph.getNode(instance.componentId) : null',
@@ -417,10 +501,26 @@ async function commitCollectionRename(event: FocusEvent) {
         if (sha256(source) !== digest) throw new Error('Editor control source changed: ' + path)
         correctedControls.add(path)
         for (let index = 0; index < edits.length; index += 2) source = replaceOnce(source, edits[index], edits[index + 1])
+        if (path.endsWith('/NumberFieldRoot.vue')) {
+          const commitCheck = 'if (workingValue.value !== interactionStartValue)'
+          if (source.split(commitCheck).length !== 3) throw new Error('Number mixed commit lifecycle changed')
+          source = source.replaceAll(commitCheck, 'if (workingValue.value !== interactionStartValue || interactionStartedMixed)')
+          for (const [action, count, committed] of [['cancel', 4, 'false'], ['commit', 3,
+            'workingValue.value !== interactionStartValue || interactionStartedMixed']]) {
+            const anchor = `binding?.actions.${action}Mutation()`
+            if (source.split(anchor).length !== count + 1) throw new Error('Number interaction lifecycle changed')
+            source = source.replaceAll(anchor, anchor + `\n    emit('interaction-end', ${committed})`)
+          }
+        }
         if (path.endsWith('/VariablesSection.vue')) source = correctModeControls(source, replaceOnce, join(adapter, 'variable-binding.mjs'))
         if (path.endsWith('/ComponentPropertyTextField.vue')) source += `
 <style scoped>
 textarea:focus-visible { outline: revert; outline-offset: 2px; }
+</style>\n`
+        if (path.endsWith('/PositionSection.vue')) source += `
+<style scoped>
+:deep([data-property="x"] input:focus-visible),
+:deep([data-property="y"] input:focus-visible) { outline: revert; outline-offset: -2px; }
 </style>\n`
         if (path.endsWith('/VariablesDialog.vue')) {
           // Mode actions use the same menu components as collection actions.
@@ -493,7 +593,7 @@ await build({ ...config, configFile: false, root: upstream, build: {
 
 // Missing transforms are a build failure, not a silently less-correct editor.
 if (!correctedNudgeKeys) throw new Error('Browser omitted the tree keyboard correction')
-if (correctedControls.size !== 20) throw new Error('Browser omitted a required editor control correction')
+if (correctedControls.size !== 27) throw new Error('Browser omitted a required editor control correction')
 // CommonJS expression code is tested by Node; the browser selects its ESM entry.
 for (const path of Object.keys(corrections).filter(path => !path.endsWith('/bundle.js'))) {
   if (!seen.has(path)) throw new Error(`Browser omitted a required native correction: ${path}`)

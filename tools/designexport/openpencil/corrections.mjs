@@ -10,7 +10,8 @@ import { correctGridNodeChange, correctGridImport, correctGridOverrides, correct
 import { correctVariantActions, correctVariantImport, correctVariantNodeChange } from './variant-correction.mjs'
 import { correctCSSBorders } from './border-correction.mjs'
 import { correctSourceOverflow } from './source-box.mjs'
-import { correctSourcePositionActions, correctSourcePositionImport, correctSourcePositionGraph } from './source-positioning.mjs'
+import { correctSourcePositionActions, correctSourcePositionImport, correctSourcePositionGraph,
+  correctPositionHistory, correctPositionNudge, correctPositionUndo } from './source-positioning.mjs'
 import { correctNumericGraph, correctNumericLayout, correctNumericLayoutApply, correctNumericEvents,
   correctNumericImport, correctNumericExport, correctNumericValueActions, correctNumericModeActions,
   correctNumericProjection, correctNumericBindingActions, correctNumericNodeActions, correctNumericNodeExport } from './variable-binding-correction.mjs'
@@ -292,7 +293,25 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/editor/nodes.js': {
     sha256: '658a69b330f927b31cc525ec4389d6913e4ea04b9db8ce9d0688ead725ca51a5',
-    transform: (source, replace) => correctNumericNodeActions(correctGridActions(correctSourcePositionActions(source, replace), replace), replace),
+    transform: (source, replace) => correctSourcePositionActions(correctNumericNodeActions(correctGridActions(source, replace), replace), replace),
+  },
+  '@open-pencil/core/dist/editor/history/position.js': {
+    sha256: 'e99904d0ed9d02fae0b3e9b65c5bbdf605c2f1da8f61590b43ed1e3a3a46ea99',
+    transform: correctPositionHistory,
+  },
+  '@open-pencil/core/dist/editor/nudge.js': {
+    sha256: 'b51059506a8748c0795ecfaac0bd40a9d36d080b75b81def40e33c419548298e',
+    transform: correctPositionNudge,
+  },
+  '@open-pencil/core/dist/editor/undo.js': {
+    sha256: 'd323b66c8448ebb53d280f5efb5dc016af8e7be3a95d80457cc19f7dc3e7a22d',
+    transform: correctPositionUndo,
+  },
+  '@open-pencil/core/dist/editor/bridges/undo.js': {
+    sha256: '8fc6dde7cd4b0189bb01d700e52d61619721b29503e934331f13c2ce5a2963ad',
+    transform: (source, replace) => replace(source, '\t\tcommitNodeUpdate: undoActions.commitNodeUpdate,',
+      '\t\tcommitNodeUpdate: undoActions.commitNodeUpdate,\n\t\tcaptureNodeUpdate: undoActions.captureNodeUpdate,\n\t\tcancelNodeUpdate: undoActions.cancelNodeUpdate,\n' +
+      '\t\tcancelMove: undoActions.cancelMove,\n\t\tupdatePositionMove: undoActions.updatePositionMove,'),
   },
   '@open-pencil/core/dist/editor/variable-bindings.js': {
     sha256: 'b08aa2649b689ef0749618cf1eb8009f7bc77f68c4bb0f58741c4e1e29c389b7',
