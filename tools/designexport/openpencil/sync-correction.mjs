@@ -400,7 +400,13 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
       for (const width of [true, false]) {
         const before = width === (target.layoutMode === 'HORIZONTAL') ? 'primaryAxisSizing' : 'counterAxisSizing'
         const after = width === (mode === 'HORIZONTAL') ? 'primaryAxisSizing' : 'counterAxisSizing'
-        if (target[before] === 'FILL') effective[after] = 'FILL'
+        if (target[before] === 'FILL') {
+          effective[after] = 'FILL'
+          // The containing layout owns the resolved dimension as well as the
+          // sizing mode; copying the master size detaches positioned children.
+          const dimension = width ? 'width' : 'height'
+          effective[dimension] = target[dimension]
+        }
       }
     }
     nodes.set(id, syncProperties(effective, target, INSTANCE_SYNC_PROPS, overrides, `${id}:`))

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { planSourceAbsolute } from './source-positioning.mjs'
+import { planSourceAbsolute, sourceAbsoluteRecord } from './source-positioning.mjs'
 import { SceneGraph } from '@open-pencil/scene-graph'
 import { computeLayout, getTextMeasurer, setTextMeasurer } from '@open-pencil/core/layout'
 import { createEditor } from '@open-pencil/core/editor'
@@ -10,6 +10,8 @@ import { fontManager } from '@open-pencil/core/text'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { nodeChangeToProps } from '@open-pencil/fig/node-change'
+import { parseFigBuffer } from '@open-pencil/fig'
+import { importNodeChanges, populateAllLazyFigImportRoots } from '@open-pencil/core/kiwi'
 
 const data = record => [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
   schema: 'platformkit.design-export.v1', scope: 'source-composition-layout', ...record,
@@ -74,6 +76,152 @@ test('source absolute layout stays out of flow and releases explicitly edited ax
     editor.redoAction(); assert.equal(named('Positioned').x, 55)
     editor.undoAction(); assert.deepEqual([...graph.getAllNodes()], before)
     if (cycle < 2) graph = await parseFigFile((await exportFigFile(graph)).slice().buffer, { populate: 'all' })
+  }
+})
+
+test('master synchronization retains parent-owned fractional grid sizing and badge insets', () => {
+  const graph = new SceneGraph(), page = graph.getPages()[0]
+  const master = graph.createNode('COMPONENT', page.id, {
+    name: 'Tile', width: 43.328125, height: 43.328125, layoutMode: 'HORIZONTAL',
+    primaryAxisSizing: 'FIXED', counterAxisSizing: 'HUG', pluginData: data({ cssBox: { version: 1, aspectRatio: 1 } }),
+  })
+  graph.createNode('FRAME', master.id, {
+    width: 19.203125, height: 20, layoutMode: 'VERTICAL',
+    primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED', layoutPositioning: 'ABSOLUTE',
+    horizontalConstraint: 'MAX', verticalConstraint: 'MAX', pluginData: data({ cssPosition: {
+      version: 1, horizontal: { edge: 'right', inset: 1 }, vertical: { edge: 'bottom', inset: 1 },
+    } }),
+  })
+  computeLayout(graph, master.id)
+  const grid = graph.createNode('FRAME', page.id, {
+    width: 320, layoutMode: 'GRID', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED',
+    gridTemplateColumns: Array.from({ length: 6 }, () => ({ sizing: 'FR', value: 1 })),
+    gridTemplateRows: [], gridColumnGap: 12, gridRowGap: 12, pluginData: data({}),
+  })
+  const instance = graph.createInstance(master.id, grid.id, {
+    primaryAxisSizing: 'FILL', counterAxisSizing: 'HUG', layoutAlignSelf: 'STRETCH',
+  })
+  computeLayout(graph, grid.id)
+  const before = structuredClone(instance), badge = graph.getChildren(instance.id)[0]
+  assert.notEqual(instance.width, master.width, 'grid and master have distinct resolved widths')
+  assert.equal(instance.width - badge.width - badge.x, 1)
+  graph.syncInstances(master.id)
+  assert.equal(instance.width, before.width, 'a canonical master does not own its occurrence fill width')
+  assert.equal(instance.width - badge.width - badge.x, 1)
+  assert.deepEqual(instance.overrides, before.overrides, 'derived sizing does not invent an authored override')
+  assert.equal(sourceAbsoluteRecord(badge).horizontal.inset, 1)
+})
+
+test('canonical synchronization preserves both physical fill axes across layout direction changes', () => {
+  for (const layoutMode of ['HORIZONTAL', 'VERTICAL']) {
+    const graph = new SceneGraph(), page = graph.getPages()[0]
+    const master = graph.createNode('COMPONENT', page.id, {
+      width: 13, height: 17, layoutMode, primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED',
+    })
+    const fill = graph.createInstance(master.id, page.id, {
+      width: 33, height: 37, primaryAxisSizing: 'FILL', counterAxisSizing: 'FILL',
+    })
+    const fixed = graph.createInstance(master.id, page.id)
+    graph.updateNode(master.id, { width: 55, height: 66, layoutMode: layoutMode === 'HORIZONTAL' ? 'VERTICAL' : 'HORIZONTAL' })
+    graph.syncInstances(master.id)
+    assert.deepEqual([fill.width, fill.height], [33, 37])
+    assert.deepEqual([fixed.width, fixed.height], [55, 66])
+    assert.deepEqual(fill.overrides, {})
+  }
+})
+
+test('linked placements retain exact fractional insets and native moves through two saves', async () => {
+  for (const horizontal of ['left', 'right']) for (const moved of [false, true]) {
+    let graph = new SceneGraph(), page = graph.getPages()[0]
+    const master = graph.createNode('COMPONENT', page.id, {
+      name: 'Master', width: 320, height: 160, layoutMode: 'HORIZONTAL',
+      primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED', pluginData: data({}),
+    })
+    graph.createNode('FRAME', master.id, {
+      name: 'Badge', width: 40.1, height: 20, layoutMode: 'VERTICAL', layoutPositioning: 'ABSOLUTE',
+      primaryAxisSizing: 'FIXED', counterAxisSizing: 'FIXED',
+      horizontalConstraint: horizontal === 'left' ? 'MIN' : 'MAX', verticalConstraint: 'MIN',
+      pluginData: [...data({ example: 'canonical', cssPosition: {
+        version: 1, horizontal: { edge: horizontal, inset: horizontal === 'left' ? .1 : 1 },
+        vertical: { edge: 'top', inset: .2 },
+      } }), { pluginId: 'another-owner', key: 'evidence', value: 'untouched' }],
+    })
+    computeLayout(graph, master.id)
+    graph.createInstance(master.id, page.id, { name: 'Edited' })
+    graph.createInstance(master.id, page.id, { name: 'Sibling' })
+    const named = name => [...graph.getAllNodes()].find(node => node.name === name)
+    const badge = name => graph.getChildren(named(name).id)[0]
+    const evidence = name => badge(name).pluginData.filter(item => item.pluginId !== 'open-pencil')
+    const canonical = structuredClone(badge('Master').pluginData)
+    if (moved) {
+      const editor = createEditor({ graph }), before = structuredClone(badge('Edited').pluginData)
+      editor.updateNodeWithUndo(badge('Edited').id, { x: 55.123456789 }, 'Move badge')
+      editor.undoAction()
+      assert.deepEqual(badge('Edited').pluginData, before)
+      editor.redoAction()
+    }
+    let expected = structuredClone(sourceAbsoluteRecord(badge('Edited')))
+    for (let cycle = 0; cycle < 3; cycle++) {
+      assert.deepEqual(sourceAbsoluteRecord(badge('Edited')), expected, `${horizontal}/${moved}/${cycle}: exact authored anchors`)
+      assert.deepEqual(evidence('Master'), canonical, 'master source and unrelated provenance are unchanged')
+      assert.deepEqual(evidence('Sibling'), canonical, 'sibling source and unrelated provenance are unchanged')
+      assert.equal(JSON.parse(badge('Edited').pluginData[0].value).example, 'canonical')
+      assert.deepEqual(badge('Edited').pluginData[1], canonical[1], 'unrelated plugin data is retained')
+      assert.equal(named('Edited').componentId, named('Master').id)
+      if (moved && cycle === 1) {
+        const editor = createEditor({ graph })
+        editor.updateNodeWithUndo(badge('Edited').id, { y: 7.123456789 }, 'Move after import')
+        editor.undoAction()
+        assert.deepEqual(sourceAbsoluteRecord(badge('Edited')), expected, 'post-import undo restores exact authored anchors')
+        editor.redoAction()
+        expected = structuredClone(sourceAbsoluteRecord(badge('Edited')))
+      }
+      graph.updateNode(named('Edited').id, { width: cycle ? 390 : 320 })
+      computeLayout(graph, named('Edited').id)
+      const parent = named('Edited'), current = badge('Edited')
+      assert.equal(current.x, horizontal === 'left' ? expected.horizontal.inset : parent.width - current.width - expected.horizontal.inset)
+      assert.equal(current.y, expected.vertical.inset)
+      if (cycle < 2) {
+        const bytes = await exportFigFile(graph)
+        if (cycle === 0 && !moved) {
+          const changes = parseFigBuffer(bytes.slice().buffer).nodeChanges
+          const overrideOf = nodes => nodes.find(node => node.name === 'Edited').symbolData.symbolOverrides.find(node => node.pluginData)
+          for (const legacy of [false, true]) {
+            const external = structuredClone(changes), override = overrideOf(external)
+            override.transform.m02 = Math.fround(override.transform.m02 + 10)
+            if (legacy) delete override.pluginData
+            const imported = importNodeChanges(external)
+            populateAllLazyFigImportRoots(imported)
+            const parent = [...imported.getAllNodes()].find(node => node.name === 'Edited')
+            const target = imported.getChildren(parent.id)[0], x = target.x
+            assert.equal(x, override.transform.m02)
+            computeLayout(imported, parent.id)
+            assert.equal(target.x, x, `${horizontal}/${legacy}: a native external move is not snapped back`)
+            assert.equal(JSON.parse(target.pluginData[0].value).example, 'canonical')
+          }
+          for (const corrupt of [
+            override => { delete override.transform },
+            override => { override.pluginData.push(structuredClone(override.pluginData[0])) },
+            override => { override.pluginData[0].value = 'invalid JSON' },
+            override => {
+              const value = JSON.parse(override.pluginData[0].value)
+              value.cssPosition.horizontal.inset = null
+              override.pluginData[0].value = JSON.stringify(value)
+            },
+            override => {
+              const value = JSON.parse(override.pluginData[0].value)
+              value.wireGeometry.size.x = null
+              override.pluginData[0].value = JSON.stringify(value)
+            },
+          ]) {
+            const invalid = structuredClone(changes)
+            corrupt(overrideOf(invalid))
+            assert.throws(() => populateAllLazyFigImportRoots(importNodeChanges(invalid)), /source absolute/)
+          }
+        }
+        graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+      }
+    }
   }
 })
 

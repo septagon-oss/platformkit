@@ -302,7 +302,15 @@ function serializeAppearanceOverrides(context, instance, counter) {
       const guidPath = target === instance ? { guids: [getOrCreateNodeGuid(context,
         resolveInstanceComponentId(context, instance.componentId), counter)] } : nativeOverridePath(context, instance, target, counter);
       const override = { guidPath };
-      if (positioned) override.transform = sourcePlacementTransform(context, target);
+      if (positioned) {
+        override.transform = sourcePlacementTransform(context, target);
+        // Coordinates and sizes are binary32 on the wire; the existing source
+        // record retains exact authored anchors independently of that rounding.
+        override.pluginData = [{ pluginID: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+          schema: 'platformkit.design-export.v1', scope: 'source-composition-layout', cssPosition: positioned,
+          wireGeometry: sourcePositionWireGeometry({ transform: override.transform, size: { x: target.width, y: target.height } })
+        }) }];
+      }
       if (dashed) override.dashPattern = [...target.dashPattern];
       if (sized || positioned) override.size = { x: target.width, y: target.height };
       for (const field of paddingFields) override[padding[field]] = target[field];
@@ -346,6 +354,7 @@ function replaceSection(source, start, end, replacement) {
 }
 
 export function correctExporter(source, replaceOnce) {
+  source = `import { sourcePositionWireGeometry } from ${JSON.stringify(fileURLToPath(new URL('./source-positioning.mjs', import.meta.url)))};\n` + source
   // Source layout derives these values without claiming authored geometry edits.
   // A FIG imported before text growth or parent resizing still has stale raw data.
   source = replaceOnce(source, 'function exportNodeSize(node) {',

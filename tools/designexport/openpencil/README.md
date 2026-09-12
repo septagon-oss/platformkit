@@ -430,8 +430,8 @@ no independent property edits, replacements or variants for those paths; changin
 derived text refuses a proposal rather than concealing it behind a sibling edit.
 Declared slots outside that boundary remain editable. This does not infer arbitrary
 Go dependencies or make native edits execute the source constructor.
-Parent-owned stretch sizing survives variant changes and FIG reloads without
-changing the reusable definition's intrinsic sizing.
+Parent-owned stretch sizing and resolved dimensions survive canonical synchronization,
+variant changes and FIG reloads without changing the definition's intrinsic sizing.
 
 Nested construction includes block flow with uniform nonnegative collapsed margins
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
@@ -444,8 +444,12 @@ width-led aspect ratios, padding-edge hidden overflow and tabular numbers retain
 [Automatic text badges](browser/positioning.test.mjs) declare native stretch alongside fill width, preserving
 that ownership for linked content and private frames after reopening. Regenerate
 older artifacts missing this setting; import does not infer it from saved sizes.
-Saving [source-owned anchors](source-positioning.test.mjs) also preserves their current
-size and position after label or parent edits, including placements in standalone frames.
+Saving [source-owned anchors](source-positioning.test.mjs) preserves current geometry
+and exact inset metadata after label or parent edits. An encoded-geometry witness
+distinguishes FIG rounding from external transform edits; changed transforms and
+older files without the record reanchor from their native coordinates.
+Native graph undo restores exact anchors. Fractional coordinate editing in the
+packaged editor still has an unresolved undo discrepancy and is not qualified.
 Changing native constraint modes inside linked placements is not yet save-safe;
 coordinate edits retain their new edge inset, but releasing an anchor needs further work.
 Stretch insets, stacking and transformed/scrolling containing blocks remain refused; artwork conversion is unfinished.

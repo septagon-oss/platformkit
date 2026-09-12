@@ -54,6 +54,11 @@ export function sourceAbsoluteRecord(node) {
   return record
 }
 
+export function sourceAbsoluteData(node, record) {
+  return node.pluginData.map(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source'
+    ? { ...item, value: JSON.stringify({ ...JSON.parse(item.value), cssPosition: record }) } : item)
+}
+
 export function applySourceAbsolute(graph, parent, node, computeLayout, measureText) {
   const record = sourceAbsoluteRecord(node)
   if (!record) return false
@@ -87,9 +92,8 @@ export function applySourceAbsolute(graph, parent, node, computeLayout, measureT
   return true
 }
 
-// FIG stores absolute occurrence coordinates as ordinary transform overrides.
-// Rebase those coordinates into the existing edge record at import/export, so
-// saved native moves retain their new inset without becoming fixed screenshots.
+// Native moves update the parent-owned anchor. Older FIG files without an
+// explicit placement record also use this coordinate-based import fallback.
 export function reanchorSourceAbsolute(node, parent, position) {
   const record = sourceAbsoluteRecord(node)
   if (!record || !parent) return node.pluginData
@@ -99,8 +103,32 @@ export function reanchorSourceAbsolute(node, parent, position) {
     next[axis].inset = next[axis].edge === start ? position[coordinate] : parent[size] - node[size] - position[coordinate]
     requirePosition(Number.isFinite(next[axis].inset), 'native placement exceeds finite geometry')
   }
-  return node.pluginData.map(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source'
-    ? { ...item, value: JSON.stringify({ ...JSON.parse(item.value), cssPosition: next }) } : item)
+  return sourceAbsoluteData(node, next)
+}
+
+export function sourcePositionWireGeometry(fields) {
+  return Object.fromEntries([['transform', ['m00', 'm01', 'm02', 'm10', 'm11', 'm12']], ['size', ['x', 'y']]].map(([field, keys]) =>
+    [field, Object.fromEntries(keys.map(key => {
+      const value = fields[field]?.[key]
+      requirePosition(Number.isFinite(value) && Number.isFinite(Math.fround(value)), 'wire geometry requires finite transform and size fields')
+      return [key, Math.fround(value)]
+    }))]))
+}
+
+export function importSourceAbsolute(node, parent, position, fields) {
+  const entries = (fields.pluginData ?? []).filter(item => item.pluginID === 'platformkit' && item.key === 'platformkit.source')
+  if (!entries.length) return reanchorSourceAbsolute({ ...node, ...position }, parent, position)
+  // A symbol override owns only the occurrence's placement. Never overwrite
+  // canonical source identity or unrelated plugin evidence with its payload.
+  const record = sourceAbsoluteRecord({ ...node, pluginData: entries.map(item => ({ ...item, pluginId: item.pluginID })) })
+  requirePosition(record, 'override requires one valid source placement record')
+  const saved = JSON.parse(entries[0].value).wireGeometry
+  requirePosition(saved, 'override requires its saved wire geometry')
+  const witness = sourcePositionWireGeometry(saved), current = sourcePositionWireGeometry(fields)
+  // An external editor may change native geometry without updating our record.
+  // Compare encoded values exactly, not geometric tolerances or inferred edits.
+  if (JSON.stringify(witness) !== JSON.stringify(current)) return reanchorSourceAbsolute({ ...node, ...position }, parent, position)
+  return sourceAbsoluteData(node, record)
 }
 
 export function correctSourcePositionGraph(source, replace) {
@@ -115,29 +143,29 @@ export function correctSourcePositionGraph(source, replace) {
 }
 
 export function correctSourcePositionImport(source, replace) {
-  source = `import { sourceAbsoluteRecord, reanchorSourceAbsolute } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
+  source = `import { sourceAbsoluteRecord, importSourceAbsolute } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   return replace(source, 'const props = convertOverrideToProps(fields);',
     'const props = convertOverrideToProps(fields);\n' +
-    '\t\tif (fields.transform) {\n' +
+    '\t\tif (fields.transform || fields.pluginData?.some(item => item.pluginID === "platformkit" && item.key === "platformkit.source")) {\n' +
     '\t\t\tconst target = ctx.graph.getNode(targetId);\n' +
     '\t\t\tif (sourceAbsoluteRecord(target)) {\n' +
-    '\t\t\t\tObject.assign(props, convertFigmaTransformProps({ transform: fields.transform, size: fields.size ?? { x: target.width, y: target.height } }));\n' +
-    '\t\t\t\tprops.pluginData = reanchorSourceAbsolute({ ...target, ...props }, ctx.graph.getNode(target.parentId), props);\n\t\t\t}\n\t\t}')
+    '\t\t\t\tif (fields.transform) Object.assign(props, convertFigmaTransformProps({ transform: fields.transform, size: fields.size ?? { x: target.width, y: target.height } }));\n' +
+    '\t\t\t\tprops.pluginData = importSourceAbsolute(target, ctx.graph.getNode(target.parentId), props, fields);\n\t\t\t}\n\t\t}')
 }
 
-// Coordinate history also owns source edit marks; a replay must not leave a
-// reverted authored change behind in the source correspondence.
+// Coordinate history owns edit marks and exact anchors. Reconstructing a prior
+// anchor from imported binary32 coordinates would make undo itself an edit.
 export function correctSourcePositionActions(source, replace) {
-  source = `import { sourceAbsoluteRecord } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
+  source = `import { sourceAbsoluteRecord, sourceAbsoluteData } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   source = replace(source, 'const previous = pick(node, Object.keys(nextChanges));',
     'const previous = pick(node, Object.keys(nextChanges));\n' +
-    '\t\tconst positionSourceBefore = sourceAbsoluteRecord(node) && ["x", "y", "horizontalConstraint", "verticalConstraint"].some(field => Object.hasOwn(nextChanges, field)) ? structuredClone(node.source) : null;')
+    '\t\tconst positionSourceBefore = sourceAbsoluteRecord(node) && ["x", "y", "horizontalConstraint", "verticalConstraint"].some(field => Object.hasOwn(nextChanges, field)) ? structuredClone({ source: node.source, position: sourceAbsoluteRecord(node) }) : null;')
   source = replace(source, '\t\tctx.runLayoutForNode(id);\n\t\tctx.undo.push({',
-    '\t\tctx.runLayoutForNode(id);\n\t\tconst positionSourceAfter = positionSourceBefore ? structuredClone(node.source) : null;\n\t\tctx.undo.push({')
+    '\t\tctx.runLayoutForNode(id);\n\t\tconst positionSourceAfter = positionSourceBefore ? structuredClone({ source: node.source, position: sourceAbsoluteRecord(node) }) : null;\n\t\tctx.undo.push({')
   for (const [changes, state] of [['nextChanges', 'positionSourceAfter'], ['previous', 'positionSourceBefore']]) {
     source = replace(source, `\t\t\t\tctx.graph.updateNode(id, ${changes});`,
       `\t\t\t\tctx.graph.updateNode(id, ${changes});\n` +
-      `\t\t\t\tif (${state}) ctx.graph.preserveSourceMetadataDuring(() => ctx.graph.updateNode(id, { source: structuredClone(${state}) }));`)
+      `\t\t\t\tif (${state}) ctx.graph.preserveSourceMetadataDuring(() => ctx.graph.updateNode(id, { source: structuredClone(${state}.source), pluginData: sourceAbsoluteData(ctx.graph.getNode(id), ${state}.position) }));`)
   }
   return source
 }
