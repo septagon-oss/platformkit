@@ -37,7 +37,11 @@ never publish a union of tenant stories or mount these files as public static as
 Controls patch only changed fields through Go's typed validation. Resetting a
 control restores the captured source value. Integers outside JavaScript's safe
 range use exact JSON text controls. The theme toolbar controls the Go preview;
-Storybook's viewport tool changes its available width. Forms and network examples
+Storybook starts at the desktop viewport; its [viewport tool](https://storybook.js.org/docs/essentials/viewport)
+lets you switch to mobile, tablet or a responsive canvas. Admin Sidebar stories
+explain when a narrow viewport hides them. The SkipLink story includes a focus
+button, sample navigation and a working content destination for keyboard testing.
+Forms and network examples
 remain isolated by the preview's HTTP sandbox. Embed private specimen images/fonts
 as data URLs; the sandbox must not depend on cookies for subresource requests.
 Use application journeys for network behavior and accessibility checks inside

@@ -29,7 +29,7 @@ export function render(args, context) {
 
 export default {
   parameters: { layout: 'fullscreen', controls: { expanded: true }, options: { storySort: { method: 'alphabetical' } } },
-  initialGlobals: { theme: 'light' },
+  initialGlobals: { theme: 'light', viewport: { value: 'desktop', isRotated: false } },
   globalTypes: {
     theme: {
       description: 'Go component theme',

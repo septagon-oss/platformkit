@@ -141,7 +141,7 @@ func galleryPreview(book ui.Storybook, example components.Example, mode string) 
 		h.Script(h.Src(assetPrefix+"/js/components.js"), g.Attr("defer")),
 		h.Script(h.Src(assetPrefix+"/js/confirm.js"), g.Attr("defer")),
 		h.Script(h.Src(assetPrefix+"/js/gallery-preview.js"), g.Attr("defer"))),
-		h.Body(h.Main(h.Style("padding:1.5rem"), example.Node)))
+		h.Body(h.Div(h.Style("padding:1.5rem"), galleryPreviewContent(example))))
 	out, err := httpx.Document(h.HTML(attrs...), http.StatusOK)
 	if err != nil {
 		return nil, err
@@ -152,4 +152,37 @@ func galleryPreview(book ui.Storybook, example components.Example, mode string) 
 	out.FrameOptions = "SAMEORIGIN"
 	out.CacheControl = "no-store"
 	return out, nil
+}
+
+// Demonstration context belongs to the preview, outside the exact component
+// invocation captured by ui.Export. Keep the real keyboard and responsive behavior.
+func galleryPreviewContent(example components.Example) g.Node {
+	switch example.ComponentID {
+	case "pk-ui.component.skiplink":
+		return components.Stack(components.StackProps{Align: "start", ComponentProps: components.ComponentProps{
+			Attrs: map[string]string{"data-gallery-skiplink": ""},
+		}}, example.Node,
+			components.Text(components.TextProps{Content: "Skip links appear when focused. Tab into this preview to reveal the link, then press Enter to skip the sample navigation."}),
+			components.Button(components.ButtonProps{Label: "Focus skip link", Variant: "secondary", ComponentProps: components.ComponentProps{
+				Attrs: map[string]string{"data-gallery-focus-skip": ""},
+			}}),
+			h.Nav(g.Attr("aria-label", "Sample navigation"), components.Button(components.ButtonProps{
+				Label: "Sample navigation link", Href: "#content", Variant: "link",
+			})),
+			h.Main(g.Attr("data-gallery-skip-target", ""), g.Attr("tabindex", "-1"),
+				components.Stack(components.StackProps{},
+					components.Heading(components.HeadingProps{Text: "Sample page content", Level: 1, Size: 3}),
+					components.Text(components.TextProps{Content: "The skip link moves keyboard focus here. Press Tab again to reach the field."}),
+					components.Input(components.InputProps{Name: "sample-content", Label: "Sample content field"}),
+				)),
+		)
+	case "pk-ui.component.sidebar":
+		return h.Main(components.Stack(components.StackProps{},
+			components.Text(components.TextProps{Content: "The admin sidebar is hidden at this viewport width. Choose Desktop in Storybook's viewport menu or widen the preview.",
+				ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-gallery-sidebar-hint": "", "hidden": ""}}}),
+			example.Node,
+		))
+	default:
+		return h.Main(example.Node)
+	}
 }
