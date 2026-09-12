@@ -154,7 +154,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Blink-underline-NOTICE', 'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
-    'scaling-correction.mjs', 'source-box.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'underline-correction.mjs', 'variable-binding-correction.mjs', 'variable-binding.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-mode-control-correction.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-box.mjs', 'source-flex.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'underline-correction.mjs', 'variable-binding-correction.mjs', 'variable-binding.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-mode-control-correction.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -1975,7 +1975,7 @@ func main() {
         assert.match(previousRole, /Derived #/)
         if (cycle === 0) {
           await tabTo(variables.getByRole('row').filter({ hasText: inputNameForRole })
-            .getByRole('button', { name: 'Edit color', exact: true }).first())
+            .getByRole('button', { name: `Edit color: ${inputNameForRole}, light`, exact: true }))
           await page.keyboard.press('Enter')
           const red = page.getByRole('spinbutton', { name: 'Red', exact: true })
           await tabTo(red)

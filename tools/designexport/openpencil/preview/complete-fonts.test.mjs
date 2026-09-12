@@ -12,7 +12,7 @@ import { loadFonts } from '../fonts.mjs'
 
 test('complete-font editor preserves the arrow, preferred-family underline, editing and two worker saves', { timeout: 120000 }, async t => {
   const endpoint = new URL(process.env.PLATFORMKIT_OPENPENCIL_URL), hash = bytes => createHash('sha256').update(bytes).digest('hex')
-  assert.ok(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
+  assert.ok(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', 'openpencil-complete-preview'].includes(endpoint.hostname))
   assert.ok(!endpoint.username && !endpoint.password && !endpoint.search && !endpoint.hash && endpoint.pathname === '/')
   const fonts = completePlexFonts(), provenance = await (await fetch(new URL('/platformkit-provenance.json', endpoint))).json()
   for (const name of ['font-correction.mjs', 'fonts.mjs', 'underline-correction.mjs', 'package-lock.json']) {
@@ -36,7 +36,9 @@ test('complete-font editor preserves the arrow, preferred-family underline, edit
     componentPropertyReferences: [{ propertyId: '30:1', field: 'TEXT' }] })
   graph.createInstance(master.id, graph.getPages()[0].id, { name: 'Recovery label' })
   const browser = await chromium.launch({ headless: true, channel: 'chromium', args: ['--enable-automation',
-    '--font-render-hinting=none', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-blink-features=FileSystemAccessLocal'] })
+    '--font-render-hinting=none', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-blink-features=FileSystemAccessLocal',
+    ...(endpoint.hostname === 'openpencil-complete-preview' ? [`--unsafely-treat-insecure-origin-as-secure=${endpoint.origin}`] : []),
+  ] })
   t.after(() => browser.close())
   async function ink(page) {
     const image = ck.MakeImageFromEncoded(await page.locator('[data-test-id="canvas-element"]').screenshot({

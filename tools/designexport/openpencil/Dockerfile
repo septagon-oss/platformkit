@@ -44,6 +44,13 @@ RUN node /adapter/build-editor.mjs /upstream \
     --font 'IBM Plex Sans' 700 normal /adapter/node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-700-normal.woff \
     --font-license /adapter/node_modules/@fontsource/ibm-plex-sans/LICENSE
 
+FROM build-inputs AS complete-preview-build
+# Different bytes for the same font identities require a separate editor profile.
+RUN node /adapter/build-editor.mjs /upstream \
+    --font 'IBM Plex Sans' 400 normal /adapter/node_modules/@ibm/plex-sans/fonts/complete/woff/IBMPlexSans-Regular.woff \
+    --font 'IBM Plex Sans' 600 normal /adapter/node_modules/@ibm/plex-sans/fonts/complete/woff/IBMPlexSans-SemiBold.woff \
+    --font-license /adapter/node_modules/@ibm/plex-sans/LICENSE.txt
+
 FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6 AS runtime
 COPY tools/designexport/openpencil/nginx.conf /etc/nginx/conf.d/default.conf
 USER 101:101
@@ -51,6 +58,9 @@ EXPOSE 8080
 
 FROM runtime AS preview
 COPY --from=preview-build /upstream/dist/ /usr/share/nginx/html/
+
+FROM runtime AS complete-preview
+COPY --from=complete-preview-build /upstream/dist/ /usr/share/nginx/html/
 
 FROM runtime AS editor
 COPY --from=build /upstream/dist/ /usr/share/nginx/html/

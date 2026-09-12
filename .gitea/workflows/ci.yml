@@ -116,6 +116,7 @@ jobs:
         run: |
           docker build -f tools/designexport/openpencil/Dockerfile -t "$IMAGE" .
           docker build --target preview -f tools/designexport/openpencil/Dockerfile -t "$IMAGE-preview" .
+          docker build --target complete-preview -f tools/designexport/openpencil/Dockerfile -t "$IMAGE-complete-preview" .
 
       - name: Verify editing and downloaded FIG saves in the built editor
         id: editor
@@ -139,27 +140,33 @@ jobs:
           curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
           node --import ./register.mjs --test editor/*.test.mjs
 
-      - name: Verify bundled fonts and visible editable preview text
+      - name: Verify both font profiles and visible editable preview text
         id: preview
         working-directory: tools/designexport/openpencil
         env:
-          IMAGE: platformkit-openpencil:ci-${{ github.run_id }}-preview
+          IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
-          PLATFORMKIT_OPENPENCIL_URL: http://openpencil-preview:8080
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias openpencil-preview \
-            --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
-            --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
-            --tmpfs /var/cache/nginx:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 "$IMAGE")
-          echo "container=$container" >> "$GITHUB_OUTPUT"
-          for i in $(seq 1 30); do
-            if curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null; then break; fi
-            sleep 1
+          for profile in latin complete; do
+            case "$profile" in
+              latin) target=preview; test_file=fonts.test.mjs ;;
+              complete) target=complete-preview; test_file=complete-fonts.test.mjs ;;
+            esac
+            export PLATFORMKIT_OPENPENCIL_URL="http://openpencil-$target:8080"
+            container=$(docker run -d --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
+              --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+              --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
+              --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
+              --tmpfs /var/cache/nginx:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 "$IMAGE-$target")
+            echo "$profile=$container" >> "$GITHUB_OUTPUT"
+            for i in $(seq 1 30); do
+              if curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null; then break; fi
+              sleep 1
+            done
+            curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
+            node --import ./register.mjs --test "preview/$test_file"
           done
-          curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
-          node --import ./register.mjs --test preview/*.test.mjs
 
       - name: make e2e
         run: make e2e
@@ -169,13 +176,16 @@ jobs:
         env:
           NATS_CONTAINER: ${{ steps.nats.outputs.container }}
           EDITOR_CONTAINER: ${{ steps.editor.outputs.container }}
-          PREVIEW_CONTAINER: ${{ steps.preview.outputs.container }}
+          PREVIEW_CONTAINER: ${{ steps.preview.outputs.latin }}
+          COMPLETE_PREVIEW_CONTAINER: ${{ steps.preview.outputs.complete }}
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
         run: |
           status=0
           if [ -n "$EDITOR_CONTAINER" ]; then docker rm -f "$EDITOR_CONTAINER" || status=1; fi
           if [ -n "$PREVIEW_CONTAINER" ]; then docker rm -f "$PREVIEW_CONTAINER" || status=1; fi
+          if [ -n "$COMPLETE_PREVIEW_CONTAINER" ]; then docker rm -f "$COMPLETE_PREVIEW_CONTAINER" || status=1; fi
           if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
           if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
           if docker image inspect "$IMAGE-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-preview" || status=1; fi
+          if docker image inspect "$IMAGE-complete-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-complete-preview" || status=1; fi
           exit "$status"

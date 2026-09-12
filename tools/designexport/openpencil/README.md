@@ -613,9 +613,9 @@ both the shaping and FIG-outline paths support them.
 The locked IBM Plex Sans fixtures cover 400/500/600/700 Latin faces: exact bytes,
 native shaping, Chromium face selection and pixels across two saves.
 Native family validation accepts legacy or typographic names from the same verified bytes.
-The [complete-font preview check](preview/complete-fonts.test.mjs) requires a separate
-editor build with `--font` selecting Regular/SemiBold from `@ibm/plex-sans@1.0.0`'s
-`fonts/complete/woff/` and `--font-license` selecting its `LICENSE.txt`; it has no install hook.
+The [complete-font preview check](preview/complete-fonts.test.mjs) uses `--target complete-preview`.
+Build and serve that profile as below; it packages licensed Regular/SemiBold faces from
+`@ibm/plex-sans@1.0.0`. Run `preview/complete-fonts.test.mjs` in its own test process.
 The OpenType correction retains Node outlines. The browser's local-font fallback
 checks binary family/weight/style metadata when legacy display names fail SDK
 lookup; unreadable, mismatched or ambiguous candidates do not select a face.
@@ -706,7 +706,7 @@ HTTP origin as secure. Saves load unopened pages without replay; tree navigation
 no canvas nudges. OS pickers, hardware GPUs and full accessibility remain unverified.
 No document, WebGPU assets or product fonts are packaged; PWA registration is disabled.
 
-The Dockerfile's explicit `--target preview` adds the four licensed IBM Plex Sans
+The Dockerfile's explicit `--target preview` adds the four licensed Latin IBM Plex Sans
 verification faces through the SDK's existing bundled-font loader and picker.
 They load from the same editor origin, including tailnet HTTP, without local-font
 permission or desktop-only providers. The default `editor` target stays generic.
@@ -716,8 +716,8 @@ Shared font validation rejects false identities and duplicate faces; packaging
 refuses replacement of SDK faces. `platformkit-provenance.json` records supplied
 face hashes, asset paths and the included license. This is font delivery, not a
 Collect typography decision or evidence that another profile matches its source.
-Against a disposable `preview` target, run
-`PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18090 node --import ./register.mjs --test preview/*.test.mjs`.
+Add `--target preview` to the build command above; against that disposable image, run
+`PLATFORMKIT_OPENPENCIL_URL=http://127.0.0.1:18090 node --import ./register.mjs --test preview/fonts.test.mjs`.
 This checks automatic font loading without local permission, visible button/field
 glyphs and alignment, exact font digests and two browser worker saves/reopens.
 Pixel comparison waits for every referenced face and excludes the overlapping editor toolbar.
