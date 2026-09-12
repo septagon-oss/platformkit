@@ -16,9 +16,10 @@ test('intrinsic source flex restores failed tree construction and respects nativ
   const root = graph.createNode('FRAME', graph.getPages()[0].id, {
     layoutMode: 'HORIZONTAL', width: 50, primaryAxisSizing: 'FIXED', counterAxisSizing: 'HUG', pluginData: [marker],
   })
-  const row = graph.createNode('FRAME', root.id, {
+  const rowProps = {
     layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG', pluginData: metadata({ cssFlex: flex }),
-  })
+  }
+  const row = graph.createNode('FRAME', root.id, rowProps)
   const text = graph.createNode('TEXT', row.id, { text: 'Hello world', textAutoResize: 'WIDTH_AND_HEIGHT', pluginData: metadata({ textWrap: 'normal-v1' }) })
   const before = structuredClone([...graph.getAllNodes()]), previous = getTextMeasurer()
   try {
@@ -35,6 +36,14 @@ test('intrinsic source flex restores failed tree construction and respects nativ
     computeLayout(graph, root.id)
     assert.equal(row.width, 300)
     assert.equal(text.width, 300, 'authored text grow retains ordinary native fill behavior')
+    const wrapper = graph.createNode('FRAME', root.id, rowProps)
+    graph.reparentNode(row.id, wrapper.id)
+    graph.updateNode(root.id, { width: 400 })
+    for (const [minWidth, maxWidth, width] of [[200, null, 200], [null, 80, 80], [null, 40, 40], [200, 80, 200]]) {
+      graph.updateNode(row.id, { minWidth, maxWidth })
+      computeLayout(graph, root.id)
+      assert.deepEqual([wrapper.width, row.width, text.width], [width, width, Math.max(100, width)])
+    }
     for (const changes of [{ primaryAxisSizing: 'FIXED' }, { layoutGrow: 1 }, { pluginData: metadata({ cssFlex: { ...flex, version: 2 } }) },
       { pluginData: metadata({ cssFlex: { ...flex, shrink: '1' } }) }, { pluginData: [marker, marker] }, { pluginData: [] }]) {
       configureSourceFlex(new Proxy({}, { get() { assert.fail('must retain ordinary native sizing') } }), graph,

@@ -32,6 +32,11 @@ function measureText(measure, node, width) {
   return { width: Math.ceil(result.width * 64) / 64, height: result.height }
 }
 
+function constrainedWidth(node, width) {
+  const padding = node.layoutMode === 'NONE' ? 0 : node.paddingLeft + node.paddingRight
+  return Math.max(padding, node.minWidth ?? 0, Math.min(node.maxWidth ?? Infinity, width))
+}
+
 function intrinsicWidth(graph, node, measure, minimum, visiting = new Set()) {
   if (autoSourceText(node)) return measureText(measure, node, minimum ? 0 : undefined).width
   if (!sourceFlex(graph, node)) return node.width
@@ -39,8 +44,10 @@ function intrinsicWidth(graph, node, measure, minimum, visiting = new Set()) {
   visiting.add(node.id)
   try {
     const children = graph.getChildren(node.id).filter(child => child.visible && child.layoutPositioning !== 'ABSOLUTE')
+    // Child contributions honor their constraints; this item's own flex basis does not.
+    // https://www.w3.org/TR/css-flexbox-1/#intrinsic-item-contributions
     return node.paddingLeft + node.paddingRight + node.itemSpacing * Math.max(0, children.length - 1) +
-      children.reduce((width, child) => width + intrinsicWidth(graph, child, measure, minimum, visiting), 0)
+      children.reduce((width, child) => width + constrainedWidth(child, intrinsicWidth(graph, child, measure, minimum, visiting)), 0)
   } finally { visiting.delete(node.id) }
 }
 
@@ -48,7 +55,7 @@ export function configureSourceFlex(yoga, graph, node, parent, measure) {
   const flex = sourceFlex(graph, node)
   if (!flex || parent.layoutMode !== 'HORIZONTAL' || !sourceCompositionLayout(graph, parent) || node.figmaDerivedLayout) return
   const natural = intrinsicWidth(graph, node, measure, false), padding = node.paddingLeft + node.paddingRight
-  const minimum = flex.autoMinimum ? intrinsicWidth(graph, node, measure, true) : padding
+  const minimum = flex.autoMinimum ? constrainedWidth(node, intrinsicWidth(graph, node, measure, true)) : padding
   if (node.minWidth == null) yoga.setMinWidth(minimum)
   // CSS scales negative free space by the inner flex base size; this Yoga
   // revision uses the outer basis. Padding/borders must not receive that weight.
