@@ -83,19 +83,23 @@ func TestPendingRegistrationsKeepTenantOwnershipAndRollBackTogether(t *testing.T
 	}
 }
 
-func TestConcurrentDeactivationCannotBeUndoneByPasswordOrApproval(t *testing.T) {
-	for _, operation := range []string{"password", "approval"} {
-		t.Run(operation, func(t *testing.T) {
+func TestConcurrentLifecycleChangesCannotBeUndoneByActivation(t *testing.T) {
+	for _, change := range []struct{ operation, field string }{{"password", "status"}, {"approval", "status"}, {"verification", "status"}, {"verification", "email"}} {
+		t.Run(change.operation+"/"+change.field, func(t *testing.T) {
 			admin, conn := dbtest.Schema(t)
 			svc := internal.NewService()
 			var id uuid.UUID
 			if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				u, err := svc.RegisterPending(ctx, tx, contracts.PendingRegistration{Email: "pending@example.com", Password: "correct horse battery staple"})
+				register := svc.RegisterPending
+				if change.operation == "verification" {
+					register = svc.RegisterUnverified
+				}
+				u, err := register(ctx, tx, contracts.PasswordRegistration{Email: "pending@example.com", Password: "correct horse battery staple"})
 				if err != nil {
 					return err
 				}
 				id = u.ID
-				if operation == "password" {
+				if change.operation == "password" {
 					_, err = svc.ApproveRegistration(ctx, tx, id, uuid.New())
 				}
 				return err
@@ -110,8 +114,14 @@ func TestConcurrentDeactivationCannotBeUndoneByPasswordOrApproval(t *testing.T) 
 			defer func() { unlock(); wg.Wait() }()
 			wg.Go(func() {
 				deactivated <- db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-					if _, err := svc.Deactivate(ctx, tx, id); err != nil {
-						return err
+					if change.field == "email" {
+						if err := tx.DB().Model(&contracts.User{}).Where("id = ?", id).Update("email", "changed@example.com").Error; err != nil {
+							return err
+						}
+					} else {
+						if _, err := svc.Deactivate(ctx, tx, id); err != nil {
+							return err
+						}
 					}
 					var pid int
 					if err := tx.DB().Raw("SELECT pg_backend_pid()").Scan(&pid).Error; err != nil {
@@ -136,8 +146,12 @@ func TestConcurrentDeactivationCannotBeUndoneByPasswordOrApproval(t *testing.T) 
 			}
 			wg.Go(func() {
 				attempted <- db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-					if operation == "password" {
+					if change.operation == "password" {
 						return svc.SetPassword(ctx, tx, id, "correct horse battery staple changed")
+					}
+					if change.operation == "verification" {
+						_, err := svc.VerifyEmail(ctx, tx, id, "pending@example.com")
+						return err
 					}
 					_, err := svc.ApproveRegistration(ctx, tx, id, uuid.New())
 					return err
@@ -161,11 +175,15 @@ func TestConcurrentDeactivationCannotBeUndoneByPasswordOrApproval(t *testing.T) 
 				t.Fatal(err)
 			}
 			if err := <-attempted; !errors.Is(err, crud.ErrConflict) {
-				t.Fatalf("%s after concurrent deactivation = %v", operation, err)
+				t.Fatalf("%s after concurrent %s change = %v", change.operation, change.field, err)
 			}
-			var status string
-			if err := admin.QueryRowContext(t.Context(), "SELECT status FROM users WHERE id = $1", id).Scan(&status); err != nil || status != contracts.StatusInactive {
-				t.Fatalf("deactivation was undone: %s, %v", status, err)
+			wantStatus, wantEmail := contracts.StatusInactive, "pending@example.com"
+			if change.field == "email" {
+				wantStatus, wantEmail = contracts.StatusUnverified, "changed@example.com"
+			}
+			var status, email string
+			if err := admin.QueryRowContext(t.Context(), "SELECT status, email FROM users WHERE id = $1", id).Scan(&status, &email); err != nil || status != wantStatus || email != wantEmail {
+				t.Fatalf("lifecycle change was undone: %s, %v", status, err)
 			}
 		})
 	}

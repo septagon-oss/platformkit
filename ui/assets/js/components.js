@@ -73,11 +73,8 @@
     const input = root.querySelector('input');
     const box = root.querySelector('[data-checkbox-box]');
     if (!input || !box) return;
-    const active = input.checked || input.indeterminate;
     const state = input.indeterminate ? 'indeterminate' : input.checked ? 'checked' : 'unchecked';
     root.dataset.state = box.dataset.state = state;
-    for (const name of root.dataset.checkboxActiveClasses.split(' ').filter(Boolean)) box.classList.toggle(name, active);
-    for (const name of root.dataset.checkboxInactiveClasses.split(' ').filter(Boolean)) box.classList.toggle(name, !active);
     root.querySelector('[data-checkbox-checkmark]').toggleAttribute('hidden', !input.checked || input.indeterminate);
     root.querySelector('[data-checkbox-bar]').toggleAttribute('hidden', !input.indeterminate);
   }
@@ -119,10 +116,10 @@
       if (selected) activate(selected, false);
     }
     for (const root of document.querySelectorAll('[data-controller="checkbox"]')) {
-      if (ready.has(root)) continue;
-      ready.add(root);
       const input = root.querySelector('input');
-      if (input) input.indeterminate = root.dataset.checkboxIndeterminateValue === 'true';
+      if (!input || ready.has(input)) continue;
+      ready.add(input);
+      input.indeterminate = root.dataset.checkboxIndeterminateValue === 'true';
       updateCheckbox(root);
     }
     for (const input of document.querySelectorAll('[data-textarea-input]')) updateTextarea(input);
@@ -170,6 +167,16 @@
   document.addEventListener('change', event => {
     const root = event.target.closest('[data-controller="checkbox"]');
     if (root) updateCheckbox(root);
+  });
+  document.addEventListener('reset', event => {
+    queueMicrotask(() => {
+      if (event.defaultPrevented) return;
+      for (const root of event.target.querySelectorAll('[data-controller="checkbox"]')) {
+        const input = root.querySelector('input');
+        if (input) input.indeterminate = root.dataset.checkboxIndeterminateValue === 'true';
+        updateCheckbox(root);
+      }
+    });
   });
   document.addEventListener('htmx:afterSwap', event => {
     init();

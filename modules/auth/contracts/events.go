@@ -39,7 +39,7 @@ const (
 // Events is every event this module emits, for the manifest.
 var Events = []string{
 	EventLoggedIn, EventLoggedOut, EventLoginFailed,
-	EventResetRequested, EventPasswordReset, EventRoleSet, EventRegistrationRequested,
+	EventResetRequested, EventPasswordReset, EventRoleSet, EventRegistrationRequested, EventVerificationRequested,
 }
 
 // ResetRequested is the payload of EventResetRequested: this address asked for

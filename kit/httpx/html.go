@@ -36,6 +36,7 @@ type Page struct {
 	ContentSecurityPolicy string `header:"Content-Security-Policy"`
 	FrameOptions          string `header:"X-Frame-Options"`
 	CacheControl          string `header:"Cache-Control"`
+	ReferrerPolicy        string `header:"Referrer-Policy"`
 	Body                  []byte
 }
 
@@ -71,10 +72,11 @@ func render(node g.Node, status int, document bool) (*Page, error) {
 	return &Page{Status: status, ContentType: htmlContentType, Body: []byte(b.String())}, nil
 }
 
-// redirect sends the caller somewhere else after a write. htmx does not follow
+// Redirect sends the caller somewhere else after a write. htmx does not follow
 // a 303 the way a browser does — it would swap the target page into a fragment
 // — so a request it made is answered with the header it understands instead.
-func redirect(ctx context.Context, to string) *Page {
+// The caller may attach response policy before returning the page.
+func Redirect(ctx context.Context, to string) *Page {
 	if r, ok := RequestFrom(ctx); ok && r.Header.Get("HX-Request") == "true" {
 		return &Page{Status: http.StatusNoContent, HXRedirect: to}
 	}
@@ -150,9 +152,8 @@ func HTML[I any](api *API, op huma.Operation, auth Auth, handler func(context.Co
 	}
 	Register(api, op, auth, func(ctx context.Context, in *I) (*Page, error) {
 		out, err := handler(ctx, in)
-		var to SeeOther
-		if errors.As(err, &to) {
-			return redirect(ctx, string(to)), nil
+		if to, ok := errors.AsType[SeeOther](err); ok {
+			return Redirect(ctx, string(to)), nil
 		}
 		return out, err
 	})

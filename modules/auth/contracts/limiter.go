@@ -238,6 +238,15 @@ func (l *Limiter) Requested(ctx context.Context, ip string) bool {
 	return l.within(ctx, forgotKey(ip), ResetRequests)
 }
 
+// VerificationMail reserves one resend per tenant/mailbox before any lookup.
+// A denied reservation receives the same public acknowledgment as an accepted
+// one. Unlike login's availability policy, a failed mail limiter fails closed.
+func (l *Limiter) VerificationMail(ctx context.Context, email string) (bool, error) {
+	key := "auth/verification-mail/" + emailHash(email)
+	allowed, _, err := l.store.Allow(ctx, key, 1, VerificationResendInterval)
+	return allowed, err
+}
+
 // Redeemed counts one reset-token redemption from an address and reports
 // whether it is within ResetRedemptions for this window. It counts the address
 // presenting the token and never the token, for the reason Requested counts the

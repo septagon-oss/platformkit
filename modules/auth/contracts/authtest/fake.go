@@ -141,7 +141,7 @@ func (f *Fake) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string) e
 		return nil
 	case err != nil:
 		return err
-	case user.Status == usercontracts.StatusInactive:
+	case user.Status != usercontracts.StatusInvited && user.Status != usercontracts.StatusActive:
 		return nil
 	}
 	return f.offer(ctx, tx, user)

@@ -50,6 +50,26 @@ overwrite credentials or roles. Credentials never enter the event outbox.
 This mode shares the recovery request limit and needs no email delivery. A
 client still composes its terms guidance, pending-success page and review UI.
 
+Password-first mailbox confirmation is a third, exclusive opt-in through
+`auth.Deps.EmailRegistration`, with the user registrar and trusted initial roles.
+Its registration form accepts the same credentials and consent, stores an
+`unverified` account and queues a credential-free event. Auth's worker delivers a
+24-hour link at `/auth/verify-email`; the application composes that page, signup,
+resend, legal guidance and sign-in. The shared [form controller](ui/assets/js/session.js)
+supports `register-password`, `verify-email` and `resend-verification` forms.
+Opening a link does not consume it, and confirmation creates no session.
+
+`POST /api/v1/auth/verify-email` consumes an auth-owned digest and calls
+`VerifyEmail` in one tenant transaction. It checks the current canonical email,
+password-bearing unverified state and expiry after waiting for concurrent work;
+activation preserves the chosen password and roles. Password setup, recovery and
+operator approval cannot satisfy this gate. `POST /api/v1/auth/resend-verification`
+shares the IP request budget and reserves one request per tenant/mailbox per
+minute before lookup, with the same acknowledgment for unknown and cooled
+addresses. Recipient-counter failures refuse delivery. Rotation and consumption
+share a per-user lock; a new delivered link replaces its predecessor. Transport
+errors are sanitized before the existing outbox retry mechanism retains them.
+
 A module has three parts. `contracts/` defines its entities, public service,
 events, permissions and conformance suite. `internal/` contains its
 implementation. `module.go` declares the constructor and manifest.
@@ -417,6 +437,17 @@ The browser uses vendored htmx and the controllers under
 [ui/assets/js](ui/assets/js/). There is no framework or CSS compilation step.
 The theme follows the operating system until the user explicitly chooses one.
 That choice is stored locally and restored before first paint.
+
+Account pages compose shared Form, Input, Button and Alert components. The existing
+`session.js` accepts `data-login-form` or `data-auth-form="register|forgot|reset"`;
+forms supply an API action, local `data-next`, and hidden `data-auth-error` (alert)
+and `data-auth-message` (status) feedback. Registration sends email/displayName
+for emailed password setup; it does not replace password-first verification.
+Reset forms use a password named `new` and `page.View.Sensitive` for response
+`no-store` and `no-referrer`; the controller removes the query token from browser
+history and retains it only in memory. Incoming URL log redaction is separate.
+Failed writes retain input without replay. Shared sign-out feedback remains
+visible outside account menus; branding and page composition belong downstream.
 
 ## Keep delivery boundaries explicit
 

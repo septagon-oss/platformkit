@@ -43,7 +43,10 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// with the prior CSS owner, all declarations and non-CSS source fields agree.
 	// Alert alignment centers its icon, text and dismiss action; only the seven
 	// Alert examples change from that baseline, with identical generated CSS.
-	if legacy.SHA256 != "c1dd0db8bc435dd57e03a09fc8587ca1dc3f27e8df3d1269b1a236aa608046e7" {
+	// Native checkbox state adds checked/focus/forced-colors CSS and two size
+	// utilities. Only four checkbox examples change HTML for sizing and label wrap.
+	// Hidden overrides are scoped to components so consumer print styles still work.
+	if legacy.SHA256 != "7a0c08a5cc4925be44da4b7add9766bfa2bf9578d37a537144738e6631a35d73" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

@@ -77,6 +77,11 @@ type View struct {
 	Title  string
 	Status int
 	Bare   bool
+	// Sensitive prevents caching and sends no referrer on this document's
+	// outgoing requests, including assets loaded before scripts run. Use it
+	// for pages carrying password links or other private URL credentials.
+	// It does not redact the incoming URL from application or proxy logs.
+	Sensitive bool
 	// Language is the BCP 47 tag of the rendered copy, such as "pt-PT".
 	// Empty uses Chrome.Attrs["lang"], or English when no default is set.
 	// The application selects and translates the content; this field only
@@ -118,7 +123,20 @@ func Document(c Chrome, r Request, v View, body g.Node) g.Node {
 			attrs = append(attrs, g.Attr(k, c.Attrs[k]))
 		}
 	}
-	return h.HTML(append(attrs, head(c, r, v), h.Body(body, requestNotices(c)))...)
+	return h.HTML(append(attrs, head(c, r, v), h.Body(body, requestNotices(c), sessionNotice(c)))...)
+}
+
+// The notice stays outside account menus, which may close during sign-out.
+func sessionNotice(c Chrome) g.Node {
+	if !slices.Contains(c.Scripts, "session.js") {
+		return nil
+	}
+	return components.Alert(components.AlertProps{
+		ComponentProps: components.ComponentProps{Hidden: true, Attrs: map[string]string{
+			"data-session-error": "", "lang": "en", "tabindex": "-1",
+		}},
+		Tone: "danger", Bordered: true,
+	})
 }
 
 // Notices are source-rendered components, not HTML rebuilt by a controller.
