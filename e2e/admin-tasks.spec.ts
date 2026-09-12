@@ -80,6 +80,40 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
   await expect(page.getByLabel('Title')).toBeFocused();
 });
 
+test('a refused generated edit retains command-owned values for the retry', async ({ page }) => {
+  const created = await page.request.post('/api/v1/task/tasks', {
+    data: { title: 'Keep the assigned technician during a refused edit' },
+  });
+  expect(created.status()).toBe(201);
+  const task = await created.json();
+  const identity = await page.request.get('/api/v1/auth/me');
+  expect(identity.status()).toBe(200);
+  const assigneeId = (await identity.json()).userId;
+  const taskPath = `/api/v1/task/tasks/${task.id}`;
+  expect((await page.request.post(`${taskPath}/assign`, { data: { assigneeId } })).status()).toBe(200);
+
+  await page.goto(`/admin/task/tasks/${task.id}/edit`);
+  const assignee = page.locator('[name="assigneeId"]');
+  await expect(assignee).toHaveJSProperty('readOnly', true);
+  await expect(assignee).toHaveValue(assigneeId);
+  // Whitespace passes the browser's required control but fails the entity's rule.
+  await page.getByLabel('Title').fill('   ');
+  const rejected = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `/admin/task/tasks/${task.id}` && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Save' }).click();
+  expect((await rejected).status()).toBe(422);
+  await expect(page.getByRole('alert').first()).toContainText('a task needs a title');
+  await expect(assignee).toHaveValue(assigneeId);
+  await expect(assignee).toHaveJSProperty('readOnly', true);
+
+  await page.getByLabel('Title').fill('Corrected title keeps its assignment');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page).toHaveURL(new RegExp(`/admin/task/tasks/${task.id}$`));
+  const saved = await page.request.get(taskPath);
+  expect(saved.status()).toBe(200);
+  expect(await saved.json()).toMatchObject({ title: 'Corrected title keeps its assignment', assigneeId });
+});
+
 test('the typed gallery retains native controls at desktop and narrow widths', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
