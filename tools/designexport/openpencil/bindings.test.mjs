@@ -30,13 +30,13 @@ function sourceMetadata(node) {
   return JSON.parse(entries[0].value)
 }
 
-function variantFixture(property = 'tone') {
+function variantFixture(property = 'ariaLabel', values) {
   const canonical = structuredClone(snapshot), source = canonical.examples[0]
   source.props[property] = property === 'label' ? 'Save' : 'neutral'
   const input = fixture(), { graph } = input
   graph.deleteNode(input.master.id)
   const owner = graph.createNode('COMPONENT_SET', graph.getPages()[0].id, { name: 'Source choices' })
-  const variants = [source.props[property], ' padded,a ', ''].map((value, index) => {
+  const variants = (values ?? [source.props[property], ' padded,a ', '']).map((value, index) => {
     const projected = structuredClone(canonical)
     projected.sha256 = String(index + 1).repeat(64)
     projected.examples[0].props[property] = value
@@ -77,7 +77,7 @@ function nestedVariantFixture() {
 
 test('nested variant context retains byte-exact ancestors and siblings while child projection lengths change', () => {
   const data = nestedVariantFixture(), before = structuredClone(data.canonical)
-  const definitions = bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.path, 'tone', data.variants)
+  const definitions = bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.path, 'ariaLabel', data.variants)
   assert.equal(definitions.at(-1).type, 'VARIANT')
   assert.deepEqual(sourceMetadata(data.owner).definitionPath, data.path)
   assert.deepEqual(data.canonical, before)
@@ -110,7 +110,7 @@ test('nested families refuse changed ancestors, siblings, slots, byte spans and 
     const data = nestedVariantFixture()
     mutate(data.variants[1].snapshot.examples[0], data)
     const before = structuredClone([...data.graph.nodes]), inputs = structuredClone(data.variants.map(item => item.snapshot))
-    assert.throws(() => bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.path, 'tone', data.variants), /Source component binding:/)
+    assert.throws(() => bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.path, 'ariaLabel', data.variants), /Source component binding:/)
     assert.deepEqual([...data.graph.nodes], before)
     assert.deepEqual(data.variants.map(item => item.snapshot), inputs)
   }
@@ -118,7 +118,7 @@ test('nested families refuse changed ancestors, siblings, slots, byte spans and 
 
 test('source variant families expose one typed property without replacing shared text ownership', async () => {
   const { graph, canonical, source, owner, variants } = variantFixture()
-  const definitions = bindings.bindComponentVariants(graph, owner, canonical, source.id, 'tone', variants)
+  const definitions = bindings.bindComponentVariants(graph, owner, canonical, source.id, 'ariaLabel', variants)
   assert.deepEqual(definitions.map(item => item.type), ['TEXT', 'VARIANT'])
   assert.equal(graph.getChildren(owner.id).length, 3)
   assert.ok(variants.every(({ master }) => master.componentPropertyDefinitions.length === 0))
@@ -126,12 +126,12 @@ test('source variant families expose one typed property without replacing shared
   associateSourceInstance(graph, instance, canonical, [source.id])
   const actions = createEditor({ graph })
   try {
-    const label = definitions.find(item => item.type === 'TEXT'), tone = definitions.find(item => item.type === 'VARIANT')
+    const label = definitions.find(item => item.type === 'TEXT'), choice = definitions.find(item => item.type === 'VARIANT')
     actions.setInstanceComponentProperty(instance.id, label.id, 'Independent label')
-    actions.setInstanceComponentProperty(instance.id, tone.id, ' padded,a ')
-    const expected = { baseSHA256: canonical.sha256, path: [source.id], props: { tone: ' padded,a ', label: 'Independent label' } }
+    actions.setInstanceComponentProperty(instance.id, choice.id, ' padded,a ')
+    const expected = { baseSHA256: canonical.sha256, path: [source.id], props: { ariaLabel: ' padded,a ', label: 'Independent label' } }
     assert.deepEqual(extractSourceProps(graph, instance, canonical).proposal, expected)
-    actions.renamePropertyDefinition(owner.id, tone.id, 'Renamed native control')
+    actions.renamePropertyDefinition(owner.id, choice.id, 'Renamed native control')
     assert.deepEqual(extractSourceProps(graph, instance, canonical).proposal, expected)
     let reopened = graph
     for (let cycle = 0; cycle < 2; cycle++) {
@@ -141,9 +141,9 @@ test('source variant families expose one typed property without replacing shared
     }
     actions.replaceGraph(reopened)
     const placed = [...reopened.getAllNodes()].find(node => node.name === 'Source placement')
-    actions.setInstanceComponentProperty(placed.id, tone.id, '')
+    actions.setInstanceComponentProperty(placed.id, choice.id, '')
     assert.deepEqual(extractSourceProps(reopened, placed, canonical).proposal,
-      { ...expected, props: { tone: '', label: 'Independent label' } }, 'empty is an exact source choice, not a missing assignment')
+      { ...expected, props: { ariaLabel: '', label: 'Independent label' } }, 'empty is an exact source choice, not a missing assignment')
   } finally { actions.replaceGraph(new SceneGraph()) }
 })
 
@@ -174,6 +174,39 @@ test('a source text field can become a finite variant without retaining a compet
   } finally { actions.replaceGraph(new SceneGraph()) }
 })
 
+test('source enum variants admit exact declared choices without allowing free text or forged states', () => {
+  const data = variantFixture('tone', ['neutral', 'info', '']), { graph, owner, canonical, source, variants } = data
+  assert.equal(isSourceTextProperty(source, 'tone'), false)
+  const definitions = bindings.bindComponentVariants(graph, owner, canonical, source.id, 'tone', variants)
+  const choice = definitions.find(item => item.type === 'VARIANT')
+  assert.deepEqual(choice.variantOptions, ['neutral', 'info', ''])
+  const instance = graph.createInstance(variants[1].master.id, owner.parentId)
+  associateSourceInstance(graph, instance, canonical, [source.id])
+  assert.deepEqual(extractSourceProps(graph, instance, canonical).proposal,
+    { baseSHA256: canonical.sha256, path: [source.id], props: { tone: 'info' } })
+  // Forge mutually consistent native correspondence; the source enum still owns admission.
+  const invalid = ' info ', master = variants[1].master
+  graph.updateNode(master.id, { componentPropertyValues: { tone: invalid }, variantPropSpecs: [{ propDefId: choice.id, value: invalid }] })
+  changeMetadata(master, origin => { origin.props.tone = invalid })
+  changeMetadata(owner, origin => { origin.variantBindings[0].projections[1].value = invalid })
+  graph.updateNode(owner.id, { componentPropertyDefinitions: definitions.map(item => item.id === choice.id ?
+    { ...item, variantOptions: ['neutral', invalid, ''] } : item) })
+  const before = structuredClone([...graph.nodes]), result = extractSourceProps(graph, instance, canonical)
+  assert.equal(result.status, 'invalid')
+  assert.equal(result.proposal, undefined)
+  assert.deepEqual([...graph.nodes], before)
+  for (const choices of [[], ['neutral', 'neutral'], ['neutral', 1], ['neutral', 'info']]) {
+    const refused = variantFixture('tone', ['neutral', 'info', ''])
+    for (const projected of [refused.canonical, ...refused.variants.map(item => item.snapshot)]) {
+      projected.examples[0].schema.properties.tone.enum = structuredClone(choices)
+    }
+    const unchanged = structuredClone([...refused.graph.nodes])
+    assert.throws(() => bindings.bindComponentVariants(refused.graph, refused.owner, refused.canonical,
+      refused.source.id, 'tone', refused.variants), /Source component binding:/)
+    assert.deepEqual([...refused.graph.nodes], unchanged)
+  }
+})
+
 test('source variant construction refuses inconsistent projections and bindings before native writes', () => {
   for (const mutate of [
     data => { data.variants.shift() },
@@ -191,7 +224,7 @@ test('source variant construction refuses inconsistent projections and bindings 
     const data = variantFixture()
     mutate(data)
     const before = structuredClone([...data.graph.nodes]), sourceBefore = structuredClone(data.canonical)
-    assert.throws(() => bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.source.id, 'tone', data.variants), /Source component binding:/)
+    assert.throws(() => bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.source.id, 'ariaLabel', data.variants), /Source component binding:/)
     assert.deepEqual([...data.graph.nodes], before)
     assert.deepEqual(data.canonical, sourceBefore)
   }
@@ -209,7 +242,7 @@ test('private instances do not own or conceal a containing family text binding',
       })
     }
     const before = structuredClone([...graph.nodes])
-    const bind = () => bindings.bindComponentVariants(graph, owner, canonical, source.id, 'tone', variants)
+    const bind = () => bindings.bindComponentVariants(graph, owner, canonical, source.id, 'ariaLabel', variants)
     if (forged) {
       assert.throws(bind, /one direct component boundary/)
       assert.deepEqual([...graph.nodes], before)
@@ -228,7 +261,7 @@ test('source variant extraction rejects stale, missing and conflicting correspon
     data => { changeMetadata(data.owner, origin => { origin.variantBindings[0].projections[1].sha256 = 'f'.repeat(64) }) },
   ]) {
     const data = variantFixture()
-    data.definitions = bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.source.id, 'tone', data.variants)
+    data.definitions = bindings.bindComponentVariants(data.graph, data.owner, data.canonical, data.source.id, 'ariaLabel', data.variants)
     data.instance = data.graph.createInstance(data.variants[0].master.id, data.owner.parentId)
     associateSourceInstance(data.graph, data.instance, data.canonical, [data.source.id])
     mutate(data)

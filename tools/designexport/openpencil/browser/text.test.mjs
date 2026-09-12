@@ -109,7 +109,16 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
     'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 79)
+  assert.equal(refused.length, 84)
+  const sectionRefusals = {
+    'pk-ui.component.grid/responsive': 'Native component: typed, nonopaque source composition required',
+    'pk-ui.component.heading/display': 'Native component: composition text requires one supplied actual face',
+    'pk-ui.component.hero/default': 'Native component: typed, nonopaque source composition required',
+    'pk-ui.component.section-header/default': 'Native component: inline composition cannot flatten a source component or non-inline child',
+    'pk-ui.component.section/default': 'Native component: typed, nonopaque source composition required',
+  }
+  assert.deepEqual(Object.fromEntries(refused.filter(item => Object.hasOwn(sectionRefusals, item.id))
+    .map(({ id, reason }) => [id, reason])), sectionRefusals)
   assert.deepEqual(captureRefused, ['pk-ui.component.video/default', 'pk-ui.component.video/disabled'])
   assert.equal(browser.contexts().length, 0)
 })

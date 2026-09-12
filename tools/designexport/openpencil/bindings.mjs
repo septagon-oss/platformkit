@@ -27,6 +27,19 @@ export function sourceTextValue(example, property) {
   return Object.hasOwn(example.props, property) ? example.props[property] : example.schema.properties[property].default
 }
 
+// Finite variants may expose declared enum choices, while free text bindings
+// keep their unconstrained-string contract. No other schema constraints change.
+export function sourceVariantValue(example, property) {
+  const schema = example?.schema?.properties?.[property]
+  if (!plainObject(schema) || !Object.hasOwn(schema, 'enum')) return sourceTextValue(example, property)
+  const { enum: choices, ...textSchema } = schema
+  if (!Array.isArray(choices) || choices.length === 0 || choices.some(value => typeof value !== 'string') ||
+    new Set(choices).size !== choices.length) return undefined
+  const value = sourceTextValue({ ...example, schema: { ...example.schema,
+    properties: { ...example.schema.properties, [property]: textSchema } } }, property)
+  return choices.includes(value) ? value : undefined
+}
+
 // Mask only the selected invocation. Ancestor HTML is compared as the exact
 // byte ranges around its declared children, so changed child lengths cannot
 // hide unrelated markup, sibling, slot or source-contract changes.
@@ -170,7 +183,7 @@ export function bindComponentVariants(graph, owner, snapshot, exampleId, propert
   const path = Array.isArray(exampleId) ? exampleId : [exampleId]
   const baselineContext = sourceVariantContext(snapshot, path), example = baselineContext.example
   requireBinding(example.propsEditable === true && plainObject(example.schema) &&
-    Object.hasOwn(example.schema, 'type') && example.schema.type === 'object' && isSourceTextProperty(example, property),
+    Object.hasOwn(example.schema, 'type') && example.schema.type === 'object' && typeof sourceVariantValue(example, property) === 'string',
     'one editable source string property required')
   requireBinding(Array.isArray(variants) && variants.length > 1 &&
     new Set(variants.map(item => item?.master?.id)).size === variants.length, 'distinct native source variants required')
@@ -186,7 +199,7 @@ export function bindComponentVariants(graph, owner, snapshot, exampleId, propert
       candidate.children?.length === 0 && candidate.opaqueSlots?.length === 0 && example.children?.length === 0 && example.opaqueSlots?.length === 0 &&
       plainObject(candidate.props) && isDeepStrictEqual(without(candidate.props, [property]), without(example.props, [property])),
     'variant projection must change only one property of the same nonopaque leaf interface')
-    const value = sourceTextValue(candidate, property)
+    const value = sourceVariantValue(candidate, property)
     requireBinding(typeof value === 'string', 'variant projection requires an exact source string value')
     const records = master.pluginData.filter(item => item.pluginId === 'platformkit' && item.key === 'platformkit.source')
     requireBinding(records.length === 1, 'one constructed source projection record required')
@@ -223,7 +236,7 @@ export function bindComponentVariants(graph, owner, snapshot, exampleId, propert
     return { master, origin, targets, value }
   })
   requireBinding(new Set(states.map(item => item.value)).size === states.length, 'duplicate source variant value')
-  const baseline = states.find(item => item.value === sourceTextValue(example, property))
+  const baseline = states.find(item => item.value === sourceVariantValue(example, property))
   requireBinding(baseline?.origin.sha256 === snapshot.sha256, 'the exact baseline source projection must be included')
   const shared = baseline.targets.filter(item => item.property !== property)
   for (const state of states) {

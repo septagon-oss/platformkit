@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import { isSourceTextProperty, sourceTextValue } from './bindings.mjs'
+import { isSourceTextProperty, sourceTextValue, sourceVariantValue } from './bindings.mjs'
 import { chain, sourceChildren, ancestryOverrides } from './exporter-correction.mjs'
 
 const sourceEntry = item => item?.pluginId === 'platformkit' && item.key === 'platformkit.source'
@@ -120,10 +120,10 @@ function readProps(graph, instance, snapshot, example) {
     'invalid-binding', 'One set-owned source variant binding for a nonopaque leaf required')
     const binding = origin.variantBindings[0]
     requireSource(object(binding) && Object.keys(binding).length === 3 && typeof binding.id === 'string' && binding.id !== '' &&
-      isSourceTextProperty(example, binding.property) && Array.isArray(binding.projections) && binding.projections.length > 1,
+      typeof sourceVariantValue(example, binding.property) === 'string' && Array.isArray(binding.projections) && binding.projections.length > 1,
     'invalid-binding', 'Malformed source variant correspondence')
     const definitions = owner.componentPropertyDefinitions.filter(item => item.id === binding.id), definition = definitions[0]
-    const values = binding.projections.map(item => item?.value), baseline = sourceTextValue(example, binding.property)
+    const values = binding.projections.map(item => item?.value), baseline = sourceVariantValue(example, binding.property)
     requireSource(definitions.length === 1 && definition.type === 'VARIANT' && definition.defaultValue === baseline &&
       isDeepStrictEqual(definition.variantOptions, values) && values.every(value => typeof value === 'string') &&
       new Set(values).size === values.length && values.includes(baseline) &&
@@ -138,7 +138,7 @@ function readProps(graph, instance, snapshot, example) {
         Object.keys(variant.componentPropertyValues).length === 1 && !observed.has(state) && projection && object(projection) &&
         Object.keys(projection).length === 2 && /^[a-f0-9]{64}$/.test(projection.sha256) && record.sha256 === projection.sha256 &&
         record.schema === snapshot.schema && record.exampleId === example.id && record.componentId === example.componentId &&
-        object(props) && sourceTextValue({ ...example, props }, binding.property) === state && isDeepStrictEqual(without(props), without(example.props)) &&
+        object(props) && sourceVariantValue({ ...example, props }, binding.property) === state && isDeepStrictEqual(without(props), without(example.props)) &&
         record.bindingVersion === 1 && isDeepStrictEqual(record.textBindings, origin.textBindings) &&
         isDeepStrictEqual(record.slotBindings, origin.slotBindings) && isDeepStrictEqual(record.definitionPath, origin.definitionPath) &&
         isDeepStrictEqual(variant.variantPropSpecs, [{ propDefId: binding.id, value: state }]),

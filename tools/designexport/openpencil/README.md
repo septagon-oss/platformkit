@@ -253,8 +253,8 @@ This is a provider consumer boundary, not a second source token map. It does not
 infer references from equal pixel values or migrate the component exporter to v2.
 Typography, contextual units, grid tracks, motion and shared-style bindings remain
 outside this qualification, as do raw graph writes and arbitrary event callbacks.
-The existing enum-contract migration and complete generated-library gates are
-separate unfinished work; these focused checks do not establish production readiness.
+Complete generated-library gates remain unfinished; these focused checks do not
+establish production readiness.
 
 [Collection mode edits](variable-modes.mjs) run the pinned graph operations on a
 detached owner, validating the resulting numeric and colour dependencies before
@@ -490,7 +490,7 @@ Obtain candidate snapshots through `--proposal`, then use the existing capture a
 materialization path. The set owns shared text definitions and one native variant
 definition; children retain their projected source revisions. Exact values, including
 empty strings, come from source properties, never visible labels or layer names.
-This currently supports one unconstrained string on a nonopaque leaf component.
+This supports one unconstrained string or declared string enum on a nonopaque leaf.
 Go Button tone and size projections verify shared-copy sizing, colour, history and
 two saves, including Form → FormActions → Button in both themes at 320/1280px.
 Ancestor HTML, sibling contracts and source byte spans must remain exact around the
