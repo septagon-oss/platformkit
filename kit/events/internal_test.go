@@ -100,14 +100,16 @@ func TestAPoisonEventIsDeadLetteredAndStopsComingBack(t *testing.T) {
 }
 
 // TestJetStreamStopsRedeliveringAPoisonEvent is the same policy on the other
-// transport, against the NATS `make up` starts. The handler cap and delayed
-// NAKs bound work while terminal recording remains recoverable.
+// transport, against the NATS `make up` starts. The handler cap and consumer
+// backoff bound work while terminal recording remains recoverable.
 func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	url := os.Getenv("PLATFORMKIT_TEST_NATS_URL")
 	if url == "" {
 		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
 	}
 	fast(t)
+	// Unequal rungs catch a second retry delay layered onto the broker timer.
+	backoff = []time.Duration{50 * time.Millisecond, 200 * time.Millisecond, 500 * time.Millisecond, time.Second}
 	admin, conn := dbtest.Schema(t)
 	ctx, stop := context.WithCancel(t.Context())
 	defer stop()
@@ -124,11 +126,13 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
 	var mu sync.Mutex
 	attempts := 0
+	var deliveries []time.Time
 	err = Consume(ctx, conn, transport, []Subscription{{
 		Module: "ledger", Name: name,
 		Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
 			mu.Lock()
 			attempts++
+			deliveries = append(deliveries, time.Now())
 			mu.Unlock()
 			return errors.New("this will never work")
 		},
@@ -166,6 +170,14 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	if attempts != maxDeliveries {
 		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", attempts, maxDeliveries)
 	}
+	for i := 1; i < len(deliveries); i++ {
+		gap, want := deliveries[i].Sub(deliveries[i-1]), backoff[min(i, len(backoff))-1]
+		t.Logf("delivery %d gap=%s configured=%s", i+1, gap, want)
+		if gap < want/2 || gap > want+250*time.Millisecond {
+			t.Errorf("delivery %d gap=%s, want one %s backoff plus scheduling tolerance", i+1, gap, want)
+		}
+	}
+
 }
 
 // TestADriftedConsumerIsReconciled, against the NATS `make up` starts.

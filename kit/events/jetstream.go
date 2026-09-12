@@ -22,9 +22,8 @@ const (
 )
 
 // JetStream is the transport for a fleet: NATS JetStream, one stream, durable
-// consumers, explicit acknowledgement. A handler that returns an error nacks,
-// and JetStream redelivers; a handler that succeeds acks, and the event is that
-// consumer's history.
+// consumers, explicit acknowledgement. Failed deliveries remain unacknowledged
+// for the consumer backoff to redeliver; a successful handler acknowledges.
 //
 // The returned Transport is an io.Closer, so kit/app releases the connection
 // when the worker stops.
@@ -105,7 +104,7 @@ func (j *jetstream) Publish(ctx context.Context, ev Event) error {
 func ackWait() time.Duration { return backoff[0] }
 
 // Handler attempts are capped in Subscribe. Unlimited broker redelivery keeps
-// terminal-record failures recoverable; delayed NAKs prevent a retry storm.
+// terminal-record failures recoverable; consumer backoff bounds the retry rate.
 // wanted is the consumer this code asks for. It is one value because the
 // subscription below and reconcile have to ask for the same thing: two lists of
 // the same settings is how a consumer comes to differ from the code that
@@ -289,7 +288,6 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Si
 		meta, err := msg.Metadata()
 		if err != nil {
 			slog.ErrorContext(ctx, "events: delivery metadata unavailable", "error", err)
-			_ = msg.NakWithDelay(backoff[len(backoff)-1])
 			return
 		}
 		// Broker retries remain available after the handler cap, including across
@@ -313,8 +311,9 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Si
 		}
 		wait := backoff[min(meta.NumDelivered, uint64(len(backoff)))-1]
 		slog.WarnContext(ctx, "events: delivery unfinished, retrying",
-			"event", ev.Name, "id", ev.ID, "in", wait, "error", err)
-		_ = msg.NakWithDelay(wait)
+			"event", ev.Name, "id", ev.ID, "backoff", wait, "error", err)
+		// Leave the message pending: the consumer already owns its retry timer.
+		// Combining BackOff with NakWithDelay compounds later rungs on NATS 2.14.6.
 	}, wanted(durable, name)...)
 	if err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
