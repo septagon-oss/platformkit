@@ -1,4 +1,5 @@
-package flags
+// Package ofrep connects flags to an explicitly configured OFREP endpoint.
+package ofrep
 
 import (
 	"context"
@@ -11,14 +12,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/open-feature/go-sdk-contrib/providers/ofrep"
-	"github.com/open-feature/go-sdk/openfeature"
+	ofrepsdk "github.com/open-feature/go-sdk-contrib/providers/ofrep"
+	sdk "github.com/open-feature/go-sdk/openfeature"
+	"github.com/septagon-oss/platformkit/kit/flags"
+	"github.com/septagon-oss/platformkit/kit/flags/providers/openfeature"
 )
 
-// OFREPConfig selects an existing OFREP service. TLS uses system roots or the
+// Config selects an existing OFREP service. TLS uses system roots or the
 // supplied CA file. Insecure permits HTTP on an explicit loopback endpoint only.
-type OFREPConfig struct {
-	Scope           Scope
+type Config struct {
+	Scope           flags.Scope
 	URL             string
 	CertificatePath string
 	BearerToken     string
@@ -26,24 +29,24 @@ type OFREPConfig struct {
 	Timeout         time.Duration
 }
 
-// NewOFREP validates local configuration without contacting the service.
+// New validates local configuration without contacting the service.
 // Construction is not readiness: the first evaluation establishes reachability.
 // Redirects and ambient proxy/provider configuration are not used.
-func NewOFREP(ctx context.Context, config OFREPConfig) (*OpenFeature, error) {
+func New(ctx context.Context, config Config) (*openfeature.Evaluator, error) {
 	endpoint, err := url.Parse(config.URL)
-	if err != nil || !validScope(config.Scope) || config.Timeout <= 0 || endpoint.Hostname() == "" ||
+	if err != nil || !config.Scope.Valid() || config.Timeout <= 0 || endpoint.Hostname() == "" ||
 		endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || strings.Contains(config.URL, "#") || endpoint.Opaque != "" {
-		return nil, ErrInvalid
+		return nil, flags.ErrInvalid
 	}
 	if config.Insecure {
 		if endpoint.Scheme != "http" || config.CertificatePath != "" || (endpoint.Hostname() != "localhost" && !net.ParseIP(endpoint.Hostname()).IsLoopback()) {
-			return nil, ErrInvalid
+			return nil, flags.ErrInvalid
 		}
 	} else if endpoint.Scheme != "https" {
-		return nil, ErrInvalid
+		return nil, flags.ErrInvalid
 	}
 	if strings.ContainsFunc(config.BearerToken, func(c rune) bool { return c < 33 || c > 126 }) {
-		return nil, ErrInvalid
+		return nil, flags.ErrInvalid
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -52,11 +55,11 @@ func NewOFREP(ctx context.Context, config OFREPConfig) (*OpenFeature, error) {
 	if config.CertificatePath != "" {
 		certificate, err := os.ReadFile(config.CertificatePath)
 		if err != nil {
-			return nil, ErrInvalid
+			return nil, flags.ErrInvalid
 		}
 		roots = x509.NewCertPool()
 		if !roots.AppendCertsFromPEM(certificate) {
-			return nil, ErrInvalid
+			return nil, flags.ErrInvalid
 		}
 	}
 	transport := &http.Transport{
@@ -66,12 +69,12 @@ func NewOFREP(ctx context.Context, config OFREPConfig) (*OpenFeature, error) {
 	}
 	client := &http.Client{Transport: transport, Timeout: config.Timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	options := []ofrep.Option{ofrep.WithClient(client)}
+	options := []ofrepsdk.Option{ofrepsdk.WithClient(client)}
 	if config.BearerToken != "" {
-		options = append(options, ofrep.WithBearerToken(config.BearerToken))
+		options = append(options, ofrepsdk.WithBearerToken(config.BearerToken))
 	}
-	provider := &ofrepProvider{Provider: ofrep.NewProvider(endpoint.String(), options...), transport: transport}
-	evaluator, err := NewOpenFeature(ctx, config.Scope, provider, config.Timeout)
+	provider := &ofrepProvider{Provider: ofrepsdk.NewProvider(endpoint.String(), options...), transport: transport}
+	evaluator, err := openfeature.New(ctx, config.Scope, provider, config.Timeout)
 	if err != nil {
 		transport.CloseIdleConnections()
 	}
@@ -79,21 +82,21 @@ func NewOFREP(ctx context.Context, config OFREPConfig) (*OpenFeature, error) {
 }
 
 type ofrepProvider struct {
-	*ofrep.Provider
+	*ofrepsdk.Provider
 	transport *http.Transport
 }
 
-func (p *ofrepProvider) Init(openfeature.EvaluationContext) error { return nil }
-func (p *ofrepProvider) Shutdown()                                { p.transport.CloseIdleConnections() }
+func (p *ofrepProvider) Init(sdk.EvaluationContext) error { return nil }
+func (p *ofrepProvider) Shutdown()                        { p.transport.CloseIdleConnections() }
 
-func (p *ofrepProvider) BooleanEvaluation(ctx context.Context, key string, fallback bool, subject openfeature.FlattenedContext) openfeature.BoolResolutionDetail {
+func (p *ofrepProvider) BooleanEvaluation(ctx context.Context, key string, fallback bool, subject sdk.FlattenedContext) sdk.BoolResolutionDetail {
 	// The upstream provider joins the key into a URL path without escaping it.
 	// Restrict this adapter's keys to a single, unambiguous path segment.
 	if key == "" || key == "." || key == ".." || strings.ContainsFunc(key, func(c rune) bool {
 		return !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.')
 	}) {
-		return openfeature.BoolResolutionDetail{Value: fallback, ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
-			ResolutionError: openfeature.NewInvalidContextResolutionError("invalid flag key"),
+		return sdk.BoolResolutionDetail{Value: fallback, ProviderResolutionDetail: sdk.ProviderResolutionDetail{
+			ResolutionError: sdk.NewInvalidContextResolutionError("invalid flag key"),
 		}}
 	}
 	return p.Provider.BooleanEvaluation(ctx, key, fallback, subject)

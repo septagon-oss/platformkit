@@ -4,7 +4,14 @@
 Permissions, tenant isolation and subscription entitlements still apply when a
 flag evaluates to true. This package does not administer flags or deploy flagd.
 
-Compose `NewOFREP` with an application, installation and environment scope,
+The contract imports only the standard library and UUID values. Supply your own
+`Evaluator`, as in the [executable example](flags_test.go), or explicitly select
+the [OpenFeature adapter](providers/openfeature/README.md) or
+[OFREP adapter](providers/ofrep/README.md). SDK dependencies belong to those
+packages. `Scope.Valid` checks that each targeting scope part is nonblank UTF-8;
+it preserves the identity supplied by the installation.
+
+Compose `ofrep.New` with an application, installation and environment scope,
 an existing service URL, an explicit timeout and optional bearer token. TLS
 verifies the server against system roots or the supplied CA file. HTTP requires
 an explicitly configured loopback endpoint for local development. Construction
@@ -32,11 +39,35 @@ is no PlatformKit rule engine, cache or event stream.
 
 [Flagd supports OFREP](https://flagd.dev/reference/flagd-ofrep/) on port 8016 by
 default and currently labels that service experimental. An installation must
-configure and verify its endpoint separately. `NewOpenFeature` also accepts
+configure and verify its endpoint separately. `openfeature.New` also accepts
 other fresh providers at the composition boundary. Those providers must honor
 evaluation contexts; arbitrary blocking provider code cannot be preempted.
 
-Run `go test -race ./kit/flags` for scope separation, concurrent evaluation,
+## Migrate constructor imports
+
+The SDK-backed constructors have moved out of this contract package. Update
+application composition when adopting this release; interface consumers retain
+the same `flags` types and error identities.
+
+| Previous API | New API |
+| --- | --- |
+| `flags.NewOpenFeature` | `openfeature.New` from `kit/flags/providers/openfeature` |
+| `*flags.OpenFeature` | `*openfeature.Evaluator` from that adapter |
+| `flags.NewOFREP` | `ofrep.New` from `kit/flags/providers/ofrep` |
+| `flags.OFREPConfig` | `ofrep.Config` from that adapter |
+
+Both constructors still return an evaluator with `Boolean` and `Close`; OFREP
+uses the same OpenFeature adapter for evaluation and lifecycle. Constructor
+signatures otherwise retain their arguments. Root-package forwarding functions
+are intentionally absent: importing a provider back into its contract would
+create a cycle and require SDKs for every custom evaluator. Existing installations
+need no schema or flag-definition migration for this source API change.
+
+Run `go test -race ./kit/flags/...` for scope separation, concurrent evaluation,
 fallback, cancellation, lifecycle, TLS wire requests and configuration refusal.
 These use local fixtures; deployed service readiness, administration UI and
 downstream application adoption require separate verification.
+
+Run `go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./kit/flags`
+to check contract independence: only `kit/flags` and `github.com/google/uuid`
+should appear. No provider is activated merely by importing the contract.

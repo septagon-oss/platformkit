@@ -2,289 +2,37 @@ package crud
 
 import (
 	"reflect"
-	"strings"
-	"sync"
-	"time"
-	"unicode"
 
-	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/entity"
 )
 
-// Schema is what an entity looks like to something that did not compile against
-// it: the generated screens of stage E4, and the sort and filter checks here.
-type Schema struct {
-	Module string  `json:"module"`
-	Entity string  `json:"entity"`
-	Path   string  `json:"path"`
-	Fields []Field `json:"fields"`
-}
+// Schema describes the fields and resource identity of an entity.
+type Schema = entity.Schema
 
-// FieldType is the closed set of shapes a screen knows how to render and a
-// query knows how to compare. A field of any other Go type is left out of the
-// schema entirely, so it is neither rendered nor sortable nor filterable — it
-// is still stored, and still in the JSON, because that is encoding/json's
-// business and not this package's.
-type FieldType string
+// FieldType is the shape a field exposes to queries and presentation.
+type FieldType = entity.FieldType
 
 const (
-	TypeString FieldType = "string"
-	TypeText   FieldType = "text"
-	TypeInt    FieldType = "int"
-	TypeFloat  FieldType = "float"
-	TypeBool   FieldType = "bool"
-	TypeTime   FieldType = "time"
-	TypeUUID   FieldType = "uuid"
-	// TypeList is a slice of one of the above, which Field.Elem names. A user's
-	// roles is the case that made it necessary: without it the field was in no
-	// schema, so it rendered nowhere, no filter could refuse it and Immutable
-	// could not name it — a PATCH could not reach it either, but only because
-	// the field did not exist, which is the right answer for the wrong reason.
-	TypeList FieldType = "list"
+	TypeString = entity.TypeString
+	TypeText   = entity.TypeText
+	TypeInt    = entity.TypeInt
+	TypeFloat  = entity.TypeFloat
+	TypeBool   = entity.TypeBool
+	TypeTime   = entity.TypeTime
+	TypeUUID   = entity.TypeUUID
+	TypeList   = entity.TypeList
 )
 
-// Field is one column, as the API and a screen see it.
-type Field struct {
-	// Name is the JSON name, which is the only name a caller ever uses.
-	Name string `json:"name"`
-	// Column is the database column, and the only string this package ever
-	// interpolates into SQL. It comes from the struct, never from a request.
-	Column string    `json:"-"`
-	Type   FieldType `json:"type"`
-	// Elem is what a TypeList holds, and empty for everything else.
-	Elem FieldType `json:"elem,omitempty"`
-	// Widget overrides the control a screen would pick from Type: `ui:"widget:select"`.
-	Widget string `json:"widget,omitempty"`
-	// Enum is the closed set of values, from `enum:"open,done"`.
-	Enum []string `json:"enum,omitempty"`
-	// Required comes from `validate:"required"`.
-	Required bool `json:"required,omitempty"`
-	// ReadOnly marks the fields Base contributes: a caller may read them and
-	// may not write them, so they are skipped by the PATCH merge.
-	ReadOnly bool `json:"readOnly,omitempty"`
-	// HideList keeps a field off the list screen, from `ui:"hide:list"`.
-	HideList bool `json:"hideList,omitempty"`
-	// Default is the value the entity declares for a field a caller may leave
-	// out, from `default:"open"` — the same tag huma reads, so the form and the
-	// API document agree about what happens when nothing is sent. A form
-	// preselects it, and a select that has one needs no "Choose a …" placeholder
-	// because there is no unchosen state to name.
-	Default string `json:"default,omitempty"`
-	// Doc is what the field is for, from `doc:"Lifecycle state"` — again huma's
-	// own tag, so the sentence in the OpenAPI document is the sentence under the
-	// control. It is a description and not a label: the entities here write
-	// "Short summary of the task", which reads under an input and not on it.
-	Doc string `json:"doc,omitempty"`
+// Field is the existing entity metadata, shared with kit/entity consumers.
+type Field = entity.Field
 
-	// Index locates the field in the struct. It is exported for one caller,
-	// kit/rest's PATCH merge, which decodes a body into the field this names;
-	// json:"-" because a screen has no use for it and a caller none at all.
-	Index []int `json:"-"`
-}
+// Fields derives caller-owned metadata for the pointer entity type.
+func Fields[T Entity]() []Field { return entity.Fields[T]() }
 
-// schemas caches one derivation per entity type. Reflection over a struct is
-// cheap but it is not free, and a list request would otherwise pay for it
-// twice.
-var schemas sync.Map // reflect.Type -> []Field
+// FieldsOf derives caller-owned metadata for a struct or pointer to one.
+func FieldsOf(t reflect.Type) []Field { return entity.FieldsOf(t) }
 
-// Fields derives the schema of T once and remembers it. A Spec's Schema is
-// these fields plus the names the Spec gives the resource.
-func Fields[T Entity]() []Field {
-	t := reflect.TypeOf(blank[T]()).Elem()
-	if cached, ok := schemas.Load(t); ok {
-		return cached.([]Field)
-	}
-	fields := derive(t)
-	schemas.Store(t, fields)
-	return fields
-}
-
-// FieldsOf is Fields for a struct that is not an entity, cached the same way.
-// A command's argument is why it exists: assigning a task takes {assigneeId},
-// a shape a screen renders and Fields cannot reach, being generic over Entity.
-// A type that is not a struct has none, which is the honest answer for a
-// command that takes no argument: rest.Command spells that struct{}.
-func FieldsOf(t reflect.Type) []Field {
-	for t != nil && t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	if t == nil || t.Kind() != reflect.Struct {
-		return nil
-	}
-	if cached, ok := schemas.Load(t); ok {
-		return cached.([]Field)
-	}
-	fields := derive(t)
-	schemas.Store(t, fields)
-	return fields
-}
-
-var (
-	baseType = reflect.TypeOf(Base{})
-	uuidType = reflect.TypeOf(uuid.UUID{})
-	timeType = reflect.TypeOf(time.Time{})
-)
-
-// derive reads a struct into fields, following embedded structs so that Base's
-// own columns appear, marked read-only.
-func derive(t reflect.Type) []Field {
-	var out []Field
-	for _, sf := range reflect.VisibleFields(t) {
-		if sf.Anonymous || !sf.IsExported() {
-			continue
-		}
-		name, ok := jsonName(sf)
-		if !ok {
-			continue
-		}
-		kind, elem, ok := fieldType(sf)
-		if !ok {
-			continue
-		}
-		f := Field{
-			Name:     name,
-			Column:   column(sf),
-			Type:     kind,
-			Elem:     elem,
-			Required: has(sf.Tag.Get("validate"), "required"),
-			ReadOnly: declaredBy(t, sf) == baseType,
-			Default:  sf.Tag.Get("default"),
-			Doc:      sf.Tag.Get("doc"),
-			Index:    sf.Index,
-		}
-		if enum := sf.Tag.Get("enum"); enum != "" {
-			f.Enum = strings.Split(enum, ",")
-		}
-		// Either separator: a struct tag reads as one string, and the entities
-		// in this repository were written with both. `ui:"widget:textarea;hide:list"`
-		// used to parse as one directive whose value was "textarea;hide:list",
-		// so the widget matched nothing and the field appeared on every list
-		// screen it had asked to be kept off. There is no third spelling.
-		for _, part := range strings.FieldsFunc(sf.Tag.Get("ui"), func(r rune) bool { return r == ',' || r == ';' }) {
-			switch key, value, _ := strings.Cut(part, ":"); key {
-			case "widget":
-				f.Widget = value
-			case "hide":
-				f.HideList = f.HideList || value == "list"
-			}
-		}
-		out = append(out, f)
-	}
-	return out
-}
-
-// declaredBy is the struct a promoted field was declared in, which is how a
-// field of Base is told from a field of the entity.
-func declaredBy(t reflect.Type, sf reflect.StructField) reflect.Type {
-	if len(sf.Index) == 1 {
-		return t
-	}
-	return t.FieldByIndex(sf.Index[:len(sf.Index)-1]).Type
-}
-
-// jsonName is the name the API speaks. A field tagged json:"-" is not part of
-// the entity as far as anything outside the kernel is concerned.
-func jsonName(sf reflect.StructField) (string, bool) {
-	tag, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
-	switch tag {
-	case "-":
-		return "", false
-	case "":
-		return sf.Name, true
-	default:
-		return tag, true
-	}
-}
-
-// fieldType maps a Go type to the closed set, reporting false for a type no
-// screen and no filter can handle. A slice of one of the scalars is TypeList
-// and the second return is what it holds.
-func fieldType(sf reflect.StructField) (kind, elem FieldType, ok bool) {
-	t := sf.Type
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	// A slice is a list of whatever it holds, and []byte is not one of those: a
-	// blob is a single value, and rendering it as a list of small numbers is
-	// worse than leaving it out. uuid.UUID is an array and not a slice, so it
-	// never reaches here.
-	if t.Kind() == reflect.Slice && t.Elem().Kind() != reflect.Uint8 {
-		elem, ok = scalar(t.Elem(), sf.Tag)
-		return TypeList, elem, ok
-	}
-	kind, ok = scalar(t, sf.Tag)
-	return kind, "", ok
-}
-
-// scalar is the shape of a single value. The tag is a parameter because a text
-// column is a paragraph and a varchar is a line, which is the whole difference
-// a form cares about, so the storage decision that is already in the gorm tag
-// is the one that decides the widget.
-func scalar(t reflect.Type, tag reflect.StructTag) (FieldType, bool) {
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	switch t {
-	case uuidType:
-		return TypeUUID, true
-	case timeType:
-		return TypeTime, true
-	}
-	switch t.Kind() {
-	case reflect.Bool:
-		return TypeBool, true
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return TypeInt, true
-	case reflect.Float32, reflect.Float64:
-		return TypeFloat, true
-	case reflect.String:
-		if has(tag.Get("gorm"), "type:text") {
-			return TypeText, true
-		}
-		return TypeString, true
-	default:
-		return "", false
-	}
-}
-
-// column is the database column: the gorm tag's own name when it names one, and
-// otherwise the snake_case GORM would have derived.
-func column(sf reflect.StructField) string {
-	for _, part := range strings.Split(sf.Tag.Get("gorm"), ";") {
-		if name, ok := strings.CutPrefix(strings.TrimSpace(part), "column:"); ok {
-			return name
-		}
-	}
-	return snake(sf.Name)
-}
-
-func has(tag, want string) bool {
-	for _, part := range strings.Split(tag, ";") {
-		for _, item := range strings.Split(part, ",") {
-			if strings.TrimSpace(item) == want {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// snake is GORM's default naming: a word boundary is a lower-to-upper change,
-// or the last capital of a run of them. "TenantID" is tenant_id, "DueAt" is
-// due_at, "ID" is id.
-func snake(s string) string {
-	rs := []rune(s)
-	var b strings.Builder
-	for i, r := range rs {
-		if !unicode.IsUpper(r) {
-			b.WriteRune(r)
-			continue
-		}
-		endsRun := i+1 < len(rs) && !unicode.IsUpper(rs[i+1])
-		if i > 0 && (!unicode.IsUpper(rs[i-1]) || endsRun) {
-			b.WriteByte('_')
-		}
-		b.WriteRune(unicode.ToLower(r))
-	}
-	return b.String()
+// FieldNamed finds a field by its JSON name in the caller's metadata.
+func FieldNamed(fields []Field, name string) (Field, bool) {
+	return entity.FieldNamed(fields, name)
 }

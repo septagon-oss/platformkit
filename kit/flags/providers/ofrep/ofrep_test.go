@@ -1,4 +1,4 @@
-package flags
+package ofrep_test
 
 import (
 	"context"
@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/flags"
+	"github.com/septagon-oss/platformkit/kit/flags/providers/ofrep"
 )
 
 func TestOFREPTLSWireAndCleanup(t *testing.T) {
@@ -32,7 +34,7 @@ func TestOFREPTLSWireAndCleanup(t *testing.T) {
 		_, _ = io.WriteString(w, `{"value":true}`)
 	}))
 	defer target.Close()
-	subject := Subject{TenantID: uuid.New(), TargetingKey: "actor-one"}
+	subject := flags.Subject{TenantID: uuid.New(), TargetingKey: "actor-one"}
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		var request struct{ Context map[string]any }
@@ -70,9 +72,9 @@ func TestOFREPTLSWireAndCleanup(t *testing.T) {
 	}
 	server.StartTLS()
 	defer server.Close()
-	config := OFREPConfig{Scope: Scope{"tasks", "customer-one", "test"}, URL: server.URL + "/prefix",
+	config := ofrep.Config{Scope: flags.Scope{Application: "tasks", Installation: "customer-one", Environment: "test"}, URL: server.URL + "/prefix",
 		CertificatePath: writeOFREPTestCA(t, server.Certificate().Raw), BearerToken: "test-token", Timeout: time.Second}
-	evaluator, err := NewOFREP(t.Context(), config)
+	evaluator, err := ofrep.New(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,8 +89,8 @@ func TestOFREPTLSWireAndCleanup(t *testing.T) {
 		err      error
 	}{
 		{0, false, true, nil}, {1, true, false, nil},
-		{2, false, false, ErrTypeMismatch}, {3, true, true, ErrUnavailable},
-		{4, true, true, ErrNotFound}, {5, false, false, ErrUnavailable},
+		{2, false, false, flags.ErrTypeMismatch}, {3, true, true, flags.ErrUnavailable},
+		{4, true, true, flags.ErrNotFound}, {5, false, false, flags.ErrUnavailable},
 	} {
 		mode.Store(tc.mode)
 		decision, err := evaluator.Boolean(t.Context(), "editor.v2-beta_1", subject, tc.fallback)
@@ -104,7 +106,7 @@ func TestOFREPTLSWireAndCleanup(t *testing.T) {
 	}
 	for _, key := range []string{".", "..", "../other", "a/b", "a%2fb", "a?query", "a#fragment", `a\b`, "é"} {
 		decision, err := evaluator.Boolean(t.Context(), key, subject, true)
-		if !errors.Is(err, ErrInvalid) || !decision.Value || !decision.Defaulted {
+		if !errors.Is(err, flags.ErrInvalid) || !decision.Value || !decision.Defaulted {
 			t.Fatalf("unsafe path key accepted: %+v %v", decision, err)
 		}
 	}
@@ -120,7 +122,7 @@ func TestOFREPTLSWireAndCleanup(t *testing.T) {
 		t.Fatal("Close retained an idle TLS connection")
 	}
 	// A second composition owns its connection and honors caller cancellation.
-	evaluator, err = NewOFREP(t.Context(), config)
+	evaluator, err = ofrep.New(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,42 +145,42 @@ func TestOFREPConfigurationAndLazyTrust(t *testing.T) {
 	server.Config.ErrorLog = log.New(io.Discard, "", 0)
 	server.StartTLS()
 	defer server.Close()
-	base := OFREPConfig{Scope: Scope{"app", "one", "test"}, URL: server.URL, Timeout: time.Second}
+	base := ofrep.Config{Scope: flags.Scope{Application: "app", Installation: "one", Environment: "test"}, URL: server.URL, Timeout: time.Second}
 	malformed := writeOFREPTestCA(t, []byte("not a certificate"))
-	for _, change := range []func(*OFREPConfig){
-		func(c *OFREPConfig) { c.URL = "http://service.internal"; c.Insecure = true },
-		func(c *OFREPConfig) { c.URL = "http://127.0.0.1" },
-		func(c *OFREPConfig) { c.URL = "https://user:password@service.internal" },
-		func(c *OFREPConfig) { c.URL += "?query" },
-		func(c *OFREPConfig) { c.URL += "?" },
-		func(c *OFREPConfig) { c.URL += "#fragment" },
-		func(c *OFREPConfig) { c.URL += "#" },
-		func(c *OFREPConfig) { c.URL = "/relative" },
-		func(c *OFREPConfig) { c.Scope.Installation = "" },
-		func(c *OFREPConfig) { c.Timeout = 0 },
-		func(c *OFREPConfig) { c.BearerToken = "bad\nheader" },
-		func(c *OFREPConfig) { c.CertificatePath = t.TempDir() + "/missing.pem" },
-		func(c *OFREPConfig) { c.CertificatePath = malformed },
+	for _, change := range []func(*ofrep.Config){
+		func(c *ofrep.Config) { c.URL = "http://service.internal"; c.Insecure = true },
+		func(c *ofrep.Config) { c.URL = "http://127.0.0.1" },
+		func(c *ofrep.Config) { c.URL = "https://user:password@service.internal" },
+		func(c *ofrep.Config) { c.URL += "?query" },
+		func(c *ofrep.Config) { c.URL += "?" },
+		func(c *ofrep.Config) { c.URL += "#fragment" },
+		func(c *ofrep.Config) { c.URL += "#" },
+		func(c *ofrep.Config) { c.URL = "/relative" },
+		func(c *ofrep.Config) { c.Scope.Installation = "" },
+		func(c *ofrep.Config) { c.Timeout = 0 },
+		func(c *ofrep.Config) { c.BearerToken = "bad\nheader" },
+		func(c *ofrep.Config) { c.CertificatePath = t.TempDir() + "/missing.pem" },
+		func(c *ofrep.Config) { c.CertificatePath = malformed },
 	} {
 		config := base
 		change(&config)
-		if evaluator, err := NewOFREP(t.Context(), config); evaluator != nil || !errors.Is(err, ErrInvalid) {
+		if evaluator, err := ofrep.New(t.Context(), config); evaluator != nil || !errors.Is(err, flags.ErrInvalid) {
 			t.Fatalf("invalid configuration accepted: %v %v", evaluator, err)
 		}
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if evaluator, err := NewOFREP(ctx, base); evaluator != nil || !errors.Is(err, context.Canceled) {
+	if evaluator, err := ofrep.New(ctx, base); evaluator != nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled construction accepted: %v %v", evaluator, err)
 	}
 	base.CertificatePath = writeOFREPTestCA(t, unrelatedOFREPTestCA(t))
-	evaluator, err := NewOFREP(t.Context(), base)
+	evaluator, err := ofrep.New(t.Context(), base)
 	if err != nil {
 		t.Fatalf("lazy construction attempted a handshake: %v", err)
 	}
 	defer evaluator.Close(context.Background())
-	decision, err := evaluator.Boolean(t.Context(), "editor", Subject{uuid.New(), "actor"}, true)
-	if !errors.Is(err, ErrUnavailable) || !decision.Value || !decision.Defaulted || calls.Load() != 0 {
+	decision, err := evaluator.Boolean(t.Context(), "editor", flags.Subject{TenantID: uuid.New(), TargetingKey: "actor"}, true)
+	if !errors.Is(err, flags.ErrUnavailable) || !decision.Value || !decision.Defaulted || calls.Load() != 0 {
 		t.Fatalf("untrusted TLS server accepted: %+v %v calls=%d", decision, err, calls.Load())
 	}
 }
@@ -192,12 +194,12 @@ func TestOFREPExplicitLoopbackIgnoresAmbientProviderConfiguration(t *testing.T) 
 		_, _ = io.WriteString(w, `{"value":true,"reason":"STATIC"}`)
 	}))
 	defer server.Close()
-	evaluator, err := NewOFREP(t.Context(), OFREPConfig{Scope: Scope{"app", "one", "test"}, URL: server.URL, Insecure: true, Timeout: time.Second})
+	evaluator, err := ofrep.New(t.Context(), ofrep.Config{Scope: flags.Scope{Application: "app", Installation: "one", Environment: "test"}, URL: server.URL, Insecure: true, Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer evaluator.Close(context.Background())
-	if decision, err := evaluator.Boolean(t.Context(), "editor", Subject{uuid.New(), "actor"}, false); err != nil || !decision.Value {
+	if decision, err := evaluator.Boolean(t.Context(), "editor", flags.Subject{TenantID: uuid.New(), TargetingKey: "actor"}, false); err != nil || !decision.Value {
 		t.Fatalf("explicit loopback configuration was overridden: %+v %v", decision, err)
 	}
 }

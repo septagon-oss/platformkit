@@ -1,5 +1,6 @@
-// Package crud is the five operations every tenant-owned resource needs, and
-// the schema a generated screen reads.
+// Package crud is the five operations every tenant-owned resource needs.
+// Entity definitions and schemas are owned by kit/entity, with aliases here
+// for existing callers.
 //
 // A module writes a struct with an embedded Base and gets read, list, create,
 // update and delete, each refusing what row-level security would refuse anyway.
@@ -7,13 +8,10 @@
 //
 // # This half links no web server
 //
-// A module's contracts/ package imports this one, because the entity is
-// declared there, and a contracts/ package is what every consumer compiles
-// against. So nothing about HTTP is here: the five routes, the PATCH merge and
-// the OpenAPI declarations are kit/rest, which imports this package. The
-// division is the entity and its storage against the entity's projection onto a
-// protocol, and it is what keeps huma, chi and NATS out of the build graph of
-// anything that only wanted to name a Task.
+// Existing module contracts may import this package for Base. A caller that
+// needs only entity definitions or field metadata can instead import kit/entity
+// without linking a database driver. HTTP routes, PATCH merging and OpenAPI
+// declarations belong to kit/rest, which imports this storage adapter.
 //
 // # Instantiate with the pointer type
 //
@@ -44,6 +42,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 )
 
 // The three failures a caller distinguishes. Everything else is an outage and
@@ -69,41 +68,15 @@ type UniqueConflict struct {
 func (e *UniqueConflict) Error() string { return ErrConflict.Error() + ": " + e.Constraint }
 func (e *UniqueConflict) Unwrap() error { return ErrConflict }
 
-// Base is embedded by every tenant-owned entity. The kernel sets TenantID from
-// the transaction's scope; a module never assigns it, and never sees it in
-// JSON either, because a tenant that a caller could send is a tenant a caller
-// could change.
-//
-// The three fields a caller may read are marked read-only for OpenAPI and not
-// required in a request body: the server sets all of them, so a create that had
-// to send an id would be a create that could choose one.
-type Base struct {
-	ID        uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id" required:"false" readOnly:"true"`
-	TenantID  uuid.UUID  `gorm:"type:uuid;not null" json:"-"`
-	CreatedAt time.Time  `json:"createdAt" required:"false" readOnly:"true"`
-	UpdatedAt time.Time  `json:"updatedAt" required:"false" readOnly:"true"`
-	DeletedAt *time.Time `gorm:"index" json:"-"`
-}
+// Base is the entity's identity, tenancy and lifecycle metadata.
+// It is an alias so existing entities remain usable by kit/entity consumers.
+type Base = entity.Base
 
-// base is how the kernel reaches the embedded fields of any entity. It is
-// unexported, so the Entity interface is closed to types that embed Base: a
-// struct cannot claim to be an entity without carrying the tenant column that
-// makes it one.
-func (b *Base) base() *Base { return b }
+// Entity is a tenant-owned row with the embedded Base.
+type Entity = entity.Entity
 
-// Entity is a tenant-owned row: a table name and an embedded Base.
-type Entity interface {
-	TableName() string
-	base() *Base
-}
-
-// Validator is the optional check an entity makes of itself before it is
-// written. It takes a context and no transaction on purpose: a validation that
-// queries is either a database constraint (which answers with ErrConflict) or a
-// Spec hook, not a rule hidden inside a setter.
-type Validator interface {
-	Validate(ctx context.Context) error
-}
+// Validator is the optional check run before a storage write.
+type Validator = entity.Validator
 
 // Query is a list request: a page, an order and a set of equality filters.
 // Sort is "field" or "-field" and every name is checked against the entity's
@@ -201,7 +174,7 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 	if isNil(e) {
 		return fmt.Errorf("%w: there is nothing to create", ErrInvalid)
 	}
-	b := e.base()
+	b := entity.BaseOf(e)
 	if b.ID == uuid.Nil {
 		b.ID = uuid.New()
 	}
@@ -242,7 +215,7 @@ func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T, columns ...
 	if isNil(e) {
 		return fmt.Errorf("%w: there is nothing to update", ErrInvalid)
 	}
-	b := e.base()
+	b := entity.BaseOf(e)
 	if b.ID == uuid.Nil {
 		return ErrNotFound
 	}
@@ -294,11 +267,10 @@ func Delete[T Entity](tx db.Tx[db.Tenant], id uuid.UUID, soft bool) error {
 	return nil
 }
 
-// Reset clears the four fields the server owns, whatever a caller sent for them.
+// Reset clears the metadata the server owns, whatever a caller sent for it.
 // A create route calls it on the body it decoded, so a caller can neither choose
-// an id nor backdate a row; base() is unexported, which is what makes this the
-// only door.
-func Reset[T Entity](e T) { *e.base() = Base{} }
+// an id nor backdate a row; the Entity constraint retains the embedded Base.
+func Reset[T Entity](e T) { *entity.BaseOf(e) = Base{} }
 
 // blank is a new zero entity. T is a pointer type, so new(T) would be a pointer
 // to a pointer; this is the one place the package needs reflection to say
@@ -377,18 +349,6 @@ func comparable(fields []Field, name, what string) (Field, error) {
 		return Field{}, fmt.Errorf("%w: %s is a list, which is not something to %s on", ErrInvalid, name, what)
 	}
 	return f, nil
-}
-
-// FieldNamed is the field with this JSON name, which is the only name a caller
-// ever uses. It is exported for kit/rest, whose PATCH merge and query parsing
-// resolve a caller's field names through the same schema the SQL here does.
-func FieldNamed(fields []Field, name string) (Field, bool) {
-	for _, f := range fields {
-		if f.Name == name {
-			return f, true
-		}
-	}
-	return Field{}, false
 }
 
 // Classify names the two database failures a caller can do something about: a

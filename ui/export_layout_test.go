@@ -46,7 +46,9 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// Native checkbox state adds checked/focus/forced-colors CSS and two size
 	// utilities. Only four checkbox examples change HTML for sizing and label wrap.
 	// Hidden overrides are scoped to components so consumer print styles still work.
-	if legacy.SHA256 != "7a0c08a5cc4925be44da4b7add9766bfa2bf9578d37a537144738e6631a35d73" {
+	// Checkbox validation adds one optional error property to each of its four
+	// source schemas. Gallery HTML, CSS, props, tokens and icons remain identical.
+	if legacy.SHA256 != "790d5819c8b55d1608c59697464f68234a2b7ba0ac8c2921b152b88f502d7bcf" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

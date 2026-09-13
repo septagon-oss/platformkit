@@ -989,8 +989,16 @@ func Checkbox(p CheckboxProps) g.Node {
 	if p.Label == "" && p.Name != "" {
 		box = append(box, g.Attr("aria-label", p.Name))
 	}
+	describedBy := make([]string, 0, 2)
+	if p.Error != "" {
+		box = append(box, g.Attr("aria-invalid", "true"))
+		describedBy = append(describedBy, id+"-error")
+	}
 	if p.HelpText != "" {
-		box = append(box, g.Attr("aria-describedby", id+"-help"))
+		describedBy = append(describedBy, id+"-help")
+	}
+	if len(describedBy) > 0 {
+		box = append(box, g.Attr("aria-describedby", strings.Join(describedBy, " ")))
 	}
 
 	indicatorClass := clCheckboxIndicator.Merge(clCheckboxIndicatorIdle)
@@ -1033,14 +1041,17 @@ func Checkbox(p CheckboxProps) g.Node {
 		root = append(root, h.Span(h.Class(clCheckboxLabel.Compile()), g.Text(p.Label)))
 	}
 	control := h.Label(root...)
-	if p.HelpText == "" {
+	if p.HelpText == "" && p.Error == "" {
 		return control
 	}
-	return h.Div(
-		h.Class(clFieldWrap.Compile()),
-		control,
-		h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)),
-	)
+	field := []g.Node{h.Class(clFieldWrap.Compile()), control}
+	if p.Error != "" {
+		field = append(field, h.P(h.ID(id+"-error"), h.Class(clFieldErr.Compile()), h.Role("alert"), g.Text(p.Error)))
+	}
+	if p.HelpText != "" {
+		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
+	}
+	return h.Div(field...)
 }
 
 // Label renders LabelProps; required fields carry a visible marker the

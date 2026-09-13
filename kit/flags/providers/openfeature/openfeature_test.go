@@ -1,4 +1,4 @@
-package flags
+package openfeature_test
 
 import (
 	"context"
@@ -12,22 +12,24 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/open-feature/go-sdk/openfeature"
+	sdk "github.com/open-feature/go-sdk/openfeature"
+	"github.com/septagon-oss/platformkit/kit/flags"
+	"github.com/septagon-oss/platformkit/kit/flags/providers/openfeature"
 )
 
 type testProvider struct {
-	openfeature.NoopProvider
-	evaluate func(context.Context, string, bool, openfeature.FlattenedContext) openfeature.BoolResolutionDetail
+	sdk.NoopProvider
+	evaluate func(context.Context, string, bool, sdk.FlattenedContext) sdk.BoolResolutionDetail
 	initErr  error
 	stopped  atomic.Int32
 }
 
-func (p *testProvider) BooleanEvaluation(ctx context.Context, key string, fallback bool, subject openfeature.FlattenedContext) openfeature.BoolResolutionDetail {
+func (p *testProvider) BooleanEvaluation(ctx context.Context, key string, fallback bool, subject sdk.FlattenedContext) sdk.BoolResolutionDetail {
 	return p.evaluate(ctx, key, fallback, subject)
 }
-func (p *testProvider) Init(openfeature.EvaluationContext) error { return p.initErr }
-func (p *testProvider) Shutdown()                                { p.stopped.Add(1) }
-func (p *testProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) error {
+func (p *testProvider) Init(sdk.EvaluationContext) error { return p.initErr }
+func (p *testProvider) Shutdown()                        { p.stopped.Add(1) }
+func (p *testProvider) InitWithContext(ctx context.Context, _ sdk.EvaluationContext) error {
 	return errors.Join(ctx.Err(), p.initErr)
 }
 func (p *testProvider) ShutdownWithContext(context.Context) error {
@@ -35,9 +37,9 @@ func (p *testProvider) ShutdownWithContext(context.Context) error {
 	return nil
 }
 
-func testEvaluator(t *testing.T, scope Scope, provider *testProvider, timeout time.Duration) *OpenFeature {
+func testEvaluator(t *testing.T, scope flags.Scope, provider *testProvider, timeout time.Duration) *openfeature.Evaluator {
 	t.Helper()
-	evaluator, err := NewOpenFeature(t.Context(), scope, provider, timeout)
+	evaluator, err := openfeature.New(t.Context(), scope, provider, timeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,14 +53,14 @@ func testEvaluator(t *testing.T, scope Scope, provider *testProvider, timeout ti
 
 func TestScopedEvaluationsRemainIndependent(t *testing.T) {
 	tenants := []uuid.UUID{uuid.New(), uuid.New()}
-	scopes := []Scope{{"app/one", "two", "test"}, {"app", "one/two", "test"}}
-	seen := make(chan openfeature.FlattenedContext, 20)
-	providers := make([]*OpenFeature, len(scopes))
+	scopes := []flags.Scope{{Application: "app/one", Installation: "two", Environment: "test"}, {Application: "app", Installation: "one/two", Environment: "test"}}
+	seen := make(chan sdk.FlattenedContext, 20)
+	providers := make([]*openfeature.Evaluator, len(scopes))
 	for i, scope := range scopes {
-		provider := &testProvider{evaluate: func(_ context.Context, _ string, _ bool, facts openfeature.FlattenedContext) openfeature.BoolResolutionDetail {
+		provider := &testProvider{evaluate: func(_ context.Context, _ string, _ bool, facts sdk.FlattenedContext) sdk.BoolResolutionDetail {
 			seen <- maps.Clone(facts)
 			facts["application"] = "provider mutation"
-			return openfeature.BoolResolutionDetail{Value: scope.Application == "app/one"}
+			return sdk.BoolResolutionDetail{Value: scope.Application == "app/one"}
 		}}
 		providers[i] = testEvaluator(t, scope, provider, time.Second)
 	}
@@ -66,7 +68,7 @@ func TestScopedEvaluationsRemainIndependent(t *testing.T) {
 	for i := range 20 {
 		pending.Go(func() {
 			index := i % 2
-			subject := Subject{TenantID: tenants[(i/2)%2], TargetingKey: "account/one"}
+			subject := flags.Subject{TenantID: tenants[(i/2)%2], TargetingKey: "account/one"}
 			decision, err := providers[index].Boolean(t.Context(), "new-editor", subject, false)
 			if err != nil || decision.Value != (index == 0) || decision.Defaulted {
 				t.Errorf("composition %d: decision=%+v error=%v", index, decision, err)
@@ -77,7 +79,7 @@ func TestScopedEvaluationsRemainIndependent(t *testing.T) {
 	close(seen)
 	keys := map[string]bool{}
 	for facts := range seen {
-		key := facts[openfeature.TargetingKey].(string)
+		key := facts[sdk.TargetingKey].(string)
 		var parts []string
 		if err := json.Unmarshal([]byte(key), &parts); err != nil || len(parts) != 5 || parts[4] != "account/one" {
 			t.Fatalf("invalid scoped targeting identity: %q", key)
@@ -96,21 +98,21 @@ func TestScopedEvaluationsRemainIndependent(t *testing.T) {
 }
 
 func TestEvaluationDefaultsAndSafeErrors(t *testing.T) {
-	scope := Scope{"app", "installation", "test"}
-	subject := Subject{uuid.New(), "actor"}
+	scope := flags.Scope{Application: "app", Installation: "installation", Environment: "test"}
+	subject := flags.Subject{TenantID: uuid.New(), TargetingKey: "actor"}
 	cases := []struct {
 		name   string
-		result openfeature.BoolResolutionDetail
+		result sdk.BoolResolutionDetail
 		want   error
 	}{
-		{"evaluated false", openfeature.BoolResolutionDetail{ProviderResolutionDetail: openfeature.ProviderResolutionDetail{Variant: "control", Reason: openfeature.DefaultReason}}, nil},
-		{"missing", openfeature.BoolResolutionDetail{ProviderResolutionDetail: openfeature.ProviderResolutionDetail{ResolutionError: openfeature.NewFlagNotFoundResolutionError("secret")}}, ErrNotFound},
-		{"wrong type", openfeature.BoolResolutionDetail{ProviderResolutionDetail: openfeature.ProviderResolutionDetail{ResolutionError: openfeature.NewTypeMismatchResolutionError("secret")}}, ErrTypeMismatch},
-		{"unavailable", openfeature.BoolResolutionDetail{ProviderResolutionDetail: openfeature.ProviderResolutionDetail{ResolutionError: openfeature.NewGeneralResolutionError("secret")}}, ErrUnavailable},
+		{"evaluated false", sdk.BoolResolutionDetail{ProviderResolutionDetail: sdk.ProviderResolutionDetail{Variant: "control", Reason: sdk.DefaultReason}}, nil},
+		{"missing", sdk.BoolResolutionDetail{ProviderResolutionDetail: sdk.ProviderResolutionDetail{ResolutionError: sdk.NewFlagNotFoundResolutionError("secret")}}, flags.ErrNotFound},
+		{"wrong type", sdk.BoolResolutionDetail{ProviderResolutionDetail: sdk.ProviderResolutionDetail{ResolutionError: sdk.NewTypeMismatchResolutionError("secret")}}, flags.ErrTypeMismatch},
+		{"unavailable", sdk.BoolResolutionDetail{ProviderResolutionDetail: sdk.ProviderResolutionDetail{ResolutionError: sdk.NewGeneralResolutionError("secret")}}, flags.ErrUnavailable},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			provider := &testProvider{evaluate: func(context.Context, string, bool, openfeature.FlattenedContext) openfeature.BoolResolutionDetail {
+			provider := &testProvider{evaluate: func(context.Context, string, bool, sdk.FlattenedContext) sdk.BoolResolutionDetail {
 				return tc.result
 			}}
 			evaluator := testEvaluator(t, scope, provider, time.Second)
@@ -132,21 +134,21 @@ func TestEvaluationDefaultsAndSafeErrors(t *testing.T) {
 
 func TestCancellationValidationAndLifecycle(t *testing.T) {
 	var calls atomic.Int32
-	provider := &testProvider{evaluate: func(ctx context.Context, _ string, _ bool, _ openfeature.FlattenedContext) openfeature.BoolResolutionDetail {
+	provider := &testProvider{evaluate: func(ctx context.Context, _ string, _ bool, _ sdk.FlattenedContext) sdk.BoolResolutionDetail {
 		calls.Add(1)
 		<-ctx.Done()
-		return openfeature.BoolResolutionDetail{Value: false}
+		return sdk.BoolResolutionDetail{Value: false}
 	}}
-	evaluator := testEvaluator(t, Scope{"app", "one", "test"}, provider, 20*time.Millisecond)
-	subject := Subject{uuid.New(), "actor"}
+	evaluator := testEvaluator(t, flags.Scope{Application: "app", Installation: "one", Environment: "test"}, provider, 20*time.Millisecond)
+	subject := flags.Subject{TenantID: uuid.New(), TargetingKey: "actor"}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	decision, err := evaluator.Boolean(ctx, "editor", subject, true)
 	if !errors.Is(err, context.Canceled) || !decision.Value || !decision.Defaulted || calls.Load() != 0 {
 		t.Fatalf("cancelled request reached provider: %+v %v", decision, err)
 	}
-	for _, invalid := range []Subject{{}, {TenantID: subject.TenantID}, {TargetingKey: "actor"}, {TenantID: subject.TenantID, TargetingKey: "\xff"}} {
-		if decision, err := evaluator.Boolean(t.Context(), "editor", invalid, true); !errors.Is(err, ErrInvalid) || !decision.Value || !decision.Defaulted {
+	for _, invalid := range []flags.Subject{{}, {TenantID: subject.TenantID}, {TargetingKey: "actor"}, {TenantID: subject.TenantID, TargetingKey: "\xff"}} {
+		if decision, err := evaluator.Boolean(t.Context(), "editor", invalid, true); !errors.Is(err, flags.ErrInvalid) || !decision.Value || !decision.Defaulted {
 			t.Fatalf("invalid subject accepted: %+v %v", decision, err)
 		}
 	}
@@ -166,15 +168,27 @@ func TestCancellationValidationAndLifecycle(t *testing.T) {
 	if provider.stopped.Load() != 1 {
 		t.Fatal("provider shutdown was not exactly once")
 	}
-	if decision, err := evaluator.Boolean(t.Context(), "editor", subject, true); !errors.Is(err, ErrClosed) || !decision.Value || !decision.Defaulted {
+	if decision, err := evaluator.Boolean(t.Context(), "editor", subject, true); !errors.Is(err, flags.ErrClosed) || !decision.Value || !decision.Defaulted {
 		t.Fatalf("closed evaluator accepted work: %+v %v", decision, err)
 	}
 }
 
 func TestFailedInitializationCleansUp(t *testing.T) {
 	provider := &testProvider{initErr: errors.New("secret provider diagnostics")}
-	evaluator, err := NewOpenFeature(t.Context(), Scope{"app", "one", "test"}, provider, time.Second)
-	if evaluator != nil || !errors.Is(err, ErrUnavailable) || strings.Contains(err.Error(), "secret") || provider.stopped.Load() != 1 {
+	evaluator, err := openfeature.New(t.Context(), flags.Scope{Application: "app", Installation: "one", Environment: "test"}, provider, time.Second)
+	if evaluator != nil || !errors.Is(err, flags.ErrUnavailable) || strings.Contains(err.Error(), "secret") || provider.stopped.Load() != 1 {
 		t.Fatalf("failed provider was not safely released: evaluator=%v error=%v stopped=%d", evaluator, err, provider.stopped.Load())
+	}
+}
+
+func TestInvalidScopeDoesNotTransferProviderOwnership(t *testing.T) {
+	provider := &testProvider{}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, scope := range []flags.Scope{{}, {Application: "app", Installation: "\xff", Environment: "test"}} {
+		evaluator, err := openfeature.New(ctx, scope, provider, time.Second)
+		if evaluator != nil || !errors.Is(err, flags.ErrInvalid) || provider.stopped.Load() != 0 {
+			t.Fatalf("invalid scope reached initialization: %v %v stopped=%d", evaluator, err, provider.stopped.Load())
+		}
 	}
 }

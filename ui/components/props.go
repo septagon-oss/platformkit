@@ -207,6 +207,7 @@ type CheckboxProps struct {
 	Value         string `json:"value,omitempty"`
 	Required      bool   `json:"required,omitempty"`
 	HelpText      string `json:"helpText,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 // ---- contracts/atoms/text.go

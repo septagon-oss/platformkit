@@ -5,6 +5,8 @@ package flags
 import (
 	"context"
 	"errors"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -20,6 +22,17 @@ type Scope struct {
 	Application  string
 	Installation string
 	Environment  string
+}
+
+// Valid reports whether every scope part contains non-whitespace, valid UTF-8
+// text. Providers preserve these values when building targeting identities.
+func (s Scope) Valid() bool {
+	for _, value := range []string{s.Application, s.Installation, s.Environment} {
+		if strings.TrimSpace(value) == "" || !utf8.ValidString(value) {
+			return false
+		}
+	}
+	return true
 }
 
 // Subject belongs to the resolved tenant. TargetingKey is a stable, preferably

@@ -11,14 +11,27 @@ implemented boundaries. Contribution policy lives in
 Reuse the existing owned contracts: `events.Transport`, File `Storage`, Notification
 `Mailer` and `tenancy.Policy`. [NATS configuration](config.example.yaml) selects
 broker transport, authentication and trust at composition. [Page localization](ui/page/README.md)
-uses `page.Messages`/`Formatter`; x/text stays behind `page.FromCatalog`.
+uses the portable [locale contracts](kit/locale/README.md); [xtext](kit/locale/providers/xtext/README.md) owns catalog formatting, with page aliases for existing callers.
 [Feature evaluation](kit/flags/README.md) uses `flags.Evaluator` with isolated
-OpenFeature/OFREP adapters. Flag evaluation does not administer flag definitions.
+OpenFeature/OFREP provider packages; constructor imports migrate as described in that guide.
+[Topaz](kit/tenancy/providers/topaz/README.md) implements `tenancy.Policy` without importing Auth.
+Flag evaluation does not administer flag definitions.
 Provider administration belongs to each capability's authorized resources and commands,
 rendered through `rest.Spec`, `httpx.Resource` and `ui/screens`. Private resources
 set `OperatorRead` and `OperatorWrite`; API routes, resource closures, discovery
 and generated screens enforce the same declarations. These adapters alone do not
 establish management screens, deployed connections or migration of downstream clients.
+
+## Independently usable parts
+
+Import the owner of the capability you need: [entity](kit/entity/README.md) for
+field metadata without CRUD, [forms](ui/forms/README.md) for captured controls
+without REST, [locale](kit/locale/README.md) for worker or page translations, and
+[Task domain](modules/task/domain/README.md) for the deterministic resolution rule.
+Their package guides contain executable entry points and dependency limits.
+SQL transactions, authorization and business writes remain explicit composition
+responsibilities; an exported form or rule does not supply a complete service.
+The existing CRUD/page/Auth aliases and screens adapter delegate to these owners.
 
 ## Start at the composition
 

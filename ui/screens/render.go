@@ -10,7 +10,6 @@ package screens
 
 import (
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/forms"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -107,109 +107,34 @@ func Form(r httpx.Resource, o Options, action, title string, row map[string]any,
 // Property edits produce presentation candidates, not schema or database writes.
 // Native editor support and interactive flow behavior require separate evidence.
 func FormExample(id string, r httpx.Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) components.Example {
-	at := Path(r, o)
-	body := []g.Node{}
-	if detail != "" {
-		body = append(body, components.ExampleWithSlots(components.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
-			components.AlertProps{Tone: "danger", Title: "That could not be saved", Message: detail, Bordered: true},
-			components.AlertSlots{}, components.AlertWithSlots).Node)
+	fields := make([]forms.Field, 0, len(r.Schema.Fields))
+	for _, field := range r.Schema.Fields {
+		fields = append(fields, formField(field))
 	}
-	for _, f := range r.Schema.Fields {
-		if f.ReadOnly {
-			continue
-		}
-		immutable := slices.Contains(r.Immutable, f.Name)
-		// A row that does not exist yet cannot have a value for a field only a
-		// command sets, and this form is not that command: a read-only control
-		// with a note under it is furniture. rest.Values refuses one that is
-		// submitted anyway, so hiding it is not the only thing stopping it.
-		if create && immutable {
-			continue
-		}
-		body = append(body, Control(f, start(f, row, create), errs[f.Name], immutable))
+	values := make(map[string]string, len(row))
+	for name, value := range row {
+		values[name] = rest.Text(value)
 	}
-	body = append(body, components.ExampleWithChildren(
-		components.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
-			components.ExampleWithSlots(components.ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: "Cancel", Variant: "secondary", Href: at}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
-			components.ExampleWithSlots(components.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: "Save", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
-		}, components.FormActions).Node)
-	return components.ExampleWithChildren(
-		components.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: title}, components.FormProps{
-			ComponentProps: components.ComponentProps{ID: "screen-form"},
-			HTMXProps: components.HTMXProps{
-				Post: action, Target: "#screen-form", Swap: "outerHTML", Select: "#screen-form"},
-			Action: action, Label: title,
-		}, body, components.Form)
+	return forms.LegacyExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
+		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
+		Action: action, CancelURL: Path(r, o), Title: title,
+	})
 }
 
-// Control is one field's input. The widget comes from the tag when the entity
-// named one and from the type otherwise, which is the whole of "screens derive
-// from schemas": a select exists because the struct says enum, not because
-// somebody wrote a select. Its node retains the selected Core invocation for
-// enclosing ExampleWithChildren compositions without changing its HTML.
+// Control adapts an entity field to the portable form control, preserving the
+// generated screens' existing labels, choices and name-derived DOM identity.
 func Control(f crud.Field, value, fieldErr string, immutable bool) g.Node {
-	label, name := rest.FieldLabel(f), f.Name
-	base := components.InputProps{
-		Name: name, Label: label, Value: value, Error: fieldErr,
-		HelpText: hint(rest.FieldHelp(f), immutableNote(immutable)),
-		Required: f.Required, ReadOnly: immutable, FullWidth: true,
+	return forms.Control(forms.ControlProps{Field: formField(f), Value: value, Error: fieldErr, Immutable: immutable})
+}
+
+// formField projects display words at the screen boundary. The portable form
+// owns controls, while REST's existing field formatting keeps its current owner.
+func formField(f crud.Field) forms.Field {
+	options := make([]components.SelectOption, 0, len(f.Enum))
+	for _, value := range f.Enum {
+		options = append(options, components.SelectOption{Label: rest.Humanize(value), Value: value})
 	}
-	switch {
-	case len(f.Enum) > 0 || f.Widget == "select":
-		options := make([]components.SelectOption, 0, len(f.Enum))
-		for _, v := range f.Enum {
-			options = append(options, components.SelectOption{Label: rest.Humanize(v), Value: v})
-		}
-		// A field that declares a default has no unchosen state to name, and
-		// the default is already selected, so a "Choose a …" placeholder would
-		// be an option that cannot be what happens.
-		placeholder := ""
-		if f.Default == "" {
-			placeholder = "Choose a " + strings.ToLower(label)
-		}
-		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
-			ComponentProps: components.ComponentProps{Disabled: immutable},
-			Name:           name, Label: label, Value: value, Error: fieldErr,
-			Required: f.Required, Options: options, Placeholder: placeholder,
-			HelpText: base.HelpText,
-		}, components.Select).Node
-	// The widget and not the column type. A text column is how a database
-	// stores a string of no fixed length, which is what an email address, a
-	// display name and a link all are: rendering every one of them as a
-	// five-row textarea is a form that reads as if somebody were expected to
-	// write a paragraph into their own address. A field that wants one says so.
-	case f.Widget == "textarea":
-		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-			ComponentProps: components.ComponentProps{Disabled: immutable},
-			Name:           name, Label: label, Value: value, ErrorMessage: fieldErr,
-			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
-		}, components.Textarea).Node
-	case f.Type == crud.TypeBool:
-		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
-			ComponentProps: components.ComponentProps{Disabled: immutable},
-			Name:           name, Label: label, Value: "true", Checked: value == "true",
-			HelpText: base.HelpText,
-		}, components.Checkbox).Node
-	case f.Widget == "entity-picker":
-		// There is no picker yet, and pretending otherwise would be a control
-		// that looks like it searches and does not. It is the id, and the note
-		// says so.
-		base.HelpText = hint(base.HelpText, "The identifier of the related record. There is no picker for it yet.")
-	case f.Type == crud.TypeList:
-		base.HelpText = hint(base.HelpText, "Comma separated.")
-	case f.Type == crud.TypeTime:
-		base.Type = "datetime-local"
-		if len(base.Value) >= 16 {
-			base.Value = base.Value[:16] // an RFC 3339 instant is longer than the control accepts
-		}
-	case f.Type == crud.TypeInt:
-		base.Type, base.Step = "number", "1"
-	case f.Type == crud.TypeFloat:
-		base.Type, base.Step = "number", "any"
-	}
-	return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
+	return forms.Field{Definition: f, Label: rest.FieldLabel(f), Options: options}
 }
 
 // table is the list screen's rows: the field a row is known by first, as the
@@ -340,38 +265,6 @@ func label(row map[string]any, fields []crud.Field) string {
 		return v
 	}
 	return rest.Text(row["id"])
-}
-
-// start is what a control opens with: what the row holds, or — on a create, for
-// a field nobody has filled in — the default the entity declares, so the select
-// a person leaves alone posts what the API would have stored anyway.
-func start(f crud.Field, row map[string]any, create bool) string {
-	if v, ok := row[f.Name]; ok {
-		return rest.Text(v)
-	}
-	if create {
-		return f.Default
-	}
-	return ""
-}
-
-// hint joins the notes under a control: the field's own doc, and whatever this
-// form has to add about the control it chose for it.
-func hint(parts ...string) string {
-	kept := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			kept = append(kept, part)
-		}
-	}
-	return strings.Join(kept, " ")
-}
-
-func immutableNote(immutable bool) string {
-	if immutable {
-		return "Changed by a command of its own, not by this form."
-	}
-	return ""
 }
 
 // next is the sort a header click asks for: the same field the other way round,
