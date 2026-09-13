@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { lineageHelpers } from './exporter-correction.mjs'
 
 function syncReadView(nodes, deletedParents = new Map()) {
@@ -96,7 +97,23 @@ function syncProperties(source, target, keys, overrides, prefix = '') {
   // Stage the markers on a fresh source record so refused plans stay pure.
   const projected = { ...target, ...structuredClone(changes),
     source: { ...target.source, editedFields: [...target.source.editedFields] } }
-  markSourceFieldsEdited(projected, Object.keys(changes).filter(key => !isEqual(target[key], changes[key])))
+  const changed = new Set(Object.keys(changes).filter(key => !isEqual(target[key], changes[key])))
+  markSourceFieldsEdited(projected, [...changed])
+  if (target.figmaDerivedLayout) {
+    // Imported geometry is a fallback, not an input owned by this occurrence.
+    // Invalidate only copied geometry and the dimensions whose sizing changed;
+    // keep untouched placement and caches protected by authored overrides.
+    const stale = ['x', 'y', 'width', 'height'].filter(key => {
+      const dimension = key === 'width' || key === 'height'
+      const sizing = (key === 'width') === (projected.layoutMode === 'HORIZONTAL') ? 'primaryAxisSizing' : 'counterAxisSizing'
+      return changed.has(key) || dimension && (changed.has('layoutMode') || changed.has(sizing))
+    })
+    if (stale.some(key => Object.hasOwn(target.figmaDerivedLayout, key))) {
+      projected.figmaDerivedLayout = { ...target.figmaDerivedLayout }
+      for (const key of stale) delete projected.figmaDerivedLayout[key]
+      if (!Object.keys(projected.figmaDerivedLayout).length) projected.figmaDerivedLayout = null
+    }
+  }
   return projected
 }
 
@@ -394,7 +411,8 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     if (!target || !source) throw new Error('Missing projected native sync instance')
     const overrides = ancestryOverrides(syncReadView(nodes), target)
     const effective = { ...source }
-    if (source.type === 'COMPONENT') {
+    const fragment = sourceFragment(syncReadView(nodes), source)
+    if (source.type === 'COMPONENT' && !fragment) {
       // A canonical master owns intrinsic layout, not its occurrence's fill
       // relationship to a parent. An enclosing INSTANCE template still owns
       // that placement and can change it; do not invent a local override.
@@ -411,7 +429,10 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
         }
       }
     }
-    nodes.set(id, syncProperties(effective, target, INSTANCE_SYNC_PROPS, overrides, `${id}:`))
+    // A transparent owner cannot inherit the old box's parent-item sizing.
+    // Explicit incompatible overrides remain owned and fail staged validation.
+    const keys = fragment ? [...INSTANCE_SYNC_PROPS, 'layoutGrow', 'layoutAlignSelf'] : INSTANCE_SYNC_PROPS
+    nodes.set(id, syncProperties(effective, target, keys, overrides, `${id}:`))
     affected.add(id)
     children(sourceId, id, overrides)
     active.delete(id)
@@ -437,6 +458,8 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
     if (!nodes.has(id)) throw new Error('Derived scale targets a missing projected node')
     nodes.set(id, { ...nodes.get(id), ...structuredClone(changes) })
   }
+  const view = syncReadView(nodes)
+  for (const id of reachable) hasSourceFragments(view, nodes.get(id))
   return { nodes, created, removed, affected }
 }
 
@@ -508,6 +531,7 @@ function swapInstanceComponent(graph, instanceId, componentId) {
 }
 
 export function correctSyncGraph(source, replace) {
+  source = `import { sourceFragment, hasSourceFragments } from ${JSON.stringify(fileURLToPath(new URL('./source-fragments.mjs', import.meta.url)))};\n` + source
   source = 'import { isEqual } from "es-toolkit";\n' + source
   // The SDK already distinguishes layout mutations from authored operations.
   // Computed positions must not masquerade as local descendant edits. Keep

@@ -1,4 +1,5 @@
 import { ownSourceLayoutRecord, sourceLayoutRecord, sourceCompositionLayout } from './layout-correction.mjs'
+import { fragmentLayoutChildren } from './source-fragments.mjs'
 
 // Retain CSS semantics missing from native HUG/FILL. This is private provider
 // evidence on the existing source record, not another component contract.
@@ -43,7 +44,7 @@ function intrinsicWidth(graph, node, measure, minimum, visiting = new Set()) {
   if (visiting.has(node.id)) throw new Error('Cyclic intrinsic source flex')
   visiting.add(node.id)
   try {
-    const children = graph.getChildren(node.id).filter(child => child.visible && child.layoutPositioning !== 'ABSOLUTE')
+    const children = fragmentLayoutChildren(graph, node).filter(child => child.visible && child.layoutPositioning !== 'ABSOLUTE')
     // Child contributions honor their constraints; this item's own flex basis does not.
     // https://www.w3.org/TR/css-flexbox-1/#intrinsic-item-contributions
     return node.paddingLeft + node.paddingRight + node.itemSpacing * Math.max(0, children.length - 1) +

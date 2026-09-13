@@ -154,7 +154,7 @@ async function verifyBuild() {
   assert.deepEqual(Object.keys(provenance.adapter.inputs).sort(), [
     'Blink-underline-NOTICE', 'Dockerfile', 'LICENSE', 'NOTICE', 'border-correction.mjs', 'build-editor.mjs', 'color-expression.mjs', 'computed-color.mjs', 'corrections.mjs', 'editor-fonts.mjs', 'exporter-correction.mjs', 'font-correction.mjs', 'fonts.mjs',
     'grid-correction.mjs', 'grid-fig-correction.mjs', 'layout-correction.mjs', 'nginx.conf', 'package-lock.json', 'package.json', 'paragraph-correction.mjs', 'property-correction.mjs',
-    'scaling-correction.mjs', 'source-box.mjs', 'source-flex.mjs', 'source-position-history.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'underline-correction.mjs', 'variable-binding-correction.mjs', 'variable-binding.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-mode-control-correction.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
+    'scaling-correction.mjs', 'source-box.mjs', 'source-flex.mjs', 'source-fragments.mjs', 'source-position-history.mjs', 'source-positioning.mjs', 'sync-correction.mjs', 'underline-correction.mjs', 'variable-binding-correction.mjs', 'variable-binding.mjs', 'variable-color.mjs', 'variable-history.mjs', 'variable-mode-control-correction.mjs', 'variable-modes.mjs', 'variable-number.mjs', 'variable-source.mjs', 'variant-correction.mjs',
   ])
   for (const [name, digest] of Object.entries(provenance.adapter.inputs)) {
     assert.match(name, /^[A-Za-z0-9._-]+$/)
@@ -1541,6 +1541,80 @@ test('source minimum-gap wrapping survives keyboard width edits, history and two
         for (const child of reopened.getChildren(edited.id)) assert.equal(chain(reopened, child, 'componentId').at(-1).name, 'Reusable item')
         for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
         assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
+test('imported shape resizing propagates nested HUG layout through editor history and two worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), pageNode = graph.getPages()[0]
+  const layout = { layoutMode: 'HORIZONTAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'HUG', itemSpacing: 8 }
+  const inner = graph.createNode('COMPONENT', pageNode.id, { name: 'Inner master', ...layout })
+  for (const name of ['Resizable shape', 'Inner guard']) graph.createNode('RECTANGLE', inner.id, { name, width: 40, height: 24 })
+  computeLayout(graph, inner.id)
+  const outer = graph.createNode('COMPONENT', pageNode.id, { name: 'Outer master', y: 100, ...layout })
+  graph.createInstance(inner.id, outer.id, { name: 'Inner placement' })
+  graph.createNode('RECTANGLE', outer.id, { name: 'Outer guard', width: 40, height: 24 })
+  computeLayout(graph, outer.id)
+  for (const [name, x] of [['First placement', 250], ['Second placement', 500]]) {
+    graph.createInstance(outer.id, pageNode.id, { name, x, y: 200 })
+  }
+  const unrelated = graph.createNode('COMPONENT', pageNode.id, { name: 'Unrelated master', y: 300, width: 23, height: 13 })
+  graph.createNode('RECTANGLE', unrelated.id, { name: 'Unrelated shape', width: 23, height: 13 })
+  graph.createInstance(unrelated.id, pageNode.id, { name: 'Unrelated placement', x: 250, y: 300 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Unrelated master', 'Unrelated placement'].map(name => [name, geometry(baseline, named(baseline, name))])
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `inherited-shape-${cycle}.fig`)
+        const placed = page.getByRole('treeitem', { name: 'First placement Lock Hide', exact: true })
+        const width = page.getByRole('spinbutton', { name: 'Width', exact: true })
+        const previous = 40 + Math.min(cycle, 2) * 20, next = previous + 20
+        await placed.click()
+        await expect(width).toHaveAttribute('aria-valuenow', String(previous + 96))
+        if (cycle < 2) {
+          await page.getByRole('treeitem', { name: 'Inner master Lock Hide', exact: true }).click()
+          await page.keyboard.press('ArrowRight')
+          await page.getByRole('treeitem', { name: 'Resizable shape Lock Hide', exact: true }).click()
+          await expect(width).toHaveAttribute('aria-valuenow', String(previous))
+          await width.dblclick(); await page.keyboard.press('Control+a'); await page.keyboard.type(String(next)); await page.keyboard.press('Enter')
+          await expect(width).toHaveAttribute('aria-valuenow', String(next))
+          await placed.click()
+          await expect(width).toHaveAttribute('aria-valuenow', String(next + 96))
+          await page.keyboard.press('Control+z')
+          await expect(width).toHaveAttribute('aria-valuenow', String(previous + 96))
+          await page.keyboard.press('Control+Shift+z')
+          await expect(width).toHaveAttribute('aria-valuenow', String(next + 96))
+          buffer = await saveDocument(page, errors, workers)
+          const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          const source = masterOf(reopened, 'Inner master')
+          assert.deepEqual([source.width, source.height], [next + 48, 24])
+          assert.deepEqual(reopened.getChildren(source.id).map(node => [node.x, node.width]), [[0, next], [next + 8, 40]])
+          for (const name of ['Outer master', 'First placement', 'Second placement']) {
+            const owner = named(reopened, name), [nested, guard] = reopened.getChildren(owner.id)
+            assert.deepEqual([owner.width, owner.height, nested.width, guard.x, guard.width], [next + 96, 24, next + 48, next + 56, 40])
+            assert.equal(chain(reopened, nested, 'componentId').at(-1).id, source.id)
+            assert.deepEqual(reopened.getChildren(nested.id).map(node => [node.type, node.x, node.width]),
+              [['RECTANGLE', 0, next], ['RECTANGLE', next + 8, 40]], 'saved plain shapes keep computed sibling positions')
+            if (name !== 'Outer master') {
+              assert.equal(chain(reopened, owner, 'componentId').at(-1).name, 'Outer master')
+              assert.deepEqual([owner.x, owner.y], [name === 'First placement' ? 250 : 500, 200])
+            }
+          }
+          for (const node of reopened.getAllNodes()) if (node.type === 'INSTANCE') {
+            assert.ok(Object.keys(node.overrides).every(key => key !== 'width' && !key.endsWith(':width')),
+              'inherited dimensions must not become authored instance overrides')
+          }
+          for (const [name, expected] of untouched) assert.deepEqual(geometry(reopened, named(reopened, name)), expected, name)
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
         assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
         assert.deepEqual(errors, [])
       } finally { await context.close() }

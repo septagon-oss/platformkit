@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { chain } from './exporter-correction.mjs'
+import { ancestryOverrides, chain } from './exporter-correction.mjs'
 
 export function sourceLayoutScope(graph, node) {
   return sourceLayoutRecord(graph, node)?.scope
@@ -52,6 +52,114 @@ export function editedSourceLayout(graph, frame) {
       'primaryAxisAlign', 'counterAxisAlign', 'primaryAxisSizing', 'counterAxisSizing',
       'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].some(field => frame.source.editedFields.includes(field) ||
         Object.hasOwn(frame.overrides, field) || Object.hasOwn(frame.overrides, `${frame.id}:${field}`))
+}
+
+const layoutInputs = ['width', 'height', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight',
+  'layoutMode', 'layoutDirection', 'layoutWrap', 'primaryAxisSizing', 'counterAxisSizing',
+  'primaryAxisAlign', 'counterAxisAlign', 'counterAxisAlignContent', 'itemSpacing', 'counterAxisSpacing',
+  'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'layoutGrow', 'layoutAlignSelf',
+  'visible', 'layoutPositioning']
+
+// Native source edit records include inherited input changes, not only local
+// overrides. Follow containment to the layout that consumes those inputs;
+// a fixed freeform box owns its interior independently of its outer placement.
+function changedLayoutInputs(graph, frame, visiting = new Set()) {
+  if (!frame || frame.layoutMode === 'NONE') return false
+  if (visiting.has(frame.id)) throw new Error('Cyclic native layout dependency')
+  const edited = node => node.source.editedFields.some(field => layoutInputs.includes(field))
+  // Ordinary imported frames retain their upstream preservation policy for
+  // their own edits; changed child inputs still require dependent placement.
+  if (edited(frame) && (frame.type !== 'FRAME' || frame.source.format !== 'fig' ||
+    sourceCompositionLayout(graph, frame))) return true
+  const next = new Set(visiting).add(frame.id)
+  return graph.getChildren(frame.id).some(child => edited(child) || child.visible &&
+    child.layoutPositioning !== 'ABSOLUTE' &&
+    (child.primaryAxisSizing === 'HUG' || child.counterAxisSizing === 'HUG') &&
+    changedLayoutInputs(graph, child, next))
+}
+
+function relativeLayoutAxis(node, parent, dimension) {
+  const primary = (dimension === 'width') === (node.layoutMode === 'HORIZONTAL')
+  const sizing = primary ? node.primaryAxisSizing : node.counterAxisSizing
+  const parentPrimary = (dimension === 'width') === (parent.layoutMode === 'HORIZONTAL')
+  return sizing === 'FILL' || (parentPrimary ? node.layoutGrow > 0 :
+    node.layoutAlignSelf === 'STRETCH' || node.layoutAlignSelf === 'AUTO' && parent.counterAxisAlign === 'STRETCH')
+}
+
+export function dependentLayoutChanged(graph, frame) {
+  // Available space is an input too. A FILL/growing occurrence can resize
+  // without acquiring an authored width edit; its interior must then reflow.
+  const visiting = new Set()
+  for (let node = frame; node && node.layoutMode !== 'NONE';) {
+    if (visiting.has(node.id)) throw new Error('Cyclic native layout dependency')
+    visiting.add(node.id)
+    if (changedLayoutInputs(graph, node)) return true
+    const parent = graph.getNode(node.parentId)
+    if (!parent || !node.visible || node.layoutPositioning === 'ABSOLUTE' ||
+      !['width', 'height'].some(dimension => relativeLayoutAxis(node, parent, dimension))) return false
+    node = parent
+  }
+  return false
+}
+
+export function withDependentLayoutCaches(graph, frame, compute) {
+  if (!frame || frame.layoutMode === 'NONE') return compute()
+  // Project the whole affected tree before Yoga measures it. An outer-only
+  // calculation must not measure a nested HUG owner against stale child boxes.
+  const owners = layoutNodes(graph, frame, node => node.layoutMode !== 'NONE')
+    .filter(node => dependentLayoutChanged(graph, node))
+  if (!owners.length) return compute()
+  const cached = new Map()
+  for (const owner of owners) {
+    const members = graph.getChildren(owner.id).filter(child => child.visible && child.layoutPositioning !== 'ABSOLUTE')
+    for (const node of [owner, ...members]) {
+      if (!node.figmaDerivedLayout) continue
+      const next = { ...(cached.has(node.id) ? cached.get(node.id)[1] : node.figmaDerivedLayout) }
+      const overrides = ancestryOverrides(graph, node)
+      if (node !== owner) { delete next.x; delete next.y }
+      for (const dimension of ['width', 'height']) {
+        if (Object.hasOwn(overrides, `${node.id}:${dimension}`)) continue
+        const primary = (dimension === 'width') === (node.layoutMode === 'HORIZONTAL')
+        const sizing = primary ? node.primaryAxisSizing : node.counterAxisSizing
+        const flexible = node !== owner && relativeLayoutAxis(node, owner, dimension)
+        if (flexible || sizing === 'HUG' && dependentLayoutChanged(graph, node)) delete next[dimension]
+      }
+      if (Object.keys(next).length !== Object.keys(node.figmaDerivedLayout).length) {
+        cached.set(node.id, [node.figmaDerivedLayout, Object.keys(next).length ? next : null])
+      }
+    }
+  }
+  graph.preserveSourceMetadataDuring(() => {
+    for (const [id, [, next]] of cached) graph.updateNode(id, { figmaDerivedLayout: next })
+  })
+  try { return graph.preserveSourceMetadataDuring(compute) }
+  catch (error) {
+    graph.preserveSourceMetadataDuring(() => {
+      for (const [id, [previous]] of cached) graph.updateNode(id, { figmaDerivedLayout: previous })
+    })
+    throw error
+  }
+}
+
+// Apply after the existing grid/fragment corrections: they retain their own
+// stronger sizing rules. This adds dependency-driven reflow, not another owner.
+export function correctDependentLayout(source, replace) {
+  source = `import { dependentLayoutChanged, withDependentLayoutCaches } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
+  source = replace(source, '!preservesImportedInstanceLayout(node)',
+    '(!preservesImportedInstanceLayout(node) || dependentLayoutChanged(graph, node))')
+  return replace(source, 'function computeLayoutMeasured(graph, frameId) {',
+    `function computeLayoutMeasured(graph, frameId) {
+  return withDependentLayoutCaches(graph, graph.getNode(frameId), () => computeLayoutUncached(graph, frameId));
+}
+function computeLayoutUncached(graph, frameId) {`)
+}
+
+export function correctDependentLayoutApply(source, replace) {
+  source = `import { dependentLayoutChanged } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
+  source = replace(source, 'if (preservesImportedInstanceInternals(child)',
+    'if (preservesImportedInstanceInternals(child) && !dependentLayoutChanged(graph, child)')
+  return replace(source, 'const preservesImportedFrameGeometry = ',
+    'const preservesImportedFrameGeometry = !dependentLayoutChanged(graph, graph.getNode(child.parentId)) && ')
 }
 
 // Layout owns temporary Yoga objects. Release them at that boundary even when

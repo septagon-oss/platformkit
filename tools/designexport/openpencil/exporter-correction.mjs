@@ -479,12 +479,14 @@ function mergeTextOverrides(symbolOverrides, overrides) {
 export function correctInstanceImporter(source, replace) {
   source = `import { ownsRotationOverride } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   const layout = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
+  const fragments = fileURLToPath(new URL('./source-fragments.mjs', import.meta.url))
+  source = `import { fragmentLayoutParent } from ${JSON.stringify(fragments)};\n` + source
   source = `import { sourceCompositionLayout } from ${JSON.stringify(layout)};\n` + source
   source = replace(source, '\tapplyGeneratedFreeformStretch(ctx);', String.raw`
   // FIG carries cross-axis fill as child stretch, not a third stack-sizing
   // enum. Restore the source composition's sizing after parent links resolve.
   for (const node of overrideCandidates(graph, ctx.activeNodeIds)) {
-    const parent = graph.getNode(node.parentId);
+    const parent = fragmentLayoutParent(graph, node);
     if (node.layoutAlignSelf !== "STRETCH" || node.layoutPositioning === "ABSOLUTE" ||
         !["HORIZONTAL", "VERTICAL", "GRID"].includes(node.layoutMode) || !["HORIZONTAL", "VERTICAL"].includes(parent?.layoutMode) ||
         !sourceCompositionLayout(graph, node) || !sourceCompositionLayout(graph, parent)) continue;

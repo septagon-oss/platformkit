@@ -388,6 +388,32 @@ and every observed token probe; ambiguous, shadowed or mismatched candidates sta
 Inactive media and theme overrides also disqualify a definition or referenced alias.
 These are scoped observations, not a general CSS parser or proof for arbitrary functions.
 
+### Layout-transparent native ownership
+
+[Source fragments](source-fragments.mjs) distinguish component ownership from
+formatting boxes. A canonical component with `cssFragment: {version: 1}` in its
+existing source record owns zero or more native children. Its instances retain
+those links while each visible member participates in the nearest real flex/grid
+parent. The owner's geometry is a selection envelope, not another layout item.
+Nested and empty owners therefore add no gaps or tracks. Native HUG sizing and
+effective-parent grid anchors are serialized into the existing FIG fields.
+
+Run `node --import ./register.mjs --test source-fragments.test.mjs browser/fragments.test.mjs`
+for the provider primitive: independent Chromium geometry, resizing, nested/empty
+ownership, native text editing, isolation, deferred population and repeated saves.
+Saved geometry is checked before recalculation. The [built-editor check](editor/fragments.test.mjs)
+also uses the real file picker, width controls, history and two browser-worker saves.
+Logical owners cannot supply paint, transforms, direction, clipping or item sizing;
+direct absolute members remain refused without an effective containing-block model.
+Boxed-to-fragment sync clears inherited box placement; incompatible authored sizing,
+paint or transforms refuse before writes. The [replacement regressions](replacement.test.mjs)
+cover imported swaps, nested HUG/fixed/FILL reflow and rotation through repeated saves.
+Authored angles retain native override ownership; placement-only matrices stay derived.
+External edits use the native decoder at FIG wire precision: scaling that changes
+the decoded angle also owns that changed angle. Structural edits remain unqualified;
+native vertical flips can still be lost on save. These provider fixtures do not
+qualify source capture, the Collect creator or its full lifecycle.
+
 ## Construct an experimental native component
 
 [materializeComponent](components.mjs) takes an existing native graph and

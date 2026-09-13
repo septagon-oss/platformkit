@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { correctExporter, correctPropertyTarget, correctInstanceImporter } from './exporter-correction.mjs'
 import { correctPropertyActions, correctComponentSync, correctEditorCreation, correctTextAutoResize, correctUndoHistory } from './property-correction.mjs'
-import { correctLayout, correctLayoutApply, correctMeasuredLayout } from './layout-correction.mjs'
+import { correctLayout, correctLayoutApply, correctMeasuredLayout, correctDependentLayout, correctDependentLayoutApply } from './layout-correction.mjs'
 import { correctScaleDefaults, correctScaleGraph, correctScaleNodeChange, correctScaleImport } from './scaling-correction.mjs'
 import { correctSyncGraph } from './sync-correction.mjs'
 import { correctGridLayout, correctGridApply, correctGridTrackMapping } from './grid-correction.mjs'
@@ -10,6 +10,7 @@ import { correctGridNodeChange, correctGridImport, correctGridOverrides, correct
 import { correctVariantActions, correctVariantImport, correctVariantNodeChange } from './variant-correction.mjs'
 import { correctCSSBorders } from './border-correction.mjs'
 import { correctSourceOverflow } from './source-box.mjs'
+import { correctFragmentLayout, correctFragmentApply, correctFragmentExport } from './source-fragments.mjs'
 import { correctSourcePositionActions, correctSourcePositionImport, correctSourcePositionGraph,
   correctPositionHistory, correctPositionNudge, correctPositionUndo } from './source-positioning.mjs'
 import { correctNumericGraph, correctNumericLayout, correctNumericLayoutApply, correctNumericEvents,
@@ -30,6 +31,7 @@ export const corrections = Object.freeze({
     transform: (source, replace) => {
       source = correctVariantNodeChange(correctGridNodeChange(correctScaleNodeChange(correctExporter(source, replace), replace), replace), replace)
       source = correctNumericNodeExport(source, replace)
+      source = correctFragmentExport(source, replace)
       return `import { sourceAbsoluteRecord } from ${JSON.stringify(fileURLToPath(new URL('./source-positioning.mjs', import.meta.url)))};\n` +
         source + '\nexport { serializeVariableModes, extractComponentPropertyAssignments };\n'
     },
@@ -319,11 +321,11 @@ export const corrections = Object.freeze({
   },
   '@open-pencil/core/dist/layout.js': {
     sha256: '358130698d8aa61bfcad65e4695679ed3883aac9efbb048df5a09cbe98f2b299',
-    transform: (source, replace) => correctNumericLayout(correctMeasuredLayout(correctGridLayout(correctLayout(source, replace), replace), replace), replace),
+    transform: (source, replace) => correctDependentLayout(correctNumericLayout(correctMeasuredLayout(correctFragmentLayout(correctGridLayout(correctLayout(source, replace), replace), replace), replace), replace), replace),
   },
   '@open-pencil/core/dist/layout/apply.js': {
     sha256: 'a02c896a0f808fd3ccb24ca6a8c09975ca7ef06e2555bc6313b54091e37e8c8d',
-    transform: (source, replace) => correctNumericLayoutApply(correctGridApply(correctLayoutApply(source, replace), replace), replace),
+    transform: (source, replace) => correctDependentLayoutApply(correctNumericLayoutApply(correctFragmentApply(correctGridApply(correctLayoutApply(source, replace), replace), replace), replace), replace),
   },
   '@open-pencil/core/dist/layout/yoga-helpers.js': {
     sha256: '24a80fac2b5649055876204e4f4b8df1761bcdee01601ecc2df808b8bfadc584',

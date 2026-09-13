@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { ancestryOverrides, chain, sourceChildren } from './exporter-correction.mjs'
+import { fragmentLayoutParent, sourceFragment } from './source-fragments.mjs'
 
 const helper = () => JSON.stringify(fileURLToPath(import.meta.url))
 const axes = ['Columns', 'Rows']
@@ -147,6 +148,8 @@ function exportTracks(node, context, counter) {
 }
 
 export function serializeGridFields(node, nc, context, counter) {
+  // A source identity owns its children, never a track or grid-item alignment.
+  if (sourceFragment(context.graph, node)) return
   if (node.layoutMode === 'GRID') {
     const tracks = exportTracks(node, context, counter)
     for (const axis of axes) {
@@ -157,7 +160,7 @@ export function serializeGridFields(node, nc, context, counter) {
     nc.gridColumnGap = number(node.gridColumnGap, 'column gap')
     nc.gridAutoTracks = node.gridTemplateRows.length ? 'NONE' : 'ROWS'
   }
-  const parent = context.graph.getNode(node.parentId)
+  const parent = fragmentLayoutParent(context.graph, node)
   if (parent?.layoutMode === 'GRID') {
     const widthSizing = node.layoutMode === 'HORIZONTAL' ? node.primaryAxisSizing : node.counterAxisSizing
     const heightSizing = node.layoutMode === 'HORIZONTAL' ? node.counterAxisSizing : node.primaryAxisSizing
@@ -178,7 +181,7 @@ export function serializeGridFields(node, nc, context, counter) {
   }
 }
 
-export function serializeGridOverrides(context, instance, counter, path) {
+export function serializeGridOverrides(context, instance, counter, path, derived = []) {
   const result = [], graph = context.graph
   function visit(target, source) {
     if (!source) refuse('missing instance source')
@@ -186,8 +189,28 @@ export function serializeGridOverrides(context, instance, counter, path) {
       refuse('instance layout-mode replacement is not supported')
     }
     const overrides = ancestryOverrides(graph, target)
-    const changed = ownedGridFields(graph, target).filter(field => JSON.stringify(target[field]) !== JSON.stringify(source[field]) ||
-      Object.hasOwn(overrides, `${target.id}:${field}`))
+    const contextual = !sourceFragment(graph, target) && sourceFragment(graph, graph.getNode(target.parentId)) &&
+      fragmentLayoutParent(graph, target)?.layoutMode === 'GRID'
+    const changed = ownedGridFields(graph, target).filter(field => {
+      if (Object.hasOwn(overrides, `${target.id}:${field}`)) return true
+      // Reopening a contextless definition decodes FILL as FIXED. Its placed
+      // derived FILL must not become authored merely because those differ.
+      if (contextual && field.endsWith('AxisSizing') && target[field] === 'FILL' && !target.source.editedFields.includes(field)) return false
+      return JSON.stringify(target[field]) !== JSON.stringify(source[field])
+    })
+    if (contextual) {
+      // A contextless definition cannot encode inherited grid FILL in the
+      // two-value stack sizing enum. Preserve the placed native alignment as
+      // derived evidence, without turning inherited sizing into an override.
+      const all = {}, entry = { guidPath: path(target) }
+      serializeGridFields(target, all, context, counter)
+      for (const axis of ['Horizontal', 'Vertical']) {
+        const field = (axis === 'Horizontal') === (target.layoutMode === 'HORIZONTAL') ? 'primaryAxisSizing' : 'counterAxisSizing'
+        entry[`gridChild${axis}Align`] = [field, 'layoutGrow', 'layoutAlignSelf'].some(field => changed.includes(field))
+          ? undefined : all[`gridChild${axis}Align`]
+      }
+      derived.push(entry)
+    }
     if (changed.length) {
       const all = {}, entry = { guidPath: path(target) }
       context.serializeLayoutProps(target, all)
@@ -224,8 +247,12 @@ export function serializeGridOverrides(context, instance, counter, path) {
 }
 
 export function importGridOverride(graph, target, fields, props) {
+  if (sourceFragment(graph, target)) {
+    if (gridFigFields.some(field => fields[field] !== undefined)) refuse('logical source owner has no grid box')
+    return
+  }
   Object.assign(props, importGridFields(fields))
-  const parent = graph.getNode(target.parentId)
+  const parent = fragmentLayoutParent(graph, target)
   // Linked clones deliberately start with empty source metadata. Missing axes
   // inherit their native track identities; an occurrence's supplied axis wins.
   const parentFields = parent && Object.assign({}, ...chain(graph, parent, 'componentId').reverse()
@@ -237,8 +264,24 @@ export function importGridOverride(graph, target, fields, props) {
     rawNodeFields: { ...target.source.fig.rawNodeFields, ...raw } } }
 }
 
+export function importDerivedGridPlacement(graph, target, fields, updates) {
+  if (!sourceFragment(graph, graph.getNode(target.parentId)) || fragmentLayoutParent(graph, target)?.layoutMode !== 'GRID') return
+  const overrides = ancestryOverrides(graph, target)
+  const owns = field => Object.hasOwn(overrides, `${target.id}:${field}`)
+  if (owns('layoutGrow') || owns('layoutAlignSelf')) return
+  const alignment = {}
+  for (const axis of ['Horizontal', 'Vertical']) {
+    const field = (axis === 'Horizontal') === (target.layoutMode === 'HORIZONTAL') ? 'primaryAxisSizing' : 'counterAxisSizing'
+    if (!owns(field)) alignment[`gridChild${axis}Align`] = fields[`gridChild${axis}Align`]
+  }
+  const props = {}
+  importGridOverride(graph, target, alignment, props)
+  Object.assign(updates, props)
+}
+
 function ownedGridFields(graph, target) {
-  return target.layoutMode === 'GRID' || graph.getNode(target.parentId)?.layoutMode === 'GRID' ?
+  if (sourceFragment(graph, target)) return []
+  return target.layoutMode === 'GRID' || fragmentLayoutParent(graph, target)?.layoutMode === 'GRID' ?
     [...gridFields, ...gridSizingFields] : gridFields
 }
 
@@ -246,14 +289,25 @@ function gridOwnership(graph, target, props) {
   const fields = ownedGridFields(graph, target).filter(field => Object.hasOwn(props, field))
   if (!fields.length) return null
   const owner = chain(graph, target, 'parentId').find(node => node.type === 'INSTANCE')
-  if (!owner) return null
-  return { id: owner.id, before: structuredClone(owner.overrides), after: { ...structuredClone(owner.overrides),
-    ...Object.fromEntries(fields.map(field => [owner.id === target.id ? field : `${target.id}:${field}`, true])) } }
+  return { id: owner?.id, targetId: target.id, fields, editedBefore: [...target.source.editedFields],
+    ...(owner ? { before: structuredClone(owner.overrides), after: { ...structuredClone(owner.overrides),
+      ...Object.fromEntries(fields.map(field => [owner.id === target.id ? field : `${target.id}:${field}`, true])) } } : {}) }
 }
 
 function restoreGridOwnership(graph, ownership, direction) {
-  if (ownership) graph.preserveSourceMetadataDuring(() => graph.updateNode(ownership.id,
+  if (ownership?.id) graph.preserveSourceMetadataDuring(() => graph.updateNode(ownership.id,
     { overrides: structuredClone(ownership[direction]) }))
+}
+
+function restoreGridEditedFields(graph, ownership, direction) {
+  if (!ownership) return
+  const node = graph.getNode(ownership.targetId), current = node.source.editedFields
+  const desired = direction === 'before' ? ownership.editedBefore : ownership.editedAfter
+  // This action owns only its grid fields. A later unrelated authored marker
+  // and the rest of the source record must survive undo and redo unchanged.
+  const editedFields = desired.filter(field => ownership.fields.includes(field) || current.includes(field))
+  editedFields.push(...current.filter(field => !ownership.fields.includes(field) && !editedFields.includes(field)))
+  graph.preserveSourceMetadataDuring(() => graph.updateNode(node.id, { source: { ...node.source, editedFields } }))
 }
 
 export function retainGridOwnership(graph, target, props) {
@@ -261,22 +315,28 @@ export function retainGridOwnership(graph, target, props) {
 }
 
 export function correctGridActions(source, replace) {
-  source = `import { gridOwnership, restoreGridOwnership } from ${helper()};\n` + source
+  source = `import { gridOwnership, restoreGridOwnership, restoreGridEditedFields } from ${helper()};\n` + source
   source = replace(source, '\t\tconst previous = pick(node, Object.keys(nextChanges));',
     '\t\tconst previous = pick(node, Object.keys(nextChanges));\n' +
     '\t\tconst ownership = gridOwnership(ctx.graph, node, nextChanges);\n' +
     '\t\trestoreGridOwnership(ctx.graph, ownership, "after");')
+  source = replace(source, '\t\tctx.undo.push({',
+    '\t\tif (ownership) ownership.editedAfter = [...ctx.graph.getNode(id).source.editedFields];\n\t\tctx.undo.push({')
   for (const [changes, direction] of [['nextChanges', 'after'], ['previous', 'before']]) {
     source = replace(source, `\t\t\t\tctx.graph.updateNode(id, ${changes});`,
-      `\t\t\t\trestoreGridOwnership(ctx.graph, ownership, "${direction}");\n\t\t\t\tctx.graph.updateNode(id, ${changes});`)
+      `\t\t\t\trestoreGridOwnership(ctx.graph, ownership, "${direction}");\n\t\t\t\tctx.graph.updateNode(id, ${changes});\n` +
+      `\t\t\t\trestoreGridEditedFields(ctx.graph, ownership, "${direction}");`)
   }
   return source
 }
 
-export { gridOwnership, restoreGridOwnership }
+export { gridOwnership, restoreGridOwnership, restoreGridEditedFields }
 
 export function correctGridOverrides(source, replace) {
-  source = `import { importGridOverride, retainGridOwnership } from ${helper()};\n` + source
+  source = `import { importGridOverride, importDerivedGridPlacement, retainGridOwnership } from ${helper()};\n` + source
+  source = replace(source, 'const { updates, hasSize } = buildDsdLayoutUpdates(ctx, visibleSiblingCount, d, target);',
+    'const { updates, hasSize } = buildDsdLayoutUpdates(ctx, visibleSiblingCount, d, target);\n' +
+    '  importDerivedGridPlacement(ctx.graph, target, d, updates);')
   source = replace(source, 'const props = convertOverrideToProps(fields);',
     'const props = convertOverrideToProps(fields);\n    importGridOverride(ctx.graph, ctx.graph.getNode(targetId), fields, props);')
   source = replace(source, '\t\t\tprotectPatchProps(ctx.protectedFields, patch.targetId, props);',
@@ -295,10 +355,14 @@ export function correctGridNodeChange(source, replace) {
   source = replace(source, 'const FIGMA_RAW_NODE_FIELD_KEYS = [', 'const FIGMA_RAW_NODE_FIELD_KEYS = [\n  ...gridTrackFields,')
   source = replace(source, 'if (RAW_FIELDS_OVERRIDE_BLOCKLIST.has(String(key))) continue;',
     'if (RAW_FIELDS_OVERRIDE_BLOCKLIST.has(String(key)) || gridFigFields.includes(key)) continue;')
+  source = replace(source, 'function applyInstancePayload(context, node, nc, localIdCounter) {',
+    'function applyInstancePayload(context, node, nc, localIdCounter) {\n  const gridDerived = [];')
+  source = replace(source, 'const layout = serializeDerivedLayout(context, node, localIdCounter);',
+    'const layout = serializeDerivedLayout(context, node, localIdCounter);\n  mergeTextOverrides(layout, gridDerived);')
   source = replace(source, 'mergeTextOverrides(symbolOverrides, serializeRootSizing(node, symbolID));', String.raw`
     for (const override of symbolOverrides) for (const field of gridFigFields) delete override[field];
     mergeTextOverrides(symbolOverrides, serializeGridOverrides(context, node, localIdCounter,
-      target => target.id === node.id ? { guids: [symbolID] } : nativeOverridePath(context, node, target, localIdCounter)));
+      target => target.id === node.id ? { guids: [symbolID] } : nativeOverridePath(context, node, target, localIdCounter), gridDerived));
     mergeTextOverrides(symbolOverrides, serializeRootSizing(node, symbolID));`)
   source = replace(source, 'const layoutMode = mapStackMode(nc.stackMode);',
     'const layoutMode = nc.stackMode === "GRID" ? "GRID" : mapStackMode(nc.stackMode);')
@@ -313,8 +377,9 @@ export function correctGridNodeChange(source, replace) {
 }
 
 export function correctGridImport(source, replace) {
+  source = `import { fragmentFigParent } from ${JSON.stringify(fileURLToPath(new URL('./source-fragments.mjs', import.meta.url)))};\n` + source
   source = `import { importGridPlacement } from ${helper()};\n` + source
   return replace(source, 'const { nodeType, ...props } = nodeChangeToProps(nc, blobs);',
     'const { nodeType, ...props } = nodeChangeToProps(nc, blobs);\n' +
-    '\t\timportGridPlacement(nc, changeMap.get(parentMap.get(ncId)), props);')
+    '\t\timportGridPlacement(nc, fragmentFigParent(ncId, changeMap, parentMap, entry => nodeChangeToProps(entry, blobs)), props);')
 }

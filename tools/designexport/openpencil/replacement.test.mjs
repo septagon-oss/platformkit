@@ -6,8 +6,8 @@ import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { parseFigBuffer } from '@open-pencil/fig'
 import { convertFigmaTransformProps } from '@open-pencil/fig/node-change'
 import { importNodeChanges, populateAllLazyFigImportRoots } from '@open-pencil/core/kiwi'
-import { ancestryOverrides, ownsRotationOverride } from './exporter-correction.mjs'
 import { computeAllLayouts, computeLayout } from '@open-pencil/core/layout'
+import { ancestryOverrides, ownsRotationOverride } from './exporter-correction.mjs'
 
 const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name === name)
 const subtree = (graph, node) => [node, ...graph.getChildren(node.id).flatMap(child => subtree(graph, child))]
@@ -193,23 +193,201 @@ test('a refused nested replacement undo leaves graph and history intact for reco
   } finally { editor.replaceGraph(new SceneGraph()) }
 })
 
-test('placed derived sibling positions override template positions after a size-changing replacement', async () => {
+for (const imported of [false, true]) test(`placed derived sibling positions override template positions after a size-changing replacement: imported=${imported}`, async () => {
   let graph = fixture(2)
   const definition = named(graph, 'Property owner')
   graph.updateNode(definition.id, { layoutMode: 'HORIZONTAL', primaryAxisAlign: 'MAX', width: 160, itemSpacing: 8 })
   graph.reorderChild(definition.childIds[0], definition.id, 1)
   graph.syncInstances(definition.id)
   graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeAllLayouts(graph)))
+  if (imported) graph = await reopen(graph)
   const owner = propertyOwner(graph, 2), [guard, target] = graph.getChildren(owner.id)
+  function checkReplacementSizing() {
+    const current = graph.getChildren(propertyOwner(graph, 2).id)[1]
+    assert.equal(current.width, named(graph, 'Replacement').width, 'replacement width comes from its current master')
+    assert.equal(Object.hasOwn(ancestryOverrides(graph, current), `${current.id}:width`), false,
+      'old imported geometry must not become an authored width override')
+  }
   const oldX = guard.x
   graph.swapInstanceComponent(target.id, named(graph, 'Replacement').id)
   graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeLayout(graph, owner.id)))
   assert.equal(guard.x, oldX - 20)
+  checkReplacementSizing()
   const positions = graph.getChildren(owner.id).map(node => [node.x, node.y, node.width, node.height])
+  graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeLayout(graph, owner.id)))
+  assert.deepEqual(graph.getChildren(owner.id).map(node => [node.x, node.y, node.width, node.height]), positions,
+    'a second owning layout is idempotent without intervening edits')
   for (let cycle = 0; cycle < 2; cycle++) {
     graph = await reopen(graph)
+    checkReplacementSizing()
     assert.deepEqual(graph.getChildren(propertyOwner(graph, 2).id).map(node => [node.x, node.y, node.width, node.height]), positions)
   }
+})
+
+for (const authored of [false, true]) test(`imported master resizing invalidates only inherited size caches: authored=${authored}`, async () => {
+  let graph = fixture(0)
+  const master = named(graph, 'Property owner')
+  graph.updateNode(master.id, { layoutMode: 'HORIZONTAL', width: 160, itemSpacing: 8 })
+  graph.syncInstances(master.id)
+  const target = graph.getChildren(propertyOwner(graph, 0).id)[0]
+  if (authored) graph.updateNode(target.id, { width: 30, overrides: { width: true } })
+  graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeAllLayouts(graph)))
+  graph = await reopen(graph)
+  const placed = graph.getChildren(propertyOwner(graph, 0).id), caches = placed.map(node => node.figmaDerivedLayout)
+  const cachedBefore = structuredClone(caches)
+  graph.syncInstances(named(graph, 'Original').id)
+  assert.deepEqual(placed.map(node => node.figmaDerivedLayout), cachedBefore, 'a no-op sync retains every cache field')
+  graph.updateNode(named(graph, 'Original').id, { width: 60 })
+  graph.syncInstances(named(graph, 'Original').id)
+  for (const [index, node] of placed.entries()) {
+    const expected = { ...cachedBefore[index] }
+    if (!authored || index !== 0) delete expected.width
+    assert.deepEqual(node.figmaDerivedLayout, expected, 'unchanged cached height and position remain intact')
+  }
+  assert.deepEqual(caches, cachedBefore, 'cache invalidation never mutates the prior record')
+  const width = authored ? 30 : 60
+  for (let cycle = 0; cycle < 3; cycle++) {
+    for (let pass = 0; pass < 2; pass++) {
+      graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeLayout(graph, propertyOwner(graph, 0).id)))
+      const [current, sibling] = graph.getChildren(propertyOwner(graph, 0).id)
+      assert.deepEqual([current.x, current.width, sibling.x, sibling.width], [0, width, width + 8, 60],
+        'both layouts use current source dimensions while respecting the authored width')
+      assert.equal(Object.hasOwn(ancestryOverrides(graph, current), `${current.id}:width`), authored)
+      assert.equal(Object.hasOwn(ancestryOverrides(graph, sibling), `${sibling.id}:width`), false)
+    }
+    if (cycle < 2) {
+      graph = await reopen(graph)
+      const [current, sibling] = graph.getChildren(propertyOwner(graph, 0).id)
+      assert.deepEqual([current.x, current.width, sibling.x, sibling.width], [0, width, width + 8, 60],
+        'reopening preserves the resized layout before recomputation')
+    }
+  }
+})
+
+const dependentLayouts = [['vertical', false], ['wrap', false], ['vertical', true], ['wrap', true]]
+for (const [mode, fixed] of dependentLayouts) for (const route of ['scheduler', 'owning']) test(`imported ${mode}/fixed=${fixed} dependencies reflow through ${route} layout and two saves`, async () => {
+  let graph = new SceneGraph()
+  const page = graph.getPages()[0], wrapping = mode === 'wrap'
+  const source = graph.createNode('COMPONENT', page.id, { name: 'Resized source', width: 40, height: 20 })
+  graph.createNode('RECTANGLE', source.id, { name: 'Source interior', x: 3, y: 2, width: 10, height: 10 })
+  const body = graph.createNode('COMPONENT', page.id, { name: 'Dependent body', width: 100, height: fixed ? 100 : 0,
+    layoutMode: wrapping ? 'HORIZONTAL' : 'VERTICAL', layoutWrap: wrapping ? 'WRAP' : 'NO_WRAP',
+    primaryAxisSizing: fixed || wrapping ? 'FIXED' : 'HUG', counterAxisSizing: fixed || !wrapping ? 'FIXED' : 'HUG',
+    itemSpacing: 8, counterAxisSpacing: 8 })
+  graph.createInstance(source.id, body.id, { name: 'Resized child' })
+  const opaque = graph.createNode('FRAME', body.id, { name: 'Opaque sibling', width: 40, height: 20 })
+  graph.createNode('RECTANGLE', opaque.id, { name: 'Opaque interior', x: 5, y: 3, width: 10, height: 10 })
+  const outer = graph.createNode('COMPONENT', page.id, { name: 'Dependent outer', width: 100, height: 0,
+    layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', counterAxisSizing: 'FIXED', itemSpacing: 8 })
+  graph.createInstance(body.id, outer.id, { name: 'Nested body' })
+  graph.createNode('RECTANGLE', outer.id, { name: 'Footer', width: 40, height: 10 })
+  graph.createInstance(outer.id, page.id, { name: 'Dependent placement' })
+  const unrelated = graph.createNode('FRAME', page.id, { name: 'Unrelated opaque', x: 280, y: 100, width: 80, height: 60 })
+  graph.createNode('RECTANGLE', unrelated.id, { x: 11, y: 7, width: 10, height: 10 })
+  graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeAllLayouts(graph)))
+  graph = await reopen(graph)
+  const parts = () => {
+    const root = named(graph, 'Dependent placement'), [nested, footer] = graph.getChildren(root.id)
+    return { root, nested, footer, children: graph.getChildren(nested.id) }
+  }
+  const savedLayout = node => subtree(graph, node).map(({ name, x, y, width, height, figmaDerivedLayout }) =>
+    structuredClone({ name, x, y, width, height, figmaDerivedLayout }))
+  const interiorBefore = savedLayout(graph.getChildren(parts().children[1].id)[0])
+  const unrelatedBefore = savedLayout(named(graph, 'Unrelated opaque'))
+  const initial = parts()
+  assert.deepEqual([initial.nested.height, initial.root.height, initial.footer.y],
+    fixed ? [100, 118, 108] : wrapping ? [20, 38, 28] : [48, 66, 56])
+  function check() {
+    const { root, nested, footer, children: [current, sibling] } = parts()
+    assert.deepEqual([nested.height, root.height, footer.y], fixed ? [100, 118, 108] : wrapping ? [48, 66, 56] : [68, 86, 76],
+      'internal growth changes HUG footprints without resizing fixed owners')
+    assert.deepEqual([current.width, current.height, sibling.x, sibling.y], wrapping ? [70, 20, 0, 28] : [40, 40, 0, 48])
+    assert.deepEqual(savedLayout(graph.getChildren(sibling.id)[0]), interiorBefore, 'dependent placement does not acquire opaque interiors')
+    assert.deepEqual(savedLayout(named(graph, 'Unrelated opaque')), unrelatedBefore, 'unrelated layout remains untouched')
+    assert.equal(Object.hasOwn(ancestryOverrides(graph, current), `${current.id}:${wrapping ? 'width' : 'height'}`), false)
+  }
+  const editor = createEditor({ graph })
+  try {
+    graph.updateNode(named(graph, 'Resized source').id, wrapping ? { width: 70 } : { height: 40 })
+    if (route === 'owning') {
+      graph.syncInstances(named(graph, 'Resized source').id)
+      computeLayout(graph, parts().root.id)
+      check()
+    }
+    await Promise.resolve()
+    check()
+    for (let cycle = 0; cycle < 2; cycle++) {
+      graph = await reopen(graph)
+      check()
+      editor.replaceGraph(graph)
+      graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeAllLayouts(graph)))
+      check()
+    }
+  } finally { editor.replaceGraph(new SceneGraph()) }
+})
+
+for (const layoutMode of ['HORIZONTAL', 'VERTICAL']) for (const imported of [false, true]) for (const route of ['scheduler', 'owning']) {
+  test(`incoming fill space reflows nested alignment and two saves: ${layoutMode}, imported=${imported}, route=${route}`, async () => {
+    let graph = new SceneGraph()
+    const page = graph.getPages()[0]
+    const dimension = layoutMode === 'HORIZONTAL' ? 'width' : 'height', position = layoutMode === 'HORIZONTAL' ? 'x' : 'y'
+    const inner = graph.createNode('COMPONENT', page.id, { name: 'Fill master', width: 100, height: 20, [dimension]: 100,
+      layoutMode, primaryAxisAlign: 'MAX' })
+    graph.createNode('RECTANGLE', inner.id, { name: 'Aligned leaf', width: 20, height: 20 })
+    const outer = graph.createNode('COMPONENT', page.id, { name: 'Available space', width: 100, height: 20, [dimension]: 100,
+      layoutMode })
+    graph.createInstance(inner.id, outer.id, { name: 'Filling child', primaryAxisSizing: 'FILL', layoutGrow: 1 })
+    graph.createInstance(outer.id, page.id, { name: 'Fill placement' })
+    graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeAllLayouts(graph)))
+    if (imported) graph = await reopen(graph)
+    function check(size) {
+      const root = named(graph, 'Fill placement'), fill = graph.getChildren(root.id)[0]
+      const leaf = graph.getChildren(fill.id)[0]
+      assert.deepEqual([root[dimension], fill[dimension], leaf[position], leaf[dimension]], [size, size, size - 20, 20])
+      assert.equal(Object.hasOwn(ancestryOverrides(graph, fill), `${fill.id}:${dimension}`), false,
+        'resolved available space must not become an authored size override')
+    }
+    check(100)
+    const editor = createEditor({ graph })
+    try {
+      graph.updateNode(named(graph, 'Available space').id, { [dimension]: 200 })
+      if (route === 'owning') {
+        graph.syncInstances(named(graph, 'Available space').id)
+        computeLayout(graph, named(graph, 'Fill placement').id)
+        check(200)
+      }
+      await Promise.resolve()
+      check(200)
+      for (let cycle = 0; cycle < 2; cycle++) {
+        graph = await reopen(graph)
+        check(200)
+        editor.replaceGraph(graph)
+      }
+    } finally { editor.replaceGraph(new SceneGraph()) }
+  })
+}
+
+test('late source-lineage refusal preserves earlier projected cache invalidation atomically', async () => {
+  let graph = fixture(0)
+  const master = named(graph, 'Property owner')
+  graph.updateNode(master.id, { layoutMode: 'VERTICAL', primaryAxisSizing: 'HUG', itemSpacing: 8 })
+  graph.syncInstances(master.id)
+  graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeAllLayouts(graph)))
+  graph = await reopen(graph)
+  const late = graph.getChildren(named(graph, 'Untouched').id).at(-1)
+  graph.updateNode(graph.getChildren(late.id)[0].id, { componentId: 'missing-late-source' })
+  graph.updateNode(named(graph, 'Original').id, { height: 40 })
+  const before = structuredClone([...graph.getAllNodes()]), index = structuredClone(graph.instanceIndex), events = []
+  const caches = [...graph.getAllNodes()].map(node => node.figmaDerivedLayout), cachedBefore = structuredClone(caches)
+  const stop = graph.onNodeEvents({ created: () => events.push('create'), updated: () => events.push('update'),
+    deleted: () => events.push('delete'), reordered: () => events.push('reorder') })
+  try {
+    assert.throws(() => graph.syncInstances(named(graph, 'Original').id), /source|lineage/i)
+    assert.deepEqual([...graph.getAllNodes()], before)
+    assert.deepEqual(graph.instanceIndex, index)
+    assert.deepEqual(caches, cachedBefore, 'failed staged invalidation leaves prior cache objects intact')
+    assert.deepEqual(events, [], 'no earlier valid instance commits before the late refusal')
+  } finally { stop() }
 })
 
 for (const positioned of [false, true]) for (const angle of [-30, 30]) test(`native rotation preserves centers, inheritance and three saves: positioned=${positioned}, angle=${angle}`, async () => {
