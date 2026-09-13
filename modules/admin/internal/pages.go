@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/text/message"
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -30,9 +31,11 @@ type pages struct {
 }
 
 func (p pages) mount(api *httpx.API) {
-	page.Serve(api, p.shell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: loginPath, Summary: "Sign in"},
-		httpx.Public(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
-			return login(ctx), nil
+	loginShell := p.shell
+	loginShell.Messages, loginShell.Locale = p.Messages, p.Locale
+	page.Serve(api, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: loginPath, Summary: "Sign in"},
+		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return login(ctx, r.Locale), nil
 		})
 
 	page.Serve(api, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: adminRoot, Summary: "The dashboard"},
@@ -67,7 +70,7 @@ func (p pages) mount(api *httpx.API) {
 // and a second one that minted it differently is the duplicate most worth not
 // having. ui/assets/js/session.js is the thirty lines that make a form post
 // JSON. It is a bare page: somebody who has no session yet has no navigation.
-func login(ctx context.Context) page.View {
+func login(ctx context.Context, locale *page.Locale) page.View {
 	next := adminRoot
 	if r, ok := httpx.RequestFrom(ctx); ok {
 		// The kernel's rule, because this one used to be its own and was
@@ -77,26 +80,33 @@ func login(ctx context.Context) page.View {
 			next = to
 		}
 	}
-	return page.View{Title: "Sign in", Bare: true, Body: []g.Node{
-		components.Card(components.CardProps{Title: "Sign in", Description: "Use the address this tenant knows you by."}),
+	text := func(key, fallback string) string {
+		if locale == nil {
+			return fallback
+		}
+		return locale.Sprintf(message.Key("admin.login."+key, fallback))
+	}
+	title := text("title", "Sign in")
+	return page.View{Title: title, Bare: true, Body: []g.Node{
+		components.Card(components.CardProps{Title: title, Description: text("description", "Use the address this tenant knows you by.")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				"data-login-form": "", "data-next": next}},
-			Action: "/api/v1/auth/login", Label: "Sign in",
+			Action: "/api/v1/auth/login", Label: title,
 		},
 			components.Alert(components.AlertProps{
 				ComponentProps: components.ComponentProps{
-					Hidden: true, Attrs: map[string]string{"data-login-error": ""}},
+					Hidden: true, Attrs: map[string]string{"data-login-error": "", "lang": "en"}},
 				Tone: "danger", Message: "", Bordered: true,
 			}),
 			components.Input(components.InputProps{
-				Name: "email", Type: "email", Label: "Email", Required: true,
+				Name: "email", Type: "email", Label: text("email", "Email"), Required: true,
 				Autocomplete: "username", AutoFocus: true, FullWidth: true}),
 			components.Input(components.InputProps{
-				Name: "password", Type: "password", Label: "Password", Required: true,
+				Name: "password", Type: "password", Label: text("password", "Password"), Required: true,
 				Autocomplete: "current-password", FullWidth: true}),
 			components.FormActions(components.FormActionsProps{},
-				components.Button(components.ButtonProps{Label: "Sign in", Type: "submit", FullWidth: true})),
+				components.Button(components.ButtonProps{Label: title, Type: "submit", FullWidth: true})),
 		),
 	}}
 }

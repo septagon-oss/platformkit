@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
 )
@@ -23,11 +24,15 @@ import (
 // a fourth positional argument. Every module follows this, and an empty Deps is
 // a module that needs nothing.
 type Deps struct {
-	// Service optionally shares task lifecycle commands with another module.
-	// Application composition constructs it with NewService, supplies it here,
-	// and passes the contracts.Service to product dependencies. Nil constructs
-	// the default service. Routes, the create hook and the SLA job all use it.
+	// Service shares one lifecycle implementation with product callers. A
+	// policy-enabled composition supplies NewServiceWithPolicy here and hands
+	// the same service to its other modules.
 	Service contracts.Service
+
+	// Policy optionally refines assignment and resolution for the locked task.
+	// Existing route grants still apply. System SLA maintenance is independent.
+	// Supply either Policy or a preconfigured Service, never both.
+	Policy tenancy.Policy
 
 	// Tenants is how the SLA sweep reaches active tenants. The application
 	// supplies tenant/contracts.Active over its tenant service.
@@ -73,17 +78,30 @@ var permissions = []module.Permission{
 	{Key: contracts.PermissionTaskUpdate},
 }
 
-// NewService constructs the task lifecycle implementation for application
-// composition. Commands use the caller's tenant transaction; the application
-// remains responsible for authorizing product operations before calling them.
-// Pass this service to Module through Deps.Service to share it with task routes
-// and the SLA sweep. Consumer modules import only the contracts package.
+// NewService constructs task lifecycle commands for application composition.
+// Pass the returned value through Deps.Service to share it with task routes.
 func NewService() contracts.Service { return internal.NewService() }
 
-// Module is the manifest. Existing compositions may omit Deps.Service; a
-// composition sharing task commands supplies the service it constructed.
+// NewServiceWithPolicy adds resource decisions to assignment and resolution.
+// The caller still owns route grants, current identity and tenant transactions.
+func NewServiceWithPolicy(policy tenancy.Policy) contracts.Service {
+	if policy == nil {
+		panic("task: a policy-enabled service requires a policy provider")
+	}
+	svc := internal.NewService()
+	svc.Policy = policy
+	return svc
+}
+
+// Module mounts one shared lifecycle implementation for routes and jobs.
 func Module(deps Deps) module.Module {
 	svc := deps.Service
+	if deps.Policy != nil {
+		if svc != nil {
+			panic("task: configure policy on the shared service or supply Policy, not both")
+		}
+		svc = NewServiceWithPolicy(deps.Policy)
+	}
 	if svc == nil {
 		svc = NewService()
 	}
@@ -95,7 +113,7 @@ func Module(deps Deps) module.Module {
 	// created with a deadline already behind it is breached on arrival, in the
 	// create's own transaction, rather than a minute later when the sweep gets
 	// to it. The hook is set here and not in the spec literal above because it
-	// needs this composition's service.
+	// needs the service, and the service is constructed here.
 	mounted := spec
 	mounted.AfterCreate = internal.BreachOnArrival(svc)
 	return module.Module{

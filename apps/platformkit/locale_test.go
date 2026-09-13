@@ -1,0 +1,88 @@
+package main
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/modules/admin"
+	"github.com/septagon-oss/platformkit/ui/page"
+	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
+)
+
+func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
+	path, cfg := configure(t)
+	install(t, path)
+	c := compose(cfg)
+	c.modules = append(c.modules, module.Module{Name: "locale_verification", Routes: func(api *httpx.API) {
+		shell := page.Shell{Messages: admin.Messages(), Frame: func(_ context.Context, r page.Request, body []g.Node) g.Node {
+			return h.Main(h.Lang(r.Locale.Language), g.Group(body))
+		}}
+		page.Serve(api, shell, page.Route{ID: "locale-authored", Method: http.MethodGet, Path: "/_locale/english"}, httpx.Public(),
+			func(context.Context, page.Request, *page.Empty) (page.View, error) {
+				return page.View{Language: "en", Body: []g.Node{g.Text("Authored English")}}, nil
+			})
+		page.Serve(api, shell, page.Route{ID: "locale-refusal", Method: http.MethodGet, Path: "/_locale/refusal"}, httpx.Public(),
+			func(context.Context, page.Request, *page.Empty) (page.View, error) {
+				return page.View{}, problem.New(http.StatusForbidden, "English refusal")
+			})
+	}})
+	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
+		Authenticate: c.auth.Authenticate, Role: app.All, Transport: events.Memory(), Log: quiet()})
+	for _, tc := range []struct {
+		path, accepted, language, text string
+		status                         int
+	}{
+		{"/admin/login", "pt-PT, en;q=0.8", "pt-PT", "Palavra-passe", 200},
+		{"/admin/login?lang=en", "pt-PT", "en", "Password", 200},
+		{"/admin/login?lang=pt-PT", "en", "pt-PT", "Palavra-passe", 200},
+		{"/admin/login?lang=ja", "pt-PT", "pt-PT", "Palavra-passe", 200},
+		{"/admin/login?lang=en&lang=pt-PT", "en", "en", "Password", 200},
+		{"/admin/login", "ja", "en", "Password", 200},
+		{"/admin/login", "", "en", "Password", 200},
+		{"/_locale/english", "pt-PT", "en", "Authored English", 200},
+		{"/_locale/refusal", "pt-PT", "en", "English refusal", 403},
+	} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+cfg.Server.Addr+tc.path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = acmeHost
+		req.Header.Set("Accept-Language", tc.accepted)
+		response, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(data)
+		if response.StatusCode != tc.status || !strings.Contains(body, `lang="`+tc.language+`"`) || !strings.Contains(body, tc.text) {
+			t.Fatalf("page %s accepting %q = %d, expected %s copy", tc.path, tc.accepted, response.StatusCode, tc.language)
+		}
+		if response.Header.Get("Content-Language") != tc.language || response.Header.Get("Vary") != "Accept-Language" || response.Header.Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("negotiated headers: language=%q vary=%q cache=%q", response.Header.Get("Content-Language"), response.Header.Get("Vary"), response.Header.Get("Cache-Control"))
+		}
+		if strings.HasPrefix(tc.path, "/_locale/") {
+			if !strings.Contains(body, `<main lang="en">`) {
+				t.Fatal("frame kept the negotiated language after an explicit English view or fault")
+			}
+			continue
+		}
+		for _, contract := range []string{`action="/api/v1/auth/login"`, `name="email"`, `name="password"`, `data-login-form`} {
+			if !strings.Contains(body, contract) {
+				t.Fatalf("localized form lost %s", contract)
+			}
+		}
+	}
+}

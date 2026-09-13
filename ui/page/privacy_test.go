@@ -42,19 +42,25 @@ func TestSensitivePagesSendPrivacyHeadersBeforeTheirAssets(t *testing.T) {
 		Frame: func(_ context.Context, _ page.Request, body []g.Node) g.Node { return g.Group(body) },
 	}
 	for _, tt := range []struct {
-		name, policy, cache string
-		sensitive, hx       bool
-		status              int
+		name, policy, cache      string
+		sensitive, hx, localized bool
+		status                   int
 	}{
-		{"ordinary", "strict-origin-when-cross-origin", "", false, false, http.StatusOK},
-		{"sensitive", "no-referrer", "no-store", true, false, http.StatusOK},
-		{"refused", "no-referrer", "no-store", true, false, http.StatusUnprocessableEntity},
-		{"redirect", "no-referrer", "no-store", true, false, http.StatusSeeOther},
-		{"htmx-redirect", "no-referrer", "no-store", true, true, http.StatusNoContent},
+		{"ordinary", "strict-origin-when-cross-origin", "", false, false, false, http.StatusOK},
+		{"sensitive", "no-referrer", "no-store", true, false, false, http.StatusOK},
+		{"refused", "no-referrer", "no-store", true, false, false, http.StatusUnprocessableEntity},
+		{"redirect", "no-referrer", "no-store", true, false, false, http.StatusSeeOther},
+		{"htmx-redirect", "no-referrer", "no-store", true, true, false, http.StatusNoContent},
+		{"localized-ordinary", "strict-origin-when-cross-origin", "private, no-store", false, false, true, http.StatusOK},
+		{"localized-sensitive", "no-referrer", "no-store", true, false, true, http.StatusOK},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := "/" + tt.name
-			page.Serve(api, shell, page.Route{ID: tt.name, Method: http.MethodGet, Path: path}, httpx.Public(),
+			pageShell := shell
+			if tt.localized {
+				pageShell.Messages = localeMessages(t, "Account")
+			}
+			page.Serve(api, pageShell, page.Route{ID: tt.name, Method: http.MethodGet, Path: path}, httpx.Public(),
 				func(context.Context, page.Request, *struct{}) (page.View, error) {
 					view := page.View{Title: "Account", Sensitive: tt.sensitive}
 					if tt.status == http.StatusUnprocessableEntity {
@@ -66,6 +72,7 @@ func TestSensitivePagesSendPrivacyHeadersBeforeTheirAssets(t *testing.T) {
 					return view, nil
 				})
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://localhost"+path+"?token=private-link", nil)
+			req.Header.Set("Accept-Language", "pt-PT")
 			if tt.hx {
 				req.Header.Set("HX-Request", "true")
 			}
@@ -83,6 +90,9 @@ func TestSensitivePagesSendPrivacyHeadersBeforeTheirAssets(t *testing.T) {
 			}
 			if got := response.Header.Get("Cache-Control"); got != tt.cache {
 				t.Errorf("Cache-Control = %q, want %q", got, tt.cache)
+			}
+			if tt.localized && (response.Header.Get("Content-Language") != "pt-PT" || response.Header.Get("Vary") != "Accept-Language") {
+				t.Errorf("privacy headers lost negotiated language: %v", response.Header)
 			}
 			if tt.status == http.StatusSeeOther || tt.hx {
 				header := "Location"

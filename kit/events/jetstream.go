@@ -26,11 +26,14 @@ const (
 // for the consumer backoff to redeliver; a successful handler acknowledges.
 //
 // The returned Transport is an io.Closer, so kit/app releases the connection
-// when the worker stops.
-func JetStream(url string) (Transport, error) {
-	nc, err := nats.Connect(url, nats.Name("platformkit"), nats.MaxReconnects(-1))
+// when the worker stops. Native NATS options let the composition supply TLS
+// trust and credentials without putting secrets in the endpoint URL. Options
+// follow the transport defaults, so the composition can override them.
+func JetStream(url string, options ...nats.Option) (Transport, error) {
+	options = append([]nats.Option{nats.Name("platformkit"), nats.MaxReconnects(-1)}, options...)
+	nc, err := nats.Connect(url, options...)
 	if err != nil {
-		return nil, fmt.Errorf("events: connect to %s: %w", url, err)
+		return nil, connectionError{cause: err}
 	}
 	js, err := nc.JetStream()
 	if err != nil {
@@ -50,6 +53,14 @@ func JetStream(url string) (Transport, error) {
 	}
 	return &jetstream{nc: nc, js: js}, nil
 }
+
+// Connection failures may quote credentials in either the endpoint or an SDK
+// error (notably malformed URLs). Keep diagnostics safe while retaining the
+// original cause for errors.Is and errors.AsType.
+type connectionError struct{ cause error }
+
+func (connectionError) Error() string   { return "events: connect to NATS failed" }
+func (e connectionError) Unwrap() error { return e.cause }
 
 // wantedStream is the stream this code asks for, in one place, because the
 // creation above and the reconciliation below have to ask for the same thing.

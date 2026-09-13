@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"golang.org/x/text/message/catalog"
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -27,6 +28,13 @@ type Shell struct {
 	Tag       string
 	Back      string
 	BackLabel string
+	// Messages is composed once from the participating modules' catalogs.
+	// Nil keeps the existing untranslated shell. Do not mutate it while serving.
+	Messages catalog.Catalog
+	// Locale chooses an explicit URL, account or tenant preference. Empty or
+	// unsupported values fall back to Accept-Language and the catalog default.
+	// The application owns preference persistence and locale-preserving links.
+	Locale func(context.Context, Request) string
 }
 
 // Route is what one page is: its operation id, method, path, summary, and the
@@ -54,6 +62,9 @@ const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)do
 // the frame, turns a SeeOther into the redirect and a 4xx problem into Fault,
 // and lets a 5xx keep the kernel's problem document and log line.
 func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Handler[I]) {
+	if s.Messages != nil {
+		_ = SelectLocale(s.Messages) // reject an empty catalog at composition
+	}
 	op := huma.Operation{
 		OperationID: rt.ID, Method: rt.Method, Path: rt.Path, Summary: rt.Summary,
 		Tags: []string{s.Tag}, Errors: rt.Errors,
@@ -63,6 +74,16 @@ func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Ha
 	}
 	httpx.HTML(api, op, auth, func(ctx context.Context, in *I) (*httpx.Page, error) {
 		r := read(ctx, s.Chrome)
+		if s.Messages != nil {
+			var preferred, accepted string
+			if s.Locale != nil {
+				preferred = s.Locale(ctx, r)
+			}
+			if req, ok := httpx.RequestFrom(ctx); ok {
+				accepted = req.Header.Get("Accept-Language")
+			}
+			r.Locale = new(SelectLocale(s.Messages, preferred, accepted))
+		}
 		v, err := handler(ctx, r, in)
 		if err != nil {
 			if to, ok := errors.AsType[httpx.SeeOther](err); ok {
@@ -78,6 +99,13 @@ func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Ha
 			fault.Sensitive = v.Sensitive
 			v = fault
 		}
+		if r.Locale != nil {
+			if v.Language == "" {
+				v.Language = r.Locale.Language
+			} else if v.Language != r.Locale.Language {
+				r.Locale = new(SelectLocale(s.Messages, v.Language))
+			}
+		}
 		status := v.Status
 		if status == 0 {
 			status = http.StatusOK
@@ -91,6 +119,12 @@ func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Ha
 		out, err := httpx.Document(Document(s.Chrome, r, v, body), status)
 		if err != nil {
 			return nil, err
+		}
+		if s.Messages != nil {
+			out.ContentLanguage, out.Vary = v.Language, "Accept-Language"
+			// A preference resolver may depend on the signed-in account. Do not
+			// let a shared cache reuse one person's language for another.
+			out.CacheControl = "private, no-store"
 		}
 		applyPrivacy(out, v.Sensitive)
 		return out, nil
