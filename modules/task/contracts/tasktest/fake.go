@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -13,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
+	"github.com/septagon-oss/platformkit/modules/task/domain"
 )
 
 // Fake is contracts.Service over a map: the same rules, no database, no
@@ -93,26 +93,23 @@ func (f *Fake) Assign(_ context.Context, _ db.Tx[db.Tenant], id, assignee uuid.U
 	return f.commit(task, contracts.EventAssigned), nil
 }
 
-// Resolve mirrors internal.Service.Resolve.
+// Resolve shares the production resolution decision, without persistence.
 func (f *Fake) Resolve(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, resolution string) (*contracts.Task, error) {
-	resolution = strings.TrimSpace(resolution)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	task, err := f.get(id)
 	if err != nil {
 		return nil, err
 	}
-	if task.Status == contracts.StatusClosed {
-		return nil, fmt.Errorf("%w: a closed task cannot be resolved", crud.ErrConflict)
+	decision, err := domain.Resolve(task.Status, task.Resolution, resolution)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", crud.ErrConflict, err)
 	}
-	if task.Status == contracts.StatusResolved {
-		if resolution == "" || strings.TrimSpace(task.Resolution) == resolution {
-			return task, nil
-		}
-		return nil, fmt.Errorf("%w: this task is resolved with a different resolution", crud.ErrConflict)
+	if !decision.Changed {
+		return task, nil
 	}
 	at := db.Now()
-	task.Status, task.Resolution, task.ResolvedAt = contracts.StatusResolved, resolution, &at
+	task.Status, task.Resolution, task.ResolvedAt = contracts.StatusResolved, decision.Text, &at
 	return f.commit(task, contracts.EventResolved), nil
 }
 

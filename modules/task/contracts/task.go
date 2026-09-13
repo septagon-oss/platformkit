@@ -21,17 +21,18 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/modules/task/domain"
 )
 
 // The lifecycle: a task opens, is acknowledged when somebody takes it, is
 // resolved when the loop closes, and is closed when nothing more will happen.
 // Nothing may be assigned once it is resolved or closed.
 const (
-	StatusOpen         = "open"
-	StatusAcknowledged = "acknowledged"
-	StatusInProgress   = "in_progress"
-	StatusResolved     = "resolved"
-	StatusClosed       = "closed"
+	StatusOpen         = domain.StatusOpen
+	StatusAcknowledged = domain.StatusAcknowledged
+	StatusInProgress   = domain.StatusInProgress
+	StatusResolved     = domain.StatusResolved
+	StatusClosed       = domain.StatusClosed
 )
 
 // The priorities, which order a queue and drive escalation.

@@ -6,7 +6,6 @@ package internal
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
+	"github.com/septagon-oss/platformkit/modules/task/domain"
 )
 
 // Service owns task transitions. Optional policy decisions use the locked task
@@ -67,7 +67,6 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 // conflict rather than an overwrite, because the account a task gives of itself
 // is the auditable part and a retry is not a correction.
 func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, resolution string) (*contracts.Task, error) {
-	resolution = strings.TrimSpace(resolution)
 	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
 	if err != nil {
 		return nil, err
@@ -75,18 +74,16 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 	if err := s.authorize(ctx, tx, task, "task:resolve", uuid.Nil); err != nil {
 		return nil, err
 	}
-	if task.Status == contracts.StatusClosed {
-		return nil, fmt.Errorf("%w: a closed task cannot be resolved", crud.ErrConflict)
+	decision, err := domain.Resolve(task.Status, task.Resolution, resolution)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", crud.ErrConflict, err)
 	}
-	if task.Status == contracts.StatusResolved {
-		if resolution == "" || strings.TrimSpace(task.Resolution) == resolution {
-			return task, nil
-		}
-		return nil, fmt.Errorf("%w: this task is resolved with a different resolution", crud.ErrConflict)
+	if !decision.Changed {
+		return task, nil
 	}
 	at := db.Now()
 	task.Status = contracts.StatusResolved
-	task.Resolution = resolution
+	task.Resolution = decision.Text
 	task.ResolvedAt = &at
 	if err := crud.Update(ctx, tx, task, "status", "resolution", "resolved_at", "updated_at"); err != nil {
 		return nil, err
