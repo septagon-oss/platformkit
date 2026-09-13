@@ -211,7 +211,7 @@ func checks(ctx context.Context) []result {
 // tenants is the switcher: every tenant of this installation and the host each
 // is served at, for a person who administers more than one.
 //
-// It is the one cross-tenant read in this module. A tenant belongs to no
+// Like delivery inspection, this reads across tenants. A tenant belongs to no
 // tenant, so listing them takes a system transaction, opened on a detached
 // context so it is a transaction of its own rather than a widening of the
 // request's. See docs/adr/0006.

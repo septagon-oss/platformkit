@@ -43,8 +43,8 @@ type Deps struct {
 	// rules of its own is a menu that lies in one direction or the other.
 	Authorize httpx.Authorizer
 
-	// Tenants is the control plane, for the switcher. It is the one cross-tenant
-	// read in this module, and it needs the token Routes is handed.
+	// Tenants is the control plane, for the switcher. Its cross-tenant read
+	// needs the system token Routes is handed, as does delivery inspection.
 	Tenants tenantcontracts.Service
 
 	// Theme is the installation's two palettes. The zero value is the palette
