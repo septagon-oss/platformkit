@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -23,9 +24,15 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 	install(t, path)
 	c := compose(cfg)
 	c.modules = append(c.modules, module.Module{Name: "locale_verification", Routes: func(api *httpx.API) {
-		shell := page.Shell{Messages: admin.Messages(), Frame: func(_ context.Context, r page.Request, body []g.Node) g.Node {
+		shell := page.Shell{Messages: page.FromCatalog(admin.Messages()), Frame: func(_ context.Context, r page.Request, body []g.Node) g.Node {
 			return h.Main(h.Lang(r.Locale.Language), g.Group(body))
 		}}
+		ownedShell := shell
+		ownedShell.Messages = independentMessages{}
+		page.Serve(api, ownedShell, page.Route{ID: "locale-provider", Method: http.MethodGet, Path: "/_locale/provider"}, httpx.Public(),
+			func(_ context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+				return page.View{Body: []g.Node{g.Text(r.Locale.Text("welcome", "Welcome, %s", "Camille"))}}, nil
+			})
 		page.Serve(api, shell, page.Route{ID: "locale-authored", Method: http.MethodGet, Path: "/_locale/english"}, httpx.Public(),
 			func(context.Context, page.Request, *page.Empty) (page.View, error) {
 				return page.View{Language: "en", Body: []g.Node{g.Text("Authored English")}}, nil
@@ -48,6 +55,7 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 		{"/admin/login?lang=en&lang=pt-PT", "en", "en", "Password", 200},
 		{"/admin/login", "ja", "en", "Password", 200},
 		{"/admin/login", "", "en", "Password", 200},
+		{"/_locale/provider", "en", "fr", "Bonjour, Camille", 200},
 		{"/_locale/english", "pt-PT", "en", "Authored English", 200},
 		{"/_locale/refusal", "pt-PT", "en", "English refusal", 403},
 	} {
@@ -74,8 +82,8 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 			t.Fatalf("negotiated headers: language=%q vary=%q cache=%q", response.Header.Get("Content-Language"), response.Header.Get("Vary"), response.Header.Get("Cache-Control"))
 		}
 		if strings.HasPrefix(tc.path, "/_locale/") {
-			if !strings.Contains(body, `<main lang="en">`) {
-				t.Fatal("frame kept the negotiated language after an explicit English view or fault")
+			if !strings.Contains(body, `<main lang="`+tc.language+`">`) {
+				t.Fatal("frame used a different language than the selected provider or view")
 			}
 			continue
 		}
@@ -85,4 +93,18 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A second provider proves page consumers need no x/text catalog or printer.
+type independentMessages struct{}
+
+func (independentMessages) Select(...string) page.Locale {
+	return page.Locale{Language: "fr", Formatter: independentMessages{}}
+}
+
+func (independentMessages) Text(key, fallback string, args ...any) string {
+	if key == "welcome" {
+		return fmt.Sprintf("Bonjour, %s", args...)
+	}
+	return fmt.Sprintf(fallback, args...)
 }

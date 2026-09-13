@@ -33,6 +33,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/web"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // composition is the application: every module it is made of, and the values
@@ -146,7 +147,7 @@ func compose(cfg config.Config) composition {
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
 		Modules: mods, Authorize: auths, Tenants: tenants, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
-		Messages: admin.Messages(), Locale: loginLocale}))
+		Messages: page.FromCatalog(admin.Messages()), Locale: loginLocale}))
 
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
 		notify: notify, mail: mail, plans: plans}

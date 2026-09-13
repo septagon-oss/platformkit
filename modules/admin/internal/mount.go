@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/text/message/catalog"
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/design"
@@ -34,7 +33,7 @@ type Shell struct {
 	// this shell that belongs to whoever runs it. See design.Pair.
 	Theme     design.Pair
 	Storybook func(context.Context) (ui.Storybook, error)
-	Messages  catalog.Catalog
+	Messages  page.Messages
 	Locale    func(context.Context, page.Request) string
 }
 

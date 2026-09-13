@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/text/message"
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -84,7 +83,7 @@ func login(ctx context.Context, locale *page.Locale) page.View {
 		if locale == nil {
 			return fallback
 		}
-		return locale.Sprintf(message.Key("admin.login."+key, fallback))
+		return locale.Text("admin.login."+key, fallback)
 	}
 	title := text("title", "Sign in")
 	return page.View{Title: title, Bare: true, Body: []g.Node{

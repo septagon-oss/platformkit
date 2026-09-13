@@ -7,7 +7,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"golang.org/x/text/message/catalog"
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -30,7 +29,7 @@ type Shell struct {
 	BackLabel string
 	// Messages is composed once from the participating modules' catalogs.
 	// Nil keeps the existing untranslated shell. Do not mutate it while serving.
-	Messages catalog.Catalog
+	Messages Messages
 	// Locale chooses an explicit URL, account or tenant preference. Empty or
 	// unsupported values fall back to Accept-Language and the catalog default.
 	// The application owns preference persistence and locale-preserving links.
@@ -63,7 +62,7 @@ const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)do
 // and lets a 5xx keep the kernel's problem document and log line.
 func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Handler[I]) {
 	if s.Messages != nil {
-		_ = SelectLocale(s.Messages) // reject an empty catalog at composition
+		_ = SelectLocale(s.Messages) // validate the provider at composition
 	}
 	op := huma.Operation{
 		OperationID: rt.ID, Method: rt.Method, Path: rt.Path, Summary: rt.Summary,

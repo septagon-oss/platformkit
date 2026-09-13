@@ -27,7 +27,6 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
-	"golang.org/x/text/message/catalog"
 )
 
 // Deps is what the shell cannot make for itself.
@@ -56,7 +55,7 @@ type Deps struct {
 	// Messages and Locale opt the sign-in page into translated copy. Compose
 	// Messages() or an application catalog before mounting. Other pages keep
 	// their authored language. Locale selects a preference before the browser.
-	Messages catalog.Catalog
+	Messages page.Messages
 	Locale   func(context.Context, page.Request) string
 
 	// Storybook selects and authorizes the composition for the resolved tenant
