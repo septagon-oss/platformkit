@@ -40,15 +40,14 @@ type (
 // API path, the guards from its two permissions, the columns and the controls
 // from its schema.
 //
-// The write declaration comes off the resource rather than being rebuilt here:
-// a resource whose rows are the operator's — the price list — is written at
-// the operator's host and nowhere else, and a screen that declared the bare
-// permission would be a form a customer's wildcard could use after the API
-// refused it. See docs/adr/0008.
+// Both declarations come off the resource: a screen must preserve the API's
+// operator boundary for private reads as well as writes. A customer's wildcard
+// must not open a screen whose corresponding API route refused it.
+// See docs/adr/0008.
 func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 	at := Path(r, o)
 	id := "screen-" + r.Module + "-" + r.Entity + "-"
-	read, write := httpx.Permission(r.Read), r.WriteAuth()
+	read, write := r.ReadAuth(), r.WriteAuth()
 
 	page.Serve(api, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: at, Summary: "The " + r.Entity + " list"}, read,
 		func(ctx context.Context, _ page.Request, in *listInput) (page.View, error) {

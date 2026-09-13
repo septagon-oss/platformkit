@@ -6,6 +6,20 @@ the modules and configuration its product needs. This page describes the
 implemented boundaries. Contribution policy lives in
 [CONTRIBUTING.md](CONTRIBUTING.md), and decisions live in [docs/adr](docs/adr/).
 
+## Provider boundaries
+
+Reuse the existing owned contracts: `events.Transport`, File `Storage`, Notification
+`Mailer` and `tenancy.Policy`. [NATS configuration](config.example.yaml) selects
+broker transport, authentication and trust at composition. [Page localization](ui/page/README.md)
+uses `page.Messages`/`Formatter`; x/text stays behind `page.FromCatalog`.
+[Feature evaluation](kit/flags/README.md) uses `flags.Evaluator` with isolated
+OpenFeature/OFREP adapters. Flag evaluation does not administer flag definitions.
+Provider administration belongs to each capability's authorized resources and commands,
+rendered through `rest.Spec`, `httpx.Resource` and `ui/screens`. Private resources
+set `OperatorRead` and `OperatorWrite`; API routes, resource closures, discovery
+and generated screens enforce the same declarations. These adapters alone do not
+establish management screens, deployed connections or migration of downstream clients.
+
 ## Start at the composition
 
 [apps/platformkit/modules.go](apps/platformkit/modules.go) is an ordered list

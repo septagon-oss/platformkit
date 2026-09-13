@@ -29,13 +29,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
-// answered is the shape every screen closure has: take the request's
-// transaction, do one thing, and answer with the one error mapping and the one
-// projection.
-//
-// Spec and Singleton both put themselves onto httpx.Resource and both had a
-// copy of this, byte for byte, under two different names. Two copies of an
-// error mapping is how two doors come to disagree about what a 409 means.
+// answered applies the shared transaction, error mapping and row projection
+// for collection and singleton screen operations.
 func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T, error)) (map[string]any, error) {
 	tx, err := transaction(ctx)
 	if err != nil {
@@ -51,12 +46,9 @@ func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T,
 // resource is this Spec as httpx.Resource, for Mount to register.
 func (s Spec[T]) resource() httpx.Resource {
 	schema := s.Schema()
-	each := func(ctx context.Context, run func(db.Tx[db.Tenant]) (T, error)) (map[string]any, error) {
-		return answered(ctx, run)
-	}
 	return httpx.Resource{
 		Module: s.Module, Entity: s.Entity, Path: s.Path,
-		Read: s.Read, Write: s.Write, OperatorWrite: s.OperatorWrite,
+		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
 		Immutable: s.Immutable, Schema: schema,
 
 		Count: func(ctx context.Context) (int64, error) {
@@ -87,10 +79,10 @@ func (s Spec[T]) resource() httpx.Resource {
 			return rows, total, nil
 		},
 		Get: func(ctx context.Context, id uuid.UUID) (map[string]any, error) {
-			return each(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return crud.Get[T](tx, id) })
+			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return crud.Get[T](tx, id) })
 		},
 		Create: func(ctx context.Context, values map[string]any) (map[string]any, error) {
-			return each(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
+			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
 				var e T
 				// The same refusal the JSON create gives, at the door a page
 				// uses. See refuseImmutable.
@@ -107,12 +99,12 @@ func (s Spec[T]) resource() httpx.Resource {
 			})
 		},
 		Update: func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error) {
-			return each(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
+			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
 				return s.updateRow(ctx, tx, id, schema.Fields, values)
 			})
 		},
 		Delete: func(ctx context.Context, id uuid.UUID) error {
-			_, err := each(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
+			_, err := answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
 				return s.deleteRow(ctx, tx, id)
 			})
 			return err

@@ -49,6 +49,10 @@ type Singleton[T crud.Entity] struct {
 	// billing's subscription is moved by subscribe and cancel, and a PUT would
 	// be a caller writing its own period.
 	Read, Write string
+	// OperatorRead and OperatorWrite restrict their respective permissions to
+	// the operator's own tenant, as on Spec. The public face remains explicitly
+	// public; it must omit everything private regardless of these flags.
+	OperatorRead, OperatorWrite bool
 	// Public mounts GET {Path}/public, unauthenticated. Face is what it
 	// answers with, and it is required when Public is set: what a visitor may
 	// see is a smaller thing than what an administrator configured, and a
@@ -69,6 +73,8 @@ type Singleton[T crud.Entity] struct {
 // resource the admin generator reads.
 func (s Singleton[T]) Mount(api *httpx.API) {
 	s.check()
+	auth := httpx.Resource{Read: s.Read, Write: s.Write,
+		OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite}
 	if s.Write != "" {
 		// Only a writable singleton is registered, and the reason is the
 		// generator rather than a preference: modules/admin mounts five pages
@@ -81,7 +87,7 @@ func (s Singleton[T]) Mount(api *httpx.API) {
 	}
 
 	Operation(api, s.op("read", http.MethodGet, s.Path, "Read this tenant's "+s.Entity, "", nil),
-		httpx.Permission(s.Read), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, _ *struct{}) (T, error) {
+		auth.ReadAuth(), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, _ *struct{}) (T, error) {
 			return s.Load(ctx, tx)
 		}, OperationOptions{})
 
@@ -92,7 +98,7 @@ func (s Singleton[T]) Mount(api *httpx.API) {
 		}
 		Operation(api, s.op("save", http.MethodPut, s.Path, "Save this tenant's "+s.Entity,
 			"The whole of it: a PUT replaces what is there. Saving what is already stored publishes nothing.", events),
-			httpx.Permission(s.Write), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *bodyInput[T]) (T, error) {
+			auth.WriteAuth(), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *bodyInput[T]) (T, error) {
 				crud.Reset(in.Body) // the four fields the server owns, whatever a body said
 				return s.Save(ctx, tx, in.Body)
 			}, OperationOptions{})
@@ -164,19 +170,17 @@ func (s Singleton[T]) op(verb, method, path, summary, description string, events
 // generator calls all five, and a nil closure is a panic where a sentence
 // belongs.
 func (s Singleton[T]) resource() httpx.Resource {
-	one := func(ctx context.Context, run func(db.Tx[db.Tenant]) (T, error)) (map[string]any, error) {
-		return answered(ctx, run)
-	}
 	refuse := func() error {
 		return problem.Conflict("a tenant has one " + s.Entity + ", and it is neither created nor removed")
 	}
 	return httpx.Resource{
 		Module: s.Module, Entity: s.Entity, Path: s.Path, Singleton: true,
-		Read: s.Read, Write: s.Write, Schema: crud.Schema{
+		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
+		Schema: crud.Schema{
 			Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: crud.Fields[T](),
 		},
 		List: func(ctx context.Context, _ crud.Query) ([]map[string]any, int64, error) {
-			out, err := one(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.Load(ctx, tx) })
+			out, err := answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.Load(ctx, tx) })
 			if err != nil {
 				return nil, 0, err
 			}
@@ -185,12 +189,12 @@ func (s Singleton[T]) resource() httpx.Resource {
 		Get: func(ctx context.Context, _ uuid.UUID) (map[string]any, error) {
 			// The id is ignored on purpose: there is one row, and a screen that
 			// asked for another would be asking about a tenant it cannot see.
-			return one(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.Load(ctx, tx) })
+			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.Load(ctx, tx) })
 		},
 		Create: func(context.Context, map[string]any) (map[string]any, error) { return nil, refuse() },
 		Delete: func(context.Context, uuid.UUID) error { return refuse() },
 		Update: func(ctx context.Context, _ uuid.UUID, values map[string]any) (map[string]any, error) {
-			return one(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
+			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
 				current, err := s.Load(ctx, tx)
 				if err != nil {
 					return current, err

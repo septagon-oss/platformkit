@@ -44,12 +44,13 @@ type Resource struct {
 	// Read and Write are the permissions the Spec declared. A screen carries
 	// the same ones, so a person who cannot use the API cannot use the screen.
 	Read, Write string
-	// OperatorWrite says Write is an operator permission: the rows are the
-	// installation's, every tenant reads them, and only the operator's own
-	// tenant writes them. It has to be carried here as well as on the routes,
-	// because the closures below are a door of their own — a screen guarded by
-	// the bare permission would let a customer's wildcard write through the
-	// form what the API had just refused. See docs/adr/0008.
+	// OperatorRead restricts reads and discovery to the operator's own tenant.
+	// It is independent of OperatorWrite; leaving it false keeps shared rows
+	// such as prices readable by ordinary tenants.
+	OperatorRead bool
+	// OperatorWrite restricts writes to the operator's own tenant. Routes and
+	// resource closures carry the same declaration, so customer wildcards
+	// cannot bypass the operator boundary. See docs/adr/0008.
 	OperatorWrite bool
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
@@ -140,12 +141,20 @@ func (r Resource) mayUse(ctx context.Context, a Auth) bool {
 // permission. Use it to decide whether to show navigation; operations already
 // carry their own guard and need no preceding Readable check.
 func (r Resource) Readable(ctx context.Context) bool {
-	return r.allowed(ctx, tenancy.Grant{Permission: r.Read})
+	return r.allowed(ctx, r.read())
 }
 
 // Writable reports whether the caller in ctx holds this resource's Write
 // permission, in a tenant that may exercise it.
 func (r Resource) Writable(ctx context.Context) bool { return r.allowed(ctx, r.write()) }
+
+// ReadAuth carries the same read declaration as the guarded resource closures.
+func (r Resource) ReadAuth() Auth {
+	if r.OperatorRead {
+		return OperatorPermission(r.Read)
+	}
+	return Permission(r.Read)
+}
 
 // WriteAuth is the declaration a page that mounts a write route carries, so a
 // screen and the API it stands in front of cannot disagree about which kind of
@@ -159,6 +168,10 @@ func (r Resource) WriteAuth() Auth {
 
 func (r Resource) write() tenancy.Grant {
 	return tenancy.Grant{Permission: r.Write, Operator: r.OperatorWrite}
+}
+
+func (r Resource) read() tenancy.Grant {
+	return tenancy.Grant{Permission: r.Read, Operator: r.OperatorRead}
 }
 
 func (r Resource) allowed(ctx context.Context, g tenancy.Grant) bool {
@@ -198,7 +211,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if count != nil {
 		r.Count = func(ctx context.Context) (int64, error) {
-			if err := a.may(ctx, tenancy.Grant{Permission: r.Read}); err != nil {
+			if err := a.may(ctx, r.read()); err != nil {
 				return 0, err
 			}
 			return count(ctx)
@@ -206,7 +219,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if list != nil {
 		r.List = func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error) {
-			if err := a.may(ctx, tenancy.Grant{Permission: r.Read}); err != nil {
+			if err := a.may(ctx, r.read()); err != nil {
 				return nil, 0, err
 			}
 			return list(ctx, q)
@@ -214,7 +227,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if get != nil {
 		r.Get = func(ctx context.Context, id uuid.UUID) (map[string]any, error) {
-			if err := a.may(ctx, tenancy.Grant{Permission: r.Read}); err != nil {
+			if err := a.may(ctx, r.read()); err != nil {
 				return nil, err
 			}
 			return get(ctx, id)

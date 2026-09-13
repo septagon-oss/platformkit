@@ -54,16 +54,13 @@ type Spec[T crud.Entity] struct {
 	// delete. Both are permissions some module has to define, or the app
 	// refuses to start.
 	Read, Write string
-	// OperatorWrite declares Write with httpx.OperatorPermission rather than
-	// httpx.Permission: the rows are the installation's and every tenant reads
-	// them, but only the operator's own tenant writes them.
-	//
-	// It exists because the alternative is a module hand-writing five routes to
-	// change one declaration, and one of them did. A price list is the case: it
-	// is read by every tenant, so it is not a control-plane resource in the way
-	// the tenant registry is, and it is written by the operator alone, because
-	// a customer that could add a plan could price itself. The manifest has to
-	// declare the same permission Operator: true, or kit/app refuses to start.
+	// OperatorRead restricts reads and discovery to the operator's own tenant.
+	// The manifest must declare Read with Operator: true. Writes retain their
+	// own declaration; private control-plane rows normally set both flags.
+	OperatorRead bool
+	// OperatorWrite restricts writes to the operator's own tenant, independently
+	// of reads. The manifest must declare Write with Operator: true; otherwise
+	// kit/app refuses startup. See docs/adr/0008.
 	OperatorWrite bool
 	// SoftDelete keeps deleted rows, hidden, instead of removing them.
 	SoftDelete bool
@@ -144,7 +141,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 
 	httpx.Register(api, s.op("list", http.MethodGet, s.Path, 0,
 		"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
-		httpx.Permission(s.Read), func(ctx context.Context, in *listInput) (*Page[T], error) {
+		s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -186,7 +183,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 
 	httpx.Register(api, s.op("read", http.MethodGet, s.item(), 0,
 		"Read a "+s.Entity, ""),
-		httpx.Permission(s.Read), func(ctx context.Context, in *idInput) (*Item[T], error) {
+		s.readAuth(), func(ctx context.Context, in *idInput) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -425,12 +422,13 @@ func (s Spec[T]) op(verb, method, path string, status int, summary, description 
 
 func (s Spec[T]) item() string { return strings.TrimSuffix(s.Path, "/") + "/{id}" }
 
+func (s Spec[T]) readAuth() httpx.Auth {
+	return (httpx.Resource{Read: s.Read, OperatorRead: s.OperatorRead}).ReadAuth()
+}
+
 // writeAuth is the declaration the three write routes and every Command carry.
 func (s Spec[T]) writeAuth() httpx.Auth {
-	if s.OperatorWrite {
-		return httpx.OperatorPermission(s.Write)
-	}
-	return httpx.Permission(s.Write)
+	return (httpx.Resource{Write: s.Write, OperatorWrite: s.OperatorWrite}).WriteAuth()
 }
 
 // check refuses a Spec that could only produce broken routes or unroutable
