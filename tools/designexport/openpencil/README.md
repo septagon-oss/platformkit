@@ -439,6 +439,18 @@ the decoded angle also owns that changed angle. Structural edits remain unqualif
 native vertical flips can still be lost on save. These provider fixtures do not
 qualify source capture, the Collect creator or its full lifecycle.
 
+### Source-member conversion
+
+[Source-member planning](source-members.mjs) now admits nonempty element fragments
+inside an observed flex/grid parent through `materializeComponent`, retaining each
+member's existing placement and declared owner. Run `node --import ./register.mjs --test browser/source-members.test.mjs`
+for real Go compositions, private text/margins, Go property projection and repeated saves.
+Child and whole-fragment replacements retain exact source occurrence paths through
+Go projection and repeated saves.
+Empty output still needs insertion evidence; text ranges and dormant content need
+their own conversion. Actual application-shell capture remains necessary: these
+fixtures do not qualify the Collect creator or its full lifecycle.
+
 ## Construct an experimental native component
 
 [materializeComponent](components.mjs) takes an existing native graph and

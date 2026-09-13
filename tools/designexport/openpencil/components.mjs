@@ -10,6 +10,7 @@ import { planSourceBox } from './source-box.mjs'
 import { planSourceFlex } from './source-flex.mjs'
 import { cssDashIntervals } from './border-correction.mjs'
 import { sourceUnderlines } from './source-underlines.mjs'
+import { memberSelection, planSourceMembers } from './source-members.mjs'
 
 // The exact owning helper is version/source-pinned by the adapter correction.
 const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
@@ -369,6 +370,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     }
   }
   describe(example, root.source.path, root.source.slot)
+  const members = planSourceMembers(observation, occurrences)
   const paintFor = (node, property) => observedPaint(graph, collection, snapshot, observation, node, property)
   const underlineFor = sourceUnderlines(observation, paintFor)
   const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1 / 64
@@ -438,6 +440,7 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
 
   function element(node, owner, isRoot = false, parentLayout = null) {
     requireComponent(node?.kind === 'element', 'composition requires explicit element roots')
+    owner = members.owner(node, owner)
     let occurrence
     if (node.source) {
       occurrence = occurrences.get(JSON.stringify(node.source.path))
@@ -650,23 +653,25 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       requireComponent(plan.textBlock || plan.blockFlow, 'maximum width requires a wrapping paragraph or ordinary block flow')
       plan.native.maxWidth = pixels(node.sizing['max-width'])
     }
+    plan.children = members.group(node, plan.children, owner, seen)
     if (occurrence) return { ...plan, kind: 'component', occurrence }
     return plan
   }
   const plan = element(root, null, true)
   requireComponent(seen.size === occurrences.size, 'composition has unobserved source children')
-  return { plan, requirements }
+  return { plan, requirements, hasFragments: members.hasFragments }
 }
 
 async function materializeComposition(graph, parentId, snapshot, observation, faces, renderer, collection, example, root, pending, finish, placement, iconTargets) {
-  const { plan, requirements } = planComposition(graph, snapshot, observation, faces, collection, example, root, iconTargets)
+  const { plan, requirements, hasFragments } = planComposition(graph, snapshot, observation, faces, collection, example, root, iconTargets)
   plan.placement = placement
   const components = [], created = [], geometry = []
-  function provenance(description, definitionPath) {
+  function provenance(description, definitionPath, fragment) {
     return [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
       schema: snapshot.schema, sha256: snapshot.sha256, exampleId: description.id, componentId: description.componentId,
       mode: observation.mode, scope: 'source-composition-observed-aliases', props: description.props,
       environment: observation.environment, viewport: observation.viewport, fontFaces: observation.fontFaces, definitionPath,
+      ...(fragment ? { cssFragment: { version: 1 } } : {}),
     }) }]
   }
   async function component(current) {
@@ -680,11 +685,19 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       return result.master
     }
     const master = createPaintedNode(graph, 'COMPONENT', parentId, {
-      ...current.native, name: description.name || description.id, pluginData: provenance(description, path),
+      ...current.native, name: description.name || description.id, pluginData: provenance(description, path, current.fragment),
     }, pending)
     created.push(master.id)
     const targets = []
-    for (const child of current.children) await construct(child, master, targets, current)
+    for (const child of current.children) {
+      const node = await construct(child, master, targets, current)
+      if (current.fragment) {
+        // A standalone definition has no containing layout. Seed only its
+        // observed selection coordinates; placed members reflow in the real box.
+        const bounds = memberSelection([child]), origin = memberSelection(current.children)
+        graph.updateNode(node.id, { x: bounds.x - origin.x, y: bounds.y - origin.y })
+      }
+    }
     const properties = bindComponentProperties(graph, master, description, targets)
     components.push({ path, master, properties })
     geometry.push({ plan: current, node: master, definition: true })
@@ -745,6 +758,21 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       for (const item of components) computeAllLayouts(graph, item.master.id)
       computeAllLayouts(graph, master.id)
     } finally { setTextMeasurer(previousMeasurer) }
+    if (hasFragments) {
+      // Validate placed members, not context-free fragment definitions. Sum
+      // logical-owner offsets but retain the witnessed boxed parent plan.
+      geometry.length = 0
+      function placed(current, node, parentPlan, offset = { x: 0, y: 0 }) {
+        const position = { x: node.x + offset.x, y: node.y + offset.y }
+        if (!current.fragment) geometry.push({ plan: current, node: { ...node, ...position }, parentPlan, definition: !parentPlan })
+        if (!current.children) return
+        const children = graph.getChildren(node.id)
+        requireComponent(children.length === current.children.length, 'placed source composition has different ownership children')
+        for (const [index, child] of current.children.entries()) placed(child, children[index],
+          current.fragment ? parentPlan : current, current.fragment ? position : { x: 0, y: 0 })
+      }
+      placed(plan, master)
+    }
     for (const { plan: current, node, parentPlan, definition } of geometry) {
       if (!current.observation) continue
       const expected = current.observation.bounds

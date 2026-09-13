@@ -522,6 +522,19 @@ function sourceTextLayout(source, target) {
     '\t\t\tstyleRuns: copyStyleRuns(source.styleRuns),\n\t\t\tfigmaDerivedTextGlyphs: source.figmaDerivedTextGlyphs ? markCopySource(source.figmaDerivedTextGlyphs, structuredClone(source.figmaDerivedTextGlyphs)) : void 0',
     '\t\t\tstyleRuns: copyStyleRuns(source.styleRuns)')
   source = lineageHelpers + '\n' + source
+  source = replace(source, 'function resolveOverrideStep(ctx, currentId, sourceId, remapped, targetNc) {', String.raw`
+function resolveOverrideStep(ctx, currentId, sourceId, remapped, targetNc) {
+  const current = ctx.graph.getNode(currentId), source = ctx.graph.getNode(remapped);
+  const owner = source && chain(ctx.graph, ctx.graph.getNode(current?.componentId), 'componentId')
+    .find(node => node.id === source.parentId);
+  if (owner) {
+    // A GUID naming a declared child owns that exact occurrence. After a swap,
+    // its sibling can share the new component without sharing this source slot.
+    const matches = [...sourceChildren(ctx.graph, owner, current, ancestryOverrides(ctx.graph, current))]
+      .filter(([, child]) => child.id === source.id);
+    if (matches.length !== 1) throw new Error('Missing or ambiguous native override occurrence');
+    return matches[0][0];
+  }`)
   source = replace(source,
     'if (!srcNode || !tgtNode || srcNode.type !== tgtNode.type) continue;',
     'if (!srcNode || !tgtNode || srcNode.type !== tgtNode.type || isFieldProtected(protections, tgtNode.id, "structure")) continue;')
