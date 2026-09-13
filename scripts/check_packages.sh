@@ -26,7 +26,7 @@ done
 
 # Deps is the complete runtime closure, unlike Imports. Tests are deliberately
 # excluded: SQL fixtures and adapter conformance tests may need more than core.
-parts=(kit/entity kit/locale kit/problem kit/blob kit/mail kit/flags kit/tenancy
+parts=(kit/entity kit/moduleplan kit/locale kit/problem kit/blob kit/mail kit/flags kit/tenancy
     modules/task/domain modules/task/resolution ui/forms kit/events
     kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature kit/flags/providers/ofrep
@@ -69,6 +69,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
         outbox = identity " " delivery " " p "kit/db " p "kit/events/providers/memory"
         check("kit/entity", uuid)
+        check("kit/moduleplan", "")
         check("kit/locale", "")
         check("kit/problem", "", "", "problem")
         check("kit/blob", "")

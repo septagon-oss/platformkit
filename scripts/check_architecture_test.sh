@@ -84,7 +84,7 @@ cp "$scripts/check_packages.sh" "$packages_repo/scripts/"
 printf 'module github.com/septagon-oss/platformkit\n\n' > "$packages_repo/go.mod"
 sed -n '/^go[[:space:]]/p' "$scripts/../go.mod" >> "$packages_repo/go.mod"
 printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
-for path in apps/platformkit kit/entity kit/locale kit/problem kit/blob kit/mail kit/flags kit/tenancy \
+for path in apps/platformkit kit/entity kit/moduleplan kit/locale kit/problem kit/blob kit/mail kit/flags kit/tenancy \
     modules/task/domain modules/task/resolution ui/forms ui/components kit/events kit/events/transport \
     kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery kit/tenancy/providers/topaz \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext kit/problem/providers/huma \
@@ -105,6 +105,10 @@ boundary_rejects() {
     rejects "$owner reaches $dependency" "$foundation/$expected transitively depends on $dependency" "${packages[@]}"
     printf 'package fixture\n' > "$packages_repo/$owner/fixture.go"
 }
+boundary_rejects kit/moduleplan "$foundation/kit/module"
+fixture_import kit/moduleplan "$foundation/kit/locale"
+boundary_rejects kit/locale net/http kit/moduleplan
+printf 'package fixture\n' > "$packages_repo/kit/moduleplan/fixture.go"
 fixture_import modules/task/resolution "$foundation/kit/tenancy"
 boundary_rejects kit/tenancy database/sql modules/task/resolution
 boundary_rejects kit/tenancy net/http modules/task/resolution
