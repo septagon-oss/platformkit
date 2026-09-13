@@ -79,7 +79,7 @@ export async function captureExample(browser, snapshot, exampleId, {
   const faces = validateFonts(fonts)
   const example = examples[0]
   const prepared = prepareCaptureSource(example)
-  const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', serviceWorkers: 'block' })
+  const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', serviceWorkers: 'block', javaScriptEnabled: true })
   try {
     const requests = []
     // CSP can refuse a request before routing, with its DOM event still queued.
@@ -110,15 +110,38 @@ export async function captureExample(browser, snapshot, exampleId, {
       // denied by CSP. The input still belongs to trusted Go constructors.
       const template = document.createElement('template')
       template.innerHTML = html
-      if (template.content.querySelector('script, iframe, object, embed, canvas, video, audio, link, style, base')) {
-        throw new Error('Capture does not support executable or externally composed example content')
+      // An omitted source can be a dormant upload preview, not missing bytes.
+      // Alternative picture candidates are resources even without img.src.
+      function absentImageSource(image) {
+        return !image.hasAttribute('src') && !image.hasAttribute('srcset') &&
+          !(image.parentElement instanceof HTMLPictureElement && image.parentElement.querySelector('source'))
       }
+      function admitContent(root) {
+        if (root.querySelector('script, iframe, object, embed, canvas, video, audio, link, style, base')) {
+          throw new Error('Capture does not support executable or externally composed example content')
+        }
+        for (const image of root.querySelectorAll('img')) {
+          if (!(image instanceof HTMLImageElement)) throw new Error('Capture requires HTML image asset semantics')
+          if (absentImageSource(image)) continue
+          if (!image.src.startsWith('data:')) throw new Error('Capture requires supplied, in-memory image assets')
+        }
+        for (const nested of root.querySelectorAll('template')) {
+          if (nested instanceof HTMLTemplateElement) admitContent(nested.content)
+        }
+      }
+      admitContent(template.content)
       document.body.append(template.content)
       await document.fonts.ready
-      for (const image of document.images) {
-        if (!image.src.startsWith('data:')) throw new Error('Capture requires supplied, in-memory image assets')
-        await image.decode()
-      }
+      const absentImages = [...document.images].filter(absentImageSource)
+      let decodingTimer
+      try {
+        await Promise.race([
+          Promise.all([...document.images].filter(image => !absentImageSource(image)).map(image => image.decode())),
+          new Promise((_, reject) => {
+            decodingTimer = setTimeout(() => reject(new Error('Capture image decoding timed out')), 1000)
+          }),
+        ])
+      } finally { clearTimeout(decodingTimer) }
       // Inherited transitions can start only when descendant styles are read.
       // Flush those styles and await actual completion, not a fixed frame count.
       let settlingTimer
@@ -142,12 +165,19 @@ export async function captureExample(browser, snapshot, exampleId, {
           }),
         ])
       } finally { clearTimeout(settlingTimer) }
+      for (const image of absentImages) {
+        let suppressed = false
+        for (let ancestor = image; ancestor; ancestor = ancestor.parentElement) {
+          if (getComputedStyle(ancestor).display === 'none') suppressed = true
+        }
+        if (!suppressed || image.currentSrc !== '') throw new Error('Capture requires display-none evidence for an absent image source')
+      }
       if (violations.length) throw new Error(`Capture refused resources blocked by CSP: ${violations.join(', ')}`)
     }, {
       css: snapshot.css, html: prepared.html, mode,
       fonts: faces.map(face => ({ family: face.family, weight: face.weight, style: face.style, bytes: [...face.bytes] })),
     })
-    await page.evaluate(indexCaptureSources, { occurrences: prepared.occurrences, html: example.html })
+    const sourceOccurrences = await page.evaluate(indexCaptureSources, { occurrences: prepared.occurrences, html: example.html })
     const colorTokens = snapshot.themes.find(theme => theme.mode === mode).tokens.filter(token => token.type === 'color')
     const declarations = await page.evaluate(() => {
       // A sampled mode cannot prove an inactive override equivalent. Only one
@@ -201,14 +231,33 @@ export async function captureExample(browser, snapshot, exampleId, {
       ]
       const isSVG = node => node.namespaceURI === 'http://www.w3.org/2000/svg'
       const bounds = rect => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
+      function domPath(node) {
+        const path = globalThis.__platformkitCaptureAddresses?.get(node)
+        let resolved = document.body
+        if (Array.isArray(path)) for (const step of path) {
+          resolved = step === 'content' && resolved instanceof HTMLTemplateElement ? resolved.content
+            : Number.isSafeInteger(step) && step >= 0 ? resolved?.childNodes[step] : undefined
+        }
+        if (!Array.isArray(path) || resolved !== node) throw new Error('Capture observation lost its exact DOM address')
+        return [...path]
+      }
       const style = element => {
         const computed = getComputedStyle(element)
         const names = isSVG(element) ? [...properties, ...svgProperties] : properties
         return Object.fromEntries(names.map(name => [name, computed.getPropertyValue(name)]))
       }
       function text(range, nodes, property) {
+        const domRanges = nodes.map(node => {
+          if (node.nodeType !== Node.TEXT_NODE || !range.intersectsNode(node)) throw new Error('Capture observation has an invalid DOM text range')
+          return { domPath: domPath(node),
+            start: range.startContainer === node ? range.startOffset : 0,
+            end: range.endContainer === node ? range.endOffset : node.length }
+        })
+        if (domRanges.map(({ start, end }, index) => nodes[index].data.slice(start, end)).join('') !== range.toString()) {
+          throw new Error('Capture observation DOM text ranges do not cover its text')
+        }
         return {
-          kind: 'text', text: range.toString(), ...(property === undefined ? {} : { property }),
+          kind: 'text', text: range.toString(), domRanges, ...(property === undefined ? {} : { property }),
           bounds: bounds(range.getBoundingClientRect()), rects: [...range.getClientRects()].map(bounds),
           fontObservationIds: nodes.map(node => globalThis.__platformkitCaptureTextNodes.push(node) - 1),
         }
@@ -268,7 +317,7 @@ export async function captureExample(browser, snapshot, exampleId, {
         const computed = style(node)
         const typed = node.computedStyleMap()
         const out = {
-          kind: 'element', observationId: id, tag: node.localName,
+          kind: 'element', observationId: id, tag: node.localName, domPath: domPath(node),
           component: node.getAttribute('data-component'),
           bounds: bounds(node.getBoundingClientRect()), style: computed,
           sizing: Object.fromEntries(['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height', 'top', 'right', 'bottom', 'left',
@@ -278,6 +327,9 @@ export async function captureExample(browser, snapshot, exampleId, {
         }
         const source = globalThis.__platformkitCaptureSources.get(node)
         if (source) out.source = source
+        if (node instanceof HTMLImageElement && !node.hasAttribute('src')) {
+          out.image = { state: 'absent-source', alt: node.getAttribute('alt'), suppression: 'display-none' }
+        }
         if (node.hasAttribute('data-pk-options') || node.hasAttribute('data-pk-values') ||
             node instanceof HTMLSelectElement && node.hasAttribute('data-pk-value')) {
           const properties = Object.fromEntries(['value', 'values', 'options'].map(name => [name, node.getAttribute(`data-pk-${name}`)]))
@@ -308,6 +360,7 @@ export async function captureExample(browser, snapshot, exampleId, {
               counter: node.hasAttribute('data-textarea-counter-target') } : {}),
             fontObservationIds: [globalThis.__platformkitCaptureTextNodes.push(node) - 1] }
         }
+        if (out.control) out.control.domPath = [...out.domPath]
         for (const pseudo of ['::before', '::after']) {
           const content = getComputedStyle(node, pseudo).content
           if (content !== 'none' && content !== 'normal') throw new Error('Generated pseudo-element content needs explicit native conversion')
@@ -413,7 +466,7 @@ export async function captureExample(browser, snapshot, exampleId, {
       environment = {
         browser: version.product, protocol: version.protocolVersion,
         headless: commandLine.arguments.some(argument => argument === '--headless' || argument.startsWith('--headless=')),
-        fontHinting,
+        fontHinting, htmlParsing: 'template-fragment', javaScriptEnabled: true,
       }
       // Whitespace nodes otherwise may have no frontend DOM ID. Query actual
       // font use even at zero advance: combining marks can still paint ink.
@@ -498,7 +551,7 @@ export async function captureExample(browser, snapshot, exampleId, {
     if (requests.length > 0) throw new Error(`Capture refused external resources: ${requests.join(', ')}`)
     return {
       sourceSHA: snapshot.sha256, exampleId, componentId: example.componentId,
-      mode, viewport: { ...viewport }, environment, roots,
+      mode, viewport: { ...viewport }, environment, roots, sourceOccurrences,
       fontFaces: faces.map(({ family, weight, style, sha256, postscriptName }) => ({ family, weight, style, sha256, postscriptName })),
     }
   } finally {

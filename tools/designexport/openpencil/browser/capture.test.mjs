@@ -166,8 +166,11 @@ test('capture observes actual text-control values and exact fonts without invent
     const result = await captureExample(browser, snapshot, snapshot.examples[0].id, { fonts: faces })
     const input = observed(result.roots).find(node => node.tag === 'input')
     assert.deepEqual(input.children, [])
-    assert.deepEqual(Object.keys(input.control).toSorted(), ['content', 'fonts', 'kind', 'placeholder', 'property', 'type', 'value'])
-    const { content, ...control } = input.control
+    assert.deepEqual(Object.keys(input.control).toSorted(), ['content', 'domPath', 'fonts', 'kind', 'placeholder', 'property', 'type', 'value'])
+    const { content, domPath, ...control } = input.control
+    assert.deepEqual(input.domPath, [0, 0])
+    assert.deepEqual(domPath, input.domPath, 'the control identifies its HTML host, not UA text nodes')
+    assert.equal(content.domRanges, undefined)
     assert.deepEqual({ ...control, fonts: [] }, { kind: 'control', property: 'value', type: 'text', value, placeholder: '', fonts: [] })
     assert.ok(content.bounds.width > 0 && content.bounds.height > 0)
     assert.equal(content.bounds.x - input.bounds.x, Number.parseFloat(input.style['padding-left']) + Number.parseFloat(input.style['border-left-width']))
@@ -284,7 +287,7 @@ test('browser capture preserves real Button layout, text regions and source iden
     assert.equal(result.componentId, 'pk-ui.component.button')
     assert.equal(result.mode, mode)
     assert.deepEqual(result.viewport, viewport)
-    assert.deepEqual(Object.keys(result.environment).toSorted(), ['browser', 'fontHinting', 'headless', 'protocol'])
+    assert.deepEqual(Object.keys(result.environment).toSorted(), ['browser', 'fontHinting', 'headless', 'htmlParsing', 'javaScriptEnabled', 'protocol'])
     assert.equal(typeof result.environment.browser, 'string')
     assert.ok(result.environment.browser.length > 0)
     assert.equal(typeof result.environment.protocol, 'string')
@@ -314,7 +317,9 @@ test('browser capture preserves real Button layout, text regions and source iden
     assert.deepEqual(label.rects, original.textRects)
     assert.ok(label.fonts.length > 0)
     assert.ok(label.fonts.every(font => font.glyphCount > 0))
-    assert.deepEqual(Object.keys(label).toSorted(), ['bounds', 'fonts', 'kind', 'property', 'rects', 'text'])
+    assert.deepEqual(Object.keys(label).toSorted(), ['bounds', 'domRanges', 'fonts', 'kind', 'property', 'rects', 'text'])
+    assert.deepEqual(button.domPath, [0])
+    assert.deepEqual(label.domRanges, [{ domPath: [0, 1], start: 0, end: 4 }])
     assert.ok(observed(result.roots).filter(node => node.kind === 'element').every(node => !Object.hasOwn(node, 'fonts')))
     assert.ok(observed(result.roots).every(node =>
       !Object.hasOwn(node, 'observationId') && !Object.hasOwn(node, 'fontObservationIds')))
@@ -331,7 +336,7 @@ test('browser capture records explicit font hinting without leaking browser argu
     const result = await captureExample(unhinted, source, primary)
     assert.equal(result.environment.fontHinting, 'none')
     assert.equal(result.environment.headless, true)
-    assert.deepEqual(Object.keys(result.environment).toSorted(), ['browser', 'fontHinting', 'headless', 'protocol'])
+    assert.deepEqual(Object.keys(result.environment).toSorted(), ['browser', 'fontHinting', 'headless', 'htmlParsing', 'javaScriptEnabled', 'protocol'])
     assert.ok(!JSON.stringify(result.environment).includes(privateMarker))
     assert.equal(unhinted.contexts().length, 0)
   } finally { await unhinted.close() }

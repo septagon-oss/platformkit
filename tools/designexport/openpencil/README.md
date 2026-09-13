@@ -314,12 +314,12 @@ headless flag and explicitly selected font-hinting mode, never the full launch
 arguments or user-agent string. `fontHinting: 'default'` means no explicit flag;
 it does not promise the same default across browsers or operating systems.
 
-Each observation uses a disposable, unauthenticated document. Resources must be
-supplied in memory; executable content and application controllers do not run.
-Capture flushes descendant styles and allows one second for finite motion to
-settle; paused or perpetual animations are refused. Tests compare both themes
-and two viewports with independent source HTML, not full responsive or
-accessibility coverage. Install Chromium, then run the local browser checks:
+Each observation parses supplied HTML in a template, then appends it to a
+disposable body. `environment` records this parser and enabled scripting; a runtime
+document can parse `noscript` differently. Resources stay in memory and controllers
+do not run. Supply the actual shell to qualify framed layout; capture adds none.
+Finite motion has one second to settle; paused/perpetual animations refuse. Tests
+cover selected themes and viewports, not full responsive or accessibility coverage:
 
 ```sh
 npx playwright install --with-deps chromium
@@ -346,14 +346,39 @@ empty or nested content, without inventing layout boxes. Missing markers mean
 that branch supplied no rendered slot, not that the source lacks a declaration.
 Malformed or crossed boundaries are refused. The existing example declarations
 remain authoritative; nested slot names alone do not establish component ownership.
-Capture checks source child byte spans against their exact UTF-8 output, then
-uses temporary numeric boundaries to identify single DOM roots. It removes those
-boundaries and verifies that HTML parsing stayed unchanged before observing.
-Each identified element carries its exact source path, component identity and
-declared slot; names and sibling positions never establish correspondence.
-Empty, multi-root and text-plus-element fragments receive no single-root claim.
-Missing spans remain unobserved; crossed, ambiguous or parser-altering boundaries
-are refused rather than repaired into guessed ownership.
+Capture checks source child byte spans against their exact UTF-8 output, removes
+temporary numeric boundaries and verifies unchanged fragment parsing. Its
+`sourceOccurrences` retain exact source paths, component identities and slots.
+Observed correspondence has `members`, including an empty array for proven zero
+DOM output; missing spans and their descendants remain explicitly unresolved.
+Members identify original elements, text slices and comments. `domPath` indexes
+the restored body's `childNodes`; a `content` step enters a template's fragment.
+Text offsets use UTF-16 in the final DOM node, preserving exact slices when
+boundary removal rejoins text. These addresses belong only to this observation;
+names, matching markup and sibling order never establish source ownership.
+Element and control observations retain `domPath`; text observations retain ordered
+`domRanges` UTF-16 slices. Resolve these only within their complete capture.
+
+Each member separately records presentation and inherited HTML `inert` evidence.
+`box-observed` means positive client geometry, not visible pixels or interaction.
+Explicit suppression retains its reason; missing boxes and conditional content
+visibility remain unresolved. A parent's result does not classify its descendants:
+visibility can be overridden, and a content-hidden container retains its own box.
+Template content is observed without activating it. Forbidden-element and
+`img.src` checks recurse into templates; other dormant asset references and
+image decoding remain unqualified.
+Images without `src`, `srcset` or picture-source candidates need no invented asset
+inside a template or beneath settled `display:none`. Attached placeholders retain
+explicit `image` absence and authored alt-text evidence; visible placeholders and
+explicit empty URLs refuse. Supplied attached images must decode within one second,
+without activating lazy loading. This does not add native image conversion.
+Legacy `node.source` still requires one unambiguous element. This extra evidence
+does not admit native fragments, hidden content, new editing or replacement paths.
+Crossed, ambiguous and parser-altering boundaries still refuse. Boundaries directly
+inside table/section/row parsing contexts also refuse: text can move outside intact
+markers. Ordinary cell content is checked normally. Run
+`node --import ./register.mjs --test browser/capture-source.test.mjs` for these
+local correspondence checks; they do not exercise application flows or deployment.
 Canonical text Inputs carry `data-pk-value="value"`. Their control observation
 retains actual type, value, placeholder and exact control-element font evidence,
 not a fabricated DOM text region. An empty control without a placeholder has no
