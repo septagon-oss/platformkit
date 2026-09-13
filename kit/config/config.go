@@ -69,9 +69,44 @@ type Database struct {
 	MigrateURL string `yaml:"migrate_url"`
 }
 
-// NATS is the JetStream endpoint the outbox relay publishes to.
+// NATS configures the event transport and its broker connection. Empty Transport
+// preserves the role default: memory for all, JetStream for a separate worker.
+// Each application/database/environment needs its own broker account because
+// stream and durable consumer names are shared within an account.
 type NATS struct {
-	URL string `yaml:"url"`
+	Transport string `yaml:"transport"`
+	URL       string `yaml:"url"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	CACert    string `yaml:"ca_cert"`
+}
+
+// Validate checks settings without opening files or connecting to the broker.
+// Diagnostics name keys without echoing endpoints or credentials.
+func (n NATS) Validate() error {
+	if n.Transport != "" && n.Transport != "memory" && n.Transport != "jetstream" {
+		return errors.New("nats.transport must be memory, jetstream or empty for the role default")
+	}
+	if (n.Username == "") != (n.Password == "") {
+		return errors.New("nats.username and nats.password must both be set or both be empty")
+	}
+	for endpoint := range strings.SplitSeq(n.URL, ",") {
+		u, err := url.Parse(strings.TrimSpace(endpoint))
+		if err != nil || u.Hostname() == "" || (u.Scheme != "nats" && u.Scheme != "tls") ||
+			u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+			return errors.New("nats.url must contain nats:// or tls:// endpoints without paths, queries or fragments")
+		}
+		if u.User != nil {
+			return errors.New("nats.url cannot contain credentials; use nats.username and PLATFORMKIT_NATS_PASSWORD instead")
+		}
+		if n.CACert != "" && u.Scheme != "tls" {
+			return errors.New("nats.ca_cert requires tls:// for every nats.url endpoint")
+		}
+		if n.Username != "" && u.Scheme != "tls" && !Local(u.Host) {
+			return errors.New("nats.username and nats.password require tls:// outside localhost")
+		}
+	}
+	return nil
 }
 
 // Log is the logging surface: one level.
@@ -185,6 +220,10 @@ var keys = []key{
 	{"database.url", "PLATFORMKIT_DATABASE_URL", func(c *Config) *string { return &c.Database.URL }, true},
 	{"database.migrate_url", "PLATFORMKIT_DATABASE_MIGRATE_URL", func(c *Config) *string { return &c.Database.MigrateURL }, true},
 	{"nats.url", "PLATFORMKIT_NATS_URL", func(c *Config) *string { return &c.NATS.URL }, true},
+	{"nats.transport", "PLATFORMKIT_NATS_TRANSPORT", func(c *Config) *string { return &c.NATS.Transport }, false},
+	{"nats.username", "PLATFORMKIT_NATS_USERNAME", func(c *Config) *string { return &c.NATS.Username }, false},
+	{"nats.password", "PLATFORMKIT_NATS_PASSWORD", func(c *Config) *string { return &c.NATS.Password }, false},
+	{"nats.ca_cert", "PLATFORMKIT_NATS_CA_CERT", func(c *Config) *string { return &c.NATS.CACert }, false},
 	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, true},
 	// The one secret in the surface with an override for a reason rather than
 	// for symmetry: rule 7 says never commit a secret, and config.yaml is a
@@ -295,6 +334,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 		if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
 			return Config{}, fmt.Errorf("config %s: %s has scheme %q; PlatformKit speaks postgres and nothing else", path, u.key, parsed.Scheme)
 		}
+	}
+	if err := c.NATS.Validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := c.Auth.OIDC.validate(path); err != nil {
 		return Config{}, err

@@ -67,9 +67,9 @@ type Options struct {
 	// Role defaults to All.
 	Role Role
 
-	// Transport carries events between the relay and the handlers. It defaults
-	// to events.Memory() for All, which needs no broker because there is no
-	// second process, and to JetStream on config's nats.url otherwise.
+	// Transport carries events between the relay and the handlers. An explicit
+	// value overrides nats.transport. Otherwise All defaults to memory and a
+	// separate Worker to JetStream; nats.transport can opt All into JetStream.
 	Transport events.Transport
 }
 
@@ -127,6 +127,17 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	default:
 		return nil, fmt.Errorf("app: role %q is not one of %q, %q or %q", opts.Role, Web, Worker, All)
 	}
+	if opts.Transport == nil {
+		broker, err := useJetStream(cfg.NATS.Transport, opts.Role)
+		if err != nil {
+			return nil, err
+		}
+		if broker {
+			if err := cfg.NATS.Validate(); err != nil {
+				return nil, fmt.Errorf("app: %w", err)
+			}
+		}
+	}
 	// Expanded before it is checked: a module that subscribes to everything is
 	// given the names here, once every manifest is in hand, so where it sits in
 	// the list cannot change what it hears.
@@ -147,14 +158,8 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 		names = append(names, m.Name)
 	}
 	log.InfoContext(ctx, "app: composed", "modules", names, "role", opts.Role)
-	if opts.Role == All && opts.Transport == nil {
-		// Said out loud because the failure it warns about is silent: two
-		// replicas of role All each relay their own outbox rows into their own
-		// process, so half the events reach half the subscribers and nothing
-		// errors. One replica of All is a laptop and a small deployment; more
-		// than one is web and worker on JetStream — where the workers share one
-		// durable consumer through a deliver group, so there is no limit of one.
-		log.WarnContext(ctx, "app: role all uses the in-process event transport, so events reach only this replica; run role web and role worker on JetStream to scale out, and any number of each")
+	if opts.Role == All && opts.Transport == nil && cfg.NATS.Transport != "jetstream" {
+		log.WarnContext(ctx, "app: in-process events reach only this replica; set nats.transport to jetstream to share events between replicas")
 	}
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
 }
@@ -216,10 +221,30 @@ func (a *App) transport() (events.Transport, error) {
 	if a.opts.Transport != nil {
 		return a.opts.Transport, nil
 	}
-	if a.opts.Role == All {
+	broker, err := useJetStream(a.cfg.NATS.Transport, a.opts.Role)
+	if err != nil {
+		return nil, err
+	}
+	if !broker {
 		return events.Memory(), nil
 	}
-	return events.JetStream(a.cfg.NATS.URL)
+	return events.ConnectJetStream(a.cfg.NATS)
+}
+
+func useJetStream(mode string, role Role) (bool, error) {
+	switch mode {
+	case "":
+		return role != All, nil
+	case "jetstream":
+		return true, nil
+	case "memory":
+		if role == All {
+			return false, nil
+		}
+		return false, errors.New("app: nats.transport memory requires role all; separate workers need a shared broker")
+	default:
+		return false, errors.New("app: nats.transport must be memory, jetstream or empty for the role default")
+	}
 }
 
 // buildAPI builds the API, lets every module register its routes and checks,

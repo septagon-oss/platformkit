@@ -39,8 +39,19 @@ database:
   migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable&connect_timeout=5"
 
 nats:
-  # JetStream endpoint the outbox relay publishes module events to.
+  # Empty preserves role defaults: all uses memory; worker uses JetStream.
+  # Set jetstream to share events between replicas of role all. Explicit memory
+  # is only valid for role all. An injected Go Transport takes precedence.
+  transport: ""
+  # Comma-separated endpoints. Use tls:// outside localhost with credentials.
+  # URL credentials are refused: move them to username and the password env.
+  # Use a separate broker account per application/database/environment.
   url: "nats://localhost:4222"
+  username: ""
+  # Supply PLATFORMKIT_NATS_PASSWORD instead of storing a secret here.
+  password: ""
+  # Optional PEM trust roots for tls://; empty uses system trust roots.
+  ca_cert: ""
 
 log:
   # debug | info | warn | error
