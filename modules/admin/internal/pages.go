@@ -48,10 +48,11 @@ func (p pages) mount(api *httpx.API) {
 		})
 
 	p.mountGallery(api)
+	p.mountDelivery(api)
 
 	// The switcher lives at the path the tenant module's nav entry already
-	// names, so that entry leads somewhere. It is the one page here that reads
-	// across tenants, and it is declared the way that module's own routes are:
+	// names, so that entry leads somewhere. Like delivery inspection, it reads
+	// across tenants and is declared the way that module's own routes are:
 	// OperatorPermission, not Permission. The control plane is served at every
 	// tenant's host, so a customer's administrator can reach this URL, and the
 	// wildcard they hold in their own tenant must not answer a question about

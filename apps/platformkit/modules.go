@@ -242,5 +242,6 @@ func seedRoles(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tena
 	return auth.SeedRoles(ctx, tx, t.Tenancy(), []string{
 		tenantcontracts.PermissionTenantManage,
 		billingcontracts.PermissionBillingCatalog,
+		admin.PermissionDeliveryRead,
 	}, nil)
 }

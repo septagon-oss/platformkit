@@ -23,6 +23,11 @@ set `OperatorRead` and `OperatorWrite`; API routes, resource closures, discovery
 and generated screens enforce the same declarations. These adapters alone do not
 establish management screens, deployed connections or migration of downstream clients.
 
+Admin's [delivery inspection](modules/admin/README.md#event-delivery) reads bounded
+metadata from the existing outbox and terminal-failure ledger through `kit/events`.
+Its dedicated operator permission guards navigation and direct access. Inspection
+does not change delivery records or qualify the selected provider's live behavior.
+
 ## Independently usable parts
 
 Import the owner of the capability you need: [entity](kit/entity/README.md) for

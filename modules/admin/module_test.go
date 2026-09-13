@@ -2,6 +2,7 @@ package admin_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"html"
@@ -159,6 +160,11 @@ func mount(t *testing.T) chi.Router { return mountAs(t, caller{}) }
 // mountAs is mount for a caller who holds less, which is what the guards on the
 // generated screens and on the dashboard's cards are tested with.
 func mountAs(t *testing.T, authorize httpx.Authorizer, configure ...func(*admin.Deps)) chi.Router {
+	router, _ := mountWithDatabase(t, authorize, configure...)
+	return router
+}
+
+func mountWithDatabase(t *testing.T, authorize httpx.Authorizer, configure ...func(*admin.Deps)) (chi.Router, *sql.DB) {
 	t.Helper()
 	adminDB, app := dbtest.Schema(t)
 	if _, err := adminDB.ExecContext(t.Context(), ddl+plansDDL); err != nil {
@@ -225,7 +231,7 @@ func mountAs(t *testing.T, authorize httpx.Authorizer, configure ...func(*admin.
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("a screen does not declare its authorization: %v", err)
 	}
-	return router
+	return router, adminDB
 }
 
 func call(t *testing.T, r http.Handler, method, path, body string) (int, string, string) {

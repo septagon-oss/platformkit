@@ -1,5 +1,5 @@
 // Package internal is the shell's implementation: one chrome, one frame, the
-// five pages written by hand, the catalog, and the screens ui/screens generates
+// pages written by hand, the catalog, and the screens ui/screens generates
 // for every resource kit/rest registered before this module was composed.
 package internal
 
@@ -81,8 +81,8 @@ func Mount(api *httpx.API, s Shell) {
 	for _, r := range resources {
 		served = append(served, screens.Path(r, opts), screens.Path(r, opts)+"/new")
 	}
-	served = append(served, adminRoot, loginPath, healthPath, galleryPath, tenantsPath)
-	nav := page.NewNavigation(s.Nav, served, api.Required())
+	served = append(served, adminRoot, loginPath, healthPath, galleryPath, tenantsPath, DeliveryPath)
+	nav := page.NewNavigation(s.Nav, served, append(api.Required(), DeliveryGrant()))
 	// A nav entry nothing answers is a mistake in a module's manifest, and it
 	// is reported here, once, at boot — not rendered as a disabled row that
 	// every person using the application sees for the life of the deployment.

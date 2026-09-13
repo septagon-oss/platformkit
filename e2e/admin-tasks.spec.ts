@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 // Gate 10. One spec, and it is the round trip a person makes on their first
 // day: sign in, create a task through the generated form, find it in the
@@ -78,6 +79,59 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
   // The browser's own required check fires first, which is the point of
   // rendering it: the request is never made.
   await expect(page.getByLabel('Title')).toBeFocused();
+});
+
+test('the newly bootstrapped operator can inspect delivery and refresh by keyboard', async ({ page }) => {
+  await page.getByRole('link', { name: 'Event delivery', exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/delivery$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Event delivery' })).toBeVisible();
+  await expect(page.getByRole('main')).toHaveCount(1);
+  await expect(page.getByText(/^Observed at /)).toContainText('Records can change between reads.');
+  for (const width of [1280, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const name of ['Pending publication', 'Terminal failures']) {
+      const region = page.getByRole('region', { name, exact: true });
+      await expect(region.getByRole('table')).toBeVisible();
+      await region.focus();
+      await expect(region).toBeFocused();
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({ path: test.info().outputPath(`delivery-${width}.png`), fullPage: true });
+    const refresh = page.getByRole('link', { name: 'Refresh records', exact: true });
+    await refresh.focus();
+    await expect(refresh).toBeFocused();
+    const response = page.waitForResponse(r => new URL(r.url()).pathname === '/admin/delivery');
+    await page.keyboard.press('Enter');
+    expect((await response).status()).toBe(200);
+    await expect(page.getByRole('heading', { level: 1, name: 'Event delivery' })).toBeVisible();
+  }
+  const direct = await page.request.get('/admin/delivery');
+  expect(direct.status()).toBe(200);
+  expect(direct.headers()['cache-control']).toContain('no-store');
+  await expect(page.getByRole('button', { name: /retry|replay|delete/i })).toHaveCount(0);
+
+  // Change only the disposable fixture's existing role, preserving every other
+  // grant. The same authenticated operator must lose both the link and access.
+  expect(process.env.PLATFORMKIT_E2E_FIXTURE_DATABASE).toMatch(/^platformkit_e2e_\d+_\d+_\d+$/);
+  expect(new URL(page.url()).hostname).toBe('localhost');
+  const roles = await page.request.get('/api/v1/auth/roles');
+  expect(roles.status()).toBe(200);
+  const operator = (await roles.json()).items.find((role: { name: string }) => role.name === 'admin');
+  const permissions: string[] = operator.permissions;
+  expect(permissions).toContain('delivery:read');
+  expect(permissions).toContain('*');
+  try {
+    expect((await page.request.put('/api/v1/auth/roles/admin', {
+      data: { permissions: permissions.filter(value => value !== 'delivery:read') },
+    })).status()).toBe(200);
+    expect((await page.request.get('/admin/delivery')).status()).toBe(403);
+    await page.goto('/admin');
+    await expect(page.getByRole('link', { name: 'Event delivery', exact: true })).toHaveCount(0);
+  } finally {
+    expect((await page.request.put('/api/v1/auth/roles/admin', { data: { permissions } })).status()).toBe(200);
+  }
+  expect((await page.request.get('/admin/delivery')).status()).toBe(200);
 });
 
 test('a refused generated edit retains command-owned values for the retry', async ({ page }) => {

@@ -1,4 +1,34 @@
-# Tenant component galleries
+# Administration
+
+## Event delivery
+
+`/admin/delivery` shows up to 50 oldest pending publications and 50 latest retained
+terminal subscription failures for this installation. The `delivery:read` operator
+permission protects both the direct route and its navigation entry. Customer
+administrators cannot inspect another tenant's delivery records through this page.
+
+The page reads the existing outbox and failure ledger through `events.InspectDelivery`
+in a bounded system transaction. It shows event/tenant IDs, event and durable names,
+recorded times and the observation time. Truncated lists say that more records exist;
+there is no total-count scan. Payloads and raw failure causes remain outside the view.
+Refresh reads the records again and changes no delivery state. Use the event ID and
+durable name to investigate through your installation's existing operational tools.
+
+Publication is transport acceptance, not proof that every subscriber completed.
+Retained failures are historical records, not a replay queue. This page does not
+establish broker connectivity, mail receipt, policy qualification or service health.
+
+The reference application grants `delivery:read` when provisioning a new operator
+role. Existing roles are preserved by `auth.SeedRoles`: an authorized operator must
+add this grant through the existing Auth role-management path before the new link
+appears. Do not rerun bootstrap or overwrite the existing role's other grants.
+Compositions using another authorizer must explicitly grant this operator permission.
+
+Run `go test ./kit/events ./modules/admin` with the contribution guide's disposable
+database setup for metadata, truncation, cancellation and access tests. The existing
+`e2e/admin-tasks.spec.ts` checks the freshly bootstrapped operator's keyboard journey.
+
+## Tenant component galleries
 
 The admin module serves the interactive gallery at `/admin/_gallery`. Sign in
 with `gallery:read` (included by the administrator's wildcard). The default

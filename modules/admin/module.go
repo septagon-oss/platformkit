@@ -5,10 +5,10 @@
 // detail and form come from an entity's schema, and kit/httpx carries that
 // schema for every resource kit/rest mounted. The generated screens are
 // ui/screens'; this module composes them with its own chrome, frame and
-// navigation, adds the five pages no schema describes — the dashboard, the
-// health page, the sign-in page, the gallery and the tenant switcher — and
+// navigation, adds the pages no schema describes — the dashboard, health,
+// sign-in, gallery, tenant switcher and delivery inspection — and
 // serves the same knowledge as JSON at /api/v1/admin/resources for a shell that
-// is not a browser. A sixth hand-written page arrives only when an interaction
+// is not a browser. A hand-written page arrives only when an interaction
 // cannot be derived.
 //
 // It is composed last, and that is load-bearing rather than tidy: kit/app calls
@@ -68,31 +68,34 @@ type Deps struct {
 
 const PermissionGalleryRead = "gallery:read"
 
+// PermissionDeliveryRead permits installation-wide delivery metadata inspection.
+const PermissionDeliveryRead = internal.PermissionDeliveryRead
+
 // Module is the manifest.
 //
-// It declares gallery:read for the selected design composition. Other pages
-// use the permissions of the modules that own their data. It declares neither
-// events nor a navigation entry of its own.
+// It declares gallery access and operator delivery inspection. Other pages use
+// the permissions of their data owners. Inspection emits no event or command.
 func Module(deps Deps) module.Module {
+	delivery := internal.DeliveryGrant()
+	nav := []module.NavEntry{{Label: "Event delivery", Path: internal.DeliveryPath, Permission: delivery.Permission}}
 	return module.Module{
 		Name:          "admin",
-		Permissions:   []module.Permission{{Key: PermissionGalleryRead}},
+		Permissions:   []module.Permission{{Key: PermissionGalleryRead}, {Key: delivery.Permission, Operator: delivery.Operator}},
 		Events:        nil,
-		Nav:           nil,
+		Nav:           nav,
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes: func(api *httpx.API) {
 			internal.Mount(api, internal.Shell{
-				Nav:       navigation(deps.Modules),
+				Nav:       append(navigation(deps.Modules), nav...),
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
 				Theme:     theme(deps.Theme),
 				Storybook: deps.Storybook,
 				Messages:  deps.Messages,
 				Locale:    deps.Locale,
-				// The one call in this module that crosses a tenant boundary,
-				// in the manifest a reviewer is already reading. It is what the
-				// tenant switcher lists. See docs/adr/0006.
+				// Tenant listing and delivery inspection explicitly read across
+				// tenants, using operator-protected routes. See docs/adr/0006.
 				Token: api.SystemToken(),
 			})
 		},
