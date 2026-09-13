@@ -23,6 +23,12 @@ import (
 // a fourth positional argument. Every module follows this, and an empty Deps is
 // a module that needs nothing.
 type Deps struct {
+	// Service optionally shares task lifecycle commands with another module.
+	// Application composition constructs it with NewService, supplies it here,
+	// and passes the contracts.Service to product dependencies. Nil constructs
+	// the default service. Routes, the create hook and the SLA job all use it.
+	Service contracts.Service
+
 	// Tenants is how the SLA sweep reaches active tenants. The application
 	// supplies tenant/contracts.Active over its tenant service.
 	Tenants jobs.TenantLister
@@ -67,11 +73,20 @@ var permissions = []module.Permission{
 	{Key: contracts.PermissionTaskUpdate},
 }
 
-// Module is the manifest. The implementation is constructed here, in one line,
-// and handed to the two places that use it, so this module's own wiring is
-// visible in the file that declares it.
+// NewService constructs the task lifecycle implementation for application
+// composition. Commands use the caller's tenant transaction; the application
+// remains responsible for authorizing product operations before calling them.
+// Pass this service to Module through Deps.Service to share it with task routes
+// and the SLA sweep. Consumer modules import only the contracts package.
+func NewService() contracts.Service { return internal.NewService() }
+
+// Module is the manifest. Existing compositions may omit Deps.Service; a
+// composition sharing task commands supplies the service it constructed.
 func Module(deps Deps) module.Module {
-	svc := internal.NewService()
+	svc := deps.Service
+	if svc == nil {
+		svc = NewService()
+	}
 	every := deps.SweepEvery
 	if every == 0 {
 		every = sweepEvery
@@ -80,7 +95,7 @@ func Module(deps Deps) module.Module {
 	// created with a deadline already behind it is breached on arrival, in the
 	// create's own transaction, rather than a minute later when the sweep gets
 	// to it. The hook is set here and not in the spec literal above because it
-	// needs the service, and the service is constructed here.
+	// needs this composition's service.
 	mounted := spec
 	mounted.AfterCreate = internal.BreachOnArrival(svc)
 	return module.Module{
