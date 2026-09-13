@@ -3,10 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"slices"
 	"time"
 
@@ -119,37 +116,3 @@ func (r *Reconcile) run(ctx context.Context, conn *db.Conn) error {
 	}
 	return nil
 }
-
-// Keys is contracts.Lister on the filesystem: every blob written before before.
-//
-// It walks the two-character directories Put creates and reads each entry's
-// modification time, which is when the upload finished writing it.
-func (l *Local) Keys(_ context.Context, before time.Time) ([]string, error) {
-	var out []string
-	err := filepath.WalkDir(l.dir, func(at string, e fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return err
-		case e.IsDir():
-			return nil
-		case !key.MatchString(e.Name()):
-			// Not something this package wrote. A directory somebody else's
-			// backup tool left here is not this job's to delete.
-			return nil
-		}
-		info, err := e.Info()
-		if err != nil {
-			return err
-		}
-		if info.ModTime().Before(before) {
-			out = append(out, e.Name())
-		}
-		return nil
-	})
-	if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("file: walk %s: %w", l.dir, err)
-	}
-	return out, nil
-}
-
-var _ contracts.Lister = (*Local)(nil)

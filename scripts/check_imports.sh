@@ -2,7 +2,7 @@
 # Check one repository against its explicitly composed module dependencies:
 #   check_imports.sh [repository [dependency-module-path ...]]
 # Consumers call this script from their resolved foundation dependency.
-# Applications may name constructors; modules consume each other's contracts.
+# Applications name constructors; modules consume contracts and admitted portable APIs.
 set -euo pipefail
 
 foundation="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,6 +49,8 @@ if [ "${#present[@]}" -gt 0 ]; then
                     sub(/^modules\//, "", owner)
                     sub(/\/.*/, "", owner)
                     if ((pkg[k] == self && target == owner) || path ~ /^contracts(\/|$)/) continue
+                    if (pkg[k] == "github.com/septagon-oss/platformkit" && target == "task" &&
+                        (path == "domain" || path == "resolution")) continue
                     printf "%s:%d: modules/%s imports %s/modules/%s%s\n", FILENAME, FNR, owner, pkg[k], target,
                         (path == "" ? ", its manifest" : "/" path)
                 }
@@ -58,8 +60,8 @@ if [ "${#present[@]}" -gt 0 ]; then
 fi
 if [ -n "$hits" ]; then
     printf '%s\n' "$hits" >&2
-    echo "OUT OF BOUNDS: modules consume contracts; applications compose constructors." >&2
+    echo "OUT OF BOUNDS: modules consume contracts or admitted portable APIs; applications compose constructors." >&2
     echo "See the foundation ARCHITECTURE.md for the dependency boundary." >&2
     exit 1
 fi
-echo "imports: every cross-module import is a contracts/ import"
+echo "imports: cross-module imports use contracts/ or admitted portable APIs"

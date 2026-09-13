@@ -53,7 +53,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
-	"github.com/septagon-oss/platformkit/kit/problem"
+	problemhuma "github.com/septagon-oss/platformkit/kit/problem/providers/huma"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -250,7 +250,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// than in an init(), so the wire is visible. huma reads the global on every
 	// request, so a second API built while a first one serves must not write it
 	// again. See kit/problem.
-	errorShape.Do(func() { huma.NewError = problem.HumaError })
+	errorShape.Do(func() { huma.NewError = problemhuma.NewError })
 
 	config := huma.DefaultConfig("PlatformKit", "1.0.0")
 	if cfg.PublicHost != "" {

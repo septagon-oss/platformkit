@@ -8,8 +8,9 @@ implemented boundaries. Contribution policy lives in
 
 ## Provider boundaries
 
-Reuse the existing owned contracts: `events.Transport`, File `Storage`, Notification
-`Mailer` and `tenancy.Policy`. [NATS configuration](config.example.yaml) selects
+Reuse the portable owners: [event delivery](kit/events/README.md),
+[blob storage](kit/blob/README.md), [mail](kit/mail/README.md) and `tenancy.Policy`.
+Existing `events.Transport`, File `Storage` and Notification `Mailer` names alias them. [NATS configuration](config.example.yaml) selects
 broker transport, authentication and trust at composition. [Page localization](ui/page/README.md)
 uses the portable [locale contracts](kit/locale/README.md); [xtext](kit/locale/providers/xtext/README.md) owns catalog formatting, with page aliases for existing callers.
 [Feature evaluation](kit/flags/README.md) uses `flags.Evaluator` with isolated
@@ -32,6 +33,18 @@ Their package guides contain executable entry points and dependency limits.
 SQL transactions, authorization and business writes remain explicit composition
 responsibilities; an exported form or rule does not supply a complete service.
 The existing CRUD/page/Auth aliases and screens adapter delegate to these owners.
+
+[Task resolution](modules/task/resolution/README.md) adds a portable backend service
+over explicit atomic storage, policy and time. Its [PostgreSQL adapter](modules/task/postgres/README.md)
+reuses the existing row lock and outbox. Standalone calls own commit; composed
+product operations retain their caller-owned transaction and provisional result.
+The database runner aligns explicit tenant identity with its callback context.
+
+[Problem details](kit/problem/README.md) are independent of Huma; the Huma adapter
+is selected at the HTTP composition edge. Local blob, SMTP, memory mail, NATS and
+memory event providers have separate imports and share their existing contracts.
+Provider guides distinguish success, cancellation and replay guarantees from
+capabilities that the surrounding persistence or application must supply.
 
 ## Start at the composition
 
@@ -102,9 +115,11 @@ events, permissions and conformance suite. `internal/` contains its
 implementation. `module.go` declares the constructor and manifest.
 [modules/task](modules/task/) is the reference example.
 
-A consumer imports another module's `contracts/`, not its `internal/` or
-constructor. Application composition is the place that connects them.
-[scripts/check_imports.sh](scripts/check_imports.sh) checks this boundary.
+A consumer imports another module's `contracts/` or the exact portable Task
+`domain` and `resolution` packages. Applications compose concrete PostgreSQL
+adapters and module constructors; other cross-module implementation imports
+remain forbidden. [scripts/check_imports.sh](scripts/check_imports.sh) checks
+this boundary against the canonical foundation module identity.
 Shared code belongs in `kit/` only when it is runtime infrastructure rather
 than a business rule.
 
@@ -507,8 +522,11 @@ changing these boundaries; a proxy or browser assumption is not evidence.
 
 [Makefile](Makefile) defines the local checks.
 `make check` runs build, vet, formatting, real-service tests, source and
-package budgets, import checks and tenant-setting checks. Boot and authorization
-cases are part of those tests. `make e2e` separately exercises the admin shell
+package budgets, import checks and tenant-setting checks. The package gate also
+checks transitive runtime dependencies of portable cores, forms and selected
+providers against their exact first-party owners and SDK module families,
+including budget write mode and compositions without the reference app.
+Boot and authorization cases are part of those tests. `make e2e` separately exercises the admin shell
 and a generated CRUD journey in a browser.
 
 [loc-budget.json](loc-budget.json) and

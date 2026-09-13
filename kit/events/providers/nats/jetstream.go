@@ -1,4 +1,6 @@
-package events
+// Package nats provides the existing JetStream event transport.
+// The caller owns tenant checks and idempotent or transactional sink handling.
+package nats
 
 import (
 	"context"
@@ -11,6 +13,8 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	delivery "github.com/septagon-oss/platformkit/kit/events/internal/delivery"
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The one stream and its one subject space. Every PlatformKit event is
@@ -25,11 +29,11 @@ const (
 // consumers, explicit acknowledgement. Failed deliveries remain unacknowledged
 // for the consumer backoff to redeliver; a successful handler acknowledges.
 //
-// The returned Transport is an io.Closer, so kit/app releases the connection
+// The returned transport.Transport is an io.Closer, so kit/app releases the connection
 // when the worker stops. Native NATS options let the composition supply TLS
 // trust and credentials without putting secrets in the endpoint URL. Options
 // follow the transport defaults, so the composition can override them.
-func JetStream(url string, options ...nats.Option) (Transport, error) {
+func JetStream(url string, options ...nats.Option) (transport.Transport, error) {
 	options = append([]nats.Option{nats.Name("platformkit"), nats.MaxReconnects(-1)}, options...)
 	nc, err := nats.Connect(url, options...)
 	if err != nil {
@@ -75,7 +79,7 @@ func wantedStream() *nats.StreamConfig {
 		Subjects:  []string{subject + ">"},
 		Retention: nats.LimitsPolicy,
 		Storage:   nats.FileStorage,
-		MaxAge:    keep,
+		MaxAge:    delivery.Keep,
 	}
 }
 
@@ -84,7 +88,7 @@ type jetstream struct {
 	js nats.JetStreamContext
 }
 
-func (j *jetstream) Publish(ctx context.Context, ev Event) error {
+func (j *jetstream) Publish(ctx context.Context, ev transport.Event) error {
 	body, err := json.Marshal(ev)
 	if err != nil {
 		return fmt.Errorf("events: marshal %s: %w", ev.Name, err)
@@ -112,7 +116,7 @@ func (j *jetstream) Publish(ctx context.Context, ev Event) error {
 // chart could see it. One value used twice cannot drift from itself; reconcile
 // handles the drift that is still possible, which is a deploy that changes the
 // ladder itself.
-func ackWait() time.Duration { return backoff[0] }
+func ackWait() time.Duration { return delivery.Backoff[0] }
 
 // Handler attempts are capped in Subscribe. Unlimited broker redelivery keeps
 // terminal-record failures recoverable; consumer backoff bounds the retry rate.
@@ -123,7 +127,7 @@ func ackWait() time.Duration { return backoff[0] }
 func wanted(durable, name string) []nats.SubOpt {
 	return []nats.SubOpt{
 		nats.Durable(durable), nats.ManualAck(), nats.AckExplicit(), nats.DeliverAll(),
-		nats.AckWait(ackWait()), nats.MaxDeliver(-1), nats.BackOff(backoff),
+		nats.AckWait(ackWait()), nats.MaxDeliver(-1), nats.BackOff(delivery.Backoff),
 		nats.BindStream(stream),
 	}
 }
@@ -153,9 +157,10 @@ func group(durable string) string { return durable }
 // on the old ones until somebody noticed.
 //
 // Where it differs from a consumer is what it does about a setting NATS cannot
-// change. A consumer is deleted and made again, which is safe because this
-// transport asks for DeliverAll and every delivery is claimed in
-// platformkit_handled before a handler runs. A stream is not: deleting one
+// change. A consumer is deleted and made again, replaying DeliverAll. When
+// composed with events.Consume, platformkit_handled claims prevent repeated
+// committed handling; independent sinks must provide durable idempotency.
+// A stream cannot be recreated that way: deleting one
 // throws away the messages in it, and the ones the outbox has already marked as
 // relayed would be events nobody ever gets. So retention and storage are
 // reported and the process refuses to start, which is a deploy that fails where
@@ -215,6 +220,8 @@ func (j *jetstream) stream(ctx context.Context) error {
 // already run does not run again; one that never ran gets its event. That is
 // the same guarantee an ordinary redelivery has (docs/adr/0004), which is why
 // recreating a consumer is a log line rather than an operator's afternoon.
+// Independent sinks must supply equivalent durable idempotency: this provider
+// does not create SQL claims and cannot make an arbitrary callback run once.
 func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	info, err := j.js.ConsumerInfo(stream, durable, nats.Context(ctx))
 	switch {
@@ -234,9 +241,9 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 		changed = append(changed, fmt.Sprintf("max_deliver %d to %d", info.Config.MaxDeliver, -1))
 		want.MaxDeliver = -1
 	}
-	if !slices.Equal(info.Config.BackOff, backoff) {
-		changed = append(changed, fmt.Sprintf("backoff %v to %v", info.Config.BackOff, backoff))
-		want.BackOff = backoff
+	if !slices.Equal(info.Config.BackOff, delivery.Backoff) {
+		changed = append(changed, fmt.Sprintf("backoff %v to %v", info.Config.BackOff, delivery.Backoff))
+		want.BackOff = delivery.Backoff
 	}
 	// The ones an update cannot carry: what a consumer filters, how it
 	// acknowledges, where it starts, and whether it is pushed at all. A
@@ -280,7 +287,7 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	return nil
 }
 
-func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Sink) error {
+func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink transport.Sink) error {
 	if err := j.stream(ctx); err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}
@@ -288,7 +295,7 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Si
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}
 	sub, err := j.js.QueueSubscribe(subject+name, group(durable), func(msg *nats.Msg) {
-		var ev Event
+		var ev transport.Event
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
 			// A message that will never parse would be redelivered forever.
 			// Terminate it and say so; the outbox still holds the row.
@@ -306,21 +313,21 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Si
 		// provider action. The last handler cause is logged before recording; a
 		// restarted delivery may no longer have it.
 		err = errors.New("delivery attempts exhausted; last handler error unavailable on redelivery")
-		if meta.NumDelivered <= uint64(maxDeliveries) {
+		if meta.NumDelivered <= uint64(delivery.MaxDeliveries) {
 			err = sink.Handle(ctx, ev)
 			if err == nil {
 				_ = msg.Ack()
 				return
 			}
 		}
-		if meta.NumDelivered >= uint64(maxDeliveries) {
+		if meta.NumDelivered >= uint64(delivery.MaxDeliveries) {
 			slog.ErrorContext(ctx, "events: recording terminal failure", "event", ev.Name, "id", ev.ID, "error", err)
 			if err = sink.Dead(ctx, ev, err); err == nil {
 				_ = msg.Term()
 				return
 			}
 		}
-		wait := backoff[min(meta.NumDelivered, uint64(len(backoff)))-1]
+		wait := delivery.Backoff[min(meta.NumDelivered, uint64(len(delivery.Backoff)))-1]
 		slog.WarnContext(ctx, "events: delivery unfinished, retrying",
 			"event", ev.Name, "id", ev.ID, "backoff", wait, "error", err)
 		// Leave the message pending: the consumer already owns its retry timer.
@@ -339,7 +346,7 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink Si
 	return nil
 }
 
-// Close releases the connection. It is not part of Transport, because the
+// Close releases the connection. It is not part of transport.Transport, because the
 // memory transport has nothing to release; kit/app asks for io.Closer.
 func (j *jetstream) Close() error {
 	j.nc.Close()

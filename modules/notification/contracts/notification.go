@@ -19,6 +19,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/mail"
 )
 
 // Notification is one thing one person was told, in one tenant. crud.Base
@@ -102,31 +103,13 @@ type HostLookup interface {
 	PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error)
 }
 
-// Message is one email, already rendered: the whole of what a Mailer is asked.
-type Message struct {
-	To      string
-	Subject string
-	Body    string
-}
+// Message is the standalone delivery value, shared by Auth and Notification.
+type Message = mail.Message
 
-// Mailer sends one message. There is one production implementation, SMTP, and
-// one in memory — notification.Mailbox — that a test and an unconfigured
-// deployment both use; a second production sender would be a second thing to
-// keep working for no capability the first does not have.
-//
-// It is exported rather than internal to this module because it has a second
-// consumer, and the exception is worth naming. Everything this application
-// mails goes out of the worker below, which reads a notification row back and
-// renders it — so whatever is in the message is, by construction, in a row.
-// That is right for every notice there is and wrong for exactly one thing: a
-// set-password link. modules/auth is handed this same Mailer by the
-// composition, mints the token in its own subscription and hands the message
-// over directly, so the secret is in the mail and in no row, no outbox payload
-// and no audit event. The alternative was a live credential sitting in
-// notifications.link, which is what it used to be.
-type Mailer interface {
-	Send(ctx context.Context, m Message) error
-}
+// Mailer sends rendered messages. Auth sends credential-bearing setup links
+// directly; Notification's outbox owns ordinary notices and their lookup.
+// Neither path copies credentials into notification rows or event payloads.
+type Mailer = mail.Mailer
 
 // Service is what a caller does with notifications. Every command takes the
 // caller's transaction rather than opening one, so the row and the events it

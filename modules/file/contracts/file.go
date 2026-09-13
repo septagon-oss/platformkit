@@ -20,11 +20,11 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/blob"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -95,7 +95,7 @@ var ErrQuota = errors.New("file: this tenant has no room left")
 // ErrNoBlob is a key Storage has nothing at. It is what a Get answers with when
 // the row says there are bytes and there are not, which is the one inconsistency
 // the split between a row and a blob can produce.
-var ErrNoBlob = errors.New("file: no bytes at this key")
+var ErrNoBlob = blob.ErrNoBlob
 
 // File is one uploaded blob's row.
 //
@@ -233,50 +233,12 @@ func validMediaType(s string) bool {
 	return err == nil
 }
 
-// Storage is where the bytes go. There is one implementation in this module, on
-// local disk, and the ones that speak to an object store live outside this
-// repository: a reference architecture carrying an S3 client would be teaching
-// S3, and the interface is what makes that a wiring decision rather than a
-// rewrite.
-//
-// It takes no transaction, and that is the shape of the whole module: a blob
-// write cannot be rolled back, so it happens outside one on purpose and the
-// order relative to the commit is chosen at each call site. Every key it is
-// given is a UUID this module generated.
-type Storage interface {
-	// Put writes the bytes at key. size is what the caller declared, or -1 when
-	// nothing did; an implementation that has to know a length up front may
-	// refuse -1, and the one here ignores it. Writing a key that already exists
-	// is an error, because a key is minted per upload and a collision is a bug
-	// rather than a replacement.
-	Put(ctx context.Context, key string, r io.Reader, size int64) error
+// Storage is the portable byte-storage contract. File retains metadata,
+// authorization, quotas and the ordering of byte effects around its transaction.
+type Storage = blob.Storage
 
-	// Get opens the bytes at key, or ErrNoBlob when there are none. The caller
-	// closes what it is given.
-	Get(ctx context.Context, key string) (io.ReadCloser, error)
-
-	// Delete removes the bytes at key. A key with nothing at it is not an
-	// error: the worker that calls this retries, and a retry that failed
-	// because the first attempt succeeded would never stop.
-	Delete(ctx context.Context, key string) error
-}
-
-// Lister is the half of Storage a reconciliation can be built on, and it is
-// optional: an implementation that cannot enumerate what it holds — a signed-URL
-// gateway, a store behind somebody else's API — simply does not implement it,
-// and the module mounts no reconciliation job.
-//
-// It exists because an orphan blob is the one inconsistency this module's own
-// ordering produces on purpose: an upload writes the bytes before the row, so a
-// transaction that then fails leaves bytes nobody references. Nothing in the
-// database records them, which is why the sweep has to start from the store.
-type Lister interface {
-	// Keys is every key written before before. The bound is the whole safety
-	// argument: an upload in flight has bytes and no row yet, and a sweep that
-	// did not exclude it would delete the blob out from under a request that is
-	// about to commit.
-	Keys(ctx context.Context, before time.Time) ([]string, error)
-}
+// Lister is optional enumeration for File's orphan-reconciliation job.
+type Lister = blob.Lister
 
 // Upload is one arriving file: what the caller said about it, and the bytes.
 // The reader is streamed straight to Storage while it is hashed and counted, so

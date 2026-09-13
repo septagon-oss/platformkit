@@ -7,16 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/septagon-oss/platformkit/kit/problem"
-)
-
-// A Problem is the error type huma writes, so it has to satisfy both of huma's
-// response interfaces.
-var (
-	_ huma.StatusError       = (*problem.Problem)(nil)
-	_ huma.ContentTypeFilter = (*problem.Problem)(nil)
 )
 
 func TestProblemIsAnRFC9457Body(t *testing.T) {
@@ -40,75 +31,31 @@ func TestProblemIsAnRFC9457Body(t *testing.T) {
 	}
 }
 
-func TestHumaErrorKeepsClientDetailAndHidesServerCause(t *testing.T) {
-	client, ok := problem.HumaError(http.StatusBadRequest, "invalid body", errors.New("name is required")).(*problem.Problem)
-	if !ok {
-		t.Fatal("HumaError did not return a *Problem")
-	}
-	if client.Detail != "invalid body" {
-		t.Errorf("detail = %q, want the caller's message", client.Detail)
-	}
-	if len(client.Errors) != 1 || client.Errors[0] != "name is required" {
-		t.Errorf("errors = %v, want the validation detail", client.Errors)
-	}
-
-	cause := errors.New("dial tcp 10.0.0.1:5432: connection refused")
-	server := problem.HumaError(http.StatusInternalServerError, "could not reach postgres", cause)
-	if got := server.Error(); strings.Contains(got, "postgres") || strings.Contains(got, "10.0.0.1") {
-		t.Errorf("a 5xx leaked its message to the client: %q", got)
-	}
-	if !errors.Is(server, cause) {
-		t.Error("a 5xx dropped the cause the logger needs")
-	}
-	if server.GetStatus() != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", server.GetStatus())
-	}
-
-	// Hiding the message must not flatten the status: an outage that asks the
-	// caller to retry is a different fact from one that does not.
-	outage := problem.HumaError(http.StatusServiceUnavailable, "policy store unreachable")
-	if outage.GetStatus() != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503", outage.GetStatus())
-	}
-	if strings.Contains(outage.Error(), "policy store") {
-		t.Errorf("a 503 leaked its message: %q", outage.Error())
-	}
-}
-
-func TestValidationErrorsKeepLocationsWithoutEchoingRequestValues(t *testing.T) {
-	const password = "private registration passphrase"
-	for _, value := range []any{password, map[string]any{"password": password}} {
-		problem := problem.HumaError(422, "validation failed", &huma.ErrorDetail{
-			Message: "expected a string", Location: "body.password", Value: value,
-		})
-		body, err := json.Marshal(problem)
+func TestFromErrorKeepsCauseWithoutExposingIt(t *testing.T) {
+	cause := errors.New("private connection details")
+	for _, tc := range []struct {
+		status int
+		body   string
+	}{
+		{503, `{"type":"about:blank","title":"Service Unavailable","status":503}`},
+		{409, `{"type":"about:blank","title":"Conflict","status":409}`},
+		{200, `{"type":"about:blank","title":"OK","status":200}`},
+		{599, `{"type":"about:blank","title":"HTTP 599","status":599}`},
+		{-1, `{"type":"about:blank","title":"HTTP -1","status":-1}`},
+	} {
+		p := problem.FromError(tc.status, cause)
+		body, err := json.Marshal(p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(body), password) || !strings.Contains(string(body), "body.password") || !strings.Contains(string(body), "expected a string") {
-			t.Fatal("validation must retain the field and explanation without repeating credentials")
+		if string(body) != tc.body || p.GetStatus() != tc.status || p.Detail != "" || p.Errors != nil || strings.Contains(p.Error(), cause.Error()) {
+			t.Errorf("status %d exposed the wrong response: %s (%s)", tc.status, body, p.Error())
+		}
+		if !errors.Is(p, cause) || errors.Unwrap(p) != cause {
+			t.Error("the sanitized response dropped its original cause")
 		}
 	}
-}
-
-// TestAServerErrorCarriesNoDetailAndAnUnknownStatusStillHasATitle. Repeating
-// the title in the detail says nothing the status has not said, and a body with
-// an empty title is not an RFC 9457 problem.
-func TestAServerErrorCarriesNoDetailAndAnUnknownStatusStillHasATitle(t *testing.T) {
-	// Through the one door a 5xx comes out of: an error a handler returned that
-	// was not a Problem. There is no exported constructor, because a handler
-	// that could build a 500 is a handler that could put something in it.
-	body, err := json.Marshal(problem.HumaError(http.StatusInternalServerError, "", errors.New("dial tcp: refused")))
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	const want = `{"type":"about:blank","title":"Internal Server Error","status":500}`
-	if string(body) != want {
-		t.Errorf("body = %s, want %s", body, want)
-	}
-
-	odd := problem.New(599, "")
-	if odd.Title != "HTTP 599" {
-		t.Errorf("title = %q, want %q", odd.Title, "HTTP 599")
+	if p := problem.FromError(500, nil); p.Unwrap() != nil || p.Detail != "" || p.Errors != nil {
+		t.Error("an absent cause introduced response details")
 	}
 }

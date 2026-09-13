@@ -1,4 +1,4 @@
-package events_test
+package nats_test
 
 import (
 	"crypto/tls"
@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/nats-io/nats.go"
-	"github.com/septagon-oss/platformkit/kit/events"
+	provider "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 )
 
 type refusedNATSDial struct{ cause error }
@@ -24,7 +24,7 @@ func TestJetStreamConnectionErrorsDoNotExposeCredentials(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cause := errors.New("fixture refused with fixture-credential-canary")
-			transport, err := events.JetStream(test.endpoint, nats.SetCustomDialer(refusedNATSDial{cause}))
+			transport, err := provider.JetStream(test.endpoint, nats.SetCustomDialer(refusedNATSDial{cause}))
 			if transport != nil || err == nil {
 				t.Fatal("a refused connection must return only an error")
 			}
@@ -39,7 +39,7 @@ func TestJetStreamConnectionErrorsDoNotExposeCredentials(t *testing.T) {
 }
 
 func TestJetStreamMalformedEndpointKeepsItsCausePrivate(t *testing.T) {
-	_, err := events.JetStream("nats://fixture-user:fixture-credential-canary@[invalid")
+	_, err := provider.JetStream("nats://fixture-user:fixture-credential-canary@[invalid")
 	if err == nil {
 		t.Fatal("malformed endpoint was accepted")
 	}
@@ -56,7 +56,7 @@ func TestJetStreamAcceptsOfficialTLSAndAuthenticationOptions(t *testing.T) {
 	roots := x509.NewCertPool()
 	cause := errors.New("fixture option failure: fixture-credential-canary")
 	configured := false
-	_, err := events.JetStream("tls://broker.invalid:4222",
+	_, err := provider.JetStream("tls://broker.invalid:4222",
 		nats.Secure(&tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}),
 		nats.UserInfo("fixture-user", "fixture-credential-canary"),
 		func(options *nats.Options) error {

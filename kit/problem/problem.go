@@ -1,9 +1,8 @@
 // Package problem is the one error shape the API returns: RFC 9457 problem
 // details (the revision of RFC 7807), served as application/problem+json.
 //
-// A Problem is an error, so a handler returns one; the huma hook in huma.go
-// turns every framework error into the same shape, which is why there is no
-// second error type anywhere in the kernel.
+// A Problem is an error that can be serialized without a framework. Provider
+// adapters translate framework errors into this same shape.
 //
 // Derived from github.com/septagon-oss/pk-problem (Apache-2.0); see NOTICE.
 package problem
@@ -60,16 +59,11 @@ func NotFound(detail string) *Problem { return New(http.StatusNotFound, detail) 
 // Conflict is 409: the request contradicts the current state.
 func Conflict(detail string) *Problem { return New(http.StatusConflict, detail) }
 
-// serverError is any 5xx: the status is kept, because 503 asks a caller to come
-// back and 500 asks them not to, and the message is not — a server error's real
-// message belongs in the log, and repeating the title in the detail says
-// nothing the status has not already said.
-//
-// It is unexported because a handler does not build one. Every 5xx this
-// application answers comes from huma.go below, out of an error a handler
-// returned that was not a Problem, which is the whole point: a handler that
-// could construct a 500 is a handler that could put something in it.
-func serverError(status int, cause error) *Problem {
+// FromError preserves a cause for server-side inspection while returning only
+// the status and its standard title to the client. It never copies cause text
+// into Detail or Errors. Any status is accepted, with the same fallback title
+// as New; the caller decides which failures need a sanitized response.
+func FromError(status int, cause error) *Problem {
 	p := New(status, "")
 	p.cause = cause
 	return p

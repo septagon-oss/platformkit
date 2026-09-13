@@ -5,6 +5,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -15,6 +16,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/domain"
+	"github.com/septagon-oss/platformkit/modules/task/internal/resolutionsql"
+	"github.com/septagon-oss/platformkit/modules/task/resolution"
 )
 
 // Service owns task transitions. Optional policy decisions use the locked task
@@ -66,31 +69,27 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 // or with none, changes nothing; a different one on a resolved task is a
 // conflict rather than an overwrite, because the account a task gives of itself
 // is the auditable part and a retry is not a correction.
-func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, resolution string) (*contracts.Task, error) {
-	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
+func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, text string) (*contracts.Task, error) {
+	locked, err := resolutionsql.Lock(ctx, tx, id)
+	if errors.Is(err, resolution.ErrNotFound) {
+		return nil, crud.ErrNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorize(ctx, tx, task, "task:resolve", uuid.Nil); err != nil {
+	if err := s.authorize(ctx, tx, locked.Task(), "task:resolve", uuid.Nil); err != nil {
 		return nil, err
 	}
-	decision, err := domain.Resolve(task.Status, task.Resolution, resolution)
-	if err != nil {
+	_, err = resolution.StageAuthorized(ctx, locked, resolution.Command{
+		Tenant: db.TenantOf(tx), TaskID: id, Resolution: text,
+	}, db.Now)
+	if errors.Is(err, domain.ErrClosed) || errors.Is(err, domain.ErrDifferentResolution) {
 		return nil, fmt.Errorf("%w: %v", crud.ErrConflict, err)
 	}
-	if !decision.Changed {
-		return task, nil
-	}
-	at := db.Now()
-	task.Status = contracts.StatusResolved
-	task.Resolution = decision.Text
-	task.ResolvedAt = &at
-	if err := crud.Update(ctx, tx, task, "status", "resolution", "resolved_at", "updated_at"); err != nil {
+	if err != nil {
 		return nil, err
 	}
-	return task, events.Publish(ctx, tx, contracts.EventResolved, contracts.Resolved{
-		TaskID: task.ID, Resolution: task.Resolution, At: at,
-	})
+	return locked.Task(), nil
 }
 
 // CheckSLA records a breach, once. The sweep calls it every minute for every
