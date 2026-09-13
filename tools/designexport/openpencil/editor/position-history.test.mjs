@@ -60,6 +60,25 @@ async function save(page, workers) {
   return Buffer.concat(chunks)
 }
 
+// Rendering follows requestRender asynchronously. Keep the exact pixel oracle,
+// but take a baseline only after two successive rendered captures agree.
+async function canvasPixels(page, expected, message) {
+  // Element screenshots include the floating HTML toolbar above the canvas.
+  // Reveal the complete scene beneath it; its SVG compositing is a separate oracle.
+  await expect(page.locator('[data-test-id="toolbar"]')).toHaveCount(1)
+  let previous
+  await expect.poll(async () => {
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const actual = hash(await page.locator('canvas').first().screenshot({
+      timeout: 5000, style: '[data-test-id="toolbar"] { visibility: hidden !important; }',
+    }))
+    const stable = actual === previous
+    previous = actual
+    return stable && (expected === undefined || actual === expected)
+  }, { message, timeout: 5000, intervals: [16, 50, 100] }).toBe(true)
+  return previous
+}
+
 for (const input of ['pointer', 'keyboard']) test(`fractional coordinate ${input} history preserves exact source through worker saves`, { timeout: 180000 }, async () => {
   const provenance = await (await fetch(new URL('platformkit-provenance.json', endpoint))).json()
   assert.equal(provenance.scope, 'generic-editor-without-packaged-design')
@@ -98,19 +117,28 @@ for (const input of ['pointer', 'keyboard']) test(`fractional coordinate ${input
           if (input === 'pointer') await field.dblclick()
           else {
             for (let step = 0; step < 120 && !await field.evaluate(node => node === document.activeElement); step++) await page.keyboard.press('Tab')
-            await expect(field).toBeFocused()
+          }
+          await expect(field).toHaveJSProperty('tagName', 'INPUT')
+          await expect(field).toHaveAttribute('data-editing', '')
+          await expect(field).toBeEditable()
+          await expect(field).toBeFocused()
+          if (input === 'keyboard') {
             assert.equal(await field.evaluate(node => node.matches(':focus-visible')), true)
             const outline = await field.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, parseFloat(style.outlineWidth)] })
             assert.ok(!['none', 'hidden'].includes(outline[0]) && outline[1] > 0, 'the focused coordinate has a visible native outline')
           }
         }
         await enter(); await page.keyboard.press('Enter'); await layer.click()
-        const pixels = hash(await page.locator('canvas').first().screenshot())
+        await setup.verify(await save(page, workers), x, y)
+        const label = `${input} cycle ${cycle} ${cycle ? 'Y' : 'X'}`
+        const pixels = await canvasPixels(page, undefined, `${label}: stable baseline`)
         for (const end of ['Escape', 'invalid']) {
           await enter(); await page.keyboard.press('Control+a'); await page.keyboard.type('55.123456789')
           if (end === 'invalid') await page.keyboard.type('x')
+          await expect(field).toHaveValue(end === 'invalid' ? '55.123456789x' : '55.123456789')
           await page.keyboard.press(end === 'invalid' ? 'Enter' : end); await layer.click()
-          assert.equal(hash(await page.locator('canvas').first().screenshot()), pixels, end)
+          await setup.verify(await save(page, workers), x, y)
+          await canvasPixels(page, pixels, `${label}: ${end} restores exact pixels`)
         }
         if (input === 'pointer') {
           const box = await field.boundingBox(), cx = box.x + box.width / 2, cy = box.y + box.height / 2
@@ -118,19 +146,20 @@ for (const input of ['pointer', 'keyboard']) test(`fractional coordinate ${input
           await page.mouse.move(cx + 8, cy); await page.mouse.up()
         } else { await enter(); await page.keyboard.press('ArrowUp'); await page.keyboard.press('Enter') }
         await layer.click()
-        assert.notEqual(hash(await page.locator('canvas').first().screenshot()), pixels, 'scrub or step previews a move')
+        assert.notEqual(await canvasPixels(page, undefined, `${label}: stable scrub or step`), pixels, 'scrub or step previews a move')
         await page.keyboard.press('Control+z')
-        assert.equal(hash(await page.locator('canvas').first().screenshot()), pixels, 'scrub or step undo')
+        await canvasPixels(page, pixels, `${label}: scrub or step undo restores exact pixels`)
         const next = cycle ? 7.123456789 : 55.123456789
         await enter(); await page.keyboard.press('Control+a'); await page.keyboard.type(String(next))
+        await expect(field).toHaveValue(String(next))
         await page.keyboard.press('Enter'); await layer.click()
-        const moved = hash(await page.locator('canvas').first().screenshot())
+        const moved = await canvasPixels(page, undefined, `${label}: stable committed move`)
         assert.notEqual(moved, pixels)
         await page.keyboard.press('Control+z')
-        assert.equal(hash(await page.locator('canvas').first().screenshot()), pixels, 'one undo restores exact pixels')
+        await canvasPixels(page, pixels, `${label}: one undo restores exact pixels`)
         await setup.verify(await save(page, workers), x, y)
         await page.keyboard.press('Control+Shift+z')
-        assert.equal(hash(await page.locator('canvas').first().screenshot()), moved, 'redo restores exact pixels')
+        await canvasPixels(page, moved, `${label}: redo restores exact pixels`)
         if (cycle) y = next; else x = next
         buffer = await save(page, workers)
         await setup.verify(buffer, x, y)
