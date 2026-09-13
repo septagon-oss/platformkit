@@ -4,6 +4,9 @@ import { SceneGraph, UndoManager } from '@open-pencil/scene-graph'
 import { createEditor } from '@open-pencil/core/editor'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { parseFigBuffer } from '@open-pencil/fig'
+import { convertFigmaTransformProps } from '@open-pencil/fig/node-change'
+import { importNodeChanges, populateAllLazyFigImportRoots } from '@open-pencil/core/kiwi'
+import { ancestryOverrides, ownsRotationOverride } from './exporter-correction.mjs'
 import { computeAllLayouts, computeLayout } from '@open-pencil/core/layout'
 
 const named = (graph, name) => [...graph.getAllNodes()].find(node => node.name === name)
@@ -206,5 +209,133 @@ test('placed derived sibling positions override template positions after a size-
   for (let cycle = 0; cycle < 2; cycle++) {
     graph = await reopen(graph)
     assert.deepEqual(graph.getChildren(propertyOwner(graph, 2).id).map(node => [node.x, node.y, node.width, node.height]), positions)
+  }
+})
+
+for (const positioned of [false, true]) for (const angle of [-30, 30]) test(`native rotation preserves centers, inheritance and three saves: positioned=${positioned}, angle=${angle}`, async () => {
+  let graph = new SceneGraph()
+  const page = graph.getPages()[0]
+  const child = graph.createNode('COMPONENT', page.id, { name: 'Rotation guard', width: 40, height: 20 })
+  const master = graph.createNode('COMPONENT', page.id, { name: 'Rotation master', width: 200, height: 40,
+    rotation: 73, layoutMode: 'HORIZONTAL', itemSpacing: 8 })
+  graph.createInstance(child.id, master.id)
+  const positionData = positioned ? [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
+    schema: 'platformkit.design-export.v1', scope: 'source-composition-layout', cssPosition: {
+      version: 1, horizontal: { edge: 'left', inset: 8 }, vertical: { edge: 'top', inset: 12 },
+    } }) }] : []
+  graph.createNode('RECTANGLE', master.id, { name: 'Rotation leaf', width: 40, height: 20, rotation: angle,
+    x: 8, y: 12, layoutPositioning: positioned ? 'ABSOLUTE' : 'AUTO', pluginData: positionData })
+  graph.createInstance(master.id, page.id, { name: 'Inherited rotation', x: 200, y: 100, rotation: 17 })
+  graph.createInstance(master.id, page.id, { name: 'Authored rotation', x: 400, y: 100, rotation: -17 })
+  graph.createNode('RECTANGLE', page.id, { name: 'Direct rotation', x: 300, y: 50, width: 40, height: 20, rotation: angle })
+  graph.withLayoutMutations(() => graph.preserveSourceMetadataDuring(() => computeAllLayouts(graph)))
+  const leaf = name => graph.getChildren(named(graph, name).id)[1]
+  const parts = () => [named(graph, 'Rotation master'), leaf('Rotation master'),
+    named(graph, 'Inherited rotation'), leaf('Inherited rotation'), named(graph, 'Authored rotation'),
+    leaf('Authored rotation'), named(graph, 'Direct rotation')]
+  const fields = ['x', 'y', 'width', 'height', 'rotation']
+  const close = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1e-4,
+    `${label}: ${actual} versus ${expected}`)
+  const guardGeometry = () => ['Rotation master', 'Inherited rotation', 'Authored rotation'].map(name =>
+    graph.getChildren(named(graph, name).id)[0]).map(node => fields.map(field => node[field]))
+  const guards = guardGeometry()
+  for (const edited of [false, true]) {
+    if (edited) {
+      const target = leaf('Authored rotation'), owner = named(graph, 'Authored rotation')
+      graph.updateNode(target.id, { rotation: 60 })
+      graph.updateNode(owner.id, { overrides: { ...owner.overrides, [`${target.id}:rotation`]: true } })
+      graph.updateNode(leaf('Rotation master').id, { rotation: -angle, width: 60, height: 33 })
+      graph.updateNode(named(graph, 'Direct rotation').id, { rotation: 45, width: 60, height: 33 })
+      graph.syncInstances(named(graph, 'Rotation master').id)
+    }
+    function checkOwnership() {
+      for (const name of ['Rotation master', 'Inherited rotation', 'Authored rotation']) {
+        const node = leaf(name)
+        close(node.rotation, edited ? name === 'Authored rotation' ? 60 : -angle : angle, `${name}: inherited or owned angle`)
+        assert.deepEqual([node.width, node.height], edited ? [60, 33] : [40, 20])
+        assert.equal(Object.hasOwn(ancestryOverrides(graph, node), `${node.id}:rotation`), edited && name === 'Authored rotation')
+      }
+      assert.deepEqual(guardGeometry(), guards, 'sibling instances remain unchanged')
+      close(named(graph, 'Inherited rotation').rotation, 17, 'placed orientation is independent of the master')
+      close(named(graph, 'Authored rotation').rotation, -17, 'other placed orientation remains independent')
+    }
+    checkOwnership()
+    const expected = parts().map(node => Object.fromEntries(fields.map(field => [field, node[field]])))
+    for (let save = 0; save < 3; save++) {
+      const bytes = await exportFigFile(graph)
+      const { nodeChanges } = parseFigBuffer(bytes.slice().buffer)
+      const wire = name => nodeChanges.find(node => node.name === name)
+      const wireLeaf = wire('Rotation leaf')
+      const derived = name => (positioned ? wire(name).symbolData.symbolOverrides : wire(name).derivedSymbolData).find(record =>
+        guidKey(record.guidPath.guids.at(-1)) === guidKey(wireLeaf.guid))
+      const records = [wire('Rotation master'), wireLeaf, wire('Inherited rotation'), derived('Inherited rotation'),
+        wire('Authored rotation'), derived('Authored rotation'), wire('Direct rotation')]
+      if (positioned && save === 0) for (const invalid of [null, 'rotation', ['width'], ['rotation', 'rotation']]) {
+        const override = structuredClone(records[3]), entry = override.pluginData.find(item => item.pluginID === 'platformkit')
+        entry.value = JSON.stringify({ ...JSON.parse(entry.value), authoredTransformFields: invalid })
+        assert.throws(() => ownsRotationOverride(override), /rotation override intent/)
+      }
+      for (const [index, record] of records.entries()) {
+        const node = expected[index], transform = record.transform, radians = node.rotation * Math.PI / 180
+        const label = `${edited}/${save}/${index}`
+        // This wire oracle is independent of the importer: rotation fixes the native rectangle's center.
+        close(transform.m00 * node.width / 2 + transform.m01 * node.height / 2 + transform.m02,
+          node.x + node.width / 2, `${label}: center x`)
+        close(transform.m10 * node.width / 2 + transform.m11 * node.height / 2 + transform.m12,
+          node.y + node.height / 2, `${label}: center y`)
+        for (const [field, value] of Object.entries({ m00: Math.cos(radians), m01: -Math.sin(radians),
+          m10: Math.sin(radians), m11: Math.cos(radians) })) close(transform[field], value, `${label}: ${field}`)
+      }
+      graph = await parseFigFile(bytes.slice().buffer, { populate: 'all' })
+      checkOwnership()
+      graph.syncInstances(named(graph, 'Rotation master').id)
+      checkOwnership()
+      for (const [index, node] of parts().entries()) {
+        for (const field of fields) close(node[field], expected[index][field], `${edited}/${save}/${index}: ${field}`)
+        assert.equal(node.flipX || node.flipY, false, 'saving rotation does not introduce reflection')
+      }
+    }
+  }
+})
+
+const scaledRotationMatrix = transform => Object.fromEntries(Object.entries(transform).map(([field, value]) =>
+  [field, ['m00', 'm01', 'm10', 'm11'].includes(field) ? value * 0.1 : value]))
+for (const [label, angle, change, owned] of [
+  ['rotation', 0, matrix => ({ ...matrix, m00: .5, m01: -Math.sqrt(3) / 2, m10: Math.sqrt(3) / 2, m11: .5 }), true],
+  ['translation', 0, matrix => ({ ...matrix, m02: matrix.m02 + 10 }), false],
+  ['scale', 0, scaledRotationMatrix, false], ['shear', 0, matrix => ({ ...matrix, m01: .25 }), false],
+  ['scaled angle', 30, scaledRotationMatrix, true],
+]) test(`external source-position ${label} preserves exact native rotation ownership`, async () => {
+  let graph = new SceneGraph()
+  const page = graph.getPages()[0], source = graph.createNode('COMPONENT', page.id, {
+    name: 'External master', width: 200, height: 40, layoutMode: 'HORIZONTAL',
+  })
+  graph.createNode('RECTANGLE', source.id, { name: 'External leaf', x: 8, y: 12, width: 40, height: 20,
+    rotation: angle, layoutPositioning: 'ABSOLUTE', pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source',
+      value: JSON.stringify({ schema: 'platformkit.design-export.v1', scope: 'source-composition-layout',
+        cssPosition: { version: 1, horizontal: { edge: 'left', inset: 8 }, vertical: { edge: 'top', inset: 12 } } }),
+    }] })
+  graph.createInstance(source.id, page.id, { name: 'External edited' })
+  graph.createInstance(source.id, page.id, { name: 'External sibling' })
+  const { nodeChanges } = parseFigBuffer((await exportFigFile(graph)).slice().buffer)
+  const override = nodeChanges.find(node => node.name === 'External edited').symbolData.symbolOverrides.find(node => node.transform)
+  const originalAngle = convertFigmaTransformProps({ transform: override.transform }).rotation
+  override.transform = Object.fromEntries(Object.entries(change(override.transform)).map(([field, value]) => [field, Math.fround(value)]))
+  const expected = convertFigmaTransformProps({ transform: override.transform, size: override.size })
+  assert.equal((expected.rotation - originalAngle) % 360 !== 0, owned, 'ownership follows the encoded native angle')
+  graph = importNodeChanges(nodeChanges)
+  populateAllLazyFigImportRoots(graph)
+  const guards = () => ['External master', 'External sibling'].flatMap(name => subtree(graph, named(graph, name)))
+    .map(node => [node.x, node.y, node.width, node.height, node.rotation])
+  const before = guards()
+  for (let save = 0; save < 3; save++) {
+    const target = graph.getChildren(named(graph, 'External edited').id)[0]
+    assert.equal(Object.hasOwn(ancestryOverrides(graph, target), `${target.id}:rotation`), owned)
+    const rotation = target.rotation
+    graph.syncInstances(named(graph, 'External master').id)
+    assert.equal(target.rotation, rotation, 'source synchronization never clobbers the external angle')
+    for (const field of ['x', 'y', 'width', 'height', 'rotation']) assert.ok(Math.abs(target[field] - expected[field]) < 1e-5, field)
+    assert.deepEqual(guards(), before, 'master and sibling geometry stay untouched')
+    if (save < 2) graph = await reopen(graph)
   }
 })

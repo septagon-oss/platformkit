@@ -124,8 +124,8 @@ export function correctNumericNodeExport(source, replace) {
   source = replace(source, 'const positioned = target !== instance && sourceAbsoluteRecord(target);',
     `const positioned = target !== instance && sourceAbsoluteRecord(target);
     const modeSelection = target !== instance && owns('variableModes') && serializeVariableModes(target, context.varIdToGuid, context.modeIdToGuid);`)
-  source = replace(source, 'if (fields.length || paddingFields.length || sized || dashed || positioned || opacity) {',
-    'if (fields.length || paddingFields.length || sized || dashed || positioned || opacity || modeSelection) {')
+  source = replace(source, 'if (fields.length || paddingFields.length ||',
+    'if (modeSelection || fields.length || paddingFields.length ||')
   source = replace(source, 'const override = { guidPath };',
     'const override = { guidPath };\n      if (modeSelection) override.variableModeBySetMap = modeSelection;')
   return source + '\nexport { extractVariableModes };\n'

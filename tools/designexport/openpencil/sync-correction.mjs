@@ -343,7 +343,9 @@ function planNativeSync(previousNodes, instanceIndex, componentId, deletedNodePa
         order.push(id)
         continue
       }
-      const keys = [...INSTANCE_SYNC_PROPS, ...SYNC_CHILD_PROPS]
+      // The containing master owns a child's orientation. An instance root's
+      // independent canvas orientation is not part of this descendant copy.
+      const keys = [...INSTANCE_SYNC_PROPS, ...SYNC_CHILD_PROPS, 'rotation']
       // Reuse the SDK's complete typography/rendering fields, not its partial
       // instance list: retained variant text must inherit the new line box too.
       if (child.type === 'TEXT') keys.push(...TEXT_STYLE_KEYS, ...TEXT_PICTURE_KEYS)

@@ -1548,6 +1548,72 @@ test('source minimum-gap wrapping survives keyboard width edits, history and two
   } finally { await browser.close() }
 })
 
+test('descendant rotation retains placement, inherited links and authored overrides through editor history and two worker saves', { timeout: 120000 }, async () => {
+  await verifyBuild()
+  const graph = new SceneGraph(), pageNode = graph.getPages()[0]
+  const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Rotation master', width: 120, height: 80 })
+  graph.createNode('RECTANGLE', master.id, { name: 'Rotating shape', x: 8, y: 12, width: 40, height: 24 })
+  graph.createNode('RECTANGLE', master.id, { name: 'Rotation guard', x: 80, y: 12, width: 20, height: 24 })
+  graph.createInstance(master.id, pageNode.id, { name: 'Inherited placement', x: 200, y: 100 })
+  const authored = graph.createInstance(master.id, pageNode.id, { name: 'Authored placement', x: 400, y: 100 })
+  graph.updateNode(authored.id, { overrides: { [`${graph.getChildren(authored.id)[0].id}:rotation`]: true } })
+  const unrelated = graph.createNode('COMPONENT', pageNode.id, { name: 'Unrelated rotation master', x: 600, width: 30, height: 20 })
+  graph.createInstance(unrelated.id, pageNode.id, { name: 'Unrelated rotation placement', x: 600, y: 100 })
+  let buffer = Buffer.from(await exportFigFile(graph))
+  const baseline = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+  const untouched = ['Authored placement', 'Unrelated rotation master', 'Unrelated rotation placement']
+    .map(name => [name, geometry(baseline, named(baseline, name))])
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: browserArgs })
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+      try {
+        const { page, errors, workers } = await openDocument(context, buffer, `rotation-${cycle}.fig`)
+        await page.getByRole('treeitem', { name: 'Rotation master Lock Hide', exact: true }).click()
+        await page.keyboard.press('ArrowRight')
+        const source = page.getByRole('treeitem', { name: 'Rotating shape Lock Hide', exact: true }).first()
+        await source.click()
+        const rotation = page.getByRole('spinbutton', { name: 'Rotation', exact: true })
+        await expect(rotation).toHaveAttribute('aria-valuenow', String(cycle * 30))
+        if (cycle < 2) {
+          const next = (cycle + 1) * 30
+          await rotation.dblclick(); await page.keyboard.press('Control+a'); await page.keyboard.type(String(next)); await page.keyboard.press('Enter')
+          await expect(rotation).toHaveAttribute('aria-valuenow', String(next))
+          await source.click()
+          await page.keyboard.press('Control+z')
+          await expect(rotation).toHaveAttribute('aria-valuenow', String(cycle * 30))
+          await page.keyboard.press('Control+Shift+z')
+          await expect(rotation).toHaveAttribute('aria-valuenow', String(next))
+          buffer = await saveDocument(page, errors, workers)
+          const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
+          for (const name of ['Rotation master', 'Inherited placement']) {
+            const owner = named(reopened, name), [shape, guard] = reopened.getChildren(owner.id)
+            for (const [field, value] of Object.entries({ x: 8, y: 12, width: 40, height: 24, rotation: next })) {
+              assert.ok(Math.abs(shape[field] - value) < 1e-4, `${name} ${field}: ${shape[field]} versus ${value}`)
+            }
+            assert.deepEqual([guard.x, guard.y, guard.width, guard.height, guard.rotation], [80, 12, 20, 24, 0])
+            assert.deepEqual([owner.x, owner.y, owner.width, owner.height], name === 'Rotation master' ? [0, 0, 120, 80] : [200, 100, 120, 80])
+            if (name === 'Inherited placement') {
+              assert.equal(chain(reopened, shape, 'componentId').at(-1).id, reopened.getChildren(masterOf(reopened, 'Rotation master').id)[0].id)
+              assert.ok(!Object.hasOwn(owner.overrides, `${shape.id}:rotation`), 'inherited rotation is not an authored override')
+            }
+          }
+          const placed = named(reopened, 'Authored placement'), child = reopened.getChildren(placed.id)[0]
+          assert.equal(child.rotation, 0)
+          assert.ok(Object.hasOwn(placed.overrides, `${child.id}:rotation`), 'explicit zero rotation remains authored')
+          const authoredGeometry = geometry(reopened, placed), expectedAuthored = untouched[0][1]
+          for (const field of ['x', 'y']) assert.ok(Math.abs(child[field] - expectedAuthored.children[0][field]) < 1e-4, `authored ${field}`)
+          Object.assign(authoredGeometry.children[0], { x: expectedAuthored.children[0].x, y: expectedAuthored.children[0].y })
+          for (const [name, expected] of untouched) assert.deepEqual(name === 'Authored placement' ? authoredGeometry : geometry(reopened, named(reopened, name)), expected, name)
+          assert.ok(workers.some(path => /export-worker-.*\.js$/.test(path)))
+        }
+        assert.ok(workers.some(path => /\/worker-.*\.js$/.test(path)))
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
+  } finally { await browser.close() }
+})
+
 test('browser file-input replacement survives public editing, history and two downloaded FIG saves', { timeout: 120000 }, async () => {
   await verifyBuild()
   const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {

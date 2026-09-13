@@ -310,7 +310,7 @@ test('source placement saves preserve imported affine terms and explicitly edite
     name: node.name, values: ['x', 'y', 'width', 'height', 'rotation'].map(field => node[field]), flipX: node.flipX,
   }))
   for (const edited of [false, true]) {
-    if (edited) for (const node of frames().filter(node => node.name.startsWith('true/'))) {
+    if (edited) for (const node of frames()) {
       createEditor({ graph }).updateNodeWithUndo(node.id, { rotation: 60, width: 70, height: 33 }, 'Rotate and resize')
     }
     const before = geometry()

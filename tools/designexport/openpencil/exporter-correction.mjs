@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { sourcePositionWireGeometry } from './source-positioning.mjs'
 
 // Pinned SDK corrections: native paths use existing source lineage, never order.
 export function chain(graph, first, field) {
@@ -79,6 +80,31 @@ function scopedOverrides(target, inherited) {
 
 export function ancestryOverrides(graph, target) {
   return chain(graph, target, 'parentId').reverse().reduce((values, node) => scopedOverrides(node, values), {})
+}
+
+export function ownsRotationOverride(fields, decodeTransform) {
+  if (!fields.transform) return false
+  if (!['m00', 'm01', 'm02', 'm10', 'm11', 'm12'].every(field =>
+    Number.isFinite(fields.transform[field]) && Number.isFinite(Math.fround(fields.transform[field])))) {
+    throw new Error('Native rotation override requires a finite transform')
+  }
+  const entries = (fields.pluginData ?? []).filter(item => item.pluginID === 'platformkit' && item.key === 'platformkit.source')
+  if (!entries.length) return true
+  if (entries.length !== 1) throw new Error('Ambiguous native rotation override intent')
+  let record
+  try { record = JSON.parse(entries[0].value) } catch { throw new Error('Invalid native rotation override intent') }
+  const owned = record && Object.hasOwn(record, 'authoredTransformFields') ? record.authoredTransformFields : []
+  if (record?.schema !== 'platformkit.design-export.v1' || record.scope !== 'source-composition-layout' ||
+    record.cssPosition?.version !== 1 || !record.wireGeometry || !Array.isArray(owned) ||
+    owned.length > 1 || owned.some(field => field !== 'rotation')) {
+    throw new Error('Invalid native rotation override intent')
+  }
+  const witness = sourcePositionWireGeometry(record.wireGeometry)
+  const current = sourcePositionWireGeometry({ ...fields, size: fields.size ?? witness.size })
+  // External native editors can change the matrix without updating our record.
+  // Compare the SDK's decoded angles at wire precision: translation and other
+  // unchanged-angle edits stay derived, even when their matrix terms differ.
+  return owned.includes('rotation') || (decodeTransform(current).rotation - decodeTransform(witness).rotation) % 360 !== 0
 }
 
 export const lineageHelpers = [chain, sourceChild, sourceChildren, scopedOverrides, ancestryOverrides].map(fn => fn.toString()).join('\n')
@@ -262,7 +288,7 @@ function serializeDerivedLayout(context, instance, counter) {
       if (!target || target.parentId !== parent.id) throw new Error('Missing native derived-layout child');
       if (parent.layoutMode !== 'NONE' && target.layoutPositioning !== 'ABSOLUTE' && target.visible) {
         const size = { x: target.width, y: target.height };
-        const transform = context.computeExportTransform(target);
+        const transform = sourcePlacementTransform(context, target);
         const values = [size.x, size.y, ...['m00', 'm01', 'm02', 'm10', 'm11', 'm12'].map(key => transform[key])];
         if (size.x < 0 || size.y < 0 || !values.every(value => Number.isFinite(value) && Number.isFinite(Math.fround(value)))) {
           throw new Error('Native derived layout exceeds finite FIG geometry');
@@ -298,18 +324,21 @@ function serializeAppearanceOverrides(context, instance, counter) {
     const sized = target !== instance && ['width', 'height'].some(owns);
     const dashed = owns('dashPattern');
     const positioned = target !== instance && sourceAbsoluteRecord(target);
+    const rotated = target !== instance && owns('rotation');
     const opacity = target !== instance && (owns('opacity') || target.source.editedFields.includes('opacity'));
-    if (fields.length || paddingFields.length || sized || dashed || positioned || opacity) {
+    if (fields.length || paddingFields.length || sized || dashed || positioned || rotated || opacity) {
       const guidPath = target === instance ? { guids: [getOrCreateNodeGuid(context,
         resolveInstanceComponentId(context, instance.componentId), counter)] } : nativeOverridePath(context, instance, target, counter);
       const override = { guidPath };
+      if (rotated) override.transform = sourcePlacementTransform(context, target);
       if (positioned) {
         override.transform = sourcePlacementTransform(context, target);
         // Coordinates and sizes are binary32 on the wire; the existing source
         // record retains exact authored anchors independently of that rounding.
         override.pluginData = [{ pluginID: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
           schema: 'platformkit.design-export.v1', scope: 'source-composition-layout', cssPosition: positioned,
-          wireGeometry: sourcePositionWireGeometry({ transform: override.transform, size: { x: target.width, y: target.height } })
+          wireGeometry: sourcePositionWireGeometry({ transform: override.transform, size: { x: target.width, y: target.height } }),
+          ...(rotated ? { authoredTransformFields: ['rotation'] } : {})
         }) }];
         for (const item of target.pluginData) if (!['platformkit', 'open-pencil'].includes(item.pluginId)) {
           override.pluginData.push({ pluginID: item.pluginId, key: item.key, value: item.value });
@@ -363,6 +392,10 @@ function replaceSection(source, start, end, replacement) {
 
 export function correctExporter(source, replaceOnce) {
   source = `import { sourcePositionWireGeometry } from ${JSON.stringify(fileURLToPath(new URL('./source-positioning.mjs', import.meta.url)))};\n` + source
+  // Native positions locate the unrotated box; FIG matrices rotate its center.
+  // Use the same inverse for fresh nodes and changed imported transforms.
+  source = replaceOnce(source, 'return rawTransform ? { ...rawTransform } : context.computeExportTransform(node);',
+    'return rawTransform ? { ...rawTransform } : sourcePlacementTransform(context, node);')
   // Source layout derives these values without claiming authored geometry edits.
   // A FIG imported before text growth or parent resizing still has stale raw data.
   source = replaceOnce(source, 'function exportNodeSize(node) {',
@@ -444,6 +477,7 @@ function mergeTextOverrides(symbolOverrides, overrides) {
 }
 
 export function correctInstanceImporter(source, replace) {
+  source = `import { ownsRotationOverride } from ${JSON.stringify(fileURLToPath(import.meta.url))};\n` + source
   const layout = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
   source = `import { sourceCompositionLayout } from ${JSON.stringify(layout)};\n` + source
   source = replace(source, '\tapplyGeneratedFreeformStretch(ctx);', String.raw`
@@ -530,6 +564,7 @@ function buildSizeOverriddenCloneUpdates(source, clone) {
   source = replace(source, 'const props = convertOverrideToProps(fields);', String.raw`
     const props = convertOverrideToProps(fields);
     const target = ctx.graph.getNode(targetId);
+    if (ownsRotationOverride(fields, convertFigmaTransformProps)) props.rotation = convertFigmaTransformProps({ transform: fields.transform }).rotation;
     if (props.strokes && target) props.strokes = props.strokes.map((stroke, index) => ({
       ...stroke,
       ...(fields.strokeWeight == null && target.strokes[index] ? { weight: target.strokes[index].weight } : {}),
@@ -551,8 +586,8 @@ function buildSizeOverriddenCloneUpdates(source, clone) {
       const target = ctx.graph.getNode(targetId);
       const sizingSource = target?.type === 'INSTANCE' ? chain(ctx.graph,
         ctx.graph.getNode(patch.swapComponentId ?? target.componentId), 'componentId').at(-1) : null;
-      const ownedFields = ['fills', 'strokes', 'dashPattern', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'width', 'height']
-        .filter(field => Object.hasOwn(patch.props ?? {}, field) && (!['width', 'height'].includes(field) ||
+      const ownedFields = ['fills', 'strokes', 'dashPattern', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'width', 'height', 'rotation']
+        .filter(field => Object.hasOwn(patch.props ?? {}, field) && (field !== 'rotation' || ownsRotationOverride(ov, convertFigmaTransformProps)) && (!['width', 'height'].includes(field) ||
           sizingSource && Math.fround(patch.props[field]) !== Math.fround(sizingSource[field] * (target.uniformScaleFactor ?? 1)) &&
           (target.layoutMode === 'NONE' || ((field === 'width') === (target.layoutMode === 'HORIZONTAL') ?
             target.primaryAxisSizing : target.counterAxisSizing) === 'FIXED')));
