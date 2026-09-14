@@ -199,8 +199,9 @@ test('source-produced typed tokens retain their baseline through editor edits an
           assert.equal(graph.resolveVariable(spacing.id), 0.1234567890123456)
           assert.deepEqual(primary.sourceToken, { version: 1, snapshot: input.snapshot.sha256,
             kind: 'color', name: '--pk-color-text-primary' })
-          const aliases = Object.values(variable('--selected-ink').valuesByMode)
-          assert.ok(aliases.every(value => value.aliasId === primary.id))
+          const alias = variable('--selected-ink'), modes = graph.variableCollections.get(alias.collectionId).modes
+          assert.deepEqual(Object.keys(alias.valuesByMode).sort(), modes.map(mode => mode.modeId).sort())
+          assert.ok(Object.values(alias.valuesByMode).every(value => value.aliasId === primary.id))
           assert.equal(graph.resolveVariable(variable('--selected-mix').id).a, 0.25)
           const masters = named(graph, 'Icon masters')
           assert.equal(graph.getChildren(masters.id).length, input.snapshot.icons.length)
@@ -1033,6 +1034,8 @@ test('bound pixel tokens reflow linked consumers through keyboard edits and two 
           const source = [...saved.variables.values()].find(variable => variable.name === 'Spacing')
           const linked = [...saved.variables.values()].find(variable => variable.name === 'Gap alias')
           assert.deepEqual(source.sourceToken, base.sourceToken)
+          assert.deepEqual(Object.keys(linked.valuesByMode).sort(),
+            saved.variableCollections.get(linked.collectionId).modes.map(mode => mode.modeId).sort())
           assert.ok(Object.values(linked.valuesByMode).every(value => value.aliasId === source.id))
           for (const [name, gap] of [['Bound master', 16], ['Light consumer', 16], ['Dark consumer', 24]]) {
             const node = named(saved, name)

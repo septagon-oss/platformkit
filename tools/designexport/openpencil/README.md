@@ -114,19 +114,19 @@ exports, not an arbitrary SVG-upload sanitizer or a universal Figma converter.
 
 ## Run the native checks
 
-Use Node 24 or newer. From this directory, install the locked dependencies and
-run the tests:
+Use Node 24 or newer. From this directory, install locked dependencies once:
 
 ```sh
 npm ci --ignore-scripts
 npm test
+npm run test:watch
 ```
 
-The tests create disposable scene graphs and FIG buffers in memory; CLI cases
-write only to automatically removed temporary directories outside the workspace.
-They do not open your documents or connect to an editor. Native checks supplement
-`make check`, covering variable descriptions, links, provenance and two FIG saves.
-CanvasKit checks light/dark icon pixels and supplied-font shaping without a GPU.
+`test:watch` reruns root unit tests for imported JavaScript changes; shared corrections
+can rerun many files. Run `npm test` after Go, font/license or other file-fixture changes.
+Focus one group with `node --import ./register.mjs --test --test-name-pattern='name' file.test.mjs`.
+Tests use in-memory graphs or cleaned temporary files. They supplement `make check`
+with link/history/FIG and CanvasKit pixel/font checks.
 [Native underlines](browser/underline.test.mjs) cover offset, pixel thickness and
 ink-skipping for untransformed static-font text. [Preview checks](preview/fonts.test.mjs)
 exercise native and Go-source underline editing and two worker saves.

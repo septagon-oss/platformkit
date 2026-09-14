@@ -208,11 +208,12 @@ for (const mode of ['light', 'dark']) for (const width of [320, 1280]) {
       assert.deepEqual([...graph.getAllNodes()], before, 'undo restores text and wrapping geometry')
       editor.redoAction()
       assert.deepEqual([...graph.getAllNodes()], edited, 'redo restores the derived layout')
+      const proposal = { baseSHA256: snapshot.sha256, path: [id], props: { content } }
+      const projected = source(['--proposal'], proposal)
+      const observed = await captureExample(browser, projected, id, { mode, viewport, fonts })
       for (let cycle = 0; cycle < 3; cycle++) {
         const result = extractSourceProps(graph, instance, snapshot)
-        assert.deepEqual(result.proposal, { baseSHA256: snapshot.sha256, path: [id], props: { content } })
-        const projected = source(['--proposal'], result.proposal)
-        const observed = await captureExample(browser, projected, id, { mode, viewport, fonts })
+        assert.deepEqual(result.proposal, proposal)
         const root = observed.roots[0], text = graph.getChildren(instance.id)[0]
         close(instance.width, root.bounds.width, 'paragraph width')
         close(instance.height, root.bounds.height, 'paragraph height')

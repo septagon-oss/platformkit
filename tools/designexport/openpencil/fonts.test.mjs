@@ -162,6 +162,7 @@ test('supplied Plex faces shape and retain real outlines and pixels through two 
 })
 
 test('one native process cannot replace a loaded face with different bytes', async () => {
+  await loadFonts([faces[0]], [requirements[0]])
   const bytes = Buffer.from(faces[0].bytes)
   bytes[23] ^= 1 // WOFF header minor version: still a valid face, different bytes.
   const alternate = { ...faces[0], bytes, sha256: hash(bytes) }

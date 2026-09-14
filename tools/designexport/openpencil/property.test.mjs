@@ -349,3 +349,18 @@ test('unsupported property-driven master resizing rolls back without stale exter
   assert.equal(graph.getChildren(instance.id)[0].text, 'Longer caption')
   assert.equal(external.width, sibling.width)
 })
+
+test('strict absolute auto-size preserves ordinary native helper fallback and zero-width behavior', async () => {
+  const { textAutoResizeChanges } = await import(new URL('./editor/text/auto-resize.js', import.meta.resolve('@open-pencil/core')))
+  const node = { type: 'TEXT', text: 'Previous', textAutoResize: 'WIDTH_AND_HEIGHT',
+    fontFamily: 'IBM Plex Sans', fontWeight: 400, fontSize: 14, lineHeight: 20, width: 900, height: 20 }
+  const previous = getTextMeasurer()
+  try {
+    setTextMeasurer(() => null)
+    assert.ok(textAutoResizeChanges(node, { text: 'Next' }).width > 0, 'ordinary native helper retains its prior estimate fallback')
+    assert.throws(() => textAutoResizeChanges(node, { text: 'Next' }, true), /Actual native text measurement/)
+    setTextMeasurer(() => ({ width: 0, height: 20 }))
+    assert.ok(!Object.hasOwn(textAutoResizeChanges(node, { text: '' }), 'width'), 'ordinary zero-width behavior is unchanged')
+    assert.equal(textAutoResizeChanges(node, { text: '' }, true).width, 0)
+  } finally { setTextMeasurer(previous) }
+})

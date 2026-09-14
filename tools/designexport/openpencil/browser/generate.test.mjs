@@ -17,6 +17,13 @@ const fontArgs = weights => weights.flatMap(weight => ['--font', 'IBM Plex Sans'
 const run = (directory, args, input) => spawnSync(process.execPath, [cli, ...args], {
   cwd: directory, encoding: 'utf8', input, timeout: 120_000, maxBuffer: 4 * 1024 * 1024,
 })
+function refused(result, reason) {
+  assert.equal(result.error, undefined)
+  assert.equal(result.signal, null)
+  assert.equal(result.status, 1, result.stderr)
+  assert.match(result.stderr, reason)
+  assert.equal(result.stdout, '', 'refusal does not report a published document')
+}
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'platformkit-library-cli-'))
@@ -65,14 +72,14 @@ test('CLI assembles supplied variant projections without replacing ordinary sour
   const invalid = join(directory, 'invalid.json'), saved = await readFile(output)
   await writeFile(invalid, '{invalid json', { flag: 'wx' })
   const files = await readdir(directory)
-  for (const extra of [
-    ['--variant', id, 'tone', invalid], ['--variant', id, 'tone', join(directory, 'missing.json')],
-    ['--variant', id, 'tone', join(directory, 'info.json')], ['--variant', id, 'label', join(directory, 'info.json')],
-    ['--variant', 'unselected', 'tone', join(directory, 'info.json')],
+  for (const [extra, reason] of [
+    [['--variant', id, 'tone', invalid], /Expected one UTF-8 JSON design-export snapshot/],
+    [['--variant', id, 'tone', join(directory, 'missing.json')], /ENOENT.*missing\.json/],
+    [['--variant', id, 'tone', join(directory, 'info.json')], /duplicate source variant value/],
+    [['--variant', id, 'label', join(directory, 'info.json')], /families currently support one source property/],
+    [['--variant', 'unselected', 'tone', join(directory, 'info.json')], /variants require a selected exampleId/],
   ]) {
-    const refused = run(directory, [join(directory, 'refused.fig'), ...args.slice(1), ...extra])
-    assert.notEqual(refused.status, 0, 'every requested state must pass before output exists')
-    assert.equal(refused.signal, null, refused.error?.message)
+    refused(run(directory, [join(directory, 'refused.fig'), ...args.slice(1), ...extra]), reason)
     assert.deepEqual(await readdir(directory), files)
     assert.deepEqual(await readFile(output), saved)
   }
@@ -94,9 +101,9 @@ test('CLI addresses a nested family by exact source path and refuses malformed p
   assert.equal(extractSourceProps(graph, target, source).status, 'no-supported-changes')
   const saved = await readFile(output), files = await readdir(directory)
   for (const address of ['not json', 'null', '{}', '[]', '[""]', '[1]', JSON.stringify([form, 'missing']), JSON.stringify(['unselected'])]) {
-    const refused = run(directory, [join(directory, 'refused.fig'), ...args, '--variant-at', address, 'size', snapshotPath])
-    assert.notEqual(refused.status, 0)
-    assert.equal(refused.signal, null, refused.error?.message)
+    const reason = address === JSON.stringify([form, 'missing']) ? /derived component cannot own an independently projected variant/ :
+      address === JSON.stringify(['unselected']) ? /variants require a selected exampleId/ : /Usage: npm run generate/
+    refused(run(directory, [join(directory, 'refused.fig'), ...args, '--variant-at', address, 'size', snapshotPath]), reason)
     assert.deepEqual(await readdir(directory), files)
     assert.deepEqual(await readFile(output), saved)
   }
@@ -131,7 +138,8 @@ test('CLI packages supplied source properties instead of silently regenerating t
   assert.equal(familyGraph.getChildren(familyRoot.id)[0].text, 'Publish album draft')
   assert.equal(extractSourceProps(familyGraph, familyRoot, supplied).status, 'no-supported-changes')
   const missing = join(directory, 'missing.fig')
-  assert.notEqual(run(directory, [missing, '--snapshot-stdin', '--example', form, ...fontArgs([600])], JSON.stringify(supplied)).status, 0)
+  refused(run(directory, [missing, '--snapshot-stdin', '--example', form, ...fontArgs([600])], JSON.stringify(supplied)),
+    /Document requires exactly one source example: pk-ui\.component\.form\/default/)
   await assert.rejects(readFile(missing), { code: 'ENOENT' })
 })
 
@@ -188,8 +196,7 @@ test('CLI packages exact selected native examples from fresh source, including n
       assert.deepEqual(graph.getChildren(actions.id).map(node => origin(node)?.localId).toSorted(), ['cancel', 'create'])
       for (const action of graph.getChildren(actions.id)) masterOf(graph, action)
     }
-    const repeated = run(directory, args)
-    assert.notEqual(repeated.status, 0, 'selected generation must not overwrite an existing document')
+    refused(run(directory, args), /EEXIST.*link/)
     assert.deepEqual(await readFile(output), bytes)
     assert.ok((await readdir(directory)).every(name => name.endsWith('.fig')), 'no staging directory remains')
   }
@@ -198,41 +205,38 @@ test('CLI packages exact selected native examples from fresh source, including n
 test('selected generation refuses invalid requests completely and preserves symlinks', async t => {
   const directory = await fixture(t), output = join(directory, 'refused.fig')
   const valid = ['--example', form, ...fontArgs([400, 500, 600])]
+  const usage = /Usage: npm run generate/, selection = /Component options require --example selections/
   const cases = [
-    ['--example', 'missing', ...fontArgs([600])],
-    [...valid, '--example', form],
-    ['--example', 'pk-ui.component.input/email', ...fontArgs([400, 500, 600])],
-    ['--example', button, '--example', 'pk-ui.component.input/email', ...fontArgs([400, 500, 600])],
-    ['--example', form, ...fontArgs([400, 500])],
-    ['--example', form, ...fontArgs([500, 600])],
-    ['--example', form],
-    ['--mode', 'dark'],
-    ['--viewport', '320x480'],
-    fontArgs([600]),
-    [...valid, '--mode', 'sepia'],
-    [...valid, '--mode', 'light', '--mode', 'dark'],
-    [...valid, '--viewport', '320x480', '--viewport', '640x480'],
-    [...valid, '--viewport', '0x480'],
-    [...valid, '--viewport', '320.5x480'],
-    [...valid, '--unknown'],
-    ['--example'],
-    ['--example', form, '--font', 'IBM Plex Sans', '400'],
-    ['--example', form, '--font', 'IBM Plex Sans', '400', 'normal', 'relative.woff'],
-    ['--example', form, '--font', 'IBM Plex Sans', '400', 'normal', join(directory, 'missing.woff')],
-    ['--example', form, '--font', 'IBM Plex Sans', '500', 'normal', fontPath(400)],
+    [['--example', 'missing', ...fontArgs([600])], /Document requires exactly one source example: missing/],
+    [[...valid, '--example', form], /Document requires nonempty, unique source example IDs/],
+    [['--example', 'pk-ui.component.input/email', ...fontArgs([400, 500, 600])], /input\/email: Native component: inline fragments need undecorated single-line presentation/],
+    [['--example', button, '--example', 'pk-ui.component.input/email', ...fontArgs([400, 500, 600])], /input\/email: Native component: inline fragments need undecorated single-line presentation/],
+    [['--example', form, ...fontArgs([400, 500])], /face.*missing or synthesized/],
+    [['--example', form, ...fontArgs([500, 600])], /face.*missing or synthesized/],
+    [['--example', form], /Component selections require caller-supplied --font faces/],
+    [['--mode', 'dark'], selection],
+    [['--viewport', '320x480'], selection],
+    [fontArgs([600]), selection],
+    [[...valid, '--mode', 'sepia'], usage],
+    [[...valid, '--mode', 'light', '--mode', 'dark'], /Repeated option: --mode/],
+    [[...valid, '--viewport', '320x480', '--viewport', '640x480'], /Repeated option: --viewport/],
+    [[...valid, '--viewport', '0x480'], usage],
+    [[...valid, '--viewport', '320.5x480'], usage],
+    [[...valid, '--unknown'], usage],
+    [['--example'], usage],
+    [['--example', form, '--font', 'IBM Plex Sans', '400'], usage],
+    [['--example', form, '--font', 'IBM Plex Sans', '400', 'normal', 'relative.woff'], usage],
+    [['--example', form, '--font', 'IBM Plex Sans', '400', 'normal', join(directory, 'missing.woff')], /ENOENT.*missing\.woff/],
+    [['--example', form, '--font', 'IBM Plex Sans', '500', 'normal', fontPath(400)], /Font weight or italic face does not match its metadata/],
   ]
-  for (const args of cases) {
-    const result = run(directory, [output, ...args])
-    assert.notEqual(result.status, 0, `invalid request succeeded: ${JSON.stringify(args)}`)
-    assert.equal(result.signal, null, result.error?.message)
-    assert.notEqual(result.stderr.trim(), '', 'refusal needs an actionable diagnostic')
+  for (const [args, reason] of cases) {
+    refused(run(directory, [output, ...args]), reason)
     assert.deepEqual(await readdir(directory), [], 'refusal created an output or left staging debris')
   }
   const target = join(directory, 'existing.txt'), destination = join(directory, 'existing.fig')
   await writeFile(target, 'keep existing bytes', { flag: 'wx' })
   await symlink(target, destination)
-  const refused = run(directory, [destination, ...valid])
-  assert.notEqual(refused.status, 0)
+  refused(run(directory, [destination, ...valid]), /EEXIST.*link/)
   assert.ok((await lstat(destination)).isSymbolicLink())
   assert.equal(await readFile(target, 'utf8'), 'keep existing bytes')
   assert.deepEqual((await readdir(directory)).toSorted(), ['existing.fig', 'existing.txt'])

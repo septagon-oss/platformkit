@@ -286,6 +286,7 @@ func main() {
         await page.getByRole('treeitem', { name: 'Editable field Lock Hide', exact: true }).click()
         const value = page.getByRole('textbox', { name: 'value', exact: true })
         await expect(value).toHaveValue(['hello', 'album-title', 'next-title'][cycle])
+        assert.deepEqual(errors, [], `preview cycle ${cycle} loads and renders without page errors`)
         if (cycle === 2) continue
         await value.fill(['album-title', 'next-title'][cycle]); await value.press('Tab')
         await page.getByRole('treeitem', { name: 'Editable button Lock Hide', exact: true }).click()
@@ -302,7 +303,10 @@ func main() {
         assert.deepEqual(errors, [])
         const reopened = await parseFigFile(arrayBuffer(buffer), { populate: 'all' })
         for (const [name, children] of definitions) assert.deepEqual(definitionGeometry(reopened, named(reopened, name)), children)
-        for (const metadata of parseFigBuffer(arrayBuffer(buffer)).nodeChanges.flatMap(node => node.derivedTextData?.fontMetaData ?? [])) {
+        const fontMetadata = parseFigBuffer(arrayBuffer(buffer)).nodeChanges.flatMap(node => node.derivedTextData?.fontMetaData ?? [])
+        assert.deepEqual([...new Set(fontMetadata.map(face => `${face.key.family}/${face.fontWeight}`))].sort(),
+          requiredFaces.map(face => `${face.family}/${face.weight}`).sort(), 'every referenced face has saved font metadata')
+        for (const metadata of fontMetadata) {
           const face = fonts.find(face => face.family === metadata.key.family && face.weight === metadata.fontWeight)
           assert.ok(face, 'saved text must use one of the exact supplied faces')
           assert.equal(Buffer.from(metadata.fontDigest).toString('hex'), createHash('sha1').update(face.bytes).digest('hex'))
