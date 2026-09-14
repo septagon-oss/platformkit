@@ -50,10 +50,8 @@ func TestMountRegistersTheEntityBesideItsRoutes(t *testing.T) {
 	if f, ok := crud.FieldNamed(r.Schema.Fields, "id"); !ok || !f.ReadOnly {
 		t.Errorf("id arrived as %+v, want read-only", f)
 	}
-	for _, fn := range []any{r.List, r.Get, r.Create, r.Update, r.Delete} {
-		if fn == nil {
-			t.Fatal("a registered resource is missing one of its five operations")
-		}
+	if r.List == nil || r.Get == nil || r.Create == nil || r.Update == nil || r.Delete == nil {
+		t.Fatal("a registered resource is missing one of its five operations")
 	}
 }
 
@@ -174,7 +172,12 @@ func (m member) Allowed(_ context.Context, _ tenancy.Tenant, want tenancy.Grant)
 // shape of a member: the list and the read answer, the three writes refuse with
 // the 403 the routes beside them would have given.
 func TestTheResourceClosuresCarryTheirOwnAuthorization(t *testing.T) {
-	api, router, _ := mountAs(t, spec, member{"task:read": true})
+	api, router, admin := mountAs(t, spec, member{"task:read": true})
+	rowID := uuid.New()
+	if _, err := admin.ExecContext(t.Context(),
+		"INSERT INTO rest_tasks (id, tenant_id, title) VALUES ($1, $2, $3)", rowID, acme.ID, "readable task"); err != nil {
+		t.Fatal(err)
+	}
 	r := api.Resources()[0]
 	if r.Readable(context.Background()) {
 		t.Error("a resource reports itself readable to a context with no caller in it")
@@ -183,8 +186,7 @@ func TestTheResourceClosuresCarryTheirOwnAuthorization(t *testing.T) {
 	var failures []string
 	fail := func(format string, args ...any) { failures = append(failures, fmt.Sprintf(format, args...)) }
 	forbidden := func(what string, err error) {
-		var p *problem.Problem
-		if !errors.As(err, &p) || p.Status != http.StatusForbidden {
+		if p, ok := errors.AsType[*problem.Problem](err); !ok || p.Status != http.StatusForbidden {
 			fail("%s = %v, want a 403 problem", what, err)
 		}
 	}
@@ -200,20 +202,30 @@ func TestTheResourceClosuresCarryTheirOwnAuthorization(t *testing.T) {
 		if _, _, err := r.List(ctx, crud.Query{Limit: 10}); err != nil {
 			fail("List refused a caller holding task:read: %v", err)
 		}
-		if _, err := r.Get(ctx, uuid.New()); errors.Is(err, nil) {
-			fail("Get of a row nobody has succeeded")
+		if row, err := r.Get(ctx, rowID); err != nil || row["title"] != "readable task" {
+			fail("Get refused or changed a readable row: %v, %v", row, err)
+		}
+		if _, err := r.Get(ctx, uuid.New()); err != nil {
+			if p, ok := errors.AsType[*problem.Problem](err); !ok || p.Status != http.StatusNotFound {
+				fail("Get of a missing row = %v, want a 404 problem", err)
+			}
+		} else {
+			fail("Get of a missing row succeeded")
 		}
 		// The three writes, each refused before it reaches the database.
 		_, err := r.Create(ctx, map[string]any{"title": "written past the permission"})
 		forbidden("Create", err)
-		_, err = r.Update(ctx, uuid.New(), map[string]any{"title": "renamed past the permission"})
+		_, err = r.Update(ctx, rowID, map[string]any{"title": "renamed past the permission"})
 		forbidden("Update", err)
-		forbidden("Delete", r.Delete(ctx, uuid.New()))
+		forbidden("Delete", r.Delete(ctx, rowID))
 
 		// And nothing was written: a refusal that happened after the INSERT
 		// would still be a row in the table.
-		if _, total, err := r.List(ctx, crud.Query{Limit: 1}); err != nil || total != 0 {
+		if _, total, err := r.List(ctx, crud.Query{Limit: 1}); err != nil || total != 1 {
 			fail("after three refused writes the table holds %d rows (%v)", total, err)
+		}
+		if row, err := r.Get(ctx, rowID); err != nil || row["title"] != "readable task" {
+			fail("refused writes changed the readable row: %v, %v", row, err)
 		}
 		return nil, nil
 	})

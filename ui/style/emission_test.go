@@ -2,9 +2,8 @@ package style
 
 // emission_test.go pins the three promises this package makes: every color
 // role tw declares is mapped, every enumerable class resolves to at least one
-// declaration, and the emitted sheet is valid CSS that styleengine can parse
-// back. The golden file makes any change to the emitted CSS reviewable as a
-// diff instead of a rendering surprise.
+// declaration, and every enumerable utility appears in the emitted sheet.
+// Marker classes intentionally carry no declarations.
 
 import (
 	"sort"
@@ -76,8 +75,11 @@ func TestBaseCoversEveryEnumerableClass(t *testing.T) {
 		t.Fatalf("enumerated only %d classes; the enumeration itself regressed", len(classes))
 	}
 	for _, class := range classes {
-		if _, err := resolveBase(class); err != nil {
+		decls, err := resolveBase(class)
+		if err != nil {
 			t.Errorf("enumerable class %q does not resolve: %v", class, err)
+		} else if len(decls) == 0 && class != "group" && class != "peer" {
+			t.Errorf("enumerable utility %q resolves without declarations", class)
 		}
 	}
 }
@@ -200,6 +202,21 @@ func TestEveryEnumerableClassEmitsARule(t *testing.T) {
 		t.Fatalf("Rules over the enumerable universe: %v", err)
 	}
 	rendered := RoleVars().Merge(sheet).CSS()
+	for _, class := range classes {
+		if class == "group" || class == "peer" {
+			continue // State markers intentionally have no declarations.
+		}
+		selector := "." + escapeClass(class)
+		for _, prefix := range []string{"divide-x-", "divide-y-", "space-x-", "space-y-"} {
+			if strings.HasPrefix(strings.TrimPrefix(class, "-"), prefix) {
+				selector += " > :not([hidden]) ~ :not([hidden])"
+				break
+			}
+		}
+		if !strings.Contains(rendered, selector+" {") {
+			t.Errorf("enumerable utility %q has no emitted rule", class)
+		}
+	}
 	if len(rendered) < 20000 {
 		t.Fatalf("the whole utility universe rendered to %d bytes; something stopped emitting", len(rendered))
 	}

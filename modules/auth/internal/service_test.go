@@ -341,9 +341,21 @@ func exec(t *testing.T, admin *sql.DB, query string, args ...any) {
 	}
 }
 
-func row(t *testing.T, admin *sql.DB, query string, args ...any) *sql.Row {
+type observedRow struct {
+	t   *testing.T
+	row *sql.Row
+}
+
+func (r observedRow) Scan(dest ...any) {
+	r.t.Helper()
+	if err := r.row.Scan(dest...); err != nil {
+		r.t.Fatalf("read the observed database state: %v", err)
+	}
+}
+
+func row(t *testing.T, admin *sql.DB, query string, args ...any) observedRow {
 	t.Helper()
-	return admin.QueryRowContext(t.Context(), query, args...)
+	return observedRow{t: t, row: admin.QueryRowContext(t.Context(), query, args...)}
 }
 
 // TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes.

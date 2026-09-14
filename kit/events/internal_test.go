@@ -348,10 +348,10 @@ func TestTwoWorkersShareOneDurable(t *testing.T) {
 	// in one process here because what is under test is what NATS does with the
 	// second bind, and that is the same question either way.
 	const workers = 2
-	seen := make(chan int, 16)
+	seen := make(chan uuid.UUID, 16)
 	for worker := range workers {
 		err := transport.Subscribe(t.Context(), durable, name, Sink{
-			Handle: func(_ context.Context, _ Event) error { seen <- worker; return nil },
+			Handle: func(_ context.Context, ev Event) error { seen <- ev.ID; return nil },
 			Dead:   func(context.Context, Event, error) error { return nil },
 		})
 		if err != nil {
@@ -362,8 +362,10 @@ func TestTwoWorkersShareOneDurable(t *testing.T) {
 	// Three events, so "each is handled once" is a claim about a stream of them
 	// and not about one that happened to land on the first subscriber.
 	const events = 3
+	wanted := make(map[uuid.UUID]bool, events)
 	for range events {
 		ev := Event{ID: uuid.New(), Name: name, TenantID: uuid.New(), Payload: []byte(`{"amount":42}`)}
+		wanted[ev.ID] = false
 		if err := transport.Publish(t.Context(), ev); err != nil {
 			t.Fatalf("publish: %v", err)
 		}
@@ -372,7 +374,11 @@ func TestTwoWorkersShareOneDurable(t *testing.T) {
 	deadline := time.After(30 * time.Second)
 	for handled < events {
 		select {
-		case <-seen:
+		case id := <-seen:
+			if delivered, ok := wanted[id]; !ok || delivered {
+				t.Fatalf("unexpected or repeated event %s", id)
+			}
+			wanted[id] = true
 			handled++
 		case <-deadline:
 			t.Fatalf("%d of %d events were handled", handled, events)

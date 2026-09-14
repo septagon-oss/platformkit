@@ -73,9 +73,13 @@ func TestColorResolutionUsesPremultipliedSRGB(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			color, ok := got["--result"]
+			if !ok {
+				t.Fatal("the requested color is missing from the result")
+			}
 			for i, want := range tc.want {
-				if math.Abs(got["--result"][i]-want) > 1e-12 {
-					t.Fatalf("got %v, want %v", got["--result"], tc.want)
+				if math.IsNaN(color[i]) || math.Abs(color[i]-want) > 1e-12 {
+					t.Fatalf("got %v, want %v", color, tc.want)
 				}
 			}
 		})

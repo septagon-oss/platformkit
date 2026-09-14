@@ -3,6 +3,7 @@ package style_test
 import (
 	"encoding/json"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,7 +26,12 @@ func TestShadowValuesOwnOrderedLayersAndPreserveCSS(t *testing.T) {
 		"inner": "inset 0 2px 4px 0 rgb(0 0 0 / 0.05)",
 		"none":  "0 0 #0000",
 	}
+	seen := make(map[string]bool)
 	for _, value := range values {
+		if _, known := wantCSS[value.Key]; !known || seen[value.Key] {
+			t.Fatalf("unexpected or duplicated shadow key %q", value.Key)
+		}
+		seen[value.Key] = true
 		if err := value.Validate(); err != nil {
 			t.Fatal(err)
 		}
@@ -90,7 +96,12 @@ func TestTimingValuesKeepCurvesAndTransitionReferences(t *testing.T) {
 	if err != nil || len(easings) != 4 {
 		t.Fatalf("easing inventory: %v", err)
 	}
+	seen := make(map[string]bool)
 	for _, easing := range easings {
+		if !slices.Contains([]string{"linear", "in", "out", "in-out"}, easing.Key) || seen[easing.Key] {
+			t.Fatalf("unexpected or duplicated easing key %q", easing.Key)
+		}
+		seen[easing.Key] = true
 		if err := easing.Validate(); err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +116,12 @@ func TestTimingValuesKeepCurvesAndTransitionReferences(t *testing.T) {
 	if err != nil || len(transitions) != 6 {
 		t.Fatalf("transition inventory: %v", err)
 	}
+	clear(seen)
 	for _, transition := range transitions {
+		if !slices.Contains([]string{"none", "all", "colors", "opacity", "shadow", "transform"}, transition.Key) || seen[transition.Key] {
+			t.Fatalf("unexpected or duplicated transition key %q", transition.Key)
+		}
+		seen[transition.Key] = true
 		if err := transition.Validate(); err != nil {
 			t.Fatal(err)
 		}

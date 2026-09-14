@@ -98,8 +98,12 @@ func TestScaleValuesAgreeWithOwningCSSAndInactiveBreakpoints(t *testing.T) {
 		if value.Number != nil {
 			literal = value.Number.Value.String() + value.Number.Unit
 		}
+		end := ";"
+		if value.Scale == "breakpoint" {
+			end = ")"
+		}
 		sheet, err := style.Rules(class)
-		if err != nil || !strings.Contains(sheet.CSS(), property+": "+literal) {
+		if err != nil || !strings.Contains(sheet.CSS(), property+": "+literal+end) {
 			t.Errorf("%s/%s differs from owning %s: %v", value.Scale, value.Key, class, err)
 		}
 	}

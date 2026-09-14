@@ -4,8 +4,8 @@
 # It boots the application the way a person would and then drives it with a
 # browser: a database of its own, migrated from nothing; one tenant and one
 # administrator, created by `platformkit bootstrap`; the binary on a port; one
-# Playwright spec; and then all of it removed again. Nothing it touches survives
-# it, so running it twice is running it once.
+# Playwright spec; and then the application fixture is removed again. Failed
+# browser results survive separately so a retry is not needed to inspect them.
 #
 # It is a script rather than four lines in the Makefile because the teardown has
 # to happen whichever step failed, and a recipe cannot trap.
@@ -37,9 +37,11 @@ swap() {
 psql_admin() { psql "$(swap "$admin_url" postgres)" -v ON_ERROR_STOP=1 -q "$@"; }
 
 work="$(mktemp -d)"
+results=""
 app_pid=""
 created=false
 cleanup() {
+	status=$?
 	if [ -n "$app_pid" ]; then
 		kill "$app_pid" 2>/dev/null || true
 		wait "$app_pid" 2>/dev/null || true
@@ -48,6 +50,14 @@ cleanup() {
 		psql_admin -c "DROP DATABASE $database WITH (FORCE);" >/dev/null || echo "e2e: could not remove $database" >&2
 	fi
 	rm -rf "$work"
+	if [ -n "$results" ]; then
+		if [ "$status" -eq 0 ]; then
+			rm -rf "$results"
+		else
+			echo "e2e: Playwright failure results retained at $results" >&2
+		fi
+	fi
+	return "$status"
 }
 trap cleanup EXIT
 
@@ -133,8 +143,24 @@ cd e2e
 # install resolves afresh and rewrites the lock, so gate 10 could pass against a
 # Playwright nobody chose and leave the lock changed in somebody's working tree.
 [ -d node_modules ] || npm ci --no-audit --no-fund
+headless=true
+default_output=true
+for argument in "$@"; do
+	case "$argument" in
+		--headed|--debug|--ui|--ui-*) headless=false ;;
+		--output|--output=*) default_output=false ;;
+	esac
+done
+# A forwarded display can stop headless Chromium animation frames. Preserve
+# it for interactive runs, including Playwright's environment-based debugger.
+if "$headless" && [ "${PWDEBUG:-0}" = 0 ]; then unset DISPLAY; fi
+output_args=()
+if "$default_output"; then
+	results="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/platformkit-e2e-results.XXXXXX")"
+	output_args=(--output "$results")
+fi
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \
-	npx playwright test --output "$work/results" "$@"
+	npx playwright test "${output_args[@]}" "$@"

@@ -1,21 +1,18 @@
 package components
 
-// ---- contracts/component.go
-// Package contracts defines platform-agnostic Props schemas for all UI components.
+// Props are the typed inputs to the component constructors in this package.
+// Example captures those same inputs and derives portable property schemas;
+// screens.FormExample uses that path for generated entity forms, and ui.Export
+// carries the captured contracts to design consumers. See example.go.
 //
-// Contracts are data schemas (Props structs), not behavior interfaces. Existing
-// builders gain an optional Props() method. Build() remains the primary API.
-// This package is purely additive — zero breaking changes.
-//
-// Consumers:
-//   - Go developers: import Props types for type-safe construction
-//   - registry.ComponentDefinition: LLM-facing JSON schema (A2UI/MCP)
-//   - Future renderers (iOS, Android): implement rendering from Props
+// These contracts describe presentation. A2UI/MCP transport and native renderers
+// require their own adapters; neither protocol processing nor entity persistence
+// is implemented by a Props schema.
 
 // ComponentProps is the base set of properties shared by all components.
 type ComponentProps struct {
-	// ID is supplied by the component-tree transport, not authored as a
-	// component property in design manifests or A2UI schemas.
+	// ID is a DOM identity supplied by trusted Go composition. Portable property
+	// schemas omit it; captured source occurrences use ExampleInfo.ID separately.
 	ID string `json:"id,omitempty" delivery:"internal"`
 	// Class is a renderer escape hatch for trusted Go composition. It is not a
 	// portable design-system property and is therefore excluded from delivery.
@@ -49,7 +46,6 @@ type HTMXProps struct {
 	Disable     bool   `json:"hx-disable,omitempty"`
 }
 
-// ---- contracts/atoms/button.go
 // ButtonProps defines the platform-agnostic properties for a Button component.
 type ButtonProps struct {
 	ComponentProps
@@ -67,7 +63,6 @@ type ButtonProps struct {
 	AriaLabel string `json:"ariaLabel,omitempty"`
 }
 
-// ---- contracts/atoms/badge.go
 // BadgeProps defines the platform-agnostic properties for a Badge component.
 type BadgeProps struct {
 	ComponentProps
@@ -83,7 +78,6 @@ type BadgeProps struct {
 	Live        bool   `json:"live,omitempty"`        // polite status announcement
 }
 
-// ---- contracts/atoms/alert.go
 // AlertProps defines properties for a persistent inline status message.
 type AlertProps struct {
 	ComponentProps
@@ -96,16 +90,13 @@ type AlertProps struct {
 	Compact     bool   `json:"compact,omitempty"`
 }
 
-// ---- contracts/atoms/input.go
 // InputProps defines the platform-agnostic properties for an Input component.
 type InputProps struct {
 	ComponentProps
 	HTMXProps
 
 	Name string `json:"name"`
-	// A hidden input keeps its native form value while hiding the entire field,
-	// including any label, icons and supporting text, from layout and focus.
-	Type string `json:"type,omitempty"` // text, email, password, number, tel, url, search, date, time, file, hidden
+	Type string `json:"type,omitempty"` // text, email, password, number, tel, url, search, date, time, file
 	// Value is what the control starts with. A file input never carries one:
 	// no browser lets a page choose a file for somebody.
 	Value        string `json:"value,omitempty"`
@@ -137,7 +128,6 @@ type InputProps struct {
 	Multiple bool   `json:"multiple,omitempty"`
 }
 
-// ---- contracts/atoms/select.go
 // SelectProps defines platform-agnostic properties for native single or multiple
 // selection. It mirrors InputProps where the concepts overlap so form
 // builders can treat text-like and choice-like fields uniformly.
@@ -171,7 +161,6 @@ type SelectOption struct {
 	Disabled    bool   `json:"disabled,omitempty"`
 }
 
-// ---- contracts/atoms/textarea.go
 // TextareaProps defines properties for a multi-line text input.
 type TextareaProps struct {
 	ComponentProps
@@ -195,7 +184,6 @@ type TextareaProps struct {
 	FullWidth    bool   `json:"fullWidth,omitempty"`
 }
 
-// ---- contracts/atoms/form_controls.go
 // CheckboxProps defines properties for a checkbox input.
 type CheckboxProps struct {
 	ComponentProps
@@ -210,7 +198,6 @@ type CheckboxProps struct {
 	Error         string `json:"error,omitempty"`
 }
 
-// ---- contracts/atoms/text.go
 // TextProps defines the platform-agnostic properties for a Text component.
 type TextProps struct {
 	ComponentProps
@@ -249,7 +236,6 @@ type LabelProps struct {
 	Required bool   `json:"required,omitempty"`
 }
 
-// ---- contracts/atoms/visual.go
 // IconProps defines a provider-neutral system glyph.
 type IconProps struct {
 	ComponentProps
@@ -282,7 +268,6 @@ type LinkProps struct {
 	Rel      string `json:"rel,omitempty"`
 }
 
-// ---- contracts/atoms/feedback.go
 // SpinnerProps defines properties for a loading spinner.
 type SpinnerProps struct {
 	ComponentProps
@@ -296,7 +281,6 @@ type SpinnerProps struct {
 // contract-only draft here (free-string width/height) predated the audited
 // class pipeline and had no renderer or consumers.
 
-// ---- contracts/atoms/empty_state.go
 // EmptyStateProps defines properties for an empty data state placeholder.
 type EmptyStateProps struct {
 	ComponentProps
@@ -307,7 +291,6 @@ type EmptyStateProps struct {
 	Bordered    bool   `json:"bordered,omitempty"`
 }
 
-// ---- contracts/atoms/skeleton.go
 // SkeletonProps defines properties for a loading placeholder. A skeleton is
 // the loading rendering of content that has not arrived yet: it holds the
 // geometry of the finished component so the layout does not shift when the
@@ -320,7 +303,6 @@ type SkeletonProps struct {
 	Lines int    `json:"lines,omitempty"` // shape=text: placeholder line count (default 1)
 }
 
-// ---- contracts/layouts/layouts.go
 // GridProps defines properties for a CSS Grid layout.
 type GridProps struct {
 	ComponentProps
@@ -359,7 +341,6 @@ type ContainerProps struct {
 	Padding  string `json:"padding,omitempty"`
 }
 
-// ---- contracts/molecules/data.go
 // TableProps defines platform-agnostic properties for a Table component.
 type TableProps struct {
 	ComponentProps
@@ -496,7 +477,6 @@ type SidebarSection struct {
 	Items      []SidebarItem `json:"items,omitempty"`
 }
 
-// ---- contracts/molecules/navigation.go
 // TabsProps defines properties for a tabbed interface.
 type TabsProps struct {
 	ComponentProps
@@ -553,7 +533,6 @@ type PaginationProps struct {
 	NavigationLabel string `json:"navigationLabel,omitempty"`
 }
 
-// ---- contracts/molecules/skeleton.go
 // TableSkeletonProps defines the loading rendering of a Table: the same wrap,
 // header, and cell classes with pulsing placeholders where data will land.
 type TableSkeletonProps struct {

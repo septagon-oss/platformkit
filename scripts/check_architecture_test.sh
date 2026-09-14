@@ -141,3 +141,31 @@ rm "$budgets/loc-budget.json"
 commit_budget 'Missing baseline document'
 rejects 'missing source baseline' 'loc-budget.json' bash "$scripts/check_budget_ratchet.sh" "$(git -C "$budgets" rev-parse HEAD)" "$budgets"
 echo 'budget ratchet: previous revisions, decreases, removed measurements and missing baselines passed'
+
+# Local selectors and an earlier test goal must never narrow the fresh gate.
+# Dry runs inspect the real Makefile without starting services or running tests.
+test_commands() {
+	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "$@" |
+		sed -n '/^go tool gotestsum /s/[[:blank:]]*$//p'
+}
+fresh="go tool gotestsum --packages='./...' -- -count=1"
+focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
+if [[ "$(test_commands test)" != "go tool gotestsum  --packages='./...' --" ]]; then
+	echo 'FAIL: local tests must use the default Go cache over every package' >&2
+	exit 1
+fi
+for goals in test check 'test check' 'check test'; do
+	read -r -a targets <<< "$goals"
+	case "$goals" in
+		test) expected="$focused" ;;
+		check) expected="$fresh" ;;
+		'test check') expected="$focused"$'\n'"$fresh" ;;
+		'check test') expected="$fresh"$'\n'"$focused" ;;
+	esac
+	actual="$(test_commands "${targets[@]}" TEST_PACKAGES='./design ./ui/css' TEST_FLAGS='-run Selected' TEST_OPTIONS=--watch)"
+	if [[ "$actual" != "$expected" ]]; then
+		printf 'FAIL: make %s changed the local or fresh test boundary:\n%s\n' "$goals" "$actual" >&2
+		exit 1
+	fi
+done
+echo 'test feedback: local selectors preserve fresh full checks in either goal order'

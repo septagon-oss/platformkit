@@ -128,10 +128,9 @@ func TestExportTokensSelectsModesAndExistingOwnersDeterministically(t *testing.T
 		if len(mode.Colors) != 22 || len(mode.Fonts) != 3 {
 			t.Fatalf("incomplete colour/family projection for %s", mode.Mode)
 		}
-		for _, color := range mode.Colors {
-			if color.Name == "--pk-color-accent-default" && mode.Mode == "light" && color.Value != "#abcdef" {
-				t.Fatal("caller palette was not projected")
-			}
+		index := slices.IndexFunc(mode.Colors, func(color design.Token) bool { return color.Name == "--pk-color-accent-default" })
+		if index < 0 || (mode.Mode == "light" && mode.Colors[index].Value != "#abcdef") {
+			t.Fatal("caller palette was not projected")
 		}
 	}
 	wantFamilies := []design.FontFamily{{Name: "Named, Family"}, {Name: "serif"}, {Name: "serif", Generic: true}}

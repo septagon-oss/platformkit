@@ -131,7 +131,7 @@ func TestKeyframeStopsRenderInOffsetOrder(t *testing.T) {
 	})
 	out := s.CSS()
 	from, mid, to := strings.Index(out, "from"), strings.Index(out, "50%"), strings.Index(out, "to {")
-	if !(from < mid && mid < to) {
+	if !(0 <= from && from < mid && mid < to) {
 		t.Fatalf("stops are out of order:\n%s", out)
 	}
 }

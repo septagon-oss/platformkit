@@ -206,12 +206,22 @@ func TestARolledBackCommandLeavesNothing(t *testing.T) {
 		t.Fatalf("seed the plan: %v", err)
 	}
 
-	_ = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if _, err := svc.Subscribe(ctx, tx, plan); err != nil {
 			return err
 		}
-		return context.Canceled // whatever went wrong after the command
+		var status string
+		if err := tx.DB().Table("billing_subscriptions").Select("status").Row().Scan(&status); err != nil {
+			return err
+		}
+		if status != contracts.StatusTrial {
+			t.Fatal("the subscription was not stored before the intentional rollback")
+		}
+		return errRollback
 	})
+	if !errors.Is(err, errRollback) {
+		t.Fatalf("subscription rollback = %v, want the failure after a successful command", err)
+	}
 
 	var subs, events int
 	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM billing_subscriptions`).Scan(&subs); err != nil {
@@ -316,9 +326,10 @@ func (s *spy) Charge(ctx context.Context, c contracts.Charge) (contracts.Receipt
 	err := s.admin.QueryRowContext(ctx,
 		`SELECT count(*) FROM pg_stat_activity
 		 WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`).Scan(&open)
-	if err == nil {
-		s.inTransaction += open
+	if err != nil {
+		return contracts.Receipt{}, err
 	}
+	s.inTransaction += open
 	return contracts.Receipt{Reference: "spy:" + c.Subject.String(), At: db.Now()}, nil
 }
 

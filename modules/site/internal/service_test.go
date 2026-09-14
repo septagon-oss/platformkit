@@ -127,12 +127,22 @@ func TestARolledBackSaveLeavesNothing(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	svc := internal.NewService()
 
-	_ = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if _, err := svc.Save(ctx, tx, &contracts.SiteSettings{Title: "Acme"}); err != nil {
 			return err
 		}
-		return context.Canceled
+		var title string
+		if err := tx.DB().Table("site_settings").Select("title").Row().Scan(&title); err != nil {
+			return err
+		}
+		if title != "Acme" {
+			t.Fatal("the settings were not stored before the intentional rollback")
+		}
+		return errRollback
 	})
+	if !errors.Is(err, errRollback) {
+		t.Fatalf("settings rollback = %v, want the failure after a successful save", err)
+	}
 
 	var rows, events int
 	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM site_settings`).Scan(&rows); err != nil {

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1022,9 +1023,15 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// A multipart form whose file part never ends: one byte, then a pause,
 	// forever. Nothing declares a length, so this goes out chunked and the
 	// server has nothing to read ahead to.
+	ctx, cancel := context.WithTimeout(t.Context(), timeout*3)
+	var work sync.WaitGroup
+	defer work.Wait()
+	defer cancel()
 	body, out := io.Pipe()
+	defer body.Close()
+	defer out.Close()
 	form := multipart.NewWriter(out)
-	go func() {
+	work.Go(func() {
 		header := textproto.MIMEHeader{}
 		header.Set("Content-Disposition", `form-data; name="file"; filename="slow.bin"`)
 		header.Set("Content-Type", "application/octet-stream")
@@ -1037,10 +1044,14 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 			if _, err := part.Write([]byte("x")); err != nil {
 				return
 			}
-			time.Sleep(100 * time.Millisecond)
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-ctx.Done():
+				return
+			}
 		}
-	}()
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"http://"+cfg.Server.Addr+filesPath, body)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -1054,7 +1065,8 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	}
 	done := make(chan answer, 1)
 	start := time.Now()
-	go func() {
+	deadline := time.After(timeout * 2)
+	work.Go(func() {
 		res, err := admin.Do(req)
 		if err != nil {
 			done <- answer{err: err}
@@ -1063,7 +1075,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 		defer res.Body.Close()
 		_, _ = io.Copy(io.Discard, res.Body)
 		done <- answer{code: res.StatusCode}
-	}()
+	})
 
 	// While the body trickles, nothing of this installation is holding a
 	// transaction. Sampled over the first three quarters of the timeout, so the
@@ -1071,6 +1083,11 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// path runs.
 	samples, oldest := 0, 0.0
 	for time.Since(start) < timeout*3/4 {
+		select {
+		case got := <-done:
+			t.Fatalf("upload ended before the read deadline: status=%d error=%v after %s", got.code, got.err, time.Since(start))
+		default:
+		}
 		oldest = max(oldest, longest())
 		samples++
 		time.Sleep(20 * time.Millisecond)
@@ -1083,17 +1100,21 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 			oldest)
 	}
 
-	got := <-done
+	var got answer
+	select {
+	case got = <-done:
+	case <-deadline:
+		t.Fatalf("the trickled upload did not stop within %s", timeout*2)
+	}
 	took := time.Since(start)
 	// Cut off. The server closed the connection on its deadline, which reaches
 	// the client as a 500 the handler produced when its body stopped arriving,
 	// or as a failed request; what matters is that it ended, and that it ended
 	// when the deadline said rather than whenever the client felt like stopping.
-	if got.err == nil && got.code < 400 {
+	if got.err == nil && got.code != http.StatusInternalServerError {
 		t.Errorf("a body that never ends was answered %d after %s", got.code, took)
 	}
 	if took > timeout*2 {
 		t.Errorf("the trickled upload ran for %s; server.read_timeout is %s", took, timeout)
 	}
-	_ = out.Close()
 }

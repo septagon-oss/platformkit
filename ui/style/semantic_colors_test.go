@@ -79,8 +79,12 @@ func TestSemanticColorsResolveBothModesAndCallerPalette(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		overlay, ok := got["--pk-role-surface-overlay"]
+		if !ok {
+			t.Fatal("resolved colors omitted the surface overlay")
+		}
 		for i, want := range tc.want {
-			if math.Abs(got["--pk-role-surface-overlay"][i]-want) > 1e-12 {
+			if math.IsNaN(overlay[i]) || math.IsInf(overlay[i], 0) || math.Abs(overlay[i]-want) > 1e-12 {
 				t.Errorf("%s overlay: %v, want %v", tc.theme.Name, got["--pk-role-surface-overlay"], tc.want)
 			}
 		}
@@ -88,7 +92,7 @@ func TestSemanticColorsResolveBothModesAndCallerPalette(t *testing.T) {
 	theme := design.Light()
 	theme.AccentDefault, theme.Focus = "#ff0000", "#ff0000"
 	before, err := design.ResolveColors(theme.Tokens(), style.RoleColors())
-	if err != nil || before["--pk-role-surface-brand"] != before["--pk-role-ring-focus"] {
+	if err != nil || before["--pk-role-surface-brand"] != (design.SRGBA{1, 0, 0, 1}) || before["--pk-role-ring-focus"] != (design.SRGBA{1, 0, 0, 1}) {
 		t.Fatalf("caller palette was not used: %v", err)
 	}
 	theme.Focus = "#0000ff"

@@ -61,10 +61,10 @@ authorization and migrations in more detail.
 
 ## Build a screen
 
-Use [resource-based screens](ui/screens/) for record management, and compose
-[typed components](ui/components/) into [pages](ui/page/) for custom workflows.
-Components use semantic design tokens, so a [theme](design/) can change colors
-and typography without changing the page's structure.
+Start with the [entity and presentation map](ARCHITECTURE.md#entity-and-presentation-contracts)
+to reuse generated forms and typed components. Compose custom workflows with
+[pages](ui/page/); shared [themes](design/) change colors and typography across
+both generated and custom screens.
 
 [Page localization](ui/page/README.md) composes module-owned messages through
 Go's x/text catalogs. The reference sign-in page includes English and Portuguese;

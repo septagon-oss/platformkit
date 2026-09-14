@@ -6,6 +6,25 @@ the modules and configuration its product needs. This page describes the
 implemented boundaries. Contribution policy lives in
 [CONTRIBUTING.md](CONTRIBUTING.md), and decisions live in [docs/adr](docs/adr/).
 
+## Entity and presentation contracts
+
+Follow the consumer as well as its schema; these paths share the existing Go owners.
+
+| Contract | Implementation and consumer |
+|---|---|
+| Entity and command fields | [`crud.Fields`/`FieldsOf`](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
+| Web forms and pages | [`screens.Control`/`FormExample`](ui/screens/render.go) compose shared [components](ui/components/); [`page.Serve`](ui/page/serve.go) applies the caller's shell and request context. |
+| Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`; the native consumer owns its renderer. |
+| Component properties | [`Example.Describe`](ui/components/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
+| Design consumers | [`ui.Export`](ui/export.go) and [`ProjectProps`](ui/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
+
+Run `go test ./ui/screens -run 'ExampleFormExample|TestGeneratedForm'` to exercise
+the [form-to-export example](ui/screens/design_test.go) and its composition checks.
+This local check does not exercise a browser, native editor or business write.
+Entity fields are flat scalars/lists; nested answer maps need an adapter. Component
+Props describe presentation, while entity and answer contracts own data validity.
+A2UI/MCP adapters need separate protocol wiring; source export does not supply it.
+
 ## Provider boundaries
 
 Reuse the existing owned contracts: `events.Transport`, File `Storage`, Notification

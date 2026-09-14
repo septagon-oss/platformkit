@@ -78,6 +78,12 @@ func TestTheLockoutIsNotAWeapon(t *testing.T) {
 		if got := l.Check(ctx, "ada@acme.example.com", "203.0.113.1"); got != contracts.Allow {
 			t.Errorf("Check after a success = %v, want Allow", got)
 		}
+		for i := range contracts.SourceAttempts - contracts.MaxAttempts {
+			l.Failed(ctx, account(i), "203.0.113.1")
+		}
+		if got := l.Check(ctx, "fresh@acme.example.com", "203.0.113.1"); got != contracts.Delay {
+			t.Errorf("the source after a success and the remaining failures = %v, want Delay", got)
+		}
 	})
 }
 
