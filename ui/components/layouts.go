@@ -1,6 +1,6 @@
 package components
 
-// go renders the layout contracts: structural containers whose whole
+// layouts.go renders the layout contracts: structural containers whose whole
 // job is arranging children. They accept children as trailing gomponents
 // nodes because layout without content is meaningless.
 

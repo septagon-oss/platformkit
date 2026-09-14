@@ -1,6 +1,6 @@
 package components
 
-// go renders the molecule contracts the admin and module pages
+// molecules.go renders the molecule contracts the admin and module pages
 // compose: tabular data, cards, navigation, and progressively enhanced
 // overlays. Interaction contracts stay in the shared runtime controllers so
 // downstream products do not need private scripts or duplicate markup.

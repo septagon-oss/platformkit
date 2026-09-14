@@ -1,9 +1,10 @@
 package components
 
-// go renders the atom  Each renderer takes its Props struct
-// and returns a gomponents Node; unknown variant or size strings fall back to
-// the documented defaults rather than failing, matching the contracts'
-// "data schema, not behavior" stance.
+// atoms.go renders the atom contracts: the smallest components — buttons,
+// inputs, badges, icons, text — that molecules and layouts compose. Each
+// renderer takes its Props struct and returns a gomponents Node; unknown
+// variant or size strings fall back to the documented defaults rather than
+// failing, matching the contracts' "data schema, not behavior" stance.
 
 import (
 	"slices"
