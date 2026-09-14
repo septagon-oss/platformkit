@@ -216,6 +216,10 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	return s.identify(ctx, tx, user)
 }
 
+// detachedWriteBudget bounds auth writes that must survive a refused request.
+// A busy or unreachable database must not keep that request open indefinitely.
+const detachedWriteBudget = 2 * time.Second
+
 // forget deletes one expired session, in a transaction of its own.
 //
 // Its own, and that is the correction rather than a flourish. This runs inside
@@ -233,7 +237,9 @@ func (s *Service) forget(ctx context.Context, hash contracts.Digest) {
 	if !ok {
 		return
 	}
-	err := db.Run(db.Detached(context.WithoutCancel(ctx)), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), detachedWriteBudget)
+	defer cancel()
+	err := db.Run(detached, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
 		return tx.DB().Where("id_hash = ?", hash).Delete(&contracts.Session{}).Error
 	})
 	if err != nil {
@@ -415,7 +421,9 @@ func (s *Service) recordFailure(ctx context.Context, email string, from contract
 	if !ok {
 		return
 	}
-	err := db.Run(db.Detached(context.WithoutCancel(ctx)), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), detachedWriteBudget)
+	defer cancel()
+	err := db.Run(detached, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
 		return events.Publish(ctx, tx, contracts.EventLoginFailed, contracts.LoginFailed{
 			Email: contracts.EmailKey(email), IP: clip(from.IP, 60), Locked: locked, At: db.Now(),
 		})

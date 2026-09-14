@@ -368,7 +368,9 @@ func TestTryLockPinsTheConnectionItTookTheLockOn(t *testing.T) {
 	if n := held(); n != 0 {
 		t.Fatalf("%d locks before anybody took one", n)
 	}
-	unlock, ok, err := db.TryLock(t.Context(), conn, name)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	unlock, ok, err := db.TryLock(ctx, conn, name)
 	if err != nil || !ok {
 		t.Fatalf("the first TryLock = %v, %v", ok, err)
 	}
@@ -380,6 +382,7 @@ func TestTryLockPinsTheConnectionItTookTheLockOn(t *testing.T) {
 	if _, again, err := db.TryLock(t.Context(), conn, name); err != nil || again {
 		t.Errorf("a second TryLock on the same pool = %v, %v; want false", again, err)
 	}
+	cancel()
 	unlock()
 	if n := held(); n != 0 {
 		t.Errorf("%d locks after the unlock, want 0; the connection went back to the pool holding it", n)
