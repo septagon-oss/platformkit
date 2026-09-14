@@ -12,8 +12,8 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 
 | Contract | Implementation and consumer |
 |---|---|
-| Entity and command fields | [`crud.Fields`/`FieldsOf`](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
-| Web forms and pages | [`screens.Control`/`FormExample`](ui/screens/render.go) compose shared [components](ui/components/); [`page.Serve`](ui/page/serve.go) applies the caller's shell and request context. |
+| Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
+| Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`screens`](ui/screens/render.go) adapts authorized resources and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`; the native consumer owns its renderer. |
 | Component properties | [`Example.Describe`](ui/components/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
 | Design consumers | [`ui.Export`](ui/export.go) and [`ProjectProps`](ui/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
@@ -51,6 +51,11 @@ Their package guides contain executable entry points and dependency limits.
 SQL transactions, authorization and business writes remain explicit composition
 responsibilities; an exported form or rule does not supply a complete service.
 The existing CRUD/page/Auth aliases and screens adapter delegate to these owners.
+[ADR 0012](docs/adr/0012-independent-parts.md) requires adopted-consumer benefit.
+The [package gate](scripts/check_packages.sh) checks transitive runtime imports;
+the [public example](ui/forms/testdata/standalone/README.md) proves ordinary
+versioned consumption without the application runtime. Neither proves scale or
+adoption by an external product.
 
 ## Start at the composition
 

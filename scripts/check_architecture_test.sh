@@ -70,6 +70,97 @@ bash "$scripts/check_gucs.sh" "$repo" >/dev/null
 "${imports[@]}" >/dev/null
 echo 'architecture gates: dependency boundaries, raw imports, file paths and tenancy ownership passed'
 
+# Real go list fixtures prove transitive runtime checks without fetching or
+# compiling dependencies. Each package contains only source text and stdlib imports.
+packages_repo="$temporary/portable packages"
+mkdir -p "$packages_repo/scripts"
+cp "$scripts/check_packages.sh" "$packages_repo/scripts/"
+printf 'module github.com/septagon-oss/platformkit\n\n' > "$packages_repo/go.mod"
+sed -n '/^go[[:space:]]/p' "$scripts/../go.mod" >> "$packages_repo/go.mod"
+printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
+# Resolve before forcing local execution: PATH may otherwise contain Go 1.27.
+selected_root="$(GOTOOLCHAIN="go$(sed -n 's/^go //p' "$scripts/../go.mod")" go env GOROOT)"
+export PATH="$selected_root/bin:$PATH"
+for path in apps/platformkit kit/entity kit/locale kit/flags kit/tenancy \
+    modules/task/domain ui/forms ui/components kit/tenancy/providers/topaz \
+    kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
+    kit/db kit/httpx modules/auth/contracts; do
+    mkdir -p "$packages_repo/$path"
+    printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
+done
+packages=(env GOENV=off GOWORK=off GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off bash "$packages_repo/scripts/check_packages.sh")
+"${packages[@]}" >/dev/null
+foundation=github.com/septagon-oss/platformkit
+fixture_import() {
+    printf 'package fixture\nimport _ "%s"\n' "$2" > "$packages_repo/$1/fixture.go"
+}
+boundary_rejects() {
+    local owner="$1" dependency="$2" expected="${3:-$1}"
+    fixture_import "$owner" "$dependency"
+    rejects "$owner reaches $dependency" "$foundation/$expected transitively depends on $dependency" "${packages[@]}"
+    printf 'package fixture\n' > "$packages_repo/$owner/fixture.go"
+}
+boundary_rejects modules/task/domain "$foundation/kit/tenancy"
+boundary_rejects kit/entity "$foundation/kit/db"
+fixture_import kit/tenancy/providers/topaz "$foundation/kit/tenancy"
+boundary_rejects kit/tenancy database/sql kit/tenancy/providers/topaz
+boundary_rejects kit/tenancy net/http
+fixture_import ui/forms "$foundation/ui/components"
+boundary_rejects ui/components "$foundation/kit/db" ui/forms
+boundary_rejects kit/tenancy/providers/topaz "$foundation/modules/auth/contracts"
+boundary_rejects kit/flags/providers/openfeature "$foundation/kit/flags/providers/ofrep"
+boundary_rejects kit/flags/providers/ofrep "$foundation/ui/components"
+boundary_rejects kit/locale/providers/xtext "$foundation/kit/flags"
+"${packages[@]}" >/dev/null
+fixture_import kit/tenancy database/sql
+rejects 'write mode bypasses portability' 'transitively depends on database/sql' "${packages[@]}" --write
+if [[ "$(cat "$packages_repo/packages-budget.json")" != '{"packages":99}' ]]; then
+    echo 'FAIL: failed portability check wrote the budget' >&2; exit 1
+fi
+rm -r "$packages_repo/apps"
+rejects 'missing app bypasses portability' 'transitively depends on database/sql' "${packages[@]}"
+printf 'package fixture\n' > "$packages_repo/kit/tenancy/fixture.go"
+"${packages[@]}" >/dev/null
+mkdir -p "$packages_repo/apps/platformkit"
+printf 'package fixture\n' > "$packages_repo/apps/platformkit/fixture.go"
+
+# Only error propagation and foreign SDK metadata need a fake go executable.
+# It delegates real dependency discovery and insists on Deps, not direct Imports.
+real_go="$(command -v go)"
+mkdir "$temporary/bin"
+cat > "$temporary/bin/go" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *' -f '* ]]; then
+    [[ "$*" == *'{{join .Deps " "}}'* ]] || { echo 'fixture requires transitive Deps' >&2; exit 2; }
+    [[ "$FAKE_GO_MODE" != closure-failure ]] || { echo 'fixture closure go list failed' >&2; exit 73; }
+    output="$("$REAL_GO" "$@")"
+    if [[ "$FAKE_GO_MODE" == missing ]]; then
+        printf '%s\n' "$output" | awk -F '|' '$1 != "github.com/septagon-oss/platformkit/kit/entity"'
+        exit 0
+    fi
+    if [[ "$FAKE_GO_MODE" == sdk ]]; then
+        printf '%s\n' "$output" | awk -F '|' -v OFS='|' -v owner="$SDK_OWNER" -v dep="$SDK_DEP" -v module="$SDK_MODULE" '
+            $1 == owner { $3 = $3 " " dep }
+            { print }
+            END { print dep, "false", "", module }
+        '
+        exit 0
+    fi
+elif [[ "$FAKE_GO_MODE" == app-failure ]]; then
+    echo 'fixture app go list failed' >&2; exit 74
+fi
+exec "$REAL_GO" "$@"
+SH
+chmod +x "$temporary/bin/go"
+fake=(env PATH="$temporary/bin:$PATH" REAL_GO="$real_go")
+rejects 'closure go list failure' 'fixture closure go list failed' "${fake[@]}" FAKE_GO_MODE=closure-failure "${packages[@]}"
+rejects 'application go list failure' 'fixture app go list failed' "${fake[@]}" FAKE_GO_MODE=app-failure "${packages[@]}"
+rejects 'missing owner metadata' 'missing dependency metadata for' "${fake[@]}" FAKE_GO_MODE=missing "${packages[@]}"
+rejects 'unselected provider SDK family' 'transitively depends on example.test/other-sdk/client' \
+    "${fake[@]}" FAKE_GO_MODE=sdk SDK_OWNER="$foundation/kit/flags/providers/openfeature" SDK_DEP=example.test/other-sdk/client SDK_MODULE=example.test/other-sdk "${packages[@]}"
+echo 'package boundaries: transitive core/UI/provider rules, missing metadata and go list failures passed'
+
 # A push has already advanced main. The previous revision, supplied explicitly,
 # must still catch a committed increase instead of comparing main with itself.
 budgets="$temporary/budget repository"
