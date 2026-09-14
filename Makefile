@@ -83,6 +83,7 @@ fmt-check: ## Fail when any file is not gofmt'd
 # Do not share the local test target as a prerequisite: in `make test check`,
 # Make would consider it complete even if that earlier run was filtered/cached.
 check: build vet fmt-check check-loc check-packages check-gucs ## Everything a pull request must pass
+	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	./scripts/check_imports.sh
