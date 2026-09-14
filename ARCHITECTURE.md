@@ -27,7 +27,7 @@ A2UI/MCP adapters need separate protocol wiring; source export does not supply i
 
 ## Provider boundaries
 
-Reuse the existing owned contracts: `events.Transport`, File `Storage`, Notification
+Reuse the existing owned contracts: [event delivery](kit/events/README.md), File `Storage`, Notification
 `Mailer` and `tenancy.Policy`. [NATS configuration](config.example.yaml) selects
 broker transport, authentication and trust at composition. [Page localization](ui/page/README.md)
 uses the portable [locale contracts](kit/locale/README.md); [xtext](kit/locale/providers/xtext/README.md) owns catalog formatting, with page aliases for existing callers.

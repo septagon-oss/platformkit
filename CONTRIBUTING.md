@@ -29,17 +29,16 @@ the existing composition and [module boundaries](ARCHITECTURE.md#start-at-the-co
 Do not add parallel registries, configuration namespaces or instruction sets.
 
 Public packages must solve a named problem outside PlatformKit and simplify an
-existing PlatformKit consumer. Compare extending the current owner and reusing
-an existing open-source library before extracting another package. Record the
-consumer's code, dependencies or composition steps before and after the change.
-Show ordinary versioned `go get` consumption with a minimal executable example,
+existing PlatformKit consumer. Apply the trace above and record its code,
+dependencies or composition steps before and after the change. Keep one
+implementation: migrate the traced caller and remove the replaced logic in the
+same dependent delivery.
+A compatible alias or delegate may preserve an existing public API. Publication,
+moving files and synthetic examples do not establish adopted consumer reduction.
+Show ordinary versioned consumption with an [executable public example](ui/forms/testdata/standalone/README.md),
 explicit optional providers, dependency limits, error behavior and compatibility
-expectations. Reuse existing checks when they already establish these contracts.
-Keep one implementation and migrate the traced consumer to it, removing the
-implementation it replaces. Publication and moving files do not establish
-simplification: record the adopted consumer's reduction and any migration still
-pending. See [ADR 0012](docs/adr/0012-independent-parts.md) and the reproducible
-[public consumer check](ui/forms/testdata/standalone/README.md).
+expectations. Reuse existing checks and identify any pending migration.
+[ADR 0012](docs/adr/0012-independent-parts.md) records the decision and its rationale.
 
 ## Make the change readable
 

@@ -1,16 +1,17 @@
-package events
+package nats
 
 import (
 	"fmt"
 
 	"github.com/nats-io/nats.go"
 	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
-// ConnectJetStream constructs the existing transport from PlatformKit settings.
+// Connect constructs the existing transport from PlatformKit settings.
 // TLS verifies the endpoint hostname; CACert supplies private trust roots and an
 // empty value retains system trust. The returned Transport is an io.Closer.
-func ConnectJetStream(settings config.NATS) (Transport, error) {
+func Connect(settings config.NATS) (transport.Transport, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, fmt.Errorf("events: %w", err)
 	}

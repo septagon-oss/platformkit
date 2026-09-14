@@ -26,6 +26,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
@@ -235,7 +236,7 @@ func (a *App) transport() (events.Transport, error) {
 	if !broker {
 		return events.Memory(), nil
 	}
-	return events.ConnectJetStream(a.cfg.NATS)
+	return eventnats.Connect(a.cfg.NATS)
 }
 
 func useJetStream(mode string, role Role) (bool, error) {

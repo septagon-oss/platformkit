@@ -21,6 +21,8 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/events/internal/delivery"
+	provider "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -28,9 +30,9 @@ import (
 // test — five attempts, then dead — not the wall-clock waits.
 func fast(t *testing.T) {
 	t.Helper()
-	was := backoff
-	backoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond}
-	t.Cleanup(func() { backoff = was })
+	was := delivery.Backoff
+	delivery.Backoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { delivery.Backoff = was })
 }
 
 // TestAPoisonEventIsDeadLetteredAndStopsComingBack. Before the cap, a handler
@@ -94,8 +96,8 @@ func TestAPoisonEventIsDeadLetteredAndStopsComingBack(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	mu.Lock()
 	defer mu.Unlock()
-	if attempts != maxDeliveries {
-		t.Errorf("the handler ran %d times, want %d and then a dead letter", attempts, maxDeliveries)
+	if attempts != delivery.MaxDeliveries {
+		t.Errorf("the handler ran %d times, want %d and then a dead letter", attempts, delivery.MaxDeliveries)
 	}
 }
 
@@ -109,7 +111,7 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	}
 	fast(t)
 	// Unequal rungs catch a second retry delay layered onto the broker timer.
-	backoff = []time.Duration{50 * time.Millisecond, 200 * time.Millisecond, 500 * time.Millisecond, time.Second}
+	delivery.Backoff = []time.Duration{50 * time.Millisecond, 200 * time.Millisecond, 500 * time.Millisecond, time.Second}
 	admin, conn := dbtest.Schema(t)
 	ctx, stop := context.WithCancel(t.Context())
 	defer stop()
@@ -117,7 +119,7 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	// This run's own subject and consumer: the stream is shared with every
 	// other run.
 	name := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "") + ".happened"
-	transport, err := JetStream(url)
+	transport, err := provider.JetStream(url)
 	if err != nil {
 		t.Fatalf("JetStream: %v", err)
 	}
@@ -167,11 +169,11 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if attempts != maxDeliveries {
-		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", attempts, maxDeliveries)
+	if attempts != delivery.MaxDeliveries {
+		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", attempts, delivery.MaxDeliveries)
 	}
 	for i := 1; i < len(deliveries); i++ {
-		gap, want := deliveries[i].Sub(deliveries[i-1]), backoff[min(i, len(backoff))-1]
+		gap, want := deliveries[i].Sub(deliveries[i-1]), delivery.Backoff[min(i, len(delivery.Backoff))-1]
 		t.Logf("delivery %d gap=%s configured=%s", i+1, gap, want)
 		if gap < want/2 || gap > want+250*time.Millisecond {
 			t.Errorf("delivery %d gap=%s, want one %s backoff plus scheduling tolerance", i+1, gap, want)
@@ -216,14 +218,14 @@ func TestADriftedConsumerIsReconciled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the consumer back: %v", err)
 	}
-	if info.Config.AckWait != ackWait() {
-		t.Errorf("ack_wait is %v, want %v", info.Config.AckWait, ackWait())
+	if info.Config.AckWait != delivery.Backoff[0] {
+		t.Errorf("ack_wait is %v, want %v", info.Config.AckWait, delivery.Backoff[0])
 	}
 	if info.Config.MaxDeliver != -1 {
 		t.Errorf("max_deliver is %d, want %d", info.Config.MaxDeliver, -1)
 	}
-	if !slices.Equal(info.Config.BackOff, backoff) {
-		t.Errorf("backoff is %v, want %v", info.Config.BackOff, backoff)
+	if !slices.Equal(info.Config.BackOff, delivery.Backoff) {
+		t.Errorf("backoff is %v, want %v", info.Config.BackOff, delivery.Backoff)
 	}
 
 	// And the subscription is a subscription: the handler receives.
@@ -274,7 +276,7 @@ func jetstreamForTest(t *testing.T) (Transport, nats.JetStreamContext) {
 	if url == "" {
 		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
 	}
-	transport, err := JetStream(url)
+	transport, err := provider.JetStream(url)
 	if err != nil {
 		t.Fatalf("JetStream(%s): %v", url, err)
 	}
@@ -402,9 +404,9 @@ func TestADriftedStreamIsReconciled(t *testing.T) {
 
 	// The stream as an older build left it: a narrower subject space and a
 	// different age. Both are settings NATS can change on a live stream.
-	drifted := wantedStream()
+	drifted := wantedStreamForTest()
 	drifted.Subjects = []string{subject + "narrower.>"}
-	drifted.MaxAge = keep / 2
+	drifted.MaxAge = delivery.Keep / 2
 	if _, err := js.UpdateStream(drifted); err != nil {
 		t.Fatalf("drift the stream: %v", err)
 	}
@@ -421,7 +423,7 @@ func TestADriftedStreamIsReconciled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the stream back: %v", err)
 	}
-	want := wantedStream()
+	want := wantedStreamForTest()
 	if !slices.Equal(info.Config.Subjects, want.Subjects) {
 		t.Errorf("the subjects are %v, want %v", info.Config.Subjects, want.Subjects)
 	}
@@ -627,7 +629,7 @@ func TestJetStreamRetriesTerminalRecordingAfterRestart(t *testing.T) {
 		if err := admin.QueryRowContext(t.Context(), "SELECT is_called FROM terminal_attempts").Scan(&tried); err != nil {
 			t.Fatal(err)
 		}
-		if tried && info.Delivered.Consumer >= uint64(maxDeliveries+1) {
+		if tried && info.Delivered.Consumer >= uint64(delivery.MaxDeliveries+1) {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -662,8 +664,8 @@ func TestJetStreamRetriesTerminalRecordingAfterRestart(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if got := attempts.Load(); got > int64(maxDeliveries) {
-		t.Fatalf("terminal recovery replayed provider handler: attempts=%d, cap=%d", got, maxDeliveries)
+	if got := attempts.Load(); got > int64(delivery.MaxDeliveries) {
+		t.Fatalf("terminal recovery replayed provider handler: attempts=%d, cap=%d", got, delivery.MaxDeliveries)
 	}
 }
 
@@ -721,7 +723,19 @@ func TestMemoryRetriesTerminalRecordingWithoutReplayingTheHandler(t *testing.T) 
 	if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_dead_letters").Scan(&failures); err != nil || failures != 1 {
 		t.Fatalf("terminal recovery recorded %d failures: %v", failures, err)
 	}
-	if got := attempts.Load(); got != int64(maxDeliveries) {
-		t.Fatalf("handler attempts=%d, want %d; retries must only persist the terminal outcome", got, maxDeliveries)
+	if got := attempts.Load(); got != int64(delivery.MaxDeliveries) {
+		t.Fatalf("handler attempts=%d, want %d; retries must only persist the terminal outcome", got, delivery.MaxDeliveries)
 	}
+}
+
+// These are the existing broker wire identities, checked independently of the
+// provider's private declarations; moving packages must not rename stored data.
+const (
+	stream  = "PLATFORMKIT"
+	subject = "platformkit."
+)
+
+func wantedStreamForTest() *nats.StreamConfig {
+	return &nats.StreamConfig{Name: stream, Subjects: []string{subject + ">"},
+		Retention: nats.LimitsPolicy, Storage: nats.FileStorage, MaxAge: delivery.Keep}
 }

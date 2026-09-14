@@ -83,8 +83,9 @@ selected_root="$(GOTOOLCHAIN="go$(sed -n 's/^go //p' "$scripts/../go.mod")" go e
 export PATH="$selected_root/bin:$PATH"
 for path in apps/platformkit kit/entity kit/locale kit/flags kit/tenancy \
     modules/task/domain ui/forms ui/components kit/tenancy/providers/topaz \
+    kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx modules/auth/contracts; do
+    kit/db kit/httpx kit/config modules/auth/contracts; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done
@@ -107,6 +108,11 @@ boundary_rejects kit/tenancy database/sql kit/tenancy/providers/topaz
 boundary_rejects kit/tenancy net/http
 fixture_import ui/forms "$foundation/ui/components"
 boundary_rejects ui/components "$foundation/kit/db" ui/forms
+fixture_import kit/events/providers/nats "$foundation/kit/events/internal/delivery"
+boundary_rejects kit/events/internal/delivery "$foundation/kit/db" kit/events/providers/nats
+fixture_import kit/events/providers/memory "$foundation/kit/events/internal/delivery"
+boundary_rejects kit/events/internal/delivery "$foundation/kit/db" kit/events/providers/memory
+boundary_rejects kit/events "$foundation/kit/events/providers/nats"
 boundary_rejects kit/tenancy/providers/topaz "$foundation/modules/auth/contracts"
 boundary_rejects kit/flags/providers/openfeature "$foundation/kit/flags/providers/ofrep"
 boundary_rejects kit/flags/providers/ofrep "$foundation/ui/components"
@@ -157,6 +163,8 @@ fake=(env PATH="$temporary/bin:$PATH" REAL_GO="$real_go")
 rejects 'closure go list failure' 'fixture closure go list failed' "${fake[@]}" FAKE_GO_MODE=closure-failure "${packages[@]}"
 rejects 'application go list failure' 'fixture app go list failed' "${fake[@]}" FAKE_GO_MODE=app-failure "${packages[@]}"
 rejects 'missing owner metadata' 'missing dependency metadata for' "${fake[@]}" FAKE_GO_MODE=missing "${packages[@]}"
+rejects 'transitive NATS SDK in SQL outbox' 'transitively depends on github.com/nats-io/nats.go' \
+    "${fake[@]}" FAKE_GO_MODE=sdk SDK_OWNER="$foundation/kit/events" SDK_DEP=github.com/nats-io/nats.go SDK_MODULE=github.com/nats-io/nats.go "${packages[@]}"
 rejects 'unselected provider SDK family' 'transitively depends on example.test/other-sdk/client' \
     "${fake[@]}" FAKE_GO_MODE=sdk SDK_OWNER="$foundation/kit/flags/providers/openfeature" SDK_DEP=example.test/other-sdk/client SDK_MODULE=example.test/other-sdk "${packages[@]}"
 echo 'package boundaries: transitive core/UI/provider rules, missing metadata and go list failures passed'

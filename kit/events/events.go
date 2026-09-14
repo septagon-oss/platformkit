@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +27,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -39,50 +39,16 @@ const (
 	deadLetters = "platformkit_dead_letters" // 000005
 )
 
-// maxDeliveries bounds handler attempts, not terminal-record persistence.
-// Once exhausted, transports retry recording the failure until it commits or
-// their context ends. The broker retains that recovery work across restarts.
-// backoff bounds the retry rate; tests shorten the ladder, not its shape.
-var (
-	maxDeliveries = 5
-	backoff       = []time.Duration{time.Second, 5 * time.Second, 15 * time.Second, 30 * time.Second}
-)
-
 // deadLetterToken is the capability the dead-letter write needs. It is a system
 // transaction and not the event's own tenant transaction because the reason a
 // delivery failed may be that the tenant transaction could not be opened.
 var deadLetterToken = syscap.NewSystemToken("record an event no subscription could handle")
 
-// Event is one thing that happened in one tenant.
-type Event struct {
-	// ID is the deduplication key. A handler that has already seen it has
-	// already done the work; see the package comment.
-	ID uuid.UUID `json:"id"`
-	// Name is "<module>.<something>", the module's namespace first.
-	Name string `json:"name"`
-	// TenantID is the tenant the event happened in. Consume opens the
-	// handler's transaction in it.
-	TenantID uuid.UUID `json:"tenantId"`
-	// Payload is whatever the publisher marshalled.
-	Payload json.RawMessage `json:"payload"`
-	// At is when the outbox row was written, which is when the state changed.
-	At time.Time `json:"at"`
-	// Actor is the user whose request caused this, and the nil UUID when
-	// nothing did: a periodic job, the relay, a handler reacting to another
-	// event. It is not a field a publisher fills in — kit/tenancy carries it on
-	// the request context and Publish reads it there — because "remember to
-	// pass the caller through" is the kind of instruction that is followed
-	// almost everywhere, and an audit trail with holes in it is worse than none.
-	Actor uuid.UUID `json:"actor"`
-}
+// Event is the portable envelope shared by the outbox and its transports.
+type Event = transport.Event
 
-// eventName is the grammar of an event name: the module's name, a dot, and a
-// lower-case path. kit/module checks a manifest's Events with ValidName, so the
-// grammar exists once and a name that passes review is a name Publish accepts.
-var eventName = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
-
-// ValidName reports whether name is a well-formed event name.
-func ValidName(name string) bool { return eventName.MatchString(name) }
+// ValidName applies the event grammar shared by manifests and transports.
+func ValidName(name string) bool { return transport.ValidName(name) }
 
 // Publish writes an event into the outbox inside tx. It is not a network call
 // and it cannot fail because a broker is down: the row commits with the state
@@ -147,26 +113,11 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 // acknowledgement of the event and rolls back with a redelivery.
 type Handler func(ctx context.Context, tx db.Tx[db.Tenant], ev Event) error
 
-// Transport carries committed events. Publish may return nil only after the
-// event is durably accepted by the broker or every local subscription has
-// completed handling or terminal recording. An error leaves the outbox pending.
-type Transport interface {
-	Publish(ctx context.Context, ev Event) error
-	// Subscribe delivers every event called name to sink until ctx is done.
-	// durable names the subscription, so a consumer that restarts resumes where
-	// it stopped rather than replaying from the beginning.
-	Subscribe(ctx context.Context, durable, name string, sink Sink) error
-}
+// Transport carries committed events through the portable delivery contract.
+type Transport = transport.Transport
 
-// Sink handles a delivery or records its terminal failure. Dead must return
-// persistence failures: a transport must retain recovery work until it succeeds.
-// Successful handling and terminal recording both finish the subscription's
-// claim, so acknowledgment loss does not repeat committed database handling.
-// External effects still require provider idempotency when a transaction fails.
-type Sink struct {
-	Handle func(ctx context.Context, ev Event) error
-	Dead   func(ctx context.Context, ev Event, cause error) error
-}
+// Sink handles deliveries and records terminal failures under that contract.
+type Sink = transport.Sink
 
 // Subscription is one module's interest in one event. A module lists its
 // subscriptions in its manifest; kit/app refuses to start when one names an
@@ -204,7 +155,7 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				// redelivered while its first attempt is still writing: the
 				// claim's row lock serializes the two, and the redelivery acks
 				// as soon as the first attempt commits. handlerTimeout is what
-				// bounds that wait. See claim, and jetstream.go's ackWait.
+				// bounds that wait. See claim, and providers/nats/jetstream.go's ackWait.
 				ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 				defer cancel()
 				// Only the id is known here. It is all kit/db needs to scope

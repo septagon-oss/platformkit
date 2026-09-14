@@ -27,6 +27,7 @@ done
 # Deps is the complete runtime closure, unlike Imports. Tests are deliberately
 # excluded: SQL fixtures and adapter conformance tests may need more than core.
 parts=(kit/entity kit/locale kit/flags kit/tenancy modules/task/domain ui/forms
+    kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
 metadata="$(cd "$root" && go list -deps -f '{{.ImportPath}}|{{.Standard}}|{{join .Deps " "}}|{{if .Module}}{{.Module.Path}}{{end}}' "${parts[@]/#/./}")"
@@ -49,7 +50,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
                 if (index(dep, p) != 1 && module[dep] != "" && contains(modules, module[dep])) bad = 0
             }
             # UUID exposes sql/driver values; that is not a database runner.
-            if (dep == "database/sql") bad = 1
+            if (dep == "database/sql" && mode != "sql") bad = 1
             if (dep ~ /^net\/http(\/|$)/ && mode != "provider") bad = 1
             if (bad) {
                 print "OUT OF BOUNDS: " name " transitively depends on " dep > "/dev/stderr"
@@ -62,12 +63,20 @@ printf '%s\n' "$metadata" | awk -F '|' '
         p = "github.com/septagon-oss/platformkit/"
         uuid = "github.com/google/uuid"
         identity = p "kit/tenancy " p "kit/internal/syscap"
+        delivery = p "kit/events/transport " p "kit/events/internal/delivery"
+        sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
+        outbox = identity " " delivery " " p "kit/db " p "kit/events/providers/memory"
         check("kit/entity", uuid)
         check("kit/locale", "")
         check("kit/flags", uuid)
         check("kit/tenancy", uuid " " p "kit/internal/syscap")
         check("modules/task/domain", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components maragu.dev/gomponents maragu.dev/gomponents/html")
+        check("kit/events/transport", uuid)
+        check("kit/events/providers/memory", uuid " " delivery)
+        check("kit/events", outbox, sql, "sql")
+        check("kit/events/providers/nats", p "kit/config " delivery,
+            uuid " github.com/nats-io/nats.go github.com/nats-io/nkeys github.com/nats-io/nuid github.com/klauspost/compress golang.org/x/crypto golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("kit/tenancy/providers/topaz", identity,
             uuid " github.com/aserto-dev/go-authorizer github.com/grpc-ecosystem/grpc-gateway/v2 golang.org/x/net golang.org/x/sys golang.org/x/text google.golang.org/genproto/googleapis/api google.golang.org/genproto/googleapis/rpc google.golang.org/grpc google.golang.org/protobuf", "provider")
         check("kit/flags/providers/openfeature", p "kit/flags", uuid " github.com/open-feature/go-sdk", "provider")

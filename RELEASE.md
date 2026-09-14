@@ -14,30 +14,25 @@ do not enable automation or grant runners publication credentials implicitly.
 
 ## Choose the compatible release line
 
-The published v1.0.0 establishes a stable API contract. Current development has
-breaking changes after that tag; do not label this rebuild a compatible v1 minor
-or patch release. The adopted direction is a `/v2` module/import migration before
-the next stable breaking release, under [ADR 0012](docs/adr/0012-independent-parts.md).
-No module rename or release is completed by this document. A proposed v1 release
-must instead restore and verify compatibility with the supported v1 API.
+The stable v1.0.0 tag establishes a public API contract. Current development has
+breaking changes, so the next stable breaking release requires a `/v2` module
+and import migration under [Go's versioning rules](https://go.dev/doc/modules/major-version).
+A v1 release must instead restore and verify v1 compatibility. The migration
+remains unfinished; pseudo-versions do not establish compatibility.
 
-Before preparing the major release, record the complete exported API review,
-consumer migration instructions, deprecation replacements and the v1 support and
-security-fix policy, including which versions remain supported and for how long.
-Run the [pinned API comparison](scripts/PUBLIC-API.md) on committed revisions:
+Use `Deprecated:` comments with working replacements and retain compatible
+delegation through the supported major line. Before a major release, record the
+complete API review, consumer migration instructions and v1 support/security-fix
+policy, including supported versions and dates. Run the [pinned API comparison](scripts/PUBLIC-API.md)
+on committed revisions and resolve its report before release. Review aliases,
+function/interface changes, wire, behavioral and database compatibility with real
+consumers; a type report alone cannot establish compatibility.
 
-```sh
-python3 scripts/check_public_api.py v1.0.0 HEAD
-```
-
-A report requiring review is an unresolved release prerequisite, not a passing
-CI gate. Review aliases and function/interface changes explicitly; also verify
-wire, behavior and database compatibility using real downstream consumers.
-When the `/v2` source migration is authorized, update imports, package guards and
+When the source migration is authorized, update imports, package guards and
 proofs together, then foundation, catalog and clients in dependency order.
 Prove each advertised public leaf with the [ordinary versioned consumer](ui/forms/testdata/standalone/README.md)
-after its candidate version is publicly resolvable. Preserve that receipt and the
-consumer source revision; an import proof does not establish product adoption.
+after its candidate version is publicly resolvable. Retain the receipt and
+consumer revision with the release evidence.
 
 ## Prepare the release
 
