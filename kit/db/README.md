@@ -13,8 +13,11 @@ exposing connections or a way around the scoped transaction API.
 
 The application maps optional `database.max_open_conns`, `max_idle_conns` and
 `conn_max_lifetime` fields to these limits. Omission retains the defaults. It
-validates them before migration or startup; worker/all roles require at least
-two open connections because scheduled jobs hold an advisory-lock connection.
+validates them before migration or startup. Every app role requires at least two
+open connections: HTTP handlers open detached transactions while retaining their
+authentication transaction; jobs hold an advisory-lock connection during work.
+This minimum does not prevent saturation by concurrent requests that each hold a
+connection while waiting for another; independent `OpenWithPool` still allows one.
 Budget database connections across all processes, including web/worker replicas,
 migrations and maintenance. A larger pool does not establish greater throughput;
 use the [tenant-work benchmark](../jobs/README.md) to measure a concrete workload.

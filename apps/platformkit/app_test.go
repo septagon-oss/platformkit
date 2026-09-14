@@ -590,6 +590,26 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	}
 }
 
+// The operator's tenant API and switcher open a separate system transaction
+// while authentication retains the request's tenant transaction.
+func TestWebPoolLeavesRoomForControlPlaneTransactions(t *testing.T) {
+	path, cfg := configure(t)
+	install(t, path)
+	cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns = new(2), new(0)
+	c := compose(cfg)
+	start(t, cfg, c.modules, app.Options{
+		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Role: app.Web, Log: quiet(),
+	})
+	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
+	admin.Timeout = 3 * time.Second
+	for _, path := range []string{tenantPath, "/admin/tenant/tenants"} {
+		if code, body := do(t, cfg, admin, http.MethodGet, acmeHost, path, ""); code != http.StatusOK || !strings.Contains(body, "Acme Corporation") {
+			t.Fatalf("two-connection web pool GET %s = %d %s", path, code, body)
+		}
+	}
+}
+
 // TestTheWorkerRoleSweepsEveryTenant is the other half of docs/adr/0005 and the
 // reason the tenant module implements jobs.TenantLister: a process that serves
 // no API still migrates, answers the two probes an orchestrator calls, and runs

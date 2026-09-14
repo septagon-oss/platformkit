@@ -131,8 +131,8 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if err := pool.Validate(); err != nil {
 		return nil, fmt.Errorf("app: %w", err)
 	}
-	if opts.Role != Web && pool.MaxOpenConns < 2 {
-		return nil, errors.New("app: database.max_open_conns must be at least two for worker/all: a scheduled job holds an advisory-lock connection while opening transactions")
+	if pool.MaxOpenConns < 2 {
+		return nil, errors.New("app: database.max_open_conns must be at least two: authenticated HTTP handlers open detached transactions, and scheduled jobs hold an advisory-lock connection")
 	}
 	if opts.Transport == nil {
 		broker, err := useJetStream(cfg.NATS.Transport, opts.Role)
