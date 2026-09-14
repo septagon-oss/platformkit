@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -108,10 +109,11 @@ func TestRetentionForgetsOnlyWhatIsOldEnough(t *testing.T) {
 
 	old := db.Now().AddDate(0, 0, -40)
 	recent := db.Now().AddDate(0, 0, -2)
+	recentID := uuid.New()
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		for _, ev := range []events.Event{
 			{ID: uuid.New(), Name: "task.task.created", At: old, Payload: []byte(`{}`)},
-			{ID: uuid.New(), Name: "task.task.created", At: recent, Payload: []byte(`{}`)},
+			{ID: recentID, Name: "task.task.created", At: recent, Payload: []byte(`{}`)},
 		} {
 			if err := svc.Record(ctx, tx, ev); err != nil {
 				return err
@@ -133,7 +135,15 @@ func TestRetentionForgetsOnlyWhatIsOldEnough(t *testing.T) {
 		t.Fatalf("count what is left: %v", err)
 	}
 	if kept != 1 {
-		t.Errorf("the trail kept %d rows, want the one inside the retention period", kept)
+		t.Fatalf("the trail kept %d rows, want the one inside the retention period", kept)
+	}
+	var keptID uuid.UUID
+	var keptAt time.Time
+	if err := admin.QueryRowContext(t.Context(), `SELECT event_id, occurred_at FROM audit_events`).Scan(&keptID, &keptAt); err != nil {
+		t.Fatalf("read the retained event: %v", err)
+	}
+	if keptID != recentID || !keptAt.Equal(recent) {
+		t.Errorf("retained %s at %s, want the recent event %s at %s", keptID, keptAt, recentID, recent)
 	}
 }
 

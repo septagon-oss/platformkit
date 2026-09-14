@@ -36,10 +36,14 @@ const bootstrapLock = "platformkit:bootstrap"
 // one. pg_advisory_xact_lock serializes them, so the second reads the first
 // one's tenant and refuses.
 func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn func(context.Context, db.Tx[db.System]) error) error {
+	pool := databasePool(cfg.Database)
+	if err := pool.Validate(); err != nil {
+		return fmt.Errorf("app: %w", err)
+	}
 	if err := db.Migrate(ctx, cfg.Database.MigrateURL, MigrationSources(mods)...); err != nil {
 		return err
 	}
-	conn, err := db.Open(ctx, cfg.Database.URL)
+	conn, err := db.OpenWithPool(ctx, cfg.Database.URL, pool)
 	if err != nil {
 		return err
 	}
@@ -54,4 +58,20 @@ func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn 
 		return fmt.Errorf("app: bootstrap: %w", err)
 	}
 	return nil
+}
+
+// databasePool resolves optional configuration at the application boundary.
+// The reusable DB owner remains the sole owner of default values and validation.
+func databasePool(cfg config.Database) db.Pool {
+	pool := db.DefaultPool()
+	if cfg.MaxOpenConns != nil {
+		pool.MaxOpenConns = *cfg.MaxOpenConns
+	}
+	if cfg.MaxIdleConns != nil {
+		pool.MaxIdleConns = *cfg.MaxIdleConns
+	}
+	if cfg.ConnMaxLifetime != nil {
+		pool.ConnMaxLifetime = *cfg.ConnMaxLifetime
+	}
+	return pool
 }

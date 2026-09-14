@@ -6,9 +6,28 @@ the modules and configuration its product needs. This page describes the
 implemented boundaries. Contribution policy lives in
 [CONTRIBUTING.md](CONTRIBUTING.md), and decisions live in [docs/adr](docs/adr/).
 
+## Entity and presentation contracts
+
+Follow the consumer as well as its schema; these paths share the existing Go owners.
+
+| Contract | Implementation and consumer |
+|---|---|
+| Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
+| Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`screens`](ui/screens/render.go) adapts authorized resources and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context. |
+| Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`; the native consumer owns its renderer. |
+| Component properties | [`Example.Describe`](ui/components/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
+| Design consumers | [`ui.Export`](ui/export.go) and [`ProjectProps`](ui/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
+
+Run `go test ./ui/screens -run 'ExampleFormExample|TestGeneratedForm'` to exercise
+the [form-to-export example](ui/screens/design_test.go) and its composition checks.
+This local check does not exercise a browser, native editor or business write.
+Entity fields are flat scalars/lists; nested answer maps need an adapter. Component
+Props describe presentation, while entity and answer contracts own data validity.
+A2UI/MCP adapters need separate protocol wiring; source export does not supply it.
+
 ## Provider boundaries
 
-Reuse the existing owned contracts: `events.Transport`, File `Storage`, Notification
+Reuse the existing owned contracts: [event delivery](kit/events/README.md), File `Storage`, Notification
 `Mailer` and `tenancy.Policy`. [NATS configuration](config.example.yaml) selects
 broker transport, authentication and trust at composition. [Page localization](ui/page/README.md)
 uses the portable [locale contracts](kit/locale/README.md); [xtext](kit/locale/providers/xtext/README.md) owns catalog formatting, with page aliases for existing callers.
@@ -32,6 +51,11 @@ Their package guides contain executable entry points and dependency limits.
 SQL transactions, authorization and business writes remain explicit composition
 responsibilities; an exported form or rule does not supply a complete service.
 The existing CRUD/page/Auth aliases and screens adapter delegate to these owners.
+[ADR 0012](docs/adr/0012-independent-parts.md) requires adopted-consumer benefit.
+The [package gate](scripts/check_packages.sh) checks transitive runtime imports;
+the [public example](ui/forms/testdata/standalone/README.md) proves ordinary
+versioned consumption without the application runtime. Neither proves scale or
+adoption by an external product.
 
 ## Start at the composition
 

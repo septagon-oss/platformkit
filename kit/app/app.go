@@ -26,6 +26,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
@@ -127,6 +128,13 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	default:
 		return nil, fmt.Errorf("app: role %q is not one of %q, %q or %q", opts.Role, Web, Worker, All)
 	}
+	pool := databasePool(cfg.Database)
+	if err := pool.Validate(); err != nil {
+		return nil, fmt.Errorf("app: %w", err)
+	}
+	if pool.MaxOpenConns < 2 {
+		return nil, errors.New("app: database.max_open_conns must be at least two: authenticated HTTP handlers open detached transactions, and scheduled jobs hold an advisory-lock connection")
+	}
 	if opts.Transport == nil {
 		broker, err := useJetStream(cfg.NATS.Transport, opts.Role)
 		if err != nil {
@@ -213,7 +221,7 @@ func (a *App) migrate(ctx context.Context) error {
 // openConn opens the application connection, as the role row-level security
 // binds.
 func (a *App) openConn(ctx context.Context) (*db.Conn, error) {
-	return db.Open(ctx, a.cfg.Database.URL)
+	return db.OpenWithPool(ctx, a.cfg.Database.URL, databasePool(a.cfg.Database))
 }
 
 // transport is the event transport this role uses.
@@ -228,7 +236,7 @@ func (a *App) transport() (events.Transport, error) {
 	if !broker {
 		return events.Memory(), nil
 	}
-	return events.ConnectJetStream(a.cfg.NATS)
+	return eventnats.Connect(a.cfg.NATS)
 }
 
 func useJetStream(mode string, role Role) (bool, error) {

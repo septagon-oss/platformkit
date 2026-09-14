@@ -26,7 +26,10 @@ func Retention(tenants jobs.TenantLister, days int) jobs.Job {
 		Name: "audit-retention",
 		Cron: retentionCron,
 		Run: func(ctx context.Context, conn *db.Conn) error {
-			return jobs.PerTenant(ctx, conn, tenants, func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
+			// Each trim holds one connection at a time; the scheduler holds another.
+			// Cap maintenance at four tenant callbacks without changing other jobs.
+			workers := max(1, min(4, conn.Stats().MaxOpenConnections-1))
+			return jobs.PerTenantConcurrent(ctx, conn, tenants, workers, func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
 				if err := trim(ctx, conn, days); err != nil {
 					return fmt.Errorf("audit: trim the trail of %s: %w", t.Slug, err)
 				}
@@ -39,7 +42,7 @@ func Retention(tenants jobs.TenantLister, days int) jobs.Job {
 // trim deletes this tenant's expired rows, a batch per transaction, until fewer
 // than a batch remain.
 //
-// jobs.PerTenant hands over a context carrying the tenant and no open
+// jobs.PerTenantConcurrent hands over a tenant context without an open
 // transaction, so every db.Run below opens its own: a tenant with a million
 // expired rows is a thousand short transactions rather than one long one, and a
 // worker asked to stop half way has already committed what it deleted. The

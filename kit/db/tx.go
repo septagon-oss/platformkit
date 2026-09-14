@@ -92,6 +92,16 @@ func current(ctx context.Context) (openTx, bool) {
 	return openTx{}, false
 }
 
+// HasTransaction reports both active and lazy transactions carried by ctx.
+// A background owner uses it to refuse accidentally sharing a caller's commit.
+func HasTransaction(ctx context.Context) bool {
+	if _, ok := pendingOf(ctx); ok {
+		return true
+	}
+	_, ok := current(ctx)
+	return ok
+}
+
 // Detached returns ctx with no transaction on it, so that a Run or a RunSystem
 // below it opens its own instead of joining — or refusing to join — the one the
 // caller already holds.

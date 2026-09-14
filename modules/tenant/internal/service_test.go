@@ -113,7 +113,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 // is the same guarantee every other table gives, reached by naming the row
 // instead of a column on it.
 func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t)
 	svc := internal.NewService(nil)
 
 	var acme, globex *contracts.Tenant
@@ -146,18 +146,24 @@ func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 		}
 		// And it may not write them: the control plane is changed through the
 		// routes that hold the capability, not from inside a tenant.
-		err := tx.DB().Exec("UPDATE tenants SET name = 'Stolen' WHERE id = ?", globex.ID).Error
-		if err == nil {
-			var name string
-			_ = tx.DB().Raw("SELECT name FROM tenants WHERE id = ?", globex.ID).Row().Scan(&name)
-			if name == "Stolen" {
-				t.Error("a tenant transaction renamed another tenant")
-			}
+		result := tx.DB().Exec("UPDATE tenants SET name = 'Stolen' WHERE id = ?", globex.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 0 {
+			t.Error("a tenant transaction updated another tenant's row")
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("the tenant transaction: %v", err)
+	}
+	var name string
+	if err := admin.QueryRowContext(t.Context(), "SELECT name FROM tenants WHERE id = $1", globex.ID).Scan(&name); err != nil {
+		t.Fatalf("independently read the other tenant: %v", err)
+	}
+	if name != "Globex" {
+		t.Errorf("the other tenant was renamed to %q", name)
 	}
 }
 

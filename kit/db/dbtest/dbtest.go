@@ -37,14 +37,20 @@ import (
 // that quietly skips the isolation tests proves nothing.
 func URLs(t *testing.T) (adminURL, appURL string) {
 	t.Helper()
+	return URLsFor(t)
+}
+
+// URLsFor is URLs for tests and benchmarks, with the same automatic cleanup.
+func URLsFor(t testing.TB) (adminURL, appURL string) {
+	t.Helper()
 	ctx := t.Context()
 	baseAdmin := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
 	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
 	name := schemaName(t.Name())
 	schema := quote(name)
-	role := quote(RoleOf(t, baseApp))
+	role := quote(roleOf(t, baseApp))
 
-	admin := Open(t, baseAdmin)
+	admin := OpenFor(t, baseAdmin)
 	run := func(query string) {
 		t.Helper()
 		if _, err := admin.ExecContext(ctx, query); err != nil {
@@ -93,6 +99,12 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 // Open is a database/sql pool on rawURL, closed when the test ends.
 func Open(t *testing.T, rawURL string) *sql.DB {
 	t.Helper()
+	return OpenFor(t, rawURL)
+}
+
+// OpenFor is Open for tests and benchmarks, with the same automatic cleanup.
+func OpenFor(t testing.TB, rawURL string) *sql.DB {
+	t.Helper()
 	pool, err := sql.Open("pgx", rawURL)
 	if err != nil {
 		t.Fatalf("dbtest: open %q: %v", rawURL, err)
@@ -104,6 +116,11 @@ func Open(t *testing.T, rawURL string) *sql.DB {
 // RoleOf is the login role of a connection URL, so a test names the same role
 // the app connects as instead of hard-coding it a second time.
 func RoleOf(t *testing.T, rawURL string) string {
+	t.Helper()
+	return roleOf(t, rawURL)
+}
+
+func roleOf(t testing.TB, rawURL string) string {
 	t.Helper()
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -127,7 +144,7 @@ func RoleOf(t *testing.T, rawURL string) string {
 // package running beside it, and answers whatever they happen to be doing. With
 // this, `application_name = current_setting('search_path')` on the owner
 // connection names exactly this test's own backends, and nobody else's.
-func withSchema(t *testing.T, rawURL, schema string) string {
+func withSchema(t testing.TB, rawURL, schema string) string {
 	t.Helper()
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -140,7 +157,7 @@ func withSchema(t *testing.T, rawURL, schema string) string {
 	return u.String()
 }
 
-func mustEnv(t *testing.T, name string) string {
+func mustEnv(t testing.TB, name string) string {
 	t.Helper()
 	v := os.Getenv(name)
 	if v == "" {

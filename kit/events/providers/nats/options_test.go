@@ -1,4 +1,4 @@
-package events_test
+package nats_test
 
 import (
 	"bufio"
@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/config"
-	"github.com/septagon-oss/platformkit/kit/events"
+	provider "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 )
 
 func TestOwnedNATSProviderUsesPrivateTLSAndCredentials(t *testing.T) {
@@ -78,7 +78,7 @@ func TestOwnedNATSProviderUsesPrivateTLSAndCredentials(t *testing.T) {
 				_, port, _ := net.SplitHostPort(listener.Addr().String())
 				settings.URL = "tls://localhost:" + port
 			}
-			transport, err := events.ConnectJetStream(settings)
+			transport, err := provider.Connect(settings)
 			if err == nil || transport != nil || strings.Contains(err.Error(), settings.Password) {
 				t.Fatal("refused authentication must return a credential-free error")
 			}
@@ -111,7 +111,7 @@ func TestOwnedNATSProviderRefusesMissingAndInvalidTrustRoots(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		transport, err := events.ConnectJetStream(config.NATS{URL: "tls://broker.invalid:4222", CACert: missing})
+		transport, err := provider.Connect(config.NATS{URL: "tls://broker.invalid:4222", CACert: missing})
 		if err == nil || transport != nil || strings.Contains(err.Error(), "credential-canary") {
 			t.Fatal("unreadable trust roots must fail without exposing input")
 		}

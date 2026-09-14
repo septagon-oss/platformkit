@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,15 +26,23 @@ var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
 // what entitles a test elsewhere to use the memory one: an interface is
 // justified by a passing fake, and this is the passing.
 func TestBothLimitersAgree(t *testing.T) {
-	for name, build := range map[string]func(*testing.T) (limit.Limiter, context.Context){
+	for implementation, build := range map[string]func(*testing.T) (limit.Limiter, context.Context){
 		"memory":   inMemory,
 		"postgres": inPostgres,
 	} {
-		t.Run(name, func(t *testing.T) {
+		t.Run(implementation, func(t *testing.T) {
 			for name, run := range cases {
 				t.Run(name, func(t *testing.T) {
-					l, ctx := build(t)
-					run(t, l, ctx)
+					runCase := func(t *testing.T) {
+						l, ctx := build(t)
+						run(t, l, ctx)
+					}
+					if implementation == "memory" {
+						// Only the in-process limiter shares synctest's clock.
+						synctest.Test(t, runCase)
+					} else {
+						runCase(t)
+					}
 				})
 			}
 		})

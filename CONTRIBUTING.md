@@ -4,24 +4,41 @@
 [ARCHITECTURE.md](ARCHITECTURE.md) explains the implementation and ownership
 boundaries. This guide describes how to make and review a change.
 
-## Begin with the owning behavior
+## Trace an existing consumer
 
-Inspect the working tree before editing. Locate the module, UI package or
-runtime boundary that owns the task, then read its relevant contracts and
-tests. Work in the existing checkout and preserve unrelated changes.
+Before architecture, consolidation or dependency replacement work, trace one
+existing consumer. For UI, start at the
+[entity and presentation map](ARCHITECTURE.md#entity-and-presentation-contracts).
 
-A module's `contracts/` defines its public behavior; `internal/` implements
-it, and `module.go` declares its dependencies and manifest.
-[modules/task](modules/task/) is the current example. Specify the new
-capability's own contracts and independent conformance cases before filling
-in its implementation. Import other modules only through their contracts.
+1. Resolve the consumer's actual dependency and composition, including local
+   replacements. Inspect that revision; a sibling checkout may differ from what
+   the application uses.
+2. Follow the contract through its implementation, registration and caller to
+   the visible result. Read the relevant tests. Confirm names and comments against
+   the wired path before claiming a capability exists or is missing.
+3. Run a focused test or small reproduction at that boundary. Identify the behavior
+   existing code cannot provide, then compare reuse, extension and an external
+   dependency before proposing another abstraction.
 
-Use generated screens for record management and explicitly composed pages
-for custom interactions. Extend the existing composition path. Do not add
-a parallel registry, configuration namespace or generated instruction set.
-Keep a business decision in one implementation; a fake may share pure
-decisions with it, but its conformance cases need independently specified
-expected results.
+Record the resolved revision, owner, consumer, check result and specific gap in
+the review or design note. Distinguish implemented, planned and unverified behavior;
+state the search scope when reporting something absent.
+
+Specify contracts and independent conformance cases before implementation. Reuse
+the existing composition and [module boundaries](ARCHITECTURE.md#start-at-the-composition).
+Do not add parallel registries, configuration namespaces or instruction sets.
+
+Public packages must solve a named problem outside PlatformKit and simplify an
+existing PlatformKit consumer. Apply the trace above and record its code,
+dependencies or composition steps before and after the change. Keep one
+implementation: migrate the traced caller and remove the replaced logic in the
+same dependent delivery.
+A compatible alias or delegate may preserve an existing public API. Publication,
+moving files and synthetic examples do not establish adopted consumer reduction.
+Show ordinary versioned consumption with an [executable public example](ui/forms/testdata/standalone/README.md),
+explicit optional providers, dependency limits, error behavior and compatibility
+expectations. Reuse existing checks and identify any pending migration.
+[ADR 0012](docs/adr/0012-independent-parts.md) records the decision and its rationale.
 
 ## Make the change readable
 
@@ -45,6 +62,9 @@ an installation's applied migration history.
 ## Verify at the relevant boundary
 
 Use the Go version in [go.mod](go.mod), Make and Docker with Compose.
+Make selects that exact Go toolchain for its commands and child scripts, including
+the formatter; an installed newer Go does not change the verification version.
+The Go command downloads the selected toolchain if it is not already available.
 From the repository root, start the development PostgreSQL and NATS services:
 
 ```sh
@@ -57,12 +77,20 @@ Set `PLATFORMKIT_PG_PORT` and `PLATFORMKIT_NATS_PORT` if the default ports are
 in use, retaining those values for every command. Never use production test
 credentials: tests create and remove database schemas. `make down` deletes the
 Compose volumes as well as stopping services; it is not a test step.
-For application development, `go run ./apps/platformkit start --addr 127.0.0.1:8080`
-uses the [local setup](README.md#try-it-locally) with its own database.
+Use the [local setup](README.md#try-it-locally) for application development.
 `make run` instead uses `config.yaml`, copied from `config.example.yaml` when absent.
 
-`make check` runs build, vet, formatting, real-service tests, source and
-package budgets, imports and tenant-setting checks.
+`make test` uses pinned gotestsum with Go's package cache. Focus a case with
+`make test TEST_PACKAGES=./modules/task/internal TEST_FLAGS='-run TestConcurrentTaskCommands'`.
+`make test TEST_OPTIONS=--watch` waits for Go edits, then checks the selected
+packages; keep the default `./...` to include consumers. Rerun explicitly after
+file deletion, module, fixture or asset changes. For JSON/JUnit and slow-test
+reports, use the gotestsum options documented beside `TEST_OPTIONS` in [Makefile](Makefile).
+The cache cannot observe database or NATS state; after external-input changes,
+run `make test TEST_FLAGS=-count=1`. See [native watch](tools/designexport/openpencil/README.md).
+
+`make check` always runs fresh tests across all packages, regardless of local
+filters, plus build, vet, formatting, budgets, imports and tenant-setting checks.
 `make e2e` adds browser journeys. Both pass before pushing; `make check`
 passes before committing.
 
@@ -76,8 +104,8 @@ make e2e
 ```
 
 Browser installation may require permission to install system packages.
-The [test script](scripts/e2e.sh) creates and removes its own database, uploads
-and temporary browser artifacts. Concurrent runs need distinct
+The [test script](scripts/e2e.sh) removes its database and uploads, retaining failed
+Playwright results at the printed temporary path. Concurrent runs need distinct
 `PLATFORMKIT_E2E_PORT` values. [Makefile](Makefile) owns the command definitions;
 [RELEASE.md](RELEASE.md) describes the separate publication procedure.
 

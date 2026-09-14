@@ -13,7 +13,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
-	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/contracts/tasktest"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
@@ -31,7 +30,7 @@ var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 func TestServiceConforms(t *testing.T) {
 	tasktest.RunService(t, func(t *testing.T, run func(tasktest.Fixture)) {
 		_, conn := dbtest.Schema(t)
-		svc := task.NewService()
+		svc := internal.NewService()
 		// One transaction per case, rolled back on the way out: a test keeps
 		// nothing, and the commands are called exactly as a request handler
 		// calls them — inside a transaction somebody else opened.
@@ -147,12 +146,23 @@ func TestARolledBackCommandLeavesNothing(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	_ = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		if _, err := svc.Assign(ctx, tx, id, uuid.New()); err != nil {
+	who := uuid.New()
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if _, err := svc.Assign(ctx, tx, id, who); err != nil {
 			return err
 		}
-		return context.Canceled // whatever went wrong after the command
+		changed, err := crud.Get[*contracts.Task](tx, id)
+		if err != nil {
+			return err
+		}
+		if changed.Status != contracts.StatusAcknowledged || changed.AssigneeID == nil || *changed.AssigneeID != who {
+			t.Fatal("the assignment was not stored before the intentional rollback")
+		}
+		return errRollback
 	})
+	if !errors.Is(err, errRollback) {
+		t.Fatalf("assignment rollback = %v, want the failure after a successful command", err)
+	}
 
 	var status string
 	var events int

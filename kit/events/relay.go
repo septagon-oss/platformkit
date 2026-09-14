@@ -8,16 +8,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events/internal/delivery"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 )
 
 // batch bounds one relay pass. Small enough that a pass is short and its rows
 // are locked briefly, large enough that a burst drains in a few ticks.
 const batch = 100
-
-// keep is how long a published row survives, for replay and for answering
-// "did that event go out?". After that the purge removes it.
-const keep = 7 * 24 * time.Hour
 
 // The relay and the purge read every tenant's rows, which is the whole reason
 // the capability exists; both reasons are logged wherever a system transaction
@@ -108,7 +105,7 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 // The database clock supplies the cutoff for all workers.
 func Purge(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, purgeToken, func(ctx context.Context, tx db.Tx[db.System]) error {
-		age := fmt.Sprintf("%d seconds", int(keep.Seconds()))
+		age := fmt.Sprintf("%d seconds", int(delivery.Keep.Seconds()))
 		if err := tx.DB().Exec("DELETE FROM "+table+
 			" WHERE published_at IS NOT NULL AND published_at < now() - ?::interval", age).Error; err != nil {
 			return fmt.Errorf("events: purge: %w", err)

@@ -135,11 +135,10 @@ func TestTypographyConfigurationReachesRuntimeAndExportWithoutChangingComponents
 		t.Fatal("typography configuration changed component contracts, assets or font-delivery policy")
 	}
 	for _, palette := range after.Themes {
-		for _, token := range palette.Tokens {
-			if token.Name == "--pk-font-display" && (token.Value != `"Customer Display", serif` ||
-				!strings.Contains(after.CSS, token.Name+": "+token.Value+";")) {
-				t.Fatalf("exported typography disagrees with the source stylesheet: %+v", token)
-			}
+		index := slices.IndexFunc(palette.Tokens, func(token design.Token) bool { return token.Name == "--pk-font-display" })
+		if index < 0 || palette.Tokens[index].Value != `"Customer Display", serif` ||
+			!strings.Contains(after.CSS, `--pk-font-display: "Customer Display", serif;`) {
+			t.Fatalf("exported typography is missing or disagrees with the source stylesheet: %+v", palette)
 		}
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -240,8 +241,36 @@ var listToken = syscap.NewSystemToken("list the tenants for periodic work")
 func PerTenant(ctx context.Context, conn *db.Conn, lister TenantLister,
 	fn func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error,
 ) error {
+	return PerTenantConcurrent(ctx, conn, lister, 1, fn)
+}
+
+// PerTenantConcurrent opts into at most workers concurrent tenant callbacks.
+// Callbacks and their providers must support concurrent use. One worker keeps
+// lister order and runs on the caller's goroutine, as PerTenant always has.
+// Other worker counts use a fixed pool, not one goroutine per tenant.
+//
+// ctx must carry no open or lazy transaction: listing commits before callbacks
+// start, and each callback owns its transactions. Failures retain lister order
+// in the joined error; one tenant's failure never cancels the others. Cancellation
+// stops dispatch, waits for active callbacks, and is returned with their errors.
+// Callbacks must observe ctx for cancellation to bound shutdown time.
+func PerTenantConcurrent(ctx context.Context, conn *db.Conn, lister TenantLister, workers int,
+	fn func(context.Context, *db.Conn, tenancy.Tenant) error,
+) error {
+	if workers < 1 {
+		return errors.New("jobs: tenant workers must be positive")
+	}
+	if fn == nil {
+		return errors.New("jobs: tenant callback is required")
+	}
+	if db.HasTransaction(ctx) {
+		return fmt.Errorf("jobs: tenant work requires a context without a transaction: %w", db.ErrScopeMismatch)
+	}
 	if lister == nil {
 		return errors.New("jobs: this job walks every tenant and the application was given no TenantLister")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	var tenants []tenancy.Tenant
 	err := db.RunSystem(ctx, conn, listToken, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -252,13 +281,44 @@ func PerTenant(ctx context.Context, conn *db.Conn, lister TenantLister,
 	if err != nil {
 		return fmt.Errorf("jobs: list the tenants: %w", err)
 	}
-	var failed []error
-	for _, t := range tenants {
-		if err := fn(tenancy.WithTenant(ctx, t), conn, t); err != nil {
-			slog.ErrorContext(ctx, "jobs: a tenant failed; continuing with the rest",
-				"tenant", t.Slug, "error", err)
-			failed = append(failed, fmt.Errorf("tenant %s: %w", t.Slug, err))
+	failed := make([]error, len(tenants))
+	run := func(i int) {
+		if ctx.Err() != nil {
+			return
+		}
+		tenant := tenants[i]
+		if err := fn(tenancy.WithTenant(ctx, tenant), conn, tenant); err != nil {
+			slog.ErrorContext(ctx, "jobs: a tenant failed; continuing with the rest", "tenant", tenant.Slug, "error", err)
+			failed[i] = fmt.Errorf("tenant %s: %w", tenant.Slug, err)
 		}
 	}
-	return errors.Join(failed...)
+	if workers == 1 {
+		for i := range tenants {
+			if ctx.Err() != nil {
+				break
+			}
+			run(i)
+		}
+	} else {
+		indices := make(chan int)
+		var work sync.WaitGroup
+		for range min(workers, len(tenants)) {
+			work.Go(func() {
+				for i := range indices {
+					run(i)
+				}
+			})
+		}
+	dispatch:
+		for i := range tenants {
+			select {
+			case <-ctx.Done():
+				break dispatch
+			case indices <- i:
+			}
+		}
+		close(indices)
+		work.Wait()
+	}
+	return errors.Join(append(failed, ctx.Err())...)
 }

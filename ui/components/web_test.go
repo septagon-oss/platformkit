@@ -1044,10 +1044,7 @@ func TestRenderedClassesAreDeclared(t *testing.T) {
 	if err != nil {
 		t.Fatalf("style.For over declared lists: %v", err)
 	}
-	css, err := sheet.CSS(), error(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	css := sheet.CSS()
 
 	html := renderAll(t)
 	seen := map[string]bool{}
@@ -1074,7 +1071,8 @@ func TestRenderedClassesAreDeclared(t *testing.T) {
 		// The class must be in the derived sheet, not merely resolvable —
 		// prefix-escaped for selector matching.
 		esc := strings.NewReplacer(":", "\\:", "/", "\\/", "[", "\\[", "]", "\\]", ".", "\\.").Replace(class)
-		if !strings.Contains(css, "."+esc) {
+		selector := regexp.MustCompile(regexp.QuoteMeta("."+esc) + `(?:[\s:{,.>+~]|$)`)
+		if !selector.MatchString(css) {
 			missing = append(missing, class+" (not in For(ClassLists()) sheet)")
 		}
 	}
@@ -1086,26 +1084,36 @@ func TestRenderedClassesAreDeclared(t *testing.T) {
 
 func TestAccessibilityStructure(t *testing.T) {
 	t.Parallel()
-	html := renderAll(t)
-	for _, want := range []string{
-		`aria-invalid="true"`,                    // errored input
-		`aria-describedby="pk-input-slug-error"`, // error linkage
-		`for="pk-input-email"`,                   // label association
-		`role="alert"`,                           // severe alert interrupts
-		`role="status"`,                          // polite alert does not
-		`aria-current="page"`,                    // breadcrumb + pagination current
-		`aria-label="Breadcrumb"`,                // named navigation landmarks
-		`aria-label="Pagination, twelve pages"`,  // one name per landmark, so no two are alike
-		`aria-label="Sidebar example, collapsed"`,
-		`aria-selected="true"`,      // active tab
-		`aria-hidden="true"`,        // decorative icons hidden
-		`rel="noopener noreferrer"`, // external link safety
-		`aria-busy="true"`,          // loading button
-		`scope="col"`,               // table headers
+	examples := map[string]Example{}
+	for _, example := range Gallery() {
+		examples[example.ID] = example
+	}
+	for id, wants := range map[string][]string{
+		"pk-ui.component.input/invalid":      {`aria-invalid="true"`, `aria-describedby="pk-input-slug-error"`},
+		"pk-ui.component.input/email":        {`for="pk-input-email"`},
+		"pk-ui.component.alert/danger":       {`role="alert"`},
+		"pk-ui.component.alert/info":         {`role="status"`},
+		"pk-ui.component.breadcrumb/default": {`aria-current="page"`, `aria-label="Breadcrumb"`},
+		"pk-ui.component.pagination/default": {`aria-current="page"`, `aria-label="Pagination, twelve pages"`},
+		"pk-ui.component.sidebar/collapsed":  {`aria-label="Sidebar example, collapsed"`},
+		"pk-ui.component.tabs/default":       {`aria-selected="true"`},
+		"pk-ui.component.button/with-icon":   {`aria-hidden="true"`},
+		"pk-ui.component.link/external":      {`rel="noopener noreferrer"`},
+		"pk-ui.component.button/loading":     {`aria-busy="true"`},
+		"pk-ui.component.table/default":      {`scope="col"`},
 	} {
-		if !strings.Contains(html, want) {
-			t.Errorf("rendered gallery missing accessibility structure %s", want)
-		}
+		t.Run(id, func(t *testing.T) {
+			example, ok := examples[id]
+			if !ok {
+				t.Fatalf("the gallery is missing %s", id)
+			}
+			html := renderNodeToString(t, example.Node)
+			for _, want := range wants {
+				if !strings.Contains(html, want) {
+					t.Errorf("rendered example missing accessibility structure %s", want)
+				}
+			}
+		})
 	}
 }
 

@@ -99,7 +99,7 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 
 	// An upload in a transaction that then fails.
 	var orphan string
-	_ = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
 			Name: "notes.txt", ContentType: "text/plain", Declared: -1,
 			Body: strings.NewReader("hello"),
@@ -108,8 +108,11 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 			return err
 		}
 		orphan = f.StorageKey
-		return context.Canceled // whatever went wrong after the command
+		return errRollback
 	})
+	if !errors.Is(err, errRollback) {
+		t.Fatalf("upload rollback = %v, want the failure after a successful command", err)
+	}
 	var rows int
 	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM files`).Scan(&rows); err != nil {
 		t.Fatalf("count the rows: %v", err)
@@ -123,7 +126,7 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 
 	// A delete in a transaction that then fails.
 	var kept string
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
 			Name: "keep.txt", ContentType: "text/plain", Declared: -1,
 			Body: strings.NewReader("keep me"),
@@ -134,7 +137,7 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	_ = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var f contracts.File
 		if err := tx.DB().Where("storage_key = ?", kept).Take(&f).Error; err != nil {
 			return err
@@ -142,8 +145,14 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 		if _, err := svc.Delete(ctx, tx, f.ID); err != nil {
 			return err
 		}
-		return context.Canceled
+		if _, err := crud.Get[*contracts.File](tx, f.ID); !errors.Is(err, crud.ErrNotFound) {
+			t.Fatalf("the deleted row before rollback = %v, want ErrNotFound", err)
+		}
+		return errRollback
 	})
+	if !errors.Is(err, errRollback) {
+		t.Fatalf("delete rollback = %v, want the failure after a successful command", err)
+	}
 	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM files`).Scan(&rows); err != nil {
 		t.Fatalf("count the rows: %v", err)
 	}

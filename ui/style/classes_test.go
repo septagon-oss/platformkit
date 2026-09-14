@@ -300,12 +300,19 @@ func TestColorCoverageInCompileTables(t *testing.T) {
 
 func TestAllSpacingsHaveRoles(t *testing.T) {
 	for _, s := range style.AllSpacings() {
-		// Numeric / fractional steps support all roles.
-		// SFull/SAuto may not make sense for some roles but must not panic.
-		_ = style.New().PaddingX(s).Compile()
-		_ = style.New().Margin(s).Compile()
-		_ = style.New().Width(s).Compile()
-		_ = style.New().Gap(s).Compile()
+		for _, role := range []struct {
+			prefix string
+			list   style.ClassList
+		}{
+			{"px-", style.New().PaddingX(s)},
+			{"m-", style.New().Margin(s)},
+			{"w-", style.New().Width(s)},
+			{"gap-", style.New().Gap(s)},
+		} {
+			if got, want := role.list.Compile(), role.prefix+string(s); got != want {
+				t.Errorf("spacing %q: got %q, want %q", s, got, want)
+			}
+		}
 	}
 }
 

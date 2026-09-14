@@ -12,6 +12,28 @@ tests source and local editor images without publishing. Before creating a
 release, agree its publication mechanism and destinations with the owner;
 do not enable automation or grant runners publication credentials implicitly.
 
+## Choose the compatible release line
+
+The stable v1.0.0 tag establishes a public API contract. Current development has
+breaking changes, so the next stable breaking release requires a `/v2` module
+and import migration under [Go's versioning rules](https://go.dev/doc/modules/major-version).
+A v1 release must instead restore and verify v1 compatibility. The migration
+remains unfinished; pseudo-versions do not establish compatibility.
+
+Use `Deprecated:` comments with working replacements and retain compatible
+delegation through the supported major line. Before a major release, record the
+complete API review, consumer migration instructions and v1 support/security-fix
+policy, including supported versions and dates. Run the [pinned API comparison](scripts/PUBLIC-API.md)
+on committed revisions and resolve its report before release. Review aliases,
+function/interface changes, wire, behavioral and database compatibility with real
+consumers; a type report alone cannot establish compatibility.
+
+When the source migration is authorized, update imports, package guards and
+proofs together, then foundation, catalog and clients in dependency order.
+Prove each advertised public leaf with the [ordinary versioned consumer](ui/forms/testdata/standalone/README.md)
+after its candidate version is publicly resolvable. Retain the receipt and
+consumer revision with the release evidence.
+
 ## Prepare the release
 
 Work in this repository with a clean tree. Review the changes, dependency
@@ -50,12 +72,13 @@ The actual source and package checks are already part of `make check`.
 
 Confirm the release commit has reached `main`, check it out with a clean tree
 and choose the reviewed version. Inspect the actual push destinations before
-publishing. The following uses `v1.2.3` as an example, not as the next release:
+publishing. The following uses `v2.0.0` only as an example after the major-version migration
+and release review have completed:
 
 ```sh
 git remote get-url --push --all origin
-git tag -s v1.2.3 -m "PlatformKit 1.2.3"
-git push origin refs/tags/v1.2.3
+git tag -s v2.0.0 -m "PlatformKit 2.0.0"
+git push origin refs/tags/v2.0.0
 ```
 
 Use an annotated tag with `-a` only if the owner explicitly chooses an unsigned

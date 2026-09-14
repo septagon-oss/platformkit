@@ -15,10 +15,16 @@ const scripts = readFileSync(resolve(root, 'ui/ui.go'), 'utf8')
   .match(/"[^"]+\.js"/g)!
   .map(name => `<script defer src="/admin/assets/js/${JSON.parse(name)}"></script>`).join('');
 
+const pageFaults = new WeakMap<Page, string[]>();
+test.beforeEach(({ page }) => {
+  const faults: string[] = [];
+  pageFaults.set(page, faults);
+  page.on('pageerror', error => faults.push(error.message));
+  page.on('response', response => { if (response.request().resourceType() === 'script' && response.status() !== 200) faults.push(`${response.status()} ${response.url()}`); });
+});
+test.afterEach(({ page }) => expect(pageFaults.get(page)).toEqual([]));
+
 async function specimen(page: Page, id: string, before = '', after = '', props?: Record<string, unknown>) {
-	const faults: string[] = [];
-	page.on('pageerror', error => faults.push(error.message));
-	page.on('response', response => { if (response.request().resourceType() === 'script' && response.status() !== 200) faults.push(`${response.status()} ${response.url()}`); });
   const source = props ? JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', id, '--props'], {
     cwd: root, encoding: 'utf8', input: JSON.stringify(props), maxBuffer: 8 * 1024 * 1024,
   })) : snapshot;
@@ -31,7 +37,6 @@ async function specimen(page: Page, id: string, before = '', after = '', props?:
       ${before}${example.html}${after}</body></html>`,
   }));
   await page.goto('/__ui_specimen');
-	expect(faults).toEqual([]);
 }
 
 test('panel tabs skip disabled items, navigate by keyboard, and load a panel once', async ({ page }) => {

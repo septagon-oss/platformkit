@@ -38,6 +38,13 @@ database:
   # Migrations connect as the owner, which holds the DDL rights.
   migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable&connect_timeout=5"
 
+  # Per-process pool limits; omitted values retain 16 open, 4 idle, 30m.
+  # Account for every replica. All app roles require at least two connections:
+  # HTTP detached transactions and job advisory locks need a second connection.
+  # max_open_conns: 16
+  # max_idle_conns: 4
+  # conn_max_lifetime: 30m
+
 nats:
   # Empty preserves role defaults: all uses memory; worker uses JetStream.
   # Set jetstream to share events between replicas of role all. Explicit memory

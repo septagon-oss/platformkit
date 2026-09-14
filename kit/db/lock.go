@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
+	"time"
 )
 
 // TryLock takes a Postgres advisory lock named name, so that at most one
@@ -29,6 +31,8 @@ func TryLock(ctx context.Context, c *Conn, name string) (unlock func(), ok bool,
 	}
 	var taken bool
 	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext($1)::bigint)", name).Scan(&taken); err != nil {
+		// The server may have acquired the session lock before the response failed.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		_ = conn.Close()
 		return nil, false, fmt.Errorf("db: lock %q: %w", name, err)
 	}
@@ -38,9 +42,14 @@ func TryLock(ctx context.Context, c *Conn, name string) (unlock func(), ok bool,
 	}
 	return func() {
 		// The unlock runs on the connection that took the lock, and runs even
-		// when the job's context is already cancelled; returning the connection
-		// to the pool while it still holds a lock would poison it.
-		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock(hashtext($1)::bigint)", name)
+		// when the job's context is already cancelled. Bound that independent
+		// cleanup, and discard a session whose release cannot be confirmed.
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		var released bool
+		if err := conn.QueryRowContext(cleanup, "SELECT pg_advisory_unlock(hashtext($1)::bigint)", name).Scan(&released); err != nil || !released {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
 		_ = conn.Close()
 	}, true, nil
 }

@@ -123,8 +123,8 @@ func cases() map[string]func(*testing.T, Fixture) {
 			switch {
 			case row.Size != int64(len(hello)):
 				t.Errorf("the size is %d, want %d: it is what arrived and not what anybody said", row.Size, len(hello))
-			case len(row.SHA256) != 64:
-				t.Errorf("the digest is %q, want a hex SHA-256", row.SHA256)
+			case row.SHA256 != "de87f09feb74b4bc17d5209e2d50276aae7fc6f8f0bb7b84a111e6f81a3a79c1":
+				t.Errorf("the digest is %q, want the SHA-256 of hello, files followed by a newline", row.SHA256)
 			case row.StorageKey == "" || row.StorageKey == row.ID.String():
 				t.Errorf("the storage key is %q; it is a UUID of its own", row.StorageKey)
 			case row.Visibility != contracts.VisibilityPrivate:
@@ -144,6 +144,10 @@ func cases() map[string]func(*testing.T, Fixture) {
 				t.Error("two rows share a storage key; a key is minted per upload")
 			case first.SHA256 != second.SHA256:
 				t.Error("the same bytes hashed differently")
+			}
+			different := stored(t, f, "different bytes\n")
+			if different.SHA256 != "78442dda3e5642ce405f6dc6a36797ab67d4c6bef4f46eb5e19d2c66d7f1595c" || different.SHA256 == first.SHA256 {
+				t.Errorf("different content has digest %q, want its own SHA-256", different.SHA256)
 			}
 		},
 
