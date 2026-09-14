@@ -115,7 +115,7 @@ func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Ha
 		} else {
 			body = s.Frame(ctx, r, v.Body)
 		}
-		out, err := httpx.Document(Document(s.Chrome, r, v, body), status)
+		out, err := Render(Document(s.Chrome, r, v, body), status)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +150,7 @@ func read(ctx context.Context, c Chrome) Request {
 		r.Path = req.URL.Path
 	}
 	if c.Theme == "" {
-		r.Inline = []g.Node{httpx.Script(ctx, beforePaint)}
+		r.Inline = []g.Node{InlineScript(ctx, beforePaint)}
 	}
 	return r
 }

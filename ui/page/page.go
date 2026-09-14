@@ -10,8 +10,9 @@
 // of a shell shares, built once at mount. Request is what a render may know
 // about the caller, read once by Serve. View is what a handler returns. Frame
 // is how a shell arranges a body: the admin's sidebar, the shop's bar. Document
-// puts them together. The one place that reads a context.Context or writes a
-// response is Serve.
+// puts them together, and Render turns the result into the bytes kit/httpx
+// serves. The places that read a context.Context are Serve and InlineScript,
+// which needs the request's nonce; the one place that writes a response is Serve.
 package page
 
 import (
@@ -70,7 +71,7 @@ type Request struct {
 	// request, including its selected content language and x/text formatter.
 	Locale *Locale
 	// Inline are the nonce-bearing inline scripts this response may run, built
-	// by Serve with httpx.Script. A renderer cannot make one: it has no nonce.
+	// by Serve with InlineScript. A renderer cannot make one: it has no nonce.
 	Inline []g.Node
 }
 

@@ -142,7 +142,7 @@ func galleryPreview(book ui.Storybook, example components.Example, mode string) 
 		h.Script(h.Src(assetPrefix+"/js/confirm.js"), g.Attr("defer")),
 		h.Script(h.Src(assetPrefix+"/js/gallery-preview.js"), g.Attr("defer"))),
 		h.Body(h.Div(h.Style("padding:1.5rem"), galleryPreviewContent(example))))
-	out, err := httpx.Document(h.HTML(attrs...), http.StatusOK)
+	out, err := page.Render(h.HTML(attrs...), http.StatusOK)
 	if err != nil {
 		return nil, err
 	}
