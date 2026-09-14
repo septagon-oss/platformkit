@@ -7,6 +7,10 @@
 # learn to skip. CI runs both.
 
 .DEFAULT_GOAL := help
+
+# Select the same compiler and tools even when PATH contains a newer Go release.
+# Child scripts and their Go subprocesses inherit this exact module version.
+export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
 .PHONY: help build test vet run e2e check-loc check-packages check-gucs fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
@@ -71,7 +75,8 @@ check-gucs: ## Fail when anything outside kit/db writes a tenancy setting
 	./scripts/check_gucs.sh
 
 fmt-check: ## Fail when any file is not gofmt'd
-	@out="$$(gofmt -l .)"; \
+	@goroot="$$(go env GOROOT)" || exit $$?; \
+	out="$$("$$goroot/bin/gofmt" -l .)" || exit $$?; \
 	if [ -n "$$out" ]; then echo "NOT FORMATTED:"; echo "$$out"; exit 1; fi; \
 	echo "gofmt clean"
 

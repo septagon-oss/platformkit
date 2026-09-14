@@ -144,6 +144,7 @@ echo 'budget ratchet: previous revisions, decreases, removed measurements and mi
 
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
+sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"
 test_commands() {
 	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "$@" |
 		sed -n '/^go tool gotestsum /s/[[:blank:]]*$//p'
@@ -169,3 +170,33 @@ for goals in test check 'test check' 'check test'; do
 	fi
 done
 echo 'test feedback: local selectors preserve fresh full checks in either goal order'
+
+# An unrelated PATH formatter must not change formatting or hide tool errors.
+formatting="$temporary/formatting"
+mkdir -p "$formatting/bin"
+cp "$temporary/go.mod" "$formatting/go.mod"
+printf 'package fixture\n' > "$formatting/source.go"
+cat > "$formatting/bin/go" <<'SH'
+#!/bin/sh
+[ "$GOTOOLCHAIN" = "$EXPECTED_GOTOOLCHAIN" ] || { echo 'wrong Go toolchain' >&2; exit 71; }
+[ "${FAIL_GO_ENV:-0}" = 0 ] || { echo 'fixture go env failed' >&2; exit 72; }
+exec "$REAL_GO" "$@"
+SH
+cat > "$formatting/bin/gofmt" <<'SH'
+#!/bin/sh
+echo 'unexpected PATH formatter' >&2
+exit 73
+SH
+chmod +x "$formatting/bin/go" "$formatting/bin/gofmt"
+formatter=(env PATH="$formatting/bin:$PATH" REAL_GO="$(command -v go)"
+    EXPECTED_GOTOOLCHAIN="go$(sed -n 's/^go //p' "$formatting/go.mod")")
+format_check=(make --no-print-directory -C "$formatting" -f "$scripts/../Makefile" fmt-check)
+if [[ "$("${formatter[@]}" "${format_check[@]}" 2>&1)" != 'gofmt clean' ]]; then
+    echo 'FAIL: formatting did not use the selected Go toolchain' >&2
+    exit 1
+fi
+printf 'package fixture\nfunc' > "$formatting/bad.go"
+rejects 'formatter syntax error' 'bad.go' "${formatter[@]}" "${format_check[@]}"
+rm "$formatting/bad.go"
+rejects 'toolchain discovery failure' 'fixture go env failed' "${formatter[@]}" FAIL_GO_ENV=1 "${format_check[@]}"
+echo 'formatting: selected toolchain and formatter errors passed'
