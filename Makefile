@@ -1,17 +1,12 @@
-# Fifteen targets, no more. `make check` is what CI runs and what a pull
-# request must pass; everything else is a convenience.
-#
-# The fifteenth is `e2e`, gate 10, which arrived with the stage that gave it
-# something to check. It is not a prerequisite of `check`: it needs a browser
-# and it takes a minute, and a gate that a laptop cannot run is a gate people
-# learn to skip. CI runs both.
+# make check is the required source gate; browser and capacity checks have
+# separate targets because they need their own runtime fixtures.
 
 .DEFAULT_GOAL := help
 
 # Select the same compiler and tools even when PATH contains a newer Go release.
 # Child scripts and their Go subprocesses inherit this exact module version.
 export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
-.PHONY: help build test vet run e2e check-loc check-packages check-gucs fmt-check check fmt image up down
+.PHONY: help build test vet run e2e load-test check-loc check-packages check-gucs fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -64,6 +59,9 @@ config.yaml:
 
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
+
+load-test: ## Compare bounded tenant work and database pool capacity
+	go test ./kit/jobs -run '^$$' -bench '^BenchmarkPerTenantCapacity$$' -benchtime=2s -count=3 -timeout=3m
 
 check-loc: ## Fail when a bucket exceeds its line ceiling
 	go run ./tools/locbudget --check

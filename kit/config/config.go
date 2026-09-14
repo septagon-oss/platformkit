@@ -67,6 +67,11 @@ type Server struct {
 type Database struct {
 	URL        string `yaml:"url"`
 	MigrateURL string `yaml:"migrate_url"`
+	// Omitted values retain kit/db defaults; explicit zero idle/lifetime
+	// disables reuse/retirement. kit/app validates the resolved pool before IO.
+	MaxOpenConns    *int           `yaml:"max_open_conns"`
+	MaxIdleConns    *int           `yaml:"max_idle_conns"`
+	ConnMaxLifetime *time.Duration `yaml:"conn_max_lifetime"`
 }
 
 // NATS configures the event transport and its broker connection. Empty Transport

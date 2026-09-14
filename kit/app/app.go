@@ -127,6 +127,13 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	default:
 		return nil, fmt.Errorf("app: role %q is not one of %q, %q or %q", opts.Role, Web, Worker, All)
 	}
+	pool := databasePool(cfg.Database)
+	if err := pool.Validate(); err != nil {
+		return nil, fmt.Errorf("app: %w", err)
+	}
+	if opts.Role != Web && pool.MaxOpenConns < 2 {
+		return nil, errors.New("app: database.max_open_conns must be at least two for worker/all: a scheduled job holds an advisory-lock connection while opening transactions")
+	}
 	if opts.Transport == nil {
 		broker, err := useJetStream(cfg.NATS.Transport, opts.Role)
 		if err != nil {
@@ -213,7 +220,7 @@ func (a *App) migrate(ctx context.Context) error {
 // openConn opens the application connection, as the role row-level security
 // binds.
 func (a *App) openConn(ctx context.Context) (*db.Conn, error) {
-	return db.Open(ctx, a.cfg.Database.URL)
+	return db.OpenWithPool(ctx, a.cfg.Database.URL, databasePool(a.cfg.Database))
 }
 
 // transport is the event transport this role uses.
