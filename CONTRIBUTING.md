@@ -23,6 +23,18 @@ Keep a business decision in one implementation; a fake may share pure
 decisions with it, but its conformance cases need independently specified
 expected results.
 
+Public packages must solve a named problem outside PlatformKit and simplify an
+existing PlatformKit consumer. Compare extending the current owner and reusing
+an existing open-source library before extracting another package. Record the
+consumer's code, dependencies or composition steps before and after the change.
+Show ordinary versioned `go get` consumption with a minimal executable example,
+explicit optional providers, dependency limits, error behavior and compatibility
+expectations. Reuse existing checks when they already establish these contracts.
+Keep one implementation and migrate the traced consumer to it, removing the
+implementation it replaces. Publication and moving files do not establish
+simplification: record the adopted consumer's reduction and any migration still
+pending.
+
 ## Make the change readable
 
 Use domain language and explicit control flow. A reader should be able to
