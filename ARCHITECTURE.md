@@ -213,6 +213,9 @@ light and dark themes. Each theme's optional `Typography` selects display, body
 and mono fallback stacks; empty fields retain the defaults. Supply the same value
 on both themes for shared type, and deliver licensed font assets separately.
 Components name semantic roles, roles resolve to tokens, and themes supply values.
+[style.ThemeVars](ui/style/theme.go) renders both themes' tokens as custom
+properties; `design` emits no CSS and depends on the standard library alone,
+which the [package gate](scripts/check_packages.sh) enforces.
 
 [Theme.FontFamilies](design/typography.go) projects those existing token identities
 as ordered literal or generic family names. It follows the admitted

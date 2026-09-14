@@ -87,7 +87,7 @@ type Extra struct {
 // resolution to the kernel's bytes emitted .flex twice.
 func Compose(theme design.Pair, extra ...Extra) Sheet {
 	sheet := css.NewSheet()
-	sheet.Merge(design.CSS(theme.Light, theme.Dark))
+	sheet.Merge(style.ThemeVars(theme.Light, theme.Dark))
 	sheet.Merge(style.RoleVars())
 	sheet.Merge(base())
 	lists := slices.Clone(components.ShellClassLists())

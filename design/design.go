@@ -1,10 +1,12 @@
 // Package design is the application's colours and type, as the two themes it
 // ships and the custom properties they render to.
 //
-// A theme is a struct of named values, rendered to --pk-color-* custom
-// properties. ui/style owns the semantic role declarations above those values;
-// ColorValue preserves their literals, references and existing sRGB mixes for
-// CSS and source projection. Theme remains the palette configuration seam.
+// A theme is a struct of named values. Tokens projects them as the --pk-color-*,
+// --pk-font-* and --pk-radius-* custom properties, and ui/style renders both
+// themes of a Pair into the stylesheet (style.ThemeVars) beneath the semantic
+// role declarations it owns. ColorValue preserves their literals, references and
+// existing sRGB mixes for CSS and source projection. Theme remains the palette
+// configuration seam; this package emits no CSS and imports nothing of ui.
 //
 // That indirection is the whole point of having themes at all. A component
 // names a role (`style.SurfaceBrand`); the role is a `--pk-role-*` property
@@ -17,11 +19,7 @@
 // a deep green accent.
 package design
 
-import (
-	"cmp"
-
-	"github.com/septagon-oss/platformkit/ui/css"
-)
+import "cmp"
 
 // Theme supplies semantic colours and optional typography. Components read
 // these values through the same tokens in CSS and design export.
@@ -223,44 +221,4 @@ func (t Theme) Tokens() []Token {
 		Token{Name: "--pk-font-mono", Type: "fontFamily", Value: fonts.Mono},
 	)
 	return append(out, t.Shape.tokens()...)
-}
-
-func (t Theme) declarations(includeFonts bool) []css.Declaration {
-	var out []css.Declaration
-	for _, token := range t.Tokens() {
-		if token.Type != "fontFamily" || includeFonts {
-			out = append(out, css.Decl(token.Name, css.Literal(token.Value)))
-		}
-	}
-	return out
-}
-
-// CSS is the token layer of the stylesheet: the light theme on :root, the dark
-// one under [data-theme="dark"], and the dark one again under a
-// prefers-color-scheme query for a browser whose owner has said what they want
-// and an application that has not been told otherwise.
-//
-// The attribute wins over the query, which is the ordering a theme toggle
-// needs: setting data-theme="light" on a machine in dark mode has to mean
-// light. That is why the media block is qualified by :root:not([data-theme]).
-//
-// It takes the two themes rather than reading the two above, so that a client
-// with its own colours changes this one argument and nothing else. See Pair.
-func CSS(light, dark Theme) *css.Sheet {
-	s := css.NewSheet()
-	// Equal resolved stacks inherit once; differing stacks follow the same
-	// explicit-mode and system-preference cascade as colours.
-	darkFonts := light.Typography.resolved() != dark.Typography.resolved()
-	s.Select(":root", append(light.declarations(true),
-		css.Decl("color-scheme", css.Literal("light")),
-	)...)
-	s.Select(`[data-theme="dark"]`, append(dark.declarations(darkFonts),
-		css.Decl("color-scheme", css.Literal("dark")),
-	)...)
-	s.Media("(prefers-color-scheme: dark)", func(inner *css.Sheet) {
-		inner.Select(`:root:not([data-theme])`, append(dark.declarations(darkFonts),
-			css.Decl("color-scheme", css.Literal("dark")),
-		)...)
-	})
-	return s
 }

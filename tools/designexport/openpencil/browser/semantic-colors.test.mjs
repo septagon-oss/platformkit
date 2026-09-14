@@ -32,7 +32,7 @@ func main() {
   }
   roles = append(roles, extra...)
   var out struct { CSS string; Modes map[string]map[string]design.SRGBA }
-  out.CSS = design.CSS(pair.Light, pair.Dark).CSS() + sheet.CSS()
+  out.CSS = style.ThemeVars(pair.Light, pair.Dark).CSS() + sheet.CSS()
   out.Modes = make(map[string]map[string]design.SRGBA)
   for _, theme := range pair.Both() {
     values, err := design.ResolveColors(theme.Tokens(), roles)

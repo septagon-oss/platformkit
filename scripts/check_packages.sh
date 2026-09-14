@@ -26,7 +26,7 @@ done
 
 # Deps is the complete runtime closure, unlike Imports. Tests are deliberately
 # excluded: SQL fixtures and adapter conformance tests may need more than core.
-parts=(kit/entity kit/locale kit/flags kit/tenancy modules/task/domain ui/forms
+parts=(kit/entity kit/locale kit/flags kit/tenancy modules/task/domain design ui/forms
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
@@ -71,6 +71,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("kit/flags", uuid)
         check("kit/tenancy", uuid " " p "kit/internal/syscap")
         check("modules/task/domain", "")
+        check("design", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components maragu.dev/gomponents maragu.dev/gomponents/html")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
@@ -87,7 +88,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
     }
 '
 
-echo "package boundaries: portable cores, forms and selected providers passed"
+echo "package boundaries: portable cores, design, forms and selected providers passed"
 
 if [ ! -d "$root/apps/platformkit" ]; then
 	echo "no app yet"

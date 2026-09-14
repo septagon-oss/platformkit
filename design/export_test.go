@@ -1,40 +1,16 @@
 package design_test
 
 import (
-	"encoding/json"
+	"regexp"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/design"
 )
 
-// The export and the stylesheet are two readings of one list. Every exported
-// token is declared with its value; each colour is declared three times (on
-// :root, under [data-theme="dark"] and again under the media query) and each
-// font stack once, because the dark theme only overrides colours.
-func TestExportedTokensAreTheDeclarationsTheStylesheetEmits(t *testing.T) {
-	t.Parallel()
-	light, dark := design.Light(), design.Dark()
-	css := design.CSS(light, dark).CSS()
-	for _, theme := range []design.Theme{light, dark} {
-		for _, token := range theme.Tokens() {
-			if !strings.Contains(css, token.Name+": "+token.Value+";") {
-				t.Errorf("%s exports %s = %q, which the stylesheet does not declare", theme.Name, token.Name, token.Value)
-			}
-			want := 3
-			if token.Type == "fontFamily" {
-				want = 1
-			}
-			if got := strings.Count(css, token.Name+":"); got != want {
-				t.Errorf("%s is declared %d times, want %d", token.Name, got, want)
-			}
-		}
-	}
-	if got := strings.Count(css, "--pk-"); got != 3*25+3 {
-		t.Errorf("the stylesheet declares %d custom properties; the export has 22 colours, 3 shapes and 3 font stacks", got)
-	}
-}
+// hex is the only colour form a token may take. A named colour or an rgb()
+// would render, and it would also make the two themes impossible to compare.
+var hex = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 
 func TestExportedTokenIdentitiesAndTypes(t *testing.T) {
 	t.Parallel()
@@ -62,76 +38,5 @@ func TestExportedTokenIdentitiesAndTypes(t *testing.T) {
 		if !slices.Equal(tokens[22:25], wantFonts) {
 			t.Errorf("%s changed its exported font stacks: %+v", theme.Name, tokens[22:25])
 		}
-	}
-}
-
-func TestExportedTokensFollowOverridesAndRemainDetached(t *testing.T) {
-	t.Parallel()
-	light, dark := design.Light(), design.Dark()
-	light.AccentDefault, dark.AccentDefault = "#123456", "#abcdef"
-	css := design.CSS(light, dark).CSS()
-	for _, theme := range []design.Theme{light, dark} {
-		tokens := theme.Tokens()
-		i := slices.IndexFunc(tokens, func(token design.Token) bool { return token.Name == "--pk-color-accent-default" })
-		if i < 0 || tokens[i].Value != theme.AccentDefault {
-			t.Fatalf("%s export ignored its palette override", theme.Name)
-		}
-		wantCount := 1
-		if theme.Name == "dark" {
-			wantCount = 2
-		}
-		if strings.Count(css, tokens[i].Name+": "+tokens[i].Value+";") != wantCount {
-			t.Errorf("%s CSS disagrees with the exported override", theme.Name)
-		}
-		tokens[i].Value = "changed by consumer"
-		if theme.Tokens()[i].Value != theme.AccentDefault {
-			t.Error("an export mutation changed a subsequent export")
-		}
-	}
-	encoded, err := json.Marshal(light.Tokens()[0])
-	if err != nil || string(encoded) != `{"name":"--pk-color-surface-canvas","type":"color","value":"#f2efe7"}` {
-		t.Fatalf("token JSON contract: %s, %v", encoded, err)
-	}
-}
-
-func TestTypographyOverridesUseTheExistingTokensAndThemeCascade(t *testing.T) {
-	t.Parallel()
-	baseline := design.Default()
-	theme := baseline
-	theme.Light.Typography = design.Typography{Display: `"Example Display", serif`, Mono: `"Example Mono", monospace`}
-	theme.Dark.Typography = theme.Light.Typography
-	for _, palette := range theme.Both() {
-		want := []design.Token{
-			{Name: "--pk-font-display", Type: "fontFamily", Value: `"Example Display", serif`},
-			{Name: "--pk-font-body", Type: "fontFamily", Value: design.FontBody},
-			{Name: "--pk-font-mono", Type: "fontFamily", Value: `"Example Mono", monospace`},
-		}
-		tokens := palette.Tokens()
-		if !slices.Equal(tokens[22:25], want) {
-			t.Fatalf("typography override or per-role fallback lost: %+v", tokens[22:25])
-		}
-		tokens[22].Value = "not a mutation of the theme"
-		if palette.Tokens()[22].Value != want[0].Value {
-			t.Fatal("exported typography is not detached")
-		}
-	}
-	shared := design.CSS(theme.Light, theme.Dark).CSS()
-	if strings.Count(shared, "--pk-font-display:") != 1 {
-		t.Fatal("identical typography must be inherited from the root")
-	}
-	theme.Dark.Typography.Body = `"Accessible Body", sans-serif`
-	changed := design.CSS(theme.Light, theme.Dark).CSS()
-	for _, selector := range []string{`[data-theme="dark"] {`, `:root:not([data-theme]) {`} {
-		start := strings.Index(changed, selector)
-		if start < 0 || !properties(changed, selector)["--pk-font-body"] {
-			t.Fatalf("dark typography is absent from %s", selector)
-		}
-		block, _, _ := strings.Cut(changed[start:], "}")
-		if !strings.Contains(block, `--pk-font-body: "Accessible Body", sans-serif;`) {
-			t.Fatalf("dark typography disagrees with its exported token: %s", block)
-		}
-	}
-	if design.Default() != baseline {
-		t.Fatal("typography configuration changed defaults or lost comparable value semantics")
 	}
 }

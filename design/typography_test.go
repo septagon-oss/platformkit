@@ -73,14 +73,13 @@ func TestFontFamilyProjectionDistinguishesCSSNamesFromKeywords(t *testing.T) {
 		t.Run(tc.css, func(t *testing.T) {
 			theme := design.Light()
 			theme.Typography.Body = tc.css
-			before := theme
-			css := design.CSS(theme, design.Dark()).CSS()
+			before, tokens := theme, theme.Tokens()
 			got, err := theme.FontFamilies()
 			if err != nil || !reflect.DeepEqual(got[1].Families, tc.want) {
 				t.Fatalf("projection = %#v, %v; want %#v", got, err, tc.want)
 			}
-			if theme != before || design.CSS(theme, design.Dark()).CSS() != css {
-				t.Fatal("projection changed the comparable theme or its existing CSS")
+			if theme != before || !reflect.DeepEqual(theme.Tokens(), tokens) {
+				t.Fatal("projection changed the comparable theme or its exported tokens")
 			}
 		})
 	}

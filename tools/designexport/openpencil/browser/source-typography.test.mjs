@@ -8,7 +8,7 @@ test('source fallback order and literal/generic distinction agree with both CSS 
 import (
   "encoding/json"
   "os"
-  "github.com/septagon-oss/platformkit/design"
+  "github.com/septagon-oss/platformkit/design"; "github.com/septagon-oss/platformkit/ui/style"
 )
 func main() {
   var input struct { Light, Dark string }
@@ -19,7 +19,7 @@ func main() {
   var err error
   out.Light, err = pair.Light.FontFamilies(); if err != nil { panic(err) }
   out.Dark, err = pair.Dark.FontFamilies(); if err != nil { panic(err) }
-  out.CSS = design.CSS(pair.Light, pair.Dark).CSS()
+  out.CSS = style.ThemeVars(pair.Light, pair.Dark).CSS()
   if err := json.NewEncoder(os.Stdout).Encode(out); err != nil { panic(err) }
 }
 `)

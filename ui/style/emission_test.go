@@ -48,7 +48,7 @@ func TestCSSIdentifierEscaping(t *testing.T) {
 // half the application.
 func TestRoleVarsReferenceRealThemeTokens(t *testing.T) {
 	t.Parallel()
-	themed := design.CSS(design.Light(), design.Dark()).CSS()
+	themed := ThemeVars(design.Light(), design.Dark()).CSS()
 	for role, value := range roleValues() {
 		rendered, err := value.CSS()
 		if err != nil {
