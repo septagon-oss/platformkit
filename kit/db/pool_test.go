@@ -31,13 +31,13 @@ func TestPoolValidationPrecedesConnecting(t *testing.T) {
 
 func TestOpenAppliesPoolLimitsAndStillRefusesUnrestrictedRoles(t *testing.T) {
 	adminURL, appURL := dbtest.URLs(t)
-	pool := db.Pool{MaxOpenConns: 2}
+	pool := db.Pool{MaxOpenConns: 1}
 	conn, err := db.OpenWithPool(t.Context(), appURL, pool)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	if stats := conn.Stats(); stats.MaxOpenConnections != 2 || stats.Idle != 0 || stats.InUse != 0 {
+	if stats := conn.Stats(); stats.MaxOpenConnections != 1 || stats.Idle != 0 || stats.InUse != 0 {
 		t.Fatalf("custom pool stats = %+v", stats)
 	}
 	if bad, err := db.OpenWithPool(t.Context(), adminURL, pool); err == nil {
