@@ -1,4 +1,4 @@
-package components_test
+package examples_test
 
 import (
 	"encoding/json"
@@ -9,25 +9,27 @@ import (
 	"strings"
 	"testing"
 
-	c "github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
+
+	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
-func compositionInfo(id, component string) c.ExampleInfo {
-	return c.ExampleInfo{ID: id, ComponentID: component, Name: id, Group: "Composition"}
+func compositionInfo(id, component string) examples.ExampleInfo {
+	return examples.ExampleInfo{ID: id, ComponentID: component, Name: id, Group: "Composition"}
 }
 
-func compositionText(id, text string) c.Example {
-	return c.ExampleOf(compositionInfo(id, "text"), c.TextProps{Content: text}, func(p c.TextProps) g.Node {
+func compositionText(id, text string) examples.Example {
+	return examples.ExampleOf(compositionInfo(id, "text"), c.TextProps{Content: text}, func(p c.TextProps) g.Node {
 		return g.Text(p.Content)
 	})
 }
 
-func compositionForm(id string, children ...g.Node) c.Example {
-	return c.ExampleWithChildren(compositionInfo(id, "form"), c.FormProps{}, children, c.Form)
+func compositionForm(id string, children ...g.Node) examples.Example {
+	return examples.ExampleWithChildren(compositionInfo(id, "form"), c.FormProps{}, children, c.Form)
 }
 
-func checkCompositionSpan(t *testing.T, owner c.ExampleDescription, child c.ChildOccurrence) {
+func checkCompositionSpan(t *testing.T, owner examples.ExampleDescription, child examples.ChildOccurrence) {
 	t.Helper()
 	span := child.Span
 	if span == nil || span.Start < 0 || span.End < span.Start || span.End > len(owner.HTML) {
@@ -39,15 +41,15 @@ func checkCompositionSpan(t *testing.T, owner c.ExampleDescription, child c.Chil
 }
 
 func TestExampleCompositionJSONRetainsChildInvocation(t *testing.T) {
-	button := c.ExampleOf(c.ExampleInfo{ID: "save", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, c.Button)
-	form := c.ExampleWithChildren(c.ExampleInfo{ID: "edit", ComponentID: "form"}, c.FormProps{}, []g.Node{button.Node}, c.Form)
+	button := examples.ExampleOf(examples.ExampleInfo{ID: "save", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, c.Button)
+	form := examples.ExampleWithChildren(examples.ExampleInfo{ID: "edit", ComponentID: "form"}, c.FormProps{}, []g.Node{button.Node}, c.Form)
 	payload, err := json.Marshal(describeExample(t, form))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var projection struct {
 		Children []struct {
-			Description c.ExampleDescription
+			Description examples.ExampleDescription
 			Slot        string
 		}
 	}
@@ -61,22 +63,22 @@ func TestExampleCompositionJSONRetainsChildInvocation(t *testing.T) {
 
 func TestExampleCompositionNestedFormsUseLocalIdentitiesAndOneRender(t *testing.T) {
 	var calls []string
-	makeForm := func(id string) c.Example {
+	makeForm := func(id string) examples.Example {
 		var nodes []g.Node
 		for _, key := range []string{"save", "cancel"} {
-			button := c.ExampleOf(compositionInfo(key, "button"), c.ButtonProps{Label: "Guardar ✓"}, func(p c.ButtonProps) g.Node {
+			button := examples.ExampleOf(compositionInfo(key, "button"), c.ButtonProps{Label: "Guardar ✓"}, func(p c.ButtonProps) g.Node {
 				calls = append(calls, id+"/"+key)
 				return c.Button(p)
 			})
 			nodes = append(nodes, button.Node)
 		}
-		return c.ExampleWithChildren(compositionInfo(id, "form"), c.FormProps{}, nodes, func(p c.FormProps, nodes ...g.Node) g.Node {
+		return examples.ExampleWithChildren(compositionInfo(id, "form"), c.FormProps{}, nodes, func(p c.FormProps, nodes ...g.Node) g.Node {
 			calls = append(calls, id)
 			return c.Form(p, nodes...)
 		})
 	}
 	first, second := makeForm("first"), makeForm("second")
-	root := c.ExampleWithChildren(compositionInfo("root", "card"), c.CardProps{}, []g.Node{g.Text("Préface ✓"), first.Node, second.Node}, c.Card)
+	root := examples.ExampleWithChildren(compositionInfo("root", "card"), c.CardProps{}, []g.Node{g.Text("Préface ✓"), first.Node, second.Node}, c.Card)
 	if len(calls) != 0 {
 		t.Fatal("capture executed a constructor")
 	}
@@ -168,17 +170,17 @@ func TestExampleCompositionEditsPreserveIdentityAndCopiedContainers(t *testing.T
 }
 
 func TestExampleCompositionRejectsPublicIdentityAndNodeMutation(t *testing.T) {
-	base := c.ExampleWithSlots(compositionInfo("save", "button"), c.ButtonProps{Label: "Save"}, c.ButtonSlots{}, c.ButtonWithSlots)
+	base := examples.ExampleWithSlots(compositionInfo("save", "button"), c.ButtonProps{Label: "Save"}, c.ButtonSlots{}, c.ButtonWithSlots)
 	before := describeExample(t, base)
-	for name, mutate := range map[string]func(*c.Example){
-		"ID":          func(e *c.Example) { e.ID = "different" },
-		"ComponentID": func(e *c.Example) { e.ComponentID = "different" },
-		"other capture": func(e *c.Example) {
-			e.Node = c.ExampleOf(e.ExampleInfo, c.ButtonProps{Label: "Different"}, c.Button).Node
+	for name, mutate := range map[string]func(*examples.Example){
+		"ID":          func(e *examples.Example) { e.ID = "different" },
+		"ComponentID": func(e *examples.Example) { e.ComponentID = "different" },
+		"other capture": func(e *examples.Example) {
+			e.Node = examples.ExampleOf(e.ExampleInfo, c.ButtonProps{Label: "Different"}, c.Button).Node
 		},
-		"raw node":      func(e *c.Example) { e.Node = g.Text("Forged") },
-		"nil node":      func(e *c.Example) { e.Node = nil },
-		"function node": func(e *c.Example) { e.Node = g.NodeFunc(func(io.Writer) error { return nil }) },
+		"raw node":      func(e *examples.Example) { e.Node = g.Text("Forged") },
+		"nil node":      func(e *examples.Example) { e.Node = nil },
+		"function node": func(e *examples.Example) { e.Node = g.NodeFunc(func(io.Writer) error { return nil }) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			changed := base
@@ -244,11 +246,11 @@ func TestExampleCompositionOpaqueAndUnobservedAreNotEmpty(t *testing.T) {
 		})
 	}
 	var childCalls int
-	counted := c.ExampleOf(compositionInfo("hidden", "text"), c.TextProps{Content: "Hidden"}, func(p c.TextProps) g.Node {
+	counted := examples.ExampleOf(compositionInfo("hidden", "text"), c.TextProps{Content: "Hidden"}, func(p c.TextProps) g.Node {
 		childCalls++
 		return g.Text(p.Content)
 	})
-	button := c.ExampleWithSlots(compositionInfo("busy", "button"), c.ButtonProps{Label: "Busy", Loading: true}, c.ButtonSlots{IconEnd: []g.Node{counted.Node}}, c.ButtonWithSlots)
+	button := examples.ExampleWithSlots(compositionInfo("busy", "button"), c.ButtonProps{Label: "Busy", Loading: true}, c.ButtonSlots{IconEnd: []g.Node{counted.Node}}, c.ButtonWithSlots)
 	doc := describeExample(t, button)
 	if len(doc.Children) != 1 || doc.Children[0].Slot != "IconEnd" || doc.Children[0].Span != nil || childCalls != 0 {
 		t.Fatal("declared suppressed child was rerendered or reported observed")
@@ -270,7 +272,7 @@ func TestExampleCompositionObservedEmptyAndDeclarationOrder(t *testing.T) {
 		Body []g.Node
 		Tail g.Node
 	}
-	reversed := c.ExampleWithSlots(compositionInfo("owner", "reverse"), struct{}{}, slots{[]g.Node{first.Node}, second.Node}, func(_ struct{}, s slots) g.Node {
+	reversed := examples.ExampleWithSlots(compositionInfo("owner", "reverse"), struct{}{}, slots{[]g.Node{first.Node}, second.Node}, func(_ struct{}, s slots) g.Node {
 		return g.Group{s.Tail, g.Group(s.Body)}
 	})
 	doc = describeExample(t, reversed)
@@ -288,13 +290,13 @@ func TestExampleCompositionObservedEmptyAndDeclarationOrder(t *testing.T) {
 func TestExampleCompositionRejectsAmbiguousOccurrencesAndCycles(t *testing.T) {
 	child := compositionText("same", "First")
 	different := compositionText("same", "Second")
-	for name, example := range map[string]c.Example{
+	for name, example := range map[string]examples.Example{
 		"same capture twice": compositionForm("owner", child.Node, child.Node),
 		"same ID twice":      compositionForm("owner", child.Node, different.Node),
-		"one declaration rendered twice": c.ExampleWithChildren(compositionInfo("owner", "duplicate"), struct{}{}, []g.Node{child.Node}, func(_ struct{}, nodes ...g.Node) g.Node {
+		"one declaration rendered twice": examples.ExampleWithChildren(compositionInfo("owner", "duplicate"), struct{}{}, []g.Node{child.Node}, func(_ struct{}, nodes ...g.Node) g.Node {
 			return g.Group{nodes[0], nodes[0]}
 		}),
-		"unowned repetition": c.ExampleOf(compositionInfo("owner", "duplicate"), struct{}{}, func(struct{}) g.Node {
+		"unowned repetition": examples.ExampleOf(compositionInfo("owner", "duplicate"), struct{}{}, func(struct{}) g.Node {
 			return g.Group{child.Node, child.Node}
 		}),
 	} {
@@ -304,8 +306,8 @@ func TestExampleCompositionRejectsAmbiguousOccurrencesAndCycles(t *testing.T) {
 			}
 		})
 	}
-	var cycle c.Example
-	cycle = c.ExampleOf(compositionInfo("cycle", "recursive"), struct{}{}, func(struct{}) g.Node { return cycle.Node })
+	var cycle examples.Example
+	cycle = examples.ExampleOf(compositionInfo("cycle", "recursive"), struct{}{}, func(struct{}) g.Node { return cycle.Node })
 	if _, err := cycle.Describe(); err == nil {
 		t.Fatal("actual bound-node render cycle was accepted")
 	}
@@ -317,7 +319,7 @@ func TestExampleCompositionRejectsAmbiguousOccurrencesAndCycles(t *testing.T) {
 func TestExampleCompositionPropagatesFailureAfterPartialChildWrite(t *testing.T) {
 	failure := errors.New("child failed after bytes")
 	var calls int
-	child := c.ExampleOf(compositionInfo("child", "failing"), struct{}{}, func(struct{}) g.Node {
+	child := examples.ExampleOf(compositionInfo("child", "failing"), struct{}{}, func(struct{}) g.Node {
 		calls++
 		return g.NodeFunc(func(w io.Writer) error {
 			if _, err := io.WriteString(w, "partial ✓"); err != nil {
@@ -333,7 +335,7 @@ func TestExampleCompositionPropagatesFailureAfterPartialChildWrite(t *testing.T)
 
 func TestExampleCompositionRejectsSwallowedObservationErrors(t *testing.T) {
 	child := compositionText("child", "Text")
-	duplicate := c.ExampleWithChildren(compositionInfo("owner", "duplicate"), struct{}{}, []g.Node{child.Node}, func(_ struct{}, nodes ...g.Node) g.Node {
+	duplicate := examples.ExampleWithChildren(compositionInfo("owner", "duplicate"), struct{}{}, []g.Node{child.Node}, func(_ struct{}, nodes ...g.Node) g.Node {
 		return g.NodeFunc(func(w io.Writer) error {
 			if err := nodes[0].Render(w); err != nil {
 				return err
@@ -342,14 +344,14 @@ func TestExampleCompositionRejectsSwallowedObservationErrors(t *testing.T) {
 			return nil
 		})
 	})
-	var cycle c.Example
-	cycle = c.ExampleOf(compositionInfo("cycle", "recursive"), struct{}{}, func(struct{}) g.Node {
+	var cycle examples.Example
+	cycle = examples.ExampleOf(compositionInfo("cycle", "recursive"), struct{}{}, func(struct{}) g.Node {
 		return g.NodeFunc(func(w io.Writer) error {
 			_ = cycle.Node.Render(w)
 			return nil
 		})
 	})
-	for name, example := range map[string]c.Example{"duplicate": duplicate, "cycle": cycle} {
+	for name, example := range map[string]examples.Example{"duplicate": duplicate, "cycle": cycle} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := example.Describe(); err == nil {
 				t.Fatal("renderer concealed invalid ownership by swallowing its error")
@@ -375,8 +377,8 @@ func TestExampleCompositionSharedCaptureIsNotACycle(t *testing.T) {
 }
 
 func TestExampleCompositionRejectsMissingChildIdentity(t *testing.T) {
-	for _, info := range []c.ExampleInfo{{ID: "child"}, {ComponentID: "text"}, {ID: " ", ComponentID: "text"}} {
-		child := c.ExampleOf(info, c.TextProps{Content: "Child"}, c.Text)
+	for _, info := range []examples.ExampleInfo{{ID: "child"}, {ComponentID: "text"}, {ID: " ", ComponentID: "text"}} {
+		child := examples.ExampleOf(info, c.TextProps{Content: "Child"}, c.Text)
 		if _, err := compositionForm("owner", child.Node).Describe(); err == nil {
 			t.Fatalf("accepted child without stable source identity: %+v", info)
 		}
@@ -390,7 +392,7 @@ func TestExampleCompositionRejectsRecoveredChildPanic(t *testing.T) {
 		}
 	}()
 	failure := errors.New("child rendering panicked")
-	child := c.ExampleOf(compositionInfo("child", "failing"), struct{}{}, func(struct{}) g.Node {
+	child := examples.ExampleOf(compositionInfo("child", "failing"), struct{}{}, func(struct{}) g.Node {
 		return g.NodeFunc(func(w io.Writer) error {
 			if _, err := io.WriteString(w, "partial"); err != nil {
 				return err
@@ -399,7 +401,7 @@ func TestExampleCompositionRejectsRecoveredChildPanic(t *testing.T) {
 		})
 	})
 	var recovered any
-	parent := c.ExampleWithChildren(compositionInfo("owner", "recovering"), struct{}{}, []g.Node{child.Node}, func(_ struct{}, nodes ...g.Node) g.Node {
+	parent := examples.ExampleWithChildren(compositionInfo("owner", "recovering"), struct{}{}, []g.Node{child.Node}, func(_ struct{}, nodes ...g.Node) g.Node {
 		return g.NodeFunc(func(w io.Writer) error {
 			if _, err := io.WriteString(w, "prefix"); err != nil {
 				return err
@@ -416,7 +418,7 @@ func TestExampleCompositionRejectsRecoveredChildPanic(t *testing.T) {
 	if recovered != failure {
 		t.Fatalf("recorder changed the panic delivered to the parent: %v", recovered)
 	}
-	if err == nil || !reflect.DeepEqual(description, c.ExampleDescription{}) {
+	if err == nil || !reflect.DeepEqual(description, examples.ExampleDescription{}) {
 		t.Fatalf("recovered child panic certified incomplete rendering: description=%+v, error=%v", description, err)
 	}
 }
@@ -427,7 +429,7 @@ func TestExampleCompositionDeclaredSlotDoesNotProveFieldUse(t *testing.T) {
 		Header g.Node
 		Body   g.Node
 	}
-	parent := c.ExampleWithSlots(compositionInfo("owner", "alias"), struct{}{}, slots{
+	parent := examples.ExampleWithSlots(compositionInfo("owner", "alias"), struct{}{}, slots{
 		Header: child.Node,
 		Body:   g.Group{child.Node},
 	}, func(_ struct{}, supplied slots) g.Node { return supplied.Body })

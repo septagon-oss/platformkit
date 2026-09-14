@@ -19,7 +19,7 @@ import (
   "os"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
 func main() {
@@ -27,15 +27,15 @@ func main() {
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   theme := design.Default()
   theme.Light.Typography, theme.Dark.Typography = input.Light, input.Dark
-  examples := components.Gallery()
+  captures := examples.Gallery()
   if input.Level > 0 {
-    examples = []components.Example{components.ExampleOf(components.ExampleInfo{
+    captures = []examples.Example{examples.ExampleOf(examples.ExampleInfo{
       ID: "fixture/heading", ComponentID: "pk-ui.component.heading",
     }, components.HeadingProps{Level: input.Level, Text: input.Text, Anchor: "album"}, components.Heading)}
   }
   var extra ui.Extra
   if input.Align != "" { extra.Sheets = []*css.Sheet{css.NewSheet().Select("#album", css.Decl("text-align", css.Literal(input.Align)))} }
-  snapshot, err := ui.Export(theme, examples, extra)
+  snapshot, err := ui.Export(theme, captures, extra)
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

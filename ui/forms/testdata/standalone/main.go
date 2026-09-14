@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/task/domain"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/forms"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message/catalog"
@@ -76,7 +77,7 @@ func newApplication() *application {
 	}}
 }
 
-func (a *application) form(namespace string) components.Example {
+func (a *application) form(namespace string) examples.Example {
 	preference := "en"
 	if namespace == "second-editor" {
 		preference = "pt-PT"
@@ -165,7 +166,7 @@ func (a *application) handler() http.Handler {
 	mux.HandleFunc("GET /snapshot", func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		snapshot, err := ui.Export(design.Default(), []components.Example{a.form("first-editor"), a.form("second-editor")})
+		snapshot, err := ui.Export(design.Default(), []examples.Example{a.form("first-editor"), a.form("second-editor")})
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return

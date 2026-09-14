@@ -24,7 +24,7 @@ import (
   h "maragu.dev/gomponents/html"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/style"
 )
 func main() {
@@ -36,25 +36,25 @@ func main() {
   } {
     props := components.TextProps{Content: item.content}
     if item.id != "last" { props.Class = "mb-0.5" }
-    children = append(children, components.ExampleOf(components.ExampleInfo{
+    children = append(children, examples.ExampleOf(examples.ExampleInfo{
       ID: item.id, ComponentID: "pk-ui.component.text",
     }, props, components.Text).Node)
   }
   blockID := "fixture/block"
   if input.Row { blockID = "copy" }
-  example := components.ExampleWithChildren(components.ExampleInfo{
+  example := examples.ExampleWithChildren(examples.ExampleInfo{
     ID: blockID, ComponentID: "fixture.component.block",
   }, struct{}{}, children, func(_ struct{}, nodes ...g.Node) g.Node {
     return h.Div(h.Class("space-y-1"), g.Group(nodes))
   })
   if input.Row {
-    action := components.ExampleOf(components.ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
+    action := examples.ExampleOf(examples.ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
       components.ButtonProps{Label: "Continue"}, components.Button)
-    example = components.ExampleWithChildren(components.ExampleInfo{
+    example = examples.ExampleWithChildren(examples.ExampleInfo{
       ID: "fixture/row", ComponentID: "pk-ui.component.flex",
     }, components.FlexProps{Wrap: true, Justify: "between", Align: "start"}, []g.Node{example.Node, action.Node}, components.Flex)
   }
-  snapshot, err := ui.Export(design.Default(), []components.Example{example},
+  snapshot, err := ui.Export(design.Default(), []examples.Example{example},
     ui.Extra{Lists: []style.ClassList{style.New().MarginBottom(style.S0_5)}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }

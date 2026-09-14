@@ -82,7 +82,7 @@ printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
 selected_root="$(GOTOOLCHAIN="go$(sed -n 's/^go //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
 for path in apps/platformkit kit/entity kit/locale kit/flags kit/tenancy \
-    modules/task/domain design ui/css ui/forms ui/components kit/tenancy/providers/topaz \
+    modules/task/domain design ui/css ui/forms ui/components ui/components/examples kit/tenancy/providers/topaz \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
     kit/db kit/httpx kit/config modules/auth/contracts; do

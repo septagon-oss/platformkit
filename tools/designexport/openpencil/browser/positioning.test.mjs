@@ -22,7 +22,7 @@ import (
   h "maragu.dev/gomponents/html"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
 type Props struct { Horizontal string \`json:"horizontal"\`; Vertical string \`json:"vertical"\` }
@@ -39,7 +39,7 @@ func owner(p OwnerProps, children ...g.Node) g.Node {
 func main() {
   var input struct { Proposal *ui.PropsProposal; Auto bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  children := []g.Node{components.ExampleOf(components.ExampleInfo{ID:"body", ComponentID:"pk-ui.component.text"},
+  children := []g.Node{examples.ExampleOf(examples.ExampleInfo{ID:"body", ComponentID:"pk-ui.component.text"},
     components.TextProps{Content:"Album"}, components.Text).Node}
   sheet := css.NewSheet()
   for i, sides := range [][2]string{{"left", "top"}, {"right", "top"}, {"left", "bottom"}, {"right", "bottom"}} {
@@ -48,20 +48,20 @@ func main() {
       sheet.Select("."+class, css.Decl("position", css.Literal("absolute")), css.Decl(sides[0], css.Literal("7.25px")),
         css.Decl(sides[1], css.Literal("-1.5px")), css.Decl("padding", css.Literal("2px 6px")),
         css.Decl("font-variant-numeric", css.Literal("tabular-nums")), css.Decl("background", css.Literal("#eee")))
-      children = append(children, components.ExampleOf(components.ExampleInfo{ID:fmt.Sprintf("corner%d", i), ComponentID:"pk-ui.component.text"},
+      children = append(children, examples.ExampleOf(examples.ExampleInfo{ID:fmt.Sprintf("corner%d", i), ComponentID:"pk-ui.component.text"},
         components.TextProps{ComponentProps:components.ComponentProps{Class:class}, Element:"span", Content:"7", Size:"xs"}, components.Text).Node)
       continue
     }
-    caption := components.ExampleOf(components.ExampleInfo{ID:"caption", ComponentID:"pk-ui.component.text"},
+    caption := examples.ExampleOf(examples.ExampleInfo{ID:"caption", ComponentID:"pk-ui.component.text"},
       components.TextProps{Content:"7"}, components.Text)
-    children = append(children, components.ExampleWithChildren(components.ExampleInfo{
+    children = append(children, examples.ExampleWithChildren(examples.ExampleInfo{
       ID:fmt.Sprintf("corner%d", i), ComponentID:"fixture.component.badge"}, Props{sides[0], sides[1]}, []g.Node{caption.Node}, badge).Node)
   }
-  examples := []components.Example{components.ExampleWithChildren(components.ExampleInfo{
+  captures := []examples.Example{examples.ExampleWithChildren(examples.ExampleInfo{
     ID:"fixture/positioning", ComponentID:"fixture.component.positioning"}, OwnerProps{input.Auto}, children, owner)}
   extra := ui.Extra{Sheets:[]*css.Sheet{sheet}}
-  snapshot, err := ui.Export(design.Default(), examples, extra)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal, extra) }
+  snapshot, err := ui.Export(design.Default(), captures, extra)
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal, extra) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

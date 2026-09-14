@@ -1,8 +1,15 @@
 package components
 
+// layout_description.go is what a layout component says about its own root:
+// the flex declarations Stack and Flex wrap their element in, so that a design
+// export can describe direction, gap and alignment from source rather than by
+// measuring rendered geometry. The description is data a component owns; the
+// observation that reads it back lives in ui/components/examples.
+
 import (
-	"github.com/septagon-oss/platformkit/ui/style"
 	g "maragu.dev/gomponents"
+
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // LayoutDescription describes root declarations, not used geometry or native
@@ -40,8 +47,14 @@ func withLayout(node g.Node, props ComponentProps, flow FlexLayout) g.Node {
 	return &layoutNode{NodeFunc: g.NodeFunc(node.Render), layout: layout}
 }
 
-// DescribeWithLayout opts into source declarations without changing Describe's
-// v1 serialization. Unknown ancestors/children still require explicit refusal.
-func (e Example) DescribeWithLayout() (ExampleDescription, error) {
-	return e.describe(true)
+// DeclaredLayout is the root layout a constructor declared for node, when node
+// is the constructor's own result. It is the one seam the example recorder
+// needs: finding a layout somewhere inside an arbitrary wrapper would not own
+// its root, so a wrapped node reports none.
+func DeclaredLayout(node g.Node) (LayoutDescription, bool) {
+	owned, ok := node.(*layoutNode)
+	if !ok {
+		return LayoutDescription{}, false
+	}
+	return owned.layout, true
 }

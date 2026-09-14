@@ -11,35 +11,36 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/css"
 	g "maragu.dev/gomponents"
 )
 
 func TestReplacementProposalUsesNestedSourceAndDestination(t *testing.T) {
 	calls := 0
-	button := func(id, label string) c.Example {
-		return c.ExampleOf(c.ExampleInfo{ID: id, ComponentID: "button"}, c.ButtonProps{Label: label}, func(p c.ButtonProps) g.Node {
+	button := func(id, label string) examples.Example {
+		return examples.ExampleOf(examples.ExampleInfo{ID: id, ComponentID: "button"}, c.ButtonProps{Label: label}, func(p c.ButtonProps) g.Node {
 			calls++
 			return c.Button(p)
 		})
 	}
-	owner := func(id string, child c.Example) c.Example {
-		return c.ExampleWithChildren(c.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, []g.Node{child.Node}, c.Form)
+	owner := func(id string, child examples.Example) examples.Example {
+		return examples.ExampleWithChildren(examples.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, []g.Node{child.Node}, c.Form)
 	}
 	target := button("save/✓", "Before")
-	examples := []c.Example{owner("source", button("choice/local", "Create & keep")), owner("second", target), owner("first", target)}
-	base := proposalExport(t, examples)
+	captures := []examples.Example{owner("source", button("choice/local", "Create & keep")), owner("second", target), owner("first", target)}
+	base := proposalExport(t, captures)
 	proposal := ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"first", "save/✓"}, ReplacementPath: []string{"source", "choice/local"}}
 	request, _ := json.Marshal(proposal)
 	calls = 0
-	candidate, projected, err := ui.ProjectReplacement(design.Default(), examples, proposal)
+	candidate, projected, err := ui.ProjectReplacement(design.Default(), captures, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if calls != 6 {
 		t.Fatalf("want two exports of three button occurrences, got %d calls", calls)
 	}
-	if candidate[0].Node != examples[0].Node || candidate[1].Node != examples[1].Node || candidate[2].Node == examples[2].Node {
+	if candidate[0].Node != captures[0].Node || candidate[1].Node != captures[1].Node || candidate[2].Node == captures[2].Node {
 		t.Fatal("replacement changed the source, a sibling occurrence or root order")
 	}
 	child := projected.Examples[0].Children[0]
@@ -50,7 +51,7 @@ func TestReplacementProposalUsesNestedSourceAndDestination(t *testing.T) {
 		t.Fatal("replacement changed unrelated exports or retained the old revision")
 	}
 	after, _ := json.Marshal(proposal)
-	if string(request) != string(after) || !reflect.DeepEqual(base, proposalExport(t, examples)) {
+	if string(request) != string(after) || !reflect.DeepEqual(base, proposalExport(t, captures)) {
 		t.Fatal("replacement mutated inputs")
 	}
 	accepted, out, err := ui.ProjectReplacement(design.Default(), candidate, proposal)
@@ -66,14 +67,14 @@ func TestReplacementProposalUsesNestedSourceAndDestination(t *testing.T) {
 }
 
 func TestReplacementProposalFreshnessIncludesSourceThemeAndCSS(t *testing.T) {
-	makeText := func(id, value string) c.Example {
-		return c.ExampleOf(c.ExampleInfo{ID: id, ComponentID: "text"}, c.TextProps{Content: value}, c.Text)
+	makeText := func(id, value string) examples.Example {
+		return examples.ExampleOf(examples.ExampleInfo{ID: id, ComponentID: "text"}, c.TextProps{Content: value}, c.Text)
 	}
-	examples := []c.Example{makeText("target", "Old"), makeText("source", "New")}
-	proposal := ui.ReplacementProposal{BaseSHA256: proposalExport(t, examples).SHA256, Path: []string{"target"}, ReplacementPath: []string{"source"}}
+	captures := []examples.Example{makeText("target", "Old"), makeText("source", "New")}
+	proposal := ui.ReplacementProposal{BaseSHA256: proposalExport(t, captures).SHA256, Path: []string{"target"}, ReplacementPath: []string{"source"}}
 	for _, change := range []string{"source", "theme", "css", "metadata"} {
 		t.Run(change, func(t *testing.T) {
-			inputs, theme := slices.Clone(examples), design.Default()
+			inputs, theme := slices.Clone(captures), design.Default()
 			var extra []ui.Extra
 			switch change {
 			case "source":
@@ -94,8 +95,8 @@ func TestReplacementProposalFreshnessIncludesSourceThemeAndCSS(t *testing.T) {
 }
 
 func TestReplacementProposalRefusesUnsafeOwnershipOnEitherPath(t *testing.T) {
-	makeText := func(id, label string) c.Example {
-		return c.ExampleOf(c.ExampleInfo{ID: id, ComponentID: "text"}, c.TextProps{Content: label}, c.Text)
+	makeText := func(id, label string) examples.Example {
+		return examples.ExampleOf(examples.ExampleInfo{ID: id, ComponentID: "text"}, c.TextProps{Content: label}, c.Text)
 	}
 	for _, side := range []string{"target", "source"} {
 		for _, mode := range []string{"unobserved", "unresolved", "opaque", "unsupported", "retained", "candidate-hidden", "render-failure"} {
@@ -115,7 +116,7 @@ func TestReplacementProposalRefusesUnsafeOwnershipOnEitherPath(t *testing.T) {
 				if mode == "unsupported" {
 					input.Callback = func() g.Node { return child.Node }
 				}
-				owner := c.ExampleWithSlots(c.ExampleInfo{ID: "owner", ComponentID: "owner"}, c.FormProps{}, input, func(p c.FormProps, s slots) g.Node {
+				owner := examples.ExampleWithSlots(examples.ExampleInfo{ID: "owner", ComponentID: "owner"}, c.FormProps{}, input, func(p c.FormProps, s slots) g.Node {
 					switch mode {
 					case "unobserved":
 						return c.Form(p)
@@ -131,13 +132,13 @@ func TestReplacementProposalRefusesUnsafeOwnershipOnEitherPath(t *testing.T) {
 					}
 					return c.Form(p, s.Body)
 				})
-				examples := []c.Example{owner, makeText("other", "New")}
-				base := proposalExport(t, examples)
+				captures := []examples.Example{owner, makeText("other", "New")}
+				base := proposalExport(t, captures)
 				proposal := ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"owner", "child"}, ReplacementPath: []string{"other"}}
 				if side == "source" {
 					proposal.Path, proposal.ReplacementPath = proposal.ReplacementPath, proposal.Path
 				}
-				accepted, out, err := ui.ProjectReplacement(design.Default(), examples, proposal)
+				accepted, out, err := ui.ProjectReplacement(design.Default(), captures, proposal)
 				// Retained or conditional rendering in an untouched source owner is
 				// safe: lookup reads the currently declared and observed capture.
 				if side == "source" && (mode == "retained" || mode == "candidate-hidden" || mode == "render-failure") {
@@ -147,7 +148,7 @@ func TestReplacementProposalRefusesUnsafeOwnershipOnEitherPath(t *testing.T) {
 				} else if err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
 					t.Fatalf("unsafe %s accepted: %v", mode, err)
 				}
-				if !reflect.DeepEqual(base, proposalExport(t, examples)) {
+				if !reflect.DeepEqual(base, proposalExport(t, captures)) {
 					t.Fatal("refusal mutated a source tree")
 				}
 			})
@@ -156,32 +157,32 @@ func TestReplacementProposalRefusesUnsafeOwnershipOnEitherPath(t *testing.T) {
 }
 
 func TestReplacementProposalRefusesMissingPathsAndIncompatibleInterfaces(t *testing.T) {
-	text := c.ExampleOf(c.ExampleInfo{ID: "text", ComponentID: "text"}, c.TextProps{Content: "Text"}, c.Text)
-	button := c.ExampleOf(c.ExampleInfo{ID: "button", ComponentID: "button"}, c.ButtonProps{Label: "Button"}, c.Button)
-	examples := []c.Example{text, button}
-	base := proposalExport(t, examples)
+	text := examples.ExampleOf(examples.ExampleInfo{ID: "text", ComponentID: "text"}, c.TextProps{Content: "Text"}, c.Text)
+	button := examples.ExampleOf(examples.ExampleInfo{ID: "button", ComponentID: "button"}, c.ButtonProps{Label: "Button"}, c.Button)
+	captures := []examples.Example{text, button}
+	base := proposalExport(t, captures)
 	for _, paths := range [][][]string{{{"text"}, {"button"}}, {nil, {"text"}}, {{"text"}, nil}, {{"missing"}, {"text"}}, {{"text"}, {"missing"}}, {{"text"}, {"text", "missing"}}} {
-		accepted, out, err := ui.ProjectReplacement(design.Default(), examples, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: paths[0], ReplacementPath: paths[1]})
+		accepted, out, err := ui.ProjectReplacement(design.Default(), captures, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: paths[0], ReplacementPath: paths[1]})
 		if err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
 			t.Fatalf("invalid paths or interface accepted: %v", err)
 		}
 	}
 	// Equal claimed component names cannot disguise different actual schemas.
-	button = c.ExampleOf(c.ExampleInfo{ID: "button", ComponentID: "text"}, c.ButtonProps{}, c.Button)
-	if accepted, out, err := ui.ProjectReplacement(design.Default(), []c.Example{text, button}, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"text"}, ReplacementPath: []string{"button"}}); err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+	button = examples.ExampleOf(examples.ExampleInfo{ID: "button", ComponentID: "text"}, c.ButtonProps{}, c.Button)
+	if accepted, out, err := ui.ProjectReplacement(design.Default(), []examples.Example{text, button}, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"text"}, ReplacementPath: []string{"button"}}); err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
 		t.Fatal("conflicting source contracts accepted")
 	}
 }
 
 func TestReplacementProposalOverlappingPathsReadTheBaseSnapshot(t *testing.T) {
-	makeOwner := func(id string, children ...g.Node) c.Example {
-		return c.ExampleWithChildren(c.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, children, c.Form)
+	makeOwner := func(id string, children ...g.Node) examples.Example {
+		return examples.ExampleWithChildren(examples.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, children, c.Form)
 	}
 	root := makeOwner("root", makeOwner("child").Node)
-	examples := []c.Example{root}
-	base := proposalExport(t, examples)
+	captures := []examples.Example{root}
+	base := proposalExport(t, captures)
 	for _, paths := range [][][]string{{{"root"}, {"root"}}, {{"root"}, {"root", "child"}}, {{"root", "child"}, {"root"}}} {
-		candidate, _, err := ui.ProjectReplacement(design.Default(), examples, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: paths[0], ReplacementPath: paths[1]})
+		candidate, _, err := ui.ProjectReplacement(design.Default(), captures, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: paths[0], ReplacementPath: paths[1]})
 		if err != nil {
 			t.Fatalf("immutable overlap failed: %v", err)
 		}
@@ -197,7 +198,7 @@ func TestReplacementProposalOverlappingPathsReadTheBaseSnapshot(t *testing.T) {
 		if err != nil || description.ID != paths[0][len(paths[0])-1] || len(description.Children) != wantChildren {
 			t.Fatal("overlap was not a finite copy of base inputs")
 		}
-		if !reflect.DeepEqual(base, proposalExport(t, examples)) {
+		if !reflect.DeepEqual(base, proposalExport(t, captures)) {
 			t.Fatal("overlapping replacement mutated source")
 		}
 	}

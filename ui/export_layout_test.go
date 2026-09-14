@@ -12,19 +12,20 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/css"
 	"github.com/septagon-oss/platformkit/ui/style"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 )
 
-func layoutExample(id string, p c.FlexProps, children ...g.Node) c.Example {
-	return c.ExampleWithChildren(c.ExampleInfo{ID: id, ComponentID: "flex"}, p, children, c.Flex)
+func layoutExample(id string, p c.FlexProps, children ...g.Node) examples.Example {
+	return examples.ExampleWithChildren(examples.ExampleInfo{ID: id, ComponentID: "flex"}, p, children, c.Flex)
 }
 
-func layoutExport(t *testing.T, examples []c.Example, extra ...ui.Extra) ui.DesignExport {
+func layoutExport(t *testing.T, captures []examples.Example, extra ...ui.Extra) ui.DesignExport {
 	t.Helper()
-	doc, err := ui.ExportWithLayout(design.Default(), examples, extra...)
+	doc, err := ui.ExportWithLayout(design.Default(), captures, extra...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +33,8 @@ func layoutExport(t *testing.T, examples []c.Example, extra ...ui.Extra) ui.Desi
 }
 
 func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
-	examples := c.Gallery()
-	legacy, err := ui.Export(design.Default(), examples)
+	captures := examples.Gallery()
+	legacy, err := ui.Export(design.Default(), captures)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,12 +53,12 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
-	first := layoutExport(t, examples)
-	second := layoutExport(t, examples)
+	first := layoutExport(t, captures)
+	second := layoutExport(t, captures)
 	if !reflect.DeepEqual(first, second) || first.SHA256 == legacy.SHA256 {
 		t.Fatal("layout export must be deterministic and distinct from v1")
 	}
-	after, err := ui.Export(design.Default(), examples)
+	after, err := ui.Export(design.Default(), captures)
 	encoded, _ := json.Marshal(after)
 	if err != nil || string(encoded) != string(before) {
 		t.Fatal("opt-in capture mutated the existing inputs or v1 export")
@@ -87,7 +88,7 @@ func TestSourceLayoutUsesResolvedConstructorValues(t *testing.T) {
 		{"column alias", c.FlexProps{Direction: "column", Gap: "2", Align: "end", Justify: "around", Wrap: true}, c.FlexLayout{Direction: "col", Gap: "2", Align: "end", Justify: "around", Wrap: true}, []string{"flex-col", "gap-2", "items-end", "justify-around", "flex-wrap"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			doc := layoutExport(t, []c.Example{layoutExample("root", tc.props)})
+			doc := layoutExport(t, []examples.Example{layoutExample("root", tc.props)})
 			d := doc.Examples[0]
 			if d.Layout.Kind != "flex" || d.Layout.Flex == nil || *d.Layout.Flex != tc.want {
 				t.Fatalf("resolved source layout: %+v", d.Layout)
@@ -105,9 +106,9 @@ func TestSourceLayoutUsesResolvedConstructorValues(t *testing.T) {
 }
 
 func TestSourceLayoutRetainsOccurrenceOwnershipAndInterface(t *testing.T) {
-	child := c.ExampleWithChildren(c.ExampleInfo{ID: "child", ComponentID: "stack"}, c.StackProps{Gap: "2", Align: "center"}, nil, c.Stack)
+	child := examples.ExampleWithChildren(examples.ExampleInfo{ID: "child", ComponentID: "stack"}, c.StackProps{Gap: "2", Align: "center"}, nil, c.Stack)
 	root := layoutExample("root", c.FlexProps{}, child.Node)
-	doc := layoutExport(t, []c.Example{root})
+	doc := layoutExport(t, []examples.Example{root})
 	d := doc.Examples[0]
 	nested := d.Children[0]
 	if nested.Slot != "children" || nested.Span == nil || nested.Description.ID != "child" ||
@@ -121,7 +122,7 @@ func TestSourceLayoutRetainsOccurrenceOwnershipAndInterface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after := layoutExport(t, []c.Example{changed})
+	after := layoutExport(t, []examples.Example{changed})
 	if !d.SameInterface(after.Examples[0]) || after.SHA256 == doc.SHA256 ||
 		!reflect.DeepEqual(d.Children[0].Description, after.Examples[0].Children[0].Description) {
 		t.Fatal("occurrence edit changed its interface/child or failed to invalidate source identity")
@@ -133,20 +134,20 @@ func TestSourceLayoutUnknownOverridesAndUnobservedChildren(t *testing.T) {
 		"class": {Class: "gap-0"}, "attribute": {Attrs: map[string]string{"style": "gap:0"}}, "hidden": {Hidden: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			doc := layoutExport(t, []c.Example{layoutExample("root", c.FlexProps{ComponentProps: props})})
+			doc := layoutExport(t, []examples.Example{layoutExample("root", c.FlexProps{ComponentProps: props})})
 			if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"), ui.ErrLayoutUnknown) || doc.Examples[0].Layout.Flex != nil {
 				t.Fatal("escape hatch received a known layout")
 			}
 		})
 	}
 	child := layoutExample("child", c.FlexProps{})
-	for name, root := range map[string]c.Example{
+	for name, root := range map[string]examples.Example{
 		"opaque":     layoutExample("root", c.FlexProps{}, g.Attr("style", "gap:0")),
-		"wrapped":    c.ExampleOf(c.ExampleInfo{ID: "root", ComponentID: "wrapper"}, c.FlexProps{}, func(p c.FlexProps) g.Node { return h.Section(c.Flex(p)) }),
-		"unobserved": c.ExampleWithChildren(c.ExampleInfo{ID: "root", ComponentID: "flex"}, c.FlexProps{}, []g.Node{child.Node}, func(p c.FlexProps, _ ...g.Node) g.Node { return c.Flex(p) }),
+		"wrapped":    examples.ExampleOf(examples.ExampleInfo{ID: "root", ComponentID: "wrapper"}, c.FlexProps{}, func(p c.FlexProps) g.Node { return h.Section(c.Flex(p)) }),
+		"unobserved": examples.ExampleWithChildren(examples.ExampleInfo{ID: "root", ComponentID: "flex"}, c.FlexProps{}, []g.Node{child.Node}, func(p c.FlexProps, _ ...g.Node) g.Node { return c.Flex(p) }),
 	} {
 		t.Run(name, func(t *testing.T) {
-			doc := layoutExport(t, []c.Example{root})
+			doc := layoutExport(t, []examples.Example{root})
 			if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"), ui.ErrLayoutUnknown) {
 				t.Fatal("unknown ownership was accepted as complete declared layout")
 			}
@@ -163,20 +164,20 @@ func TestSourceLayoutUnknownOverridesAndUnobservedChildren(t *testing.T) {
 		} else {
 			write(sheet)
 		}
-		doc := layoutExport(t, []c.Example{layoutExample("root", c.FlexProps{}, child.Node)}, ui.Extra{Sheets: []*css.Sheet{sheet}})
+		doc := layoutExport(t, []examples.Example{layoutExample("root", c.FlexProps{}, child.Node)}, ui.Extra{Sheets: []*css.Sheet{sheet}})
 		if !errors.Is(doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"), ui.ErrLayoutUnknown) ||
 			doc.Examples[0].Layout.Flex != nil || doc.Examples[0].Children[0].Description.Layout.Flex != nil {
 			t.Fatal("consumer stylesheet retained an invalidated claim")
 		}
 	}
-	doc := layoutExport(t, []c.Example{child}, ui.Extra{Lists: []style.ClassList{style.New().Gap(style.S4)}, Sheets: []*css.Sheet{nil, css.NewSheet()}})
+	doc := layoutExport(t, []examples.Example{child}, ui.Extra{Lists: []style.ClassList{style.New().Gap(style.S4)}, Sheets: []*css.Sheet{nil, css.NewSheet()}})
 	if err := doc.CheckLayoutContract("source-flex-declarations.v1", "source-measurements.v1"); err != nil {
 		t.Fatalf("identical owned utility/empty sheet is not an override: %v", err)
 	}
 }
 
 func TestSourceLayoutRefusesUnknownVersionsFeaturesAndMalformedDeclarations(t *testing.T) {
-	base := layoutExport(t, []c.Example{layoutExample("root", c.FlexProps{})})
+	base := layoutExport(t, []examples.Example{layoutExample("root", c.FlexProps{})})
 	for name, change := range map[string]func(*ui.DesignExport){
 		"version":               func(d *ui.DesignExport) { d.Schema = "platformkit.design-export.v3" },
 		"missing requirement":   func(d *ui.DesignExport) { d.RequiredFeatures = nil },

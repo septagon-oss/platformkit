@@ -1,4 +1,15 @@
-package components
+// Package examples captures component constructor invocations as typed
+// examples and describes them: Props as JSON Schema, named slots, observed HTML
+// and child occurrences, derived by reflection from the actual Go inputs.
+// Gallery is the foundation's own catalogue of one example per component.
+//
+// It is a package of its own because ui/components is the runtime: a button
+// renders without reflect, encoding/json or go/format, and a shell that serves
+// pages should not link the description and code-generation machinery. This
+// package imports ui/components; nothing in ui/components imports it. ui/forms
+// and ui/page build examples of their own through the same constructors, and
+// ui/export projects them into snapshots.
+package examples
 
 import (
 	"bytes"
@@ -9,6 +20,8 @@ import (
 	"slices"
 
 	g "maragu.dev/gomponents"
+
+	"github.com/septagon-oss/platformkit/ui/components"
 )
 
 // ExampleInfo identifies a particular constructor invocation, not a second
@@ -39,15 +52,15 @@ type Example struct {
 // PropsEditable and slot support describe Go APIs, not native/editor readiness.
 type ExampleDescription struct {
 	ExampleInfo
-	PropsEditable bool               `json:"propsEditable"`
-	Reason        string             `json:"reason,omitempty"`
-	Props         json.RawMessage    `json:"props"`
-	Schema        json.RawMessage    `json:"schema"`
-	Slots         []SlotDescription  `json:"slots"`
-	HTML          string             `json:"html"`
-	Children      []ChildOccurrence  `json:"children"`
-	OpaqueSlots   []string           `json:"opaqueSlots"`
-	Layout        *LayoutDescription `json:"layout,omitempty"`
+	PropsEditable bool                          `json:"propsEditable"`
+	Reason        string                        `json:"reason,omitempty"`
+	Props         json.RawMessage               `json:"props"`
+	Schema        json.RawMessage               `json:"schema"`
+	Slots         []SlotDescription             `json:"slots"`
+	HTML          string                        `json:"html"`
+	Children      []ChildOccurrence             `json:"children"`
+	OpaqueSlots   []string                      `json:"opaqueSlots"`
+	Layout        *components.LayoutDescription `json:"layout,omitempty"`
 }
 
 // SlotDescription advertises the actual field type. Supported replacements

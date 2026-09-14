@@ -1,4 +1,4 @@
-package components_test
+package examples_test
 
 import (
 	"encoding/json"
@@ -9,13 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	c "github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
+
+	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
-var exampleInfo = c.ExampleInfo{ID: "button/default", ComponentID: "button", Group: "Action", Name: "Button"}
+var exampleInfo = examples.ExampleInfo{ID: "button/default", ComponentID: "button", Group: "Action", Name: "Button"}
 
-func describeExample(t *testing.T, example c.Example) c.ExampleDescription {
+func describeExample(t *testing.T, example examples.Example) examples.ExampleDescription {
 	t.Helper()
 	description, err := example.Describe()
 	if err != nil {
@@ -25,7 +27,7 @@ func describeExample(t *testing.T, example c.Example) c.ExampleDescription {
 }
 
 func TestExampleDescribesActualPropsAndPreservesTransport(t *testing.T) {
-	example := c.ExampleOf(exampleInfo, c.ButtonProps{
+	example := examples.ExampleOf(exampleInfo, c.ButtonProps{
 		ComponentProps: c.ComponentProps{ID: "trusted", Class: "extra", Attrs: map[string]string{"data-local": "yes"}},
 		HTMXProps:      c.HTMXProps{Post: "/save"},
 		Label:          "Save",
@@ -87,7 +89,7 @@ func TestButtonTextRegionNamesItsActualProperty(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Button))
+			description := describeExample(t, examples.ExampleOf(exampleInfo, props, c.Button))
 			var values map[string]any
 			var schema struct {
 				Properties map[string]struct{ Type string }
@@ -127,7 +129,7 @@ func TestAlertTextRegionsPreservePropertiesAndAnnouncements(t *testing.T) {
 	for _, tone := range []string{"info", "danger"} {
 		for _, value := range []string{"", `Review & <tag>"'<!--/pk-text:message-->`} {
 			props := c.AlertProps{Title: value, Message: value, Tone: tone, Dismissible: true, Bordered: true}
-			example := c.ExampleWithSlots(exampleInfo, props, c.AlertSlots{Actions: []g.Node{g.Text("Trusted action")}}, c.AlertWithSlots)
+			example := examples.ExampleWithSlots(exampleInfo, props, c.AlertSlots{Actions: []g.Node{g.Text("Trusted action")}}, c.AlertWithSlots)
 			description := describeExample(t, example)
 			var escaped strings.Builder
 			if err := g.Text(value).Render(&escaped); err != nil {
@@ -164,7 +166,7 @@ func TestAlertTextRegionsPreservePropertiesAndAnnouncements(t *testing.T) {
 }
 
 func TestButtonReplacedLabelHasNoTextRegion(t *testing.T) {
-	original := c.ExampleWithSlots(exampleInfo, c.ButtonProps{Label: "Save"}, c.ButtonSlots{}, c.ButtonWithSlots)
+	original := examples.ExampleWithSlots(exampleInfo, c.ButtonProps{Label: "Save"}, c.ButtonSlots{}, c.ButtonWithSlots)
 	iconOnly, err := original.WithProps(json.RawMessage(`{"iconOnly":true}`))
 	if err != nil {
 		t.Fatal(err)
@@ -173,7 +175,7 @@ func TestButtonReplacedLabelHasNoTextRegion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, example := range []c.Example{iconOnly, content} {
+	for _, example := range []examples.Example{iconOnly, content} {
 		if strings.Contains(describeExample(t, example).HTML, "pk-text:label") {
 			t.Fatal("an icon-only label or identical slot text was advertised as rendered label text")
 		}
@@ -199,7 +201,7 @@ func TestInputAndLabelTextRegionsPreserveNativeSemantics(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Input))
+			description := describeExample(t, examples.ExampleOf(exampleInfo, props, c.Input))
 			if tc.value == "" {
 				if strings.Contains(description.HTML, "pk-text:label") || strings.Contains(description.HTML, "<label") {
 					t.Fatal("absent Input label was advertised as rendered text")
@@ -218,7 +220,7 @@ func TestInputAndLabelTextRegionsPreserveNativeSemantics(t *testing.T) {
 					t.Errorf("Input annotation lost %s", attribute)
 				}
 			}
-			label := describeExample(t, c.ExampleOf(exampleInfo, c.LabelProps{Text: tc.value, For: "title-field", Required: true}, c.Label))
+			label := describeExample(t, examples.ExampleOf(exampleInfo, c.LabelProps{Text: tc.value, For: "title-field", Required: true}, c.Label))
 			if !strings.Contains(label.HTML, "<!--pk-text:text-->"+tc.escaped+"<!--/pk-text:text--><span") || !strings.Contains(label.HTML, `aria-hidden="true"> *</span>`) {
 				t.Fatalf("Label property region changed text or required semantics: %s", label.HTML)
 			}
@@ -234,7 +236,7 @@ func TestTextContentRegionPreservesSemanticElementAndEscaping(t *testing.T) {
 	for _, value := range []string{"", "Album description", `A & <tag>"'<!--/pk-text:content-->`} {
 		for _, element := range []string{"p", "div", "strong", "h1"} {
 			props := c.TextProps{Content: value, Element: element}
-			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Text))
+			description := describeExample(t, examples.ExampleOf(exampleInfo, props, c.Text))
 			var escaped strings.Builder
 			if err := g.Text(value).Render(&escaped); err != nil {
 				t.Fatal(err)
@@ -256,8 +258,8 @@ func TestTextContentRegionPreservesSemanticElementAndEscaping(t *testing.T) {
 
 func TestToolbarTextRegionsBelongToToolbarProps(t *testing.T) {
 	for _, value := range []string{"", "Act", `A & <tag>"'<!--/pk-text:Title-->`} {
-		action := c.ExampleOf(c.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Act"}, c.Button)
-		original := c.ExampleWithChildren(c.ExampleInfo{ID: "toolbar", ComponentID: "toolbar"},
+		action := examples.ExampleOf(examples.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Act"}, c.Button)
+		original := examples.ExampleWithChildren(examples.ExampleInfo{ID: "toolbar", ComponentID: "toolbar"},
 			c.ToolbarProps{Title: value, Subtitle: value}, []g.Node{action.Node}, c.Toolbar)
 		description := describeExample(t, original)
 		var escaped strings.Builder
@@ -307,7 +309,7 @@ func TestCardTextRegionsFollowRenderedHeaderOwnership(t *testing.T) {
 		{name: "caller header", slots: c.CardSlots{Header: []g.Node{g.Text("Custom")}}, count: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			example := c.ExampleWithSlots(c.ExampleInfo{ID: "card", ComponentID: "card"},
+			example := examples.ExampleWithSlots(examples.ExampleInfo{ID: "card", ComponentID: "card"},
 				c.CardProps{Title: "A & <title>", Description: "A & <description>"}, tc.slots, c.CardWithSlots)
 			description := describeExample(t, example)
 			for _, field := range []string{"title", "description"} {
@@ -323,7 +325,7 @@ func TestCardTextRegionsFollowRenderedHeaderOwnership(t *testing.T) {
 			}
 		})
 	}
-	empty := c.ExampleWithSlots(c.ExampleInfo{ID: "empty", ComponentID: "card"}, c.CardProps{}, c.CardSlots{}, c.CardWithSlots)
+	empty := examples.ExampleWithSlots(examples.ExampleInfo{ID: "empty", ComponentID: "card"}, c.CardProps{}, c.CardSlots{}, c.CardWithSlots)
 	if strings.Contains(describeExample(t, empty).HTML, "pk-text:") {
 		t.Fatal("Absent Card copy must not invent text regions")
 	}
@@ -331,9 +333,9 @@ func TestCardTextRegionsFollowRenderedHeaderOwnership(t *testing.T) {
 
 func TestEmptyStateTextRegionsRetainOwnershipAndEscaping(t *testing.T) {
 	for _, value := range []string{"", "Gather memories", `A & <tag>"'<!--/pk-text:description-->`} {
-		example := c.ExampleWithSlots(c.ExampleInfo{ID: "empty", ComponentID: "empty-state"},
+		example := examples.ExampleWithSlots(examples.ExampleInfo{ID: "empty", ComponentID: "empty-state"},
 			c.EmptyStateProps{Title: value, Description: value}, c.EmptyStateSlots{Actions: []g.Node{
-				c.ExampleOf(c.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Create"}, c.Button).Node,
+				examples.ExampleOf(examples.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Create"}, c.Button).Node,
 			}}, c.EmptyStateWithSlots)
 		description := describeExample(t, example)
 		var escaped strings.Builder
@@ -368,7 +370,7 @@ func TestInputValueRegionIsLimitedToTextControls(t *testing.T) {
 	for _, typ := range []string{"", "text", " TEXT ", "email", "password", "number", "tel", "url", "search", "date", "time", "datetime-local", "month", "week", "color", "hidden", "file"} {
 		t.Run(typ, func(t *testing.T) {
 			for _, value := range []string{"", `A & <tag>"'`} {
-				description := describeExample(t, c.ExampleOf(exampleInfo, c.InputProps{Name: "title", Type: typ, Value: value}, c.Input))
+				description := describeExample(t, examples.ExampleOf(exampleInfo, c.InputProps{Name: "title", Type: typ, Value: value}, c.Input))
 				want := typ == "" || strings.EqualFold(strings.TrimSpace(typ), "text")
 				if count := strings.Count(description.HTML, `data-pk-value="value"`); count != 0 && !want || count != 1 && want {
 					t.Fatalf("type %q value %q has %d value markers", typ, value, count)
@@ -382,7 +384,7 @@ func TestInputValueRegionIsLimitedToTextControls(t *testing.T) {
 			}
 		})
 	}
-	original := c.ExampleOf(exampleInfo, c.InputProps{Name: "title"}, c.Input)
+	original := examples.ExampleOf(exampleInfo, c.InputProps{Name: "title"}, c.Input)
 	filled, err := original.WithProps(json.RawMessage(`{"value":"New title"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -420,7 +422,7 @@ func TestTextareaRegionsRetainOwningCopyAndLeadingNewlines(t *testing.T) {
 		{"", ""}, {"A & <tag>", "A &amp; &lt;tag&gt;"}, {"\nFirst\nLast\n", "\n\nFirst\nLast\n"},
 		{"\r\nFirst\r\n", "\n\r\nFirst\r\n"},
 	} {
-		example := c.ExampleOf(exampleInfo, c.TextareaProps{Name: "description", Label: "A & <label>", Value: tc.value, Rows: 5, Required: true}, c.Textarea)
+		example := examples.ExampleOf(exampleInfo, c.TextareaProps{Name: "description", Label: "A & <label>", Value: tc.value, Rows: 5, Required: true}, c.Textarea)
 		description := describeExample(t, example)
 		if strings.Count(description.HTML, `data-pk-value="value"`) != 1 ||
 			!strings.Contains(description.HTML, "<!--pk-text:label-->A &amp; &lt;label&gt;<!--/pk-text:label-->") ||
@@ -452,7 +454,7 @@ func TestExampleStringDefaultsDescribeOnlyDefiniteOmittedZeros(t *testing.T) {
 		Pointer  *string     `json:"pointer,omitempty"`
 		Number   json.Number `json:"number,omitempty"`
 	}
-	original := c.ExampleOf(exampleInfo, props{Number: "1"}, func(props) g.Node { return g.Text("unchanged") })
+	original := examples.ExampleOf(exampleInfo, props{Number: "1"}, func(props) g.Node { return g.Text("unchanged") })
 	description := describeExample(t, original)
 	var schema struct{ Properties map[string]map[string]any }
 	if err := json.Unmarshal(description.Schema, &schema); err != nil {
@@ -479,7 +481,7 @@ func TestExampleStringDefaultsDescribeOnlyDefiniteOmittedZeros(t *testing.T) {
 	if string(describeExample(t, updated).Schema) != string(description.Schema) || string(describeExample(t, original).Props) != string(description.Props) {
 		t.Fatal("defaults depend on instance values or mutated the original")
 	}
-	input := describeExample(t, c.ExampleOf(exampleInfo, c.InputProps{Name: "title"}, c.Input))
+	input := describeExample(t, examples.ExampleOf(exampleInfo, c.InputProps{Name: "title"}, c.Input))
 	if err := json.Unmarshal(input.Schema, &schema); err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +515,7 @@ func TestButtonSlotRegionsFollowTheRenderedComposition(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.props.Label = "Save"
-			example := c.ExampleWithSlots(exampleInfo, tc.props, tc.slots, c.ButtonWithSlots)
+			example := examples.ExampleWithSlots(exampleInfo, tc.props, tc.slots, c.ButtonWithSlots)
 			description := describeExample(t, example)
 			if strings.Count(description.HTML, "<!--pk-slot:") != len(tc.regions) {
 				t.Fatalf("rendered slot ownership differs: %s", description.HTML)
@@ -558,7 +560,7 @@ func TestButtonSlotRegionsCopyCallerContainers(t *testing.T) {
 }
 
 func TestExampleStrictPatch(t *testing.T) {
-	example := c.ExampleOf(exampleInfo, c.ButtonProps{Label: "Save"}, c.Button)
+	example := examples.ExampleOf(exampleInfo, c.ButtonProps{Label: "Save"}, c.Button)
 	for _, patch := range []string{
 		`null`, `[]`, `true`, `{"Label":"bad"}`, `{"unknown":1}`, `{"id":"bad"}`,
 		`{"class":"bad"}`, `{"attrs":{}}`, `{"hx-post":"bad"}`, `{"loading":null}`,
@@ -585,7 +587,7 @@ func TestExampleNestedCopyAndReplacement(t *testing.T) {
 		Any     map[string]any `json:"any,omitempty"`
 	}
 	input := props{Child: child{Name: "first", Values: map[string][]int{"n": {1, 2}}, Secret: "private"}, Enabled: new(false), Any: map[string]any{"nested": map[string]any{"n": []int{4}}}}
-	example := c.ExampleOf(exampleInfo, input, func(p props) g.Node {
+	example := examples.ExampleOf(exampleInfo, input, func(p props) g.Node {
 		data, _ := json.Marshal(p)
 		p.Child.Name = "renderer mutation"
 		p.Any["changed"] = true
@@ -618,7 +620,7 @@ func TestExampleNestedCopyAndReplacement(t *testing.T) {
 
 func TestExampleSlotReplacementCopiesContainers(t *testing.T) {
 	icons := []g.Node{g.Text("old-icon")}
-	button := c.ExampleWithSlots(exampleInfo, c.ButtonProps{Label: "Save"}, c.ButtonSlots{IconEnd: icons}, c.ButtonWithSlots)
+	button := examples.ExampleWithSlots(exampleInfo, c.ButtonProps{Label: "Save"}, c.ButtonSlots{IconEnd: icons}, c.ButtonWithSlots)
 	icons[0] = g.Text("caller-mutation")
 	replacement := []g.Node{g.Text("new-icon")}
 	updated, err := button.WithSlot("IconEnd", replacement...)
@@ -643,7 +645,7 @@ func TestExampleSlotReplacementCopiesContainers(t *testing.T) {
 	if _, err := button.WithSlot("iconEnd", g.Text("wrong-case")); err == nil {
 		t.Fatal("accepted slot case folding")
 	}
-	card := c.ExampleWithSlots(exampleInfo, c.CardProps{}, c.CardSlots{Header: []g.Node{g.Text("old-header")}, Content: []g.Node{g.Text("body")}}, c.CardWithSlots)
+	card := examples.ExampleWithSlots(exampleInfo, c.CardProps{}, c.CardSlots{Header: []g.Node{g.Text("old-header")}, Content: []g.Node{g.Text("body")}}, c.CardWithSlots)
 	newCard, err := card.WithSlot("Header", g.Text("new-header"))
 	if err != nil {
 		t.Fatal(err)
@@ -659,7 +661,7 @@ func TestExampleSlotReplacementCopiesContainers(t *testing.T) {
 }
 
 func TestExampleChildrenAndUnsupportedSlots(t *testing.T) {
-	children := c.ExampleWithChildren(exampleInfo, c.CardProps{}, []g.Node{g.Text("before")}, c.Card)
+	children := examples.ExampleWithChildren(exampleInfo, c.CardProps{}, []g.Node{g.Text("before")}, c.Card)
 	changed, err := children.WithSlot("children", g.Text("after"))
 	if err != nil {
 		t.Fatal(err)
@@ -667,7 +669,7 @@ func TestExampleChildrenAndUnsupportedSlots(t *testing.T) {
 	if !strings.Contains(describeExample(t, changed).HTML, "after") || describeExample(t, children).Slots[0].Name != "children" {
 		t.Fatal("children contract missing")
 	}
-	table := c.ExampleWithSlots(exampleInfo, c.TableProps{}, c.TableSlots{}, c.TableWithSlots)
+	table := examples.ExampleWithSlots(exampleInfo, c.TableProps{}, c.TableSlots{}, c.TableWithSlots)
 	for _, slot := range describeExample(t, table).Slots {
 		if slot.Supported {
 			t.Errorf("callback/config slot advertised replaceable: %+v", slot)
@@ -680,7 +682,7 @@ func TestExampleChildrenAndUnsupportedSlots(t *testing.T) {
 		One      g.Node `json:"one"`
 		Compound []struct{ Child g.Node }
 	}
-	one := c.ExampleWithSlots(exampleInfo, c.CardProps{}, slots{One: g.Text("one")}, func(p c.CardProps, s slots) g.Node { return c.Card(p, s.One) })
+	one := examples.ExampleWithSlots(exampleInfo, c.CardProps{}, slots{One: g.Text("one")}, func(p c.CardProps, s slots) g.Node { return c.Card(p, s.One) })
 	if _, err := one.WithSlot("one", g.Text("a"), g.Text("b")); err == nil {
 		t.Fatal("accepted multiple nodes for single-node slot")
 	}
@@ -693,7 +695,7 @@ func TestExampleChildrenAndUnsupportedSlots(t *testing.T) {
 }
 
 func TestExamplePreviewAndRenderFailure(t *testing.T) {
-	preview := c.ExamplePreview(exampleInfo, g.Text("preview"), "helper has no Props contract")
+	preview := examples.ExamplePreview(exampleInfo, g.Text("preview"), "helper has no Props contract")
 	description := describeExample(t, preview)
 	if description.PropsEditable || description.Reason == "" || description.HTML != "preview" {
 		t.Fatalf("preview masquerades as editable: %+v", description)
@@ -705,7 +707,7 @@ func TestExamplePreviewAndRenderFailure(t *testing.T) {
 		t.Fatal("preview accepted slot")
 	}
 	failure := errors.New("render failed")
-	broken := c.ExampleOf(exampleInfo, c.ButtonProps{}, func(c.ButtonProps) g.Node {
+	broken := examples.ExampleOf(exampleInfo, c.ButtonProps{}, func(c.ButtonProps) g.Node {
 		return g.NodeFunc(func(io.Writer) error { return failure })
 	})
 	if _, err := broken.Describe(); !errors.Is(err, failure) {
@@ -716,7 +718,7 @@ func TestExamplePreviewAndRenderFailure(t *testing.T) {
 func TestHeadingKeepsSemanticLevelAndEscapedSourceProperty(t *testing.T) {
 	for level := range 6 {
 		text := `An album & <memories>`
-		example := c.ExampleOf(c.ExampleInfo{ID: "heading", ComponentID: "pk-ui.component.heading"},
+		example := examples.ExampleOf(examples.ExampleInfo{ID: "heading", ComponentID: "pk-ui.component.heading"},
 			c.HeadingProps{Level: level + 1, Text: text, Anchor: "album"}, c.Heading)
 		description := describeExample(t, example)
 		want := `<!--pk-text:text-->An album &amp; &lt;memories&gt;<!--/pk-text:text-->`
@@ -736,7 +738,7 @@ func TestEveryGalleryExampleHasAnAccurateDescription(t *testing.T) {
 		"pk-ui.component.emptystate/default":       {"action", "Actions", "pk-ui.component.link"},
 		"pk-ui.component.toolbar/default":          {"action", "children", "pk-ui.component.button"},
 	}
-	for _, example := range c.Gallery() {
+	for _, example := range examples.Gallery() {
 		t.Run(example.ID, func(t *testing.T) {
 			description := describeExample(t, example)
 			if example.ID == "pk-ui.component.grid/default" {
@@ -772,7 +774,7 @@ func TestEveryGalleryExampleHasAnAccurateDescription(t *testing.T) {
 			}
 		})
 	}
-	sidebar := c.ExampleOf(exampleInfo, c.SidebarProps{Items: []c.SidebarItem{{Label: "Parent", Children: []c.SidebarItem{{Label: "Child"}}}}}, c.Sidebar)
+	sidebar := examples.ExampleOf(exampleInfo, c.SidebarProps{Items: []c.SidebarItem{{Label: "Parent", Children: []c.SidebarItem{{Label: "Child"}}}}}, c.Sidebar)
 	if schema := string(describeExample(t, sidebar).Schema); !strings.Contains(schema, `"$defs"`) || !strings.Contains(schema, `"$ref"`) {
 		t.Fatalf("recursive SidebarItem data not represented: %s", schema)
 	}
@@ -782,7 +784,7 @@ func TestExampleNodesRemainOpaqueTrustedReferences(t *testing.T) {
 	// We copy slot containers, not arbitrary state captured by a Go Node.
 	text := "before"
 	node := g.NodeFunc(func(w io.Writer) error { _, err := io.WriteString(w, text); return err })
-	example := c.ExampleWithChildren(exampleInfo, c.CardProps{}, []g.Node{node}, c.Card)
+	example := examples.ExampleWithChildren(exampleInfo, c.CardProps{}, []g.Node{node}, c.Card)
 	text = "after"
 	if !strings.Contains(describeExample(t, example).HTML, "after") {
 		t.Fatal("opaque Node capability unexpectedly replaced")
@@ -790,7 +792,7 @@ func TestExampleNodesRemainOpaqueTrustedReferences(t *testing.T) {
 }
 
 func TestExampleTablePatchKeepsJSONNumberPrecision(t *testing.T) {
-	example := c.ExampleOf(exampleInfo, c.TableProps{}, c.Table)
+	example := examples.ExampleOf(exampleInfo, c.TableProps{}, c.Table)
 	updated, err := example.WithProps(json.RawMessage(`{"rows":[{"cells":{"n":9007199254740993}}]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -816,7 +818,7 @@ func TestExampleRefusesOpaqueValuesHiddenInsideAny(t *testing.T) {
 		Value any `json:"value"`
 	}
 	for _, value := range []any{opaqueExampleNode{Label: "node"}, encodedExampleValue{Label: "custom codec"}, netip.MustParseAddr("192.0.2.1")} {
-		example := c.ExampleOf(exampleInfo, props{Value: value}, func(props) g.Node { return g.Text("Preview") })
+		example := examples.ExampleOf(exampleInfo, props{Value: value}, func(props) g.Node { return g.Text("Preview") })
 		if _, err := example.Describe(); err == nil {
 			t.Errorf("opaque dynamic value %T was silently projected as a data struct", value)
 		}
@@ -826,7 +828,7 @@ func TestExampleRefusesOpaqueValuesHiddenInsideAny(t *testing.T) {
 func TestExampleRejectsCyclicDataWithoutMutatingIt(t *testing.T) {
 	data := map[string]any{}
 	data["self"] = data
-	example := c.ExampleOf(exampleInfo, struct{ Data map[string]any }{Data: data}, func(struct{ Data map[string]any }) g.Node { return g.Text("Cycle") })
+	example := examples.ExampleOf(exampleInfo, struct{ Data map[string]any }{Data: data}, func(struct{ Data map[string]any }) g.Node { return g.Text("Cycle") })
 	if _, err := example.Describe(); err == nil {
 		t.Fatal("cyclic JSON data was accepted")
 	}
@@ -839,7 +841,7 @@ func TestExampleTypedJSONNumberHasNumericSchema(t *testing.T) {
 	type props struct {
 		N json.Number `json:"n"`
 	}
-	example := c.ExampleOf(exampleInfo, props{N: "9007199254740993"}, func(p props) g.Node { return g.Text(p.N.String()) })
+	example := examples.ExampleOf(exampleInfo, props{N: "9007199254740993"}, func(p props) g.Node { return g.Text(p.N.String()) })
 	description := describeExample(t, example)
 	var schema struct {
 		Properties map[string]struct{ Type string }
@@ -866,7 +868,7 @@ func TestExampleNilEmbeddedPointerDoesNotRequireAbsentFields(t *testing.T) {
 		Label string `json:"label"`
 	}
 	type props struct{ *EmbeddedProps }
-	example := c.ExampleOf(exampleInfo, props{}, func(p props) g.Node {
+	example := examples.ExampleOf(exampleInfo, props{}, func(p props) g.Node {
 		if p.EmbeddedProps == nil {
 			return g.Text("Absent")
 		}
@@ -887,7 +889,7 @@ func TestExampleNilEmbeddedPointerDoesNotRequireAbsentFields(t *testing.T) {
 }
 
 func TestSelectLabelKeepsItsOwningPropertyWhenReusingLabel(t *testing.T) {
-	example := c.ExampleOf(exampleInfo, c.SelectProps{Name: "state", Label: "State & <kind>", Required: true,
+	example := examples.ExampleOf(exampleInfo, c.SelectProps{Name: "state", Label: "State & <kind>", Required: true,
 		Value: "draft", Options: []c.SelectOption{{Value: "draft", Label: "Draft"}}}, c.Select)
 	before := describeExample(t, example)
 	if !strings.Contains(before.HTML, "<!--pk-text:label-->State &amp; &lt;kind&gt;<!--/pk-text:label-->") ||
@@ -917,7 +919,7 @@ func TestSelectPreservesExactChoiceValues(t *testing.T) {
 			if multiple {
 				props.Value, props.Values = "", []string{"", " padded "}
 			}
-			description := describeExample(t, c.ExampleOf(exampleInfo, props, c.Select))
+			description := describeExample(t, examples.ExampleOf(exampleInfo, props, c.Select))
 			if !strings.Contains(description.HTML, `value=" padded " selected`) || strings.Contains(description.HTML, `value="padded" selected`) {
 				t.Fatal("Select changed the selected identifier by trimming it")
 			}
@@ -930,7 +932,7 @@ func TestSelectPreservesExactChoiceValues(t *testing.T) {
 
 func TestSelectDeclaresItsSourceChoiceFields(t *testing.T) {
 	for _, multiple := range []bool{false, true} {
-		example := c.ExampleOf(exampleInfo, c.SelectProps{Name: "choice", Multiple: multiple,
+		example := examples.ExampleOf(exampleInfo, c.SelectProps{Name: "choice", Multiple: multiple,
 			Options: []c.SelectOption{{Value: "draft", Label: "Draft"}}}, c.Select)
 		before := describeExample(t, example)
 		for _, marker := range []string{`data-pk-value="value"`, `data-pk-values="values"`, `data-pk-options="options"`} {

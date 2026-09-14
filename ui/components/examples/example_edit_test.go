@@ -1,4 +1,4 @@
-package components_test
+package examples_test
 
 import (
 	"encoding/json"
@@ -7,18 +7,20 @@ import (
 	"strings"
 	"testing"
 
-	c "github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
+
+	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
 func TestExampleWithPropsAtRebuildsOnlyTheNamedOccurrence(t *testing.T) {
 	calls := 0
-	leaf := c.ExampleOf(compositionInfo("save/✓", "text"), c.TextProps{Content: "Before"}, func(p c.TextProps) g.Node {
+	leaf := examples.ExampleOf(compositionInfo("save/✓", "text"), c.TextProps{Content: "Before"}, func(p c.TextProps) g.Node {
 		calls++
 		return g.Text(p.Content)
 	})
-	makeOwner := func(id string) c.Example {
-		return c.ExampleWithChildren(compositionInfo(id, "form"), c.FormProps{}, []g.Node{nil, leaf.Node, nil}, func(p c.FormProps, nodes ...g.Node) g.Node {
+	makeOwner := func(id string) examples.Example {
+		return examples.ExampleWithChildren(compositionInfo(id, "form"), c.FormProps{}, []g.Node{nil, leaf.Node, nil}, func(p c.FormProps, nodes ...g.Node) g.Node {
 			calls++
 			if len(nodes) != 3 || nodes[0] != nil || nodes[2] != nil {
 				t.Fatal("editing changed the owning slot's positions or nil members")
@@ -31,7 +33,7 @@ func TestExampleWithPropsAtRebuildsOnlyTheNamedOccurrence(t *testing.T) {
 		Body g.Node
 		Tail []g.Node
 	}
-	root := c.ExampleWithSlots(compositionInfo("root", "owner"), c.FormProps{}, slots{first.Node, []g.Node{second.Node}}, func(p c.FormProps, s slots) g.Node {
+	root := examples.ExampleWithSlots(compositionInfo("root", "owner"), c.FormProps{}, slots{first.Node, []g.Node{second.Node}}, func(p c.FormProps, s slots) g.Node {
 		calls++
 		return c.Form(p, append([]g.Node{s.Body}, s.Tail...)...)
 	})
@@ -61,7 +63,7 @@ func TestExampleWithPropsAtRebuildsOnlyTheNamedOccurrence(t *testing.T) {
 }
 
 func TestExampleWithPropsAtRootAndTargetOpaqueSlots(t *testing.T) {
-	child := c.ExampleWithSlots(compositionInfo("save", "button"), c.ButtonProps{
+	child := examples.ExampleWithSlots(compositionInfo("save", "button"), c.ButtonProps{
 		ComponentProps: c.ComponentProps{Attrs: map[string]string{"data-trusted": "kept"}},
 		HTMXProps:      c.HTMXProps{Post: "/save"}, Label: "Before",
 	}, c.ButtonSlots{Content: []g.Node{g.Text("Opaque content")}}, c.ButtonWithSlots)
@@ -101,7 +103,7 @@ func TestExampleWithPropsAtRejectsInvalidPathsAndPatches(t *testing.T) {
 	if !reflect.DeepEqual(before, describeExample(t, root)) {
 		t.Fatal("rejected edits mutated captured inputs")
 	}
-	preview := c.ExamplePreview(compositionInfo("preview", "helper"), g.Text("Preview"), "read only")
+	preview := examples.ExamplePreview(compositionInfo("preview", "helper"), g.Text("Preview"), "read only")
 	if _, err := preview.WithPropsAt([]string{"preview"}, json.RawMessage(`{}`)); err == nil {
 		t.Fatal("preview acquired an editable Props contract")
 	}
@@ -109,12 +111,12 @@ func TestExampleWithPropsAtRejectsInvalidPathsAndPatches(t *testing.T) {
 
 func TestExampleWithPropsAtKeepsThePublicCaptureGuard(t *testing.T) {
 	root := compositionForm("root", compositionText("leaf", "Before").Node)
-	for name, mutate := range map[string]func(*c.Example){
-		"identity":  func(e *c.Example) { e.ID = "forged" },
-		"component": func(e *c.Example) { e.ComponentID = "forged" },
-		"nil":       func(e *c.Example) { e.Node = nil },
-		"opaque":    func(e *c.Example) { e.Node = g.Text("Replacement") },
-		"other capture": func(e *c.Example) {
+	for name, mutate := range map[string]func(*examples.Example){
+		"identity":  func(e *examples.Example) { e.ID = "forged" },
+		"component": func(e *examples.Example) { e.ComponentID = "forged" },
+		"nil":       func(e *examples.Example) { e.Node = nil },
+		"opaque":    func(e *examples.Example) { e.Node = g.Text("Replacement") },
+		"other capture": func(e *examples.Example) {
 			e.Node = compositionForm("root", compositionText("leaf", "Other").Node).Node
 		},
 	} {
@@ -150,7 +152,7 @@ func TestExampleWithPropsAtRefusesAmbiguousOrOpaqueAncestors(t *testing.T) {
 		"only wrapped":       {Body: g.Group{leaf.Node}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			root := c.ExampleWithSlots(compositionInfo("root", "owner"), c.TextProps{}, value, func(c.TextProps, slots) g.Node {
+			root := examples.ExampleWithSlots(compositionInfo("root", "owner"), c.TextProps{}, value, func(c.TextProps, slots) g.Node {
 				t.Fatal("validation executed a constructor or tried to discover rendered ownership")
 				return nil
 			})
@@ -159,7 +161,7 @@ func TestExampleWithPropsAtRefusesAmbiguousOrOpaqueAncestors(t *testing.T) {
 			}
 		})
 	}
-	root := c.ExampleWithSlots(compositionInfo("root", "owner"), c.TextProps{}, slots{Body: leaf.Node}, func(c.TextProps, slots) g.Node {
+	root := examples.ExampleWithSlots(compositionInfo("root", "owner"), c.TextProps{}, slots{Body: leaf.Node}, func(c.TextProps, slots) g.Node {
 		t.Fatal("an edit rendered the owner")
 		return nil
 	})
@@ -170,7 +172,7 @@ func TestExampleWithPropsAtRefusesAmbiguousOrOpaqueAncestors(t *testing.T) {
 
 func TestExampleWithPropsAtAllowsSuppressedDeclaredInputWithoutRendering(t *testing.T) {
 	leaf := compositionText("leaf", "Before")
-	root := c.ExampleWithSlots(compositionInfo("root", "button"), c.ButtonProps{Loading: true, Label: "Wait"}, c.ButtonSlots{IconEnd: []g.Node{leaf.Node}}, c.ButtonWithSlots)
+	root := examples.ExampleWithSlots(compositionInfo("root", "button"), c.ButtonProps{Loading: true, Label: "Wait"}, c.ButtonSlots{IconEnd: []g.Node{leaf.Node}}, c.ButtonWithSlots)
 	edited, err := root.WithPropsAt([]string{"root", "leaf"}, json.RawMessage(`{"content":"After"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +188,7 @@ func TestExampleWithPropsAtValidatesPortableInputsWithoutExecutingThem(t *testin
 		Value string `json:"value"`
 		Run   func() `json:"run"`
 	}
-	root := c.ExampleWithChildren(compositionInfo("root", "owner"), props{}, []g.Node{compositionText("leaf", "Before").Node}, func(props, ...g.Node) g.Node {
+	root := examples.ExampleWithChildren(compositionInfo("root", "owner"), props{}, []g.Node{compositionText("leaf", "Before").Node}, func(props, ...g.Node) g.Node {
 		t.Fatal("portable validation executed the constructor")
 		return nil
 	})
@@ -219,7 +221,7 @@ func TestExampleWithPropsAtKeepsTypedNestedValueSemantics(t *testing.T) {
 		Label  string           `json:"label"`
 	}
 	input := props{Values: map[string][]int{"old": {1, 2}}, Label: "Retained"}
-	leaf := c.ExampleOf(compositionInfo("leaf", "data"), input, func(p props) g.Node {
+	leaf := examples.ExampleOf(compositionInfo("leaf", "data"), input, func(p props) g.Node {
 		return g.Text(p.Label)
 	})
 	root := compositionForm("root", leaf.Node)
@@ -239,7 +241,7 @@ func TestExampleWithPropsAtRejectsDuplicateKeysInsideAny(t *testing.T) {
 	type props struct {
 		Value any `json:"value"`
 	}
-	leaf := c.ExampleOf(compositionInfo("leaf", "data"), props{}, func(p props) g.Node {
+	leaf := examples.ExampleOf(compositionInfo("leaf", "data"), props{}, func(p props) g.Node {
 		if p.Value != nil {
 			if _, ok := p.Value.(map[string]any)["large"].(json.Number); !ok {
 				t.Error("a valid arbitrary JSON number lost its exact numeric representation")

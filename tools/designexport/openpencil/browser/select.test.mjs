@@ -23,18 +23,18 @@ import (
   "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 func main() {
   var input struct { Props components.SelectProps; Proposal *ui.PropsProposal }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  selectExample := components.ExampleOf(components.ExampleInfo{ID: "fixture/select", ComponentID: "pk-ui.component.select"}, input.Props, components.Select)
-  field := components.ExampleOf(components.ExampleInfo{ID: "state", ComponentID: "pk-ui.component.select"}, input.Props, components.Select)
-  form := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/form", ComponentID: "pk-ui.component.form"},
+  selectExample := examples.ExampleOf(examples.ExampleInfo{ID: "fixture/select", ComponentID: "pk-ui.component.select"}, input.Props, components.Select)
+  field := examples.ExampleOf(examples.ExampleInfo{ID: "state", ComponentID: "pk-ui.component.select"}, input.Props, components.Select)
+  form := examples.ExampleWithChildren(examples.ExampleInfo{ID: "fixture/form", ComponentID: "pk-ui.component.form"},
     components.FormProps{Label: "Album details", Action: "/albums"}, []gomponents.Node{field.Node}, components.Form)
-  examples := []components.Example{selectExample, form}
-  snapshot, err := ui.Export(design.Default(), examples)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal) }
+  captures := []examples.Example{selectExample, form}
+  snapshot, err := ui.Export(design.Default(), captures)
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

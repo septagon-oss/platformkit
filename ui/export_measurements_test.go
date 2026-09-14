@@ -8,12 +8,13 @@ import (
 
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 func TestExportMeasurementsUseSourceValuesAndRequiredFeature(t *testing.T) {
 	child := layoutExample("child", c.FlexProps{Gap: "2"})
-	doc := layoutExport(t, []c.Example{layoutExample("root", c.FlexProps{}, child.Node)})
+	doc := layoutExport(t, []examples.Example{layoutExample("root", c.FlexProps{}, child.Node)})
 	want, err := style.Measurements()
 	if err != nil || !reflect.DeepEqual(doc.Measurements, want) {
 		t.Fatalf("export did not project its owning scales: %v", err)
@@ -42,7 +43,7 @@ func TestExportMeasurementsUseSourceValuesAndRequiredFeature(t *testing.T) {
 }
 
 func TestExportMeasurementsRefuseAmbiguityAndRetainDeclarationOnlyMigration(t *testing.T) {
-	base := layoutExport(t, []c.Example{layoutExample("root", c.FlexProps{})})
+	base := layoutExport(t, []examples.Example{layoutExample("root", c.FlexProps{})})
 	features := []string{"source-flex-declarations.v1", "source-measurements.v1"}
 	for name, change := range map[string]func(*ui.DesignExport){
 		"unrequired data": func(d *ui.DesignExport) { d.RequiredFeatures = d.RequiredFeatures[:1] },

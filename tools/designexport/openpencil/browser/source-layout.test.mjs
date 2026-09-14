@@ -11,7 +11,7 @@ import (
   "os"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  c "github.com/septagon-oss/platformkit/ui/components"
+  c "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   g "maragu.dev/gomponents"
 )
 func main() {
@@ -19,13 +19,13 @@ func main() {
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   var children []g.Node
   for _, label := range []string{"Save", "Cancel"} {
-    child := c.ExampleOf(c.ExampleInfo{ID:label, ComponentID:"button"}, c.ButtonProps{Label:label}, c.Button)
+    child := examples.ExampleOf(examples.ExampleInfo{ID:label, ComponentID:"button"}, c.ButtonProps{Label:label}, c.Button)
     children = append(children, child.Node)
   }
-  info := c.ExampleInfo{ID:"root", ComponentID:"layout"}
-  example := c.ExampleWithChildren(info, input.Props, children, c.Flex)
-  if input.Stack { example = c.ExampleWithChildren(info, c.StackProps{Gap:"2", Align:"center"}, children, c.Stack) }
-  snapshot, err := ui.ExportWithLayout(design.Default(), []c.Example{example})
+  info := examples.ExampleInfo{ID:"root", ComponentID:"layout"}
+  example := examples.ExampleWithChildren(info, input.Props, children, c.Flex)
+  if input.Stack { example = examples.ExampleWithChildren(info, c.StackProps{Gap:"2", Align:"center"}, children, c.Stack) }
+  snapshot, err := ui.ExportWithLayout(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

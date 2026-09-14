@@ -22,19 +22,19 @@ import (
   "os"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  c "github.com/septagon-oss/platformkit/ui/components"
+  c "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   g "maragu.dev/gomponents"
   h "maragu.dev/gomponents/html"
 )
 func main() {
   var input struct { Layout, Label, Heading string; Nested, Empty, Private bool; Proposal *ui.PropsProposal; Replacement *ui.ReplacementProposal }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  info := func(id, component string) c.ExampleInfo { return c.ExampleInfo{ID:id, ComponentID:component} }
+  info := func(id, component string) examples.ExampleInfo { return examples.ExampleInfo{ID:id, ComponentID:component} }
   button := func(id, label string) g.Node {
-    return c.ExampleOf(info(id, "pk-ui.component.button"), c.ButtonProps{Label:label}, c.Button).Node
+    return examples.ExampleOf(info(id, "pk-ui.component.button"), c.ButtonProps{Label:label}, c.Button).Node
   }
   group := func(id string, children ...g.Node) g.Node {
-    return c.ExampleWithChildren(info(id, "fixture.fragment"), c.TextProps{Content:input.Heading}, children,
+    return examples.ExampleWithChildren(info(id, "fixture.fragment"), c.TextProps{Content:input.Heading}, children,
       func(p c.TextProps, nodes ...g.Node) g.Node {
         if input.Private && id == "fragment" {
           heading := h.Div(h.Style("display:flex;flex-direction:column;margin-bottom:8px"),
@@ -48,18 +48,18 @@ func main() {
   if input.Empty { children = nil }
   if input.Nested { children = []g.Node{group("inner", children...)} }
   members := []g.Node{button("before", "Before"), group("fragment", children...), button("after", "After")}
-  var example c.Example
+  var example examples.Example
   switch input.Layout {
   case "grid":
-    example = c.ExampleWithChildren(info("fixture", "pk-ui.component.grid"), c.GridProps{Columns:"2", Gap:"8"}, members, c.Grid)
+    example = examples.ExampleWithChildren(info("fixture", "pk-ui.component.grid"), c.GridProps{Columns:"2", Gap:"8"}, members, c.Grid)
   case "wrap":
-    example = c.ExampleWithChildren(info("fixture", "pk-ui.component.flex"), c.FlexProps{Wrap:true, Gap:"8"}, members, c.Flex)
+    example = examples.ExampleWithChildren(info("fixture", "pk-ui.component.flex"), c.FlexProps{Wrap:true, Gap:"8"}, members, c.Flex)
   default:
-    example = c.ExampleWithChildren(info("fixture", "pk-ui.component.stack"), c.StackProps{Gap:"8"}, members, c.Stack)
+    example = examples.ExampleWithChildren(info("fixture", "pk-ui.component.stack"), c.StackProps{Gap:"8"}, members, c.Stack)
   }
-  snapshot, err := ui.Export(design.Default(), []c.Example{example})
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), []c.Example{example}, *input.Proposal) }
-  if input.Replacement != nil { _, snapshot, err = ui.ProjectReplacement(design.Default(), []c.Example{example}, *input.Replacement) }
+  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), []examples.Example{example}, *input.Proposal) }
+  if input.Replacement != nil { _, snapshot, err = ui.ProjectReplacement(design.Default(), []examples.Example{example}, *input.Replacement) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

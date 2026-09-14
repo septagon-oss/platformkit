@@ -29,6 +29,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
 // Chrome is what every page of one shell has in common.
@@ -163,8 +164,8 @@ func requestNotices(c Chrome) g.Node {
 // in its own export or composition without adding a second notice catalog.
 // These are presentation candidates, not request classification, automatic retry,
 // source persistence or an executable prototype. Only a local sign-in link is used.
-func RequestNoticeExamples(signIn string) []components.Example {
-	var examples []components.Example
+func RequestNoticeExamples(signIn string) []examples.Example {
+	var captures []examples.Example
 	for _, notice := range []struct {
 		kind, title, message string
 		signin               bool
@@ -174,20 +175,20 @@ func RequestNoticeExamples(signIn string) []components.Example {
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
 		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
 	} {
-		body := []g.Node{components.ExampleWithSlots(
-			components.ExampleInfo{ID: "message", ComponentID: "pk-ui.component.alert"},
+		body := []g.Node{examples.ExampleWithSlots(
+			examples.ExampleInfo{ID: "message", ComponentID: "pk-ui.component.alert"},
 			components.AlertProps{Tone: "danger", Title: notice.title, Message: notice.message, Bordered: true},
 			components.AlertSlots{}, components.AlertWithSlots).Node}
 		if notice.signin && httpx.LocalPath(signIn) {
-			body = append(body, components.ExampleOf(
-				components.ExampleInfo{ID: "sign-in", ComponentID: "pk-ui.component.link"},
+			body = append(body, examples.ExampleOf(
+				examples.ExampleInfo{ID: "sign-in", ComponentID: "pk-ui.component.link"},
 				components.LinkProps{Label: "Sign in (opens a new tab)", Href: signIn, External: true}, components.Link).Node)
 		}
-		examples = append(examples, components.ExampleWithChildren(
-			components.ExampleInfo{ID: "pk-auth-" + notice.kind, ComponentID: "pk-ui.component.stack", Group: "Request recovery", Name: notice.title},
+		captures = append(captures, examples.ExampleWithChildren(
+			examples.ExampleInfo{ID: "pk-auth-" + notice.kind, ComponentID: "pk-ui.component.stack", Group: "Request recovery", Name: notice.title},
 			components.StackProps{Gap: "3"}, body, components.Stack))
 	}
-	return examples
+	return captures
 }
 
 // head is every page's head: the stylesheet with its fingerprint, the inline

@@ -23,7 +23,7 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/style"
 )
 func main() {
@@ -36,24 +36,24 @@ func main() {
     if input.Controls && item.id != "body" {
       label := item.content
       if item.id == "first" { label = input.Label }
-      children = append(children, components.ExampleOf(components.ExampleInfo{
+      children = append(children, examples.ExampleOf(examples.ExampleInfo{
         ID: item.id, ComponentID: "pk-ui.component.button",
       }, components.ButtonProps{Label: label}, components.Button).Node)
       continue
     }
     props := components.TextProps{Content: item.content}
     if input.Span && item.id == "body" { props.Class = "col-span-full" }
-    children = append(children, components.ExampleOf(components.ExampleInfo{
+    children = append(children, examples.ExampleOf(examples.ExampleInfo{
       ID: item.id, ComponentID: "pk-ui.component.text",
     }, props, components.Text).Node)
   }
-  example := components.ExampleWithChildren(components.ExampleInfo{
+  example := examples.ExampleWithChildren(examples.ExampleInfo{
     ID: "fixture/grid", ComponentID: "pk-ui.component.grid",
   }, components.GridProps{Columns: input.Columns, Gap: "4"}, children, components.Grid)
-  standalone := components.ExampleOf(components.ExampleInfo{
+  standalone := examples.ExampleOf(examples.ExampleInfo{
     ID: "fixture/button", ComponentID: "pk-ui.component.button",
   }, components.ButtonProps{Label: input.Label}, components.Button)
-  snapshot, err := ui.Export(design.Default(), []components.Example{example, standalone},
+  snapshot, err := ui.Export(design.Default(), []examples.Example{example, standalone},
     ui.Extra{Lists: []style.ClassList{style.New().ColSpanFull()}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }

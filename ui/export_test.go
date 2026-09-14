@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/icon"
 	g "maragu.dev/gomponents"
 )
@@ -22,8 +23,8 @@ import (
 func TestDesignExportUsesCurrentRenderingAndAssets(t *testing.T) {
 	theme := design.Default()
 	theme.Light.AccentDefault = "#abcdef"
-	examples := c.Gallery()
-	doc, err := ui.Export(theme, examples)
+	captures := examples.Gallery()
+	doc, err := ui.Export(theme, captures)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,15 +47,15 @@ func TestDesignExportUsesCurrentRenderingAndAssets(t *testing.T) {
 	if len(doc.Themes) != 2 || doc.Themes[0].Mode != "light" || doc.Themes[1].Mode != "dark" {
 		t.Fatalf("theme mode selectors do not match CSS: %+v", doc.Themes)
 	}
-	if len(doc.Examples) != len(examples) || len(doc.Icons) != len(icon.Names()) {
+	if len(doc.Examples) != len(captures) || len(doc.Icons) != len(icon.Names()) {
 		t.Fatal("export omitted gallery entries or canonical glyphs")
 	}
-	for _, example := range examples {
+	for _, example := range captures {
 		description, err := example.Describe()
 		if err != nil {
 			t.Fatal(err)
 		}
-		index := slices.IndexFunc(doc.Examples, func(d c.ExampleDescription) bool { return d.ID == example.ID })
+		index := slices.IndexFunc(doc.Examples, func(d examples.ExampleDescription) bool { return d.ID == example.ID })
 		if index < 0 || doc.Examples[index].HTML != description.HTML {
 			t.Fatalf("exported rendering differs for %s", example.ID)
 		}
@@ -72,13 +73,13 @@ func TestDesignExportUsesCurrentRenderingAndAssets(t *testing.T) {
 }
 
 func TestDesignExportIsDeterministicAndContentAddressed(t *testing.T) {
-	examples := c.Gallery()
-	first, err := ui.Export(design.Default(), examples)
+	captures := examples.Gallery()
+	first, err := ui.Export(design.Default(), captures)
 	if err != nil {
 		t.Fatal(err)
 	}
-	slices.Reverse(examples)
-	second, err := ui.Export(design.Default(), examples)
+	slices.Reverse(captures)
+	second, err := ui.Export(design.Default(), captures)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,19 +97,19 @@ func TestDesignExportIsDeterministicAndContentAddressed(t *testing.T) {
 	}
 	theme := design.Default()
 	theme.Dark.AccentDefault = "#123456"
-	changed, err := ui.Export(theme, examples)
+	changed, err := ui.Export(theme, captures)
 	if err != nil || changed.SHA256 == claimed {
 		t.Fatalf("changed token did not invalidate artifact: %v", err)
 	}
-	index := slices.IndexFunc(examples, func(e c.Example) bool { return e.ID == "pk-ui.component.button/primary" })
+	index := slices.IndexFunc(captures, func(e examples.Example) bool { return e.ID == "pk-ui.component.button/primary" })
 	if index < 0 {
 		t.Fatal("stable button identity missing")
 	}
-	examples[index], err = examples[index].WithProps(json.RawMessage(`{"label":"A changed label"}`))
+	captures[index], err = captures[index].WithProps(json.RawMessage(`{"label":"A changed label"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err = ui.Export(design.Default(), examples)
+	changed, err = ui.Export(design.Default(), captures)
 	if err != nil || changed.SHA256 == claimed {
 		t.Fatalf("changed props did not invalidate artifact: %v", err)
 	}
@@ -117,14 +118,14 @@ func TestDesignExportIsDeterministicAndContentAddressed(t *testing.T) {
 func TestTypographyConfigurationReachesRuntimeAndExportWithoutChangingComponents(t *testing.T) {
 	t.Parallel()
 	theme := design.Default()
-	examples := c.Gallery()
-	before, err := ui.Export(theme, examples)
+	captures := examples.Gallery()
+	before, err := ui.Export(theme, captures)
 	if err != nil {
 		t.Fatal(err)
 	}
 	theme.Light.Typography.Display = `"Customer Display", serif`
 	theme.Dark.Typography.Display = theme.Light.Typography.Display
-	after, err := ui.Export(theme, examples)
+	after, err := ui.Export(theme, captures)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,17 +145,17 @@ func TestTypographyConfigurationReachesRuntimeAndExportWithoutChangingComponents
 }
 
 func TestDesignExportRejectsAmbiguousIdentityAndRenderFailures(t *testing.T) {
-	info := c.ExampleInfo{ID: "button/one", ComponentID: "button", Name: "Button"}
-	button := c.ExampleOf(info, c.ButtonProps{Label: "Save"}, c.Button)
+	info := examples.ExampleInfo{ID: "button/one", ComponentID: "button", Name: "Button"}
+	button := examples.ExampleOf(info, c.ButtonProps{Label: "Save"}, c.Button)
 	otherInfo := info
 	otherInfo.ID = "button/two"
-	for _, examples := range [][]c.Example{
+	for _, captures := range [][]examples.Example{
 		{button, button},
-		{c.ExampleOf(c.ExampleInfo{}, c.ButtonProps{}, c.Button)},
-		{button, c.ExampleOf(otherInfo, c.TextProps{Content: "Different contract"}, c.Text)},
-		{c.ExamplePreview(info, failedExportNode{}, "Render failure must be visible")},
+		{examples.ExampleOf(examples.ExampleInfo{}, c.ButtonProps{}, c.Button)},
+		{button, examples.ExampleOf(otherInfo, c.TextProps{Content: "Different contract"}, c.Text)},
+		{examples.ExamplePreview(info, failedExportNode{}, "Render failure must be visible")},
 	} {
-		if _, err := ui.Export(design.Default(), examples); err == nil {
+		if _, err := ui.Export(design.Default(), captures); err == nil {
 			t.Fatal("accepted duplicate/missing identity, conflicting props contract or render failure")
 		}
 	}
@@ -165,11 +166,11 @@ type failedExportNode struct{}
 func (failedExportNode) Render(io.Writer) error { return errors.New("fixture render failed") }
 
 func TestDesignExportKeepsPreviewAndGoSlotSupportExplicit(t *testing.T) {
-	info := c.ExampleInfo{ID: "button/icon", ComponentID: "button"}
-	button := c.ExampleWithSlots(info, c.ButtonProps{Label: "Save"}, c.ButtonSlots{IconEnd: []g.Node{g.Text("Icon")}}, c.ButtonWithSlots)
-	previewInfo := c.ExampleInfo{ID: "helper/preview", ComponentID: "helper"}
-	preview := c.ExamplePreview(previewInfo, g.Text("Preview"), "No typed property contract")
-	doc, err := ui.Export(design.Default(), []c.Example{button, preview})
+	info := examples.ExampleInfo{ID: "button/icon", ComponentID: "button"}
+	button := examples.ExampleWithSlots(info, c.ButtonProps{Label: "Save"}, c.ButtonSlots{IconEnd: []g.Node{g.Text("Icon")}}, c.ButtonWithSlots)
+	previewInfo := examples.ExampleInfo{ID: "helper/preview", ComponentID: "helper"}
+	preview := examples.ExamplePreview(previewInfo, g.Text("Preview"), "No typed property contract")
+	doc, err := ui.Export(design.Default(), []examples.Example{button, preview})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,28 +184,28 @@ func TestDesignExportKeepsPreviewAndGoSlotSupportExplicit(t *testing.T) {
 	}
 }
 
-func slotContractExample[S any](info c.ExampleInfo, label string, slots S) c.Example {
-	return c.ExampleWithSlots(info, c.ButtonProps{Label: label}, slots, func(p c.ButtonProps, _ S) g.Node {
+func slotContractExample[S any](info examples.ExampleInfo, label string, slots S) examples.Example {
+	return examples.ExampleWithSlots(info, c.ButtonProps{Label: label}, slots, func(p c.ButtonProps, _ S) g.Node {
 		return g.Text(p.Label)
 	})
 }
 
 func TestDesignExportRejectsConflictingSlotAndEditabilityContracts(t *testing.T) {
-	info := c.ExampleInfo{ID: "owner/first", ComponentID: "owner"}
+	info := examples.ExampleInfo{ID: "owner/first", ComponentID: "owner"}
 	base := slotContractExample(info, "First", struct{ Body g.Node }{g.Text("Body")})
-	other := c.ExampleInfo{ID: "owner/second", ComponentID: "owner"}
-	cases := map[string]c.Example{
+	other := examples.ExampleInfo{ID: "owner/second", ComponentID: "owner"}
+	cases := map[string]examples.Example{
 		"missing":  slotContractExample(other, "Second", struct{}{}),
 		"extra":    slotContractExample(other, "Second", struct{ Body, Footer g.Node }{}),
 		"renamed":  slotContractExample(other, "Second", struct{ Content g.Node }{}),
 		"multiple": slotContractExample(other, "Second", struct{ Body []g.Node }{}),
 		"callback": slotContractExample(other, "Second", struct{ Body func() g.Node }{}),
-		"preview":  c.ExamplePreview(other, g.Text("Preview"), "No typed contract"),
+		"preview":  examples.ExamplePreview(other, g.Text("Preview"), "No typed contract"),
 	}
 	for name, example := range cases {
 		t.Run(name, func(t *testing.T) {
-			for _, examples := range [][]c.Example{{base, example}, {example, base}} {
-				doc, err := ui.Export(design.Default(), examples)
+			for _, captures := range [][]examples.Example{{base, example}, {example, base}} {
+				doc, err := ui.Export(design.Default(), captures)
 				if err == nil || !reflect.DeepEqual(doc, ui.DesignExport{}) {
 					t.Fatalf("conflicting interface must fail without partial export: error=%v, examples=%d", err, len(doc.Examples))
 				}
@@ -213,7 +214,7 @@ func TestDesignExportRejectsConflictingSlotAndEditabilityContracts(t *testing.T)
 	}
 	callback := slotContractExample(info, "First", struct{ Body func() g.Node }{})
 	changed := slotContractExample(other, "Second", struct{ Body func(string) g.Node }{})
-	if doc, err := ui.Export(design.Default(), []c.Example{callback, changed}); err == nil || !reflect.DeepEqual(doc, ui.DesignExport{}) {
+	if doc, err := ui.Export(design.Default(), []examples.Example{callback, changed}); err == nil || !reflect.DeepEqual(doc, ui.DesignExport{}) {
 		t.Fatal("accepted conflicting opaque callback types or returned a partial export")
 	}
 }
@@ -227,13 +228,13 @@ func TestDesignExportSlotContractsIgnoreDeclarationOrderAndExampleValues(t *test
 		Footer []g.Node
 		Body   g.Node
 	}
-	first := c.ExampleInfo{ID: "owner/first", ComponentID: "owner", Name: "First", Group: "One"}
-	second := c.ExampleInfo{ID: "owner/second", ComponentID: "owner", Name: "Second", Group: "Two"}
-	examples := []c.Example{
+	first := examples.ExampleInfo{ID: "owner/first", ComponentID: "owner", Name: "First", Group: "One"}
+	second := examples.ExampleInfo{ID: "owner/second", ComponentID: "owner", Name: "Second", Group: "Two"}
+	captures := []examples.Example{
 		slotContractExample(first, "First label", ordered{g.Text("Body"), nil}),
 		slotContractExample(second, "Second label", reversed{[]g.Node{g.Text("Footer")}, g.Text("Changed")}),
 	}
-	doc, err := ui.Export(design.Default(), examples)
+	doc, err := ui.Export(design.Default(), captures)
 	if err != nil || len(doc.Examples) != 2 {
 		t.Fatalf("compatible interfaces rejected: %v", err)
 	}
@@ -243,10 +244,10 @@ func TestDesignExportSlotContractsIgnoreDeclarationOrderAndExampleValues(t *test
 }
 
 func TestDesignExportValidatesNestedContractsWithoutGlobalChildIDs(t *testing.T) {
-	childInfo := c.ExampleInfo{ID: "action", ComponentID: "button"}
-	button := c.ExampleOf(childInfo, c.ButtonProps{Label: "Save"}, c.Button)
-	parent := func(id string, child c.Example, hide bool) c.Example {
-		return c.ExampleWithChildren(c.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, []g.Node{child.Node},
+	childInfo := examples.ExampleInfo{ID: "action", ComponentID: "button"}
+	button := examples.ExampleOf(childInfo, c.ButtonProps{Label: "Save"}, c.Button)
+	parent := func(id string, child examples.Example, hide bool) examples.Example {
+		return examples.ExampleWithChildren(examples.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, []g.Node{child.Node},
 			func(p c.FormProps, nodes ...g.Node) g.Node {
 				if hide {
 					return c.Form(p)
@@ -255,12 +256,12 @@ func TestDesignExportValidatesNestedContractsWithoutGlobalChildIDs(t *testing.T)
 			})
 	}
 	first := parent("first", button, false)
-	if _, err := ui.Export(design.Default(), []c.Example{first, parent("second", button, false)}); err != nil {
+	if _, err := ui.Export(design.Default(), []examples.Example{first, parent("second", button, false)}); err != nil {
 		t.Fatalf("the same local child identity in different owners is valid: %v", err)
 	}
-	conflicting := c.ExampleOf(childInfo, c.TextProps{Content: "Different interface"}, c.Text)
+	conflicting := examples.ExampleOf(childInfo, c.TextProps{Content: "Different interface"}, c.Text)
 	for _, hide := range []bool{false, true} {
-		doc, err := ui.Export(design.Default(), []c.Example{first, parent("second", conflicting, hide)})
+		doc, err := ui.Export(design.Default(), []examples.Example{first, parent("second", conflicting, hide)})
 		if err == nil || !reflect.DeepEqual(doc, ui.DesignExport{}) {
 			t.Fatalf("nested interface conflict escaped validation (unobserved=%v): %v", hide, err)
 		}

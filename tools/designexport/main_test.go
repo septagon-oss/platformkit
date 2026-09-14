@@ -12,7 +12,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
-	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
 type failingWriter struct{}
@@ -51,7 +51,7 @@ func TestExportPreservesFullSnapshotWithoutReadingInput(t *testing.T) {
 	input := new(failingReader)
 	_, first := exportedSnapshot(t, nil, input)
 	_, again := exportedSnapshot(t, nil, input)
-	want, err := ui.Export(design.Default(), components.Gallery())
+	want, err := ui.Export(design.Default(), examples.Gallery())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestExportProjectsExistingTypedExamples(t *testing.T) {
 		t.Run(tc.id+tc.patch, func(t *testing.T) {
 			args := []string{"--example", tc.id}
 			selected, _ := exportedSnapshot(t, args, input)
-			index := slices.IndexFunc(full.Examples, func(e components.ExampleDescription) bool { return e.ID == tc.id })
+			index := slices.IndexFunc(full.Examples, func(e examples.ExampleDescription) bool { return e.ID == tc.id })
 			if index < 0 || len(selected.Examples) != 1 || !reflect.DeepEqual(selected.Examples[0], full.Examples[index]) {
 				t.Fatal("selection changed the existing example or included other examples")
 			}
@@ -173,7 +173,7 @@ func TestExportProjectsRevisionCheckedSourceProposal(t *testing.T) {
 		if len(projected.Examples) != len(full.Examples) || projected.SHA256 == full.SHA256 {
 			t.Fatal("proposal did not return the full changed snapshot")
 		}
-		root := slices.IndexFunc(projected.Examples, func(e components.ExampleDescription) bool { return e.ID == path[0] })
+		root := slices.IndexFunc(projected.Examples, func(e examples.ExampleDescription) bool { return e.ID == path[0] })
 		if root < 0 || !strings.Contains(projected.Examples[root].HTML, "Create &amp; keep") {
 			t.Fatal("source constructor did not render the proposed edit")
 		}
@@ -224,7 +224,7 @@ func TestExportProjectsSourceReplacementWithoutPersisting(t *testing.T) {
 		t.Fatal(err)
 	}
 	projected, _ := exportedSnapshot(t, []string{"--replacement"}, bytes.NewReader(body))
-	root := slices.IndexFunc(projected.Examples, func(e components.ExampleDescription) bool { return e.ID == "pk-ui.component.form/default" })
+	root := slices.IndexFunc(projected.Examples, func(e examples.ExampleDescription) bool { return e.ID == "pk-ui.component.form/default" })
 	if root < 0 || !strings.Contains(projected.Examples[root].HTML, "Save") || projected.SHA256 == base.SHA256 {
 		t.Fatal("replacement did not render the selected source invocation")
 	}

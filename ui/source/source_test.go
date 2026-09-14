@@ -358,26 +358,27 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
 )
 
-func captureInfo(section, name, component string) c.ExampleInfo {
-	return c.ExampleInfo{ID: section + "/" + name, ComponentID: component}
+func captureInfo(section, name, component string) examples.ExampleInfo {
+	return examples.ExampleInfo{ID: section + "/" + name, ComponentID: component}
 }
 
-func examples() []c.Example {
+func captures() []examples.Example {
 	// Preserve the author's explanation.
-	save := c.ExampleOf(captureInfo("action", "save", "button"), c.ButtonProps{
+	save := examples.ExampleOf(captureInfo("action", "save", "button"), c.ButtonProps{
 		Label: "Save", // Keep this inline note.
 		AriaLabel: "Keep accessible action",
 	}, c.Button)
-	decoy := c.ExampleOf(captureInfo("action", "other", "button"), c.ButtonProps{
+	decoy := examples.ExampleOf(captureInfo("action", "other", "button"), c.ButtonProps{
 		Label: "Save",
 		AriaLabel: "Keep accessible action",
 	}, c.Button)
-	form := c.ExampleWithChildren(captureInfo("screen", "editor", "form"), c.FormProps{}, []g.Node{save.Node, decoy.Node}, c.Form)
-	text := c.ExampleOf(captureInfo("screen", "sibling", "text"), c.TextProps{Content: independentCopy}, c.Text)
-	return []c.Example{form, text}
+	form := examples.ExampleWithChildren(captureInfo("screen", "editor", "form"), c.FormProps{}, []g.Node{save.Node, decoy.Node}, c.Form)
+	text := examples.ExampleOf(captureInfo("screen", "sibling", "text"), c.TextProps{Content: independentCopy}, c.Text)
+	return []examples.Example{form, text}
 }
 
 func main() {
@@ -395,10 +396,10 @@ func main() {
 		var request ui.PropsProposal
 		err = json.NewDecoder(os.Stdin).Decode(&request)
 		if err == nil {
-			_, snapshot, err = ui.ProjectProps(design.Default(), examples(), request)
+			_, snapshot, err = ui.ProjectProps(design.Default(), captures(), request)
 		}
 	} else {
-		snapshot, err = ui.Export(design.Default(), examples())
+		snapshot, err = ui.Export(design.Default(), captures())
 	}
 	if err == nil && *failure == "rebuilt" && !*proposal && strings.Contains(snapshot.Examples[0].HTML, "Create &amp; keep") {
 		err = fmt.Errorf("intentional rebuilt producer failure")

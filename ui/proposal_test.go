@@ -11,13 +11,14 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/css"
 	g "maragu.dev/gomponents"
 )
 
-func proposalExport(t *testing.T, examples []c.Example) ui.DesignExport {
+func proposalExport(t *testing.T, captures []examples.Example) ui.DesignExport {
 	t.Helper()
-	out, err := ui.Export(design.Default(), examples)
+	out, err := ui.Export(design.Default(), captures)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,19 +26,19 @@ func proposalExport(t *testing.T, examples []c.Example) ui.DesignExport {
 }
 
 func TestPropsProposalChangesOneNestedOccurrence(t *testing.T) {
-	button := c.ExampleOf(c.ExampleInfo{ID: "save/local", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, c.Button)
-	parent := func(id string) c.Example {
-		return c.ExampleWithChildren(c.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, []g.Node{button.Node}, c.Form)
+	button := examples.ExampleOf(examples.ExampleInfo{ID: "save/local", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, c.Button)
+	parent := func(id string) examples.Example {
+		return examples.ExampleWithChildren(examples.ExampleInfo{ID: id, ComponentID: "form"}, c.FormProps{}, []g.Node{button.Node}, c.Form)
 	}
-	examples := []c.Example{parent("second"), parent("first")}
-	base := proposalExport(t, examples)
+	captures := []examples.Example{parent("second"), parent("first")}
+	base := proposalExport(t, captures)
 	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"first", "save/local"}, Props: json.RawMessage(`{"label":"Create & keep"}`)}
 	before, _ := json.Marshal(proposal)
-	candidate, projected, err := ui.ProjectProps(design.Default(), examples, proposal)
+	candidate, projected, err := ui.ProjectProps(design.Default(), captures, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if candidate[0].Node != examples[0].Node || candidate[1].Node == examples[1].Node || candidate[1].ID != "first" {
+	if candidate[0].Node != captures[0].Node || candidate[1].Node == captures[1].Node || candidate[1].ID != "first" {
 		t.Fatal("projection changed order or replaced the unrelated capture")
 	}
 	if !reflect.DeepEqual(base.Examples[1], projected.Examples[1]) || projected.SHA256 == base.SHA256 {
@@ -48,7 +49,7 @@ func TestPropsProposalChangesOneNestedOccurrence(t *testing.T) {
 		t.Fatal("projection lost exact local identity, escaping or observed ownership")
 	}
 	after, _ := json.Marshal(proposal)
-	if string(before) != string(after) || !reflect.DeepEqual(base, proposalExport(t, examples)) {
+	if string(before) != string(after) || !reflect.DeepEqual(base, proposalExport(t, captures)) {
 		t.Fatal("projection mutated its request or authoritative examples")
 	}
 	if accepted, out, err := ui.ProjectProps(design.Default(), candidate, proposal); !errors.Is(err, ui.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
@@ -63,13 +64,13 @@ func TestPropsProposalChangesOneNestedOccurrence(t *testing.T) {
 }
 
 func TestPropsProposalFreshnessIncludesPaletteCSSAndSource(t *testing.T) {
-	example := c.ExampleOf(c.ExampleInfo{ID: "button", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, c.Button)
-	examples := []c.Example{example}
-	base := proposalExport(t, examples)
+	example := examples.ExampleOf(examples.ExampleInfo{ID: "button", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, c.Button)
+	captures := []examples.Example{example}
+	base := proposalExport(t, captures)
 	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"button"}, Props: json.RawMessage(`{"label":"Changed"}`)}
 	for _, change := range []string{"palette", "css", "props", "schema", "metadata"} {
 		t.Run(change, func(t *testing.T) {
-			theme, inputs := design.Default(), slices.Clone(examples)
+			theme, inputs := design.Default(), slices.Clone(captures)
 			var extra []ui.Extra
 			switch change {
 			case "palette":
@@ -79,7 +80,7 @@ func TestPropsProposalFreshnessIncludesPaletteCSSAndSource(t *testing.T) {
 			case "props":
 				inputs[0], _ = example.WithProps(json.RawMessage(`{"label":"Elsewhere"}`))
 			case "schema":
-				inputs[0] = c.ExampleOf(example.ExampleInfo, c.TextProps{Content: "Save"}, c.Text)
+				inputs[0] = examples.ExampleOf(example.ExampleInfo, c.TextProps{Content: "Save"}, c.Text)
 			case "metadata":
 				inputs[0].Name = "Renamed source example"
 			}
@@ -92,7 +93,7 @@ func TestPropsProposalFreshnessIncludesPaletteCSSAndSource(t *testing.T) {
 }
 
 func TestPropsProposalRefusesUnobservedAndRetainedOpaqueAliases(t *testing.T) {
-	button := c.ExampleOf(c.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, func(p c.ButtonProps) g.Node {
+	button := examples.ExampleOf(examples.ExampleInfo{ID: "action", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, func(p c.ButtonProps) g.Node {
 		if p.Label == "Fail" {
 			return failedExportNode{}
 		}
@@ -114,7 +115,7 @@ func TestPropsProposalRefusesUnobservedAndRetainedOpaqueAliases(t *testing.T) {
 			if mode == "hidden-alias" {
 				input.Alias = button.Node
 			}
-			owner := c.ExampleWithSlots(c.ExampleInfo{ID: "owner", ComponentID: "form"}, c.FormProps{}, input, func(p c.FormProps, s slots) g.Node {
+			owner := examples.ExampleWithSlots(examples.ExampleInfo{ID: "owner", ComponentID: "form"}, c.FormProps{}, input, func(p c.FormProps, s slots) g.Node {
 				switch mode {
 				case "unobserved":
 					return c.Form(p)
@@ -129,18 +130,18 @@ func TestPropsProposalRefusesUnobservedAndRetainedOpaqueAliases(t *testing.T) {
 				}
 				return c.Form(p, s.Body)
 			})
-			examples := []c.Example{owner}
-			base := proposalExport(t, examples)
+			captures := []examples.Example{owner}
+			base := proposalExport(t, captures)
 			patch := json.RawMessage(`{"label":"Changed"}`)
 			if mode == "render-failure" {
 				patch = json.RawMessage(`{"label":"Fail"}`)
 			}
 			proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"owner", "action"}, Props: patch}
-			accepted, out, err := ui.ProjectProps(design.Default(), examples, proposal)
+			accepted, out, err := ui.ProjectProps(design.Default(), captures, proposal)
 			if err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
 				t.Fatalf("unsafe projection was accepted: %v", err)
 			}
-			if !reflect.DeepEqual(base, proposalExport(t, examples)) {
+			if !reflect.DeepEqual(base, proposalExport(t, captures)) {
 				t.Fatal("refused proposal changed the original capture")
 			}
 		})
@@ -149,20 +150,20 @@ func TestPropsProposalRefusesUnobservedAndRetainedOpaqueAliases(t *testing.T) {
 
 func TestPropsProposalRenderPassesAndInvalidPaths(t *testing.T) {
 	calls := 0
-	example := c.ExampleOf(c.ExampleInfo{ID: "root", ComponentID: "text"}, c.TextProps{Content: "Before"}, func(p c.TextProps) g.Node {
+	example := examples.ExampleOf(examples.ExampleInfo{ID: "root", ComponentID: "text"}, c.TextProps{Content: "Before"}, func(p c.TextProps) g.Node {
 		calls++
 		return c.Text(p)
 	})
-	examples := []c.Example{example}
-	base := proposalExport(t, examples)
+	captures := []examples.Example{example}
+	base := proposalExport(t, captures)
 	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"root"}, Props: json.RawMessage(`{"content":"After"}`)}
 	calls = 0
-	if _, _, err := ui.ProjectProps(design.Default(), examples, proposal); err != nil || calls != 2 {
+	if _, _, err := ui.ProjectProps(design.Default(), captures, proposal); err != nil || calls != 2 {
 		t.Fatalf("want two explicit export renders, got %d: %v", calls, err)
 	}
 	for _, path := range [][]string{nil, {}, {"missing"}, {"root", "missing"}, {"Root"}} {
 		proposal.Path = path
-		accepted, out, err := ui.ProjectProps(design.Default(), examples, proposal)
+		accepted, out, err := ui.ProjectProps(design.Default(), captures, proposal)
 		if err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
 			t.Fatalf("invalid path %q accepted: %v", path, err)
 		}

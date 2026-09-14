@@ -13,12 +13,12 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
-	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/source"
 )
 
 func TestSourcePreviewVerifiesRealGalleryWithoutWriting(t *testing.T) {
-	const file = "ui/components/gallery.go"
+	const file = "ui/components/examples/gallery.go"
 	before := map[string][]byte{}
 	for _, name := range []string{file, "go.mod", "go.sum"} {
 		data, err := os.ReadFile(filepath.Join("../..", name))
@@ -41,13 +41,13 @@ func TestSourcePreviewVerifiesRealGalleryWithoutWriting(t *testing.T) {
 	}
 	line := bytes.Count(before[file][:bytes.Index(before[file], marker)], []byte("\n")) + 1
 	digest := func(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) }
-	examples := components.Gallery()
-	base, err := ui.Export(design.Default(), examples)
+	captures := examples.Gallery()
+	base, err := ui.Export(design.Default(), captures)
 	if err != nil {
 		t.Fatal(err)
 	}
 	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"pk-ui.component.button/primary"}, Props: json.RawMessage(`{"label":"CLI preview & keep"}`)}
-	_, expected, err := ui.ProjectProps(design.Default(), examples, proposal)
+	_, expected, err := ui.ProjectProps(design.Default(), captures, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestSourcePreviewVerifiesRealGalleryWithoutWriting(t *testing.T) {
 }
 
 func TestSourceCommandRefusesMalformedRequests(t *testing.T) {
-	valid := []string{"--source", "ui/components/gallery.go", "--dir", "../..", "--line", "1", "--sha256", strings.Repeat("0", 64)}
+	valid := []string{"--source", "ui/components/examples/gallery.go", "--dir", "../..", "--line", "1", "--sha256", strings.Repeat("0", 64)}
 	for _, tc := range []struct {
 		name, body, want string
 		args             []string

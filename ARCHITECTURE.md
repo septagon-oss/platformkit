@@ -15,7 +15,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 | Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`screens`](ui/screens/render.go) adapts authorized resources and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`; the native consumer owns its renderer. |
-| Component properties | [`Example.Describe`](ui/components/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
+| Component properties | [`Example.Describe`](ui/components/examples/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
 | Design consumers | [`ui.Export`](ui/export.go) and [`ProjectProps`](ui/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
 
 Run `go test ./ui/screens -run 'ExampleFormExample|TestGeneratedForm'` to exercise
@@ -323,7 +323,7 @@ nor carry unrelated earlier declarations forward. Shared utility deduplication
 belongs to the style owner, before emission. The existing at-rule group still
 renders after ordinary rules; this is not an arbitrary CSS parser or minifier.
 
-[Gallery](ui/components/gallery.go) captures the existing constructor calls with
+[Gallery](ui/components/examples/gallery.go) captures the existing constructor calls with
 stable identities, typed properties and named Go slots. Passing a captured
 example's `.Node` into another constructor retains its source identity without
 another rendering API. The gallery still renders through those constructors. Property edits and

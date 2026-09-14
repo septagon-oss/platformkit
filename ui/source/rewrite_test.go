@@ -30,7 +30,7 @@ func rewriteFixture(t *testing.T, body string) (dir, filename string, content []
 	if err != nil {
 		t.Fatal(err)
 	}
-	content = []byte("package fixture\nimport (\nc \"github.com/septagon-oss/platformkit/ui/components\"\ng \"maragu.dev/gomponents\"\n)\nvar _ g.Node\n" + body)
+	content = []byte("package fixture\nimport (\nc \"github.com/septagon-oss/platformkit/ui/components\"\nexamples \"github.com/septagon-oss/platformkit/ui/components/examples\"\ng \"maragu.dev/gomponents\"\n)\nvar _ g.Node\nvar _ c.ComponentProps\n" + body)
 	for name, data := range map[string][]byte{"go.mod": []byte(module), "go.sum": sums, "fixture.go": content} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 			t.Fatal(err)
@@ -44,11 +44,11 @@ func rewriteFixture(t *testing.T, body string) (dir, filename string, content []
 }
 
 func TestRewriteLiteralKeepsCommentsImportsAndOtherCall(t *testing.T) {
-	body := `var first = /*target*/c.ExampleOf(c.ExampleInfo{ID: "same"}, c.ButtonProps{
+	body := `var first = /*target*/examples.ExampleOf(examples.ExampleInfo{ID: "same"}, c.ButtonProps{
 	// The product owner explains this label here.
 	Label: "Save", // Keep this comment with the property.
 }, c.Button)
-var second = c.ExampleOf(c.ExampleInfo{ID: "same"}, c.ButtonProps{Label: "Save"}, c.Button)
+var second = examples.ExampleOf(examples.ExampleInfo{ID: "same"}, c.ButtonProps{Label: "Save"}, c.Button)
 `
 	dir, filename, before, line, column := rewriteFixture(t, body)
 	after, err := rewrite(t.Context(), dir, filename, before, line, column, json.RawMessage(`{"label":"Create & \"keep\""}`))
@@ -70,11 +70,11 @@ var second = c.ExampleOf(c.ExampleInfo{ID: "same"}, c.ButtonProps{Label: "Save"}
 func TestRewriteTypedCaptures(t *testing.T) {
 	for _, tc := range []struct{ name, body, props, want string }{
 		{"explicit-alias", `type Props = c.ButtonProps
-var example = /*target*/c.ExampleOf[Props](c.ExampleInfo{}, Props{Label: "Before"}, c.Button)`, `{"label":"After"}`, `Label: "After"`},
-		{"children", `var example = /*target*/c.ExampleWithChildren[c.StackProps](c.ExampleInfo{}, c.StackProps{Gap: "4"}, []g.Node{}, c.Stack)`, `{"gap":"6"}`, `Gap: "6"`},
-		{"slots", `var example = /*target*/c.ExampleWithSlots[c.ButtonProps, c.ButtonSlots](c.ExampleInfo{}, c.ButtonProps{Label: "Before"}, c.ButtonSlots{}, c.ButtonWithSlots)`, `{"label":"After"}`, `Label: "After"`},
+var example = /*target*/examples.ExampleOf[Props](examples.ExampleInfo{}, Props{Label: "Before"}, c.Button)`, `{"label":"After"}`, `Label: "After"`},
+		{"children", `var example = /*target*/examples.ExampleWithChildren[c.StackProps](examples.ExampleInfo{}, c.StackProps{Gap: "4"}, []g.Node{}, c.Stack)`, `{"gap":"6"}`, `Gap: "6"`},
+		{"slots", `var example = /*target*/examples.ExampleWithSlots[c.ButtonProps, c.ButtonSlots](examples.ExampleInfo{}, c.ButtonProps{Label: "Before"}, c.ButtonSlots{}, c.ButtonWithSlots)`, `{"label":"After"}`, `Label: "After"`},
 		{"defined-string", "type Copy string\ntype Props struct { Text Copy `json:\"copy\"` }\n" +
-			`var example = /*target*/c.ExampleOf(c.ExampleInfo{}, Props{Text: "Before"}, func(p Props) g.Node { return g.Text(string(p.Text)) })`, `{"copy":"After"}`, `Text: "After"`},
+			`var example = /*target*/examples.ExampleOf(examples.ExampleInfo{}, Props{Text: "Before"}, func(p Props) g.Node { return g.Text(string(p.Text)) })`, `{"copy":"After"}`, `Text: "After"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, filename, before, line, _ := rewriteFixture(t, tc.body)
@@ -87,7 +87,7 @@ var example = /*target*/c.ExampleOf[Props](c.ExampleInfo{}, Props{Label: "Before
 }
 
 func TestRewriteColumnDisambiguatesCallsOnOneLine(t *testing.T) {
-	capture := `c.ExampleOf(c.ExampleInfo{}, c.ButtonProps{Label: "Before"}, c.Button)`
+	capture := `examples.ExampleOf(examples.ExampleInfo{}, c.ButtonProps{Label: "Before"}, c.Button)`
 	dir, filename, before, line, column := rewriteFixture(t, `var first, second = /*target*/`+capture+`, `+capture)
 	patch := json.RawMessage(`{"label":"After"}`)
 	after, err := rewrite(t.Context(), dir, filename, before, line, column, patch)
@@ -100,26 +100,26 @@ func TestRewriteColumnDisambiguatesCallsOnOneLine(t *testing.T) {
 }
 
 func TestRewriteRefusesUnsupportedSource(t *testing.T) {
-	capture := `c.ExampleOf(c.ExampleInfo{}, c.ButtonProps{Label: "Before"}, c.Button)`
+	capture := `examples.ExampleOf(examples.ExampleInfo{}, c.ButtonProps{Label: "Before"}, c.Button)`
 	for _, tc := range []struct{ name, body, props, want string }{
-		{"same-name-function", `func ExampleOf(c.ExampleInfo, c.ButtonProps, func(c.ButtonProps) g.Node) g.Node { return nil }
-var example = /*target*/ExampleOf(c.ExampleInfo{}, c.ButtonProps{Label: "Before"}, c.Button)`, `{"label":"After"}`, "selects 0"},
+		{"same-name-function", `func ExampleOf(examples.ExampleInfo, c.ButtonProps, func(c.ButtonProps) g.Node) g.Node { return nil }
+var example = /*target*/ExampleOf(examples.ExampleInfo{}, c.ButtonProps{Label: "Before"}, c.Button)`, `{"label":"After"}`, "selects 0"},
 		{"ambiguous-line", `var first, second = /*target*/` + capture + `, ` + capture, `{"label":"After"}`, "selects 2"},
-		{"computed", `var example = /*target*/c.ExampleOf(c.ExampleInfo{}, c.ButtonProps{Label: "Be" + "fore"}, c.Button)`, `{"label":"After"}`, "missing or computed"},
-		{"missing-literal", `var example = /*target*/c.ExampleOf(c.ExampleInfo{}, c.ButtonProps{}, c.Button)`, `{"label":"After"}`, "missing or computed"},
+		{"computed", `var example = /*target*/examples.ExampleOf(examples.ExampleInfo{}, c.ButtonProps{Label: "Be" + "fore"}, c.Button)`, `{"label":"After"}`, "missing or computed"},
+		{"missing-literal", `var example = /*target*/examples.ExampleOf(examples.ExampleInfo{}, c.ButtonProps{}, c.Button)`, `{"label":"After"}`, "missing or computed"},
 		{"indirect-props", `var props = c.ButtonProps{Label: "Before"}
-var example = /*target*/c.ExampleOf(c.ExampleInfo{}, props, c.Button)`, `{"label":"After"}`, "direct keyed"},
+var example = /*target*/examples.ExampleOf(examples.ExampleInfo{}, props, c.Button)`, `{"label":"After"}`, "direct keyed"},
 		{"wrong-json-case", `var example = /*target*/` + capture, `{"Label":"After"}`, "not a direct exported"},
 		{"promoted-field", `var example = /*target*/` + capture, `{"id":"After"}`, "not a direct exported"},
 		{"nonstring-field", `var example = /*target*/` + capture, `{"loading":"true"}`, "not a string field"},
 		{"internal-field", "type Props struct { Secret string `json:\"-\"` }\n" +
-			`var example = /*target*/c.ExampleOf(c.ExampleInfo{}, Props{Secret: "Before"}, func(Props) g.Node { return nil })`, `{"Secret":"After"}`, "not a direct exported"},
+			`var example = /*target*/examples.ExampleOf(examples.ExampleInfo{}, Props{Secret: "Before"}, func(Props) g.Node { return nil })`, `{"Secret":"After"}`, "not a direct exported"},
 		{"internal-delivery", "type Props struct { Secret string `json:\"secret\" delivery:\"internal\"` }\n" +
-			`var example = /*target*/c.ExampleOf(c.ExampleInfo{}, Props{Secret: "Before"}, func(Props) g.Node { return nil })`, `{"secret":"After"}`, "not a direct exported"},
+			`var example = /*target*/examples.ExampleOf(examples.ExampleInfo{}, Props{Secret: "Before"}, func(Props) g.Node { return nil })`, `{"secret":"After"}`, "not a direct exported"},
 		{"private-field", "type Props struct { secret string `json:\"secret\"` }\n" +
-			`var example = /*target*/c.ExampleOf(c.ExampleInfo{}, Props{secret: "Before"}, func(Props) g.Node { return nil })`, `{"secret":"After"}`, "not a direct exported"},
+			`var example = /*target*/examples.ExampleOf(examples.ExampleInfo{}, Props{secret: "Before"}, func(Props) g.Node { return nil })`, `{"secret":"After"}`, "not a direct exported"},
 		{"duplicate-json-tag", "type Props struct { First string `json:\"text\"`; Second string `json:\"text\"` }\n" +
-			`var example = /*target*/c.ExampleOf(c.ExampleInfo{}, Props{First: "A", Second: "B"}, func(Props) g.Node { return nil })`, `{"text":"After"}`, "ambiguous Go fields"},
+			`var example = /*target*/examples.ExampleOf(examples.ExampleInfo{}, Props{First: "A", Second: "B"}, func(Props) g.Node { return nil })`, `{"text":"After"}`, "ambiguous Go fields"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, filename, before, line, _ := rewriteFixture(t, tc.body)
@@ -144,7 +144,7 @@ func TestStringPatchRejectsNonstringAndAmbiguousJSON(t *testing.T) {
 }
 
 func TestCaptureRecognitionUsesResolvedFunctions(t *testing.T) {
-	for _, expression := range []string{"ExampleOf()", "ExampleOf[P]()", "c.ExampleWithSlots[P, S]()"} {
+	for _, expression := range []string{"ExampleOf()", "ExampleOf[P]()", "examples.ExampleWithSlots[P, S]()"} {
 		t.Run(expression, func(t *testing.T) {
 			node, err := parser.ParseExpr(expression)
 			if err != nil {

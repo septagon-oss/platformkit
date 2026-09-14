@@ -8,7 +8,7 @@ import (
 	"slices"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
 // PropsProposal addresses one source invocation, never a native editor object.
@@ -76,16 +76,16 @@ var ErrStaleExport = errors.New("source proposal base differs from current sourc
 // are not rolled back. Neither source files nor persistent state are saved or
 // locked. A persistence owner must perform its own atomic revision check.
 // Failure returns nil examples and a zero export, never an accepted partial edit.
-func ProjectProps(theme design.Pair, examples []components.Example, proposal PropsProposal, extra ...Extra) ([]components.Example, DesignExport, error) {
-	return projectSource(theme, examples, proposal.BaseSHA256, proposal.Path, func(_ DesignExport, root components.Example) (components.Example, error) {
+func ProjectProps(theme design.Pair, captures []examples.Example, proposal PropsProposal, extra ...Extra) ([]examples.Example, DesignExport, error) {
+	return projectSource(theme, captures, proposal.BaseSHA256, proposal.Path, func(_ DesignExport, root examples.Example) (examples.Example, error) {
 		return root.WithPropsAt(proposal.Path, proposal.Props)
 	}, extra...)
 }
 
 // Projection owns the two render passes and the common freshness, observation
 // and interface checks. The edit copies source inputs between those passes.
-func projectSource(theme design.Pair, examples []components.Example, baseSHA256 string, path []string, edit func(DesignExport, components.Example) (components.Example, error), extra ...Extra) ([]components.Example, DesignExport, error) {
-	base, err := Export(theme, examples, extra...)
+func projectSource(theme design.Pair, captures []examples.Example, baseSHA256 string, path []string, edit func(DesignExport, examples.Example) (examples.Example, error), extra ...Extra) ([]examples.Example, DesignExport, error) {
+	base, err := Export(theme, captures, extra...)
 	if err != nil {
 		return nil, DesignExport{}, err
 	}
@@ -96,12 +96,12 @@ func projectSource(theme design.Pair, examples []components.Example, baseSHA256 
 	if err != nil {
 		return nil, DesignExport{}, err
 	}
-	index := slices.IndexFunc(examples, func(example components.Example) bool { return example.ID == path[0] })
-	edited, err := edit(base, examples[index])
+	index := slices.IndexFunc(captures, func(example examples.Example) bool { return example.ID == path[0] })
+	edited, err := edit(base, captures[index])
 	if err != nil {
 		return nil, DesignExport{}, fmt.Errorf("source proposal %q: %w", path, err)
 	}
-	candidate := slices.Clone(examples)
+	candidate := slices.Clone(captures)
 	candidate[index] = edited
 	projected, err := Export(theme, candidate, extra...)
 	if err != nil {
@@ -117,17 +117,17 @@ func projectSource(theme design.Pair, examples []components.Example, baseSHA256 
 	return candidate, projected, nil
 }
 
-func observedProposalTarget(snapshot DesignExport, path []string) (*components.ExampleDescription, error) {
+func observedProposalTarget(snapshot DesignExport, path []string) (*examples.ExampleDescription, error) {
 	if len(path) == 0 {
 		return nil, fmt.Errorf("source proposal requires a source occurrence path")
 	}
-	index := slices.IndexFunc(snapshot.Examples, func(example components.ExampleDescription) bool { return example.ID == path[0] })
+	index := slices.IndexFunc(snapshot.Examples, func(example examples.ExampleDescription) bool { return example.ID == path[0] })
 	if index < 0 {
 		return nil, fmt.Errorf("source proposal has unknown root %q", path[0])
 	}
 	current := &snapshot.Examples[index]
 	for _, id := range path[1:] {
-		index := slices.IndexFunc(current.Children, func(child components.ChildOccurrence) bool { return child.Description.ID == id })
+		index := slices.IndexFunc(current.Children, func(child examples.ChildOccurrence) bool { return child.Description.ID == id })
 		if len(current.OpaqueSlots) != 0 || index < 0 {
 			return nil, fmt.Errorf("source proposal %q requires unambiguous declared ownership", path)
 		}

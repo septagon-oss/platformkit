@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
 )
 
@@ -54,15 +55,15 @@ var ErrFields = errors.New("forms: field names must be nonempty and unique")
 // Example captures the same typed Form and field constructors used at runtime.
 // It returns a presentation candidate; rendering or editing it performs no write.
 // DOM identities and HTMX targets belong to Namespace, never to the source ID.
-func Example(id string, model Model, options Options) (components.Example, error) {
+func Example(id string, model Model, options Options) (examples.Example, error) {
 	if !validNamespace(options.Namespace) {
-		return components.Example{}, ErrNamespace
+		return examples.Example{}, ErrNamespace
 	}
 	seen := make(map[string]bool, len(model.Fields))
 	for _, field := range model.Fields {
 		name := field.Definition.Name
 		if name == "" || seen[name] {
-			return components.Example{}, ErrFields
+			return examples.Example{}, ErrFields
 		}
 		seen[name] = true
 	}
@@ -74,18 +75,18 @@ func Example(id string, model Model, options Options) (components.Example, error
 //
 // Deprecated: use Example for new compositions. Legacy forms cannot share a page
 // when their field names overlap; their form ID is always "screen-form".
-func LegacyExample(id string, model Model, options Options) components.Example {
+func LegacyExample(id string, model Model, options Options) examples.Example {
 	return example(id, model, options, true)
 }
 
-func example(id string, model Model, options Options, legacy bool) components.Example {
+func example(id string, model Model, options Options, legacy bool) examples.Example {
 	formID := options.Namespace + "-form"
 	if legacy {
 		formID = "screen-form"
 	}
 	body := []g.Node{}
 	if model.Detail != "" {
-		body = append(body, components.ExampleWithSlots(components.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
+		body = append(body, examples.ExampleWithSlots(examples.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
 			components.AlertProps{Tone: "danger", Title: cmp.Or(options.FailureTitle, "That could not be saved"), Message: model.Detail, Bordered: true},
 			components.AlertSlots{}, components.AlertWithSlots).Node)
 	}
@@ -108,15 +109,15 @@ func example(id string, model Model, options Options, legacy bool) components.Ex
 		body = append(body, Control(ControlProps{Field: field, ID: controlID,
 			Value: value, Error: model.Errors[f.Name], Immutable: immutable}))
 	}
-	body = append(body, components.ExampleWithChildren(
-		components.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
-			components.ExampleWithSlots(components.ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
+	body = append(body, examples.ExampleWithChildren(
+		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
+			examples.ExampleWithSlots(examples.ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
 				components.ButtonProps{Label: cmp.Or(options.CancelLabel, "Cancel"), Variant: "secondary", Href: options.CancelURL}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
-			components.ExampleWithSlots(components.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
+			examples.ExampleWithSlots(examples.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
 				components.ButtonProps{Label: cmp.Or(options.SubmitLabel, "Save"), Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 		}, components.FormActions).Node)
-	return components.ExampleWithChildren(
-		components.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: options.Title}, components.FormProps{
+	return examples.ExampleWithChildren(
+		examples.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: options.Title}, components.FormProps{
 			ComponentProps: components.ComponentProps{ID: formID},
 			HTMXProps: components.HTMXProps{
 				Post: options.Action, Target: "#" + formID, Swap: "outerHTML", Select: "#" + formID},

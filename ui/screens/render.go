@@ -19,6 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/forms"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -106,7 +107,7 @@ func Form(r httpx.Resource, o Options, action, title string, row map[string]any,
 // use "field/" plus their schema name so actions and errors cannot shadow them.
 // Property edits produce presentation candidates, not schema or database writes.
 // Native editor support and interactive flow behavior require separate evidence.
-func FormExample(id string, r httpx.Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) components.Example {
+func FormExample(id string, r httpx.Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
 	fields := make([]forms.Field, 0, len(r.Schema.Fields))
 	for _, field := range r.Schema.Fields {
 		fields = append(fields, formField(field))

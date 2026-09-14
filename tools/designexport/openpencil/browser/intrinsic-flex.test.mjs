@@ -21,7 +21,7 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
 func main() {
@@ -32,24 +32,24 @@ func main() {
     id := []string{"create", "cancel"}[i]
     props := components.ButtonProps{ComponentProps:components.ComponentProps{ID:id}, Label:label}
     if input.Nested { props.Href = "/albums/new" }
-    action := components.ExampleOf(components.ExampleInfo{ID:id, ComponentID:"pk-ui.component.button"}, props, components.Button)
+    action := examples.ExampleOf(examples.ExampleInfo{ID:id, ComponentID:"pk-ui.component.button"}, props, components.Button)
     actions = append(actions, action.Node)
   }
-  row := components.ExampleWithChildren(components.ExampleInfo{ID:"actions", ComponentID:"pk-ui.component.form-actions"},
+  row := examples.ExampleWithChildren(examples.ExampleInfo{ID:"actions", ComponentID:"pk-ui.component.form-actions"},
     components.FormActionsProps{}, actions, components.FormActions)
-  example := components.ExampleWithChildren(components.ExampleInfo{ID:"fixture", ComponentID:"pk-ui.component.form"},
+  example := examples.ExampleWithChildren(examples.ExampleInfo{ID:"fixture", ComponentID:"pk-ui.component.form"},
     components.FormProps{Action:"/albums", Label:"Create album"}, []g.Node{row.Node}, components.Form)
   if input.Nested {
-    row = components.ExampleWithChildren(components.ExampleInfo{ID:"actions", ComponentID:"pk-ui.component.toolbar"},
+    row = examples.ExampleWithChildren(examples.ExampleInfo{ID:"actions", ComponentID:"pk-ui.component.toolbar"},
       components.ToolbarProps{Title:"Album library", Subtitle:"Keep every memory."}, actions, components.Toolbar)
-    example = components.ExampleWithChildren(components.ExampleInfo{ID:"fixture", ComponentID:"pk-ui.component.stack"},
+    example = examples.ExampleWithChildren(examples.ExampleInfo{ID:"fixture", ComponentID:"pk-ui.component.stack"},
       components.StackProps{Gap:"8"}, []g.Node{row.Node}, components.Stack)
   }
   theme, sheet := design.Default(), css.NewSheet()
   theme.Light.Typography.Display, theme.Dark.Typography.Display = design.FontBody, design.FontBody
   if input.Shrink != "" { sheet.Select("#create", css.Decl("flex-shrink", css.Literal(input.Shrink))) }
   if input.Minimum != "" { sheet.Select("#create", css.Decl("min-width", css.Literal(input.Minimum))) }
-  snapshot, err := ui.Export(theme, []components.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
+  snapshot, err := ui.Export(theme, []examples.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

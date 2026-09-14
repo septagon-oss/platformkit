@@ -5,7 +5,7 @@ import (
 	"slices"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
 // ReplacementProposal selects two invocations from the authoritative source
@@ -41,15 +41,15 @@ func (p *ReplacementProposal) UnmarshalJSON(data []byte) error {
 // Paths may overlap: immutable copies always read the base, not earlier writes.
 // Self/same-content replacements are permitted and can retain the export hash.
 // Native adapters must separately prove correspondence and edit/save fidelity.
-func ProjectReplacement(theme design.Pair, examples []components.Example, proposal ReplacementProposal, extra ...Extra) ([]components.Example, DesignExport, error) {
-	return projectSource(theme, examples, proposal.BaseSHA256, proposal.Path, func(base DesignExport, root components.Example) (components.Example, error) {
+func ProjectReplacement(theme design.Pair, captures []examples.Example, proposal ReplacementProposal, extra ...Extra) ([]examples.Example, DesignExport, error) {
+	return projectSource(theme, captures, proposal.BaseSHA256, proposal.Path, func(base DesignExport, root examples.Example) (examples.Example, error) {
 		if _, err := observedProposalTarget(base, proposal.ReplacementPath); err != nil {
-			return components.Example{}, err
+			return examples.Example{}, err
 		}
-		index := slices.IndexFunc(examples, func(example components.Example) bool { return example.ID == proposal.ReplacementPath[0] })
-		replacement, err := examples[index].At(proposal.ReplacementPath)
+		index := slices.IndexFunc(captures, func(example examples.Example) bool { return example.ID == proposal.ReplacementPath[0] })
+		replacement, err := captures[index].At(proposal.ReplacementPath)
 		if err != nil {
-			return components.Example{}, err
+			return examples.Example{}, err
 		}
 		return root.WithReplacementAt(proposal.Path, replacement)
 	}, extra...)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/icon"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
@@ -21,17 +22,17 @@ import (
 // executes it. PropsEditable and slot support describe the Go example API, not
 // native editor support, accessibility approval or production readiness.
 type DesignExport struct {
-	Schema           string                          `json:"schema"`
-	RequiredFeatures []string                        `json:"requiredFeatures,omitempty"`
-	Measurements     []style.Measurement             `json:"measurements,omitempty"`
-	SourceTokens     *TokenExport                    `json:"sourceTokens,omitempty"`
-	SHA256           string                          `json:"sha256,omitempty"`
-	FontPolicy       string                          `json:"fontPolicy"`
-	Notices          string                          `json:"notices"`
-	Themes           []ThemeExport                   `json:"themes"`
-	Icons            []IconExport                    `json:"icons"`
-	Examples         []components.ExampleDescription `json:"examples"`
-	CSS              string                          `json:"css"`
+	Schema           string                        `json:"schema"`
+	RequiredFeatures []string                      `json:"requiredFeatures,omitempty"`
+	Measurements     []style.Measurement           `json:"measurements,omitempty"`
+	SourceTokens     *TokenExport                  `json:"sourceTokens,omitempty"`
+	SHA256           string                        `json:"sha256,omitempty"`
+	FontPolicy       string                        `json:"fontPolicy"`
+	Notices          string                        `json:"notices"`
+	Themes           []ThemeExport                 `json:"themes"`
+	Icons            []IconExport                  `json:"icons"`
+	Examples         []examples.ExampleDescription `json:"examples"`
+	CSS              string                        `json:"css"`
 }
 
 // ThemeExport separates the CSS selector's stable mode from its display name.
@@ -59,17 +60,17 @@ type IconExport struct {
 var designNotices string
 
 // Export captures one consumer's palette, examples and stylesheet additions.
-// Pass components.Gallery() for Core; a product supplies its own explicitly
+// Pass examples.Gallery() for Core; a product supplies its own explicitly
 // bound examples. No registration, network access or files are involved.
 //
 // Examples are sorted by stable ID without changing the caller's slice. The
 // digest covers encoding/json's compact output with SHA256 omitted; it changes
 // with the exported content, not timestamps or unrelated repository edits.
-func Export(theme design.Pair, examples []components.Example, extra ...Extra) (DesignExport, error) {
-	return export(theme, examples, false, extra...)
+func Export(theme design.Pair, captures []examples.Example, extra ...Extra) (DesignExport, error) {
+	return export(theme, captures, false, extra...)
 }
 
-func export(theme design.Pair, examples []components.Example, layout bool, extra ...Extra) (DesignExport, error) {
+func export(theme design.Pair, captures []examples.Example, layout bool, extra ...Extra) (DesignExport, error) {
 	out := DesignExport{
 		Schema: "platformkit.design-export.v1", FontPolicy: "system-fallback-stacks", Notices: designNotices,
 		Themes: []ThemeExport{
@@ -77,7 +78,7 @@ func export(theme design.Pair, examples []components.Example, layout bool, extra
 			{Mode: "dark", Name: theme.Dark.Name, Tokens: theme.Dark.Tokens()},
 		},
 		Icons:    []IconExport{},
-		Examples: []components.ExampleDescription{},
+		Examples: []examples.ExampleDescription{},
 	}
 	if layout {
 		out.Schema = "platformkit.design-export.v2"
@@ -90,12 +91,12 @@ func export(theme design.Pair, examples []components.Example, layout bool, extra
 	}
 	type componentContract struct {
 		exampleID   string
-		description components.ExampleDescription
+		description examples.ExampleDescription
 	}
-	seen := make(map[string]bool, len(examples))
+	seen := make(map[string]bool, len(captures))
 	contracts := make(map[string]componentContract)
-	var checkContract func(components.ExampleDescription, []string) error
-	checkContract = func(description components.ExampleDescription, parent []string) error {
+	var checkContract func(examples.ExampleDescription, []string) error
+	checkContract = func(description examples.ExampleDescription, parent []string) error {
 		path := append(slices.Clone(parent), description.ID)
 		contract := componentContract{fmt.Sprintf("%q", path), description}
 		if previous, exists := contracts[description.ComponentID]; exists &&
@@ -110,7 +111,7 @@ func export(theme design.Pair, examples []components.Example, layout bool, extra
 		}
 		return nil
 	}
-	for _, example := range examples {
+	for _, example := range captures {
 		if strings.TrimSpace(example.ID) == "" || strings.TrimSpace(example.ComponentID) == "" {
 			return DesignExport{}, fmt.Errorf("design export: example %q has no stable identity", example.Name)
 		}
@@ -131,7 +132,7 @@ func export(theme design.Pair, examples []components.Example, layout bool, extra
 		}
 		out.Examples = append(out.Examples, description)
 	}
-	slices.SortFunc(out.Examples, func(a, b components.ExampleDescription) int { return cmp.Compare(a.ID, b.ID) })
+	slices.SortFunc(out.Examples, func(a, b examples.ExampleDescription) int { return cmp.Compare(a.ID, b.ID) })
 	for _, name := range icon.Names() {
 		glyph, _ := icon.Resolve(name)
 		svg := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="` + icon.ViewBox + `" fill="currentColor">` + glyph.Body + `</svg>`

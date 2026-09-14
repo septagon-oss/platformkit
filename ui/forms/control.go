@@ -7,6 +7,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
 )
 
@@ -43,20 +44,20 @@ func Control(p ControlProps) g.Node {
 		if f.Default == "" {
 			placeholder = "Choose a " + strings.ToLower(label)
 		}
-		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
+		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: p.Value, Error: p.Error,
 			Required: f.Required, Options: options, Placeholder: placeholder,
 			HelpText: base.HelpText,
 		}, components.Select).Node
 	case f.Widget == "textarea":
-		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
+		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
 		}, components.Textarea).Node
 	case f.Type == entity.TypeBool:
-		return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
+		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: "true", Checked: p.Value == "true",
 			Required: f.Required, Error: p.Error, HelpText: base.HelpText,
@@ -75,5 +76,5 @@ func Control(p ControlProps) g.Node {
 	case f.Type == entity.TypeFloat:
 		base.Type, base.Step = "number", "any"
 	}
-	return components.ExampleOf(components.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
+	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
 }

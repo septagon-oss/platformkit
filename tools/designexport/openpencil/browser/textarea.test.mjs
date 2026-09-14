@@ -24,16 +24,16 @@ import (
   "github.com/septagon-oss/platformkit/kit/crud"
   "github.com/septagon-oss/platformkit/kit/httpx"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/screens"
 )
 func main() {
   var input struct { components.TextareaProps; Generated bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  children := []g.Node{components.ExampleOf(components.ExampleInfo{ID: "description", ComponentID: "pk-ui.component.textarea"}, input.TextareaProps, components.Textarea).Node,
-    components.ExampleOf(components.ExampleInfo{ID: "note", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "Changes remain local."}, components.Text).Node,
-    components.ExampleWithSlots(components.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"}, components.ButtonProps{Label: "Save", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node}
-  example := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/textarea", ComponentID: "pk-ui.component.form"},
+  children := []g.Node{examples.ExampleOf(examples.ExampleInfo{ID: "description", ComponentID: "pk-ui.component.textarea"}, input.TextareaProps, components.Textarea).Node,
+    examples.ExampleOf(examples.ExampleInfo{ID: "note", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "Changes remain local."}, components.Text).Node,
+    examples.ExampleWithSlots(examples.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"}, components.ButtonProps{Label: "Save", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node}
+  example := examples.ExampleWithChildren(examples.ExampleInfo{ID: "fixture/textarea", ComponentID: "pk-ui.component.form"},
     components.FormProps{Label: "Album description", Action: "/albums"}, children, components.Form)
   if input.Generated {
     resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: []crud.Field{
@@ -42,7 +42,7 @@ func main() {
     example = screens.FormExample("fixture/textarea", resource, screens.Options{Root: "/admin"}, "/admin/notes", "Note description",
       map[string]any{"description": input.Value}, map[string]string{"description": input.ErrorMessage}, "", true)
   }
-  snapshot, err := ui.Export(design.Default(), []components.Example{example})
+  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

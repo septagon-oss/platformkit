@@ -23,29 +23,29 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 func main() {
   var input struct { Props components.ToolbarProps; Page bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  action := components.ExampleOf(components.ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
+  action := examples.ExampleOf(examples.ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
     components.ButtonProps{Label: "Create album", Href: "/albums/new"}, components.Button)
   id := "fixture/toolbar"
   if input.Page { id = "toolbar" }
-  example := components.ExampleWithChildren(components.ExampleInfo{ID: id, ComponentID: "pk-ui.component.toolbar"},
+  example := examples.ExampleWithChildren(examples.ExampleInfo{ID: id, ComponentID: "pk-ui.component.toolbar"},
     input.Props, []g.Node{action.Node}, components.Toolbar)
   if input.Page {
-    body := components.ExampleOf(components.ExampleInfo{ID: "description", ComponentID: "pk-ui.component.text"},
+    body := examples.ExampleOf(examples.ExampleInfo{ID: "description", ComponentID: "pk-ui.component.text"},
       components.TextProps{Content: "Small discoveries, collected together."}, components.Text)
     type slots struct { Header, Body g.Node }
-    example = components.ExampleWithSlots(components.ExampleInfo{ID: "fixture/page", ComponentID: "fixture.page"},
+    example = examples.ExampleWithSlots(examples.ExampleInfo{ID: "fixture/page", ComponentID: "fixture.page"},
       struct{}{}, slots{Header: example.Node, Body: body.Node}, func(_ struct{}, content slots) g.Node {
         return components.Stack(components.StackProps{Gap: "8"}, content.Header, content.Body)
       })
   }
   theme := design.Default()
   theme.Light.Typography.Display, theme.Dark.Typography.Display = design.FontBody, design.FontBody
-  snapshot, err := ui.Export(theme, []components.Example{example})
+  snapshot, err := ui.Export(theme, []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

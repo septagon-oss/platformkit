@@ -7,6 +7,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
@@ -17,20 +18,20 @@ var (
 
 // ExportWithLayout opts into v2 root declarations through the existing capture
 // and stylesheet composition path. It makes no native/editability guarantee.
-func ExportWithLayout(theme design.Pair, examples []components.Example, extra ...Extra) (DesignExport, error) {
-	return export(theme, examples, true, extra...)
+func ExportWithLayout(theme design.Pair, captures []examples.Example, extra ...Extra) (DesignExport, error) {
+	return export(theme, captures, true, extra...)
 }
 
-func invalidateLayout(examples []components.ExampleDescription) {
-	var invalidate func(*components.ExampleDescription)
-	invalidate = func(d *components.ExampleDescription) {
+func invalidateLayout(captures []examples.ExampleDescription) {
+	var invalidate func(*examples.ExampleDescription)
+	invalidate = func(d *examples.ExampleDescription) {
 		d.Layout = &components.LayoutDescription{Kind: "unknown", Reason: "consumer stylesheet may override root declarations"}
 		for i := range d.Children {
 			invalidate(&d.Children[i].Description)
 		}
 	}
-	for i := range examples {
-		invalidate(&examples[i])
+	for i := range captures {
+		invalidate(&captures[i])
 	}
 }
 
@@ -59,8 +60,8 @@ func (d DesignExport) CheckLayoutContract(supported ...string) error {
 		}
 		measurements[key] = true
 	}
-	var check func(components.ExampleDescription, []string) error
-	check = func(example components.ExampleDescription, parent []string) error {
+	var check func(examples.ExampleDescription, []string) error
+	check = func(example examples.ExampleDescription, parent []string) error {
 		path := append(slices.Clone(parent), example.ID)
 		layout := example.Layout
 		if layout == nil || (layout.Kind == "unknown" && layout.Flex == nil && layout.Reason != "") {

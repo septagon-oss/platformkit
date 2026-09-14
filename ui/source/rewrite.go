@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const capturePackage = "github.com/septagon-oss/platformkit/ui/components"
+const capturePackage = "github.com/septagon-oss/platformkit/ui/components/examples"
 
 // rewrite changes existing direct string literals at one typed capture call.
 // Its caller owns source identity, semantic proposal validation and persistence.

@@ -286,7 +286,7 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 func main() {
   var input struct { Props components.FlexProps; Label string }
@@ -295,15 +295,15 @@ func main() {
   for _, item := range []struct{ id, label string }{
     {"cancel", "Return to library"}, {"save", input.Label}, {"preview", "Preview changes"},
   } {
-    children = append(children, components.ExampleWithSlots(components.ExampleInfo{
+    children = append(children, examples.ExampleWithSlots(examples.ExampleInfo{
       ID: item.id, ComponentID: "pk-ui.component.button",
     }, components.ButtonProps{Label: item.label, Variant: "secondary"},
       components.ButtonSlots{}, components.ButtonWithSlots).Node)
   }
-  example := components.ExampleWithChildren(components.ExampleInfo{
+  example := examples.ExampleWithChildren(examples.ExampleInfo{
     ID: "fixture/actions", ComponentID: "pk-ui.component.flex",
   }, input.Props, children, components.Flex)
-  snapshot, err := ui.Export(design.Default(), []components.Example{example})
+  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

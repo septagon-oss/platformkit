@@ -1,4 +1,4 @@
-package components
+package examples
 
 import (
 	"encoding"
@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/septagon-oss/platformkit/ui/components"
 )
 
 type exampleField struct {
@@ -62,7 +64,7 @@ func exampleFields(typ reflect.Type) ([]exampleField, error) {
 			if nested.Kind() == reflect.Pointer {
 				nested = nested.Elem()
 			}
-			if field.Anonymous && nested == reflect.TypeFor[HTMXProps]() {
+			if field.Anonymous && nested == reflect.TypeFor[components.HTMXProps]() {
 				continue
 			}
 			if field.Anonymous && name == "" && nested.Kind() == reflect.Struct {

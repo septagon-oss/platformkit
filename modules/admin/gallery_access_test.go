@@ -17,14 +17,15 @@ import (
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
 // Each build is private in its entirety, including metadata and guessed bundle
 // paths. A build for the same IDs with different tenant content is also refused.
 func TestStorybookBuildsAreAuthorizedAndBoundToTheirComposition(t *testing.T) {
 	book := func(name string) ui.Storybook {
-		b := ui.Storybook{Theme: design.Default(), Examples: []c.Example{
-			c.ExampleOf(c.ExampleInfo{ID: "product/button", ComponentID: "product.button"}, c.ButtonProps{Label: name}, c.Button),
+		b := ui.Storybook{Theme: design.Default(), Examples: []examples.Example{
+			examples.ExampleOf(examples.ExampleInfo{ID: "product/button", ComponentID: "product.button"}, c.ButtonProps{Label: name}, c.Button),
 		}}
 		snapshot, err := ui.Export(b.Theme, b.Examples)
 		if err != nil {
@@ -119,8 +120,8 @@ func TestStorybooksUseOnlyTheAuthorizedTenantComposition(t *testing.T) {
 		}
 		pair := design.Default()
 		pair.Light.AccentDefault = color
-		return ui.Storybook{Title: name, Theme: pair, Examples: []c.Example{
-			c.ExampleOf(c.ExampleInfo{ID: name, ComponentID: "product.button", Group: "Product", Name: name}, c.ButtonProps{Label: name}, c.Button),
+		return ui.Storybook{Title: name, Theme: pair, Examples: []examples.Example{
+			examples.ExampleOf(examples.ExampleInfo{ID: name, ComponentID: "product.button", Group: "Product", Name: name}, c.ButtonProps{Label: name}, c.Button),
 		}}, nil
 	}
 	router := mountAs(t, caller{}, func(d *admin.Deps) { d.Storybook = provider })

@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
@@ -83,14 +83,14 @@ func (d DesignExport) checkSourceFeatures(supported ...string) error {
 		(len(d.Measurements) != 0 && !required["source-measurements.v1"]) {
 		return fmt.Errorf("%w: feature/data mismatch", ErrSourceUnsupported)
 	}
-	var checkLayoutPresence func([]components.ExampleDescription) error
-	checkLayoutPresence = func(examples []components.ExampleDescription) error {
-		for _, example := range examples {
+	var checkLayoutPresence func([]examples.ExampleDescription) error
+	checkLayoutPresence = func(captures []examples.ExampleDescription) error {
+		for _, example := range captures {
 			if example.Layout != nil && !required["source-flex-declarations.v1"] {
 				return fmt.Errorf("%w: unadvertised layout at %q", ErrSourceUnsupported, example.ID)
 			}
 			for _, child := range example.Children {
-				if err := checkLayoutPresence([]components.ExampleDescription{child.Description}); err != nil {
+				if err := checkLayoutPresence([]examples.ExampleDescription{child.Description}); err != nil {
 					return err
 				}
 			}

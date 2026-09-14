@@ -32,7 +32,7 @@ import (
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
 	"github.com/septagon-oss/platformkit/ui"
-	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -157,7 +157,7 @@ func operatorStorybook(dir string) func(context.Context) (ui.Storybook, error) {
 	if dir == "" {
 		return nil
 	}
-	book := ui.Storybook{Title: "Components", Theme: design.Default(), Examples: components.Gallery(), Files: os.DirFS(dir)}
+	book := ui.Storybook{Title: "Components", Theme: design.Default(), Examples: examples.Gallery(), Files: os.DirFS(dir)}
 	return func(ctx context.Context) (ui.Storybook, error) {
 		tenant, ok := tenancy.FromContext(ctx)
 		if !ok || !tenant.Operator {

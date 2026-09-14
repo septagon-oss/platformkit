@@ -65,7 +65,7 @@ import (
   "github.com/septagon-oss/platformkit/kit/crud"
   "github.com/septagon-oss/platformkit/kit/httpx"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
   "github.com/septagon-oss/platformkit/ui/screens"
 )
@@ -77,7 +77,7 @@ func main() {
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes",
     Schema: crud.Schema{Fields: []crud.Field{{Name: "title", Type: crud.TypeString, Required: true}}}}
-  examples := []components.Example{
+  captures := []examples.Example{
     screens.FormExample("fixture/validation", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note",
       nil, map[string]string{"title": "A title is required."}, "A title is required.", true),
     screens.FormExample("fixture/conflict", resource, screens.Options{Root: "/admin"}, "/admin/notes/1", "Edit note",
@@ -89,8 +89,8 @@ func main() {
     sheet.Select("[data-alert-icon]", css.Decl("margin-top", css.Literal("2px")))
     extras = append(extras, ui.Extra{Sheets: []*css.Sheet{sheet}})
   }
-  snapshot, err := ui.Export(design.Default(), examples, extras...)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal, extras...) }
+  snapshot, err := ui.Export(design.Default(), captures, extras...)
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal, extras...) }
   if err != nil { panic(err) }; if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
 `)

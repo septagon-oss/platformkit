@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
@@ -20,7 +21,7 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, err := ui.Export(design.Default(), c.Gallery())
+	base, err := ui.Export(design.Default(), examples.Gallery())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 	if _, err := again.WithTokens(tokens); !errors.Is(err, ui.ErrSourceUnsupported) {
 		t.Fatalf("repeated attachment was not refused: %v", err)
 	}
-	layout := layoutExport(t, []c.Example{layoutExample("root", c.FlexProps{})})
+	layout := layoutExport(t, []examples.Example{layoutExample("root", c.FlexProps{})})
 	features := []string{"source-flex-declarations.v1", "source-measurements.v1", "source-tokens.v1"}
 	combined, err := layout.WithTokens(tokens)
 	if err != nil || combined.CheckSourceContract(features...) != nil {
@@ -87,7 +88,7 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 	if err := layout.CheckSourceContract("source-flex-declarations.v1"); err != nil {
 		t.Fatalf("early layout-only v2 was refused: %v", err)
 	}
-	unknown := layoutExport(t, c.Gallery())
+	unknown := layoutExport(t, examples.Gallery())
 	combined, err = unknown.WithTokens(tokens)
 	if err != nil || !errors.Is(combined.CheckSourceContract(features...), ui.ErrLayoutUnknown) {
 		t.Fatalf("unknown layout was concealed or prevented token capture: %v", err)
@@ -123,7 +124,7 @@ func TestTokenSnapshotRefusesContradictionsAndUnknownFeatureEnvelopes(t *testing
 		"unselected transition dependency": func(d *ui.DesignExport) { d.SourceTokens.Easings = nil },
 		"unadvertised measurement":         func(d *ui.DesignExport) { d.Measurements, _ = style.Measurements() },
 		"unadvertised layout": func(d *ui.DesignExport) {
-			d.Examples = []c.ExampleDescription{{Layout: &c.LayoutDescription{Kind: "unknown", Reason: "not captured"}}}
+			d.Examples = []examples.ExampleDescription{{Layout: &c.LayoutDescription{Kind: "unknown", Reason: "not captured"}}}
 		},
 		"measurement without layout": func(d *ui.DesignExport) { d.RequiredFeatures = append(d.RequiredFeatures, "source-measurements.v1") },
 	} {

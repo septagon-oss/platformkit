@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/forms"
 	"golang.org/x/net/html"
 )
@@ -50,7 +51,7 @@ func fixture() forms.Model {
 		Errors: map[string]string{"title": "Choose a title", "body": "Explain more", "status": "Choose another state", "accepted": "Check this choice"}}
 }
 
-func describe(t *testing.T, id, namespace string, model forms.Model) (components.Example, components.ExampleDescription) {
+func describe(t *testing.T, id, namespace string, model forms.Model) (examples.Example, examples.ExampleDescription) {
 	t.Helper()
 	example, err := forms.Example(id, model, forms.Options{Namespace: namespace, Action: "/save", CancelURL: "/cancel", Title: "Edit record"})
 	if err != nil {
@@ -141,7 +142,7 @@ func TestInstancesKeepControlsLabelsAndFeedbackSeparate(t *testing.T) {
 	if controls != 18 {
 		t.Fatalf("rendered %d controls, want nine in each form", controls)
 	}
-	if _, err := ui.Export(design.Default(), append(components.Gallery(), first, second)); err != nil {
+	if _, err := ui.Export(design.Default(), append(examples.Gallery(), first, second)); err != nil {
 		t.Fatalf("forms disagree with Core's captured interfaces: %v", err)
 	}
 }
@@ -182,7 +183,7 @@ func TestCapturedFormsKeepIdentityAndInputsThroughChanges(t *testing.T) {
 	slices.Reverse(model.Fields)
 	_, reordered := describe(t, form.ID, "editor", model)
 	for _, child := range before.Children {
-		index := slices.IndexFunc(reordered.Children, func(other components.ChildOccurrence) bool { return other.Description.ID == child.Description.ID })
+		index := slices.IndexFunc(reordered.Children, func(other examples.ChildOccurrence) bool { return other.Description.ID == child.Description.ID })
 		if index < 0 || !reflect.DeepEqual(child.Description, reordered.Children[index].Description) {
 			t.Fatalf("reordering changed field identity or inputs: %s", child.Description.ID)
 		}
@@ -197,7 +198,7 @@ func TestCapturedFormsKeepIdentityAndInputsThroughChanges(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(before, again) {
 		t.Fatalf("caller changes mutated the captured form: %v", err)
 	}
-	source := []components.Example{form}
+	source := []examples.Example{form}
 	base, err := ui.Export(design.Default(), source)
 	if err != nil {
 		t.Fatal(err)

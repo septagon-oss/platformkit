@@ -21,7 +21,7 @@ import (
   h "maragu.dev/gomponents/html"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 type Props struct { Ratio float64 }
 func tile(p Props, children ...g.Node) g.Node {
@@ -34,11 +34,11 @@ func main() {
   for i := range 7 {
     copy := "Album"
     if i == 0 { copy = input.Copy }
-    text := components.ExampleOf(components.ExampleInfo{ID:"caption", ComponentID:"pk-ui.component.text"}, components.TextProps{Content:copy}, components.Text)
-    tiles = append(tiles, components.ExampleWithChildren(components.ExampleInfo{ID:fmt.Sprintf("tile%d", i), ComponentID:"fixture.component.tile"}, Props{input.Ratio}, []g.Node{text.Node}, tile).Node)
+    text := examples.ExampleOf(examples.ExampleInfo{ID:"caption", ComponentID:"pk-ui.component.text"}, components.TextProps{Content:copy}, components.Text)
+    tiles = append(tiles, examples.ExampleWithChildren(examples.ExampleInfo{ID:fmt.Sprintf("tile%d", i), ComponentID:"fixture.component.tile"}, Props{input.Ratio}, []g.Node{text.Node}, tile).Node)
   }
-  example := components.ExampleWithChildren(components.ExampleInfo{ID:"fixture/grid", ComponentID:"pk-ui.component.grid"}, components.GridProps{Columns:"6", Gap:"3"}, tiles, components.Grid)
-  snapshot, err := ui.Export(design.Default(), []components.Example{example})
+  example := examples.ExampleWithChildren(examples.ExampleInfo{ID:"fixture/grid", ComponentID:"pk-ui.component.grid"}, components.GridProps{Columns:"6", Gap:"3"}, tiles, components.Grid)
+  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

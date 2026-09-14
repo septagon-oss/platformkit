@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -21,9 +22,9 @@ func TestRequestNoticeExamplesRetainTheRenderedRecoveryContract(t *testing.T) {
 	t.Parallel()
 	c := chrome()
 	c.Scripts = append(c.Scripts, "htmx-config.js")
-	examples := page.RequestNoticeExamples(c.SignIn)
-	if len(examples) != 4 {
-		t.Fatalf("request notices = %d, want 4", len(examples))
+	captures := page.RequestNoticeExamples(c.SignIn)
+	if len(captures) != 4 {
+		t.Fatalf("request notices = %d, want 4", len(captures))
 	}
 	runtime := render(t, page.Document(c, page.Request{}, page.View{}, h.Main()))
 	for index, want := range []struct {
@@ -35,7 +36,7 @@ func TestRequestNoticeExamplesRetainTheRenderedRecoveryContract(t *testing.T) {
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
 		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
 	} {
-		example := examples[index]
+		example := captures[index]
 		if example.ID != "pk-auth-"+want.kind || example.Name != want.title || example.ComponentID != "pk-ui.component.stack" {
 			t.Fatalf("wrong recovery identity or component contract: %+v", example.ExampleInfo)
 		}
@@ -66,7 +67,7 @@ func TestRequestNoticeExamplesRetainTheRenderedRecoveryContract(t *testing.T) {
 			}
 		}
 	}
-	if _, err := ui.Export(design.Default(), append(components.Gallery(), examples...)); err != nil {
+	if _, err := ui.Export(design.Default(), append(examples.Gallery(), captures...)); err != nil {
 		t.Fatalf("notices must compose with Core's canonical interfaces: %v", err)
 	}
 	c.Scripts = nil
@@ -131,7 +132,7 @@ func TestRequestNoticeSourceEditsAreDetachedAndUseSharedReplacementContracts(t *
 	if err != nil {
 		t.Fatalf("same-interface Alert replacement failed: %v", err)
 	}
-	index := slices.IndexFunc(replaced.Examples, func(e components.ExampleDescription) bool { return e.ID == path[0] })
+	index := slices.IndexFunc(replaced.Examples, func(e examples.ExampleDescription) bool { return e.ID == path[0] })
 	if index < 0 || !strings.Contains(replaced.Examples[index].HTML, "Permission denied") {
 		t.Fatal("Alert replacement did not retain its destination or source copy")
 	}

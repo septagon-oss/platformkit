@@ -1,4 +1,4 @@
-package components
+package examples
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	g "maragu.dev/gomponents"
+
+	"github.com/septagon-oss/platformkit/ui/components"
 )
 
 // ChildOccurrence retains a source-local invocation identity, not a native node
@@ -43,8 +45,8 @@ func (n *exampleNode) renderBody(w io.Writer) error {
 		return fmt.Errorf("example %q rendered a nil node", e.ID)
 	}
 	if recorder, ok := w.(*exampleRecorder); ok && recorder.layout {
-		if owned, ok := node.(*layoutNode); ok {
-			recorder.current.description.Layout = new(owned.layout)
+		if layout, ok := components.DeclaredLayout(node); ok {
+			recorder.current.description.Layout = &layout
 		}
 	}
 	return node.Render(w)
@@ -189,7 +191,7 @@ func (r *exampleRecord) add(child *exampleRecord) error {
 func (r *exampleRecord) describe(html string, layout bool) ExampleDescription {
 	description := r.description
 	if layout && (description.Layout == nil || len(description.OpaqueSlots) != 0) {
-		description.Layout = &LayoutDescription{Kind: "unknown", Reason: "unobserved, unmigrated or opaque source"}
+		description.Layout = &components.LayoutDescription{Kind: "unknown", Reason: "unobserved, unmigrated or opaque source"}
 	}
 	if r.observed {
 		description.HTML = html[r.start:r.end]

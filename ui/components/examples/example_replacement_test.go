@@ -1,4 +1,4 @@
-package components_test
+package examples_test
 
 import (
 	"encoding/json"
@@ -6,16 +6,18 @@ import (
 	"slices"
 	"testing"
 
-	c "github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
+
+	c "github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
 func TestExampleReplacementUsesSourceInputsAndKeepsDestinationMetadata(t *testing.T) {
 	calls := 0
-	makeSource := func(id, label, content, marker string) c.Example {
+	makeSource := func(id, label, content, marker string) examples.Example {
 		info := compositionInfo(id, "section")
 		info.Name, info.Group = "Label for "+id, "Group for "+id
-		return c.ExampleWithChildren(info, c.TextProps{Content: label},
+		return examples.ExampleWithChildren(info, c.TextProps{Content: label},
 			[]g.Node{compositionText("body", content).Node}, func(p c.TextProps, children ...g.Node) g.Node {
 				calls++
 				return g.Group{g.Text(marker + p.Content), g.Group(children)}
@@ -23,7 +25,7 @@ func TestExampleReplacementUsesSourceInputsAndKeepsDestinationMetadata(t *testin
 	}
 	target := makeSource("target/✓", "Old", "old body", "old renderer:")
 	source := makeSource("source", "New", "new body", "new renderer:")
-	first := c.ExampleWithChildren(compositionInfo("first", "owner"), c.TextProps{}, []g.Node{nil, target.Node, nil}, func(_ c.TextProps, nodes ...g.Node) g.Node {
+	first := examples.ExampleWithChildren(compositionInfo("first", "owner"), c.TextProps{}, []g.Node{nil, target.Node, nil}, func(_ c.TextProps, nodes ...g.Node) g.Node {
 		if len(nodes) != 3 || nodes[0] != nil || nodes[2] != nil {
 			t.Fatal("replacement changed slot positions or nil members")
 		}
@@ -31,7 +33,7 @@ func TestExampleReplacementUsesSourceInputsAndKeepsDestinationMetadata(t *testin
 	})
 	second := compositionForm("second", target.Node)
 	type slots struct{ Body g.Node }
-	root := c.ExampleWithSlots(compositionInfo("root", "shell"), c.FormProps{}, slots{compositionForm("both", first.Node, second.Node).Node},
+	root := examples.ExampleWithSlots(compositionInfo("root", "shell"), c.FormProps{}, slots{compositionForm("both", first.Node, second.Node).Node},
 		func(p c.FormProps, s slots) g.Node { return c.Form(p, s.Body) })
 	before, originalSource := describeExample(t, root), describeExample(t, source)
 	path := []string{"root", "both", "first", "target/✓"}
@@ -75,17 +77,17 @@ func TestExampleReplacementUsesSourceInputsAndKeepsDestinationMetadata(t *testin
 
 func TestExampleReplacementSharesTheDeclaredInterfaceCheck(t *testing.T) {
 	target := compositionText("target", "Before")
-	for name, source := range map[string]c.Example{
-		"component identity": c.ExampleOf(compositionInfo("source", "other"), c.TextProps{}, c.Text),
-		"property schema": c.ExampleOf(compositionInfo("source", "text"), struct {
+	for name, source := range map[string]examples.Example{
+		"component identity": examples.ExampleOf(compositionInfo("source", "other"), c.TextProps{}, c.Text),
+		"property schema": examples.ExampleOf(compositionInfo("source", "text"), struct {
 			Content int `json:"content"`
 		}{}, func(struct {
 			Content int `json:"content"`
 		}) g.Node {
 			return nil
 		}),
-		"slot declaration": c.ExampleWithChildren(compositionInfo("source", "text"), c.TextProps{}, nil, func(c.TextProps, ...g.Node) g.Node { return nil }),
-		"read only":        c.ExamplePreview(compositionInfo("source", "text"), g.Text("Preview"), "read only"),
+		"slot declaration": examples.ExampleWithChildren(compositionInfo("source", "text"), c.TextProps{}, nil, func(c.TextProps, ...g.Node) g.Node { return nil }),
+		"read only":        examples.ExamplePreview(compositionInfo("source", "text"), g.Text("Preview"), "read only"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			edited, err := target.WithReplacementAt([]string{"target"}, source)
@@ -97,7 +99,7 @@ func TestExampleReplacementSharesTheDeclaredInterfaceCheck(t *testing.T) {
 	left := describeExample(t, target)
 	right := left
 	right.ID, right.Name, right.Group, right.HTML, right.Props = "other", "Other", "Other", "Other", json.RawMessage(`{}`)
-	left.Slots = []c.SlotDescription{{Name: "first", GoType: "gomponents.Node", Supported: true, TrustedOnly: true}, {Name: "second", GoType: "[]gomponents.Node", Supported: true, Multiple: true, TrustedOnly: true}}
+	left.Slots = []examples.SlotDescription{{Name: "first", GoType: "gomponents.Node", Supported: true, TrustedOnly: true}, {Name: "second", GoType: "[]gomponents.Node", Supported: true, Multiple: true, TrustedOnly: true}}
 	right.Slots = slices.Clone(left.Slots)
 	slices.Reverse(right.Slots)
 	if !left.SameInterface(right) || left.Slots[0].Name != "first" || right.Slots[0].Name != "second" {
@@ -133,12 +135,12 @@ func TestExampleReplacementSharesTheDeclaredInterfaceCheck(t *testing.T) {
 func TestExampleReplacementRefusesForgedCapturesOnEitherSide(t *testing.T) {
 	target, source := compositionText("target", "Before"), compositionText("source", "After")
 	for _, side := range []string{"target", "source"} {
-		for name, mutate := range map[string]func(*c.Example){
-			"id":            func(e *c.Example) { e.ID = "forged" },
-			"interface":     func(e *c.Example) { e.ComponentID = "forged" },
-			"nil":           func(e *c.Example) { e.Node = nil },
-			"opaque":        func(e *c.Example) { e.Node = g.Text("Forged") },
-			"other capture": func(e *c.Example) { e.Node = compositionText(e.ID, "Forged").Node },
+		for name, mutate := range map[string]func(*examples.Example){
+			"id":            func(e *examples.Example) { e.ID = "forged" },
+			"interface":     func(e *examples.Example) { e.ComponentID = "forged" },
+			"nil":           func(e *examples.Example) { e.Node = nil },
+			"opaque":        func(e *examples.Example) { e.Node = g.Text("Forged") },
+			"other capture": func(e *examples.Example) { e.Node = compositionText(e.ID, "Forged").Node },
 		} {
 			t.Run(side+"/"+name, func(t *testing.T) {
 				a, b := target, source
@@ -175,7 +177,7 @@ func TestExampleReplacementResolvesOnlyExactDeclaredPaths(t *testing.T) {
 			t.Fatal("replacement accepted ambiguous ownership")
 		}
 	}
-	suppressed := c.ExampleWithChildren(compositionInfo("root", "owner"), c.TextProps{}, []g.Node{leaf.Node}, func(c.TextProps, ...g.Node) g.Node {
+	suppressed := examples.ExampleWithChildren(compositionInfo("root", "owner"), c.TextProps{}, []g.Node{leaf.Node}, func(c.TextProps, ...g.Node) g.Node {
 		t.Fatal("source resolution or replacement executed a constructor")
 		return nil
 	})
@@ -203,14 +205,14 @@ func TestExampleReplacementAcceptsEquivalentGoShapesWithoutAliasingInputs(t *tes
 		Tail []g.Node `json:"tail"`
 		Body g.Node   `json:"body"`
 	}
-	target := c.ExampleWithSlots(compositionInfo("target", "container"), props{Label: "Old"}, destinationSlots{}, func(props, destinationSlots) g.Node {
+	target := examples.ExampleWithSlots(compositionInfo("target", "container"), props{Label: "Old"}, destinationSlots{}, func(props, destinationSlots) g.Node {
 		t.Fatal("replacement executed the old renderer")
 		return nil
 	})
 	target.Name, target.Group = "Current display label", "Current display group"
 	values := map[string][]int{"source": {1, 2}}
 	children := []g.Node{compositionText("tail", "Tail").Node}
-	source := c.ExampleWithSlots(compositionInfo("source", "container"), props{Values: values, Label: "New"},
+	source := examples.ExampleWithSlots(compositionInfo("source", "container"), props{Values: values, Label: "New"},
 		sourceSlots{children, compositionText("body", "Body").Node}, func(p props, s sourceSlots) g.Node {
 			if !reflect.DeepEqual(p.Values, map[string][]int{"source": {1, 2}}) {
 				t.Fatal("source properties aliased caller data or were retained from the target")
@@ -235,7 +237,7 @@ func TestExampleReplacementAcceptsEquivalentGoShapesWithoutAliasingInputs(t *tes
 	if result, err := target.WithReplacementAt([]string{"target"}, duplicate); err == nil || result.Node != nil {
 		t.Fatal("replacement admitted ambiguous child identities")
 	}
-	preview := c.ExamplePreview(compositionInfo("preview", "container"), g.Text("Preview"), "read only")
+	preview := examples.ExamplePreview(compositionInfo("preview", "container"), g.Text("Preview"), "read only")
 	if result, err := preview.WithReplacementAt([]string{"preview"}, source); err == nil || result.Node != nil {
 		t.Fatal("replacement converted a read-only preview into a typed capture")
 	}

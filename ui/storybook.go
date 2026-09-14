@@ -14,6 +14,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
 // Storybook is one application's selected design composition. The application
@@ -23,7 +24,7 @@ import (
 type Storybook struct {
 	Title    string
 	Theme    design.Pair
-	Examples []components.Example
+	Examples []examples.Example
 	Extra    []Extra
 	// Files is an optional, immutable Storybook.js build produced from Export
 	// of this exact composition. All files are served through gallery authorization.
@@ -43,13 +44,13 @@ func (b Storybook) Validate() error {
 }
 
 // Find resolves strictly inside the selected composition, with no Core fallback.
-func (b Storybook) Find(id string) (components.Example, bool) {
+func (b Storybook) Find(id string) (examples.Example, bool) {
 	for _, example := range b.Examples {
 		if example.ID == id {
 			return example, true
 		}
 	}
-	return components.Example{}, false
+	return examples.Example{}, false
 }
 
 func (b Storybook) groups() []string {
@@ -65,7 +66,7 @@ func (b Storybook) groups() []string {
 // StorybookPage renders the index and one live example. Previews use their own
 // document so a modal can own focus without taking over the documentation.
 // The server validates the selected ID and applies Props before calling this.
-func StorybookPage(b Storybook, path, group string, selected components.Example, props, mode, width string) (g.Node, error) {
+func StorybookPage(b Storybook, path, group string, selected examples.Example, props, mode, width string) (g.Node, error) {
 	var links []g.Node
 	for _, name := range append([]string{""}, b.groups()...) {
 		label := name
@@ -103,7 +104,7 @@ func StorybookPage(b Storybook, path, group string, selected components.Example,
 			h.Div(g.Attr("data-gallery-layout", ""), index, detail))), nil
 }
 
-func storybookExample(example components.Example, path, group, props, mode, width string) (g.Node, error) {
+func storybookExample(example examples.Example, path, group, props, mode, width string) (g.Node, error) {
 	d, err := example.Describe()
 	if err != nil {
 		return nil, err
@@ -136,10 +137,10 @@ func storybookExample(example components.Example, path, group, props, mode, widt
 		components.Link(components.LinkProps{ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-gallery-preview-link": ""}}, Label: "Open preview", Href: preview, External: true}),
 		h.Details(h.Open(), h.Summary(g.Text("Preview controls")), h.Form(form...)),
 		h.Div(h.ID("pk-gallery-status"), h.Role("status"), g.Attr("data-gallery-status", "")), snippet,
-		h.Details(h.Summary(g.Text("Properties and slots")), components.Documentation(example)))), nil
+		h.Details(h.Summary(g.Text("Properties and slots")), examples.Documentation(example)))), nil
 }
 
-func propertyControls(d components.ExampleDescription) []g.Node {
+func propertyControls(d examples.ExampleDescription) []g.Node {
 	var schema struct {
 		Properties map[string]map[string]any `json:"properties"`
 	}

@@ -72,7 +72,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("kit/tenancy", uuid " " p "kit/internal/syscap")
         check("modules/task/domain", "")
         check("design", "")
-        check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components maragu.dev/gomponents maragu.dev/gomponents/html")
+        check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples maragu.dev/gomponents maragu.dev/gomponents/html")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox, sql, "sql")

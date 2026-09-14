@@ -23,24 +23,24 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
 func main() {
   var input struct { components.CardProps; ShadowCSS, BackgroundCSS string }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   props := input.CardProps
-  cards := []g.Node{components.ExampleWithSlots(components.ExampleInfo{ID: "first", ComponentID: "pk-ui.component.card"},
+  cards := []g.Node{examples.ExampleWithSlots(examples.ExampleInfo{ID: "first", ComponentID: "pk-ui.component.card"},
     props, components.CardSlots{}, components.CardWithSlots).Node}
-  cards = append(cards, components.ExampleWithSlots(components.ExampleInfo{ID: "second", ComponentID: "pk-ui.component.card"},
+  cards = append(cards, examples.ExampleWithSlots(examples.ExampleInfo{ID: "second", ComponentID: "pk-ui.component.card"},
     components.CardProps{Title: "Coastal trail", Description: "Two stickers", Clickable: true, Href: "/packs/coast"},
     components.CardSlots{}, components.CardWithSlots).Node)
-  grid := components.ExampleWithChildren(components.ExampleInfo{ID: "cards", ComponentID: "pk-ui.component.grid"},
+  grid := examples.ExampleWithChildren(examples.ExampleInfo{ID: "cards", ComponentID: "pk-ui.component.grid"},
     components.GridProps{Columns: "2", Gap: "4"}, cards, components.Grid)
-  heading := components.ExampleOf(components.ExampleInfo{ID: "heading", ComponentID: "pk-ui.component.heading"},
+  heading := examples.ExampleOf(examples.ExampleInfo{ID: "heading", ComponentID: "pk-ui.component.heading"},
     components.HeadingProps{Level: 1, Text: "Packs"}, components.Heading)
   type slots struct { Header, Content g.Node }
-  example := components.ExampleWithSlots(components.ExampleInfo{ID: "fixture/cards", ComponentID: "fixture.page"},
+  example := examples.ExampleWithSlots(examples.ExampleInfo{ID: "fixture/cards", ComponentID: "fixture.page"},
     struct{}{}, slots{Header: heading.Node, Content: grid.Node}, func(_ struct{}, content slots) g.Node {
       return components.Stack(components.StackProps{Gap: "8"}, content.Header, content.Content)
     })
@@ -55,7 +55,7 @@ func main() {
     sheet := css.NewSheet().Select("[data-component=card]", css.Decl("background-color", css.Literal(input.BackgroundCSS)))
     extra = append(extra, ui.Extra{Sheets: []*css.Sheet{sheet}})
   }
-  snapshot, err := ui.Export(theme, []components.Example{example}, extra...)
+  snapshot, err := ui.Export(theme, []examples.Example{example}, extra...)
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

@@ -17,7 +17,7 @@ go run ./tools/designexport --example pk-ui.component.button/primary
 These write the full gallery or one captured invocation, with typed properties,
 schemas, slots, HTML, CSS, themes, attributed glyphs and a content hash. Children
 retain local IDs, ownership and spans; opaque/unobserved inputs remain explicit.
-Core's IDs come from [Gallery](../../ui/components/gallery.go).
+Core's IDs come from [Gallery](../../ui/components/examples/gallery.go).
 
 ## Inspect typed foundation values
 
@@ -49,7 +49,7 @@ printf '%s\n' '{"label":"Create album","loading":true}' |
 ```
 
 The output contains the changed invocation, stylesheet, themes and icons.
-[Example.WithProps](../../ui/components/example.go) enforces exact public field
+[Example.WithProps](../../ui/components/examples/example.go) enforces exact public field
 names and types. Duplicate, unknown or internal fields, trailing JSON and edits
 to read-only helpers are refused. Input is limited to 1 MiB; plain exports and
 selections do not read stdin. This command changes no source files.
@@ -79,7 +79,7 @@ explicit typed capture call. It reuses `go/packages` and `dave/dst`, preserving
 comments and import aliases. From a dependency-complete module, prepare a review:
 
 ```sh
-pkit_source=ui/components/gallery.go
+pkit_source=ui/components/examples/gallery.go
 pkit_line=$(rg -n 'ExampleWithSlots\(info\("pk-ui.component.button/primary"' "$pkit_source" | cut -d: -f1)
 pkit_sha=$(sha256sum "$pkit_source" | cut -d' ' -f1)
 go run ./tools/designexport |

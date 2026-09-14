@@ -126,7 +126,7 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
 func main() {
@@ -134,16 +134,16 @@ func main() {
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   var children []g.Node
   for _, item := range []struct{ id, label string }{{"first", input.Label}, {"second", "Keep this copy"}} {
-    children = append(children, components.ExampleOf(components.ExampleInfo{
+    children = append(children, examples.ExampleOf(examples.ExampleInfo{
       ID: item.id, ComponentID: "pk-ui.component.button",
     }, components.ButtonProps{Label: item.label}, components.Button).Node)
   }
-  example := components.ExampleWithChildren(components.ExampleInfo{
+  example := examples.ExampleWithChildren(examples.ExampleInfo{
     ID: "fixture/dashed", ComponentID: "pk-ui.component.stack",
   }, components.StackProps{Gap: "4"}, children, components.Stack)
   sheet := css.NewSheet().Select("[data-component=button]",
     css.Decl("border", css.Literal(input.Border)), css.Decl("border-radius", css.Literal("12px")))
-  snapshot, err := ui.Export(design.Default(), []components.Example{example}, ui.Extra{Sheets: []*css.Sheet{sheet}})
+  snapshot, err := ui.Export(design.Default(), []examples.Example{example}, ui.Extra{Sheets: []*css.Sheet{sheet}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
@@ -24,7 +25,7 @@ func ExampleFormExample() {
 		Schema: crud.Schema{Fields: []crud.Field{{Name: "description", Type: crud.TypeText, Widget: "textarea"}}}}
 	form := screens.FormExample("notes/new", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note",
 		map[string]any{"description": "A synthetic design example."}, nil, "", true)
-	snapshot, err := ui.Export(design.Default(), []components.Example{form})
+	snapshot, err := ui.Export(design.Default(), []examples.Example{form})
 	if err != nil {
 		panic(err)
 	}
@@ -80,8 +81,8 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 			if !slices.Equal(got, want) {
 				t.Fatalf("children = %q, want %q", got, want)
 			}
-			var observed func(components.ExampleDescription)
-			observed = func(parent components.ExampleDescription) {
+			var observed func(examples.ExampleDescription)
+			observed = func(parent examples.ExampleDescription) {
 				kind := "input"
 				if specialized := (map[string]string{form.ID: "form", "field/body": "textarea", "field/status": "select",
 					"field/pinned": "checkbox", "error": "alert", "actions": "formactions", "cancel": "button", "save": "button"})[parent.ID]; specialized != "" {
@@ -104,7 +105,7 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 			observed(description)
 			// Export's shared interface check rejects another Props or slot shape
 			// under a Core identity, including private Button and Alert shortcuts.
-			if _, err := ui.Export(design.Default(), append(components.Gallery(), form)); err != nil {
+			if _, err := ui.Export(design.Default(), append(examples.Gallery(), form)); err != nil {
 				t.Fatal(err)
 			}
 			for _, marker := range []string{`id="screen-form"`, `method="post"`, `hx-post="/admin/note/notes"`,
@@ -123,7 +124,7 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, child := range description.Children {
-				index := slices.IndexFunc(reordered.Children, func(other components.ChildOccurrence) bool { return other.Description.ID == child.Description.ID })
+				index := slices.IndexFunc(reordered.Children, func(other examples.ChildOccurrence) bool { return other.Description.ID == child.Description.ID })
 				if index < 0 || !reflect.DeepEqual(child.Description, reordered.Children[index].Description) {
 					t.Fatalf("schema order changed the contract or inputs of %s", child.Description.ID)
 				}
@@ -143,7 +144,7 @@ func TestGeneratedFormComposesSourceEditsAndReplacements(t *testing.T) {
 	t.Parallel()
 	form := screens.FormExample("notes/edit", resource(), opts, "/admin/note/notes/1", "Edit note",
 		map[string]any{"title": "Original", "body": "Before", "status": "done"}, nil, "", false)
-	source := []components.Example{form}
+	source := []examples.Example{form}
 	base, err := ui.Export(design.Default(), source)
 	if err != nil {
 		t.Fatal(err)
@@ -181,11 +182,11 @@ func TestGeneratedFormComposesSourceEditsAndReplacements(t *testing.T) {
 		BaseSHA256: base.SHA256, Path: path, Props: json.RawMessage(`{"value":"Stale"}`)}); !errors.Is(err, ui.ErrStaleExport) {
 		t.Fatalf("a stale source edit was not refused: %v", err)
 	}
-	if _, err := form.WithReplacementAt(path, components.ExampleOf(
-		components.ExampleInfo{ID: "wrong", ComponentID: "pk-ui.component.input"}, components.InputProps{}, components.Input)); err == nil {
+	if _, err := form.WithReplacementAt(path, examples.ExampleOf(
+		examples.ExampleInfo{ID: "wrong", ComponentID: "pk-ui.component.input"}, components.InputProps{}, components.Input)); err == nil {
 		t.Fatal("a Textarea accepted an Input's different interface")
 	}
-	replacement := components.ExampleOf(components.ExampleInfo{ID: "replacement", ComponentID: "pk-ui.component.textarea"},
+	replacement := examples.ExampleOf(examples.ExampleInfo{ID: "replacement", ComponentID: "pk-ui.component.textarea"},
 		components.TextareaProps{Name: "body", Label: "Description", Value: "Replacement", Rows: 5}, components.Textarea)
 	source = append(source, replacement)
 	base, err = ui.Export(design.Default(), source)

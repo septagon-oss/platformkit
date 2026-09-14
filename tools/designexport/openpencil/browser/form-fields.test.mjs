@@ -20,19 +20,19 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 func main() {
   var input components.InputProps
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  fields := []g.Node{components.ExampleOf(components.ExampleInfo{ID: "title", ComponentID: "pk-ui.component.input"}, input, components.Input).Node}
-  fields = append(fields, components.ExampleOf(components.ExampleInfo{ID: "slug", ComponentID: "pk-ui.component.input"},
+  fields := []g.Node{examples.ExampleOf(examples.ExampleInfo{ID: "title", ComponentID: "pk-ui.component.input"}, input, components.Input).Node}
+  fields = append(fields, examples.ExampleOf(examples.ExampleInfo{ID: "slug", ComponentID: "pk-ui.component.input"},
     components.InputProps{Name: "slug", Label: "Slug", Value: "field-notes", Required: true, FullWidth: true}, components.Input).Node)
-  fields = append(fields, components.ExampleWithSlots(components.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
+  fields = append(fields, examples.ExampleWithSlots(examples.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
     components.ButtonProps{Label: "Save", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node)
-  example := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/form-fields", ComponentID: "pk-ui.component.form"},
+  example := examples.ExampleWithChildren(examples.ExampleInfo{ID: "fixture/form-fields", ComponentID: "pk-ui.component.form"},
     components.FormProps{Label: "Album details", Action: "/albums"}, fields, components.Form)
-  snapshot, err := ui.Export(design.Default(), []components.Example{example})
+  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

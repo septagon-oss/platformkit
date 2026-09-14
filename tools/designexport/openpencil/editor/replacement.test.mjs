@@ -1916,7 +1916,7 @@ import (
   "github.com/septagon-oss/platformkit/kit/crud"
   "github.com/septagon-oss/platformkit/kit/httpx"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
   "github.com/septagon-oss/platformkit/ui/screens"
 )
@@ -1927,7 +1927,7 @@ type Note struct {
 }
 func (Note) TableName() string { return "notes" }
 func choiceForm(p components.FormProps, children ...g.Node) g.Node {
-  summary := components.ExampleOf(components.ExampleInfo{ID: "source-summary", ComponentID: "pk-ui.component.text"},
+  summary := examples.ExampleOf(examples.ExampleInfo{ID: "source-summary", ComponentID: "pk-ui.component.text"},
     components.TextProps{Content: "Source-owned album states", Color: "muted"}, components.Text)
   return components.Form(p, append([]g.Node{summary.Node}, children...)...)
 }
@@ -1936,13 +1936,13 @@ func main() {
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: crud.Fields[*Note]()}}
   form := screens.FormExample("fixture/generated-form", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note", nil, nil, "", true)
-  examples := append(components.Gallery(), form)
-  state := components.ExampleOf(components.ExampleInfo{ID: "stage", ComponentID: "pk-ui.component.select"},
+  captures := append(examples.Gallery(), form)
+  state := examples.ExampleOf(examples.ExampleInfo{ID: "stage", ComponentID: "pk-ui.component.select"},
     components.SelectProps{Name: "stage", Label: "Stage", Value: "draft", Required: true, Placeholder: "Choose a stage",
       Options: []components.SelectOption{{Value: "draft", Label: "Draft"}, {Value: " ready,a ", Label: "Ready"}}}, components.Select)
-  choices := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/choice-form", ComponentID: "pk-ui.component.form"},
+  choices := examples.ExampleWithChildren(examples.ExampleInfo{ID: "fixture/choice-form", ComponentID: "pk-ui.component.form"},
     components.FormProps{Label: "Album state", Action: "/albums"}, []g.Node{state.Node}, choiceForm)
-  examples = append(examples, choices)
+  captures = append(captures, choices)
   var extra ui.Extra
   if input.Centered {
     extra.Sheets = append(extra.Sheets, css.NewSheet().Select("[data-component=text]", css.Decl("text-align", css.Literal("center"))))
@@ -1952,8 +1952,8 @@ func main() {
       css.Decl("border", css.Literal("1px dashed var(--pk-color-border-default)")),
       css.Decl("border-radius", css.Literal("12px"))))
   }
-  snapshot, err := ui.Export(design.Default(), examples, extra)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal, extra) }
+  snapshot, err := ui.Export(design.Default(), captures, extra)
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal, extra) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

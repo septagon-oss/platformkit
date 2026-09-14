@@ -103,7 +103,7 @@ import (
   "slices"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
 func main() {
@@ -114,16 +114,16 @@ func main() {
     Proposal *ui.PropsProposal
   }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  info := components.ExampleInfo{ID:"underlined", ComponentID:"pk-ui.component.button"}
+  info := examples.ExampleInfo{ID:"underlined", ComponentID:"pk-ui.component.button"}
   common := components.ComponentProps{ID:"subject"}
-  example := components.ExampleOf(info, components.ButtonProps{ComponentProps:common, Label:input.Content, Variant:"link"}, components.Button)
+  example := examples.ExampleOf(info, components.ButtonProps{ComponentProps:common, Label:input.Content, Variant:"link"}, components.Button)
   switch input.Kind {
   case "text":
     info.ComponentID = "pk-ui.component.text"
-    example = components.ExampleOf(info, components.TextProps{ComponentProps:common, Content:input.Content, Underline:true}, components.Text)
+    example = examples.ExampleOf(info, components.TextProps{ComponentProps:common, Content:input.Content, Underline:true}, components.Text)
   case "link":
     info.ComponentID = "pk-ui.component.link"
-    example = components.ExampleOf(info, components.LinkProps{ComponentProps:common, Label:input.Content, Href:"/account/sign-in", External:input.External}, components.Link)
+    example = examples.ExampleOf(info, components.LinkProps{ComponentProps:common, Label:input.Content, Href:"/account/sign-in", External:input.External}, components.Link)
   }
   sheet := css.NewSheet()
   for _, name := range slices.Sorted(maps.Keys(input.Style)) {
@@ -132,14 +132,14 @@ func main() {
   for _, name := range slices.Sorted(maps.Keys(input.DescendantStyle)) {
     sheet.Select("#subject span", css.Decl(name, css.Literal(input.DescendantStyle[name])))
   }
-  examples := []components.Example{example}
+  captures := []examples.Example{example}
   extra := ui.Extra{Sheets:[]*css.Sheet{sheet}}
   var snapshot ui.DesignExport
   var err error
   if input.Proposal == nil {
-    snapshot, err = ui.Export(design.Default(), examples, extra)
+    snapshot, err = ui.Export(design.Default(), captures, extra)
   } else {
-    _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal, extra)
+    _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal, extra)
   }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
@@ -157,7 +157,7 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
 func main() {
@@ -167,16 +167,16 @@ func main() {
   theme.Light.Typography.Display, theme.Dark.Typography.Display = "IBM Plex Sans", "IBM Plex Sans"
   var actions []g.Node
   if input.Action {
-    action := components.ExampleOf(components.ExampleInfo{ID:"create", ComponentID:"pk-ui.component.button"}, components.ButtonProps{Label:"Create album"}, components.Button)
+    action := examples.ExampleOf(examples.ExampleInfo{ID:"create", ComponentID:"pk-ui.component.button"}, components.ButtonProps{Label:"Create album"}, components.Button)
     actions = []g.Node{action.Node}
   }
-  example := components.ExampleWithSlots(components.ExampleInfo{ID:"fixture/empty", ComponentID:"pk-ui.component.emptystate"},
+  example := examples.ExampleWithSlots(examples.ExampleInfo{ID:"fixture/empty", ComponentID:"pk-ui.component.emptystate"},
     components.EmptyStateProps{ComponentProps:components.ComponentProps{ID:"empty"}, Title:input.Title, Description:input.Description, Compact:input.Compact, Bordered:true},
     components.EmptyStateSlots{Actions:actions}, components.EmptyStateWithSlots)
   sheet := css.NewSheet()
   if input.Align != "" { sheet.Select("#empty", css.Decl("align-items", css.Literal(input.Align))) }
   if input.Constraint != "" { sheet.Select("#empty > p", css.Decl(input.Constraint, css.Literal(input.Value))) }
-  snapshot, err := ui.Export(theme, []components.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
+  snapshot, err := ui.Export(theme, []examples.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

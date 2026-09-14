@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -42,7 +43,7 @@ func (s Shell) storybook(ctx context.Context) (ui.Storybook, error) {
 			return ui.Storybook{}, err
 		}
 	} else if tenant.Operator {
-		book = ui.Storybook{Title: "Components", Theme: s.Theme, Examples: components.Gallery()}
+		book = ui.Storybook{Title: "Components", Theme: s.Theme, Examples: examples.Gallery()}
 	} else {
 		return ui.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available for this tenant.")
 	}
@@ -55,8 +56,8 @@ func (s Shell) storybook(ctx context.Context) (ui.Storybook, error) {
 	return book, book.Validate()
 }
 
-func galleryExample(book ui.Storybook, in *galleryInput) (components.Example, error) {
-	var example components.Example
+func galleryExample(book ui.Storybook, in *galleryInput) (examples.Example, error) {
+	var example examples.Example
 	if in.Example != "" {
 		var found bool
 		example, found = book.Find(in.Example)
@@ -128,7 +129,7 @@ func (p pages) mountGallery(api *httpx.API) {
 	}
 }
 
-func galleryPreview(book ui.Storybook, example components.Example, mode string) (*httpx.Page, error) {
+func galleryPreview(book ui.Storybook, example examples.Example, mode string) (*httpx.Page, error) {
 	extra := append(slices.Clone(book.Extra), ui.Extra{Lists: components.GalleryClassLists()})
 	sheet := ui.Compose(book.Theme, extra...)
 	attrs := []g.Node{h.Lang("en")}
@@ -156,7 +157,7 @@ func galleryPreview(book ui.Storybook, example components.Example, mode string) 
 
 // Demonstration context belongs to the preview, outside the exact component
 // invocation captured by ui.Export. Keep the real keyboard and responsive behavior.
-func galleryPreviewContent(example components.Example) g.Node {
+func galleryPreviewContent(example examples.Example) g.Node {
 	switch example.ComponentID {
 	case "pk-ui.component.skiplink":
 		return components.Stack(components.StackProps{Align: "start", ComponentProps: components.ComponentProps{

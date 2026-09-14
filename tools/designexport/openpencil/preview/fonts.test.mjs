@@ -213,9 +213,9 @@ test('bundled preview fonts render centered editable text without local access t
     assert.equal(hash(new Uint8Array(await (await fetch(new URL(face.licensePath, endpoint))).arrayBuffer())), face.licenseSHA256)
   }
   const project = await sourceFixture(t, `package main
-import ("encoding/json"; "os"; "github.com/septagon-oss/platformkit/design"; "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/components")
+import ("encoding/json"; "os"; "github.com/septagon-oss/platformkit/design"; "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/components/examples")
 func main() {
-  snapshot, err := ui.Export(design.Default(), components.Gallery())
+  snapshot, err := ui.Export(design.Default(), examples.Gallery())
   if err != nil { panic(err) }; if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
 `)

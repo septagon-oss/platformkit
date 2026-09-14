@@ -20,14 +20,14 @@ import (
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/ui"
-  "github.com/septagon-oss/platformkit/ui/components"
+  "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 type Props struct { Number int \`json:"number"\`; Nested bool \`json:"nested"\` }
 func owner(p Props, children ...g.Node) g.Node {
-  number := components.ExampleOf(components.ExampleInfo{ID: "number", ComponentID: "pk-ui.component.text"},
+  number := examples.ExampleOf(examples.ExampleInfo{ID: "number", ComponentID: "pk-ui.component.text"},
     components.TextProps{Content: strconv.Itoa(p.Number), Color: "muted"}, components.Text)
   if p.Nested {
-    number = components.ExampleWithChildren(components.ExampleInfo{ID: "summary", ComponentID: "pk-ui.component.stack"},
+    number = examples.ExampleWithChildren(examples.ExampleInfo{ID: "summary", ComponentID: "pk-ui.component.stack"},
       components.StackProps{Gap: "4"}, []g.Node{number.Node}, components.Stack)
   }
   return components.Stack(components.StackProps{Gap: "4"}, append([]g.Node{number.Node}, children...)...)
@@ -35,15 +35,15 @@ func owner(p Props, children ...g.Node) g.Node {
 func main() {
   var input struct { Proposal *ui.PropsProposal; Nested bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  action := components.ExampleOf(components.ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
+  action := examples.ExampleOf(examples.ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
     components.ButtonProps{Label: "Continue"}, components.Button)
-  caption := components.ExampleOf(components.ExampleInfo{ID: "caption", ComponentID: "pk-ui.component.text"},
+  caption := examples.ExampleOf(examples.ExampleInfo{ID: "caption", ComponentID: "pk-ui.component.text"},
     components.TextProps{Content: "Album notes"}, components.Text)
-  example := components.ExampleWithChildren(components.ExampleInfo{ID: "fixture/derived", ComponentID: "fixture.component.derived"},
+  example := examples.ExampleWithChildren(examples.ExampleInfo{ID: "fixture/derived", ComponentID: "fixture.component.derived"},
     Props{Number: 7, Nested: input.Nested}, []g.Node{action.Node, caption.Node}, owner)
-  examples := []components.Example{example}
-  snapshot, err := ui.Export(design.Default(), examples)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal) }
+  captures := []examples.Example{example}
+  snapshot, err := ui.Export(design.Default(), captures)
+  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
