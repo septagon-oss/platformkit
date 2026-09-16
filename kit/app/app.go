@@ -26,7 +26,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
-	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
@@ -51,8 +50,8 @@ const (
 
 // Options are the cross-cutting implementations main chooses: the three
 // questions the kernel cannot answer for itself — which host is which tenant,
-// who is calling, and what they may do — plus the role, the event transport,
-// the tenant list the periodic jobs walk, and where to log.
+// who is calling, and what they may do — plus the role, the event transport
+// constructors, the tenant list the periodic jobs walk, and where to log.
 type Options struct {
 	Tenants   httpx.TenantLoader
 	Authorize httpx.Authorizer
@@ -69,9 +68,50 @@ type Options struct {
 	Role Role
 
 	// Transport carries events between the relay and the handlers. An explicit
-	// value overrides nats.transport. Otherwise All defaults to memory and a
-	// separate Worker to JetStream; nats.transport can opt All into JetStream.
+	// value overrides nats.transport and Transports. Otherwise All defaults to
+	// memory and a separate Worker to JetStream; nats.transport can opt All
+	// into JetStream, and Transports says how each is built.
 	Transport events.Transport
+
+	// Transports are the constructors behind nats.transport's two names. New
+	// refuses a composition whose selected name has no constructor, so a
+	// worker that would have found out at Run finds out before anything is
+	// opened; the check runs in every role, because one image must answer
+	// "will this start?" the same way whichever half it runs.
+	Transports Transports
+}
+
+// Transports is how the two event transports nats.transport can name are
+// built. The kernel knows the names and the rule between them — memory is one
+// process talking to itself, so a separate worker cannot use it — and nothing
+// about how either is made: the composing application supplies both and is
+// the one importer of the provider packages, so kit/app links neither the
+// NATS client nor the in-process queue (scripts/check_packages.sh records
+// that). apps/platformkit passes memory.New and nats.Connect; a product that
+// runs one process forever may leave JetStream nil and set nats.transport to
+// memory, and is refused the day a separate worker is deployed against it.
+type Transports struct {
+	// Memory builds the in-process transport the combined role defaults to.
+	Memory func() events.Transport
+	// JetStream builds the shared broker transport a separate role defaults
+	// to, from the NATS settings New has already validated.
+	JetStream func(config.NATS) (events.Transport, error)
+}
+
+// constructor is the Transports field the selected mode needs, or the error
+// that names the missing one. It is the whole of what New checks about
+// transports beyond the mode itself, and transport() calls what it returns.
+func (t Transports) constructor(broker bool) (func(config.NATS) (events.Transport, error), error) {
+	if broker {
+		if t.JetStream == nil {
+			return nil, errors.New("app: nats.transport selects jetstream and Options.Transports.JetStream is nil; the application supplies the constructor (kit/events/providers/nats.Connect)")
+		}
+		return t.JetStream, nil
+	}
+	if t.Memory == nil {
+		return nil, errors.New("app: nats.transport selects memory and Options.Transports.Memory is nil; the application supplies the constructor (kit/events/providers/memory.New)")
+	}
+	return func(config.NATS) (events.Transport, error) { return t.Memory(), nil }, nil
 }
 
 // App is a composed application that has not started yet.
@@ -138,6 +178,9 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Transport == nil {
 		broker, err := useJetStream(cfg.NATS.Transport, opts.Role)
 		if err != nil {
+			return nil, err
+		}
+		if _, err := opts.Transports.constructor(broker); err != nil {
 			return nil, err
 		}
 		if broker {
@@ -224,7 +267,10 @@ func (a *App) openConn(ctx context.Context) (*db.Conn, error) {
 	return db.OpenWithPool(ctx, a.cfg.Database.URL, databasePool(a.cfg.Database))
 }
 
-// transport is the event transport this role uses.
+// transport is the event transport this role uses: the injected one, or the
+// one the application's constructor for the selected mode builds. New has
+// already refused a missing constructor, so the second error here is the
+// constructor's own — a broker that cannot be reached.
 func (a *App) transport() (events.Transport, error) {
 	if a.opts.Transport != nil {
 		return a.opts.Transport, nil
@@ -233,10 +279,11 @@ func (a *App) transport() (events.Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !broker {
-		return events.Memory(), nil
+	build, err := a.opts.Transports.constructor(broker)
+	if err != nil {
+		return nil, err
 	}
-	return eventnats.Connect(a.cfg.NATS)
+	return build(a.cfg.NATS)
 }
 
 func useJetStream(mode string, role Role) (bool, error) {

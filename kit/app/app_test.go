@@ -22,6 +22,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
+	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -68,6 +70,7 @@ func compose(t *testing.T) (config.Config, Options) {
 		Authorize:    fixture{},
 		Authenticate: anonymous,
 		Log:          slog.New(slog.DiscardHandler),
+		Transports:   Transports{Memory: memory.New, JetStream: eventnats.Connect},
 	}
 	return cfg, opts
 }
@@ -484,7 +487,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 		// The transport a single worker uses to talk to itself. JetStream is
 		// the default for this role and kit/events tests it; what is under test
 		// here is that the worker relays at all.
-		Transport: events.Memory(),
+		Transport: memory.New(),
 	}
 
 	a, err := New(t.Context(), cfg, []module.Module{ledger}, opts)
@@ -561,7 +564,7 @@ func TestEveryRoleRunsTheBootGates(t *testing.T) {
 	for _, role := range []Role{Web, Worker, All} {
 		t.Run(string(role), func(t *testing.T) {
 			cfg, opts := compose(t)
-			opts.Role, opts.Transport = role, events.Memory()
+			opts.Role, opts.Transport = role, memory.New()
 			a, err := New(t.Context(), cfg, []module.Module{ghost}, opts)
 			if err != nil {
 				t.Fatalf("New: %v", err)
@@ -581,7 +584,7 @@ func TestEveryRoleRunsTheBootGates(t *testing.T) {
 // manifest, so the readiness body an operator learns has to be the same one.
 func TestTheWorkerAnswersTheSameProbeShapeAsTheWeb(t *testing.T) {
 	cfg, opts := compose(t)
-	opts.Role, opts.Transport = Worker, events.Memory()
+	opts.Role, opts.Transport = Worker, memory.New()
 	a, err := New(t.Context(), cfg, nil, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)

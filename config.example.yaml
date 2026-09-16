@@ -48,7 +48,8 @@ database:
 nats:
   # Empty preserves role defaults: all uses memory; worker uses JetStream.
   # Set jetstream to share events between replicas of role all. Explicit memory
-  # is only valid for role all. An injected Go Transport takes precedence.
+  # is only valid for role all. The application supplies the constructor for
+  # each name (app.Transports); an injected Go Transport takes precedence.
   transport: ""
   # Comma-separated endpoints. Use tls:// outside localhost with credentials.
   # URL credentials are refused: move them to username and the password env.

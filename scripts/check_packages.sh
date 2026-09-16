@@ -38,7 +38,7 @@ done
 # database/sql and net/http.
 parts=(kit/entity kit/entity/display kit/locale kit/flags kit/tenancy modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
-    kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
+    kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
 metadata="$(cd "$root" && go list -deps -f '{{.ImportPath}}|{{.Standard}}|{{join .Deps " "}}|{{if .Module}}{{.Module.Path}}{{end}}' "${parts[@]/#/./}")"
@@ -76,7 +76,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         identity = p "kit/tenancy " p "kit/internal/syscap"
         delivery = p "kit/events/transport " p "kit/events/internal/delivery"
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
-        outbox = identity " " delivery " " p "kit/db " p "kit/events/providers/memory"
+        outbox = identity " " delivery " " p "kit/db"
         # The recorded closure of the page composition layer (see the comment above parts).
         kernel = p "kit/config " identity " " p "kit/db " p "kit/entity " p "kit/crud " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module"
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
@@ -94,6 +94,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("ui/resource", uuid " " p "kit/entity " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
         check("ui/page", kernel " " presentation, web, "web")
         check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
+        # The kernel runner selects a transport by name and builds none: neither
+        # provider package is in its closure.
+        check("kit/app", kernel " " p "kit/health " p "migrations", web, "web")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox, sql, "sql")
@@ -109,7 +112,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
     }
 '
 
-echo "package boundaries: portable cores, design, forms, documents, resources, pages, screens and selected providers passed"
+echo "package boundaries: portable cores, design, forms, documents, resources, pages, screens, the runner and selected providers passed"
 
 if [ ! -d "$root/apps/platformkit" ]; then
 	echo "no app yet"

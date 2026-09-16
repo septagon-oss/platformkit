@@ -22,6 +22,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/internal/delivery"
+	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	provider "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -48,7 +49,7 @@ func TestAPoisonEventIsDeadLetteredAndStopsComingBack(t *testing.T) {
 	var mu sync.Mutex
 	attempts := 0
 	poison := errors.New("this will never work")
-	transport := Memory()
+	transport := memory.New()
 	err := Consume(ctx, conn, transport, []Subscription{{
 		Module: "ledger", Name: "billing.invoice_issued",
 		Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
@@ -445,7 +446,7 @@ func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
 			tenant := tenancy.Tenant{ID: uuid.New()}
 			name := "source.changed"
 			entered, release := make(chan struct{}), make(chan struct{})
-			transport := Memory()
+			transport := memory.New()
 			handler := func(ctx context.Context, tx db.Tx[db.Tenant], _ Event) error {
 				if err := Publish(ctx, tx, "effect.completed", nil); err != nil {
 					return err
@@ -484,7 +485,7 @@ func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
 			}
 			if restart {
 				stop()
-				transport = Memory()
+				transport = memory.New()
 				handler = func(ctx context.Context, tx db.Tx[db.Tenant], _ Event) error {
 					return Publish(ctx, tx, "effect.completed", nil)
 				}
@@ -566,7 +567,7 @@ func TestTerminalRecordingCommitsItsClaimAtomically(t *testing.T) {
 	// Re-enter the real consumer after terminal acknowledgment loss. Its handler
 	// must not run again, including after purge.
 	var runs atomic.Int64
-	transport := Memory()
+	transport := memory.New()
 	sub.Handler = func(context.Context, db.Tx[db.Tenant], Event) error { runs.Add(1); return nil }
 	if err := Consume(t.Context(), conn, transport, []Subscription{sub}); err != nil {
 		t.Fatal(err)
@@ -676,7 +677,7 @@ func TestMemoryRetriesTerminalRecordingWithoutReplayingTheHandler(t *testing.T) 
 		ALTER TABLE platformkit_dead_letters ADD CONSTRAINT unavailable CHECK (nextval('terminal_attempts') < 0) NOT VALID`); err != nil {
 		t.Fatal(err)
 	}
-	transport := Memory()
+	transport := memory.New()
 	var attempts atomic.Int64
 	sub := Subscription{Module: "effect", Name: "source.changed", Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
 		attempts.Add(1)

@@ -84,6 +84,7 @@ func run(args []string) error {
 		Entitle:      c.plans,
 		Authenticate: c.auth.Authenticate,
 		Role:         app.Role(*role),
+		Transports:   transports(),
 	})
 	if err != nil {
 		return err

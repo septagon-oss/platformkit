@@ -182,7 +182,10 @@ commands while the service keeps its domain authorization. Resource counts use
 one read guard; standard Specs issue a COUNT without loading entity rows.
 [kit/app](kit/app/app.go) defaults to an in-memory transport for the combined
 `all` role and JetStream for separate `web` and `worker` roles, unless the
-application supplies a transport. Memory waits for committed handling or a
+application supplies a transport. The application also supplies the two
+constructors (`app.Transports`); the kernel selects by name and imports no
+provider, which the [package gate](scripts/check_packages.sh) records for
+`kit/app` and `kit/events`. Memory waits for committed handling or a
 terminal record before acknowledging publication; unfinished rows recover from
 PostgreSQL after a restart. This does not establish the broker deployment's
 durability. Terminal recording remains retryable after the handler attempt cap;

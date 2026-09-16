@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -43,7 +43,7 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 			})
 	}})
 	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: events.Memory(), Log: quiet()})
+		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
 	for _, tc := range []struct {
 		path, accepted, language, text string
 		status                         int

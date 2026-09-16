@@ -8,8 +8,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
+	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -151,6 +154,14 @@ func compose(cfg config.Config) composition {
 
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
 		notify: notify, mail: mail, plans: plans}
+}
+
+// transports is the one place this application names an event provider. The
+// kernel selects memory or jetstream by nats.transport and the role, and
+// builds neither; a product that composes a different broker supplies its own
+// constructor here and nowhere else. See app.Transports.
+func transports() app.Transports {
+	return app.Transports{Memory: memory.New, JetStream: eventnats.Connect}
 }
 
 func operatorStorybook(dir string) func(context.Context) (export.Storybook, error) {

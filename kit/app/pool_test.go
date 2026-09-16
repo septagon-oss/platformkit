@@ -1,7 +1,6 @@
 package app
 
 import (
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +20,7 @@ func TestDatabasePoolDefaultsAndExplicitZero(t *testing.T) {
 }
 
 func TestAppPoolLeavesRoomForDetachedWork(t *testing.T) {
-	opts := Options{Tenants: fixture{}, Authorize: fixture{}, Authenticate: anonymous, Log: slog.New(slog.DiscardHandler)}
+	opts := transportOptions("")
 	cfg := config.Config{Database: config.Database{MaxOpenConns: new(1), MaxIdleConns: new(0)}, NATS: config.NATS{URL: "nats://localhost:4222"}}
 	for _, role := range []Role{Web, Worker, All, ""} {
 		opts.Role = role

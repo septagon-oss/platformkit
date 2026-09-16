@@ -25,7 +25,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
-	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -138,7 +138,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.All, Transport: events.Memory(), Log: quiet(),
+		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 
 	// The probes, at the pod's own address, which names no tenant and carries
@@ -599,7 +599,7 @@ func TestWebPoolLeavesRoomForControlPlaneTransactions(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.Web, Log: quiet(),
+		Role: app.Web, Transports: transports(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	admin.Timeout = 3 * time.Second
@@ -665,7 +665,7 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 	})}
 	start(t, cfg, mods, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.Worker, Transport: events.Memory(), Log: quiet(),
+		Role: app.Worker, Transport: memory.New(), Log: quiet(),
 	})
 
 	if code, body := do(t, cfg, nil, http.MethodGet, cfg.Server.Addr, "/ready", ""); code != http.StatusOK {
@@ -1021,7 +1021,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.All, Transport: events.Memory(), Log: quiet(),
+		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 

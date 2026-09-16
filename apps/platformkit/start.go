@@ -120,6 +120,7 @@ func startApp(args []string) error {
 		Entitle:      c.plans,
 		Authenticate: c.auth.Authenticate,
 		Role:         app.All,
+		Transports:   transports(),
 	})
 	if err != nil {
 		return err

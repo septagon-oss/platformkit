@@ -14,8 +14,9 @@ For an application that owns its own persistence, import the parts directly:
 | [`kit/events/providers/nats`](providers/nats/) | `JetStream(url, options...)` and `Connect(config.NATS)` select the existing NATS transport |
 
 `events.Event`, `events.Transport` and `events.Sink` are aliases; `ValidName`
-forwards to the shared grammar. `events.Memory()` forwards to `memory.New()`.
-Existing outbox consumers can migrate those imports independently. The retry
+forwards to the shared grammar. `events.Memory()` is gone: call `memory.New()`,
+so the SQL outbox package imports none of its own providers and the package gate
+holds it there. Existing outbox consumers can migrate those imports independently. The retry
 ladder, handler-attempt cap and seven-day retention have one internal owner;
 moving packages does not change stored subjects, stream names or durables.
 
@@ -28,6 +29,11 @@ NATS SDK. The reference application's transport selection uses the new owner.
 Removing these constructors breaks stable v1 source APIs. This change belongs to
 the planned `/v2` release in [RELEASE](../../RELEASE.md), and must not ship as a
 compatible v1 minor or patch release.
+
+`kit/app` imports neither provider: the composing application passes both
+constructors as `app.Transports{Memory: memory.New, JetStream: nats.Connect}`
+and the kernel selects one by `nats.transport` and the role, refusing at `New`
+when the selected name has no constructor.
 
 `Connect` validates the existing `config.NATS` settings and then connects;
 `JetStream` accepts official NATS options. Both can create the existing

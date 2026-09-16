@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	provider "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -221,7 +222,7 @@ func TestConsumeRunsInTheEventTenant(t *testing.T) {
 	defer stop()
 
 	seen := make(chan uuid.UUID, 4)
-	transport := events.Memory()
+	transport := memory.New()
 	subs := []events.Subscription{{
 		Module: "ledger", Name: "billing.invoice_issued",
 		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
@@ -268,7 +269,7 @@ func TestAFailedHandlerSeesTheEventAgain(t *testing.T) {
 	deliveries := make(chan uuid.UUID, 8)
 	var attempts int
 	var mu sync.Mutex
-	transport := events.Memory()
+	transport := memory.New()
 	err := events.Consume(ctx, conn, transport, []events.Subscription{{
 		Module: "ledger", Name: "billing.invoice_issued",
 		Handler: func(_ context.Context, _ db.Tx[db.Tenant], ev events.Event) error {
@@ -374,7 +375,7 @@ func TestAHandlerRunsOnceHoweverOftenTheEventIsDelivered(t *testing.T) {
 	defer stop()
 
 	runs := make(chan uuid.UUID, 8)
-	transport := events.Memory()
+	transport := memory.New()
 	// Two subscriptions to one event, because the claim is per subscription:
 	// two modules interested in one thing are two pieces of work, and each has
 	// to do its own.
@@ -450,7 +451,7 @@ func TestAFailedHandlerDoesNotKeepItsClaim(t *testing.T) {
 	var mu sync.Mutex
 	attempts := 0
 	done := make(chan struct{}, 4)
-	transport := events.Memory()
+	transport := memory.New()
 	err := events.Consume(ctx, conn, transport, []events.Subscription{{
 		Module: "ledger", Name: "billing.invoice_issued",
 		Handler: func(_ context.Context, _ db.Tx[db.Tenant], _ events.Event) error {
