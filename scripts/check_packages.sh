@@ -27,16 +27,17 @@ done
 # Deps is the complete runtime closure, unlike Imports. Tests are deliberately
 # excluded: SQL fixtures and adapter conformance tests may need more than core.
 #
-# ui/document is the database-free core of the page layer: a document is
-# values, and it reaches neither kit/db nor net/http. ui/page and ui/screens
-# are gated at the adapter closure they have today: through kit/httpx they
-# reach kit/db, database/sql and net/http (the request context and its
-# transaction) and, through kit/module's manifest types, kit/events and
-# kit/jobs. Recording both boundaries is what refuses growth — ui/export,
-# ui/source, a module's internals — in either; the "web" mode is the one that
-# admits both database/sql and net/http.
+# ui/document and ui/resource are the database-free cores of the page and
+# screen layers: a document is values, a screen is a schema plus rows, and
+# neither reaches kit/db, net/http or a module. ui/page and ui/screens are their
+# adapters and are gated at the adapter closure: through kit/httpx they reach
+# kit/db, database/sql and net/http (the request context and its transaction)
+# and, through kit/module's manifest types, kit/events and kit/jobs. Recording
+# both boundaries is what refuses growth — ui/export, ui/source, a module's
+# internals — in either; the "web" mode is the one that admits both
+# database/sql and net/http.
 parts=(kit/entity kit/entity/display kit/locale kit/flags kit/tenancy modules/task/domain design ui/forms
-    ui/document ui/page ui/screens
+    ui/document ui/resource ui/page ui/screens
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
@@ -90,8 +91,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("design", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
         check("ui/document", p "kit/locale " presentation " " markup)
+        check("ui/resource", uuid " " p "kit/entity " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
         check("ui/page", kernel " " presentation, web, "web")
-        check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "ui/forms " p "ui/page", web, "web")
+        check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox, sql, "sql")
@@ -107,7 +109,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
     }
 '
 
-echo "package boundaries: portable cores, design, forms, documents, pages, screens and selected providers passed"
+echo "package boundaries: portable cores, design, forms, documents, resources, pages, screens and selected providers passed"
 
 if [ ! -d "$root/apps/platformkit" ]; then
 	echo "no app yet"

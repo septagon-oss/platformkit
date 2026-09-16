@@ -10,11 +10,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
 
-// perPage is a screenful. The API's own default is the same number, so a page
-// of a list and a page of the collection route are the same page.
-const perPage = crud.DefaultLimit
+// perPage is a screenful: the page the renderers link and the page the
+// collection route serves by default are one number, which the adapter's test
+// holds the two owners to.
+const perPage = resource.PerPage
 
 // The inputs. huma needs a type per shape, and there are four: a page of a
 // list, one row, a form, and a form about one row.
@@ -62,7 +64,7 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 	page.Serve(api, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: at + "/new", Summary: "The new-" + r.Entity + " form"}, write,
 		func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 			o := localized(o, req)
-			return Form(r, o, at, o.text("screens.new", "New %s", r.Entity), nil, nil, "", true), nil
+			return Form(r, o, at, o.Text("screens.new", "New %s", r.Entity), nil, nil, "", true), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: at, Summary: "Create a " + r.Entity}, write,
@@ -79,7 +81,7 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 			}
 			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
 			o := localized(o, req)
-			return Form(r, o, at, o.text("screens.new", "New %s", r.Entity), sent, errs, detail, true), nil
+			return Form(r, o, at, o.Text("screens.new", "New %s", r.Entity), sent, errs, detail, true), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: at + "/{id}", Summary: "One " + r.Entity}, read,
@@ -98,7 +100,7 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 				return page.View{}, err
 			}
 			o := localized(o, req)
-			return Form(r, o, at+"/"+in.ID.String(), o.text("screens.edit_item", "Edit %s", r.Entity), row, nil, "", false), nil
+			return Form(r, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", r.Entity), row, nil, "", false), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: at + "/{id}", Summary: "Update a " + r.Entity}, write,
@@ -112,7 +114,7 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 			}
 			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
 			o := localized(o, req)
-			return Form(r, o, item, o.text("screens.edit_item", "Edit %s", r.Entity), sent, errs, detail, false), nil
+			return Form(r, o, item, o.Text("screens.edit_item", "Edit %s", r.Entity), sent, errs, detail, false), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: at + "/{id}/delete", Summary: "Delete a " + r.Entity}, write,

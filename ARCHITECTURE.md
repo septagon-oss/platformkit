@@ -13,7 +13,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 | Contract | Implementation and consumer |
 |---|---|
 | Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
-| Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`screens`](ui/screens/render.go) adapts authorized resources and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context. |
+| Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`; the native consumer owns its renderer. |
 | Component properties | [`Example.Describe`](ui/components/examples/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
 | Design consumers | [`export.Export`](ui/export/export.go) and [`ProjectProps`](ui/export/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
@@ -52,8 +52,10 @@ SQL transactions, authorization and business writes remain explicit composition
 responsibilities; an exported form or rule does not supply a complete service.
 The existing CRUD/page/Auth aliases and screens adapter delegate to these owners.
 [ADR 0012](docs/adr/0012-independent-parts.md) requires adopted-consumer benefit.
-The [package gate](scripts/check_packages.sh) checks transitive runtime imports,
-including the recorded closures of `ui/page` and `ui/screens`, and the
+The [package gate](scripts/check_packages.sh) checks transitive runtime imports:
+`ui/document`, `ui/resource` and `kit/entity/display` reach no database or HTTP
+server, and `ui/page` and `ui/screens` are held to the adapter closure they have
+today. The
 [version gate](scripts/check_versions.sh) refuses a `replace` directive or a
 `go.work` file, so a passing check reflects the versions the module declares;
 the [public example](ui/forms/testdata/standalone/README.md) proves ordinary
@@ -453,8 +455,9 @@ cooperating writers, but cannot exclude an unrelated editor's final rename race.
 The [tooling guide](tools/designexport/README.md#persist-a-string-property) owns
 prerequisites, review/apply commands and limits; child insertion remains separate.
 
-[RequestNoticeExamples](ui/page/page.go) captures the recovery content that
-`page.Document` already serves, retaining its Stack, Alert and Link contracts.
+[RequestNoticeExamples](ui/document/document.go) captures the recovery content that
+`document.Document` already serves, retaining its Stack, Alert and Link contracts;
+`page.RequestNoticeExamples` applies the kernel's local-path rule to the sign-in link first.
 Consumers may include those notices in source compositions; the document still
 owns their hidden wrappers and the request controller owns when they appear.
 Capturing a notice does not execute recovery or establish a connected prototype.
@@ -480,12 +483,19 @@ The [adapter guide](tools/designexport/openpencil/README.md) defines supported p
 Native tooling and tests have their own reviewed source budgets, separate from
 the application's browser controllers.
 
-[ui/page](ui/page/) models a document as shared `Chrome`, a request value,
-a handler's `View` and a composing `Frame`. `page.Serve` adapts that
-composition to the router. [ui/screens](ui/screens/) renders resource screens
-and describes the resource catalog at `/api/v1/admin/resources`.
-The admin module and downstream storefronts call these packages rather than
-maintaining separate document or stylesheet machinery.
+[ui/document](ui/document/) models a document as shared `Chrome`, a plain
+`Request`, a handler's `View` and `Document`, which puts them around the body a
+`Frame` arranged; it reads no context and links no database. [ui/page](ui/page/)
+is the router adapter: its `Request` carries the typed tenant and principal a
+frame asks the Authorizer about, `page.Serve` reads it off the request, and its
+`Chrome`, `View`, `Render` and notices are the document's under the names shells
+already use. [ui/resource](ui/resource/) renders list, detail and form screens
+from an entity schema and rows the same way; [ui/screens](ui/screens/) adapts an
+`httpx.Resource` to it, mounts the seven operations and describes the resource
+catalog at `/api/v1/admin/resources`. Value words — how a boolean, an enum or an
+instant reads — are [kit/entity/display](kit/entity/display/display.go)'s, with
+`kit/rest` delegating. The admin module and downstream storefronts call these
+packages rather than maintaining separate document or stylesheet machinery.
 
 The shared [Video](ui/components/video.go) component uses native playback and
 caption controls without autoplay. A composing page supplies a nearby transcript

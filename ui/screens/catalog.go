@@ -3,7 +3,7 @@ package screens
 import (
 	"context"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
@@ -19,7 +19,7 @@ type Catalog struct {
 // an unreadable resource is not in the document at all: what a caller may not
 // look at, they are not told exists.
 type Entry struct {
-	crud.Schema
+	entity.Schema
 	Immutable []string `json:"immutable,omitempty"`
 	Writable  bool     `json:"writable"`
 	// Commands are the doors this caller may open beyond the five: the
@@ -39,11 +39,11 @@ type Entry struct {
 // path here is: POST {Path}/{id}/{verb}, or {Path}/{verb} when Collection. A
 // shell that had to be told would be a shell that could be told wrong.
 type Command struct {
-	Verb        string       `json:"verb"`
-	Summary     string       `json:"summary,omitempty"`
-	Description string       `json:"description,omitempty"`
-	Collection  bool         `json:"collection,omitempty"`
-	Fields      []crud.Field `json:"fields,omitempty"`
+	Verb        string         `json:"verb"`
+	Summary     string         `json:"summary,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Collection  bool           `json:"collection,omitempty"`
+	Fields      []entity.Field `json:"fields,omitempty"`
 }
 
 // Describe is the catalog for this caller: the readable resources, in the
