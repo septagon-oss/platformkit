@@ -15,8 +15,9 @@ with a custom path that shares transaction and error handling. Updates and
 deletes lock the live row before merging, validating and snapshotting. `Fault`
 maps kit/crud errors to problem documents; `FieldErrors`, `Values`,
 `UpdateValues` and `Writable` type a submitted form by the schema; `Display`,
-`Text`, `Humanize`, `FieldLabel` and `FieldHelp` are the one way a value is
-shown, used by the generated screens and the catalog.
+`Text`, `Humanize`, `FieldLabel` and `FieldHelp` delegate to
+[kit/entity/display](../entity/display/display.go), the one way a value is
+shown, which the generated screens read without linking this package.
 
 Prerequisites: an entity embedding `crud.Base` with a `TableName`, its
 migration, and the permissions the manifest declares. Tests need the

@@ -34,7 +34,7 @@ done
 # separate change. Recording the boundary now is what refuses growth — ui/export,
 # ui/source, a module's internals — until that change lands; the "web" mode is
 # the one that admits both database/sql and net/http.
-parts=(kit/entity kit/locale kit/flags kit/tenancy modules/task/domain design ui/forms ui/page ui/screens
+parts=(kit/entity kit/entity/display kit/locale kit/flags kit/tenancy modules/task/domain design ui/forms ui/page ui/screens
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
@@ -79,6 +79,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3"
         check("kit/entity", uuid)
+        check("kit/entity/display", uuid " " p "kit/entity")
         check("kit/locale", "")
         check("kit/flags", uuid)
         check("kit/tenancy", uuid " " p "kit/internal/syscap")
@@ -86,7 +87,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("design", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples maragu.dev/gomponents maragu.dev/gomponents/html")
         check("ui/page", kernel " " presentation, web, "web")
-        check("ui/screens", kernel " " presentation " " p "kit/rest " p "ui/forms " p "ui/page", web, "web")
+        check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "ui/forms " p "ui/page", web, "web")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox, sql, "sql")

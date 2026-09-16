@@ -19,12 +19,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
@@ -339,101 +339,22 @@ func mentions(detail, field string) bool {
 	return false
 }
 
-// Text is a value as a form control and a link read it: the raw one. Everything
-// arrives as encoding/json made it, so a number is a float64 and a list is a
-// []any.
-//
-// It is not Display. A select's value attribute has to be the enum's own
-// spelling and a checkbox's has to be "true"; what a person reads is Display's
-// business, and confusing the two is how a form posts back "Yes".
-func Text(v any) string {
-	switch typed := v.(type) {
-	case string:
-		return typed
-	case bool:
-		return strconv.FormatBool(typed)
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	case []any:
-		parts := make([]string, 0, len(typed))
-		for _, item := range typed {
-			parts = append(parts, Text(item))
-		}
-		return strings.Join(parts, ", ")
-	default:
-		return ""
-	}
-}
+// The value words — Text, Display, Humanize, FieldLabel and FieldHelp — are
+// kit/entity/display's, so a screen renderer that must not link the storage
+// adapter shows a value the way the generated screens do. These delegates keep
+// the names the existing callers read here.
 
-// Display is a field's value as a screen shows it, and it is the only one: a
-// cell, a description list and a select's option label all come through here,
-// so a status is "In progress" in all three rather than "in_progress" in two of
-// them. An instant is in the form a person reads, a boolean is Yes or No, and
-// nothing at all is a dash, because a blank cell reads as a bug rather than as
-// an empty field.
-func Display(f crud.Field, v any) string {
-	switch {
-	case f.Type == crud.TypeBool:
-		if b, ok := v.(bool); ok && b {
-			return "Yes"
-		}
-		return "No"
-	case f.Type == crud.TypeTime:
-		if out := moment(v); out != "" {
-			return out
-		}
-	case len(f.Enum) > 0:
-		if out := Text(v); out != "" {
-			return Humanize(out)
-		}
-	default:
-		if out := Text(v); out != "" {
-			return out
-		}
-	}
-	return "—"
-}
+// Text is display.Text: a value as a form control and a link read it.
+func Text(v any) string { return display.Text(v) }
 
-// moment is how a screen writes an instant. The wire form is RFC 3339 with
-// microseconds, which is right for a machine and unreadable in a table cell.
-func moment(v any) string {
-	raw := Text(v)
-	at, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return raw
-	}
-	return at.UTC().Format("2006-01-02 15:04")
-}
+// Display is display.Display: a field's value as a screen shows it.
+func Display(f crud.Field, v any) string { return display.Display(f, v) }
 
-// Humanize turns a JSON name or an enum value into something a person reads:
-// "slaDeadline" becomes "Sla deadline" and "in_progress" becomes "In progress".
-// It is not a dictionary and does not try to be one; a field that wants a
-// better word is a field that should say so, which is what Field.Doc is for.
-func Humanize(name string) string {
-	var b strings.Builder
-	for i, r := range name {
-		switch {
-		case i == 0:
-			b.WriteRune(unicode.ToUpper(r))
-		case unicode.IsUpper(r):
-			b.WriteByte(' ')
-			b.WriteRune(unicode.ToLower(r))
-		case r == '_' || r == '-':
-			b.WriteByte(' ')
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
+// Humanize is display.Humanize: a JSON name or an enum value as a person reads it.
+func Humanize(name string) string { return display.Humanize(name) }
 
-// FieldLabel is what a control, a column header and a description term call a
-// field. It is Humanize today, in one place, so that the entity gaining a way
-// to name its own fields is one line here rather than three at three call
-// sites. Field.Doc is not that name: the entities in this repository write a
-// sentence there — "Short summary of the task" — which is a description and
-// belongs under the control, not on it. See Field.Doc.
-func FieldLabel(f crud.Field) string { return Humanize(f.Name) }
+// FieldLabel is display.FieldLabel: what a control and a column header call a field.
+func FieldLabel(f crud.Field) string { return display.FieldLabel(f) }
 
-// FieldHelp is the note under a control: the field's own Doc, when it has one.
-func FieldHelp(f crud.Field) string { return f.Doc }
+// FieldHelp is display.FieldHelp: the note under a control, the field's own Doc.
+func FieldHelp(f crud.Field) string { return display.FieldHelp(f) }

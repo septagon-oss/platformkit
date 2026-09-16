@@ -25,6 +25,11 @@ Existing `crud.Base`, `crud.Entity`, `crud.Validator`, `crud.Schema` and field
 types are aliases. Existing CRUD metadata helpers forward here. Applications
 can migrate those imports independently while keeping their storage calls.
 
+[`display`](display/display.go) is the sibling that turns a field's value into
+words: `Text` for a control, `Display` for a person, `Humanize` and `FieldLabel`
+for a name. It depends on this package alone, so a renderer of schema values
+needs neither CRUD nor REST.
+
 `BaseOf` lets a storage adapter reach the embedded metadata; it does not grant
 tenant access. CRUD retains tenant stamping, validation-error mapping and SQL
 operations. Tags still describe storage columns and presentation hints, but
