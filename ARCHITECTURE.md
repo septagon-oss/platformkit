@@ -129,7 +129,11 @@ errors are sanitized before the existing outbox retry mechanism retains them.
 A module has three parts. `contracts/` defines its entities, public service,
 events, permissions and conformance suite. `internal/` contains its
 implementation. `module.go` declares the constructor and manifest.
-[modules/task](modules/task/) is the reference example.
+[modules/task](modules/task/) is the reference example. The manifest's
+subscriptions, jobs and routes are typed by the kernel packages that run them;
+[ADR 0013](docs/adr/0013-manifests-name-kernel-types.md) records why
+`kit/module` is not a declaration-only leaf and what would move first if a
+database-free reader of manifests appeared.
 
 A consumer imports another module's `contracts/`, not its `internal/` or
 constructor. Application composition is the place that connects them.
