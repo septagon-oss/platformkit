@@ -35,46 +35,6 @@ func chrome() page.Chrome {
 	}
 }
 
-func TestDocumentCarriesChromeRequestAndView(t *testing.T) {
-	t.Parallel()
-	c := chrome()
-	r := page.Request{Tenant: tenancy.Tenant{Name: "Acme"}, Inline: []g.Node{h.Script(g.Attr("nonce", "n1"), g.Raw("1"))}}
-	v := page.View{Title: "Tasks", Head: []g.Node{h.Link(h.Rel("stylesheet"), h.Href("/x.css"))}}
-	out := render(t, page.Document(c, r, v, h.Main(g.Text("body"))))
-	for _, want := range []string{
-		`<html lang="en" data-signin="/admin/login" data-grain="pke-grain">`,
-		`<title>Tasks · Acme</title>`,
-		`href="/admin/assets/app.css?v=` + c.Stylesheet.Fingerprint + `"`,
-		`<script nonce="n1">1</script>`,
-		`<script src="/admin/assets/js/htmx.min.js" defer></script><script src="/admin/assets/js/theme.js" defer></script>`,
-		`href="/x.css"`,
-		`<body><main>body</main></body>`,
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("document lacks %q:\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "data-theme") {
-		t.Fatal("a chrome that pins no theme wrote data-theme")
-	}
-}
-
-func TestDocumentPinsATheme(t *testing.T) {
-	t.Parallel()
-	c := chrome()
-	c.Theme, c.SignIn = "dark", ""
-	out := render(t, page.Document(c, page.Request{}, page.View{Title: "Shop"}, h.Main()))
-	if !strings.Contains(out, `<html lang="en" data-theme="dark" data-grain="pke-grain">`) {
-		t.Fatalf("html element is wrong:\n%s", out)
-	}
-	if !strings.Contains(out, `<title>Shop · PlatformKit</title>`) {
-		t.Fatal("the brand is not the fallback title")
-	}
-	if strings.Contains(out, "data-signin") {
-		t.Fatal("a chrome with no sign-in wrote data-signin")
-	}
-}
-
 func TestDocumentOffersRecoveryWithoutSerializingInputs(t *testing.T) {
 	t.Parallel()
 	c := chrome()
@@ -97,31 +57,6 @@ func TestDocumentOffersRecoveryWithoutSerializingInputs(t *testing.T) {
 		if strings.Contains(out, "data-principal") || strings.Contains(out, "Sign in (opens a new tab)") {
 			t.Errorf("anonymous page or unsafe sign-in %q exposed recovery identity/link", signin)
 		}
-	}
-}
-
-func TestFaultKeepsTheStatusAndTheWayBack(t *testing.T) {
-	t.Parallel()
-	v := page.Fault(http.StatusNotFound, "no such task", "/admin", "Back to the dashboard")
-	if v.Status != http.StatusNotFound || v.Title != "Not Found" {
-		t.Fatalf("view is %+v", v)
-	}
-	out := render(t, g.Group(v.Body))
-	for _, want := range []string{"no such task", `href="/admin"`, "Back to the dashboard"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("fault lacks %q", want)
-		}
-	}
-	if !strings.Contains(render(t, g.Group(page.Fault(422, "", "/", "Home").Body)), "That did not work.") {
-		t.Fatal("an empty detail has no fallback sentence")
-	}
-}
-
-func TestBareIsANarrowColumn(t *testing.T) {
-	t.Parallel()
-	out := render(t, page.Bare([]g.Node{g.Text("card")}))
-	if !strings.Contains(out, "card") || !strings.Contains(out, "max-w-sm") {
-		t.Fatalf("bare frame:\n%s", out)
 	}
 }
 
@@ -175,21 +110,5 @@ func TestServedIsEveryRecordedGET(t *testing.T) {
 	}
 	if got := page.Served(ops); len(got) != 2 || got[0] != "/admin" || got[1] != "/api/v1/task/tasks" {
 		t.Fatalf("served = %v", got)
-	}
-}
-
-func TestAViewPinsItsOwnThemeAndDropsTheThemeScript(t *testing.T) {
-	c := chrome()
-	r := page.Request{Inline: []g.Node{h.Script(g.Raw("stored theme"))}}
-	out := render(t, page.Document(c, r, page.View{Title: "Home", Theme: "dark"}, h.Main()))
-	if !strings.Contains(out, `data-theme="dark"`) {
-		t.Fatal("the view's theme was not pinned on the document")
-	}
-	if strings.Contains(out, "stored theme") {
-		t.Fatal("a pinned document carried the visitor's theme script")
-	}
-	out = render(t, page.Document(c, r, page.View{Title: "Home"}, h.Main()))
-	if !strings.Contains(out, "stored theme") {
-		t.Fatal("an unpinned document dropped the theme script")
 	}
 }

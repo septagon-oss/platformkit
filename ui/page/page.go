@@ -6,60 +6,41 @@
 // four. The copy drifted where it mattered — a stylesheet emitted twice, a
 // script that named a route the shop did not have.
 //
-// Everything here is a value or a function of values. Chrome is what every page
-// of a shell shares, built once at mount. Request is what a render may know
-// about the caller, read once by Serve. View is what a handler returns. Frame
-// is how a shell arranges a body: the admin's sidebar, the shop's bar. Document
-// puts them together, and Render turns the result into the bytes kit/httpx
-// serves. The places that read a context.Context are Serve and InlineScript,
-// which needs the request's nonce; the one place that writes a response is Serve.
+// The document itself is ui/document's: Chrome, View, Document, Render and the
+// recovery notices are values and functions of values there, and this package
+// aliases them so a shell that already says page.Chrome keeps saying it. What
+// this package adds is the request: Request carries the typed tenant and
+// principal a frame asks the Authorizer about, Serve reads it off the context
+// and hands the rendered bytes to kit/httpx, and the three functions that need
+// the kernel's rules — the local-path check on the sign-in link, the nonce on
+// an inline script, the status text of a fault — apply them here before the
+// pure document sees a value.
 package page
 
 import (
-	"cmp"
-	"maps"
 	"net/http"
-	"slices"
-	"strings"
 
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
-	"github.com/septagon-oss/platformkit/ui"
-	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/document"
 )
 
-// Chrome is what every page of one shell has in common.
-type Chrome struct {
-	// Brand is the name shown when the tenant has none: the document title's
-	// suffix and the sidebar's label.
-	Brand string
-	// Assets is the prefix the shell serves ui.Assets under, e.g. "/admin/assets".
-	Assets string
-	// Stylesheet is the sheet the shell composed, once, with ui.Compose.
-	Stylesheet ui.Sheet
-	// Scripts are the controllers a page loads, in order, as file names under
-	// Assets + "/js/". A shell lists the kernel's it wants and its own.
-	Scripts []string
-	// SignIn is where an anonymous visitor to a guarded page is sent, and the
-	// route offered for recovery without leaving an unsaved form. Empty means
-	// the shell has no sign-in link. Controllers never invent a route.
-	SignIn string
-	// Theme pins data-theme on <html>: a shop is the brand's colour and has no
-	// toggle. Empty follows the operating system and the person's own toggle,
-	// applied before first paint by an inline snippet Serve adds.
-	Theme string
-	// Attrs are further <html> attributes: a client's grain and scrollbar,
-	// which the shell's own rules give a meaning to. A lang attribute sets the
-	// shell's default document language; View.Language takes precedence.
-	Attrs map[string]string
-}
+// Chrome is what every page of one shell has in common. See document.Chrome.
+type Chrome = document.Chrome
+
+// View is one page's content. See document.View.
+type View = document.View
 
 // Request is what a render may know about the caller. Serve reads it once from
 // the context so that every function below it is a function of values.
+//
+// It carries the kernel's own types — a frame asks the Authorizer about the
+// tenant and shows the principal's roles — and projects to document.Request,
+// which knows the tenant by name and the principal by identity, when the
+// document is rendered.
 type Request struct {
 	// Path is the request's own path; a sidebar marks it current.
 	Path string
@@ -76,168 +57,57 @@ type Request struct {
 	Inline []g.Node
 }
 
-// View is one page's content. Status zero is 200. Bare asks for the frame with
-// no navigation — the sign-in screen, shown to somebody who has none yet.
-type View struct {
-	Title  string
-	Status int
-	Bare   bool
-	// Sensitive prevents caching and sends no referrer on this document's
-	// outgoing requests, including assets loaded before scripts run. Use it
-	// for pages carrying password links or other private URL credentials.
-	// It does not redact the incoming URL from application or proxy logs.
-	Sensitive bool
-	// Language is the BCP 47 tag of the rendered copy, such as "pt-PT".
-	// Empty uses Chrome.Attrs["lang"], or English when no default is set.
-	// The application selects and translates the content; this field only
-	// declares its language to the browser and assistive technology.
-	Language string
-	// Theme pins data-theme on this document over the chrome's, for a page
-	// whose theme is the tenant's choice rather than the shell's. A pinned
-	// document carries no theme script: the choice is not the visitor's.
-	Theme string
-	Head  []g.Node
-	Body  []g.Node
+// document is the request as the pure document reads it: the tenant's name,
+// the signed-in principal's identity, and nothing an anonymous page could
+// name somebody by.
+func (r Request) document() document.Request {
+	d := document.Request{Path: r.Path, Tenant: r.Tenant.Name, Locale: r.Locale, Inline: r.Inline}
+	if r.SignedIn {
+		d.Principal = r.Principal.UserID.String()
+	}
+	return d
 }
 
 // Document renders a whole HTML document: the head from the chrome and the
-// view, and the framed body. It is pure; body is the frame's result.
+// view, and the framed body. It is document.Document with the kernel's rule
+// applied first: a sign-in that is not a local path is no sign-in, so neither
+// the recovery link nor data-signin can send a browser off this site.
 func Document(c Chrome, r Request, v View, body g.Node) g.Node {
-	keys := slices.Sorted(maps.Keys(c.Attrs))
-	language := cmp.Or(v.Language, c.Attrs["lang"])
-	if language == "" {
-		for _, k := range keys {
-			if strings.EqualFold(k, "lang") && c.Attrs[k] != "" {
-				language = c.Attrs[k]
-				break
-			}
-		}
-	}
-	attrs := []g.Node{h.Lang(cmp.Or(language, "en"))}
-	if theme := cmp.Or(v.Theme, c.Theme); theme != "" {
-		attrs = append(attrs, g.Attr("data-theme", theme))
-	}
-	if c.SignIn != "" {
-		attrs = append(attrs, g.Attr("data-signin", c.SignIn))
-	}
-	if r.SignedIn {
-		attrs = append(attrs, g.Attr("data-principal", r.Principal.UserID.String()))
-	}
-	for _, k := range keys {
-		if !strings.EqualFold(k, "lang") {
-			attrs = append(attrs, g.Attr(k, c.Attrs[k]))
-		}
-	}
-	return h.HTML(append(attrs, head(c, r, v), h.Body(body, requestNotices(c), sessionNotice(c)))...)
+	return document.Document(localSignIn(c), r.document(), v, body)
 }
 
-// The notice stays outside account menus, which may close during sign-out.
-func sessionNotice(c Chrome) g.Node {
-	if !slices.Contains(c.Scripts, "session.js") {
-		return nil
+// localSignIn is the chrome with a sign-in httpx.LocalPath refused cleared.
+// Chrome.SignIn is a shell's constant, so this is defense in depth: the one
+// rule for where a browser may be sent, read at the one place a document is
+// built from a chrome.
+func localSignIn(c Chrome) Chrome {
+	if !httpx.LocalPath(c.SignIn) {
+		c.SignIn = ""
 	}
-	return components.Alert(components.AlertProps{
-		ComponentProps: components.ComponentProps{Hidden: true, Attrs: map[string]string{
-			"data-session-error": "", "lang": "en", "tabindex": "-1",
-		}},
-		Tone: "danger", Bordered: true,
-	})
-}
-
-// Notices are source-rendered components, not HTML rebuilt by a controller.
-// They stay outside the form's swap target; its input is never serialized.
-func requestNotices(c Chrome) g.Node {
-	if !slices.Contains(c.Scripts, "htmx-config.js") {
-		return nil
-	}
-	var nodes []g.Node
-	for _, example := range RequestNoticeExamples(c.SignIn) {
-		nodes = append(nodes, h.Div(h.ID(example.ID), h.Hidden(""), h.Lang("en"), g.Attr("data-request-notice", ""), example.Node))
-	}
-	return g.Group(nodes)
+	return c
 }
 
 // RequestNoticeExamples captures the visible content Document serves for request
-// failures. IDs retain the controller's existing notice identities; Stack, Alert
-// and Link keep their shared typed interfaces. The hidden, English-language DOM
-// wrapper remains Document's responsibility. A consumer may include these values
-// in its own export or composition without adding a second notice catalog.
-// These are presentation candidates, not request classification, automatic retry,
-// source persistence or an executable prototype. Only a local sign-in link is used.
+// failures, with the sign-in link present only for a local path. See
+// document.RequestNoticeExamples for the captured contract.
 func RequestNoticeExamples(signIn string) []examples.Example {
-	var captures []examples.Example
-	for _, notice := range []struct {
-		kind, title, message string
-		signin               bool
-	}{
-		{"anonymous", "Sign-in required", "Keep this page open to retain your input. Sign in in another tab, then return and try again. Nothing is retried automatically.", true},
-		{"denied", "Permission denied", "You do not have permission for this action. Keep this page open to retain your input and contact an administrator if you need access.", false},
-		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
-		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
-	} {
-		body := []g.Node{examples.ExampleWithSlots(
-			examples.ExampleInfo{ID: "message", ComponentID: "pk-ui.component.alert"},
-			components.AlertProps{Tone: "danger", Title: notice.title, Message: notice.message, Bordered: true},
-			components.AlertSlots{}, components.AlertWithSlots).Node}
-		if notice.signin && httpx.LocalPath(signIn) {
-			body = append(body, examples.ExampleOf(
-				examples.ExampleInfo{ID: "sign-in", ComponentID: "pk-ui.component.link"},
-				components.LinkProps{Label: "Sign in (opens a new tab)", Href: signIn, External: true}, components.Link).Node)
-		}
-		captures = append(captures, examples.ExampleWithChildren(
-			examples.ExampleInfo{ID: "pk-auth-" + notice.kind, ComponentID: "pk-ui.component.stack", Group: "Request recovery", Name: notice.title},
-			components.StackProps{Gap: "3"}, body, components.Stack))
+	if !httpx.LocalPath(signIn) {
+		signIn = ""
 	}
-	return captures
-}
-
-// head is every page's head: the stylesheet with its fingerprint, the inline
-// snippets, the controllers as deferred scripts in order — deferred, so the
-// document parses before any of them runs and the order is still theirs — and
-// whatever the view adds.
-func head(c Chrome, r Request, v View) g.Node {
-	scripts := make([]g.Node, 0, len(c.Scripts))
-	for _, name := range c.Scripts {
-		scripts = append(scripts, h.Script(h.Src(c.Assets+"/js/"+name), g.Attr("defer")))
-	}
-	return h.Head(
-		h.Meta(h.Charset("utf-8")),
-		h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
-		h.Meta(h.Name("color-scheme"), h.Content("light dark")),
-		h.TitleEl(g.Text(v.Title+" · "+Brand(c, r))),
-		h.Link(h.Rel("stylesheet"), h.Href(c.Assets+"/app.css?v="+c.Stylesheet.Fingerprint)),
-		g.If(v.Theme == "", g.Group(r.Inline)),
-		g.Group(scripts),
-		g.Group(v.Head),
-	)
+	return document.RequestNoticeExamples(signIn)
 }
 
 // Brand is what the page calls the installation: the tenant's name, or the
 // chrome's when the tenant has none.
-func Brand(c Chrome, r Request) string {
-	if strings.TrimSpace(r.Tenant.Name) != "" {
-		return r.Tenant.Name
-	}
-	return c.Brand
-}
+func Brand(c Chrome, r Request) string { return document.Brand(c, r.document()) }
 
 // Bare is the frame with no navigation: a narrow column of cards.
-func Bare(body []g.Node) g.Node {
-	return components.Container(components.ContainerProps{MaxWidth: "sm"},
-		components.Stack(components.StackProps{Gap: "6"}, body...))
-}
+func Bare(body []g.Node) g.Node { return document.Bare(body) }
 
 // Fault is the page for a refusal a person can act on: the status text, the
 // detail, and one way back. A 5xx never reaches it — see Serve.
 func Fault(status int, detail, back, backLabel string) View {
-	if strings.TrimSpace(detail) == "" {
-		detail = "That did not work."
-	}
-	return View{Title: http.StatusText(status), Status: status, Language: "en", Body: []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: http.StatusText(status)}),
-		components.Alert(components.AlertProps{Tone: "danger", Message: detail, Bordered: true}),
-		components.Link(components.LinkProps{Label: backLabel, Href: back}),
-	}}
+	return document.Fault(status, http.StatusText(status), detail, back, backLabel)
 }
 
 // Empty is the input of a page that takes none. huma needs a type per shape.
