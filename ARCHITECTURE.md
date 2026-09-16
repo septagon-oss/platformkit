@@ -16,7 +16,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`screens`](ui/screens/render.go) adapts authorized resources and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`; the native consumer owns its renderer. |
 | Component properties | [`Example.Describe`](ui/components/examples/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
-| Design consumers | [`ui.Export`](ui/export.go) and [`ProjectProps`](ui/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
+| Design consumers | [`export.Export`](ui/export/export.go) and [`ProjectProps`](ui/export/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
 
 Run `go test ./ui/screens -run 'ExampleFormExample|TestGeneratedForm'` to exercise
 the [form-to-export example](ui/screens/design_test.go) and its composition checks.
@@ -262,7 +262,7 @@ admits a bounded selection of colours, aliases, mixes and numeric scales; it reu
 linked icons and retains source evidence separately from native values. The source
 contract alone establishes neither that native support nor layout or asset availability.
 
-[ui.ExportTokens](ui/export_tokens.go) composes the existing colour, fallback
+[export.ExportTokens](ui/export/export_tokens.go) composes the existing colour, fallback
 family, scale, shadow and timing owners without components or I/O. Select
 `light`, `dark` or both explicitly; output follows selector order. Theme token
 kinds other than colour and font family, including semantic shape dimensions,
@@ -273,7 +273,7 @@ in each mode, and transition timing must be present in the selected values,
 not merely known to a source owner. Asset-only or scale-only selections need
 no mode, layout or assertion that fallback fonts are installed.
 
-[DesignExport.WithTokens](ui/export_source.go) attaches that selection to an
+[DesignExport.WithTokens](ui/export/export_source.go) attaches that selection to an
 existing capture, producing a detached v2 snapshot with `source-tokens.v1` and
 a new content hash. Selected theme values and overlapping measurements must agree
 with the original capture; the operation neither edits source nor certifies
@@ -286,7 +286,7 @@ still refuses token features. Ordinary `Export` output remains unchanged.
 Consumers must explicitly support the token feature before using these values;
 native component and layout migration remain separate.
 
-[TokenExport.DTCG](ui/export_dtcg.go) projects one explicit mode into the
+[TokenExport.DTCG](ui/export/export_dtcg.go) projects one explicit mode into the
 [DTCG 2025.10 format](https://www.designtokens.org/tr/2025.10/format/) and
 [sRGB colour representation](https://www.designtokens.org/tr/2025.10/color/#srgb).
 An empty mode is valid only for mode-independent selections. The whole source
@@ -352,7 +352,7 @@ their definite Go zero value. Required strings, pointers and fields promoted
 through optional pointers do not gain that default. Serialized Props retain
 their existing omission behavior; these defaults do not describe renderer fallbacks.
 
-[ui.Export](ui/export.go) projects those examples with their palette, glyphs
+[export.Export](ui/export/export.go) projects those examples with their palette, glyphs
 and stylesheet into a content-addressed snapshot. Products supply their own
 bound examples and reuse that boundary. An OpenPencil adapter must translate
 the snapshot and separately prove native editing, sizing and save/reopen
@@ -370,7 +370,7 @@ Gap names a [style spacing step](ui/style/spacing.go), not a pixel measurement
 or a new design token. `normal` explicitly means CSS initial alignment;
 missing layout means unknown, never an inferred default.
 
-The [layout contract check](ui/export_layout.go) is a pure, all-occurrence
+The [layout contract check](ui/export/export_layout.go) is a pure, all-occurrence
 preflight on source-generated Go values, not an untrusted JSON decoder or hash
 authenticator. Unknown versions/features and malformed declarations are unsupported;
 unmigrated, unobserved or unowned layout is unknown. These are distinct errors.
@@ -429,7 +429,7 @@ layers and transition declarations. Token snapshots retain these declarations;
 DTCG projects only its admitted subset and reports losses or refusals explicitly.
 Native support and animation/keyframe projection remain unfinished work.
 
-[ui.ProjectProps](ui/proposal.go) and [ui.ProjectReplacement](ui/replacement.go)
+[export.ProjectProps](ui/export/proposal.go) and [export.ProjectReplacement](ui/export/replacement.go)
 accept a base export hash and exact occurrence ID segments. Typed patches change
 properties; replacement copies a compatible invocation's inputs and renderer,
 retaining destination metadata. `SameInterface` compares component identity,

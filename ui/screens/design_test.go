@@ -14,9 +14,9 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
-	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
@@ -25,7 +25,7 @@ func ExampleFormExample() {
 		Schema: crud.Schema{Fields: []crud.Field{{Name: "description", Type: crud.TypeText, Widget: "textarea"}}}}
 	form := screens.FormExample("notes/new", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note",
 		map[string]any{"description": "A synthetic design example."}, nil, "", true)
-	snapshot, err := ui.Export(design.Default(), []examples.Example{form})
+	snapshot, err := export.Export(design.Default(), []examples.Example{form})
 	if err != nil {
 		panic(err)
 	}
@@ -105,7 +105,7 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 			observed(description)
 			// Export's shared interface check rejects another Props or slot shape
 			// under a Core identity, including private Button and Alert shortcuts.
-			if _, err := ui.Export(design.Default(), append(examples.Gallery(), form)); err != nil {
+			if _, err := export.Export(design.Default(), append(examples.Gallery(), form)); err != nil {
 				t.Fatal(err)
 			}
 			for _, marker := range []string{`id="screen-form"`, `method="post"`, `hx-post="/admin/note/notes"`,
@@ -145,12 +145,12 @@ func TestGeneratedFormComposesSourceEditsAndReplacements(t *testing.T) {
 	form := screens.FormExample("notes/edit", resource(), opts, "/admin/note/notes/1", "Edit note",
 		map[string]any{"title": "Original", "body": "Before", "status": "done"}, nil, "", false)
 	source := []examples.Example{form}
-	base, err := ui.Export(design.Default(), source)
+	base, err := export.Export(design.Default(), source)
 	if err != nil {
 		t.Fatal(err)
 	}
 	path := []string{form.ID, "field/body"}
-	edited, candidate, err := ui.ProjectProps(design.Default(), source, ui.PropsProposal{
+	edited, candidate, err := export.ProjectProps(design.Default(), source, export.PropsProposal{
 		BaseSHA256: base.SHA256, Path: path, Props: json.RawMessage(`{"value":"\nAfter\n"}`)})
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestGeneratedFormComposesSourceEditsAndReplacements(t *testing.T) {
 		}
 	}
 	buttonPath := []string{form.ID, "actions", "save"}
-	buttonEdit, _, err := ui.ProjectProps(design.Default(), source, ui.PropsProposal{
+	buttonEdit, _, err := export.ProjectProps(design.Default(), source, export.PropsProposal{
 		BaseSHA256: base.SHA256, Path: buttonPath, Props: json.RawMessage(`{"label":"Save changes"}`)})
 	if err != nil {
 		t.Fatal(err)
@@ -178,8 +178,8 @@ func TestGeneratedFormComposesSourceEditsAndReplacements(t *testing.T) {
 	if html := render(t, []g.Node{button.Node}); !strings.Contains(html, "Save changes") || !strings.Contains(html, `type="submit"`) {
 		t.Fatal("nested action editing lost the Core button or its submit behavior")
 	}
-	if _, _, err := ui.ProjectProps(design.Default(), edited, ui.PropsProposal{
-		BaseSHA256: base.SHA256, Path: path, Props: json.RawMessage(`{"value":"Stale"}`)}); !errors.Is(err, ui.ErrStaleExport) {
+	if _, _, err := export.ProjectProps(design.Default(), edited, export.PropsProposal{
+		BaseSHA256: base.SHA256, Path: path, Props: json.RawMessage(`{"value":"Stale"}`)}); !errors.Is(err, export.ErrStaleExport) {
 		t.Fatalf("a stale source edit was not refused: %v", err)
 	}
 	if _, err := form.WithReplacementAt(path, examples.ExampleOf(
@@ -189,11 +189,11 @@ func TestGeneratedFormComposesSourceEditsAndReplacements(t *testing.T) {
 	replacement := examples.ExampleOf(examples.ExampleInfo{ID: "replacement", ComponentID: "pk-ui.component.textarea"},
 		components.TextareaProps{Name: "body", Label: "Description", Value: "Replacement", Rows: 5}, components.Textarea)
 	source = append(source, replacement)
-	base, err = ui.Export(design.Default(), source)
+	base, err = export.Export(design.Default(), source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replaced, _, err := ui.ProjectReplacement(design.Default(), source, ui.ReplacementProposal{
+	replaced, _, err := export.ProjectReplacement(design.Default(), source, export.ReplacementProposal{
 		BaseSHA256: base.SHA256, Path: path, ReplacementPath: []string{replacement.ID}})
 	if err != nil {
 		t.Fatal(err)

@@ -14,14 +14,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/source"
 )
 
 func TestProducerSourcePersistence(t *testing.T) {
 	f := newProducerFixture(t)
 	base := f.snapshot(t, nil)
-	proposal := ui.PropsProposal{
+	proposal := export.PropsProposal{
 		BaseSHA256: base.SHA256,
 		Path:       []string{"screen/editor", "action/save"},
 		Props:      json.RawMessage(`{"label":"Create & keep"}`),
@@ -274,7 +274,7 @@ func (f producerFixture) target(marker string) source.Target {
 	return source.Target{File: f.file, Line: line, SHA256: fileDigest(f.program)}
 }
 
-func (f producerFixture) snapshot(t *testing.T, proposal *ui.PropsProposal) ui.DesignExport {
+func (f producerFixture) snapshot(t *testing.T, proposal *export.PropsProposal) export.DesignExport {
 	t.Helper()
 	args := append([]string{"run", "-mod=readonly", "."}, f.producer.Args...)
 	var input []byte
@@ -286,7 +286,7 @@ func (f producerFixture) snapshot(t *testing.T, proposal *ui.PropsProposal) ui.D
 		}
 		args = append(args, "--proposal")
 	}
-	var snapshot ui.DesignExport
+	var snapshot export.DesignExport
 	if err := json.Unmarshal(f.runGo(t, input, args...), &snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/export"
 	c "github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
@@ -390,16 +390,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "intentional fixture failure")
 		os.Exit(1)
 	}
-	var snapshot ui.DesignExport
+	var snapshot export.DesignExport
 	var err error
 	if *proposal {
-		var request ui.PropsProposal
+		var request export.PropsProposal
 		err = json.NewDecoder(os.Stdin).Decode(&request)
 		if err == nil {
-			_, snapshot, err = ui.ProjectProps(design.Default(), captures(), request)
+			_, snapshot, err = export.ProjectProps(design.Default(), captures(), request)
 		}
 	} else {
-		snapshot, err = ui.Export(design.Default(), captures())
+		snapshot, err = export.Export(design.Default(), captures())
 	}
 	if err == nil && *failure == "rebuilt" && !*proposal && strings.Contains(snapshot.Examples[0].HTML, "Create &amp; keep") {
 		err = fmt.Errorf("intentional rebuilt producer failure")

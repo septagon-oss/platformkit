@@ -1,4 +1,4 @@
-package ui
+package export
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
@@ -18,7 +19,7 @@ var (
 
 // ExportWithLayout opts into v2 root declarations through the existing capture
 // and stylesheet composition path. It makes no native/editability guarantee.
-func ExportWithLayout(theme design.Pair, captures []examples.Example, extra ...Extra) (DesignExport, error) {
+func ExportWithLayout(theme design.Pair, captures []examples.Example, extra ...ui.Extra) (DesignExport, error) {
 	return export(theme, captures, true, extra...)
 }
 

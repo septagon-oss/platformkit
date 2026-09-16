@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 )
 
 type failingWriter struct{}
@@ -26,13 +26,13 @@ func (r *failingReader) Read([]byte) (int, error) {
 	return 0, io.ErrUnexpectedEOF
 }
 
-func exportedSnapshot(t *testing.T, args []string, input io.Reader) (ui.DesignExport, []byte) {
+func exportedSnapshot(t *testing.T, args []string, input io.Reader) (export.DesignExport, []byte) {
 	t.Helper()
 	var output bytes.Buffer
 	if err := run(args, input, &output); err != nil {
 		t.Fatal(err)
 	}
-	var snapshot ui.DesignExport
+	var snapshot export.DesignExport
 	if err := json.Unmarshal(output.Bytes(), &snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestExportPreservesFullSnapshotWithoutReadingInput(t *testing.T) {
 	input := new(failingReader)
 	_, first := exportedSnapshot(t, nil, input)
 	_, again := exportedSnapshot(t, nil, input)
-	want, err := ui.Export(design.Default(), examples.Gallery())
+	want, err := export.Export(design.Default(), examples.Gallery())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestExportRejectsInvalidProposalWithoutOutput(t *testing.T) {
 
 func TestExportProjectsSourceReplacementWithoutPersisting(t *testing.T) {
 	base, original := exportedSnapshot(t, nil, new(failingReader))
-	body, err := json.Marshal(ui.ReplacementProposal{BaseSHA256: base.SHA256,
+	body, err := json.Marshal(export.ReplacementProposal{BaseSHA256: base.SHA256,
 		Path:            []string{"pk-ui.component.form/default", "actions", "create"},
 		ReplacementPath: []string{"pk-ui.component.button/primary"}})
 	if err != nil {

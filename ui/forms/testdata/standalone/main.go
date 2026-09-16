@@ -18,6 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/forms"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message/catalog"
@@ -166,7 +167,7 @@ func (a *application) handler() http.Handler {
 	mux.HandleFunc("GET /snapshot", func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		snapshot, err := ui.Export(design.Default(), []examples.Example{a.form("first-editor"), a.form("second-editor")})
+		snapshot, err := export.Export(design.Default(), []examples.Example{a.form("first-editor"), a.form("second-editor")})
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return

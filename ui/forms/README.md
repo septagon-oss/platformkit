@@ -28,7 +28,7 @@ return form.Node.Render(writer)
 Import `github.com/septagon-oss/platformkit/ui/forms` and
 `github.com/septagon-oss/platformkit/kit/entity`. `writer` is your `io.Writer`.
 Rendering emits HTML; it does not open a connection or execute the save action.
-Use `ui.Compose` for the shared stylesheet and `ui.Export` to capture this same
+Use `ui.Compose` for the shared stylesheet and `export.Export` to capture this same
 example for design tools. The surrounding shell supplies assets and landmarks.
 
 The source ID (`notes/new`) identifies an authoring occurrence. The separate DOM

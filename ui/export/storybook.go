@@ -1,4 +1,4 @@
-package ui
+package export
 
 import (
 	"encoding/json"
@@ -13,6 +13,7 @@ import (
 	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
@@ -25,7 +26,7 @@ type Storybook struct {
 	Title    string
 	Theme    design.Pair
 	Examples []examples.Example
-	Extra    []Extra
+	Extra    []ui.Extra
 	// Files is an optional, immutable Storybook.js build produced from Export
 	// of this exact composition. All files are served through gallery authorization.
 	Files fs.FS

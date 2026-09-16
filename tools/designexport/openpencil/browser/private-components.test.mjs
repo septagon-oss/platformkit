@@ -19,7 +19,7 @@ import (
   "strconv"
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 type Props struct { Number int \`json:"number"\`; Nested bool \`json:"nested"\` }
@@ -33,7 +33,7 @@ func owner(p Props, children ...g.Node) g.Node {
   return components.Stack(components.StackProps{Gap: "4"}, append([]g.Node{number.Node}, children...)...)
 }
 func main() {
-  var input struct { Proposal *ui.PropsProposal; Nested bool }
+  var input struct { Proposal *export.PropsProposal; Nested bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   action := examples.ExampleOf(examples.ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
     components.ButtonProps{Label: "Continue"}, components.Button)
@@ -42,8 +42,8 @@ func main() {
   example := examples.ExampleWithChildren(examples.ExampleInfo{ID: "fixture/derived", ComponentID: "fixture.component.derived"},
     Props{Number: 7, Nested: input.Nested}, []g.Node{action.Node, caption.Node}, owner)
   captures := []examples.Example{example}
-  snapshot, err := ui.Export(design.Default(), captures)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal) }
+  snapshot, err := export.Export(design.Default(), captures)
+  if input.Proposal != nil { _, snapshot, err = export.ProjectProps(design.Default(), captures, *input.Proposal) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

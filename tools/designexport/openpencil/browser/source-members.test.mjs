@@ -21,13 +21,13 @@ import (
   "encoding/json"
   "os"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/export"
   c "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   g "maragu.dev/gomponents"
   h "maragu.dev/gomponents/html"
 )
 func main() {
-  var input struct { Layout, Label, Heading string; Nested, Empty, Private bool; Proposal *ui.PropsProposal; Replacement *ui.ReplacementProposal }
+  var input struct { Layout, Label, Heading string; Nested, Empty, Private bool; Proposal *export.PropsProposal; Replacement *export.ReplacementProposal }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   info := func(id, component string) examples.ExampleInfo { return examples.ExampleInfo{ID:id, ComponentID:component} }
   button := func(id, label string) g.Node {
@@ -57,9 +57,9 @@ func main() {
   default:
     example = examples.ExampleWithChildren(info("fixture", "pk-ui.component.stack"), c.StackProps{Gap:"8"}, members, c.Stack)
   }
-  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), []examples.Example{example}, *input.Proposal) }
-  if input.Replacement != nil { _, snapshot, err = ui.ProjectReplacement(design.Default(), []examples.Example{example}, *input.Replacement) }
+  snapshot, err := export.Export(design.Default(), []examples.Example{example})
+  if input.Proposal != nil { _, snapshot, err = export.ProjectProps(design.Default(), []examples.Example{example}, *input.Proposal) }
+  if input.Replacement != nil { _, snapshot, err = export.ProjectReplacement(design.Default(), []examples.Example{example}, *input.Replacement) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/source"
 )
 
@@ -42,12 +42,12 @@ func TestSourcePreviewVerifiesRealGalleryWithoutWriting(t *testing.T) {
 	line := bytes.Count(before[file][:bytes.Index(before[file], marker)], []byte("\n")) + 1
 	digest := func(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) }
 	captures := examples.Gallery()
-	base, err := ui.Export(design.Default(), captures)
+	base, err := export.Export(design.Default(), captures)
 	if err != nil {
 		t.Fatal(err)
 	}
-	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"pk-ui.component.button/primary"}, Props: json.RawMessage(`{"label":"CLI preview & keep"}`)}
-	_, expected, err := ui.ProjectProps(design.Default(), captures, proposal)
+	proposal := export.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"pk-ui.component.button/primary"}, Props: json.RawMessage(`{"label":"CLI preview & keep"}`)}
+	_, expected, err := export.ProjectProps(design.Default(), captures, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}

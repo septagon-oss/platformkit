@@ -22,7 +22,7 @@ import (
   "os"
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/style"
 )
@@ -53,7 +53,7 @@ func main() {
   standalone := examples.ExampleOf(examples.ExampleInfo{
     ID: "fixture/button", ComponentID: "pk-ui.component.button",
   }, components.ButtonProps{Label: input.Label}, components.Button)
-  snapshot, err := ui.Export(design.Default(), []examples.Example{example, standalone},
+  snapshot, err := export.Export(design.Default(), []examples.Example{example, standalone},
     ui.Extra{Lists: []style.ClassList{style.New().ColSpanFull()}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }

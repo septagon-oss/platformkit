@@ -1,4 +1,4 @@
-package ui_test
+package export_test
 
 import (
 	"errors"
@@ -6,9 +6,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
@@ -23,7 +23,7 @@ func TestExportMeasurementsUseSourceValuesAndRequiredFeature(t *testing.T) {
 	if !slices.Equal(doc.RequiredFeatures, features) || doc.CheckLayoutContract(features...) != nil {
 		t.Fatal("fresh source measurements have no understood feature contract")
 	}
-	if !errors.Is(doc.CheckLayoutContract(features[0]), ui.ErrLayoutUnsupported) {
+	if !errors.Is(doc.CheckLayoutContract(features[0]), export.ErrLayoutUnsupported) {
 		t.Fatal("old consumer silently ignored the new required meaning")
 	}
 	// Packaging can retain only the dependency closure. Identity, not array
@@ -37,7 +37,7 @@ func TestExportMeasurementsUseSourceValuesAndRequiredFeature(t *testing.T) {
 		t.Fatalf("valid dependency-closed subset rejected: %v", err)
 	}
 	doc.Measurements = doc.Measurements[1:]
-	if !errors.Is(doc.CheckLayoutContract(features...), ui.ErrLayoutUnknown) {
+	if !errors.Is(doc.CheckLayoutContract(features...), export.ErrLayoutUnknown) {
 		t.Fatal("missing nested gap resolved to an invented default")
 	}
 }
@@ -45,18 +45,18 @@ func TestExportMeasurementsUseSourceValuesAndRequiredFeature(t *testing.T) {
 func TestExportMeasurementsRefuseAmbiguityAndRetainDeclarationOnlyMigration(t *testing.T) {
 	base := layoutExport(t, []examples.Example{layoutExample("root", c.FlexProps{})})
 	features := []string{"source-flex-declarations.v1", "source-measurements.v1"}
-	for name, change := range map[string]func(*ui.DesignExport){
-		"unrequired data": func(d *ui.DesignExport) { d.RequiredFeatures = d.RequiredFeatures[:1] },
-		"duplicate":       func(d *ui.DesignExport) { d.Measurements = append(d.Measurements, d.Measurements[0]) },
-		"invalid":         func(d *ui.DesignExport) { d.Measurements[0].Unit = "future" },
-		"unknown scale":   func(d *ui.DesignExport) { d.Measurements[0].Scale = "future" },
+	for name, change := range map[string]func(*export.DesignExport){
+		"unrequired data": func(d *export.DesignExport) { d.RequiredFeatures = d.RequiredFeatures[:1] },
+		"duplicate":       func(d *export.DesignExport) { d.Measurements = append(d.Measurements, d.Measurements[0]) },
+		"invalid":         func(d *export.DesignExport) { d.Measurements[0].Unit = "future" },
+		"unknown scale":   func(d *export.DesignExport) { d.Measurements[0].Scale = "future" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := base
 			doc.Measurements = slices.Clone(base.Measurements)
 			doc.RequiredFeatures = slices.Clone(base.RequiredFeatures)
 			change(&doc)
-			if !errors.Is(doc.CheckLayoutContract(features...), ui.ErrLayoutUnsupported) {
+			if !errors.Is(doc.CheckLayoutContract(features...), export.ErrLayoutUnsupported) {
 				t.Fatal("invalid measurement contract accepted")
 			}
 		})

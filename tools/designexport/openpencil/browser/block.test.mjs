@@ -23,7 +23,7 @@ import (
   g "maragu.dev/gomponents"
   h "maragu.dev/gomponents/html"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/style"
 )
@@ -54,7 +54,7 @@ func main() {
       ID: "fixture/row", ComponentID: "pk-ui.component.flex",
     }, components.FlexProps{Wrap: true, Justify: "between", Align: "start"}, []g.Node{example.Node, action.Node}, components.Flex)
   }
-  snapshot, err := ui.Export(design.Default(), []examples.Example{example},
+  snapshot, err := export.Export(design.Default(), []examples.Example{example},
     ui.Extra{Lists: []style.ClassList{style.New().MarginBottom(style.S0_5)}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }

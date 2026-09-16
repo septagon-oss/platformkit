@@ -1,4 +1,4 @@
-package ui_test
+package export_test
 
 import (
 	"bytes"
@@ -11,13 +11,13 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-func interchangeTokens() ui.TokenExport {
-	return ui.TokenExport{
-		Modes: []ui.TokenMode{{Mode: "light", Colors: []design.Token{{Name: "--brand", Type: "color", Value: "#f008"}},
+func interchangeTokens() export.TokenExport {
+	return export.TokenExport{
+		Modes: []export.TokenMode{{Mode: "light", Colors: []design.Token{{Name: "--brand", Type: "color", Value: "#f008"}},
 			Fonts: []design.FontFamilyToken{{Name: "--body", Families: []design.FontFamily{{Name: "Named, Family"}, {Name: "serif"}, {Name: "serif", Generic: true}}}}}},
 		Colors: []design.ColorToken{
 			{Name: "--alias", Value: design.ColorValue{Reference: "--brand"}},
@@ -135,7 +135,7 @@ func TestDTCGRefusesAllUnsupportedValuesWithoutPartialDocument(t *testing.T) {
 	source.Shadows[0].Layers[0].OffsetX.Unit = "vw"
 	source.Modes[0].Fonts[0].Families[0].Name = "{colors.--brand}"
 	data, diagnostics, err := source.DTCG("light")
-	if !errors.Is(err, ui.ErrDTCGUnsupported) || data != nil {
+	if !errors.Is(err, export.ErrDTCGUnsupported) || data != nil {
 		t.Fatalf("unsupported selection emitted a partial document: %v", err)
 	}
 	var paths []string
@@ -153,17 +153,17 @@ func TestDTCGRefusesAllUnsupportedValuesWithoutPartialDocument(t *testing.T) {
 
 func TestDTCGValidatesSourceClosureAndRequiresExplicitMode(t *testing.T) {
 	t.Parallel()
-	for name, mutate := range map[string]func(*ui.TokenExport){
-		"missing colour":               func(s *ui.TokenExport) { s.Modes[0].Colors = nil },
-		"wrong reference kind":         func(s *ui.TokenExport) { s.Colors[0].Value.Reference = "--body" },
-		"duplicate identity":           func(s *ui.TokenExport) { s.Scales = append(s.Scales, s.Scales[0]) },
-		"cycle":                        func(s *ui.TokenExport) { s.Colors[0].Value.Reference = "--alias" },
-		"infinite number":              func(s *ui.TokenExport) { s.Scales[0].Number.Value = "1e999" },
-		"weight above exact boundary":  func(s *ui.TokenExport) { s.Scales[4].Number.Value = "1000.00000000000000001" },
-		"weight below exact boundary":  func(s *ui.TokenExport) { s.Scales[4].Number.Value = "0.99999999999999999999" },
-		"negative dimension underflow": func(s *ui.TokenExport) { s.Scales[0].Number.Value = "-1e-999" },
-		"negative duration underflow":  func(s *ui.TokenExport) { s.Scales[5].Number.Value = "-1e-999" },
-		"negative blur underflow":      func(s *ui.TokenExport) { s.Shadows[0].Layers[1].Blur.Value = "-1e-999" },
+	for name, mutate := range map[string]func(*export.TokenExport){
+		"missing colour":               func(s *export.TokenExport) { s.Modes[0].Colors = nil },
+		"wrong reference kind":         func(s *export.TokenExport) { s.Colors[0].Value.Reference = "--body" },
+		"duplicate identity":           func(s *export.TokenExport) { s.Scales = append(s.Scales, s.Scales[0]) },
+		"cycle":                        func(s *export.TokenExport) { s.Colors[0].Value.Reference = "--alias" },
+		"infinite number":              func(s *export.TokenExport) { s.Scales[0].Number.Value = "1e999" },
+		"weight above exact boundary":  func(s *export.TokenExport) { s.Scales[4].Number.Value = "1000.00000000000000001" },
+		"weight below exact boundary":  func(s *export.TokenExport) { s.Scales[4].Number.Value = "0.99999999999999999999" },
+		"negative dimension underflow": func(s *export.TokenExport) { s.Scales[0].Number.Value = "-1e-999" },
+		"negative duration underflow":  func(s *export.TokenExport) { s.Scales[5].Number.Value = "-1e-999" },
+		"negative blur underflow":      func(s *export.TokenExport) { s.Shadows[0].Layers[1].Blur.Value = "-1e-999" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := interchangeTokens()
@@ -179,7 +179,7 @@ func TestDTCGValidatesSourceClosureAndRequiresExplicitMode(t *testing.T) {
 		}
 	}
 	source := interchangeTokens()
-	source.Modes = append(source.Modes, ui.TokenMode{Mode: "dark", Colors: slices.Clone(source.Modes[0].Colors), Fonts: source.Modes[0].Fonts})
+	source.Modes = append(source.Modes, export.TokenMode{Mode: "dark", Colors: slices.Clone(source.Modes[0].Colors), Fonts: source.Modes[0].Fonts})
 	source.Modes[1].Colors[0].Value = "#00f"
 	light, _, err := source.DTCG("light")
 	if err != nil {
@@ -202,7 +202,7 @@ func TestDTCGKeepsAssetOnlyEvidenceWithoutInventingFontTokens(t *testing.T) {
 		License: design.LicenseEvidence{ID: "LicenseRef-Owner", SHA256: strings.Repeat("b", 64), Source: "owner:notice"}}
 	second := asset
 	second.ID = "b"
-	source := ui.TokenExport{Assets: []design.Asset{second, asset}, Faces: []design.FontFace{{ID: "a", Asset: "a", Family: "Body", PostScriptName: "Body-Regular", Weight: "650.5", Style: "normal"}}}
+	source := export.TokenExport{Assets: []design.Asset{second, asset}, Faces: []design.FontFace{{ID: "a", Asset: "a", Family: "Body", PostScriptName: "Body-Regular", Weight: "650.5", Style: "normal"}}}
 	data, diagnostics, err := source.DTCG("")
 	if err != nil || len(diagnostics) != 3 {
 		t.Fatalf("asset-only package lost metadata diagnostics: %v", err)
@@ -232,7 +232,7 @@ func TestDTCGKeepsExactDecimalsAndNegativeZero(t *testing.T) {
 		{"spacing", "0", "-0E-999", "px"},
 		{"tracking", "tighter", "-1e-999", "px"},
 	} {
-		source := ui.TokenExport{Scales: []style.ScaleValue{{Scale: tc.scale, Key: tc.key, Number: &style.Scalar{Value: json.Number(tc.value), Unit: tc.unit}}}}
+		source := export.TokenExport{Scales: []style.ScaleValue{{Scale: tc.scale, Key: tc.key, Number: &style.Scalar{Value: json.Number(tc.value), Unit: tc.unit}}}}
 		data, diagnostics, err := source.DTCG("")
 		if err != nil || len(diagnostics) != 0 {
 			t.Fatalf("decimal %s lost exact representation or valid sign: %v", tc.value, err)
@@ -254,12 +254,12 @@ func TestDTCGKeepsExactDecimalsAndNegativeZero(t *testing.T) {
 }
 
 func ExampleTokenExport_DTCG() {
-	owned, err := ui.ExportTokens(design.Default(), "light")
+	owned, err := export.ExportTokens(design.Default(), "light")
 	if err != nil {
 		panic(err)
 	}
 	// Select a palette/family package explicitly; no implicit filtering of scales.
-	selection := ui.TokenExport{Modes: owned.Modes, Colors: owned.Colors}
+	selection := export.TokenExport{Modes: owned.Modes, Colors: owned.Colors}
 	data, diagnostics, err := selection.DTCG("light")
 	fmt.Println(json.Valid(data), len(diagnostics) > 0, err)
 	// Output: true true <nil>

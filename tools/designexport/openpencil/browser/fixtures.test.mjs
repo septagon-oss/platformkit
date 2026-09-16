@@ -57,12 +57,12 @@ import (
   "os"
   "slices"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/style"
 )
 func main() {
   theme := design.Default()
-  tokens, err := ui.ExportTokens(theme, "light", "dark")
+  tokens, err := export.ExportTokens(theme, "light", "dark")
   if err != nil { panic(err) }
   for i := range tokens.Modes {
     tokens.Modes[i].Fonts = nil
@@ -82,7 +82,7 @@ func main() {
     {Scale: "leading", Key: "normal", Number: &style.Scalar{Value: json.Number("1.5"), Unit: ""}},
   }
   tokens.Shadows, tokens.Easings, tokens.Transitions = nil, nil, nil
-  base, err := ui.Export(theme, nil)
+  base, err := export.Export(theme, nil)
   if err != nil { panic(err) }
   snapshot, err := base.WithTokens(tokens)
   if err != nil { panic(err) }
@@ -102,7 +102,7 @@ import (
   "os"
   "slices"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
@@ -111,7 +111,7 @@ func main() {
     Kind, Content string
     External bool
     Style, DescendantStyle map[string]string
-    Proposal *ui.PropsProposal
+    Proposal *export.PropsProposal
   }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   info := examples.ExampleInfo{ID:"underlined", ComponentID:"pk-ui.component.button"}
@@ -134,12 +134,12 @@ func main() {
   }
   captures := []examples.Example{example}
   extra := ui.Extra{Sheets:[]*css.Sheet{sheet}}
-  var snapshot ui.DesignExport
+  var snapshot export.DesignExport
   var err error
   if input.Proposal == nil {
-    snapshot, err = ui.Export(design.Default(), captures, extra)
+    snapshot, err = export.Export(design.Default(), captures, extra)
   } else {
-    _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal, extra)
+    _, snapshot, err = export.ProjectProps(design.Default(), captures, *input.Proposal, extra)
   }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
@@ -156,7 +156,7 @@ import (
   "os"
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
@@ -176,7 +176,7 @@ func main() {
   sheet := css.NewSheet()
   if input.Align != "" { sheet.Select("#empty", css.Decl("align-items", css.Literal(input.Align))) }
   if input.Constraint != "" { sheet.Select("#empty > p", css.Decl(input.Constraint, css.Literal(input.Value))) }
-  snapshot, err := ui.Export(theme, []examples.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
+  snapshot, err := export.Export(theme, []examples.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

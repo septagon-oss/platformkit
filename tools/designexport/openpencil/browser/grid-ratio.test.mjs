@@ -20,7 +20,7 @@ import (
   g "maragu.dev/gomponents"
   h "maragu.dev/gomponents/html"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 type Props struct { Ratio float64 }
@@ -38,7 +38,7 @@ func main() {
     tiles = append(tiles, examples.ExampleWithChildren(examples.ExampleInfo{ID:fmt.Sprintf("tile%d", i), ComponentID:"fixture.component.tile"}, Props{input.Ratio}, []g.Node{text.Node}, tile).Node)
   }
   example := examples.ExampleWithChildren(examples.ExampleInfo{ID:"fixture/grid", ComponentID:"pk-ui.component.grid"}, components.GridProps{Columns:"6", Gap:"3"}, tiles, components.Grid)
-  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
+  snapshot, err := export.Export(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

@@ -9,7 +9,7 @@ follow the [Storybook adapter instructions](../../ui/storybook/README.md).
 
 The application composition owns this selector. Read the tenant and principal
 already established in `context.Context`; select examples from the same resolved
-product/module composition used by the application. Return `ui.Storybook` with
+product/module composition used by the application. Return `export.Storybook` with
 that composition's `Examples`, `Theme` and stylesheet `Extra` values. Reuse an
 existing product `Design()` contribution rather than maintaining another registry.
 Return a `problem.Problem` with status 403 for a tenant or caller without access.

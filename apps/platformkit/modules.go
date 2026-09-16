@@ -31,8 +31,8 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
-	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -153,15 +153,15 @@ func compose(cfg config.Config) composition {
 		notify: notify, mail: mail, plans: plans}
 }
 
-func operatorStorybook(dir string) func(context.Context) (ui.Storybook, error) {
+func operatorStorybook(dir string) func(context.Context) (export.Storybook, error) {
 	if dir == "" {
 		return nil
 	}
-	book := ui.Storybook{Title: "Components", Theme: design.Default(), Examples: examples.Gallery(), Files: os.DirFS(dir)}
-	return func(ctx context.Context) (ui.Storybook, error) {
+	book := export.Storybook{Title: "Components", Theme: design.Default(), Examples: examples.Gallery(), Files: os.DirFS(dir)}
+	return func(ctx context.Context) (export.Storybook, error) {
 		tenant, ok := tenancy.FromContext(ctx)
 		if !ok || !tenant.Operator {
-			return ui.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available for this tenant.")
+			return export.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available for this tenant.")
 		}
 		return book, nil
 	}

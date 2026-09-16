@@ -21,6 +21,12 @@
 // third-party script in application pages. The optional Storybook.js development
 // interface is built separately under ui/storybook and served through authorization.
 // The application enhancements live in assets/js, listed in Controllers.
+//
+// # What is not here
+//
+// Design snapshots, token export, proposals and the storybook composition are
+// ui/export. This package is what a shell needs to serve a page and nothing a
+// design tool needs, so ui/page depends on it without linking the tooling.
 package ui
 
 import (

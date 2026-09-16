@@ -1,7 +1,7 @@
 # Storybook for Go components
 
 This adapter runs Storybook.js with its HTML renderer. Stories and controls come
-from the selected `ui.Export` snapshot; the canvas loads the existing authorized
+from the selected `export.Export` snapshot; the canvas loads the existing authorized
 Go preview. It does not reimplement components in JavaScript. Node 22.12+ and npm
 are build prerequisites; the running application serves the finished files.
 
@@ -22,7 +22,7 @@ Keep build directories immutable; select a new directory after rebuilding.
 
 For products, export exactly the `Theme`, `Examples` and `Extra` returned by the
 existing `admin.Deps.Storybook` selector. Build that snapshot, then return its
-filesystem in the same `ui.Storybook.Files` value (for example, `os.DirFS(path)`).
+filesystem in the same `export.Storybook.Files` value (for example, `os.DirFS(path)`).
 Select the filesystem from the authenticated tenant's product composition, never
 from a browser path or tenant query parameter. Identical compositions can reuse
 one immutable build. Different content or themes require separate builds.

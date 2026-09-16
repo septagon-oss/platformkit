@@ -285,7 +285,7 @@ import (
   "os"
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
 )
 func main() {
@@ -303,7 +303,7 @@ func main() {
   example := examples.ExampleWithChildren(examples.ExampleInfo{
     ID: "fixture/actions", ComponentID: "pk-ui.component.flex",
   }, input.Props, children, components.Flex)
-  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
+  snapshot, err := export.Export(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

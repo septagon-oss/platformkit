@@ -2,7 +2,7 @@ package components
 
 // Props are the typed inputs to the component constructors in this package.
 // Example captures those same inputs and derives portable property schemas;
-// screens.FormExample uses that path for generated entity forms, and ui.Export
+// screens.FormExample uses that path for generated entity forms, and export.Export
 // carries the captured contracts to design consumers. See example.go.
 //
 // These contracts describe presentation. A2UI/MCP transport and native renderers

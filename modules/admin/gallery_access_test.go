@@ -15,19 +15,19 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/admin"
-	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 )
 
 // Each build is private in its entirety, including metadata and guessed bundle
 // paths. A build for the same IDs with different tenant content is also refused.
 func TestStorybookBuildsAreAuthorizedAndBoundToTheirComposition(t *testing.T) {
-	book := func(name string) ui.Storybook {
-		b := ui.Storybook{Theme: design.Default(), Examples: []examples.Example{
+	book := func(name string) export.Storybook {
+		b := export.Storybook{Theme: design.Default(), Examples: []examples.Example{
 			examples.ExampleOf(examples.ExampleInfo{ID: "product/button", ComponentID: "product.button"}, c.ButtonProps{Label: name}, c.Button),
 		}}
-		snapshot, err := ui.Export(b.Theme, b.Examples)
+		snapshot, err := export.Export(b.Theme, b.Examples)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -41,7 +41,7 @@ func TestStorybookBuildsAreAuthorizedAndBoundToTheirComposition(t *testing.T) {
 		return b
 	}
 	acme, operator := book("acme"), book("operator")
-	provider := func(ctx context.Context) (ui.Storybook, error) {
+	provider := func(ctx context.Context) (export.Storybook, error) {
 		tenant, _ := tenancy.FromContext(ctx)
 		if tenant.Operator {
 			return operator, nil
@@ -108,7 +108,7 @@ func TestDefaultGalleryRefusesCustomerTenantByDirectURL(t *testing.T) {
 }
 
 func TestStorybooksUseOnlyTheAuthorizedTenantComposition(t *testing.T) {
-	provider := func(ctx context.Context) (ui.Storybook, error) {
+	provider := func(ctx context.Context) (export.Storybook, error) {
 		tenant, _ := tenancy.FromContext(ctx)
 		principal, ok := tenancy.PrincipalFrom(ctx)
 		if !ok || len(principal.Roles) == 0 {
@@ -120,7 +120,7 @@ func TestStorybooksUseOnlyTheAuthorizedTenantComposition(t *testing.T) {
 		}
 		pair := design.Default()
 		pair.Light.AccentDefault = color
-		return ui.Storybook{Title: name, Theme: pair, Examples: []examples.Example{
+		return export.Storybook{Title: name, Theme: pair, Examples: []examples.Example{
 			examples.ExampleOf(examples.ExampleInfo{ID: name, ComponentID: "product.button", Group: "Product", Name: name}, c.ButtonProps{Label: name}, c.Button),
 		}}, nil
 	}
@@ -152,7 +152,7 @@ func TestStorybooksUseOnlyTheAuthorizedTenantComposition(t *testing.T) {
 				}
 			}
 			if strings.HasSuffix(path, "export") {
-				var snapshot ui.DesignExport
+				var snapshot export.DesignExport
 				if err := json.Unmarshal(out.Body.Bytes(), &snapshot); err != nil || len(snapshot.Examples) != 1 || snapshot.Examples[0].ID != test.own {
 					t.Error("export contains a different catalog")
 				}
@@ -170,11 +170,11 @@ func TestStorybooksUseOnlyTheAuthorizedTenantComposition(t *testing.T) {
 func TestStorybookDenialAndEmptyCompositionNeverFallBack(t *testing.T) {
 	for _, denied := range []bool{false, true} {
 		router := mountAs(t, caller{}, func(d *admin.Deps) {
-			d.Storybook = func(context.Context) (ui.Storybook, error) {
+			d.Storybook = func(context.Context) (export.Storybook, error) {
 				if denied {
-					return ui.Storybook{}, problem.New(http.StatusForbidden, "No access")
+					return export.Storybook{}, problem.New(http.StatusForbidden, "No access")
 				}
-				return ui.Storybook{Title: "Empty product"}, nil
+				return export.Storybook{Title: "Empty product"}, nil
 			}
 		})
 		for _, path := range []string{"/admin/_gallery", "/admin/_gallery/export"} {
@@ -192,9 +192,9 @@ func TestStorybookDenialAndEmptyCompositionNeverFallBack(t *testing.T) {
 
 func TestStorybookRequiresPermissionBeforeCallingProvider(t *testing.T) {
 	router := mountAs(t, member{}, func(d *admin.Deps) {
-		d.Storybook = func(context.Context) (ui.Storybook, error) {
+		d.Storybook = func(context.Context) (export.Storybook, error) {
 			t.Error("unauthorized provider call")
-			return ui.Storybook{}, nil
+			return export.Storybook{}, nil
 		}
 	})
 	for _, path := range []string{"/admin/_gallery", "/admin/_gallery/preview?example=private", "/admin/_gallery/export", "/admin/_gallery/storybook/index.json", "/admin/_gallery/storybook/assets/private.js"} {

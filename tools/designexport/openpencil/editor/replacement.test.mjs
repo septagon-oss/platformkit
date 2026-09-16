@@ -1915,7 +1915,7 @@ import (
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/kit/crud"
   "github.com/septagon-oss/platformkit/kit/httpx"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
   "github.com/septagon-oss/platformkit/ui/screens"
@@ -1932,7 +1932,7 @@ func choiceForm(p components.FormProps, children ...g.Node) g.Node {
   return components.Form(p, append([]g.Node{summary.Node}, children...)...)
 }
 func main() {
-  var input struct { Proposal *ui.PropsProposal; Dashed, Centered bool }
+  var input struct { Proposal *export.PropsProposal; Dashed, Centered bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: crud.Fields[*Note]()}}
   form := screens.FormExample("fixture/generated-form", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note", nil, nil, "", true)
@@ -1952,8 +1952,8 @@ func main() {
       css.Decl("border", css.Literal("1px dashed var(--pk-color-border-default)")),
       css.Decl("border-radius", css.Literal("12px"))))
   }
-  snapshot, err := ui.Export(design.Default(), captures, extra)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal, extra) }
+  snapshot, err := export.Export(design.Default(), captures, extra)
+  if input.Proposal != nil { _, snapshot, err = export.ProjectProps(design.Default(), captures, *input.Proposal, extra) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

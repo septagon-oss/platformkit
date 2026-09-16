@@ -2,7 +2,7 @@
 
 This tool projects PlatformKit's existing Go components for adapter development.
 Tokens, glyphs, typed examples and stylesheets remain authoritative. Products
-reuse [ui.Export](../../ui/export.go) with their own composition; the
+reuse [export.Export](../../ui/export/export.go) with their own composition; the
 [architecture](../../ARCHITECTURE.md#compose-the-interface) defines its boundaries.
 
 ## Inspect the source
@@ -30,7 +30,7 @@ families, scales, shadows and timing, plus CSS, icons and legacy themes. Other
 theme token kinds and component examples are excluded; fonts are not bundled.
 This reads no stdin and cannot combine with edit or selection flags.
 
-Products compose [ui.ExportTokens](../../ui/export_tokens.go), validate subsets
+Products compose [export.ExportTokens](../../ui/export/export_tokens.go), validate subsets
 and attach them through `DesignExport.WithTokens`; default v1 exports remain
 unchanged. The [native adapter](openpencil/README.md#generate-a-design-document)
 accepts an explicitly selected colour/numeric subset, not the complete selection.
@@ -38,7 +38,7 @@ accepts an explicitly selected colour/numeric subset, not the complete selection
 `TokenExport.DTCG(mode)` projects JSON with loss diagnostics and source metadata
 to review before saving. Unsupported values, including a full Core selection's
 contextual units and transitions, yield no document. Check the
-[example](../../ui/export_dtcg_test.go) without services or filesystem output:
+[example](../../ui/export/export_dtcg_test.go) without services or filesystem output:
 `go test ./ui -run '^ExampleTokenExport_DTCG$' -v`.
 
 ## Project a property edit
@@ -69,8 +69,8 @@ For replacement, use `--replacement` with
 `replacementPath: ["pk-ui.component.button/primary"]` instead of `props`.
 It copies compatible inputs/renderer while retaining destination metadata.
 Both return full candidates in memory; selected-example bases and unknown or
-repeated fields are refused. Products use [ui.ProjectProps](../../ui/proposal.go) or
-[ui.ProjectReplacement](../../ui/replacement.go) with their own composition.
+repeated fields are refused. Products use [export.ProjectProps](../../ui/export/proposal.go) or
+[export.ProjectReplacement](../../ui/export/replacement.go) with their own composition.
 
 ## Persist a string property
 

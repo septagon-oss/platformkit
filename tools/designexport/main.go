@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/source"
 )
 
@@ -63,7 +63,7 @@ func runSource(args []string, input io.Reader, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	var proposal ui.PropsProposal
+	var proposal export.PropsProposal
 	if err := json.Unmarshal(body, &proposal); err != nil {
 		return err
 	}
@@ -84,51 +84,51 @@ func runSource(args []string, input io.Reader, output io.Writer) error {
 	return nil
 }
 
-func projectSnapshot(args []string, input io.Reader) (ui.DesignExport, error) {
+func projectSnapshot(args []string, input io.Reader) (export.DesignExport, error) {
 	if len(args) != 0 && args[0] == "--tokens" {
 		if len(args) != 2 || !slices.Contains([]string{"light", "dark", "both"}, args[1]) {
-			return ui.DesignExport{}, fmt.Errorf("designexport: usage: designexport --tokens light|dark|both")
+			return export.DesignExport{}, fmt.Errorf("designexport: usage: designexport --tokens light|dark|both")
 		}
 		modes := []string{args[1]}
 		if args[1] == "both" {
 			modes = []string{"light", "dark"}
 		}
 		theme := design.Default()
-		tokens, err := ui.ExportTokens(theme, modes...)
+		tokens, err := export.ExportTokens(theme, modes...)
 		if err != nil {
-			return ui.DesignExport{}, err
+			return export.DesignExport{}, err
 		}
-		base, err := ui.Export(theme, nil)
+		base, err := export.Export(theme, nil)
 		if err != nil {
-			return ui.DesignExport{}, err
+			return export.DesignExport{}, err
 		}
 		return base.WithTokens(tokens)
 	}
 	if len(args) == 1 && (args[0] == "--proposal" || args[0] == "--replacement") {
 		body, err := readInput(input)
 		if err != nil {
-			return ui.DesignExport{}, err
+			return export.DesignExport{}, err
 		}
 		if args[0] == "--replacement" {
-			var proposal ui.ReplacementProposal
+			var proposal export.ReplacementProposal
 			if err := json.Unmarshal(body, &proposal); err != nil {
-				return ui.DesignExport{}, fmt.Errorf("designexport: read replacement: %w", err)
+				return export.DesignExport{}, fmt.Errorf("designexport: read replacement: %w", err)
 			}
-			_, snapshot, err := ui.ProjectReplacement(design.Default(), examples.Gallery(), proposal)
+			_, snapshot, err := export.ProjectReplacement(design.Default(), examples.Gallery(), proposal)
 			return snapshot, err
 		}
-		var proposal ui.PropsProposal
+		var proposal export.PropsProposal
 		if err := json.Unmarshal(body, &proposal); err != nil {
-			return ui.DesignExport{}, fmt.Errorf("designexport: read proposal: %w", err)
+			return export.DesignExport{}, fmt.Errorf("designexport: read proposal: %w", err)
 		}
-		_, snapshot, err := ui.ProjectProps(design.Default(), examples.Gallery(), proposal)
+		_, snapshot, err := export.ProjectProps(design.Default(), examples.Gallery(), proposal)
 		return snapshot, err
 	}
 	captures, err := projectExamples(args, input)
 	if err != nil {
-		return ui.DesignExport{}, err
+		return export.DesignExport{}, err
 	}
-	return ui.Export(design.Default(), captures)
+	return export.Export(design.Default(), captures)
 }
 
 const maxInputBytes = 1 << 20

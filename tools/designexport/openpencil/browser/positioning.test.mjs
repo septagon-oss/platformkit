@@ -21,7 +21,7 @@ import (
   g "maragu.dev/gomponents"
   h "maragu.dev/gomponents/html"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
@@ -37,7 +37,7 @@ func owner(p OwnerProps, children ...g.Node) g.Node {
     h.Style("position:relative;display:flex;gap:16px;align-items:center;padding:12px;border:solid transparent;border-width:2px 5px 4px 3px;"+size), g.Group(children))
 }
 func main() {
-  var input struct { Proposal *ui.PropsProposal; Auto bool }
+  var input struct { Proposal *export.PropsProposal; Auto bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   children := []g.Node{examples.ExampleOf(examples.ExampleInfo{ID:"body", ComponentID:"pk-ui.component.text"},
     components.TextProps{Content:"Album"}, components.Text).Node}
@@ -60,8 +60,8 @@ func main() {
   captures := []examples.Example{examples.ExampleWithChildren(examples.ExampleInfo{
     ID:"fixture/positioning", ComponentID:"fixture.component.positioning"}, OwnerProps{input.Auto}, children, owner)}
   extra := ui.Extra{Sheets:[]*css.Sheet{sheet}}
-  snapshot, err := ui.Export(design.Default(), captures, extra)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal, extra) }
+  snapshot, err := export.Export(design.Default(), captures, extra)
+  if input.Proposal != nil { _, snapshot, err = export.ProjectProps(design.Default(), captures, *input.Proposal, extra) }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

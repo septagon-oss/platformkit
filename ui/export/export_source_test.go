@@ -1,4 +1,4 @@
-package ui_test
+package export_test
 
 import (
 	"crypto/sha256"
@@ -10,18 +10,18 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.T) {
-	tokens, err := ui.ExportTokens(design.Default(), "light")
+	tokens, err := export.ExportTokens(design.Default(), "light")
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, err := ui.Export(design.Default(), examples.Gallery())
+	base, err := export.Export(design.Default(), examples.Gallery())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 	if err := doc.CheckSourceContract("source-tokens.v1"); err != nil {
 		t.Fatalf("token-only contract incorrectly requires component layout: %v", err)
 	}
-	if !errors.Is(doc.CheckSourceContract(), ui.ErrSourceUnsupported) {
+	if !errors.Is(doc.CheckSourceContract(), export.ErrSourceUnsupported) {
 		t.Fatal("consumer without token support admitted required token contract")
 	}
 	claimed := doc.SHA256
@@ -52,7 +52,7 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 	doc.Themes[0].Tokens[0].Value = "changed"
 	doc.Examples[0].Props[0] = ' '
 	after, _ := json.Marshal(base)
-	fresh, _ := ui.ExportTokens(design.Default(), "light")
+	fresh, _ := export.ExportTokens(design.Default(), "light")
 	if string(after) != string(before) || !reflect.DeepEqual(tokens, fresh) {
 		t.Fatal("composed snapshot aliases caller inputs")
 	}
@@ -60,7 +60,7 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 	if err != nil || again.SHA256 != claimed {
 		t.Fatalf("same source did not reproduce snapshot: %v", err)
 	}
-	if _, err := again.WithTokens(tokens); !errors.Is(err, ui.ErrSourceUnsupported) {
+	if _, err := again.WithTokens(tokens); !errors.Is(err, export.ErrSourceUnsupported) {
 		t.Fatalf("repeated attachment was not refused: %v", err)
 	}
 	layout := layoutExport(t, []examples.Example{layoutExample("root", c.FlexProps{})})
@@ -69,7 +69,7 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 	if err != nil || combined.CheckSourceContract(features...) != nil {
 		t.Fatalf("valid token and layout composition was refused: %v", err)
 	}
-	if !errors.Is(combined.CheckLayoutContract(features...), ui.ErrLayoutUnsupported) {
+	if !errors.Is(combined.CheckLayoutContract(features...), export.ErrLayoutUnsupported) {
 		t.Fatal("legacy layout-only gate silently widened to understand tokens")
 	}
 	for _, scale := range combined.SourceTokens.Scales {
@@ -77,7 +77,7 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 			scale.Number.Value = "999"
 		}
 	}
-	if !errors.Is(combined.CheckSourceContract(features...), ui.ErrSourceUnsupported) {
+	if !errors.Is(combined.CheckSourceContract(features...), export.ErrSourceUnsupported) {
 		t.Fatal("token selection contradicted the same identity in source measurements")
 	}
 	if err := layout.CheckSourceContract(features...); err != nil {
@@ -90,43 +90,45 @@ func TestTokenSnapshotComposesWithoutChangingLegacyOrLayoutAdmission(t *testing.
 	}
 	unknown := layoutExport(t, examples.Gallery())
 	combined, err = unknown.WithTokens(tokens)
-	if err != nil || !errors.Is(combined.CheckSourceContract(features...), ui.ErrLayoutUnknown) {
+	if err != nil || !errors.Is(combined.CheckSourceContract(features...), export.ErrLayoutUnknown) {
 		t.Fatalf("unknown layout was concealed or prevented token capture: %v", err)
 	}
 }
 
 func TestTokenSnapshotRefusesContradictionsAndUnknownFeatureEnvelopes(t *testing.T) {
 	t.Parallel()
-	tokens, err := ui.ExportTokens(design.Default(), "light")
+	tokens, err := export.ExportTokens(design.Default(), "light")
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, err := ui.Export(design.Default(), nil)
+	base, err := export.Export(design.Default(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, mutate := range map[string]func(*ui.DesignExport){
-		"unknown version":       func(d *ui.DesignExport) { d.Schema = "platformkit.design-export.v9" },
-		"unknown feature":       func(d *ui.DesignExport) { d.RequiredFeatures = append(d.RequiredFeatures, "future.v1") },
-		"duplicate feature":     func(d *ui.DesignExport) { d.RequiredFeatures = append(d.RequiredFeatures, "source-tokens.v1") },
-		"missing feature":       func(d *ui.DesignExport) { d.RequiredFeatures = nil },
-		"missing block":         func(d *ui.DesignExport) { d.SourceTokens = nil },
-		"mismatched colour":     func(d *ui.DesignExport) { d.SourceTokens.Modes[0].Colors[0].Value = "#abcdef" },
-		"missing source colour": func(d *ui.DesignExport) { d.Themes[0].Tokens = d.Themes[0].Tokens[1:] },
-		"mismatched family":     func(d *ui.DesignExport) { d.SourceTokens.Modes[0].Fonts[0].Families[0].Name = "Another" },
-		"mismatched literal generic": func(d *ui.DesignExport) {
+	for name, mutate := range map[string]func(*export.DesignExport){
+		"unknown version":       func(d *export.DesignExport) { d.Schema = "platformkit.design-export.v9" },
+		"unknown feature":       func(d *export.DesignExport) { d.RequiredFeatures = append(d.RequiredFeatures, "future.v1") },
+		"duplicate feature":     func(d *export.DesignExport) { d.RequiredFeatures = append(d.RequiredFeatures, "source-tokens.v1") },
+		"missing feature":       func(d *export.DesignExport) { d.RequiredFeatures = nil },
+		"missing block":         func(d *export.DesignExport) { d.SourceTokens = nil },
+		"mismatched colour":     func(d *export.DesignExport) { d.SourceTokens.Modes[0].Colors[0].Value = "#abcdef" },
+		"missing source colour": func(d *export.DesignExport) { d.Themes[0].Tokens = d.Themes[0].Tokens[1:] },
+		"mismatched family":     func(d *export.DesignExport) { d.SourceTokens.Modes[0].Fonts[0].Families[0].Name = "Another" },
+		"mismatched literal generic": func(d *export.DesignExport) {
 			families := d.SourceTokens.Modes[0].Fonts[0].Families
 			families[len(families)-1].Generic = false
 		},
-		"duplicate source identity":        func(d *ui.DesignExport) { d.Themes[0].Tokens = append(d.Themes[0].Tokens, d.Themes[0].Tokens[0]) },
-		"missing source mode":              func(d *ui.DesignExport) { d.Themes = d.Themes[1:] },
-		"duplicate source mode":            func(d *ui.DesignExport) { d.Themes = append(d.Themes, d.Themes[0]) },
-		"unselected transition dependency": func(d *ui.DesignExport) { d.SourceTokens.Easings = nil },
-		"unadvertised measurement":         func(d *ui.DesignExport) { d.Measurements, _ = style.Measurements() },
-		"unadvertised layout": func(d *ui.DesignExport) {
+		"duplicate source identity":        func(d *export.DesignExport) { d.Themes[0].Tokens = append(d.Themes[0].Tokens, d.Themes[0].Tokens[0]) },
+		"missing source mode":              func(d *export.DesignExport) { d.Themes = d.Themes[1:] },
+		"duplicate source mode":            func(d *export.DesignExport) { d.Themes = append(d.Themes, d.Themes[0]) },
+		"unselected transition dependency": func(d *export.DesignExport) { d.SourceTokens.Easings = nil },
+		"unadvertised measurement":         func(d *export.DesignExport) { d.Measurements, _ = style.Measurements() },
+		"unadvertised layout": func(d *export.DesignExport) {
 			d.Examples = []examples.ExampleDescription{{Layout: &c.LayoutDescription{Kind: "unknown", Reason: "not captured"}}}
 		},
-		"measurement without layout": func(d *ui.DesignExport) { d.RequiredFeatures = append(d.RequiredFeatures, "source-measurements.v1") },
+		"measurement without layout": func(d *export.DesignExport) {
+			d.RequiredFeatures = append(d.RequiredFeatures, "source-measurements.v1")
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc, err := base.WithTokens(tokens)
@@ -134,25 +136,25 @@ func TestTokenSnapshotRefusesContradictionsAndUnknownFeatureEnvelopes(t *testing
 				t.Fatal(err)
 			}
 			mutate(&doc)
-			if err := doc.CheckSourceContract("source-tokens.v1", "source-flex-declarations.v1", "source-measurements.v1", "future.v1"); !errors.Is(err, ui.ErrSourceUnsupported) {
+			if err := doc.CheckSourceContract("source-tokens.v1", "source-flex-declarations.v1", "source-measurements.v1", "future.v1"); !errors.Is(err, export.ErrSourceUnsupported) {
 				t.Fatalf("invalid source snapshot admitted or misclassified: %v", err)
 			}
 		})
 	}
-	for name, mutate := range map[string]func(*ui.DesignExport, *ui.TokenExport){
-		"invalid selection":  func(_ *ui.DesignExport, s *ui.TokenExport) { s.Modes = nil },
-		"conflicting source": func(_ *ui.DesignExport, s *ui.TokenExport) { s.Modes[0].Colors[0].Value = "#abcdef" },
-		"unknown schema":     func(d *ui.DesignExport, _ *ui.TokenExport) { d.Schema = "future" },
-		"v1 advertises features": func(d *ui.DesignExport, _ *ui.TokenExport) {
+	for name, mutate := range map[string]func(*export.DesignExport, *export.TokenExport){
+		"invalid selection":  func(_ *export.DesignExport, s *export.TokenExport) { s.Modes = nil },
+		"conflicting source": func(_ *export.DesignExport, s *export.TokenExport) { s.Modes[0].Colors[0].Value = "#abcdef" },
+		"unknown schema":     func(d *export.DesignExport, _ *export.TokenExport) { d.Schema = "future" },
+		"v1 advertises features": func(d *export.DesignExport, _ *export.TokenExport) {
 			d.RequiredFeatures = []string{"source-flex-declarations.v1"}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			doc, _ := ui.Export(design.Default(), nil)
-			s, _ := ui.ExportTokens(design.Default(), "light")
+			doc, _ := export.Export(design.Default(), nil)
+			s, _ := export.ExportTokens(design.Default(), "light")
 			mutate(&doc, &s)
 			out, err := doc.WithTokens(s)
-			if !errors.Is(err, ui.ErrSourceUnsupported) || !reflect.DeepEqual(out, ui.DesignExport{}) {
+			if !errors.Is(err, export.ErrSourceUnsupported) || !reflect.DeepEqual(out, export.DesignExport{}) {
 				t.Fatalf("invalid attachment returned partial output: %v", err)
 			}
 		})

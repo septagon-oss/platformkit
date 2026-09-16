@@ -171,7 +171,7 @@ function createIcon(graph, parent, prepared, foreground) {
   return master
 }
 
-// The caller supplies ui.Export's existing contract. Its SHA is producer
+// The caller supplies export.Export's existing contract. Its SHA is producer
 // provenance, not a JS reimplementation of Go's canonical JSON encoding.
 function legacyTokens(snapshot) {
   requireValue(snapshot?.schema === 'platformkit.design-export.v1' &&

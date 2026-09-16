@@ -12,9 +12,9 @@ import (
 	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -67,7 +67,7 @@ func TestRequestNoticeExamplesRetainTheRenderedRecoveryContract(t *testing.T) {
 			}
 		}
 	}
-	if _, err := ui.Export(design.Default(), append(examples.Gallery(), captures...)); err != nil {
+	if _, err := export.Export(design.Default(), append(examples.Gallery(), captures...)); err != nil {
 		t.Fatalf("notices must compose with Core's canonical interfaces: %v", err)
 	}
 	c.Scripts = nil
@@ -107,13 +107,13 @@ func TestRequestNoticeSourceEditsAreDetachedAndUseSharedReplacementContracts(t *
 	t.Parallel()
 	theme := design.Default()
 	source := page.RequestNoticeExamples("/admin/login")
-	base, err := ui.Export(theme, source)
+	base, err := export.Export(theme, source)
 	if err != nil {
 		t.Fatal(err)
 	}
 	path := []string{"pk-auth-uncertain", "message"}
-	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: path, Props: json.RawMessage(`{"message":"Keep this page open while checking the stored result."}`)}
-	_, edited, err := ui.ProjectProps(theme, source, proposal)
+	proposal := export.PropsProposal{BaseSHA256: base.SHA256, Path: path, Props: json.RawMessage(`{"message":"Keep this page open while checking the stored result."}`)}
+	_, edited, err := export.ProjectProps(theme, source, proposal)
 	if err != nil || edited.SHA256 == base.SHA256 {
 		t.Fatalf("the nested recovery text did not produce a source candidate: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestRequestNoticeSourceEditsAreDetachedAndUseSharedReplacementContracts(t *
 			t.Fatalf("editing recovery copy changed sibling %s", before.ID)
 		}
 	}
-	_, replaced, err := ui.ProjectReplacement(theme, source, ui.ReplacementProposal{
+	_, replaced, err := export.ProjectReplacement(theme, source, export.ReplacementProposal{
 		BaseSHA256: base.SHA256, Path: path, ReplacementPath: []string{"pk-auth-denied", "message"}})
 	if err != nil {
 		t.Fatalf("same-interface Alert replacement failed: %v", err)
@@ -136,15 +136,15 @@ func TestRequestNoticeSourceEditsAreDetachedAndUseSharedReplacementContracts(t *
 	if index < 0 || !strings.Contains(replaced.Examples[index].HTML, "Permission denied") {
 		t.Fatal("Alert replacement did not retain its destination or source copy")
 	}
-	if _, _, err := ui.ProjectReplacement(theme, source, ui.ReplacementProposal{
+	if _, _, err := export.ProjectReplacement(theme, source, export.ReplacementProposal{
 		BaseSHA256: base.SHA256, Path: path, ReplacementPath: []string{"pk-auth-anonymous", "sign-in"}}); err == nil {
 		t.Fatal("a Link must not replace an Alert's different interface")
 	}
 	changed := page.RequestNoticeExamples("/account/sign-in")
-	if _, _, err := ui.ProjectProps(theme, changed, proposal); !errors.Is(err, ui.ErrStaleExport) {
+	if _, _, err := export.ProjectProps(theme, changed, proposal); !errors.Is(err, export.ErrStaleExport) {
 		t.Fatalf("changed recovery navigation accepted a stale source proposal: %v", err)
 	}
-	fresh, err := ui.Export(theme, page.RequestNoticeExamples("/admin/login"))
+	fresh, err := export.Export(theme, page.RequestNoticeExamples("/admin/login"))
 	if err != nil || !reflect.DeepEqual(fresh, base) {
 		t.Fatalf("projection or replacement mutated the runtime notice source: %v", err)
 	}

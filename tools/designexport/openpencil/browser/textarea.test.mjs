@@ -23,7 +23,7 @@ import (
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/kit/crud"
   "github.com/septagon-oss/platformkit/kit/httpx"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/screens"
 )
@@ -42,7 +42,7 @@ func main() {
     example = screens.FormExample("fixture/textarea", resource, screens.Options{Root: "/admin"}, "/admin/notes", "Note description",
       map[string]any{"description": input.Value}, map[string]string{"description": input.ErrorMessage}, "", true)
   }
-  snapshot, err := ui.Export(design.Default(), []examples.Example{example})
+  snapshot, err := export.Export(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

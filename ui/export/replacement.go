@@ -1,10 +1,11 @@
-package ui
+package export
 
 import (
 	"fmt"
 	"slices"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
@@ -41,7 +42,7 @@ func (p *ReplacementProposal) UnmarshalJSON(data []byte) error {
 // Paths may overlap: immutable copies always read the base, not earlier writes.
 // Self/same-content replacements are permitted and can retain the export hash.
 // Native adapters must separately prove correspondence and edit/save fidelity.
-func ProjectReplacement(theme design.Pair, captures []examples.Example, proposal ReplacementProposal, extra ...Extra) ([]examples.Example, DesignExport, error) {
+func ProjectReplacement(theme design.Pair, captures []examples.Example, proposal ReplacementProposal, extra ...ui.Extra) ([]examples.Example, DesignExport, error) {
 	return projectSource(theme, captures, proposal.BaseSHA256, proposal.Path, func(base DesignExport, root examples.Example) (examples.Example, error) {
 		if _, err := observedProposalTarget(base, proposal.ReplacementPath); err != nil {
 			return examples.Example{}, err

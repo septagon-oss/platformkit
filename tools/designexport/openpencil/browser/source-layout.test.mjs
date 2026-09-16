@@ -10,7 +10,7 @@ import (
   "encoding/json"
   "os"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/export"
   c "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   g "maragu.dev/gomponents"
 )
@@ -25,7 +25,7 @@ func main() {
   info := examples.ExampleInfo{ID:"root", ComponentID:"layout"}
   example := examples.ExampleWithChildren(info, input.Props, children, c.Flex)
   if input.Stack { example = examples.ExampleWithChildren(info, c.StackProps{Gap:"2", Align:"center"}, children, c.Stack) }
-  snapshot, err := ui.ExportWithLayout(design.Default(), []examples.Example{example})
+  snapshot, err := export.ExportWithLayout(design.Default(), []examples.Example{example})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

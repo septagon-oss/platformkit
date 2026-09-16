@@ -64,14 +64,14 @@ import (
   "github.com/septagon-oss/platformkit/design"
   "github.com/septagon-oss/platformkit/kit/crud"
   "github.com/septagon-oss/platformkit/kit/httpx"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
   "github.com/septagon-oss/platformkit/ui/screens"
 )
 func main() {
   var input struct {
-    Proposal *ui.PropsProposal
+    Proposal *export.PropsProposal
     IconMargin bool
   }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
@@ -89,8 +89,8 @@ func main() {
     sheet.Select("[data-alert-icon]", css.Decl("margin-top", css.Literal("2px")))
     extras = append(extras, ui.Extra{Sheets: []*css.Sheet{sheet}})
   }
-  snapshot, err := ui.Export(design.Default(), captures, extras...)
-  if input.Proposal != nil { _, snapshot, err = ui.ProjectProps(design.Default(), captures, *input.Proposal, extras...) }
+  snapshot, err := export.Export(design.Default(), captures, extras...)
+  if input.Proposal != nil { _, snapshot, err = export.ProjectProps(design.Default(), captures, *input.Proposal, extras...) }
   if err != nil { panic(err) }; if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
 `)

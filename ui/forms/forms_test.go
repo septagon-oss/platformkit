@@ -10,9 +10,9 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/entity"
-	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/forms"
 	"golang.org/x/net/html"
 )
@@ -142,7 +142,7 @@ func TestInstancesKeepControlsLabelsAndFeedbackSeparate(t *testing.T) {
 	if controls != 18 {
 		t.Fatalf("rendered %d controls, want nine in each form", controls)
 	}
-	if _, err := ui.Export(design.Default(), append(examples.Gallery(), first, second)); err != nil {
+	if _, err := export.Export(design.Default(), append(examples.Gallery(), first, second)); err != nil {
 		t.Fatalf("forms disagree with Core's captured interfaces: %v", err)
 	}
 }
@@ -199,20 +199,20 @@ func TestCapturedFormsKeepIdentityAndInputsThroughChanges(t *testing.T) {
 		t.Fatalf("caller changes mutated the captured form: %v", err)
 	}
 	source := []examples.Example{form}
-	base, err := ui.Export(design.Default(), source)
+	base, err := export.Export(design.Default(), source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited, changed, err := ui.ProjectProps(design.Default(), source, ui.PropsProposal{
+	edited, changed, err := export.ProjectProps(design.Default(), source, export.PropsProposal{
 		BaseSHA256: base.SHA256, Path: []string{form.ID, "field/body"}, Props: json.RawMessage(`{"value":"Reviewed"}`)})
 	if err != nil || !strings.Contains(changed.Examples[0].HTML, "Reviewed") {
 		t.Fatalf("field no longer supports existing source edits: %v", err)
 	}
-	if _, _, err := ui.ProjectProps(design.Default(), edited, ui.PropsProposal{
-		BaseSHA256: base.SHA256, Path: []string{form.ID, "field/body"}, Props: json.RawMessage(`{"value":"Stale"}`)}); !errors.Is(err, ui.ErrStaleExport) {
+	if _, _, err := export.ProjectProps(design.Default(), edited, export.PropsProposal{
+		BaseSHA256: base.SHA256, Path: []string{form.ID, "field/body"}, Props: json.RawMessage(`{"value":"Stale"}`)}); !errors.Is(err, export.ErrStaleExport) {
 		t.Fatalf("stale form proposal was not refused: %v", err)
 	}
-	if _, _, err := ui.ProjectProps(design.Default(), source, ui.PropsProposal{
+	if _, _, err := export.ProjectProps(design.Default(), source, export.PropsProposal{
 		BaseSHA256: base.SHA256, Path: []string{form.ID}, Props: json.RawMessage(`{"id":"another-form"}`)}); err == nil {
 		t.Fatal("DOM identity became an editable presentation property")
 	}

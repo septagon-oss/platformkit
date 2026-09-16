@@ -20,7 +20,7 @@ import (
   "os"
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
@@ -49,7 +49,7 @@ func main() {
   theme.Light.Typography.Display, theme.Dark.Typography.Display = design.FontBody, design.FontBody
   if input.Shrink != "" { sheet.Select("#create", css.Decl("flex-shrink", css.Literal(input.Shrink))) }
   if input.Minimum != "" { sheet.Select("#create", css.Decl("min-width", css.Literal(input.Minimum))) }
-  snapshot, err := ui.Export(theme, []examples.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
+  snapshot, err := export.Export(theme, []examples.Example{example}, ui.Extra{Sheets:[]*css.Sheet{sheet}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

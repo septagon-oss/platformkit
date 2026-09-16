@@ -328,7 +328,7 @@ func GalleryGroups() []string {
 // the value this example gave it, and the slots something else can be put into.
 //
 // It is projected from the same Example the specimen is rendered from — the
-// schema and the props are the ones ui.Export publishes — so a page cannot
+// schema and the props are the ones export.Export publishes — so a page cannot
 // describe a component this package does not have, or a property it does not
 // take. That is the reason it exists: a wall of specimens says what a badge
 // looks like and nothing about how to ask for one.

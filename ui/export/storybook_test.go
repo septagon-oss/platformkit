@@ -1,4 +1,4 @@
-package ui_test
+package export_test
 
 import (
 	"encoding/json"
@@ -8,14 +8,14 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 )
 
 func TestStorybookSelectionAndPropertyMetadata(t *testing.T) {
 	example := examples.ExampleOf(examples.ExampleInfo{ID: "product/heading", ComponentID: "heading"}, c.HeadingProps{Text: "A section", Level: 2, Size: 1}, c.Heading)
-	book := ui.Storybook{Examples: []examples.Example{example}}
+	book := export.Storybook{Examples: []examples.Example{example}}
 	if err := book.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestShapeOverridesUseTheSameTokensInCSSAndExport(t *testing.T) {
 	pair := design.Default()
 	pair.Light.Shape = design.Shape{ButtonRadius: "9999px", CardRadius: "0px"}
 	pair.Dark.Shape = design.Shape{ButtonRadius: "1rem", ModalRadius: "0px"}
-	book, err := ui.Export(pair, []examples.Example{})
+	book, err := export.Export(pair, []examples.Example{})
 	if err != nil {
 		t.Fatal(err)
 	}

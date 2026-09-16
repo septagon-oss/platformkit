@@ -1,4 +1,4 @@
-package ui_test
+package export_test
 
 import (
 	"encoding/json"
@@ -8,17 +8,19 @@ import (
 	"strings"
 	"testing"
 
+	g "maragu.dev/gomponents"
+
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/css"
-	g "maragu.dev/gomponents"
+	"github.com/septagon-oss/platformkit/ui/export"
 )
 
-func proposalExport(t *testing.T, captures []examples.Example) ui.DesignExport {
+func proposalExport(t *testing.T, captures []examples.Example) export.DesignExport {
 	t.Helper()
-	out, err := ui.Export(design.Default(), captures)
+	out, err := export.Export(design.Default(), captures)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,9 +34,9 @@ func TestPropsProposalChangesOneNestedOccurrence(t *testing.T) {
 	}
 	captures := []examples.Example{parent("second"), parent("first")}
 	base := proposalExport(t, captures)
-	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"first", "save/local"}, Props: json.RawMessage(`{"label":"Create & keep"}`)}
+	proposal := export.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"first", "save/local"}, Props: json.RawMessage(`{"label":"Create & keep"}`)}
 	before, _ := json.Marshal(proposal)
-	candidate, projected, err := ui.ProjectProps(design.Default(), captures, proposal)
+	candidate, projected, err := export.ProjectProps(design.Default(), captures, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,13 +54,13 @@ func TestPropsProposalChangesOneNestedOccurrence(t *testing.T) {
 	if string(before) != string(after) || !reflect.DeepEqual(base, proposalExport(t, captures)) {
 		t.Fatal("projection mutated its request or authoritative examples")
 	}
-	if accepted, out, err := ui.ProjectProps(design.Default(), candidate, proposal); !errors.Is(err, ui.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+	if accepted, out, err := export.ProjectProps(design.Default(), candidate, proposal); !errors.Is(err, export.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 		t.Fatal("old revision accepted after the first change")
 	}
 	proposal.BaseSHA256 = projected.SHA256
 	proposal.Props = json.RawMessage(`{"label":"Final"}`)
 	slices.Reverse(candidate)
-	if _, _, err := ui.ProjectProps(design.Default(), candidate, proposal); err != nil {
+	if _, _, err := export.ProjectProps(design.Default(), candidate, proposal); err != nil {
 		t.Fatalf("fresh identity-addressed edit failed after root reordering: %v", err)
 	}
 }
@@ -67,7 +69,7 @@ func TestPropsProposalFreshnessIncludesPaletteCSSAndSource(t *testing.T) {
 	example := examples.ExampleOf(examples.ExampleInfo{ID: "button", ComponentID: "button"}, c.ButtonProps{Label: "Save"}, c.Button)
 	captures := []examples.Example{example}
 	base := proposalExport(t, captures)
-	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"button"}, Props: json.RawMessage(`{"label":"Changed"}`)}
+	proposal := export.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"button"}, Props: json.RawMessage(`{"label":"Changed"}`)}
 	for _, change := range []string{"palette", "css", "props", "schema", "metadata"} {
 		t.Run(change, func(t *testing.T) {
 			theme, inputs := design.Default(), slices.Clone(captures)
@@ -84,8 +86,8 @@ func TestPropsProposalFreshnessIncludesPaletteCSSAndSource(t *testing.T) {
 			case "metadata":
 				inputs[0].Name = "Renamed source example"
 			}
-			accepted, out, err := ui.ProjectProps(theme, inputs, proposal, extra...)
-			if !errors.Is(err, ui.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+			accepted, out, err := export.ProjectProps(theme, inputs, proposal, extra...)
+			if !errors.Is(err, export.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 				t.Fatalf("%s change did not refuse the old revision: %v", change, err)
 			}
 		})
@@ -136,9 +138,9 @@ func TestPropsProposalRefusesUnobservedAndRetainedOpaqueAliases(t *testing.T) {
 			if mode == "render-failure" {
 				patch = json.RawMessage(`{"label":"Fail"}`)
 			}
-			proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"owner", "action"}, Props: patch}
-			accepted, out, err := ui.ProjectProps(design.Default(), captures, proposal)
-			if err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+			proposal := export.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"owner", "action"}, Props: patch}
+			accepted, out, err := export.ProjectProps(design.Default(), captures, proposal)
+			if err == nil || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 				t.Fatalf("unsafe projection was accepted: %v", err)
 			}
 			if !reflect.DeepEqual(base, proposalExport(t, captures)) {
@@ -156,15 +158,15 @@ func TestPropsProposalRenderPassesAndInvalidPaths(t *testing.T) {
 	})
 	captures := []examples.Example{example}
 	base := proposalExport(t, captures)
-	proposal := ui.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"root"}, Props: json.RawMessage(`{"content":"After"}`)}
+	proposal := export.PropsProposal{BaseSHA256: base.SHA256, Path: []string{"root"}, Props: json.RawMessage(`{"content":"After"}`)}
 	calls = 0
-	if _, _, err := ui.ProjectProps(design.Default(), captures, proposal); err != nil || calls != 2 {
+	if _, _, err := export.ProjectProps(design.Default(), captures, proposal); err != nil || calls != 2 {
 		t.Fatalf("want two explicit export renders, got %d: %v", calls, err)
 	}
 	for _, path := range [][]string{nil, {}, {"missing"}, {"root", "missing"}, {"Root"}} {
 		proposal.Path = path
-		accepted, out, err := ui.ProjectProps(design.Default(), captures, proposal)
-		if err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+		accepted, out, err := export.ProjectProps(design.Default(), captures, proposal)
+		if err == nil || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 			t.Fatalf("invalid path %q accepted: %v", path, err)
 		}
 	}
@@ -178,7 +180,7 @@ func TestPropsProposalJSONRefusalsPreserveReceiver(t *testing.T) {
 		strings.Replace(valid, "baseSHA256", "BaseSHA256", 1),
 		strings.Replace(valid, `"props":`, `"props":{},"props":`, 1),
 		strings.Replace(valid, `"path":["root"]`, `"path":[1]`, 1)} {
-		value := ui.PropsProposal{BaseSHA256: "unchanged", Path: []string{"original"}, Props: json.RawMessage(`{}`)}
+		value := export.PropsProposal{BaseSHA256: "unchanged", Path: []string{"original"}, Props: json.RawMessage(`{}`)}
 		before, _ := json.Marshal(value)
 		if err := value.UnmarshalJSON([]byte(data)); err == nil {
 			t.Fatalf("accepted invalid proposal %s", data)

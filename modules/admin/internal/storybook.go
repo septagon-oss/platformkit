@@ -12,7 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
-	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/export"
 )
 
 // Storybook's entire build is private. Never mount it with API.Static: even
@@ -41,7 +41,7 @@ func (p pages) mountStorybook(api *httpx.API) {
 		if err != nil || json.Unmarshal(data, &manifest) != nil {
 			return nil, problem.New(http.StatusServiceUnavailable, "Rebuild Storybook for this composition.")
 		}
-		snapshot, err := ui.Export(book.Theme, book.Examples, book.Extra...)
+		snapshot, err := export.Export(book.Theme, book.Examples, book.Extra...)
 		if err != nil {
 			return nil, err
 		}

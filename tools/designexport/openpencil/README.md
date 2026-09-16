@@ -15,7 +15,7 @@ with its reason, using IBM Plex Sans 400/500/600/700, headless Chromium
 `npm run test:browser` for the current inventory. These measured checks do not
 establish complete typography, visual, interaction or provider support.
 
-Consumers can configure `design.Theme.Typography` before `ui.Export`; empty roles
+Consumers can configure `design.Theme.Typography` before `export.Export`; empty roles
 retain the default stacks. In a separate profile with display set to IBM Plex Sans
 and its supplied 600 face, H1–H5 retain editable source text, wrapping, history,
 semantics and two saves at 320px/1280px in both themes. H6's uppercase styling is
@@ -30,13 +30,13 @@ npm run generate -- /tmp/platformkit-foundation.fig
 ```
 
 By default, the command runs a fresh Go export from this checkout. To use another
-producer, pipe one UTF-8 `ui.Export` JSON snapshot into `--snapshot-stdin` (32 MiB
+producer, pipe one UTF-8 `export.Export` JSON snapshot into `--snapshot-stdin` (32 MiB
 maximum); Go is not invoked and invalid input never falls back to Core. Supplied
 hashes do not verify freshness against current source. Use an absolute `.fig` path
 with an existing parent outside the workspace; files and symlinks are never overwritten.
 Publication, deployment and applying source proposals are separate operations.
 
-For typed tokens, the producer first selects a dependency-closed `ui.TokenExport`
+For typed tokens, the producer first selects a dependency-closed `export.TokenExport`
 and attaches it with `DesignExport.WithTokens`. Pipe that v2 snapshot into the same
 `--snapshot-stdin` command without component options. The adapter admits exactly
 `source-tokens.v1`: selected light/dark colours, native aliases, premultiplied sRGB
@@ -75,7 +75,7 @@ arguments. Quote family names containing spaces; supply every required static fa
 with its actual family, weight and style. No brand font is selected implicitly.
 For example, `--example pk-ui.component.form/default` selects the linked Form.
 Add repeated `--variant ID PROPERTY /absolute/projection.json` for nonbaseline
-`ui.ProjectProps` snapshots (32 MiB each); the ID must also be selected. These
+`export.ProjectProps` snapshots (32 MiB each); the ID must also be selected. These
 caller-supplied projections are validated for correspondence, not source freshness.
 For a nested leaf, use `--variant-at '["pk-ui.component.form/default","actions","create"]' size /absolute/large.json`;
 the projected snapshot must change that exact invocation, and the root must be selected.
@@ -93,7 +93,7 @@ has one source correspondence, not duplicate theme or responsive claims. FIG
 retains font identities and glyph outlines, not font files: editing requires the
 same fonts separately in the editor. No page prototypes are included.
 
-[buildComponentDocument](document.mjs) accepts one existing `ui.Export` snapshot,
+[buildComponentDocument](document.mjs) accepts one existing `export.Export` snapshot,
 explicit `examples`, `fonts`, `mode`, `viewport`, and caller-owned `browser` and
 `renderer`, plus optional `variants: [{ exampleId, path?, property, snapshot }]`.
 `path` defaults to `[exampleId]`; nested paths use exact source invocation IDs.
@@ -587,13 +587,13 @@ Both extractors take an exact instance and canonical snapshot, deriving its
 destination path through persisted native lineage. `extractSourceProps` returns
 `{baseSHA256, path, props}` for mapped, unconstrained strings. Native definitions,
 bindings, baselines, assignments and rendered text must agree. Validate the result
-with [ui.ProjectProps](../../../ui/proposal.go).
+with [export.ProjectProps](../../../ui/export/proposal.go).
 
 After a native swap, `extractSourceReplacement` returns
 `{baseSHA256, path, replacementPath}`, identifying root or nested source occurrences.
 It refuses ambiguous, stale or missing correspondence and additional bound-string
 edits inside the replacement subtree. This is intent, not acceptance:
-[ui.ProjectReplacement](../../../ui/replacement.go) owns interface compatibility,
+[export.ProjectReplacement](../../../ui/export/replacement.go) owns interface compatibility,
 observed source ownership and freshness checks; the adapter does not duplicate them.
 Run Core's `go run ./tools/designexport --proposal` or `--replacement` with the
 matching JSON on stdin; it returns a candidate snapshot without saving source.

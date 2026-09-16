@@ -25,7 +25,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/admin/internal"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
-	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -63,7 +63,7 @@ type Deps struct {
 	// query parameter or fall back to another tenant. Nil exposes Core only to
 	// the operator tenant. Empty Examples stays empty. Every gallery endpoint
 	// also requires PermissionGalleryRead before calling this function.
-	Storybook func(context.Context) (ui.Storybook, error)
+	Storybook func(context.Context) (export.Storybook, error)
 }
 
 const PermissionGalleryRead = "gallery:read"

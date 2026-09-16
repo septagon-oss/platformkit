@@ -1,4 +1,4 @@
-package ui_test
+package export_test
 
 import (
 	"encoding/json"
@@ -8,12 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	g "maragu.dev/gomponents"
+
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 	c "github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/css"
-	g "maragu.dev/gomponents"
+	"github.com/septagon-oss/platformkit/ui/export"
 )
 
 func TestReplacementProposalUsesNestedSourceAndDestination(t *testing.T) {
@@ -30,10 +32,10 @@ func TestReplacementProposalUsesNestedSourceAndDestination(t *testing.T) {
 	target := button("save/✓", "Before")
 	captures := []examples.Example{owner("source", button("choice/local", "Create & keep")), owner("second", target), owner("first", target)}
 	base := proposalExport(t, captures)
-	proposal := ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"first", "save/✓"}, ReplacementPath: []string{"source", "choice/local"}}
+	proposal := export.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"first", "save/✓"}, ReplacementPath: []string{"source", "choice/local"}}
 	request, _ := json.Marshal(proposal)
 	calls = 0
-	candidate, projected, err := ui.ProjectReplacement(design.Default(), captures, proposal)
+	candidate, projected, err := export.ProjectReplacement(design.Default(), captures, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,13 +56,13 @@ func TestReplacementProposalUsesNestedSourceAndDestination(t *testing.T) {
 	if string(request) != string(after) || !reflect.DeepEqual(base, proposalExport(t, captures)) {
 		t.Fatal("replacement mutated inputs")
 	}
-	accepted, out, err := ui.ProjectReplacement(design.Default(), candidate, proposal)
-	if !errors.Is(err, ui.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+	accepted, out, err := export.ProjectReplacement(design.Default(), candidate, proposal)
+	if !errors.Is(err, export.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 		t.Fatal("old revision accepted")
 	}
 	proposal.BaseSHA256 = projected.SHA256
 	slices.Reverse(candidate)
-	_, unchanged, err := ui.ProjectReplacement(design.Default(), candidate, proposal)
+	_, unchanged, err := export.ProjectReplacement(design.Default(), candidate, proposal)
 	if err != nil || unchanged.SHA256 != projected.SHA256 {
 		t.Fatal("reordered roots or same-content replacement failed")
 	}
@@ -71,7 +73,7 @@ func TestReplacementProposalFreshnessIncludesSourceThemeAndCSS(t *testing.T) {
 		return examples.ExampleOf(examples.ExampleInfo{ID: id, ComponentID: "text"}, c.TextProps{Content: value}, c.Text)
 	}
 	captures := []examples.Example{makeText("target", "Old"), makeText("source", "New")}
-	proposal := ui.ReplacementProposal{BaseSHA256: proposalExport(t, captures).SHA256, Path: []string{"target"}, ReplacementPath: []string{"source"}}
+	proposal := export.ReplacementProposal{BaseSHA256: proposalExport(t, captures).SHA256, Path: []string{"target"}, ReplacementPath: []string{"source"}}
 	for _, change := range []string{"source", "theme", "css", "metadata"} {
 		t.Run(change, func(t *testing.T) {
 			inputs, theme := slices.Clone(captures), design.Default()
@@ -86,8 +88,8 @@ func TestReplacementProposalFreshnessIncludesSourceThemeAndCSS(t *testing.T) {
 			case "metadata":
 				inputs[1].Name = "Renamed"
 			}
-			accepted, out, err := ui.ProjectReplacement(theme, inputs, proposal, extra...)
-			if !errors.Is(err, ui.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+			accepted, out, err := export.ProjectReplacement(theme, inputs, proposal, extra...)
+			if !errors.Is(err, export.ErrStaleExport) || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 				t.Fatalf("%s accepted stale base: %v", change, err)
 			}
 		})
@@ -134,18 +136,18 @@ func TestReplacementProposalRefusesUnsafeOwnershipOnEitherPath(t *testing.T) {
 				})
 				captures := []examples.Example{owner, makeText("other", "New")}
 				base := proposalExport(t, captures)
-				proposal := ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"owner", "child"}, ReplacementPath: []string{"other"}}
+				proposal := export.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"owner", "child"}, ReplacementPath: []string{"other"}}
 				if side == "source" {
 					proposal.Path, proposal.ReplacementPath = proposal.ReplacementPath, proposal.Path
 				}
-				accepted, out, err := ui.ProjectReplacement(design.Default(), captures, proposal)
+				accepted, out, err := export.ProjectReplacement(design.Default(), captures, proposal)
 				// Retained or conditional rendering in an untouched source owner is
 				// safe: lookup reads the currently declared and observed capture.
 				if side == "source" && (mode == "retained" || mode == "candidate-hidden" || mode == "render-failure") {
 					if err != nil {
 						t.Fatal(err)
 					}
-				} else if err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+				} else if err == nil || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 					t.Fatalf("unsafe %s accepted: %v", mode, err)
 				}
 				if !reflect.DeepEqual(base, proposalExport(t, captures)) {
@@ -162,14 +164,14 @@ func TestReplacementProposalRefusesMissingPathsAndIncompatibleInterfaces(t *test
 	captures := []examples.Example{text, button}
 	base := proposalExport(t, captures)
 	for _, paths := range [][][]string{{{"text"}, {"button"}}, {nil, {"text"}}, {{"text"}, nil}, {{"missing"}, {"text"}}, {{"text"}, {"missing"}}, {{"text"}, {"text", "missing"}}} {
-		accepted, out, err := ui.ProjectReplacement(design.Default(), captures, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: paths[0], ReplacementPath: paths[1]})
-		if err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+		accepted, out, err := export.ProjectReplacement(design.Default(), captures, export.ReplacementProposal{BaseSHA256: base.SHA256, Path: paths[0], ReplacementPath: paths[1]})
+		if err == nil || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 			t.Fatalf("invalid paths or interface accepted: %v", err)
 		}
 	}
 	// Equal claimed component names cannot disguise different actual schemas.
 	button = examples.ExampleOf(examples.ExampleInfo{ID: "button", ComponentID: "text"}, c.ButtonProps{}, c.Button)
-	if accepted, out, err := ui.ProjectReplacement(design.Default(), []examples.Example{text, button}, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"text"}, ReplacementPath: []string{"button"}}); err == nil || accepted != nil || !reflect.DeepEqual(out, ui.DesignExport{}) {
+	if accepted, out, err := export.ProjectReplacement(design.Default(), []examples.Example{text, button}, export.ReplacementProposal{BaseSHA256: base.SHA256, Path: []string{"text"}, ReplacementPath: []string{"button"}}); err == nil || accepted != nil || !reflect.DeepEqual(out, export.DesignExport{}) {
 		t.Fatal("conflicting source contracts accepted")
 	}
 }
@@ -182,7 +184,7 @@ func TestReplacementProposalOverlappingPathsReadTheBaseSnapshot(t *testing.T) {
 	captures := []examples.Example{root}
 	base := proposalExport(t, captures)
 	for _, paths := range [][][]string{{{"root"}, {"root"}}, {{"root"}, {"root", "child"}}, {{"root", "child"}, {"root"}}} {
-		candidate, _, err := ui.ProjectReplacement(design.Default(), captures, ui.ReplacementProposal{BaseSHA256: base.SHA256, Path: paths[0], ReplacementPath: paths[1]})
+		candidate, _, err := export.ProjectReplacement(design.Default(), captures, export.ReplacementProposal{BaseSHA256: base.SHA256, Path: paths[0], ReplacementPath: paths[1]})
 		if err != nil {
 			t.Fatalf("immutable overlap failed: %v", err)
 		}
@@ -206,7 +208,7 @@ func TestReplacementProposalOverlappingPathsReadTheBaseSnapshot(t *testing.T) {
 
 func TestReplacementProposalJSONRefusalsPreserveReceiver(t *testing.T) {
 	valid := `{"baseSHA256":"revision","path":["root"],"replacementPath":["source","child/✓"]}`
-	var decoded ui.ReplacementProposal
+	var decoded export.ReplacementProposal
 	if err := json.Unmarshal([]byte(valid), &decoded); err != nil || !slices.Equal(decoded.ReplacementPath, []string{"source", "child/✓"}) {
 		t.Fatal("valid source proposal refused")
 	}
@@ -218,7 +220,7 @@ func TestReplacementProposalJSONRefusalsPreserveReceiver(t *testing.T) {
 		strings.Replace(valid, `"path":`, `"path":[],"path":`, 1),
 		strings.Replace(valid, `"path":["root"]`, `"path":[1]`, 1),
 		strings.Replace(valid, `"replacementPath":`, `"nativeId":"123","replacementPath":`, 1)} {
-		value := ui.ReplacementProposal{BaseSHA256: "unchanged", Path: []string{"original"}, ReplacementPath: []string{"unchanged"}}
+		value := export.ReplacementProposal{BaseSHA256: "unchanged", Path: []string{"original"}, ReplacementPath: []string{"unchanged"}}
 		before, _ := json.Marshal(value)
 		if err := value.UnmarshalJSON([]byte(data)); err == nil {
 			t.Fatalf("accepted %s", data)

@@ -1,4 +1,16 @@
-package ui
+// Package export is the design-tooling half of ui: content-addressed
+// snapshots of the composed components (Export, ExportWithLayout), token
+// export in the DTCG interchange format (ExportTokens, TokenExport.DTCG), typed
+// proposals applied to source captures (ProjectProps, ProjectReplacement), and
+// the Storybook a shell serves so a person can browse the same composition.
+//
+// It is separate from package ui because nothing here is needed to serve a
+// page. ui owns the stylesheet and the browser assets a shell mounts; this
+// package reads that composition and the examples in ui/components/examples
+// and produces artefacts for design tools, the admin gallery and tests.
+// ui/page and the shells depend on ui; only design tooling and the admin
+// gallery depend on this package, and ui/page must never import it.
+package export
 
 import (
 	"cmp"
@@ -11,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/icon"
@@ -66,11 +79,11 @@ var designNotices string
 // Examples are sorted by stable ID without changing the caller's slice. The
 // digest covers encoding/json's compact output with SHA256 omitted; it changes
 // with the exported content, not timestamps or unrelated repository edits.
-func Export(theme design.Pair, captures []examples.Example, extra ...Extra) (DesignExport, error) {
+func Export(theme design.Pair, captures []examples.Example, extra ...ui.Extra) (DesignExport, error) {
 	return export(theme, captures, false, extra...)
 }
 
-func export(theme design.Pair, captures []examples.Example, layout bool, extra ...Extra) (DesignExport, error) {
+func export(theme design.Pair, captures []examples.Example, layout bool, extra ...ui.Extra) (DesignExport, error) {
 	out := DesignExport{
 		Schema: "platformkit.design-export.v1", FontPolicy: "system-fallback-stacks", Notices: designNotices,
 		Themes: []ThemeExport{
@@ -142,8 +155,8 @@ func export(theme design.Pair, captures []examples.Example, layout bool, extra .
 	}
 	// Compose deduplicates these declarations with the shared shell and every
 	// consumer addition. The exported sheet can render every gallery example.
-	all := append([]Extra{{Lists: components.ClassLists()}}, extra...)
-	out.CSS = string(Compose(theme, all...).Body)
+	all := append([]ui.Extra{{Lists: components.ClassLists()}}, extra...)
+	out.CSS = string(ui.Compose(theme, all...).Body)
 	if layout {
 		overridden := false
 		for _, e := range extra {

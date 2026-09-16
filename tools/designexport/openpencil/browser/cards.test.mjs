@@ -22,7 +22,7 @@ import (
   "os"
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
@@ -55,7 +55,7 @@ func main() {
     sheet := css.NewSheet().Select("[data-component=card]", css.Decl("background-color", css.Literal(input.BackgroundCSS)))
     extra = append(extra, ui.Extra{Sheets: []*css.Sheet{sheet}})
   }
-  snapshot, err := ui.Export(theme, []examples.Example{example}, extra...)
+  snapshot, err := export.Export(theme, []examples.Example{example}, extra...)
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

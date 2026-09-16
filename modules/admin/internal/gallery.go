@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -30,22 +31,22 @@ type galleryInput struct {
 
 // storybook is the only selection path, shared by index, previews, exports and
 // navigation. A configured provider is authoritative even for operator users.
-func (s Shell) storybook(ctx context.Context) (ui.Storybook, error) {
+func (s Shell) storybook(ctx context.Context) (export.Storybook, error) {
 	tenant, ok := tenancy.FromContext(ctx)
 	if !ok {
-		return ui.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available.")
+		return export.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available.")
 	}
-	var book ui.Storybook
+	var book export.Storybook
 	if s.Storybook != nil {
 		var err error
 		book, err = s.Storybook(ctx)
 		if err != nil {
-			return ui.Storybook{}, err
+			return export.Storybook{}, err
 		}
 	} else if tenant.Operator {
-		book = ui.Storybook{Title: "Components", Theme: s.Theme, Examples: examples.Gallery()}
+		book = export.Storybook{Title: "Components", Theme: s.Theme, Examples: examples.Gallery()}
 	} else {
-		return ui.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available for this tenant.")
+		return export.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available for this tenant.")
 	}
 	if book.Theme == (design.Pair{}) {
 		book.Theme = s.Theme
@@ -56,7 +57,7 @@ func (s Shell) storybook(ctx context.Context) (ui.Storybook, error) {
 	return book, book.Validate()
 }
 
-func galleryExample(book ui.Storybook, in *galleryInput) (examples.Example, error) {
+func galleryExample(book export.Storybook, in *galleryInput) (examples.Example, error) {
 	var example examples.Example
 	if in.Example != "" {
 		var found bool
@@ -95,10 +96,10 @@ func (p pages) mountGallery(api *httpx.API) {
 			if err != nil {
 				return page.View{}, err
 			}
-			body, err := ui.StorybookPage(book, galleryPath, in.Group, example, in.Props, in.Theme, in.Width)
+			body, err := export.StorybookPage(book, galleryPath, in.Group, example, in.Props, in.Theme, in.Width)
 			return page.View{Title: book.Title, Head: []g.Node{
 				h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.Gallery().Fingerprint)),
-				h.StyleEl(g.Raw(ui.StorybookCSS())),
+				h.StyleEl(g.Raw(export.StorybookCSS())),
 			}, Body: []g.Node{body}}, err
 		})
 	for _, route := range []string{"preview", "export"} {
@@ -110,7 +111,7 @@ func (p pages) mountGallery(api *httpx.API) {
 				return nil, err
 			}
 			if route == "export" {
-				snapshot, err := ui.Export(book.Theme, book.Examples, book.Extra...)
+				snapshot, err := export.Export(book.Theme, book.Examples, book.Extra...)
 				if err != nil {
 					return nil, err
 				}
@@ -129,7 +130,7 @@ func (p pages) mountGallery(api *httpx.API) {
 	}
 }
 
-func galleryPreview(book ui.Storybook, example examples.Example, mode string) (*httpx.Page, error) {
+func galleryPreview(book export.Storybook, example examples.Example, mode string) (*httpx.Page, error) {
 	extra := append(slices.Clone(book.Extra), ui.Extra{Lists: components.GalleryClassLists()})
 	sheet := ui.Compose(book.Theme, extra...)
 	attrs := []g.Node{h.Lang("en")}
@@ -156,7 +157,7 @@ func galleryPreview(book ui.Storybook, example examples.Example, mode string) (*
 }
 
 // Demonstration context belongs to the preview, outside the exact component
-// invocation captured by ui.Export. Keep the real keyboard and responsive behavior.
+// invocation captured by export.Export. Keep the real keyboard and responsive behavior.
 func galleryPreviewContent(example examples.Example) g.Node {
 	switch example.ComponentID {
 	case "pk-ui.component.skiplink":

@@ -1,4 +1,4 @@
-package ui_test
+package export_test
 
 import (
 	"encoding/json"
@@ -8,13 +8,13 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/design"
-	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-func selectedTokens() ui.TokenExport {
-	return ui.TokenExport{
-		Modes: []ui.TokenMode{{
+func selectedTokens() export.TokenExport {
+	return export.TokenExport{
+		Modes: []export.TokenMode{{
 			Mode:   "light",
 			Colors: []design.Token{{Name: "--brand", Type: "color", Value: "#123456"}},
 			Fonts:  []design.FontFamilyToken{{Name: "--font", Families: []design.FontFamily{{Name: "serif"}, {Name: "serif", Generic: true}}}},
@@ -40,32 +40,32 @@ func TestTokenSelectionIsDependencyClosedWithoutComponents(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("validation mutated the caller's selected values")
 	}
-	for name, mutate := range map[string]func(*ui.TokenExport){
-		"unknown mode":         func(s *ui.TokenExport) { s.Modes[0].Mode = "sepia" },
-		"duplicate mode":       func(s *ui.TokenExport) { s.Modes = append(s.Modes, s.Modes[0]) },
-		"missing colour":       func(s *ui.TokenExport) { s.Modes[0].Colors = nil },
-		"wrong colour kind":    func(s *ui.TokenExport) { s.Modes[0].Colors[0].Type = "dimension" },
-		"wrong reference kind": func(s *ui.TokenExport) { s.Colors[0].Value.Reference = "--font" },
-		"cycle":                func(s *ui.TokenExport) { s.Colors[0].Value.Reference = "--action" },
-		"unsupported literal":  func(s *ui.TokenExport) { s.Modes[0].Colors[0].Value = "currentColor" },
-		"duplicate colour":     func(s *ui.TokenExport) { s.Colors = append(s.Colors, s.Colors[0]) },
-		"duplicate font":       func(s *ui.TokenExport) { s.Modes[0].Fonts = append(s.Modes[0].Fonts, s.Modes[0].Fonts[0]) },
-		"cross-kind collision": func(s *ui.TokenExport) { s.Modes[0].Fonts[0].Name = "--brand" },
-		"invalid font":         func(s *ui.TokenExport) { s.Modes[0].Fonts[0].Families[1].Name = "SERIF" },
-		"roles without a mode": func(s *ui.TokenExport) { s.Modes = nil },
-		"different mode interface": func(s *ui.TokenExport) {
-			s.Modes = append(s.Modes, ui.TokenMode{Mode: "dark", Colors: s.Modes[0].Colors})
+	for name, mutate := range map[string]func(*export.TokenExport){
+		"unknown mode":         func(s *export.TokenExport) { s.Modes[0].Mode = "sepia" },
+		"duplicate mode":       func(s *export.TokenExport) { s.Modes = append(s.Modes, s.Modes[0]) },
+		"missing colour":       func(s *export.TokenExport) { s.Modes[0].Colors = nil },
+		"wrong colour kind":    func(s *export.TokenExport) { s.Modes[0].Colors[0].Type = "dimension" },
+		"wrong reference kind": func(s *export.TokenExport) { s.Colors[0].Value.Reference = "--font" },
+		"cycle":                func(s *export.TokenExport) { s.Colors[0].Value.Reference = "--action" },
+		"unsupported literal":  func(s *export.TokenExport) { s.Modes[0].Colors[0].Value = "currentColor" },
+		"duplicate colour":     func(s *export.TokenExport) { s.Colors = append(s.Colors, s.Colors[0]) },
+		"duplicate font":       func(s *export.TokenExport) { s.Modes[0].Fonts = append(s.Modes[0].Fonts, s.Modes[0].Fonts[0]) },
+		"cross-kind collision": func(s *export.TokenExport) { s.Modes[0].Fonts[0].Name = "--brand" },
+		"invalid font":         func(s *export.TokenExport) { s.Modes[0].Fonts[0].Families[1].Name = "SERIF" },
+		"roles without a mode": func(s *export.TokenExport) { s.Modes = nil },
+		"different mode interface": func(s *export.TokenExport) {
+			s.Modes = append(s.Modes, export.TokenMode{Mode: "dark", Colors: s.Modes[0].Colors})
 		},
-		"unselected duration":  func(s *ui.TokenExport) { s.Scales = nil },
-		"unselected easing":    func(s *ui.TokenExport) { s.Easings = nil },
-		"duplicate scale":      func(s *ui.TokenExport) { s.Scales = append(s.Scales, s.Scales[0]) },
-		"invalid scale":        func(s *ui.TokenExport) { s.Scales[0].Number.Unit = "px" },
-		"duplicate easing":     func(s *ui.TokenExport) { s.Easings = append(s.Easings, s.Easings[0]) },
-		"invalid easing":       func(s *ui.TokenExport) { s.Easings[0].CubicBezier[0] = -1 },
-		"duplicate transition": func(s *ui.TokenExport) { s.Transitions = append(s.Transitions, s.Transitions[0]) },
-		"invalid transition":   func(s *ui.TokenExport) { s.Transitions[0].Properties = nil },
-		"invalid shadow":       func(s *ui.TokenExport) { s.Shadows = []style.ShadowValue{{Key: "base"}} },
-		"missing face asset": func(s *ui.TokenExport) {
+		"unselected duration":  func(s *export.TokenExport) { s.Scales = nil },
+		"unselected easing":    func(s *export.TokenExport) { s.Easings = nil },
+		"duplicate scale":      func(s *export.TokenExport) { s.Scales = append(s.Scales, s.Scales[0]) },
+		"invalid scale":        func(s *export.TokenExport) { s.Scales[0].Number.Unit = "px" },
+		"duplicate easing":     func(s *export.TokenExport) { s.Easings = append(s.Easings, s.Easings[0]) },
+		"invalid easing":       func(s *export.TokenExport) { s.Easings[0].CubicBezier[0] = -1 },
+		"duplicate transition": func(s *export.TokenExport) { s.Transitions = append(s.Transitions, s.Transitions[0]) },
+		"invalid transition":   func(s *export.TokenExport) { s.Transitions[0].Properties = nil },
+		"invalid shadow":       func(s *export.TokenExport) { s.Shadows = []style.ShadowValue{{Key: "base"}} },
+		"missing face asset": func(s *export.TokenExport) {
 			s.Faces = []design.FontFace{{ID: "body", Asset: "missing", Family: "Body", PostScriptName: "Body-Regular", Weight: "400", Style: "normal"}}
 		},
 	} {
@@ -83,7 +83,7 @@ func TestTokenSelectionKeepsIndependentPackagesAndEqualIdentities(t *testing.T) 
 	t.Parallel()
 	asset := design.Asset{ID: "a", SHA256: strings.Repeat("a", 64), MediaType: "font/woff2", Source: "owner:a",
 		License: design.LicenseEvidence{ID: "LicenseRef-Owner", SHA256: strings.Repeat("b", 64), Source: "owner:notice"}}
-	for name, selection := range map[string]ui.TokenExport{
+	for name, selection := range map[string]export.TokenExport{
 		"empty":                                   {},
 		"scales without modes":                    {Scales: selectedTokens().Scales},
 		"assets without fonts or modes":           {Assets: []design.Asset{asset}},
@@ -98,7 +98,7 @@ func TestTokenSelectionKeepsIndependentPackagesAndEqualIdentities(t *testing.T) 
 	}
 	s := selectedTokens()
 	s.Colors = append(s.Colors, design.ColorToken{Name: "--same-value-distinct-id", Value: s.Colors[0].Value})
-	s.Modes = append(s.Modes, ui.TokenMode{Mode: "dark", Colors: slices.Clone(s.Modes[0].Colors), Fonts: s.Modes[0].Fonts})
+	s.Modes = append(s.Modes, export.TokenMode{Mode: "dark", Colors: slices.Clone(s.Modes[0].Colors), Fonts: s.Modes[0].Fonts})
 	s.Modes[1].Colors[0].Value = "#abcdef"
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
@@ -113,11 +113,11 @@ func TestExportTokensSelectsModesAndExistingOwnersDeterministically(t *testing.T
 	theme := design.Default()
 	theme.Light.AccentDefault = "#abcdef"
 	theme.Light.Typography.Body = `"Named, Family", "serif", serif`
-	first, err := ui.ExportTokens(theme, "dark", "light")
+	first, err := export.ExportTokens(theme, "dark", "light")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := ui.ExportTokens(theme, "light", "dark")
+	second, err := export.ExportTokens(theme, "light", "dark")
 	if err != nil || !reflect.DeepEqual(first, second) {
 		t.Fatalf("mode selection order changed projection: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestExportTokensSelectsModesAndExistingOwnersDeterministically(t *testing.T
 			color.Value.Mix.FirstPercent = 12
 		}
 	}
-	again, err := ui.ExportTokens(theme, "light", "dark")
+	again, err := export.ExportTokens(theme, "light", "dark")
 	if err != nil || !reflect.DeepEqual(again, second) {
 		t.Fatalf("returned nested values alias source owners: %v", err)
 	}
@@ -172,22 +172,22 @@ func TestExportTokensSelectsModesAndExistingOwnersDeterministically(t *testing.T
 func TestExportTokensRefusesWithoutPartialOutputAndIgnoresUnselectedModes(t *testing.T) {
 	t.Parallel()
 	for _, modes := range [][]string{nil, {""}, {"LIGHT"}, {"light", "light"}, {"light", "sepia"}} {
-		out, err := ui.ExportTokens(design.Default(), modes...)
-		if err == nil || !reflect.DeepEqual(out, ui.TokenExport{}) {
+		out, err := export.ExportTokens(design.Default(), modes...)
+		if err == nil || !reflect.DeepEqual(out, export.TokenExport{}) {
 			t.Fatalf("modes %q yielded partial or successful output: %v", modes, err)
 		}
 	}
 	theme := design.Default()
 	theme.Dark.Typography.Body = `var(--font)`
-	if out, err := ui.ExportTokens(theme, "light"); err != nil || len(out.Modes) != 1 || out.Modes[0].Mode != "light" {
+	if out, err := export.ExportTokens(theme, "light"); err != nil || len(out.Modes) != 1 || out.Modes[0].Mode != "light" {
 		t.Fatalf("unselected mode prevented standalone light package: %v", err)
 	}
-	if out, err := ui.ExportTokens(theme, "light", "dark"); err == nil || !reflect.DeepEqual(out, ui.TokenExport{}) {
+	if out, err := export.ExportTokens(theme, "light", "dark"); err == nil || !reflect.DeepEqual(out, export.TokenExport{}) {
 		t.Fatalf("bad selected typography yielded partial or successful output: %v", err)
 	}
 	theme = design.Default()
 	theme.Dark.AccentDefault = "currentColor"
-	if out, err := ui.ExportTokens(theme, "light", "dark"); err == nil || !reflect.DeepEqual(out, ui.TokenExport{}) {
+	if out, err := export.ExportTokens(theme, "light", "dark"); err == nil || !reflect.DeepEqual(out, export.TokenExport{}) {
 		t.Fatalf("bad selected colour yielded partial or successful output: %v", err)
 	}
 }

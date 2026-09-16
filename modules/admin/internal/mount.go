@@ -19,6 +19,7 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
@@ -32,7 +33,7 @@ type Shell struct {
 	// Theme is the installation's two palettes: the one thing about the look of
 	// this shell that belongs to whoever runs it. See design.Pair.
 	Theme     design.Pair
-	Storybook func(context.Context) (ui.Storybook, error)
+	Storybook func(context.Context) (export.Storybook, error)
 	Messages  page.Messages
 	Locale    func(context.Context, page.Request) string
 }
@@ -117,7 +118,7 @@ func Mount(api *httpx.API, s Shell) {
 // stylesheet's dark rules are behind prefers-color-scheme, so a person whose
 // system is dark gets dark, and the inline snippet page.Serve adds sets the
 // attribute only when they have chosen one for themselves.
-func frame(nav page.Navigation, authorize httpx.Authorizer, storybook func(context.Context) (ui.Storybook, error)) page.Frame {
+func frame(nav page.Navigation, authorize httpx.Authorizer, storybook func(context.Context) (export.Storybook, error)) page.Frame {
 	return func(ctx context.Context, r page.Request, body []g.Node) g.Node {
 		gallery := false
 		if r.SignedIn && authorize != nil {

@@ -125,7 +125,7 @@ import (
   "os"
   g "maragu.dev/gomponents"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
@@ -143,7 +143,7 @@ func main() {
   }, components.StackProps{Gap: "4"}, children, components.Stack)
   sheet := css.NewSheet().Select("[data-component=button]",
     css.Decl("border", css.Literal(input.Border)), css.Decl("border-radius", css.Literal("12px")))
-  snapshot, err := ui.Export(design.Default(), []examples.Example{example}, ui.Extra{Sheets: []*css.Sheet{sheet}})
+  snapshot, err := export.Export(design.Default(), []examples.Example{example}, ui.Extra{Sheets: []*css.Sheet{sheet}})
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }

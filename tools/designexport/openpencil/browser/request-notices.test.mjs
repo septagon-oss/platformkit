@@ -18,19 +18,19 @@ import (
   "encoding/json"
   "os"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/page"
 )
 func main() {
-  var input struct { Proposal *ui.PropsProposal }
+  var input struct { Proposal *export.PropsProposal }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
   examples := page.RequestNoticeExamples("/account/sign-in")
-  var snapshot ui.DesignExport
+  var snapshot export.DesignExport
   var err error
   if input.Proposal == nil {
-    snapshot, err = ui.Export(design.Default(), examples)
+    snapshot, err = export.Export(design.Default(), examples)
   } else {
-    _, snapshot, err = ui.ProjectProps(design.Default(), examples, *input.Proposal)
+    _, snapshot, err = export.ProjectProps(design.Default(), examples, *input.Proposal)
   }
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }

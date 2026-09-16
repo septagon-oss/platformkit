@@ -30,7 +30,7 @@ const snapshot = JSON.parse(await text(process.stdin), (_key, value, context) =>
   typeof value === 'number' && !Number.isSafeInteger(value) && /^-?\d+$/.test(context.source)
     ? JSON.rawJSON(context.source) : value);
 if (snapshot.schema !== 'platformkit.design-export.v1' || !/^[a-f0-9]{64}$/.test(snapshot.sha256) || !snapshot.examples.length) {
-  throw new Error('Expected a nonempty v1 ui.Export snapshot with its SHA-256.');
+  throw new Error('Expected a nonempty v1 export.Export snapshot with its SHA-256.');
 }
 const work = await mkdtemp(resolve(tmpdir(), 'platformkit-storybook-'));
 const require = createRequire(import.meta.url);

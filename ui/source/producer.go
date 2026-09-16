@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/export"
 )
 
 type session struct {
@@ -85,7 +85,7 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 
-func (s *session) snapshot(ctx context.Context, overlay string, proposal []byte) (ui.DesignExport, error) {
+func (s *session) snapshot(ctx context.Context, overlay string, proposal []byte) (export.DesignExport, error) {
 	var flags []string
 	if overlay != "" {
 		flags = append(flags, "-overlay="+overlay)
@@ -96,9 +96,9 @@ func (s *session) snapshot(ctx context.Context, overlay string, proposal []byte)
 	}
 	body, err := s.command(ctx, "run", flags, args, proposal)
 	if err != nil {
-		return ui.DesignExport{}, err
+		return export.DesignExport{}, err
 	}
-	var snapshot ui.DesignExport
+	var snapshot export.DesignExport
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&snapshot); err != nil {

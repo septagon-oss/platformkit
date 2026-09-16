@@ -1,4 +1,4 @@
-package ui
+package export
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
@@ -76,7 +77,7 @@ var ErrStaleExport = errors.New("source proposal base differs from current sourc
 // are not rolled back. Neither source files nor persistent state are saved or
 // locked. A persistence owner must perform its own atomic revision check.
 // Failure returns nil examples and a zero export, never an accepted partial edit.
-func ProjectProps(theme design.Pair, captures []examples.Example, proposal PropsProposal, extra ...Extra) ([]examples.Example, DesignExport, error) {
+func ProjectProps(theme design.Pair, captures []examples.Example, proposal PropsProposal, extra ...ui.Extra) ([]examples.Example, DesignExport, error) {
 	return projectSource(theme, captures, proposal.BaseSHA256, proposal.Path, func(_ DesignExport, root examples.Example) (examples.Example, error) {
 		return root.WithPropsAt(proposal.Path, proposal.Props)
 	}, extra...)
@@ -84,7 +85,7 @@ func ProjectProps(theme design.Pair, captures []examples.Example, proposal Props
 
 // Projection owns the two render passes and the common freshness, observation
 // and interface checks. The edit copies source inputs between those passes.
-func projectSource(theme design.Pair, captures []examples.Example, baseSHA256 string, path []string, edit func(DesignExport, examples.Example) (examples.Example, error), extra ...Extra) ([]examples.Example, DesignExport, error) {
+func projectSource(theme design.Pair, captures []examples.Example, baseSHA256 string, path []string, edit func(DesignExport, examples.Example) (examples.Example, error), extra ...ui.Extra) ([]examples.Example, DesignExport, error) {
 	base, err := Export(theme, captures, extra...)
 	if err != nil {
 		return nil, DesignExport{}, err

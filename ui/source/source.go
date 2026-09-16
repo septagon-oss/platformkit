@@ -14,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/export"
 )
 
 // Target locates the start of an existing capture call in an owning module.
@@ -64,7 +64,7 @@ func (c *Change) Review() Review { return c.review }
 // build with the candidate Go overlay. All three must agree on the full export.
 // Only existing keyed string literals can change; no source files are written.
 // Temporary overlays and module copies are removed before returning.
-func Prepare(ctx context.Context, producer GoProducer, target Target, proposal ui.PropsProposal) (*Change, error) {
+func Prepare(ctx context.Context, producer GoProducer, target Target, proposal export.PropsProposal) (*Change, error) {
 	root, err := filepath.Abs(producer.Dir)
 	if err != nil {
 		return nil, err
@@ -110,7 +110,7 @@ func Prepare(ctx context.Context, producer GoProducer, target Target, proposal u
 		return nil, err
 	}
 	if baseline.SHA256 != proposal.BaseSHA256 {
-		return nil, ui.ErrStaleExport
+		return nil, export.ErrStaleExport
 	}
 	body, err := json.Marshal(proposal)
 	if err != nil {

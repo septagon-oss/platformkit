@@ -18,7 +18,7 @@ import (
   "encoding/json"
   "os"
   "github.com/septagon-oss/platformkit/design"
-  "github.com/septagon-oss/platformkit/ui"
+  "github.com/septagon-oss/platformkit/ui"; "github.com/septagon-oss/platformkit/ui/export"
   "github.com/septagon-oss/platformkit/ui/components"; "github.com/septagon-oss/platformkit/ui/components/examples"
   "github.com/septagon-oss/platformkit/ui/css"
 )
@@ -35,7 +35,7 @@ func main() {
   }
   var extra ui.Extra
   if input.Align != "" { extra.Sheets = []*css.Sheet{css.NewSheet().Select("#album", css.Decl("text-align", css.Literal(input.Align)))} }
-  snapshot, err := ui.Export(theme, captures, extra)
+  snapshot, err := export.Export(theme, captures, extra)
   if err != nil { panic(err) }
   if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil { panic(err) }
 }
