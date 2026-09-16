@@ -142,7 +142,29 @@ cd e2e
 # and fails when the lock and the manifest disagree, which is what a gate wants.
 # install resolves afresh and rewrites the lock, so gate 10 could pass against a
 # Playwright nobody chose and leave the lock changed in somebody's working tree.
-[ -d node_modules ] || npm ci --no-audit --no-fund
+#
+# The condition is the installed tree and not the directory's existence. npm
+# records what it installed in node_modules/.package-lock.json; an install made
+# before a dependency change still leaves a node_modules behind, so a lock that
+# raises Playwright, its Chromium or axe-core would go on being ignored on every
+# developer machine while CI, which always installs from nothing, ran the chosen
+# versions. A gate that only the runner really runs is not a gate.
+matches_lock() {
+	node -e 'const fs = require("node:fs");
+		const packages = path => JSON.parse(fs.readFileSync(path, "utf8")).packages ?? {};
+		let installed;
+		try { installed = packages("node_modules/.package-lock.json"); } catch { process.exit(1); }
+		for (const [name, pinned] of Object.entries(packages("package-lock.json"))) {
+			// Optional dependencies are platform-specific: npm is right not to
+			// install a darwin watcher here, and absence is not drift.
+			if (!name || pinned.optional) continue;
+			if (installed[name]?.version !== pinned.version) {
+				console.error(`e2e: ${name} is ${installed[name]?.version ?? "not installed"}, package-lock.json pins ${pinned.version}; reinstalling`);
+				process.exit(1);
+			}
+		}'
+}
+matches_lock || npm ci --no-audit --no-fund
 headless=true
 default_output=true
 for argument in "$@"; do
