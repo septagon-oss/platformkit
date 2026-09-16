@@ -24,7 +24,14 @@ test.beforeEach(({ page }) => {
 });
 test.afterEach(({ page }) => expect(pageFaults.get(page)).toEqual([]));
 
-async function specimen(page: Page, id: string, before = '', after = '', props?: Record<string, unknown>) {
+// theme, when given, is served on the document instead of being switched after
+// it is styled. That is what a person sees: the shell writes a stored choice
+// before first paint. Switching it afterwards starts the colour transition
+// every themed utility declares, and until a frame advances that transition the
+// outgoing theme's foreground is still the computed one over the incoming
+// theme's background — a state no reader ever reads, and a measurement no
+// check should take.
+async function specimen(page: Page, id: string, before = '', after = '', props?: Record<string, unknown>, theme = '') {
   const source = props ? JSON.parse(execFileSync('go', ['run', './tools/designexport', '--example', id, '--props'], {
     cwd: root, encoding: 'utf8', input: JSON.stringify(props), maxBuffer: 8 * 1024 * 1024,
   })) : snapshot;
@@ -32,7 +39,7 @@ async function specimen(page: Page, id: string, before = '', after = '', props?:
   if (!example) throw new Error(`Unknown source example: ${id}`);
   await page.route('**/__ui_specimen', route => route.fulfill({
     contentType: 'text/html',
-    body: `<!doctype html><html lang="en"><head><title>Component interaction</title>
+    body: `<!doctype html><html lang="en"${theme ? ` data-theme="${theme}"` : ''}><head><title>Component interaction</title>
       <style>${snapshot.css}</style>${scripts}</head><body>
       ${before}${example.html}${after}</body></html>`,
   }));
@@ -254,8 +261,7 @@ test('the enhanced source examples pass automated accessibility checks in both t
   await page.emulateMedia({ reducedMotion: 'reduce' });
   for (const theme of ['light', 'dark']) {
     for (const id of ['pk-ui.component.button/primary', 'pk-ui.component.tabs/vertical-pills', 'pk-ui.component.modal/default', 'pk-ui.component.hero/default']) {
-      await specimen(page, id);
-      await page.evaluate(mode => document.documentElement.dataset.theme = mode, theme);
+      await specimen(page, id, '', '', undefined, theme);
       const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
       expect(results.violations, `${id} in ${theme}`).toEqual([]);
     }
