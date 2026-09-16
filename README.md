@@ -62,9 +62,10 @@ authorization and migrations in more detail.
 ## Build a screen
 
 Start with the [entity and presentation map](ARCHITECTURE.md#entity-and-presentation-contracts)
-to reuse generated forms and typed components. Compose custom workflows with
-[pages](ui/page/); shared [themes](design/) change colors and typography across
-both generated and custom screens.
+to reuse generated forms and typed components, and the [presentation map](ui/README.md)
+for what each `ui` package owns. Compose custom workflows with [pages](ui/page/);
+shared [themes](design/README.md) change colors and typography across both
+generated and custom screens.
 
 [Page localization](ui/page/README.md) composes module-owned messages through
 Go's x/text catalogs. The reference sign-in page includes English and Portuguese;

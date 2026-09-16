@@ -219,6 +219,8 @@ Components name semantic roles, roles resolve to tokens, and themes supply value
 [style.ThemeVars](ui/style/theme.go) renders both themes' tokens as custom
 properties; `design` emits no CSS and depends on the standard library alone,
 which the [package gate](scripts/check_packages.sh) enforces.
+[ui/README.md](ui/README.md) maps the presentation packages and the rules the
+gates enforce between them.
 
 [Theme.FontFamilies](design/typography.go) projects those existing token identities
 as ordered literal or generic family names. It follows the admitted
