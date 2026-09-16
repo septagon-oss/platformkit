@@ -9,8 +9,8 @@
 package screens
 
 import (
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -30,6 +30,33 @@ type Options struct {
 	Root string
 	// Home is the breadcrumb's first entry, linking to Root.
 	Home string
+	// Locale is the request's selected language when the shell composes
+	// page.Shell.Messages; Mount sets it per request from page.Request. The
+	// fixed labels — New, Edit, Delete, the count, the pager and the empty
+	// state — are looked up under screens.* keys with their English as the
+	// fallback, the same seam the sign-in page uses. Nil keeps the English.
+	// Entity names stay as the schema humanizes them.
+	Locale *page.Locale
+}
+
+// text is one label through the seam: the catalog's translation of key, or
+// fallback formatted with args when no catalog is composed or lacks the key.
+func (o Options) text(key, fallback string, args ...any) string {
+	if o.Locale == nil {
+		return fmt.Sprintf(fallback, args...)
+	}
+	return o.Locale.Text(key, fallback, args...)
+}
+
+// count is the list's subtitle. The English fallback is already pluralized
+// so a shell without a catalog reads exactly as before; a catalog receives
+// the number and the noun and applies its own plural rules.
+func (o Options) count(total int64, noun string) string {
+	noun = strings.ToLower(noun)
+	if total != 1 {
+		noun += "s"
+	}
+	return o.text("screens.count", "%d %s", total, noun)
 }
 
 // Path is where a resource's list screen lives: /api/v1/task/tasks is served at
@@ -48,14 +75,17 @@ func List(r httpx.Resource, o Options, rows []map[string]any, total int64, pageN
 	at, title := Path(r, o), rest.Humanize(r.Entity)
 	var actions []g.Node
 	if writable {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: "New " + r.Entity, Href: at + "/new"})}
+		actions = []g.Node{components.Button(components.ButtonProps{Label: o.text("screens.new", "New %s", r.Entity), Href: at + "/new"})}
 	}
 	return page.View{Title: title + "s", Body: []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: title + "s", Subtitle: plural(total, title)}, actions...),
-		table(r, at, rows, sort),
+		components.Toolbar(components.ToolbarProps{Title: title + "s", Subtitle: o.count(total, title)}, actions...),
+		table(o, r, at, rows, sort),
 		components.Pagination(components.PaginationProps{
 			HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 			CurrentPage: pageNo, TotalPages: pages(total), BaseURL: at + "?sort=" + sort,
+			NavigationLabel: o.text("screens.pagination", "Pagination"),
+			PreviousLabel:   o.text("screens.previous", "Previous page"),
+			NextLabel:       o.text("screens.next", "Next page"),
 		}),
 	}}
 }
@@ -71,8 +101,8 @@ func Detail(r httpx.Resource, o Options, row map[string]any, writable bool) page
 	var actions []g.Node
 	if writable {
 		actions = []g.Node{
-			components.Button(components.ButtonProps{Label: "Edit", Href: item + "/edit"}),
-			deleteForm(item, r.Entity),
+			components.Button(components.ButtonProps{Label: o.text("screens.edit", "Edit"), Href: item + "/edit"}),
+			deleteForm(o, item, r.Entity),
 		}
 	}
 	return page.View{Title: named, Body: []g.Node{
@@ -143,7 +173,7 @@ func formField(f crud.Field) forms.Field {
 //
 // The id is not a column. It is the row's identity and it is already the link's
 // href; a table that leads with a UUID is a table nobody can read.
-func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.Node {
+func table(o Options, r httpx.Resource, at string, rows []map[string]any, sort string) g.Node {
 	primary := known(r.Schema.Fields)
 	shown := []crud.Field{primary}
 	for _, f := range r.Schema.Fields {
@@ -169,7 +199,7 @@ func table(r httpx.Resource, at string, rows []map[string]any, sort string) g.No
 	return components.TableWithSlots(components.TableProps{
 		HTMXProps: components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 		Sortable:  true, Columns: columns, Rows: out,
-		EmptyText: "No " + r.Entity + "s yet.",
+		EmptyText: o.text("screens.empty", "No %ss yet.", r.Entity),
 	}, components.TableSlots{
 		// Sorting is a link the server answers, not a script that reorders what
 		// is on the page: page two of a table sorted in the browser is page two
@@ -211,31 +241,27 @@ func details(r httpx.Resource, row map[string]any) g.Node {
 
 // deleteForm is the destructive action: a real form, so it works without
 // JavaScript, carrying the attribute confirm.js opens the dialog on.
-func deleteForm(item, entity string) g.Node {
-	return components.Form(components.FormProps{Action: item + "/delete", Label: "Delete this " + entity},
+func deleteForm(o Options, item, entity string) g.Node {
+	remove := o.text("screens.delete", "Delete")
+	return components.Form(components.FormProps{Action: item + "/delete", Label: o.text("screens.delete_this", "Delete this %s", entity)},
 		components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
-				"data-confirm":       "This deletes the " + entity + ". It cannot be undone.",
-				"data-confirm-label": "Delete",
+				"data-confirm":       o.text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity),
+				"data-confirm-label": remove,
 			}},
-			Label: "Delete", Type: "submit", Tone: "danger", Size: "md",
+			Label: remove, Type: "submit", Tone: "danger", Size: "md",
 		}))
 }
 
 func breadcrumb(o Options, collection, at, here string) g.Node {
-	return components.Breadcrumb(components.BreadcrumbProps{Items: []components.BreadcrumbItem{
-		{Label: o.Home, Href: o.Root}, {Label: collection, Href: at}, {Label: here},
-	}})
+	return components.Breadcrumb(components.BreadcrumbProps{
+		NavigationLabel: o.text("screens.breadcrumb", "Breadcrumb"),
+		Items: []components.BreadcrumbItem{
+			{Label: o.Home, Href: o.Root}, {Label: collection, Href: at}, {Label: here},
+		}})
 }
 
 func pages(total int64) int { return int((total + perPage - 1) / perPage) }
-
-func plural(total int64, noun string) string {
-	if total == 1 {
-		return "1 " + strings.ToLower(noun)
-	}
-	return strconv.FormatInt(total, 10) + " " + strings.ToLower(noun) + "s"
-}
 
 func direction(sort string) string {
 	if strings.HasPrefix(sort, "-") {

@@ -50,22 +50,23 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 	read, write := r.ReadAuth(), r.WriteAuth()
 
 	page.Serve(api, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: at, Summary: "The " + r.Entity + " list"}, read,
-		func(ctx context.Context, _ page.Request, in *listInput) (page.View, error) {
+		func(ctx context.Context, req page.Request, in *listInput) (page.View, error) {
 			pageNo := max(in.Page, 1)
 			rows, total, err := r.List(ctx, crud.Query{Limit: perPage, Offset: (pageNo - 1) * perPage, Sort: in.Sort})
 			if err != nil {
 				return page.View{}, err
 			}
-			return List(r, o, rows, total, pageNo, in.Sort, r.Writable(ctx)), nil
+			return List(r, localized(o, req), rows, total, pageNo, in.Sort, r.Writable(ctx)), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: at + "/new", Summary: "The new-" + r.Entity + " form"}, write,
-		func(context.Context, page.Request, *page.Empty) (page.View, error) {
-			return Form(r, o, at, "New "+r.Entity, nil, nil, "", true), nil
+		func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
+			o := localized(o, req)
+			return Form(r, o, at, o.text("screens.new", "New %s", r.Entity), nil, nil, "", true), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: at, Summary: "Create a " + r.Entity}, write,
-		func(ctx context.Context, _ page.Request, in *formInput) (page.View, error) {
+		func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
 			// Immutable is refused here rather than dropped: this form does not
 			// render those fields at all, so a value for one did not come from
 			// it. See rest.Values.
@@ -77,29 +78,31 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 				}
 			}
 			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
-			return Form(r, o, at, "New "+r.Entity, sent, errs, detail, true), nil
+			o := localized(o, req)
+			return Form(r, o, at, o.text("screens.new", "New %s", r.Entity), sent, errs, detail, true), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: at + "/{id}", Summary: "One " + r.Entity}, read,
-		func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
+		func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
 			row, err := r.Get(ctx, in.ID)
 			if err != nil {
 				return page.View{}, err
 			}
-			return Detail(r, o, row, r.Writable(ctx)), nil
+			return Detail(r, localized(o, req), row, r.Writable(ctx)), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: at + "/{id}/edit", Summary: "The edit-" + r.Entity + " form"}, write,
-		func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
+		func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
 			row, err := r.Get(ctx, in.ID)
 			if err != nil {
 				return page.View{}, err
 			}
-			return Form(r, o, at+"/"+in.ID.String(), "Edit "+r.Entity, row, nil, "", false), nil
+			o := localized(o, req)
+			return Form(r, o, at+"/"+in.ID.String(), o.text("screens.edit_item", "Edit %s", r.Entity), row, nil, "", false), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: at + "/{id}", Summary: "Update a " + r.Entity}, write,
-		func(ctx context.Context, _ page.Request, in *itemFormInput) (page.View, error) {
+		func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
 			item := at + "/" + in.ID.String()
 			sent, err := rest.UpdateValues(in.RawBody, r.Schema.Fields, nil)
 			if err == nil {
@@ -108,7 +111,8 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 				}
 			}
 			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
-			return Form(r, o, item, "Edit "+r.Entity, sent, errs, detail, false), nil
+			o := localized(o, req)
+			return Form(r, o, item, o.text("screens.edit_item", "Edit %s", r.Entity), sent, errs, detail, false), nil
 		})
 
 	page.Serve(api, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: at + "/{id}/delete", Summary: "Delete a " + r.Entity}, write,
@@ -118,4 +122,12 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 			}
 			return page.View{}, httpx.SeeOther(at)
 		})
+}
+
+// localized is the shell's options with this request's language. Options is a
+// small value, so each render carries its own copy rather than the shell
+// holding one language for everybody.
+func localized(o Options, req page.Request) Options {
+	o.Locale = req.Locale
+	return o
 }

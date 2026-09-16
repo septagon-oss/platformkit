@@ -86,8 +86,10 @@ type AlertProps struct {
 	Title       string `json:"title,omitempty"`
 	Tone        string `json:"tone,omitempty"` // neutral, info, success, warning, danger (default info)
 	Dismissible bool   `json:"dismissible,omitempty"`
-	Bordered    bool   `json:"bordered,omitempty"`
-	Compact     bool   `json:"compact,omitempty"`
+	// DismissLabel names the dismiss control. Empty keeps "Dismiss notification".
+	DismissLabel string `json:"dismissLabel,omitempty"`
+	Bordered     bool   `json:"bordered,omitempty"`
+	Compact      bool   `json:"compact,omitempty"`
 }
 
 // InputProps defines the platform-agnostic properties for an Input component.
@@ -511,6 +513,8 @@ type BreadcrumbProps struct {
 	Items     []BreadcrumbItem `json:"items"`
 	Separator string           `json:"separator,omitempty"` // default "/"
 	MaxItems  int              `json:"maxItems,omitempty"`  // collapse middle items
+	// NavigationLabel names the landmark. Empty keeps "Breadcrumb".
+	NavigationLabel string `json:"navigationLabel,omitempty"`
 }
 
 // BreadcrumbItem represents a breadcrumb segment.
@@ -533,6 +537,14 @@ type PaginationProps struct {
 	BaseURL  string `json:"baseURL,omitempty"`
 	// NavigationLabel names this landmark, for a page carrying more than one.
 	NavigationLabel string `json:"navigationLabel,omitempty"`
+	// PreviousLabel and NextLabel name the boundary controls for assistive
+	// technology. Empty keeps "Previous page" and "Next page".
+	PreviousLabel string `json:"previousLabel,omitempty"`
+	NextLabel     string `json:"nextLabel,omitempty"`
+	// PageLabel and CurrentPageLabel name the numbered links; %d stands for the
+	// page number. Empty keeps "Go to page %d" and "Page %d, current page".
+	PageLabel        string `json:"pageLabel,omitempty"`
+	CurrentPageLabel string `json:"currentPageLabel,omitempty"`
 }
 
 // TableSkeletonProps defines the loading rendering of a Table: the same wrap,

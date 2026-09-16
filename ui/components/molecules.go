@@ -1215,7 +1215,7 @@ func Breadcrumb(p BreadcrumbProps) g.Node {
 	nav = append(nav, htmxAttrs(p.HTMXProps)...)
 	nav = append(nav,
 		g.Attr("data-component", "breadcrumb"),
-		g.Attr("aria-label", "Breadcrumb"),
+		g.Attr("aria-label", fallbackText(strings.TrimSpace(p.NavigationLabel), "Breadcrumb")),
 		h.Ol(items...),
 	)
 	return h.Nav(nav...)
@@ -1286,11 +1286,16 @@ func Pagination(p PaginationProps) g.Node {
 		)
 	}
 
+	previous := fallbackText(strings.TrimSpace(p.PreviousLabel), "Previous page")
+	following := fallbackText(strings.TrimSpace(p.NextLabel), "Next page")
+	numbered := func(n int) string { return pageLabel(fallbackText(p.PageLabel, "Go to page %d"), n) }
+	current := func(n int) string { return pageLabel(fallbackText(p.CurrentPageLabel, "Page %d, current page"), n) }
+
 	items := []g.Node{h.Class(clPagination.Compile())}
 	if p.CurrentPage > 1 {
-		items = append(items, pageLink(p.CurrentPage-1, "‹", false, "Previous page", "data-pagination-prev"))
+		items = append(items, pageLink(p.CurrentPage-1, "‹", false, previous, "data-pagination-prev"))
 	} else {
-		items = append(items, disabledBoundary("Previous page", "data-pagination-prev", "‹"))
+		items = append(items, disabledBoundary(previous, "data-pagination-prev", "‹"))
 	}
 	lo, hi := p.CurrentPage-siblings, p.CurrentPage+siblings
 	if lo < 1 {
@@ -1300,15 +1305,15 @@ func Pagination(p PaginationProps) g.Node {
 		hi = p.TotalPages
 	}
 	if lo > 1 {
-		items = append(items, pageLink(1, "1", p.CurrentPage == 1, "Go to page 1", ""))
+		items = append(items, pageLink(1, "1", p.CurrentPage == 1, numbered(1), ""))
 		if lo > 2 {
 			items = append(items, h.Span(h.Class(clBreadcrumbSep.Compile()), g.Text("…")))
 		}
 	}
 	for n := lo; n <= hi; n++ {
-		ariaLabel := "Go to page " + itoa(n)
+		ariaLabel := numbered(n)
 		if n == p.CurrentPage {
-			ariaLabel = "Page " + itoa(n) + ", current page"
+			ariaLabel = current(n)
 		}
 		items = append(items, pageLink(n, itoa(n), n == p.CurrentPage, ariaLabel, ""))
 	}
@@ -1316,12 +1321,12 @@ func Pagination(p PaginationProps) g.Node {
 		if hi < p.TotalPages-1 {
 			items = append(items, h.Span(h.Class(clBreadcrumbSep.Compile()), g.Text("…")))
 		}
-		items = append(items, pageLink(p.TotalPages, itoa(p.TotalPages), false, "Go to page "+itoa(p.TotalPages), ""))
+		items = append(items, pageLink(p.TotalPages, itoa(p.TotalPages), false, numbered(p.TotalPages), ""))
 	}
 	if p.CurrentPage < p.TotalPages {
-		items = append(items, pageLink(p.CurrentPage+1, "›", false, "Next page", "data-pagination-next"))
+		items = append(items, pageLink(p.CurrentPage+1, "›", false, following, "data-pagination-next"))
 	} else {
-		items = append(items, disabledBoundary("Next page", "data-pagination-next", "›"))
+		items = append(items, disabledBoundary(following, "data-pagination-next", "›"))
 	}
 
 	nav := baseAttrs(p.ComponentProps)
@@ -1329,6 +1334,13 @@ func Pagination(p PaginationProps) g.Node {
 		g.Attr("aria-label", fallbackText(strings.TrimSpace(p.NavigationLabel), "Pagination")))
 	nav = append(nav, items...)
 	return h.Nav(nav...)
+}
+
+// pageLabel puts the page number where the label says. It substitutes rather
+// than formats so a label without the marker renders as written instead of
+// as a fmt diagnostic: Props are data, and data does not fail a render.
+func pageLabel(format string, n int) string {
+	return strings.Replace(format, "%d", itoa(n), 1)
 }
 
 func paginationPageURL(baseURL string, page int) string {

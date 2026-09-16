@@ -366,7 +366,7 @@ func AlertWithSlots(p AlertProps, slots AlertSlots) g.Node {
 			h.Class(clAlertClose.Compile()),
 			g.Attr("data-action", "click->alert#dismiss"),
 			g.Attr("data-alert-close", ""),
-			g.Attr("aria-label", "Dismiss notification"),
+			g.Attr("aria-label", fallbackText(strings.TrimSpace(p.DismissLabel), "Dismiss notification")),
 			glyph("x-mark"),
 		))
 	}

@@ -51,7 +51,9 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// Hidden overrides are scoped to components so consumer print styles still work.
 	// Checkbox validation adds one optional error property to each of its four
 	// source schemas. Gallery HTML, CSS, props, tokens and icons remain identical.
-	if legacy.SHA256 != "790d5819c8b55d1608c59697464f68234a2b7ba0ac8c2921b152b88f502d7bcf" {
+	// Pagination, Breadcrumb and Alert gain optional label properties, so ten
+	// source schemas change; HTML, CSS, props, tokens and icons are identical.
+	if legacy.SHA256 != "78c9571e6040424614609e49fe193bcb067e154b679238496996664d310b4671" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
