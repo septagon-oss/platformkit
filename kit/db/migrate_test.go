@@ -91,6 +91,87 @@ func TestMigrationOwnersAdvanceIndependently(t *testing.T) {
 	}
 }
 
+// TestAnOwnerAdoptsHistoryWithoutReapplyingIt is the upgrade a module goes
+// through when it takes its SQL out of the foundation: the old layout applied
+// everything as one owner, the new layout names the same files under two, and
+// the second run must neither refuse the old owner's now-missing files nor run
+// the adopted SQL again — CREATE TABLE would fail, and an INSERT would double.
+func TestAnOwnerAdoptsHistoryWithoutReapplyingIt(t *testing.T) {
+	migrateURL, _ := dbtest.URLs(t)
+	customers := &fstest.MapFile{Data: []byte("CREATE TABLE customers (name text); INSERT INTO customers VALUES ('Alice')")}
+	orders := &fstest.MapFile{Data: []byte("CREATE TABLE orders (customer text); INSERT INTO orders VALUES ('Alice')")}
+	active := &fstest.MapFile{Data: []byte("ALTER TABLE customers ADD COLUMN active boolean NOT NULL DEFAULT true")}
+	before := db.MigrationSource{Owner: "core", Files: fstest.MapFS{
+		"000001_customers.up.sql": customers, "000002_orders.up.sql": orders, "000003_active.up.sql": active,
+	}}
+	if err := db.Migrate(t.Context(), migrateURL, before); err != nil {
+		t.Fatal(err)
+	}
+	// The new layout: core keeps 1 and 3, the orders module owns 2 under the
+	// same number and says where it came from.
+	core := db.MigrationSource{Owner: "core", Files: fstest.MapFS{"000001_customers.up.sql": customers, "000003_active.up.sql": active}}
+	sales := fstest.MapFS{"000002_orders.up.sql": orders}
+	after := []db.MigrationSource{core, {Owner: "orders", Files: sales, Adopts: []db.Adoption{{Owner: "core", Versions: []int64{2}}}}}
+	for range 2 {
+		if err := db.Migrate(t.Context(), migrateURL, after...); err != nil {
+			t.Fatalf("upgrade to module-owned history: %v", err)
+		}
+	}
+	admin := dbtest.Open(t, migrateURL)
+	var rows int
+	var owners string
+	scan(t, admin, "SELECT count(*) FROM orders", &rows)
+	scan(t, admin, "SELECT string_agg(owner || '/' || version, ',' ORDER BY version) FROM schema_migrations", &owners)
+	if rows != 1 || owners != "core/1,orders/2,core/3" {
+		t.Fatalf("adoption re-ran SQL or left the ledger wrong: orders=%d ledger=%s", rows, owners)
+	}
+	// The new owner advances on its own from here.
+	sales["000004_paid.up.sql"] = &fstest.MapFile{Data: []byte("ALTER TABLE orders ADD COLUMN paid boolean NOT NULL DEFAULT false")}
+	if err := db.Migrate(t.Context(), migrateURL, after...); err != nil {
+		t.Fatal(err)
+	}
+	scan(t, admin, "SELECT string_agg(owner || '/' || version, ',' ORDER BY version) FROM schema_migrations", &owners)
+	if owners != "core/1,orders/2,core/3,orders/4" {
+		t.Fatalf("ledger after the adopting owner's own migration = %s", owners)
+	}
+	// A fresh installation has nothing to adopt and reads the same ledger.
+	freshURL, _ := dbtest.URLs(t)
+	if err := db.Migrate(t.Context(), freshURL, after...); err != nil {
+		t.Fatal(err)
+	}
+	scan(t, dbtest.Open(t, freshURL), "SELECT string_agg(owner || '/' || version, ',' ORDER BY version) FROM schema_migrations", &owners)
+	if owners != "core/1,orders/2,core/3,orders/4" {
+		t.Fatalf("fresh ledger = %s", owners)
+	}
+}
+
+// TestAdoptionRefusesAChangedFileAndLeavesHistoryAlone: an adopted row is an
+// applied file, and applied files are immutable whoever owns them.
+func TestAdoptionRefusesAChangedFileAndLeavesHistoryAlone(t *testing.T) {
+	migrateURL, _ := dbtest.URLs(t)
+	before := db.MigrationSource{Owner: "core", Files: fstest.MapFS{
+		"1_customers.up.sql": {Data: []byte("CREATE TABLE customers (name text)")},
+		"2_orders.up.sql":    {Data: []byte("CREATE TABLE orders (customer text)")},
+	}}
+	if err := db.Migrate(t.Context(), migrateURL, before); err != nil {
+		t.Fatal(err)
+	}
+	after := []db.MigrationSource{
+		{Owner: "core", Files: fstest.MapFS{"1_customers.up.sql": {Data: []byte("CREATE TABLE customers (name text)")}}},
+		{Owner: "orders", Files: fstest.MapFS{"2_orders.up.sql": {Data: []byte("CREATE TABLE orders (customer text, total int)")}},
+			Adopts: []db.Adoption{{Owner: "core", Versions: []int64{2}}}},
+	}
+	err := db.Migrate(t.Context(), migrateURL, after...)
+	if err == nil || !strings.Contains(err.Error(), "orders/2_orders.up.sql was applied as core/2_orders.up.sql with different content") {
+		t.Fatalf("changed adopted file = %v", err)
+	}
+	var owners string
+	scan(t, dbtest.Open(t, migrateURL), "SELECT string_agg(owner || '/' || version, ',' ORDER BY version) FROM schema_migrations", &owners)
+	if owners != "core/1,core/2" {
+		t.Fatalf("a refused adoption changed the ledger: %s", owners)
+	}
+}
+
 func TestFailedMigrationRollsBackAndCanBeRetried(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	files := fstest.MapFS{
@@ -243,6 +324,12 @@ func TestInvalidMigrationSourcesFailBeforeConnecting(t *testing.T) {
 		"zero version":      {Owner: "zero", Files: fstest.MapFS{"0_a.up.sql": {Data: []byte("SELECT 1")}}},
 		"overflow version":  {Owner: "overflow", Files: fstest.MapFS{"9223372036854775808_a.up.sql": {Data: []byte("SELECT 1")}}},
 		"bad filename":      {Owner: "bad", Files: fstest.MapFS{"schema.sql": {Data: []byte("SELECT 1")}}},
+		"adopts a version it lacks": {Owner: "adopter", Files: valid.Files,
+			Adopts: []db.Adoption{{Owner: "elsewhere", Versions: []int64{7}}}},
+		"adopts from itself": {Owner: "adopter", Files: valid.Files,
+			Adopts: []db.Adoption{{Owner: "adopter", Versions: []int64{1}}}},
+		"adopts a version its previous owner still lists": {Owner: "adopter", Files: valid.Files,
+			Adopts: []db.Adoption{{Owner: "valid", Versions: []int64{1}}}},
 	}
 	for name, invalid := range cases {
 		t.Run(name, func(t *testing.T) {

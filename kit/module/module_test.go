@@ -66,6 +66,15 @@ func TestValidateAcceptsAWellFormedComposition(t *testing.T) {
 	}
 }
 
+// TestValidateRefusesAdoptionWithoutMigrations: an adoption names files, so a
+// manifest that adopts and has no files is a declaration nothing can check.
+func TestValidateRefusesAdoptionWithoutMigrations(t *testing.T) {
+	err := Validate([]Module{{Name: "orders", Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{2}}}}})
+	if err == nil || !strings.Contains(err.Error(), `module "orders": adopts migration history and declares no Migrations`) {
+		t.Fatalf("Validate = %v", err)
+	}
+}
+
 // TestValidateRejectsMalformedTokens: the grammar of a permission is the one
 // kit/httpx enforces at the route, so a manifest cannot declare a key no route
 // could ever require.

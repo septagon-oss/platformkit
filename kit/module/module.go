@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
@@ -79,6 +80,13 @@ type Module struct {
 	// its append-only history; versions are local to this module. Composition
 	// order determines which capability migrates first.
 	Migrations fs.FS
+
+	// Adopts is history this module takes over from another owner: the
+	// versions another owner's ledger rows carry that are now files of
+	// Migrations, under the same numbers. The reference modules declare the
+	// files the foundation applied before each module owned its own SQL; a
+	// module that never shared an owner declares nothing. See db.Adoption.
+	Adopts []db.Adoption
 
 	// Routes registers this module's operations, each with its authorization.
 	Routes func(api *httpx.API)
@@ -159,6 +167,13 @@ func Validate(mods []Module) error {
 			if err := jobs.Valid(j); err != nil {
 				add("module %q: %s", m.Name, err)
 			}
+		}
+
+		// The files an adoption names are checked by db.Migrate against the
+		// module's SQL before it connects; what only the manifest can say is
+		// that there is SQL to check against at all.
+		if len(m.Adopts) > 0 && m.Migrations == nil {
+			add("module %q: adopts migration history and declares no Migrations", m.Name)
 		}
 
 		for _, e := range m.Events {

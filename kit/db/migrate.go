@@ -16,6 +16,24 @@ import (
 type MigrationSource struct {
 	Owner string
 	Files fs.FS
+	// Adopts is history this owner takes over from another: ledger rows the
+	// named owner applied whose version and checksum match a file of this
+	// source, under the same version number. Migrate re-owns them in one
+	// transaction before it reads any history, so the adopted files are
+	// neither missing from the old owner nor pending for the new one, and
+	// their SQL never runs again. It is how a module takes the files the
+	// foundation once applied under its own name (docs/adr/0011); a fresh
+	// installation has nothing to adopt and the declaration is a no-op.
+	Adopts []Adoption
+}
+
+// Adoption names one previous owner and the versions of its ledger rows that
+// are now the adopting source's files. Every version must be a file of the
+// adopting source; an adopted row whose checksum differs from that file is a
+// changed migration and refuses, like any other changed applied file.
+type Adoption struct {
+	Owner    string
+	Versions []int64
 }
 
 // Migrate validates the selected histories, then applies pending SQL in source
@@ -24,7 +42,7 @@ type MigrationSource struct {
 // control and operations such as CREATE INDEX CONCURRENTLY belong outside them.
 // Removing a source from the composition leaves its tables and history intact.
 func Migrate(ctx context.Context, migrateURL string, sources ...MigrationSource) error {
-	migrations, err := readMigrations(sources)
+	migrations, adoptions, err := readMigrations(sources)
 	if err != nil {
 		return err
 	}
@@ -52,6 +70,9 @@ func Migrate(ctx context.Context, migrateURL string, sources ...MigrationSource)
 
 	if _, err := conn.ExecContext(ctx, migrationLedger); err != nil {
 		return fmt.Errorf("db: migrate: prepare history: %w", err)
+	}
+	if err := adoptHistory(ctx, conn, adoptions); err != nil {
+		return err
 	}
 	pending, err := pendingMigrations(ctx, conn, migrations)
 	if err != nil {
@@ -89,6 +110,48 @@ BEGIN
 		EXECUTE 'REVOKE ALL ON TABLE schema_migrations FROM ' || recipient || ' CASCADE';
 	END LOOP;
 END $$;`
+
+// adoptHistory re-owns the ledger rows the adoptions name, all in one
+// transaction, so a failure part-way leaves the history as it was. A row the
+// old owner never applied is not there to adopt, which is every fresh
+// installation and every installation that already adopted it; a row that is
+// there with another checksum is a file that changed after it was applied.
+func adoptHistory(ctx context.Context, conn *sql.Conn, adoptions []adoption) error {
+	if len(adoptions) == 0 {
+		return nil
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("db: migrate: adopt history: %w", err)
+	}
+	defer tx.Rollback()
+	for _, a := range adoptions {
+		result, err := tx.ExecContext(ctx,
+			"UPDATE schema_migrations SET owner = $1 WHERE owner = $2 AND version = $3 AND checksum = $4",
+			a.owner, a.from, a.version, a.checksum)
+		if err != nil {
+			return fmt.Errorf("db: migrate: adopt %s/%s from %s: %w", a.owner, a.name, a.from, err)
+		}
+		if moved, _ := result.RowsAffected(); moved == 1 {
+			continue
+		}
+		var applied string
+		err = tx.QueryRowContext(ctx, "SELECT name FROM schema_migrations WHERE owner = $1 AND version = $2", a.from, a.version).Scan(&applied)
+		switch {
+		case err == sql.ErrNoRows:
+			// Nothing to adopt: never applied under the old owner, or adopted already.
+		case err != nil:
+			return fmt.Errorf("db: migrate: adopt %s/%s from %s: %w", a.owner, a.name, a.from, err)
+		default:
+			return fmt.Errorf("db: migrate: %s/%s was applied as %s/%s with different content; adoption keeps the bytes that ran, add a new migration for the change",
+				a.owner, a.name, a.from, applied)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("db: migrate: adopt history: %w", err)
+	}
+	return nil
+}
 
 func pendingMigrations(ctx context.Context, conn *sql.Conn, migrations []migration) ([]migration, error) {
 	remaining := make(map[migrationID]migration, len(migrations))

@@ -335,7 +335,7 @@ func TestNewRefusesAnInvalidComposition(t *testing.T) {
 func TestMigrationSourcesFollowComposition(t *testing.T) {
 	mods := []module.Module{hello(), {Name: "no-sql"}, {Name: "another", Migrations: fstest.MapFS{
 		"000001_other.up.sql": {Data: []byte("SELECT 1")},
-	}}}
+	}, Adopts: []db.Adoption{{Owner: "elsewhere", Versions: []int64{1}}}}}
 	sources := MigrationSources(mods)
 	var owners []string
 	for _, source := range sources {
@@ -343,6 +343,9 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 	if !slices.Equal(owners, []string{"platformkit", "hello", "another"}) {
 		t.Fatalf("migration owners = %v", owners)
+	}
+	if len(sources[2].Adopts) != 1 || sources[2].Adopts[0].Owner != "elsewhere" {
+		t.Fatalf("a module's adoption did not travel with its source: %+v", sources[2].Adopts)
 	}
 	migrateURL, _ := dbtest.URLs(t)
 	if err := db.Migrate(t.Context(), migrateURL, sources...); err != nil {
