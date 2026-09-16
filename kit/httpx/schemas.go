@@ -10,7 +10,10 @@ package httpx
 // register they are generated from, and modules/admin is its one reader.
 //
 // The kernel stays ignorant of kit/rest: a Resource is declared here, kit/rest
-// fills one in, and nothing in this package imports it back.
+// fills one in, and nothing in this package imports it back. The shape a
+// resource has is kit/entity's (Schema, Field); the one thing read from
+// kit/crud is Query, the page a List asks for, because a list request is the
+// storage adapter's contract and a screen fills it in the adapter's terms.
 
 import (
 	"context"
@@ -22,6 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -54,7 +58,7 @@ type Resource struct {
 	OperatorWrite bool
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
-	Schema    crud.Schema
+	Schema    entity.Schema
 	// Commands are the lifecycle routes beyond the five, filled in by
 	// Resources from what AddCommand recorded.
 	Commands []Command
@@ -93,7 +97,7 @@ type Command struct {
 	Summary, Description string
 	Collection           bool
 	Auth                 Auth
-	Fields               []crud.Field
+	Fields               []entity.Field
 }
 
 // CommandsFor is the commands this caller may call. One they may not is left

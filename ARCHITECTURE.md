@@ -162,7 +162,11 @@ adoption.
 
 [kit/db](kit/db/) owns transaction entry and tenant database settings.
 `db.Tx[db.Tenant]` and `db.Tx[db.System]` distinguish tenant and system work
-in Go. PostgreSQL row-level security enforces isolation for tenant tables under
+in Go. The router imports it for the transaction a request is — `TxFrom`,
+the loader and authenticate signatures, the lazy `db.Pending` the middleware
+closes — and for nothing that executes SQL of its own; the
+[kit/httpx guide](kit/httpx/README.md#the-database-boundary) records why the
+pipeline stays there rather than in a second package with the same closure. PostgreSQL row-level security enforces isolation for tenant tables under
 the application role. The owner role performs migrations, not ordinary requests.
 The tenant settings are PostgreSQL `USERSET` values, so the source gate that
 restricts writes to `kit/db` is part of the security boundary, not a substitute
