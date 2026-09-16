@@ -9,7 +9,8 @@
 // package reads that composition and the examples in ui/components/examples
 // and produces artefacts for design tools, the admin gallery and tests.
 // ui/page and the shells depend on ui; only design tooling and the admin
-// gallery depend on this package, and ui/page must never import it.
+// gallery depend on this package, and the ui/page and ui/screens gates in
+// scripts/check_packages.sh refuse it in their closures.
 package export
 
 import (

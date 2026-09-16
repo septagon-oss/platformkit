@@ -26,7 +26,15 @@ done
 
 # Deps is the complete runtime closure, unlike Imports. Tests are deliberately
 # excluded: SQL fixtures and adapter conformance tests may need more than core.
-parts=(kit/entity kit/locale kit/flags kit/tenancy modules/task/domain design ui/forms
+#
+# ui/page and ui/screens are gated at the closure they have today, not the one
+# they should have: through kit/httpx they reach kit/db, database/sql and
+# net/http (the request context and its transaction) and, through kit/module's
+# manifest types, kit/events and kit/jobs. Freeing them from the database is a
+# separate change. Recording the boundary now is what refuses growth — ui/export,
+# ui/source, a module's internals — until that change lands; the "web" mode is
+# the one that admits both database/sql and net/http.
+parts=(kit/entity kit/locale kit/flags kit/tenancy modules/task/domain design ui/forms ui/page ui/screens
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
@@ -50,8 +58,8 @@ printf '%s\n' "$metadata" | awk -F '|' '
                 if (index(dep, p) != 1 && module[dep] != "" && contains(modules, module[dep])) bad = 0
             }
             # UUID exposes sql/driver values; that is not a database runner.
-            if (dep == "database/sql" && mode != "sql") bad = 1
-            if (dep ~ /^net\/http(\/|$)/ && mode != "provider") bad = 1
+            if (dep == "database/sql" && mode != "sql" && mode != "web") bad = 1
+            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web") bad = 1
             if (bad) {
                 print "OUT OF BOUNDS: " name " transitively depends on " dep > "/dev/stderr"
                 failed = 1
@@ -66,6 +74,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         delivery = p "kit/events/transport " p "kit/events/internal/delivery"
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
         outbox = identity " " delivery " " p "kit/db " p "kit/events/providers/memory"
+        # The recorded closure of the page composition layer (see the comment above parts).
+        kernel = p "kit/config " identity " " p "kit/db " p "kit/entity " p "kit/crud " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module"
+        presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui"
+        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3"
         check("kit/entity", uuid)
         check("kit/locale", "")
         check("kit/flags", uuid)
@@ -73,6 +85,8 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("modules/task/domain", "")
         check("design", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples maragu.dev/gomponents maragu.dev/gomponents/html")
+        check("ui/page", kernel " " presentation, web, "web")
+        check("ui/screens", kernel " " presentation " " p "kit/rest " p "ui/forms " p "ui/page", web, "web")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox, sql, "sql")
@@ -88,7 +102,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
     }
 '
 
-echo "package boundaries: portable cores, design, forms and selected providers passed"
+echo "package boundaries: portable cores, design, forms, pages, screens and selected providers passed"
 
 if [ ! -d "$root/apps/platformkit" ]; then
 	echo "no app yet"

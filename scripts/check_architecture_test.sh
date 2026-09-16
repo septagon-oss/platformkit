@@ -82,7 +82,7 @@ printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
 selected_root="$(GOTOOLCHAIN="go$(sed -n 's/^go //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
 for path in apps/platformkit kit/entity kit/locale kit/flags kit/tenancy \
-    modules/task/domain design ui/css ui/forms ui/components ui/components/examples kit/tenancy/providers/topaz \
+    modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
     kit/db kit/httpx kit/config modules/auth/contracts; do
@@ -104,6 +104,8 @@ boundary_rejects() {
 boundary_rejects modules/task/domain "$foundation/kit/tenancy"
 boundary_rejects kit/entity "$foundation/kit/db"
 boundary_rejects design "$foundation/ui/css"
+boundary_rejects ui/page "$foundation/ui/export"
+boundary_rejects ui/screens "$foundation/ui/export"
 fixture_import kit/tenancy/providers/topaz "$foundation/kit/tenancy"
 boundary_rejects kit/tenancy database/sql kit/tenancy/providers/topaz
 boundary_rejects kit/tenancy net/http
@@ -169,6 +171,23 @@ rejects 'transitive NATS SDK in SQL outbox' 'transitively depends on github.com/
 rejects 'unselected provider SDK family' 'transitively depends on example.test/other-sdk/client' \
     "${fake[@]}" FAKE_GO_MODE=sdk SDK_OWNER="$foundation/kit/flags/providers/openfeature" SDK_DEP=example.test/other-sdk/client SDK_MODULE=example.test/other-sdk "${packages[@]}"
 echo 'package boundaries: transitive core/UI/provider rules, missing metadata and go list failures passed'
+
+# Declared versions are the build: a replace directive in either form and a
+# go.work file are refused, a commented-out directive is not.
+versions="$temporary/versions"
+mkdir "$versions"
+printf 'module example.test/versions\n\ngo 1.26\n\nrequire example.test/dep v1.0.0\n// replace example.test/dep => ../dep\n' > "$versions/go.mod"
+bash "$scripts/check_versions.sh" "$versions" >/dev/null
+printf 'module example.test/versions\n\nreplace example.test/dep => ../dep\n' > "$versions/go.mod"
+rejects 'one-line replace directive' 'replaces a dependency' bash "$scripts/check_versions.sh" "$versions"
+printf 'module example.test/versions\n\nreplace (\n\texample.test/dep => ../dep\n)\n' > "$versions/go.mod"
+rejects 'replace block' 'replaces a dependency' bash "$scripts/check_versions.sh" "$versions"
+printf 'module example.test/versions\n' > "$versions/go.mod"
+printf 'go 1.26\n\nuse .\n' > "$versions/go.work"
+rejects 'workspace file' 'go.work' bash "$scripts/check_versions.sh" "$versions"
+rm "$versions/go.work"
+rejects 'missing module' 'no go.mod' bash "$scripts/check_versions.sh" "$temporary"
+echo 'version gate: replace directives, workspace files and missing modules passed'
 
 # A push has already advanced main. The previous revision, supplied explicitly,
 # must still catch a committed increase instead of comparing main with itself.

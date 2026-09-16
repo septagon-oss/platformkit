@@ -52,7 +52,10 @@ SQL transactions, authorization and business writes remain explicit composition
 responsibilities; an exported form or rule does not supply a complete service.
 The existing CRUD/page/Auth aliases and screens adapter delegate to these owners.
 [ADR 0012](docs/adr/0012-independent-parts.md) requires adopted-consumer benefit.
-The [package gate](scripts/check_packages.sh) checks transitive runtime imports;
+The [package gate](scripts/check_packages.sh) checks transitive runtime imports,
+including the recorded closures of `ui/page` and `ui/screens`, and the
+[version gate](scripts/check_versions.sh) refuses a `replace` directive or a
+`go.work` file, so a passing check reflects the versions the module declares;
 the [public example](ui/forms/testdata/standalone/README.md) proves ordinary
 versioned consumption without the application runtime. Neither proves scale or
 adoption by an external product.

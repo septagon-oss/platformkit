@@ -90,7 +90,8 @@ The cache cannot observe database or NATS state; after external-input changes,
 run `make test TEST_FLAGS=-count=1`. See [native watch](tools/designexport/openpencil/README.md).
 
 `make check` always runs fresh tests across all packages, regardless of local
-filters, plus build, vet, formatting, budgets, imports and tenant-setting checks.
+filters, plus build, vet, formatting, budgets, imports, declared-version and
+tenant-setting checks.
 `make e2e` adds browser journeys. Both pass before pushing; `make check`
 passes before committing.
 
