@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/audit/contracts"
 	"github.com/septagon-oss/platformkit/modules/audit/contracts/audittest"
 	"github.com/septagon-oss/platformkit/modules/audit/internal"
@@ -28,7 +29,7 @@ var (
 // service, a real Postgres and a real tenant transaction.
 func TestServiceConforms(t *testing.T) {
 	audittest.RunService(t, func(t *testing.T, run func(audittest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, audit.Migrations)
 		svc := internal.NewService()
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(audittest.Fixture{
@@ -60,7 +61,7 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 // out of another's — it is invisible to it, by the policy in
 // migrations/000010 and not by anything this module wrote.
 func TestTheTrailIsTenantOwned(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, audit.Migrations)
 	svc := internal.NewService()
 
 	ev := events.Event{ID: uuid.New(), Name: "task.task.created", At: db.Now(),
@@ -104,7 +105,7 @@ func TestTheTrailIsTenantOwned(t *testing.T) {
 // thousand and the fixture is smaller, so what this proves is the boundary and
 // the loop's exit, not the batching itself.
 func TestRetentionForgetsOnlyWhatIsOldEnough(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, audit.Migrations)
 	svc := internal.NewService()
 
 	old := db.Now().AddDate(0, 0, -40)

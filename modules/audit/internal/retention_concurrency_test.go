@@ -24,7 +24,7 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			adminURL, appURL := dbtest.URLs(t)
-			if err := db.Migrate(ctx, adminURL, migrations.Source); err != nil {
+			if err := db.Migrate(ctx, adminURL, migrations.Source, audit.Migrations); err != nil {
 				t.Fatal(err)
 			}
 			admin := dbtest.Open(t, adminURL)

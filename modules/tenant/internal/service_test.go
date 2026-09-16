@@ -11,9 +11,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts/tenanttest"
 	"github.com/septagon-oss/platformkit/modules/tenant/internal"
+	"github.com/septagon-oss/platformkit/modules/user"
 )
 
 // errRollback ends a case's transaction without committing it.
@@ -24,7 +26,7 @@ var errRollback = errors.New("rolled back on purpose")
 // implementations, one specification.
 func TestServiceConforms(t *testing.T) {
 	tenanttest.RunService(t, func(t *testing.T, run func(tenanttest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 		svc := internal.NewService(nil)
 		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 			run(tenanttest.Fixture{
@@ -58,7 +60,7 @@ func outbox(t *testing.T, tx db.Tx[db.System]) []string {
 // breath finds their role already there. A hook that fails takes the tenant
 // with it.
 func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	boom := errors.New("the hook refused")
 	var seen uuid.UUID
 
@@ -113,7 +115,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 // is the same guarantee every other table gives, reached by naming the row
 // instead of a column on it.
 func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	svc := internal.NewService(nil)
 
 	var acme, globex *contracts.Tenant
@@ -170,7 +172,7 @@ func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 // TestBootstrapRefusesASecondInstallation: the one write with no caller to
 // authorize is safe because it can only ever happen once.
 func TestBootstrapRefusesASecondInstallation(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	svc := internal.NewService(nil)
 	first := contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"}
 

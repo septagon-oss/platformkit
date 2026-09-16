@@ -15,6 +15,8 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	usermodule "github.com/septagon-oss/platformkit/modules/user"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -27,7 +29,7 @@ func TestRegistrationIsOptIn(t *testing.T) {
 }
 
 func TestRegistrationCreatesOnlyAnInvitedMemberAfterTheRequest(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, true)
 	res := call(t, router, http.MethodPost, "/api/v1/auth/register", `{"email":"Student@EXAMPLE.com","displayName":"Student","roles":["admin"]}`)
 	if res.Code != http.StatusUnprocessableEntity {
@@ -83,7 +85,7 @@ func TestRegistrationCreatesOnlyAnInvitedMemberAfterTheRequest(t *testing.T) {
 }
 
 func TestRegistrationPreservesExistingAccountsAndIsTenantScoped(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, true)
 	id := person(t, conn, "student@example.com", contracts.RoleAdmin)
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -132,7 +134,7 @@ func TestRegistrationPreservesExistingAccountsAndIsTenantScoped(t *testing.T) {
 }
 
 func TestRegistrationSharesThePublicMailRequestLimit(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, true)
 	for i := range contracts.ResetRequests + 1 {
 		res := call(t, router, http.MethodPost, "/api/v1/auth/register", `{"email":"student@example.com"}`, from("203.0.113.29"))
@@ -147,7 +149,7 @@ func TestRegistrationSharesThePublicMailRequestLimit(t *testing.T) {
 }
 
 func TestConcurrentRegistrationCreatesOneAccount(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	mountConfigured(t, conn, auth.OIDC{}, true)
 	payload, err := json.Marshal(contracts.RegistrationRequested{Email: "race@example.com"})
 	if err != nil {

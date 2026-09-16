@@ -19,6 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/file/contracts/filetest"
 	"github.com/septagon-oss/platformkit/modules/file/internal"
@@ -34,7 +35,7 @@ const outbox = "platformkit_outbox"
 // service, a real Postgres, a real tenant transaction and a real directory.
 func TestServiceConforms(t *testing.T) {
 	filetest.RunService(t, func(t *testing.T, run func(filetest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, file.Migrations)
 		dir := t.TempDir()
 		store := internal.NewLocal(dir)
 		svc := internal.NewService(store, filetest.Limit, 0)
@@ -93,7 +94,7 @@ func published(t *testing.T, tx db.Tx[db.Tenant]) []string {
 // alternative to each is a row that points at nothing, which is a download that
 // fails forever.
 func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
 
@@ -171,7 +172,7 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 // with nothing at it is not an error — so a redelivery after a half-finished
 // attempt finishes it instead of failing forever.
 func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
 	svc := internal.NewService(store, filetest.Limit, 0)
@@ -271,7 +272,7 @@ func TestAStorageKeyIsAUUIDAndNothingElse(t *testing.T) {
 // TestTheUploaderIsTheCaller: Validate stamps it from the actor on the context,
 // which is where kit/events reads the actor of an event from too.
 func TestTheUploaderIsTheCaller(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, file.Migrations)
 	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit, 0)
 	me := uuid.New()
 
@@ -299,7 +300,7 @@ func TestTheUploaderIsTheCaller(t *testing.T) {
 // the caller did: Open returns the error, which reaches huma as a 500 with the
 // key in the log.
 func TestARowThatPointsAtNothingIsAnOutage(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
 	svc := internal.NewService(store, filetest.Limit, 0)
@@ -338,7 +339,7 @@ func TestARowThatPointsAtNothingIsAnOutage(t *testing.T) {
 // back with no bookkeeping to get wrong, and the check is under row-level
 // security, so one tenant's uploads are not counted against another's.
 func TestATenantCannotFillTheDisk(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, file.Migrations)
 	// Room for ten bytes, and a per-upload limit far past it, so the refusal
 	// below can only be the quota.
 	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit, 10)
@@ -393,7 +394,7 @@ func TestTheQuotaHoldsUnderTwentyUploadsAtOnce(t *testing.T) {
 		each    = 4000
 		quota   = 8192
 	)
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	svc := internal.NewService(internal.NewLocal(dir), each*2, quota)
 
@@ -454,7 +455,7 @@ func TestTheQuotaHoldsUnderTwentyUploadsAtOnce(t *testing.T) {
 // store and asks the database which keys it knows, under system access, because
 // the question crosses every tenant by construction.
 func TestTheOrphansAreSweptUp(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
 	svc := internal.NewService(store, filetest.Limit, 0)

@@ -36,6 +36,18 @@ type Adoption struct {
 	Versions []int64
 }
 
+// Sub is fs.Sub for an embedded migrations directory: the files under dir as a
+// source's root, which is where readMigrations looks. It panics where fs.Sub
+// would return an error, because dir is a literal written beside a //go:embed
+// directive and a wrong one is a mistake with no runtime to report to.
+func Sub(fsys fs.FS, dir string) fs.FS {
+	files, err := fs.Sub(fsys, dir)
+	if err != nil {
+		panic("db: Sub: " + err.Error())
+	}
+	return files
+}
+
 // Migrate validates the selected histories, then applies pending SQL in source
 // order and numeric version order. Each file and its history row commit in one
 // transaction. Files must contain transactional PostgreSQL SQL; transaction

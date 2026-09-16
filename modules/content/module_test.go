@@ -43,7 +43,7 @@ func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, err
 // real API, against a real Postgres.
 func mounted(t *testing.T) (*httpx.API, chi.Router) {
 	t.Helper()
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, content.Migrations)
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {

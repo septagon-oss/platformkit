@@ -84,6 +84,8 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 	mounted.AfterCreate = refuseLifecycleOnCreate
 	return svc, module.Module{
 		Name:        "user",
+		Migrations:  Migrations.Files,
+		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events: []string{
 			contracts.EventCreated, contracts.EventUpdated, contracts.EventDeleted,

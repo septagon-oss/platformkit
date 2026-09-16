@@ -23,6 +23,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
+	"github.com/septagon-oss/platformkit/modules/notification"
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -63,7 +64,7 @@ func (site) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Ten
 // mount builds the application's HTTP surface around the real auth module.
 func mount(t *testing.T, oidc auth.OIDC) (chi.Router, *db.Conn, contracts.Auth) {
 	t.Helper()
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	return mountOn(t, conn, oidc)
 }
 

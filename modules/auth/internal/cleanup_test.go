@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -98,7 +99,10 @@ func TestDetachedAuthWritesBoundPoolWait(t *testing.T) {
 func authCleanupFixture(t *testing.T, maxOpen int) (*sql.DB, *db.Conn, context.Context, contracts.Digest) {
 	t.Helper()
 	adminURL, appURL := dbtest.URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
+	// The module's own SQL, read from disk: this white-box test cannot import
+	// the package that embeds it (modules/auth imports this one).
+	sessions := db.MigrationSource{Owner: "auth", Files: os.DirFS("../migrations")}
+	if err := db.Migrate(t.Context(), adminURL, migrations.Source, user.Migrations, sessions); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	admin := dbtest.Open(t, adminURL)

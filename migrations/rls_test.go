@@ -1,7 +1,8 @@
-// Package migrations_test holds one test, and it is about the whole directory
-// rather than about any file in it: every table this schema creates is either
-// protected by the tenant policy migrations/000001 describes or declared exempt
-// in the comment the convention uses.
+// Package migrations_test holds one test, and it is about every migration in
+// the repository rather than about any file: every table the kernel's schema
+// and the reference modules' schemas create is either protected by the tenant
+// policy migrations/000001 describes or declared exempt in the comment the
+// convention uses.
 //
 // It is here and not in kit/db because the claim is about the SQL. kit/db's
 // tests prove that the mechanism works — that a forgotten WHERE returns nothing
@@ -18,7 +19,22 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/migrations"
+	"github.com/septagon-oss/platformkit/modules/audit"
+	"github.com/septagon-oss/platformkit/modules/auth"
+	"github.com/septagon-oss/platformkit/modules/billing"
+	"github.com/septagon-oss/platformkit/modules/content"
+	"github.com/septagon-oss/platformkit/modules/file"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	"github.com/septagon-oss/platformkit/modules/site"
+	"github.com/septagon-oss/platformkit/modules/task"
+	"github.com/septagon-oss/platformkit/modules/user"
 )
+
+// everything is the kernel's schema and every reference module's, in the order
+// apps/platformkit composes them: the claim below is about every table this
+// repository creates, whichever owner now carries the file.
+var everything = []db.MigrationSource{migrations.Source, user.Migrations, notification.Migrations, auth.Migrations,
+	task.Migrations, billing.Migrations, content.Migrations, site.Migrations, file.Migrations, audit.Migrations}
 
 // exemption is the marker a table that belongs to no tenant carries, in its
 // own COMMENT, so that "this one is deliberate" is written where the table is
@@ -32,7 +48,7 @@ const ledger = "schema_migrations"
 // TestEveryTableIsScopedOrExemptOnPurpose.
 func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
 	adminURL, _ := dbtest.URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
+	if err := db.Migrate(t.Context(), adminURL, everything...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	rows, err := dbtest.Open(t, adminURL).QueryContext(t.Context(), `
@@ -86,6 +102,6 @@ func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
 	// A query that found nothing would pass every case above, which is the one
 	// way this test could be worthless.
 	if seen < 10 {
-		t.Errorf("the schema has %d tables, which is fewer than migrations/ creates", seen)
+		t.Errorf("the schema has %d tables, which is fewer than the kernel and the modules create", seen)
 	}
 }

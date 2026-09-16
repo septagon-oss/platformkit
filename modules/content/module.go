@@ -65,6 +65,8 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
 	return svc, module.Module{
 		Name:        "content",
+		Migrations:  Migrations.Files,
+		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{

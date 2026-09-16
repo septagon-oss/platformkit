@@ -10,6 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/user"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/user/contracts/usertest"
 	"github.com/septagon-oss/platformkit/modules/user/internal"
@@ -25,7 +26,7 @@ var (
 // service, a real Postgres and a real tenant transaction.
 func TestServiceConforms(t *testing.T) {
 	usertest.RunService(t, func(t *testing.T, run func(usertest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, user.Migrations)
 		svc := internal.NewService()
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(usertest.Fixture{
@@ -55,7 +56,7 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 // means in practice: the same person working for two customers is two rows,
 // each protected by its own tenant's policy, and neither can see the other.
 func TestOneAddressPerTenantAndNotOnePerInstallation(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, user.Migrations)
 	svc := internal.NewService()
 
 	ids := map[string]uuid.UUID{}
@@ -100,7 +101,7 @@ func TestOneAddressPerTenantAndNotOnePerInstallation(t *testing.T) {
 // what makes today's argon2id parameters raisable tomorrow without invalidating
 // anybody's password, so it is pinned here rather than assumed.
 func TestAPasswordIsNeverStoredAndTheHashCarriesItsParameters(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations)
 	svc := internal.NewService()
 	const password = "correct horse battery staple"
 
@@ -135,7 +136,7 @@ func TestAPasswordIsNeverStoredAndTheHashCarriesItsParameters(t *testing.T) {
 // installation is created in the same transaction as the tenant they
 // administer, which belongs to no tenant.
 func TestProvisionIsTheBootstrapsDoorAndNobodyElses(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations)
 	svc := internal.NewService()
 
 	var id uuid.UUID

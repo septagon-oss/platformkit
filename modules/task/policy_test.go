@@ -28,7 +28,7 @@ func (p *taskPolicy) Decide(_ context.Context, request tenancy.PolicyRequest) (t
 }
 
 func TestTaskPolicyGuardsTheLockedLifecycleAndPreservesFailureOutcomes(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, task.Migrations)
 	owner, other := uuid.New(), uuid.New()
 	actor := other
 	policy := &taskPolicy{owner: owner}

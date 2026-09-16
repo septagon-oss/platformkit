@@ -210,6 +210,21 @@ values. Each source has a stable owner and its SQL filesystem. `kit/app`
 collects the sources in composition order; there is no global version range
 or flattened migration filesystem.
 
+[migrations/](migrations/) is now the kernel's own schema: the tenancy helper
+functions, the tenants and hosts they resolve, the outbox with its claims and
+dead letters, and the limits ledger. Everything a module stores lives beside
+that module — `modules/<name>/migrations`, embedded and exported as
+`<module>.Migrations`, with the manifest handing the kernel the same files. A
+test composes the schema it needs by naming those sources:
+`dbtest.Schema(t, user.Migrations, auth.Migrations)`.
+
+The files kept the version numbers they carried when the foundation applied
+them, and each module declares `Adopts` for them, so an installation migrated
+before this split is re-owned by checksum inside the migration transaction and
+no SQL runs twice. `db.Adoption` is that declaration; a fresh database has
+nothing to adopt and reads the same ledger either way. An adopted file is an
+applied file, so changing one still refuses.
+
 The runner validates the selected source files, obtains a database advisory
 lock, checks applied histories, and executes each pending file with its history
 row in one transaction.

@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/site/contracts/sitetest"
 	"github.com/septagon-oss/platformkit/modules/site/internal"
@@ -26,7 +27,7 @@ const outbox = "platformkit_outbox"
 // service, a real Postgres and a real tenant transaction.
 func TestServiceConforms(t *testing.T) {
 	sitetest.RunService(t, func(t *testing.T, run func(sitetest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, site.Migrations)
 		svc := internal.NewService()
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(sitetest.Fixture{Ctx: ctx, Tx: tx, Service: svc, Published: func() []string {
@@ -50,7 +51,7 @@ func TestServiceConforms(t *testing.T) {
 // the database rather than by the service: the unique index in
 // migrations/000018 refuses a second row whatever Go believes.
 func TestOneSitePerTenant(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, site.Migrations)
 	svc := internal.NewService()
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -85,7 +86,7 @@ func TestOneSitePerTenant(t *testing.T) {
 // cannot see, because the fake has no outbox: the change and the event that
 // describes it are one transaction, and an identical save writes neither.
 func TestSavingPublishesInTheCallersTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, site.Migrations)
 	svc := internal.NewService()
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -124,7 +125,7 @@ func TestSavingPublishesInTheCallersTransaction(t *testing.T) {
 // TestARolledBackSaveLeavesNothing: a transaction that does not commit leaves
 // neither the settings nor the event.
 func TestARolledBackSaveLeavesNothing(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, site.Migrations)
 	svc := internal.NewService()
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

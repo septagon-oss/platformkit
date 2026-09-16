@@ -117,6 +117,8 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
 		Name:        "auth",
+		Migrations:  Migrations.Files,
+		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{

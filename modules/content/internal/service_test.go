@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/content/contracts/contenttest"
 	"github.com/septagon-oss/platformkit/modules/content/internal"
@@ -28,7 +29,7 @@ const outbox = "platformkit_outbox"
 // service, a real Postgres and a real tenant transaction.
 func TestServiceConforms(t *testing.T) {
 	contenttest.RunService(t, func(t *testing.T, run func(contenttest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, content.Migrations)
 		svc := internal.NewService()
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(contenttest.Fixture{Ctx: ctx, Tx: tx, Service: svc,
@@ -60,7 +61,7 @@ func TestServiceConforms(t *testing.T) {
 // describes it are one row each in one transaction. It also pins the idempotent
 // paths as silent.
 func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, content.Migrations)
 	svc := internal.NewService()
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -111,7 +112,7 @@ func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
 // constraint, so an UPDATE straight at the column cannot leave a published page
 // with no publication time or a draft claiming one.
 func TestTheDatabaseKeepsPublishedAndItsTimeTogether(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, content.Migrations)
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		page := &contracts.Content{Slug: "about-us", Title: "About us"}
@@ -129,7 +130,7 @@ func TestTheDatabaseKeepsPublishedAndItsTimeTogether(t *testing.T) {
 // a name, and a deleted one gives its name back — which is the partial index
 // rather than anything Go remembers.
 func TestASlugIsUniqueWithinTheTenantAndReleasedByADelete(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, content.Migrations)
 	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
 
 	var first uuid.UUID
@@ -177,7 +178,7 @@ func TestASlugIsUniqueWithinTheTenantAndReleasedByADelete(t *testing.T) {
 // from, so a body that claims somebody else's byline is overwritten rather than
 // believed.
 func TestTheAuthorIsTheCallerAndNotTheBody(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, content.Migrations)
 	me, impostor := uuid.New(), uuid.New()
 
 	var mine, seeded contracts.Content

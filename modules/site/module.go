@@ -70,6 +70,8 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 	}
 	return svc, module.Module{
 		Name:        "site",
+		Migrations:  Migrations.Files,
+		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{

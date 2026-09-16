@@ -113,6 +113,8 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	sweep := internal.NewReconcile(deps.Storage, deps.ReconcileEvery)
 	return svc, module.Module{
 		Name:        "file",
+		Migrations:  Migrations.Files,
+		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{

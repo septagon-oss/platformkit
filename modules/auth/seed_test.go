@@ -14,10 +14,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	"github.com/septagon-oss/platformkit/modules/user"
 )
 
 func TestRoleProvisioningNeedsOnlyItsTransaction(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	for _, operator := range []bool{false, true} {
 		tenant := tenancy.Tenant{ID: uuid.New(), Operator: operator}
 		defaults := []contracts.Role{{Name: "member", Grants: contracts.Permissions{"task:read"}}}
@@ -59,7 +61,7 @@ func TestRoleProvisioningNeedsOnlyItsTransaction(t *testing.T) {
 }
 
 func TestInitialRoleRefusalsAndRollbackLeaveNoRoles(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	tenant := tenancy.Tenant{ID: uuid.New()}
 	for _, role := range []contracts.Role{
 		{Name: "admin", Grants: contracts.Permissions{"task:read"}},

@@ -18,6 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
 )
@@ -50,7 +51,7 @@ func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, err
 // and the response held until the commit.
 func mounted(t *testing.T) (*httpx.API, chi.Router, *db.Conn) {
 	t.Helper()
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, task.Migrations)
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {

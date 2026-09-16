@@ -118,6 +118,8 @@ func Module(deps Deps) module.Module {
 	mounted.AfterCreate = internal.BreachOnArrival(svc)
 	return module.Module{
 		Name:        "task",
+		Migrations:  Migrations.Files,
+		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{

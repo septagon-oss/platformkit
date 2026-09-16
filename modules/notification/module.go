@@ -72,6 +72,8 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService(deps.Recipients)
 	return svc, module.Module{
 		Name:        "notification",
+		Migrations:  Migrations.Files,
+		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
 		// No nav entry, and it is the same fact as the empty Permissions: a

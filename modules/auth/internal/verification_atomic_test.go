@@ -15,11 +15,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	usermodule "github.com/septagon-oss/platformkit/modules/user"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 func TestConcurrentEmailVerificationConsumesOnlyOnce(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	u, token := verificationSignup(t, conn, router, "concurrent@example.com")
 	body := verificationBody(t, token)
@@ -56,7 +58,7 @@ func TestConcurrentEmailVerificationConsumesOnlyOnce(t *testing.T) {
 func TestEmailVerificationRechecksCredentialAfterAdvisoryWait(t *testing.T) {
 	for _, change := range []string{"expiry", "rotation"} {
 		t.Run(change, func(t *testing.T) {
-			admin, conn := dbtest.Schema(t)
+			admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 			router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 			u, token := verificationSignup(t, conn, router, "waiting@example.com")
 			body := verificationBody(t, token)
@@ -130,7 +132,7 @@ func TestEmailVerificationRechecksCredentialAfterAdvisoryWait(t *testing.T) {
 }
 
 func TestEmailVerificationEventFailureRollsBackConsumption(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	u, token := verificationSignup(t, conn, router, "rollback@example.com")
 	body := verificationBody(t, token)
@@ -155,7 +157,7 @@ func TestEmailVerificationEventFailureRollsBackConsumption(t *testing.T) {
 func TestEmailVerificationRechecksAccountAfterIssuance(t *testing.T) {
 	for _, change := range []string{"email", "deactivation", "deletion"} {
 		t.Run(change, func(t *testing.T) {
-			admin, conn := dbtest.Schema(t)
+			admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 			router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 			u, token := verificationSignup(t, conn, router, "changed@example.com")
 			status := user.StatusUnverified

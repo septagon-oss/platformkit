@@ -15,9 +15,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
+	"github.com/septagon-oss/platformkit/modules/notification"
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -53,7 +55,7 @@ var (
 // are indistinguishable there, which is what the suite is entitled to assume.
 func TestServiceConforms(t *testing.T) {
 	authtest.RunService(t, func(t *testing.T, run func(authtest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 		users := realUsers()
 		notices := &authtest.Notices{}
 		box := &authtest.Mailbox{}
@@ -153,7 +155,7 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 // looks for it returns nothing because the policy does. No code compares two
 // tenant ids; there is no code to get wrong.
 func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	svc := internal.NewService(users, nil, internal.Delivery{})
 	seed(t, conn, acme)
@@ -196,7 +198,7 @@ func TestASessionFromAnotherTenantIsNotASessionHere(t *testing.T) {
 // a thirty-day session that a laptop in a drawer loses and a person who works
 // every day keeps.
 func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	svc := internal.NewService(users, nil, internal.Delivery{})
 	seed(t, conn, acme)
@@ -269,7 +271,7 @@ func TestAnExpiredSessionIsNobodyAndUseSlidesTheExpiry(t *testing.T) {
 // TestDeactivatingSomebodyEndsTheirSessions without walking a list of them:
 // a session is only honoured for an active user, so one column does it.
 func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	svc := internal.NewService(users, nil, internal.Delivery{})
 	seed(t, conn, acme)
@@ -308,7 +310,7 @@ func TestDeactivatingSomebodyEndsTheirSessions(t *testing.T) {
 // account was attacked and nothing recorded it" is the one case where that
 // matters, which is why the event is written beside it.
 func TestAFailedLoginIsRecordedThoughItsRequestIsRolledBack(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	svc := internal.NewService(users, nil, internal.Delivery{})
 	seed(t, conn, acme)
@@ -367,7 +369,7 @@ func row(t *testing.T, admin *sql.DB, query string, args ...any) observedRow {
 // way past rather than left for the sweep — a refused credential that is still
 // in the table is still something a copy of the table teaches an attacker.
 func TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	svc := internal.NewService(users, nil, internal.Delivery{})
 	seed(t, conn, acme)
@@ -416,7 +418,7 @@ func TestASessionPastItsAbsoluteCapIsNobodyAndItsRowGoes(t *testing.T) {
 // session that expires at ninety days, not one that expires thirty days later
 // and is refused anyway.
 func TestTheSlideNeverPassesTheCap(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	svc := internal.NewService(users, nil, internal.Delivery{})
 	seed(t, conn, acme)
@@ -460,7 +462,7 @@ func TestTheSlideNeverPassesTheCap(t *testing.T) {
 // TestThePurgeTakesExpiredCredentials, which is what stops the two tables being
 // a history of who signed in from where.
 func TestThePurgeTakesExpiredCredentials(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
 	svc := internal.NewService(users, notices, delivery(box))
@@ -517,7 +519,7 @@ func TestThePurgeTakesExpiredCredentials(t *testing.T) {
 // adding a second, so a mailbox with four of these mails still has one that
 // works — and it is the newest.
 func TestOnePendingLinkPerPerson(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
 	svc := internal.NewService(users, notices, delivery(box))
@@ -576,7 +578,7 @@ func TestOnePendingLinkPerPerson(t *testing.T) {
 // and it is the reason both are hashed: a copy of either is a list of digests
 // rather than a set of live credentials.
 func TestTheTokenTableHoldsNoToken(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	users := realUsers()
 	notices, box := &authtest.Notices{}, &authtest.Mailbox{}
 	svc := internal.NewService(users, notices, delivery(box))

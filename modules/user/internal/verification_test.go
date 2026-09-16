@@ -13,12 +13,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/user"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/user/internal"
 )
 
 func TestEmailVerificationKeepsTenantOwnershipAndPublishesAtomically(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations)
 	svc := internal.NewService()
 	const password = "correct horse battery staple"
 	if _, err := admin.ExecContext(t.Context(), "ALTER TABLE platformkit_outbox ADD CONSTRAINT reject_registration_event CHECK (name <> 'user.registration_unverified')"); err != nil {
@@ -108,7 +109,7 @@ func TestEmailVerificationKeepsTenantOwnershipAndPublishesAtomically(t *testing.
 }
 
 func TestEmailVerificationRefusesMissingPasswordAndDeletedUsers(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, user.Migrations)
 	svc := internal.NewService()
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		u, err := svc.RegisterUnverified(ctx, tx, contracts.PasswordRegistration{Email: "ada@example.com", Password: "correct horse battery staple"})

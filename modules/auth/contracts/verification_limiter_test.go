@@ -10,11 +10,14 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	"github.com/septagon-oss/platformkit/modules/user"
 )
 
 func TestVerificationRecipientLimitIsSharedAndTenantScoped(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	acme := httpx.WithConn(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New()}), conn)
 	globex := httpx.WithConn(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New()}), conn)
 	first := contracts.NewLimiter(limit.Postgres(httpx.ConnFrom))

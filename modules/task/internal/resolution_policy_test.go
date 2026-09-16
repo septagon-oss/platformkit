@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
 )
@@ -26,7 +27,7 @@ func (p *resolutionPolicy) Decide(context.Context, tenancy.PolicyRequest) (tenan
 }
 
 func TestResolutionPolicyPrecedesRetriesAndConflicts(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, task.Migrations)
 	for _, status := range []string{contracts.StatusResolved, contracts.StatusClosed} {
 		for _, access := range []struct {
 			name string

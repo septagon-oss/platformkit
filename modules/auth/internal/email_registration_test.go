@@ -21,10 +21,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
+	notificationmodule "github.com/septagon-oss/platformkit/modules/notification"
 	notification "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	usermodule "github.com/septagon-oss/platformkit/modules/user"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -72,7 +75,7 @@ func verificationSignup(t *testing.T, conn *db.Conn, router chi.Router, email st
 }
 
 func TestEmailSignupKeepsThePasswordAndRequiresExplicitVerification(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	u, token := verificationSignup(t, conn, router, "New@EXAMPLE.com")
 	if u.Status != user.StatusUnverified || u.CanSignIn() || !u.CheckPassword(authtest.Password) || !slices.Equal(u.Roles, user.Roles{"member"}) {
@@ -117,7 +120,7 @@ func TestEmailSignupKeepsThePasswordAndRequiresExplicitVerification(t *testing.T
 }
 
 func TestEmailSignupValidatesConsentCredentialsAndComposition(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	cases := []struct {
 		field string
@@ -198,7 +201,7 @@ func (sites verificationSites) ByHost(_ context.Context, _ db.Tx[db.System], hos
 }
 
 func TestEmailVerificationCannotCrossTenantHosts(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	_, token := verificationSignup(t, conn, router, "tenant@example.com")
 	seed(t, conn, globex)
@@ -224,7 +227,7 @@ func TestEmailVerificationCannotCrossTenantHosts(t *testing.T) {
 }
 
 func TestPasswordTokenCannotConfirmEmailOrActivateUnverifiedAccounts(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations)
 	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	id := person(t, conn, "recovery@example.com")
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -258,7 +261,7 @@ func TestPasswordTokenCannotConfirmEmailOrActivateUnverifiedAccounts(t *testing.
 }
 
 func TestVerificationResendFailsClosedWhenItsRecipientStoreFails(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	person(t, conn, "known@example.com")
 	_, err := admin.Exec(`CREATE FUNCTION reject_verification_counter() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -290,7 +293,7 @@ func TestVerificationResendFailsClosedWhenItsRecipientStoreFails(t *testing.T) {
 }
 
 func TestEmailSignupDuplicatesPreserveEveryExistingState(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	var acknowledged string
 	for i, status := range []string{user.StatusInvited, user.StatusPending, user.StatusUnverified, user.StatusActive, user.StatusInactive} {
@@ -342,7 +345,7 @@ func TestEmailSignupDuplicatesPreserveEveryExistingState(t *testing.T) {
 }
 
 func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations)
 	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	u, first := verificationSignup(t, conn, router, "pending@example.com")
 	var acknowledgment string
@@ -423,7 +426,9 @@ func (m *verificationFailingMailer) Send(ctx context.Context, message notificati
 }
 
 func TestVerificationDeliveryFailureRetainsTheRegistrationWithoutPersistingSecrets(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	// The sweep below reads every table a secret could have reached, the audit
+	// trail among them, so the audit module's schema is composed as well.
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations, audit.Migrations)
 	mailer := &verificationFailingMailer{fail: true}
 	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup, func(d *auth.Deps) { d.Mailer = mailer })
 	if res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, "delivery@example.com", nil)); res.Code != http.StatusAccepted {

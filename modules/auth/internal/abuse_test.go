@@ -23,11 +23,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/migrations"
+	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	"github.com/septagon-oss/platformkit/modules/notification"
+	"github.com/septagon-oss/platformkit/modules/user"
 )
 
 // from sets the address a request appears to come from, which is what both
@@ -53,7 +55,7 @@ func from(addr string) func(*http.Request) {
 // with an application_name of this test's own, and nothing of it may be idle in
 // a transaction while the request sleeps.
 func TestTheSoftDelayHoldsNoTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountOn(t, conn, auth.OIDC{})
 	person(t, conn, "ada@acme.localhost")
 
@@ -138,7 +140,9 @@ func TestTheSoftDelayHoldsNoTransaction(t *testing.T) {
 // application has is then searched, whole rows cast to text, because the
 // interesting failure is the column nobody thought of.
 func TestTheResetTokenIsInTheMailAndInNoRow(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	// The sweep below reads every table a token could have reached, the audit
+	// trail among them, so the audit module's schema is composed as well.
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations, audit.Migrations)
 	users := realUsers()
 	notify, _ := notification.Module(notification.Deps{Mailer: notification.NewMailbox()})
 	box := &authtest.Mailbox{}
@@ -301,7 +305,7 @@ func TestOneAddressCannotAskForUnboundedMail(t *testing.T) {
 // that were actually made, and the count is what an incident is reconstructed
 // from.
 func TestARefusalIsRecordedOncePerWindow(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountOn(t, conn, auth.OIDC{})
 	person(t, conn, "ada@acme.localhost")
 
@@ -349,7 +353,7 @@ func failures(t *testing.T, admin *sql.DB) int {
 // comment beside it claimed the opposite. It is detached now, so the row goes
 // on the first refusal and the sweep is a backstop rather than the mechanism.
 func TestAnExpiredSessionGoesOnTheRefusalItCauses(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountOn(t, conn, auth.OIDC{})
 	person(t, conn, "ada@acme.localhost")
 	session := signIn(t, router, "ada@acme.localhost")
@@ -375,7 +379,7 @@ func TestAnExpiredSessionGoesOnTheRefusalItCauses(t *testing.T) {
 // that fails on any counter that lives in a process.
 func TestTheLockoutIsOneCounterForEveryReplica(t *testing.T) {
 	adminURL, appURL := dbtest.URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
+	if err := db.Migrate(t.Context(), adminURL, migrations.Source, user.Migrations, auth.Migrations); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	pods := []*db.Conn{pool(t, appURL), pool(t, appURL)}
@@ -436,7 +440,7 @@ func service(t *testing.T) contracts.Service {
 // dump, and by anybody who gets a look at either. The counter needs the address
 // to be the same string twice and nothing else, which is what a hash is.
 func TestTheLimiterCountsAnAddressWithoutStoringIt(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountOn(t, conn, auth.OIDC{})
 	const email = "ada@acme.localhost"
 	const digest = "5778cc685df6140da25791b19cbb7b3e87b7466d3da7cd73afa0ae877c07cc4b"

@@ -208,7 +208,7 @@ func TestTaskRESTWaitsForCommittedState(t *testing.T) {
 			[]string{contracts.EventResolved, contracts.EventDeleted}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			admin, conn := dbtest.Schema(t)
+			admin, conn := dbtest.Schema(t, task.Migrations)
 			ctx := tenancy.WithTenant(t.Context(), acme)
 			row := &contracts.Task{Title: "chiller", SLADeadline: new(time.Now().Add(-time.Hour))}
 			if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -288,7 +288,7 @@ func TestTaskRESTWaitsForCommittedState(t *testing.T) {
 func taskIsolationSchema(t *testing.T, isolation string) (*sql.DB, *db.Conn) {
 	t.Helper()
 	adminURL, appURL := dbtest.URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, migrations.Source); err != nil {
+	if err := db.Migrate(t.Context(), adminURL, migrations.Source, task.Migrations); err != nil {
 		t.Fatal(err)
 	}
 	u, err := url.Parse(appURL)

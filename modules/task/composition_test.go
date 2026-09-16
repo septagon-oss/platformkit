@@ -23,7 +23,7 @@ import (
 // A product shares the lifecycle service with the task module. Exercise that
 // composition through committed database state, HTTP and the manifest's job.
 func TestModuleUsesComposedService(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, task.Migrations)
 	svc := &observedService{Service: task.NewService()}
 	manifest := task.Module(task.Deps{Service: svc, Tenants: activeTenants{acme}})
 	api, router := httpx.New(httpx.Options{

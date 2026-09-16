@@ -114,6 +114,8 @@ func Module(deps Deps) (httpx.Entitler, module.Module) {
 	svc := internal.NewService()
 	return svc, module.Module{
 		Name:        "billing",
+		Migrations:  Migrations.Files,
+		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{

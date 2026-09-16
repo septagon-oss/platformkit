@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/billing"
 	"github.com/septagon-oss/platformkit/modules/billing/contracts"
 	"github.com/septagon-oss/platformkit/modules/billing/contracts/billingtest"
 	"github.com/septagon-oss/platformkit/modules/billing/internal"
@@ -32,7 +33,7 @@ const outbox = "platformkit_outbox"
 // one specification: that is what the interface is for.
 func TestServiceConforms(t *testing.T) {
 	billingtest.RunService(t, func(t *testing.T, run func(billingtest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, billing.Migrations)
 		svc := internal.NewService()
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(billingtest.Fixture{Ctx: ctx, Tx: tx, Service: svc,
@@ -92,7 +93,7 @@ func TestServiceConforms(t *testing.T) {
 // describes it are one row each in one transaction, so neither can outlive the
 // other. It also pins the idempotent paths as silent.
 func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, billing.Migrations)
 	svc := internal.NewService()
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -163,7 +164,7 @@ func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
 // and it is the database that keeps it: the unique index in migrations/000016
 // refuses a second row whatever Go believes.
 func TestOneSubscriptionPerTenant(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, billing.Migrations)
 	svc := internal.NewService()
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -190,7 +191,7 @@ func TestOneSubscriptionPerTenant(t *testing.T) {
 // leaves neither the subscription nor its event, so a subscriber can never be
 // told about a change that did not happen.
 func TestARolledBackCommandLeavesNothing(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, billing.Migrations)
 	svc := internal.NewService()
 
 	var plan uuid.UUID
@@ -242,7 +243,7 @@ func TestARolledBackCommandLeavesNothing(t *testing.T) {
 // It also checks the second pass, which is the ordinary case — the job runs
 // every night, and a customer whose card is dead must not be an event a night.
 func TestTheNightlyRenewalChargesOutsideEveryTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, billing.Migrations)
 	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
 	svc := internal.NewService()
 

@@ -8,6 +8,10 @@ for the entity, service, events, permissions and the
 [conformance suite](contracts/tasktest/), and [domain/](domain/README.md) for
 the resolution rule that needs no runtime.
 
+Its SQL is [migrations/](migrations/), embedded and exported as
+`task.Migrations`; the manifest hands the kernel the same files, and a test
+composes it with `dbtest.Schema(t, task.Migrations)`.
+
 Compose it with `task.Deps{Service, Policy, Tenants, SweepEvery}`; `Policy` is
 optional and [modules/auth/policies](../auth/policies/README.md) shows the
 Topaz adapter. The generated admin screens appear at `/admin/task/tasks` with

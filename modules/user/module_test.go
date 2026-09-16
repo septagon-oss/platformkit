@@ -45,7 +45,7 @@ func (everything) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool,
 
 func mount(t *testing.T) chi.Router {
 	t.Helper()
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, user.Migrations)
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: everything{}, Conn: conn, Authorize: everything{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {

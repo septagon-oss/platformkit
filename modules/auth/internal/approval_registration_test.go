@@ -16,6 +16,8 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	usermodule "github.com/septagon-oss/platformkit/modules/user"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -39,7 +41,7 @@ func approvalBody(t *testing.T, email string, edit func(map[string]any)) string 
 }
 
 func TestApprovalSignupValidatesInputWithoutEchoingCredentials(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup, func(d *auth.Deps) {
 		d.Mailer, d.Hosts = nil, nil
 	})
@@ -97,7 +99,7 @@ func TestApprovalSignupValidatesInputWithoutEchoingCredentials(t *testing.T) {
 }
 
 func TestApprovalSignupPreservesExistingAccountsAndAcknowledgesDuplicates(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup)
 	users := realUsers()
 	var acknowledged string
@@ -150,7 +152,7 @@ func TestApprovalSignupPreservesExistingAccountsAndAcknowledgesDuplicates(t *tes
 }
 
 func TestConcurrentApprovalSignupsCreateOnePendingAccountAndNoCredentialEvent(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup)
 	body := approvalBody(t, "race@example.com", nil)
 	var wg sync.WaitGroup
@@ -182,7 +184,7 @@ func TestConcurrentApprovalSignupsCreateOnePendingAccountAndNoCredentialEvent(t 
 }
 
 func TestApprovalSignupSharesTheRecoveryLimitAndRollsBackFailedEvents(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup)
 	for range contracts.ResetRequests {
 		if res := call(t, router, "POST", "/api/v1/auth/password/forgot", `{"email":"missing@example.com"}`, from("203.0.113.8")); res.Code != 200 {
@@ -206,7 +208,7 @@ func TestApprovalSignupSharesTheRecoveryLimitAndRollsBackFailedEvents(t *testing
 }
 
 func TestApprovalSignupDoesNotAcknowledgeAnUnrelatedDatabaseConflict(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup)
 	// A fixture-only constraint simulates an unrelated storage conflict. Only
 	// the user owner's email-exists result may become a neutral acknowledgment.

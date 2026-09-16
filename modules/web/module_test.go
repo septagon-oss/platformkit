@@ -17,8 +17,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/content"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/content/contracts/contenttest"
+	sitemodule "github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/site/contracts/sitetest"
 	"github.com/septagon-oss/platformkit/modules/web"
@@ -45,7 +47,7 @@ func (tenants) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, er
 // application would, and returns the fakes to publish into.
 func site(t *testing.T) (http.Handler, *sitetest.Fake, *contenttest.Fake) {
 	t.Helper()
-	_, app := dbtest.Schema(t)
+	_, app := dbtest.Schema(t, content.Migrations, sitemodule.Migrations)
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: tenants{}, Conn: app, Authorize: tenants{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {

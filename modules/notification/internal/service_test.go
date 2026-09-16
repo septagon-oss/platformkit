@@ -41,7 +41,7 @@ func (directory) Email(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (str
 // service, a real Postgres and a real tenant transaction.
 func TestServiceConforms(t *testing.T) {
 	notificationtest.RunService(t, func(t *testing.T, run func(notificationtest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, notification.Migrations)
 		svc := internal.NewService(directory{})
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(notificationtest.Fixture{
@@ -71,7 +71,7 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 // is two sets of rows, and neither transaction can see the other's — by the
 // policy in migrations/000011 and not by anything this module wrote.
 func TestOneTenantsNotificationsAreNotAnothers(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, notification.Migrations)
 	svc := internal.NewService(directory{})
 	ada := notificationtest.Ada
 
@@ -112,7 +112,7 @@ func TestOneTenantsNotificationsAreNotAnothers(t *testing.T) {
 // that tenant's own host, because a mail client has no base to resolve a path
 // against and one customer's people must not be sent to another's front door.
 func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, notification.Migrations)
 	svc := internal.NewService(directory{})
 	box := notification.NewMailbox()
 	sub := internal.SendMail(box, directory{}, hosts{}, true)
@@ -172,7 +172,7 @@ func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 // in a payload is an address or a body in the audit trail — and a set-password
 // link in one would be a live credential there.
 func TestTheOutboxCarriesNoMessage(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, notification.Migrations)
 	svc := internal.NewService(directory{})
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		_, err := svc.Notify(ctx, tx, contracts.Notice{

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime/multipart"
 	"net"
@@ -13,9 +14,11 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/google/uuid"
@@ -1136,5 +1139,121 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	}
 	if took > timeout*2 {
 		t.Errorf("the trickled upload ran for %s; server.read_timeout is %s", took, timeout)
+	}
+}
+
+// legacyLayout is every migration the composition now splits across owners,
+// under the one owner the foundation used before each module took its own SQL.
+// It is built from the same bytes the modules ship, so the ledger it writes is
+// the ledger a release before this change actually left behind: same versions,
+// same names, same checksums.
+func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource {
+	t.Helper()
+	all := fstest.MapFS{}
+	for _, source := range sources {
+		entries, err := fs.ReadDir(source.Files, ".")
+		if err != nil {
+			t.Fatalf("read %s: %v", source.Owner, err)
+		}
+		for _, entry := range entries {
+			body, err := fs.ReadFile(source.Files, entry.Name())
+			if err != nil {
+				t.Fatalf("read %s/%s: %v", source.Owner, entry.Name(), err)
+			}
+			if _, clash := all[entry.Name()]; clash {
+				t.Fatalf("two owners ship %s; the old layout had one of each", entry.Name())
+			}
+			all[entry.Name()] = &fstest.MapFile{Data: body}
+		}
+	}
+	return db.MigrationSource{Owner: "platformkit", Files: all}
+}
+
+// TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace is the
+// upgrade half of the migration move, and the half a fresh database cannot
+// check: an existing installation's ledger says "platformkit" applied all
+// twenty-four files, and the release that splits them must neither refuse the
+// files the foundation no longer ships nor run the module files again.
+//
+// Success alone proves the SQL did not re-run — a second 000004_task.up.sql
+// would fail on CREATE TABLE tasks — and the applied_at comparison proves the
+// rows were re-owned rather than replaced.
+func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.T) {
+	path, cfg := configure(t)
+	sources := app.MigrationSources(compose(cfg).modules)
+	if err := db.Migrate(t.Context(), cfg.Database.MigrateURL, legacyLayout(t, sources)); err != nil {
+		t.Fatalf("the release before this one: %v", err)
+	}
+	admin := dbtest.Open(t, cfg.Database.MigrateURL)
+	before := map[int64]string{}
+	ledger := func(into map[int64]string, query string) {
+		t.Helper()
+		rows, err := admin.QueryContext(t.Context(), query)
+		if err != nil {
+			t.Fatalf("read the ledger: %v", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var version int64
+			var value string
+			if err := rows.Scan(&version, &value); err != nil {
+				t.Fatalf("read the ledger: %v", err)
+			}
+			into[version] = value
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("read the ledger: %v", err)
+		}
+	}
+	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
+	if len(before) != 24 {
+		t.Fatalf("the old layout applied %d files, want 24", len(before))
+	}
+
+	// The new release, through the path a person runs: bootstrap migrates with
+	// the composed sources before it writes the first tenant.
+	install(t, path)
+
+	owners := map[int64]string{}
+	ledger(owners, "SELECT version, owner FROM schema_migrations")
+	after := map[int64]string{}
+	ledger(after, "SELECT version, applied_at::text FROM schema_migrations")
+	if len(owners) != 24 {
+		t.Fatalf("the upgrade left %d applied files, want the same 24", len(owners))
+	}
+	for version, when := range before {
+		if after[version] != when {
+			t.Errorf("version %d was applied again: %s became %s", version, when, after[version])
+		}
+	}
+	// Each file now reads under the owner that ships it.
+	want := map[int64]string{}
+	for _, source := range sources {
+		entries, err := fs.ReadDir(source.Files, ".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			version, err := strconv.ParseInt(strings.SplitN(entry.Name(), "_", 2)[0], 10, 64)
+			if err != nil {
+				t.Fatalf("%s is not <version>_<name>.up.sql", entry.Name())
+			}
+			want[version] = source.Owner
+		}
+	}
+	for version, owner := range want {
+		if owners[version] != owner {
+			t.Errorf("version %d reads as %q, want %q", version, owners[version], owner)
+		}
+	}
+	// And the application built on that schema serves.
+	c := compose(cfg)
+	start(t, cfg, c.modules, app.Options{
+		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Role: app.All, Transport: memory.New(), Log: quiet(),
+	})
+	admins := signIn(t, cfg, acmeHost, adminEmail, adminPass)
+	if code, body := do(t, cfg, admins, http.MethodGet, acmeHost, tasksPath, ""); code != http.StatusOK {
+		t.Fatalf("the upgraded installation's task list = %d %s", code, body)
 	}
 }

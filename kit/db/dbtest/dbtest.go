@@ -77,9 +77,12 @@ func URLsFor(t testing.TB) (adminURL, appURL string) {
 	return withSchema(t, baseAdmin, name), withSchema(t, baseApp, name)
 }
 
-// Schema creates an isolated database schema with the foundation and the named
-// capabilities. It returns an owner handle for assertions and an application
-// connection subject to row-level security.
+// Schema creates an isolated database schema with the kernel's tables and the
+// named capabilities — a module's exported Migrations source, such as
+// task.Migrations, and the sources of the modules it depends on (auth needs
+// user). It returns an owner handle for assertions and an application
+// connection subject to row-level security. A test that names no capability
+// gets the tenancy, outbox and limits tables and nothing else.
 func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.Conn) {
 	t.Helper()
 	adminURL, appURL := URLs(t)

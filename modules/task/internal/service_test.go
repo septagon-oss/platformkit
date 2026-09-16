@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/contracts/tasktest"
 	"github.com/septagon-oss/platformkit/modules/task/internal"
@@ -29,7 +30,7 @@ var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 // which is exactly how a request handler calls these.
 func TestServiceConforms(t *testing.T) {
 	tasktest.RunService(t, func(t *testing.T, run func(tasktest.Fixture)) {
-		_, conn := dbtest.Schema(t)
+		_, conn := dbtest.Schema(t, task.Migrations)
 		svc := internal.NewService()
 		// One transaction per case, rolled back on the way out: a test keeps
 		// nothing, and the commands are called exactly as a request handler
@@ -74,7 +75,7 @@ const outbox = "platformkit_outbox"
 // other. It also pins the idempotent paths as silent — a retry that publishes
 // is a workload dashboard counting one assignment twice.
 func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, task.Migrations)
 	svc := internal.NewService()
 	who := uuid.New()
 
@@ -130,7 +131,7 @@ func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
 // transaction that does not commit leaves neither the assignment nor its event,
 // so a subscriber can never be told about a change that did not happen.
 func TestARolledBackCommandLeavesNothing(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, task.Migrations)
 	svc := internal.NewService()
 
 	var id uuid.UUID
@@ -182,7 +183,7 @@ func TestARolledBackCommandLeavesNothing(t *testing.T) {
 // it left alone — including the second pass, which is the ordinary case: the
 // sweep runs every minute forever and must publish once per task.
 func TestTheSweepBreachesTheOverdueAndNothingElse(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, task.Migrations)
 	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
 	svc := internal.NewService()
 
@@ -241,7 +242,7 @@ func (l lister) List(context.Context, db.Tx[db.System]) ([]tenancy.Tenant, error
 // task has its own transaction now, so the bad row costs itself, the sweep
 // carries on, and the failure comes back naming the task it belongs to.
 func TestTheSweepPassesALegacyRowAndBreachesTheRest(t *testing.T) {
-	admin, conn := dbtest.Schema(t)
+	admin, conn := dbtest.Schema(t, task.Migrations)
 	svc := internal.NewService()
 
 	var legacy, healthy uuid.UUID

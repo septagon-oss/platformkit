@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -88,7 +89,9 @@ func TestAHungMailServerIsAnErrorAndNotAWait(t *testing.T) {
 // TestAPoisonEventIsDeadLetteredAndStopsComingBack proves it in milliseconds,
 // where the ladder's constants live.
 func TestAMailerThatFailsFailsTheSubscription(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	// The module's own SQL, read from disk: this white-box test cannot import
+	// the package that embeds it (modules/notification imports this one).
+	_, conn := dbtest.Schema(t, db.MigrationSource{Owner: "notification", Files: os.DirFS("../migrations")})
 	broken := errors.New("notification: dial mail.acme.example.com:587: i/o timeout")
 	sub := SendMail(refusing{broken}, everybody{}, somewhere{}, true)
 	svc := NewService(everybody{})

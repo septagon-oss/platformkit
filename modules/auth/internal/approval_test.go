@@ -16,11 +16,13 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	usermodule "github.com/septagon-oss/platformkit/modules/user"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 func TestPendingRegistrationCannotRecoverOrSignInBeforeApproval(t *testing.T) {
-	_, conn := dbtest.Schema(t)
+	_, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup)
 	users := realUsers()
 	var pending *user.User
