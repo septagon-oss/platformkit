@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+The kernel stops deciding what it does not own. `ui/document` and `ui/resource`
+render a document and a resource's screens from values — no database, no router
+— and `ui/page` and `ui/screens` stay as the adapters that read a request and
+carry the kernel's rules; `kit/entity/display` owns how a value reads, with
+`kit/rest` delegating. `kit/app` no longer imports an event provider: the
+application supplies `app.Transports{Memory, JetStream}` and the kernel selects
+by name, refusing at `New` when the selected name has no constructor.
+`events.Memory()` is removed — call `memory.New()`. Each reference module ships
+its own SQL under `modules/<name>/migrations` and adopts the history the
+foundation applied for it, so an existing installation is re-owned by checksum
+and nothing re-runs; `migrations/` is the kernel's schema alone.
+`scripts/check_packages.sh` records every new boundary. `ADR 0013` explains why
+`kit/module` stays a typed manifest.
+
 The composition layer becomes values a second shell can call. `ui.Compose`
 returns a `Sheet`; `ui/page` holds `Chrome`, `Request`, `View`, `Frame` and
 `Navigation`, with `page.Serve` as the one adapter between a handler and the
