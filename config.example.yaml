@@ -102,6 +102,13 @@ mail:
 audit:
   retention_days: 365
 
+# The first administrator's password, read by `platformkit bootstrap` and by
+# nothing else. Empty means the command generates one and prints it once. It
+# belongs in PLATFORMKIT_BOOTSTRAP_PASSWORD, not here, for the same reason as
+# the other secrets.
+bootstrap:
+  password: ""
+
 # Where uploaded bytes go, how large one upload may be, and how much disk one
 # tenant may fill. They are the three things modules/file cannot decide for
 # itself: a directory is a deployment's disk, and both limits are how much of it

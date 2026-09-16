@@ -34,6 +34,20 @@ type Config struct {
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
 	Files    Files    `yaml:"files"`
+	// Bootstrap is read by `platformkit bootstrap` alone; the server never
+	// looks at it. It is in the configuration surface so the one secret the
+	// command takes arrives the way every other secret does, through kit/config
+	// and its environment override, rather than through a variable the command
+	// read for itself.
+	Bootstrap Bootstrap `yaml:"bootstrap"`
+}
+
+// Bootstrap is what the first-run command cannot decide for itself: the first
+// administrator's password. Empty means the command generates one and prints
+// it once. Command-line arguments are in the process table and in shell
+// history, so a password is not a flag; supply PLATFORMKIT_BOOTSTRAP_PASSWORD.
+type Bootstrap struct {
+	Password string `yaml:"password"`
 }
 
 // Server is where the app listens, what host it believes it is reached at, and
@@ -236,6 +250,9 @@ var keys = []key{
 	{"auth.oidc.client_secret", "PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", func(c *Config) *string { return &c.Auth.OIDC.ClientSecret }, false},
 	// The second secret, for the same reason as the first.
 	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
+	// The third: the first administrator's password, read once by the
+	// bootstrap command and stored nowhere but as an argon2id hash.
+	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, false},
 	// No environment override, and still overridable: the sender is a value a
 	// composition knows — one client, one from address — and a deployment that
 	// wrote it in the file wrote it once.

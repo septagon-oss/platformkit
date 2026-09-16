@@ -17,11 +17,6 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
 
-// passwordEnv is where a bootstrap password comes from when somebody has one in
-// mind. Command-line arguments are in the process table and in shell history,
-// so a password is not a flag.
-const passwordEnv = "PLATFORMKIT_BOOTSTRAP_PASSWORD"
-
 // bootstrap creates the first tenant of an empty installation and the
 // administrator who signs in to it.
 //
@@ -32,7 +27,8 @@ const passwordEnv = "PLATFORMKIT_BOOTSTRAP_PASSWORD"
 // somebody holding tenant:manage.
 //
 // The whole thing is one transaction — migrations, the tenant, its roles, the
-// administrator — so an installation is either usable or untouched.
+// administrator — so an installation is either usable or untouched. The one
+// secret it takes arrives through config.Bootstrap, never a flag.
 func bootstrap(args []string) error {
 	fs := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
@@ -56,7 +52,11 @@ func bootstrap(args []string) error {
 	}
 	logger(cfg.Log.Level)
 
-	password, generated := os.Getenv(passwordEnv), false
+	// The password comes through kit/config like every other secret:
+	// bootstrap.password, which is PLATFORMKIT_BOOTSTRAP_PASSWORD in the
+	// environment. Command-line arguments are in the process table and in
+	// shell history, so it is not a flag. Empty means generate one.
+	password, generated := cfg.Bootstrap.Password, false
 	if password == "" {
 		if password, err = generatePassword(); err != nil {
 			return err

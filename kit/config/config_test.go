@@ -41,6 +41,23 @@ func TestEnvironmentOverrides(t *testing.T) {
 	}
 }
 
+// The bootstrap password is the third secret in the surface: the example
+// leaves it empty, the environment supplies it, and a composition may set it
+// by the same key name — nothing reads a variable of its own.
+func TestTheBootstrapPasswordIsASecretReadThroughTheConfiguration(t *testing.T) {
+	got, err := config.Load(example)
+	if err != nil || got.Bootstrap.Password != "" {
+		t.Fatalf("the example ships a bootstrap password %q, %v", got.Bootstrap.Password, err)
+	}
+	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", "correct horse battery staple")
+	if got, err = config.Load(example); err != nil || got.Bootstrap.Password != "correct horse battery staple" {
+		t.Fatalf("bootstrap.password = %q, %v; want the environment's value", got.Bootstrap.Password, err)
+	}
+	if got, err = config.Load(example, config.Set("bootstrap.password", "from the composition")); err != nil || got.Bootstrap.Password != "correct horse battery staple" {
+		t.Fatalf("bootstrap.password = %q, %v; the environment outranks a composition", got.Bootstrap.Password, err)
+	}
+}
+
 func TestEmptyValueIsRejected(t *testing.T) {
 	t.Setenv("PLATFORMKIT_NATS_URL", "")
 	if _, err := config.Load(example); err == nil {
