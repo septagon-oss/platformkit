@@ -7,11 +7,30 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
+// CatalogVersion is the shape of the document at /api/v1/admin/resources — the
+// contract a shipped native shell renders from — and it is the one number in
+// this repository that cannot be revised by the person who changes it.
+//
+// It goes up when an existing key changes meaning, when a key becomes required,
+// and whenever a shell that does not know the change could still parse the
+// document and draw the wrong screen. It does not go up for an added optional
+// key: an older shell ignores what it has not read, which is the only reason any
+// of this can move forward without a flag day.
+//
+// What the number cannot do is protect a build that is already installed — the
+// shell in somebody's pocket parses what it was written to parse. So the rule
+// that actually protects it is the one beside this constant: additive, optional,
+// and never a change of meaning. A consumer that must refuse is the *next* build,
+// reading this field, and that is who the field is written for.
+const CatalogVersion = 1
+
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell
 // that is not a browser — the native one — generates its screens from this the
 // way a browser shell generates them from httpx.Resources, by the same rules.
 type Catalog struct {
+	// Version is CatalogVersion at the moment the document was written.
+	Version   int     `json:"catalogVersion"`
 	Resources []Entry `json:"resources"`
 }
 
@@ -51,7 +70,7 @@ type Command struct {
 // are the ones the closures on the resource ask — the same Authorizer, the same
 // operator rule — so the document cannot promise a screen the API would refuse.
 func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
-	out := Catalog{Resources: []Entry{}}
+	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
 		if !r.Readable(ctx) {
 			continue

@@ -1,4 +1,5 @@
 {
+  "catalogVersion": 1,
   "resources": [
     {
       "module": "note",

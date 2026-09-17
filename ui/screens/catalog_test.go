@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -19,8 +20,14 @@ type publishBody struct {
 }
 
 // The golden file is the seam a native shell reads. It is committed here and
-// copied verbatim into platformkit-mobile/testdata, whose parser test reads it;
-// a change here that the shell cannot parse fails there. Regenerate with
+// copied by hand into platformkit-mobile/testdata, which is a weaker link than
+// this comment would once have implied: nothing compares the two, so a change
+// here does not fail there — the shell's tests keep passing against the copy it
+// still holds, and the difference is met in production by a build that cannot be
+// redeployed as quickly as this repository can be. `catalogVersion` is the handle
+// for closing that: compare this file to the one at the shell's pinned foundation
+// version, and let a future build refuse a shape it was not written for.
+// Regenerate with
 //
 //	UPDATE_GOLDEN=1 go test ./ui/screens -run TestCatalogGolden
 func TestCatalogGolden(t *testing.T) {
@@ -53,7 +60,7 @@ func TestCatalogGolden(t *testing.T) {
 	settings.Entity, settings.Path, settings.Singleton = "setting", "/api/v1/note/settings", true
 	settings.Schema.Entity, settings.Schema.Path = "setting", "/api/v1/note/settings"
 	settings.Immutable = nil
-	catalog := screens.Catalog{Resources: []screens.Entry{
+	catalog := screens.Catalog{Version: screens.CatalogVersion, Resources: []screens.Entry{
 		screens.Describe1(notes, true),
 		screens.Describe1(tags, false),
 		screens.Describe1(settings, true),
@@ -82,6 +89,12 @@ func TestCatalogGolden(t *testing.T) {
 	}
 	if len(back.Resources) != 3 || back.Resources[0].Fields[0].Name != "id" || !back.Resources[0].Fields[0].ReadOnly {
 		t.Fatalf("the catalog does not round-trip: %+v", back)
+	}
+	// The golden is copied verbatim into the native shell's testdata, so the
+	// version is not decoration here: it is the one thing in the document that
+	// tells a future build whether it may render what it is being handed.
+	if back.Version != screens.CatalogVersion {
+		t.Fatalf("the golden carries catalog version %d, not %d", back.Version, screens.CatalogVersion)
 	}
 	if !back.Resources[0].Writable || back.Resources[1].Writable {
 		t.Fatal("writable did not survive the trip")
@@ -123,5 +136,22 @@ func TestDescribeOmitsWhatTheCallerMayNotRead(t *testing.T) {
 	out := screens.Describe(t.Context(), []httpx.Resource{resource()})
 	if len(out.Resources) != 0 {
 		t.Fatalf("an unguarded resource was described: %+v", out)
+	}
+}
+
+// TestTheRouteStampsTheCatalogVersion. Describe is the function mounted at
+// /api/v1/admin/resources; the golden above is written from a literal, so
+// nothing else would notice a served document arriving with no version at all —
+// and a zero there reads as "very old", which is the opposite of the truth. The
+// resource below is deliberately unreadable, because the stamp is not a function
+// of what the caller may see.
+func TestTheRouteStampsTheCatalogVersion(t *testing.T) {
+	t.Parallel()
+	body, err := json.Marshal(screens.Describe(t.Context(), []httpx.Resource{resource()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"catalogVersion":1`) {
+		t.Errorf("the served document does not carry the catalog version: %s", body)
 	}
 }

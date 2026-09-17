@@ -14,7 +14,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 |---|---|
 | Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). |
-| Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`; the native consumer owns its renderer. |
+| Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
 | Component properties | [`Example.Describe`](ui/components/examples/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
 | Design consumers | [`export.Export`](ui/export/export.go) and [`ProjectProps`](ui/export/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
 
