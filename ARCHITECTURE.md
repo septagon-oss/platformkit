@@ -59,8 +59,10 @@ today. The
 [version gate](scripts/check_versions.sh) refuses a `replace` directive or a
 `go.work` file, so a passing check reflects the versions the module declares;
 the [public example](ui/forms/testdata/standalone/README.md) proves ordinary
-versioned consumption without the application runtime. Neither proves scale or
-adoption by an external product.
+versioned consumption without the application runtime, and the weekly
+[public-consumption workflow](.gitea/workflows/public-consumption.yml) runs it,
+because a check that lives in a guide runs when somebody remembers. Neither
+proves scale or adoption by an external product.
 
 ## Start at the composition
 
@@ -582,9 +584,18 @@ and a generated CRUD journey in a browser.
 [loc-budget.json](loc-budget.json) and
 [packages-budget.json](packages-budget.json) hold current ceilings. Do not copy
 their numbers into prose; run `make check-loc` and `make check-packages`.
-[The CI workflow](.github/workflows/ci.yml) also runs dependency vulnerability
-analysis. [The release workflow](.github/workflows/release.yml) checks the tagged
-tree before publishing its image and SBOM.
+[The verification workflow](.gitea/workflows/ci.yml) is the one that runs: `make
+check`, then `make check-race`, `govulncheck`, the native editor and browser
+checks, `make e2e`, and the budget ratchet last. It is Gitea's because GitHub
+Actions is disabled for this repository; [the retained GitHub
+workflows](.github/workflows/ci.yml) are kept in step with it and do not run
+merely because their files exist, exactly as [RELEASE.md](RELEASE.md) says of the
+release workflow beside them. An absent GitHub check establishes nothing. A
+publisher for the image, SBOM and release notes is not yet approved, so no tag
+publishes anything until [RELEASE.md](RELEASE.md#publish-an-approved-version)
+agrees one with the owner. The weekly
+[public-consumption workflow](.gitea/workflows/public-consumption.yml) runs the
+published-module and exported-API checks that `make check` deliberately does not.
 
 A type check proves types, a test proves its exercised cases, and a product
 journey proves its observed outcome. None alone proves production readiness,

@@ -1,0 +1,91 @@
+# The public module is consumed by someone else's `go get`, and nothing in
+# `make check` can see that. `scripts/check_public_module.py` builds the
+# independent-forms example against one published version through the public
+# proxy and checksum database, with no workspace and no replace to fall back on;
+# `scripts/check_public_api.py` compares the exported surface with the supported
+# tag. Both existed as instructions in a README and ran when a person remembered.
+#
+# This workflow is scheduled and reports. It is deliberately not a required check
+# on a pull request, for two reasons that are each other's opposite: the published
+# version is a fact about the proxy, not about the diff, and scripts/PUBLIC-API.md
+# asks that the API report stay out of `make check` until the known v1.0.0
+# incompatibilities and the major-version baseline are resolved. Suppressing that
+# report would be worse than running it weekly.
+name: public-consumption
+
+on:
+  schedule:
+    - cron: '37 5 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: pkit-ci-linux-amd64
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install the interpreters the scripts ask for
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends python3
+
+      # The version is read out of the guide rather than duplicated here. That is
+      # the point: this step fails if the sentence in
+      # ui/forms/testdata/standalone/README.md names something the proxy cannot
+      # resolve, which is how a documented version quietly stops being true.
+      - name: Consume the published module the way an outside product would
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/.*check_public_module\.py \(v[^ ]*\).*/\1/p' \
+            ui/forms/testdata/standalone/README.md | head -n1)"
+          test -n "$version" || { echo "no version named in the standalone guide" >&2; exit 1; }
+          # The suffix of a pseudo-version is a commit of this repository. Checking
+          # it costs one git call and catches the way a documented version goes
+          # false: not a lying proxy, a version nobody ever wrote down correctly.
+          sha="${version##*-}"
+          git rev-parse --verify --quiet "${sha}^{commit}" >/dev/null \
+            || { echo "$version does not name a commit of this repository" >&2; exit 1; }
+          echo "verifying $version"
+          python3 scripts/check_public_module.py "$version" > "$RUNNER_TEMP/public-module.json"
+          echo "the example compiled, tested and vetted against $version with no replace directive"
+
+      # Reports, does not gate: apidiff has findings against v1.0.0 by design, and
+      # the release line has not been cut. A warning is the honest result; a green
+      # tick would be a lie and a red one would be noise nobody reads.
+      - name: Exported surface against the supported tag
+        continue-on-error: true
+        run: |
+          python3 scripts/check_public_api.py v1.0.0 HEAD > "$RUNNER_TEMP/public-api.json" \
+            || echo "::warning::apidiff reports incompatibilities against v1.0.0; the /v2 line is open (RELEASE.md)"
+
+      # The scripts print a JSON report and remove their own fixtures and caches.
+      # The job log carries the report; no artifact action is referenced here
+      # because every action in this repository is pinned by commit and this one
+      # would need a pin nobody has verified. Retrieve the JSON from the run log
+      # when it becomes release evidence, as RELEASE.md asks for.
+      - name: Say what the reports said
+        if: always()
+        run: |
+          for report in public-module public-api; do
+            file="$RUNNER_TEMP/$report.json"
+            if [ -f "$file" ]; then
+              echo "::group::$report"
+              head -c 4000 "$file"
+              echo
+              echo "::endgroup::"
+            else
+              echo "$report: no report written"
+            fi
+          done

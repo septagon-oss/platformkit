@@ -8,8 +8,17 @@ composition fixture, not an adopted client product.
 From the foundation root, verify one exact published version:
 
 ```sh
-python3 scripts/check_public_module.py v1.0.1-0.20260913210353-40c63af55968 > /tmp/platformkit-public-module.json
+python3 scripts/check_public_module.py v1.0.1-0.20260917134124-d3f81bdc2cab > /tmp/platformkit-public-module.json
 ```
+
+That version is the tip of `main` at the time of writing, not a release: the
+`/v2` line in [RELEASE](../../../../RELEASE.md#choose-the-compatible-release-line)
+is still open, so an outside consumer takes a pseudo-version the way the
+commercial catalog and a client application do. When the version changes, change
+it here; the weekly
+[public-consumption workflow](../../../../.gitea/workflows/public-consumption.yml)
+reads this line, fails if the version it names does not resolve through the
+public proxy, and fails if it is not a commit of this repository.
 
 The script needs Python 3, Go and public proxy/checksum-service access. It selects
 the source [go.mod](../../../../go.mod) toolchain, uses fresh external caches and
