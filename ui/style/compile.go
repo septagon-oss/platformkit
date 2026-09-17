@@ -917,11 +917,6 @@ const (
 	classPeer              = "peer"
 	classWhitespacePre     = "whitespace-pre"
 	classOverscrollContain = "overscroll-contain"
-	// classContainer is Tailwind's responsive container utility — an
-	// element whose max-width steps through the configured breakpoints.
-	// Emitted verbatim; callers typically combine it with MarginX(SAuto)
-	// for horizontal centering.
-	classContainer = "container"
 )
 
 // classFlexNone is Tailwind's "flex-none" atom — prevents a flex
