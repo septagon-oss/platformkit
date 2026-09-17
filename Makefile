@@ -6,7 +6,7 @@
 # Select the same compiler and tools even when PATH contains a newer Go release.
 # Child scripts and their Go subprocesses inherit this exact module version.
 export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
-.PHONY: help build test vet run e2e load-test check-loc check-packages check-gucs check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run e2e load-test check check-race check-loc check-packages check-gucs check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -83,6 +83,18 @@ fmt-check: ## Fail when any file is not gofmt'd
 
 # Do not share the local test target as a prerequisite: in `make test check`,
 # Make would consider it complete even if that earlier run was filtered/cached.
+# The concurrency kernel under the race detector: the outbox claims and the
+# relay, the request's lazy transaction, the advisory locks, the limit counters,
+# the router's per-request state. Five package guides tell a contributor to run
+# `go test -race` by hand; a claim nobody runs is not a gate, so this is the
+# target that runs them and CI is what calls it on every change. It is separate
+# from `check` rather than inside it because -race roughly doubles the suite and a
+# local loop should not pay that to find out whether one file compiles.
+# RACE_PACKAGES overrides the list when a change reaches somewhere else.
+RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx
+check-race: ## Run the concurrency kernel under -race
+	go test -race -count=1 $(RACE_PACKAGES)
+
 check: build vet fmt-check check-loc check-packages check-gucs check-versions ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1

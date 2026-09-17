@@ -92,6 +92,10 @@ run `make test TEST_FLAGS=-count=1`. See [native watch](tools/designexport/openp
 `make check` always runs fresh tests across all packages, regardless of local
 filters, plus build, vet, formatting, budgets, imports, declared-version and
 tenant-setting checks.
+`make check-race` runs the outbox, the request transaction, the advisory locks,
+the limit counters and the router under the race detector. CI runs `check` and
+`check-race`, so the detector is not something a contributor has to remember; it
+is a separate goal because -race roughly doubles the suite.
 `make e2e` adds browser journeys. Both pass before pushing; `make check`
 passes before committing.
 
