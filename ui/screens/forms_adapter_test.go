@@ -9,7 +9,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
-func TestFormAdapterPreservesExplicitWireValuesAndLegacyIdentity(t *testing.T) {
+func TestFormAdapterPreservesExplicitWireValuesAndAddressIdentity(t *testing.T) {
 	t.Parallel()
 	row := map[string]any{"title": "", "rank": float64(0), "pinned": false, "tags": []any{"alpha", "beta"}}
 	errors := map[string]string{"title": "A title is required"}
@@ -18,9 +18,14 @@ func TestFormAdapterPreservesExplicitWireValuesAndLegacyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if before.ID != "source/distinct-from-dom" || !strings.Contains(before.HTML, `id="screen-form"`) ||
-		!strings.Contains(before.HTML, `hx-target="#screen-form"`) || !strings.Contains(before.HTML, `for="pk-input-title"`) {
-		t.Fatal("source identity changed the legacy form's DOM contract")
+	// The design source's ID stays out of the DOM, and the DOM identity comes from
+	// the address instead: two screens of one entity, or two entities whose fields
+	// share a name, no longer answer to one control id.
+	titleID := "save-field-7469746c65"
+	if before.ID != "source/distinct-from-dom" || !strings.Contains(before.HTML, `id="save-form"`) ||
+		!strings.Contains(before.HTML, `hx-target="#save-form"`) ||
+		!strings.Contains(before.HTML, `for="`+titleID+`"`) || !strings.Contains(before.HTML, `id="`+titleID+`"`) {
+		t.Fatalf("source identity changed the form's DOM contract: %s", before.HTML)
 	}
 	for name, expected := range map[string]string{"title": "", "rank": "0", "tags": "alpha, beta"} {
 		field, err := form.At([]string{form.ID, "field/" + name})

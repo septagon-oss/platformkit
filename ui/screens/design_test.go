@@ -108,14 +108,22 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 			if _, err := export.Export(design.Default(), append(examples.Gallery(), form)); err != nil {
 				t.Fatal(err)
 			}
-			for _, marker := range []string{`id="screen-form"`, `method="post"`, `hx-post="/admin/note/notes"`,
-				`hx-target="#screen-form"`, `hx-select="#screen-form"`, `aria-label="A note"`, `for="pk-input-title"`,
-				`for="pk-textarea-body"`, `rows="5"`, `href="/admin/note/notes"`, `type="submit"`} {
+			// The form's DOM identity is the address it posts to, so the design
+			// invocation and the served page agree on it by construction; the check
+			// above compares their HTML byte for byte. What these markers hold is the
+			// rest: the encoding, the swap targets and the label-to-control pairing
+			// a native renderer and a screen reader both depend on.
+			const fieldID = "admin-note-notes-field-"
+			titleID, bodyID := fieldID+"7469746c65", fieldID+"626f6479"
+			for _, marker := range []string{`id="admin-note-notes-form"`, `method="post"`, `hx-post="/admin/note/notes"`,
+				`hx-target="#admin-note-notes-form"`, `hx-select="#admin-note-notes-form"`, `aria-label="A note"`,
+				`for="` + titleID + `"`, `id="` + titleID + `"`,
+				`for="` + bodyID + `"`, `id="` + bodyID + `"`, `rows="5"`, `href="/admin/note/notes"`, `type="submit"`} {
 				if !strings.Contains(description.HTML, marker) {
 					t.Fatalf("form lost runtime or native control attribute %s", marker)
 				}
 			}
-			if state.detail != "" && !strings.Contains(description.HTML, `aria-describedby="pk-input-title-error pk-input-title-help"`) {
+			if state.detail != "" && !strings.Contains(description.HTML, `aria-describedby="`+titleID+`-error `+titleID+`-help"`) {
 				t.Fatal("the invalid field lost its error and help association")
 			}
 			slices.Reverse(input.Schema.Fields)

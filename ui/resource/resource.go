@@ -148,7 +148,7 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 	return document.View{Title: title, Status: status, Body: []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
-		FormExample("screen-form", r, o, action, title, row, errs, detail, create).Node,
+		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
 }
 
@@ -163,6 +163,11 @@ const statusUnprocessableEntity = 422
 // use "field/" plus their schema name so actions and errors cannot shadow them.
 // Property edits produce presentation candidates, not schema or database writes.
 // Native editor support and interactive flow behavior require separate evidence.
+//
+// The form's DOM scope comes from action, not from id: two screens of one entity
+// (create and edit) post to different addresses and so own different scopes, and
+// the refused POST that swaps errors back in is answered at the address the form
+// was drawn from, so the swap still finds its target.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
 	fields := make([]forms.Field, 0, len(r.Schema.Fields))
 	for _, field := range r.Schema.Fields {
@@ -172,9 +177,11 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	for name, value := range row {
 		values[name] = display.Text(value)
 	}
-	return forms.LegacyExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
+	return forms.MustExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
 		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
-		Action: action, CancelURL: Path(r, o), Title: title,
+		// The address the form posts to is its DOM scope: see forms.Namespace.
+		Namespace: forms.Namespace(action),
+		Action:    action, CancelURL: Path(r, o), Title: title,
 	})
 }
 

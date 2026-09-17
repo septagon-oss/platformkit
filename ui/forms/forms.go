@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -52,6 +53,47 @@ var ErrNamespace = errors.New("forms: namespace must start with a letter and con
 // ErrFields refuses ambiguous input names and the DOM/source identities they create.
 var ErrFields = errors.New("forms: field names must be nonempty and unique")
 
+// Namespace derives a form's DOM scope from the address it posts to. It exists
+// because the two things a generated form's identity has to satisfy pull apart:
+// it must differ from every other form on the page, and it must not change when
+// the same screen re-renders a refused submission — the swap that puts the field
+// errors back targets the id the form was drawn with. An address gives both: one
+// screen posts to one address, and a refused POST is answered by the screen at
+// that same address. A fixed id gave neither, which is why one screen could hold
+// only one generated form.
+//
+// The answer is always something Example accepts: a letter, a digit, an
+// underscore or a hyphen is kept, everything else is a separator, consecutive
+// separators collapse and a leading separator is dropped, so the identity stays
+// readable in DevTools rather than a run of dashes. Two addresses are given the
+// same identity only where they differ in punctuation alone, and a screen serves
+// one address, so that never puts two forms on one page. A leading digit is
+// prefixed rather than dropped, and an input with nothing usable in it gets a
+// fixed scope. namespace_test.go feeds it the inputs that would break that and
+// checks every byte of every answer.
+func Namespace(action string) string {
+	var b strings.Builder
+	for i := 0; i < len(action); i++ {
+		c := action[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			b.WriteByte(c)
+			continue
+		}
+		// One separator for a run of them, and none at the front.
+		if b.Len() > 0 && !strings.HasSuffix(b.String(), "-") {
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "pk-form"
+	}
+	if !letter(out[0]) {
+		return "pk-" + out
+	}
+	return out
+}
+
 // Example captures the same typed Form and field constructors used at runtime.
 // It returns a presentation candidate; rendering or editing it performs no write.
 // DOM identities and HTMX targets belong to Namespace, never to the source ID.
@@ -62,28 +104,41 @@ func Example(id string, model Model, options Options) (examples.Example, error) 
 	seen := make(map[string]bool, len(model.Fields))
 	for _, field := range model.Fields {
 		name := field.Definition.Name
-		if name == "" || seen[name] {
-			return examples.Example{}, ErrFields
+		// The name is in the error because it is the thing to fix: one field with no
+		// name has no label to write, and two of one name draw two controls the
+		// browser cannot tell apart.
+		if name == "" {
+			return examples.Example{}, fmt.Errorf("%w: a field has no name to label or report on", ErrFields)
+		}
+		if seen[name] {
+			return examples.Example{}, fmt.Errorf("%w: two fields are named %q", ErrFields, name)
 		}
 		seen[name] = true
 	}
-	return example(id, model, options, false), nil
+	return example(id, model, options), nil
 }
 
-// LegacyExample retains the generated screens' historical DOM IDs while they
-// migrate to explicit per-instance namespaces. It still uses the same builder.
+// MustExample is Example for a composition whose field names were already kept
+// distinct by the thing that built the schema. It exists for the generated
+// screens, which render a page and have no channel left to report on: kit/crud
+// derives one name per struct field, falling back to the Go name when the JSON
+// tag is empty, and go vet refuses a struct that repeats a tag, so a schema that
+// reached a mounted route cannot hold two fields of one name.
 //
-// Deprecated: use Example for new compositions. Legacy forms cannot share a page
-// when their field names overlap; their form ID is always "screen-form".
-func LegacyExample(id string, model Model, options Options) examples.Example {
-	return example(id, model, options, true)
+// Reaching the panic therefore means a hand-built entity.Schema — a design
+// invocation, an adapter — named two fields the same. That is a composition bug,
+// and it is said in the same shape regexp.MustCompile and this repository's own
+// component constructors already use it.
+func MustExample(id string, model Model, options Options) examples.Example {
+	example, err := Example(id, model, options)
+	if err != nil {
+		panic(err.Error() + " — a schema reaching a renderer should have been refused where it was built")
+	}
+	return example
 }
 
-func example(id string, model Model, options Options, legacy bool) examples.Example {
+func example(id string, model Model, options Options) examples.Example {
 	formID := options.Namespace + "-form"
-	if legacy {
-		formID = "screen-form"
-	}
 	body := []g.Node{}
 	if model.Detail != "" {
 		body = append(body, examples.ExampleWithSlots(examples.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
@@ -100,13 +155,10 @@ func example(id string, model Model, options Options, legacy bool) examples.Exam
 		if !present && model.Create {
 			value = f.Default
 		}
-		controlID := ""
-		if !legacy {
+		body = append(body, Control(ControlProps{Field: field,
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
-			controlID = options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name))
-		}
-		body = append(body, Control(ControlProps{Field: field, ID: controlID,
+			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
 			Value: value, Error: model.Errors[f.Name], Immutable: immutable}))
 	}
 	body = append(body, examples.ExampleWithChildren(

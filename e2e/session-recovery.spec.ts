@@ -225,7 +225,11 @@ for (const width of [1280, 390]) test(`a recovery notice survives validation rep
   const title = 'Retain the notice across the validation swap';
   const field = page.getByRole('textbox', { name: 'Title', exact: true });
   await field.fill(title);
-  const oldForm = await page.locator('#screen-form').elementHandle();
+  // The form's DOM identity is the address it posts to (see forms.Namespace), so
+  // the create screen of this entity owns this one. It is spelled out rather than
+  // derived here on purpose: a TypeScript copy of the Go rule would agree with it
+  // by coincidence and drift silently, while this selector fails when they part.
+  const oldForm = await page.locator('#admin-task-tasks-form').elementHandle();
   if (!oldForm) throw new Error('The generated form is missing');
   const submit = async (status: number) => {
     const received = page.waitForResponse(response =>
@@ -252,7 +256,7 @@ for (const width of [1280, 390]) test(`a recovery notice survives validation rep
   }
   await page.bringToFront();
   // Whitespace passes native required validation but the real domain refuses
-  // it. HTMX replaces #screen-form with the returned 422 form, not this notice.
+  // it. HTMX replaces #admin-task-tasks-form with the returned 422 form, not this notice.
   await field.fill('   ');
   await submit(422);
   await expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -268,7 +272,7 @@ for (const width of [1280, 390]) test(`a recovery notice survives validation rep
   await expect(notice).toBeVisible();
   await expect(field).toHaveValue(title);
   await expect(page.locator('[data-request-notice]:visible')).toHaveCount(1);
-  expect(await page.locator('#screen-form').evaluate(node => node.nextElementSibling?.id)).toBe('pk-auth-anonymous');
+  expect(await page.locator('#admin-task-tasks-form').evaluate(node => node.nextElementSibling?.id)).toBe('pk-auth-anonymous');
   expect(await retainedNotice.evaluate(node => node.isConnected)).toBe(true);
   expect(await matchingTasks(request, title)).toEqual([]);
   await oldForm.dispose();

@@ -52,10 +52,17 @@ Rendering alone does not establish browser, native or A2UI adapter compatibility
 HTMX focus after a refused write requires the existing browser assets and the
 handler's refusal response; direct rendering does not execute that controller.
 
-`screens.FormExample` forwards through deprecated `LegacyExample` to preserve its
-historical HTML and IDs during migration. New compositions use `Example` because
-legacy generated forms share IDs and cannot safely repeat on one page.
-`Control` is available for custom trusted composition with an explicit control ID.
+`screens.FormExample` derives the form's DOM scope from the address it posts to
+(`forms.Namespace`), so the create and edit screens of one entity own different
+identities and two forms may share a page. `Control` is available for custom
+trusted composition with an explicit control ID; without one it falls back to the
+component's name-derived identity, which is why a page holding two forms built
+that way collides — pass an ID when you compose more than one.
+
+`MustExample` is `Example` for a composition already gated at mount. The generated
+screens use it because a renderer returns a page, not an error, and `kit/rest`
+already refuses a schema whose field names collide (`rest_test.go` names the
+case). Reaching its panic means a resource reached a renderer unmounted.
 
 Run `go test ./ui/forms ./ui/screens ./ui/components` for local rendering, capture,
 namespace and compatibility checks. Product HTTP/browser behavior remains the
