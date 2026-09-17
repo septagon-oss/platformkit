@@ -313,8 +313,8 @@ func (p *Pending) Close(keep bool) error {
 // restored.
 //
 // So the control for a deliberate escape is not here. It is scripts/check_gucs.sh,
-// which fails the build when any .go file outside kit/db writes either setting,
-// and the type parameter, which makes crossing the tenant by accident
+// which fails the build when anything outside kit/db writes either setting, in Go
+// or in SQL, and the type parameter, which makes crossing the tenant by accident
 // impossible. This costs one round trip per transaction, both settings in one
 // query, and it is worth that because the naive escape is the one that happens.
 func sealed(gtx *gorm.DB, wantTenant, wantSystem string) error {

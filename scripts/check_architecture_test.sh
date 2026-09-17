@@ -63,6 +63,41 @@ mv "$repo/kit/db/write.go" "$repo/kit/db/dbtest/write.go"
 rejects 'foundation subpackage writes tenancy' 'OUT OF BOUNDS' bash "$scripts/check_gucs.sh" "$repo"
 rm "$repo/kit/db/dbtest/write.go"
 
+# The shapes the tenancy gate exists to catch. Each used to walk straight past
+# it, because the gate looked for two spellings of one statement and the
+# settings can be written in more than two, in a file type it never opened.
+# A consumer's go.mod, so no kit/db directory is exempt here.
+printf 'module example.test/product\n' > "$repo/go.mod"
+refuses() {
+	local description="$1" path="$2" content="$3"
+	mkdir -p "$repo/$(dirname "$path")"
+	printf '%s\n' "$content" > "$repo/$path"
+	rejects "$description" 'OUT OF BOUNDS' bash "$scripts/check_gucs.sh" "$repo"
+	rm "$repo/$path"
+}
+refuses 'SET without LOCAL, which outlives the commit' internal/escape.go \
+	'var q = "SET platformkit.tenant_id = '"'"'x'"'"'"'
+refuses 'setting name parked in a constant' internal/escape.go \
+	'const guc = "platformkit.tenant_id"'
+refuses 'name assembled at runtime' internal/escape.go \
+	'var q = "SELECT set_config('"'"'platformkit'"'"' || '"'"'.tenant_id'"'"', 1, true)"'
+refuses 'qualified set_config with odd spacing' internal/escape.go \
+	'var q = "SELECT pg_catalog.set_config ( '"'"'platformkit.system_access'"'"', 1, true )"'
+refuses 'a default pinned to the role' migrations/escape.sql \
+	"ALTER ROLE platformkit_app SET platformkit.tenant_id = 'x';"
+refuses 'set_config in a migration' migrations/escape.sql \
+	"SELECT set_config('platformkit.system_access', 'true', false);"
+refuses 'SET without LOCAL in a migration' migrations/escape.sql \
+	"SET platformkit.system_access = 'true';"
+
+# What a migration still has to be allowed to do: the policies in 000001 read
+# the setting they are written to match. Refusing this would refuse the
+# foundation's own schema, which is how a gate gets switched off.
+mkdir -p "$repo/migrations"
+printf 'SELECT current_setting(%splatformkit.tenant_id%s, true) IS NOT NULL;\n' "'" "'" > "$repo/migrations/000001_tenancy.up.sql"
+bash "$scripts/check_gucs.sh" "$repo" >/dev/null
+rm -r "$repo/migrations"
+
 # Tracked files deleted from the working tree do not become scanner failures.
 git -C "$repo" add .
 rm "$repo/modules/a/internal/good.go"

@@ -46,10 +46,22 @@ transaction turns the policy off for the rest of it. So the escape is closed by
 two things that are not privileges, and softened by a third:
 
 1. the type parameter, so it cannot happen by accident;
-2. `scripts/check_gucs.sh`, which fails the build when any `.go` file outside
+2. `scripts/check_gucs.sh`, which fails the build when anything outside
    `kit/db` writes either setting, so it cannot happen quietly. **This is the
    control.** A deliberate escape has to be written, and this is what stops it
-   being written;
+   being written. It reads `.sql` as well as `.go`, because a migration is
+   exactly as authoritative as a source file and was invisible to it, and it
+   looks for the spellings that matter rather than one statement: `set_config`
+   in any spacing or qualification, the name passed as a parameter, the name
+   assembled from pieces, `SET LOCAL`, `SET` **without** `LOCAL` — which is the
+   one that survives the commit and stays on the pooled connection, so it never
+   reaches the re-read — and `ALTER ROLE`/`DATABASE`/`SYSTEM … SET`, which pins
+   a tenant to every connection the pool will open. A `.go` file outside
+   `kit/db` may not name either setting at all, since `db.Run`, `db.RunSystem`
+   and `db.TenantOf` are how Go says whose transaction this is. What still
+   escapes a grep is a name assembled from data at runtime; the answer to that
+   is a reviewer asking why a module writes a kernel setting, not a cleverer
+   pattern;
 3. a re-read in `db.Run` and `db.RunSystem`: before committing, each re-reads
    both settings and rolls back if either differs from what it placed.
 
