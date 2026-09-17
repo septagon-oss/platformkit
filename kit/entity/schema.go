@@ -54,6 +54,9 @@ type Field struct {
 	// Elem is what a TypeList holds, and empty for everything else.
 	Elem FieldType `json:"elem,omitempty"`
 	// Widget overrides the control a screen would pick from Type: `ui:"widget:select"`.
+	// It must be a name Widgets admits; a Spec whose entity carries any other
+	// name refuses to mount, because a name no renderer knows used to draw a
+	// plain text input in silence.
 	Widget string `json:"widget,omitempty"`
 	// Enum is the closed set of values, from `enum:"open,done"`.
 	Enum []string `json:"enum,omitempty"`
@@ -80,6 +83,41 @@ type Field struct {
 	// kit/rest's PATCH merge, which decodes a body into the field this names;
 	// json:"-" because a screen has no use for it and a caller none at all.
 	Index []int `json:"-"`
+}
+
+// Widgets is every name `ui:"widget:…"` may carry. It is the vocabulary, not a
+// suggestion: the control each name draws lives in ui/forms, which cannot be
+// imported from here, so what binds the two is a test there that names a
+// rendered control for every entry here, and the mount-time refusal in
+// kit/rest's Spec.check. A widget absent from this list is a compile-adjacent
+// mistake rather than a runtime surprise: kit/entity owns the names because
+// ui/forms owns the renderers, and a kernel below the presentation layer has no
+// way to ask what a control is.
+//
+// Two entries are aliases of what a Go type already picks — `datetime` for a
+// time.Time and `checkbox` for a bool — kept because fifteen fields of the
+// foundation's own entities, and of the catalog and a client, name them. They
+// now mean the control instead of being ignored next to it, which is why a
+// string holding a timestamp or a "true" draws the same control its
+// time.Time and bool neighbours do.
+var Widgets = []string{
+	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
+	"hidden", "month", "number", "password", "search", "select", "tel", "text",
+	"textarea", "time", "url", "week",
+}
+
+// ValidWidget reports whether a screen can draw the named widget. The empty
+// string is valid: it means "pick from Type", which is most fields.
+func ValidWidget(widget string) bool {
+	if widget == "" {
+		return true
+	}
+	for _, w := range Widgets {
+		if w == widget {
+			return true
+		}
+	}
+	return false
 }
 
 // schemas caches one derivation per entity type. Reflection over a struct is

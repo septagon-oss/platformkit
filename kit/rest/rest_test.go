@@ -546,6 +546,43 @@ func TestSpecRefusesToMountNonsense(t *testing.T) {
 	}
 }
 
+// Prefs is a second entity, here only to carry a widget no screen can draw.
+type Prefs struct {
+	crud.Base
+	Theme string `json:"theme,omitempty" ui:"widget:colour"`
+}
+
+func (Prefs) TableName() string { return "rest_prefs" }
+
+// TestAWidgetNoScreenCanDrawIsRefusedAtMount.
+//
+// A `ui:"widget:…"` name the renderer does not know used to draw a plain text
+// input and say nothing, which is how `widget:file` ended up with a file
+// component in the library and no form that could ask for it. kit/entity owns
+// the vocabulary because ui/forms owns the renderers and cannot be imported
+// from a kernel package below the presentation layer, so the refusal happens at
+// the mount site, where every other wiring mistake is already made loud.
+func TestAWidgetNoScreenCanDrawIsRefusedAtMount(t *testing.T) {
+	// The message is the assertion. Mount on an API with no router behind it
+	// panics for its own reasons, so a bare recover() here would be satisfied by
+	// the wrong accident — which is exactly how a test like this goes green while
+	// the rule it names goes unenforced.
+	var recovered any
+	defer func() {
+		recovered = recover()
+		if recovered == nil {
+			t.Error("Mount accepted an entity whose widget renders nothing")
+			return
+		}
+		message, _ := recovered.(string)
+		if !strings.Contains(message, `widget "colour"`) || !strings.Contains(message, "no screen") {
+			t.Errorf("Mount refused for another reason: %v", recovered)
+		}
+	}()
+	rest.Spec[*Prefs]{Module: "prefs", Entity: "pref", Path: "/api/prefs",
+		Read: "pref:read", Write: "pref:write"}.Mount(&httpx.API{})
+}
+
 // TestASchemaCarriesAListAndNothingSortsOnIt. A list renders — a user's roles
 // is the case that made the type necessary — and it is not something a query
 // compares against: "tags = ?" is not a question about any of the values in the

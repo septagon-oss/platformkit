@@ -228,6 +228,9 @@ func (s Singleton[T]) check() {
 	case s.Public && s.Face == nil:
 		bad = "Public is set and Face is nil; a public route that served the whole row would be an admin screen anybody could read"
 	}
+	if bad == "" {
+		bad = widgetFault(crud.Fields[T]())
+	}
 	if bad != "" {
 		panic("rest: Singleton for " + s.Path + ": " + bad)
 	}

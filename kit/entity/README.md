@@ -34,3 +34,21 @@ needs neither CRUD nor REST.
 tenant access. CRUD retains tenant stamping, validation-error mapping and SQL
 operations. Tags still describe storage columns and presentation hints, but
 schema derivation neither writes a value nor executes those operations.
+
+## The widget vocabulary
+
+`ui:"widget:select"` names the control a screen draws. `Widgets` is every name it
+may carry, and `ValidWidget` is the check; `ui/forms` renders one control per
+name, and `widget_test.go` there refuses a name in this list with no drawn
+control. What enforces the pair is `rest.Spec.Mount`, which panics at boot over a
+field naming anything else.
+
+Before that, an unknown name drew a plain text input and said nothing, so
+`widget:file` was an upload control no schema could reach while the component
+behind it worked when built by hand in Go. `datetime` and `checkbox` are names
+the foundation's own entities, the catalog and a client already carry on fifteen
+fields, where the Go type chose the control and the name was ignored; both now
+mean the control, on a string holding an instant as much as on a `time.Time`. Run
+`go test ./ui/forms ./kit/rest` to see the vocabulary, the drawing and the refusal
+together. Neither proves a control is right for the field: `entity-picker` draws
+the identifier text box and says there is no picker yet.

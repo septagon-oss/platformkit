@@ -116,13 +116,40 @@ func example(id string, model Model, options Options, legacy bool) examples.Exam
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
 				components.ButtonProps{Label: cmp.Or(options.SubmitLabel, "Save"), Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 		}, components.FormActions).Node)
+	// A file control submits a body a urlencoded form cannot carry, and the
+	// encoding belongs to the form rather than to whoever composed it: one
+	// field that needs it is enough to break the whole submission. It is added
+	// here and not to FormProps because nothing else may decide it — a page
+	// that sets enctype by hand and renders no file control is a page that
+	// stopped validating its own fields.
+	props := components.FormProps{
+		ComponentProps: components.ComponentProps{ID: formID},
+		HTMXProps: components.HTMXProps{
+			Post: options.Action, Target: "#" + formID, Swap: "outerHTML", Select: "#" + formID},
+		Action: options.Action, Label: options.Title,
+	}
+	if rendersFile(model) {
+		props.Attrs = map[string]string{"enctype": "multipart/form-data"}
+	}
 	return examples.ExampleWithChildren(
-		examples.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: options.Title}, components.FormProps{
-			ComponentProps: components.ComponentProps{ID: formID},
-			HTMXProps: components.HTMXProps{
-				Post: options.Action, Target: "#" + formID, Swap: "outerHTML", Select: "#" + formID},
-			Action: options.Action, Label: options.Title,
-		}, body, components.Form)
+		examples.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: options.Title}, props,
+		body, components.Form)
+}
+
+// rendersFile reports whether the form draws a control that submits a file.
+// It applies the same skip the body loop applies — a read-only field, or an
+// immutable one on create, renders no control and so needs no encoding.
+func rendersFile(model Model) bool {
+	for _, field := range model.Fields {
+		f := field.Definition
+		if f.ReadOnly || (model.Create && slices.Contains(model.Immutable, f.Name)) {
+			continue
+		}
+		if f.Widget == "file" {
+			return true
+		}
+	}
+	return false
 }
 
 func validNamespace(value string) bool {

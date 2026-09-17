@@ -31,6 +31,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -456,9 +457,32 @@ func (s Spec[T]) check() {
 			bad = fmt.Sprintf("Immutable names %q, which is not a field of the entity", name)
 		}
 	}
+	if bad == "" {
+		bad = widgetFault(crud.Fields[T]())
+	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Path + ": " + bad)
 	}
+}
+
+// widgetFault names the first field whose `ui:"widget:…"` is a name no screen
+// can draw, and "" when every widget the entity names is inside the vocabulary
+// kit/entity owns.
+//
+// The check belongs here because a Spec is where an entity, a schema and a
+// mount are all in hand at once. It exists because the failure it prevents is
+// silent: a widget name the renderer had not heard of drew a plain text input,
+// so `widget:file` gave an installation a file component in the library and not
+// one form that could ask for it. The vocabulary is kit/entity's because
+// ui/forms draws the controls, and a kernel package below the presentation
+// layer cannot import it to ask what a name means.
+func widgetFault(fields []crud.Field) string {
+	for _, f := range fields {
+		if !entity.ValidWidget(f.Widget) {
+			return fmt.Sprintf("field %q names widget %q, which no screen can draw", f.Name, f.Widget)
+		}
+	}
+	return ""
 }
 
 // transaction is the request's, or a 503 saying why there is none. A handler
