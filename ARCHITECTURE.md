@@ -595,7 +595,9 @@ publisher for the image, SBOM and release notes is not yet approved, so no tag
 publishes anything until [RELEASE.md](RELEASE.md#publish-an-approved-version)
 agrees one with the owner. The weekly
 [public-consumption workflow](.gitea/workflows/public-consumption.yml) runs the
-published-module and exported-API checks that `make check` deliberately does not.
+published-module and exported-API checks that `make check` deliberately does not,
+the second gated on [the API changes this line already accepted](scripts/PUBLIC-API-BASELINE.json),
+so a new break stands out from the ones the open `/v2` decision covers.
 
 A type check proves types, a test proves its exercised cases, and a product
 journey proves its observed outcome. None alone proves production readiness,

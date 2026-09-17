@@ -28,6 +28,14 @@ on committed revisions and resolve its report before release. Review aliases,
 function/interface changes, wire, behavioral and database compatibility with real
 consumers; a type report alone cannot establish compatibility.
 
+The changes already accepted on this line are enumerated in
+[PUBLIC-API-BASELINE.json](scripts/PUBLIC-API-BASELINE.json), so a new break is
+distinguishable from the ones already reviewed. Publishing a stable release ends
+that file: measure against the new tag and delete it, rather than carrying a list
+of excuses into the next line. Restoring v1 compatibility instead of releasing
+`/v2` means the same file shrinking line by line, which is how you would know it
+was working.
+
 When the source migration is authorized, update imports, package guards and
 proofs together, then foundation, catalog and clients in dependency order.
 Prove each advertised public leaf with the [ordinary versioned consumer](ui/forms/testdata/standalone/README.md)

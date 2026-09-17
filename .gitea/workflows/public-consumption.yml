@@ -61,14 +61,21 @@ jobs:
           python3 scripts/check_public_module.py "$version" > "$RUNNER_TEMP/public-module.json"
           echo "the example compiled, tested and vetted against $version with no replace directive"
 
-      # Reports, does not gate: apidiff has findings against v1.0.0 by design, and
-      # the release line has not been cut. A warning is the honest result; a green
-      # tick would be a lie and a red one would be noise nobody reads.
+      # Gates on the delta, not on the whole report. apidiff finds 71 changes against
+      # v1.0.0: deliberate moves made after the tag, each one in CHANGELOG.md, which
+      # is why the /v2 line in RELEASE.md is open rather than closed. Running that
+      # report unfiltered every week yields a step that is always red, and a step that
+      # is always red tells nobody whether anything is wrong — the finding this
+      # repository already learned about a gate that never passes. So the accepted
+      # changes are enumerated in scripts/PUBLIC-API-BASELINE.json, and this fails on a
+      # line the baseline does not name and on a named line that stops being reported.
+      # Both directions were checked by running it: a baseline with one entry removed
+      # and one invented prints `NEW ./design.CSS: removed` and
+      # `GONE ./kit/db.FakeThing: removed` and exits 1.
       - name: Exported surface against the supported tag
-        continue-on-error: true
         run: |
-          python3 scripts/check_public_api.py v1.0.0 HEAD > "$RUNNER_TEMP/public-api.json" \
-            || echo "::warning::apidiff reports incompatibilities against v1.0.0; the /v2 line is open (RELEASE.md)"
+          python3 scripts/check_public_api.py v1.0.0 HEAD \
+            --baseline scripts/PUBLIC-API-BASELINE.json > "$RUNNER_TEMP/public-api.json"
 
       # The scripts print a JSON report and remove their own fixtures and caches.
       # The job log carries the report; no artifact action is referenced here
