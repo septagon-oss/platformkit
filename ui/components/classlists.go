@@ -467,6 +467,24 @@ var (
 		"lg": style.New().Width(style.S16).Height(style.S16).Rounded(style.RadiusFull),
 	}
 
+	// A person, as a disc. The neutral surface is deliberate: a hue chosen by the
+	// renderer signifies nothing to the person it stands for, and the palette
+	// ceiling in ui/style/README.md is there to stop exactly that kind of
+	// invention. See Avatar for the naming rules the markup has to honour.
+	clAvatar = style.New().
+			Display(style.DisplayFlex).Items(style.ItemsCenter).Justify(style.JustifyCenter).
+			Overflow(style.OverflowHidden).FlexShrink0().
+			Bg(style.SurfaceSecondary).TextColor(style.FgSecondary).FontWeight(style.FontSemibold)
+	clAvatarSize = map[string]style.ClassList{
+		"sm": style.New().Width(style.S8).Height(style.S8).Rounded(style.RadiusFull),
+		"md": style.New().Width(style.S12).Height(style.S12).Rounded(style.RadiusFull),
+		"lg": style.New().Width(style.S16).Height(style.S16).Rounded(style.RadiusFull),
+	}
+	clAvatarInitials = style.New().FontSize(style.TextSM)
+	// The focus ring belongs on the disc when the disc is the link, which is what
+	// a caller can reach with a Tab and what the design audit then looks for.
+	clAvatarLink = clFocusRing
+
 	clEmpty = style.New().
 		Display(style.DisplayFlex).FlexDir(style.FlexCol).Items(style.ItemsCenter).
 		Justify(style.JustifyCenter).Gap(style.S3).TextAlign(style.TextCenter)
@@ -588,10 +606,21 @@ var (
 	clMediaFigure  = style.New().Display(style.DisplayBlock)
 	clMediaCaption = style.New().FontSize(style.TextSM).TextColor(style.FgMuted).PaddingTop(style.S3)
 
-	clCardImageVertical   = style.New().Width(style.SFull).ObjectCover()
-	clCardImageHorizontal = style.New().Width(style.S48).ObjectCover()
-	clCardHorizontal      = style.New().Display(style.DisplayFlex)
-	clCardVertical        = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1()
+	// Geometry only. The crop used to live here, which meant a caller who asked
+	// for `fit: "contain"` got `object-cover object-contain` on one element and
+	// whichever the stylesheet happened to declare last won — the caller's sentence
+	// about the picture lost to source order. The crop is Media's Fit to answer, in
+	// one place, in whatever order the classes arrive.
+	clCardImageVertical   = style.New().Width(style.SFull)
+	clCardImageHorizontal = style.New().Width(style.S48)
+	// The two crops, named. They are declared here rather than built inline where
+	// they are used, because a class the registry cannot see is a class the
+	// stylesheet may never grow — TestRenderedClassesAreDeclared failed on exactly
+	// that the first time, and `object-cover` would have shipped unstyled.
+	clImageCover     = style.New().ObjectCover()
+	clImageContain   = style.New().ObjectContain()
+	clCardHorizontal = style.New().Display(style.DisplayFlex)
+	clCardVertical   = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1()
 
 	// Breadcrumb.
 	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
@@ -746,6 +775,7 @@ func GalleryClassLists() []style.ClassList {
 		clDividerH, clDividerV, clDividerText, clDividerTextLine, clDividerTextLabel,
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
 		clMediaFigure, clMediaCaption, clMediaAbsent, clMediaFailed, clMediaRefused,
+		clAvatar, clAvatarInitials, clAvatarLink,
 		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
 		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay,
 		clModalPanel, clModalHeader, clModalTitleBlock, clModalTitle,
@@ -759,7 +789,7 @@ func GalleryClassLists() []style.ClassList {
 		clTabsBadge, clTabsPanels, clTabsPanel, clTabsLazy, clTabsLazyLabel,
 	}
 	for _, m := range []map[string]style.ClassList{
-		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize, clModalPanelSize,
+		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize, clModalPanelSize, clAvatarSize,
 	} {
 		for _, cl := range m {
 			out = append(out, cl)
@@ -799,6 +829,7 @@ func ShellClassLists() []style.ClassList {
 		clCardShadowSmall, clCardShadowMedium, clCardShadowLarge,
 		clCardClickable, clCardHoverable, clCardTitle, clCardDesc,
 		clCardHeader, clCardFooter, clCardImageVertical, clCardImageHorizontal,
+		clImageCover, clImageContain,
 		clCardHorizontal, clCardVertical,
 		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur,
 		clSidebarRootAdmin, clSidebarRootContent, clSidebarWidthCollapsed,

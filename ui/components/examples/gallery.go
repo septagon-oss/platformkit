@@ -330,6 +330,38 @@ func Gallery() []Example {
 		ExampleOf(info("pk-ui.component.media/refused", "Media", "Picture / not permitted"),
 			components.MediaProps{Status: components.MediaRefused, Reason: "This artwork belongs to a tier you are not in."}, components.Media),
 
+		// Avatar is the same argument as Media in a smaller shape: every product
+		// that ever showed a person invented a coloured div with a letter in it.
+		// The specimens are ordered so the interesting pair sits together — the one
+		// that speaks and the one that stays quiet because its name is already on
+		// screen, which is the difference between a reader saying a person's name
+		// once and saying it twice.
+		ExampleOf(info("pk-ui.component.avatar/initials", "Avatar", "Person / no picture"),
+			components.AvatarProps{Name: "Jean-Paul Reyes"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/sizes", "Avatar", "Person / three sizes"),
+			components.AvatarProps{Name: "Ada Lovelace", Size: "lg"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/picture", "Avatar", "Person / with a picture"),
+			components.AvatarProps{Name: "Jean-Paul Reyes", Src: mediaSpecimen}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/linked", "Avatar", "Person / linking to them"),
+			components.AvatarProps{Name: "Ada Lovelace", Href: "/admin/_gallery"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/unknown", "Avatar", "Person / nothing known"),
+			components.AvatarProps{}, components.Avatar),
+		// The decorative case cannot be a lone disc or the specimen would prove
+		// nothing: what makes it decorative is the name sitting beside it, so the
+		// pair is shown as a toolbar would show it in a member row.
+		// This one is a Toolbar specimen and not an Avatar specimen, and the export
+		// says why: every occurrence of a component must present one interface, so
+		// an Avatar cannot be the thing that holds others. The pair is shown under
+		// the component that actually composes it — which is what a member row is.
+		ExampleWithChildren(info("pk-ui.component.toolbar/member", "Frame", "Toolbar / a member row"),
+			components.ToolbarProps{Title: "A member row", Subtitle: "The disc stays quiet because the name is right there"},
+			[]g.Node{
+				ExampleOf(ExampleInfo{ID: "avatar", ComponentID: "pk-ui.component.avatar"},
+					components.AvatarProps{Name: "Jean-Paul Reyes", Decorative: true, Size: "sm"}, components.Avatar).Node,
+				ExampleOf(ExampleInfo{ID: "name", ComponentID: "pk-ui.component.text"},
+					components.TextProps{Content: "Jean-Paul Reyes"}, components.Text).Node,
+			}, components.Toolbar),
+
 		// Shell is not in this list, and cannot be: it renders <main>, and the
 		// page this gallery is on is itself a Shell, so an example would be a
 		// second main landmark inside the first — two documents in one, which

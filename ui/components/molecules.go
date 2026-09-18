@@ -1697,6 +1697,20 @@ func Media(p MediaProps) g.Node {
 	if p.Horizontal {
 		imageClass = clCardImageHorizontal
 	}
+	// Fit is the one piece of layout the caller owns, because it is a claim about
+	// the picture and not about the box: "the whole subject matters" is contain,
+	// "fill this shape and crop what hangs over" is cover. An image in a fixed
+	// round box hangs over the edge without it, which is what an Avatar needs —
+	// the prop had been declared and silently ignored until then.
+	// Exactly one crop, and a name for the default: Card has cropped its images
+	// since it was written, so the empty string means cover rather than nothing.
+	switch p.Fit {
+	case "contain":
+		imageClass = imageClass.Merge(clImageContain)
+	default:
+		imageClass = imageClass.Merge(clImageCover)
+	}
+
 	img := h.Img(append(attrs, h.Class(imageClass.Compile()))...)
 	if p.Caption == "" {
 		return img
@@ -1709,6 +1723,90 @@ func Media(p MediaProps) g.Node {
 		img,
 		h.FigCaption(h.Class(clMediaCaption.Compile()), g.Raw("<!--pk-text:caption-->"), g.Text(p.Caption), g.Raw("<!--/pk-text:caption-->")))
 	return h.Figure(nodes...)
+}
+
+// Avatar renders AvatarProps: a person as a disc.
+//
+// Three rules carry it, and each is a decision someone would otherwise re-make
+// inside a product:
+//
+//   - A picture when there is one, initials when there is no picture but there is
+//     a name, and the `user` glyph when there is neither. It never invents a
+//     person: no generated hue behind a letter, because a colour the renderer made
+//     up signifies nothing to the person it stands for, and ui/style/README.md
+//     exists to stop exactly that invention.
+//   - The disc is named after the person, never after its own contents. Initials
+//     are aria-hidden and the name rides on the wrapper, or a screen reader says
+//     "J P R" for someone whose profile link should say "Jean-Paul Reyes" — on
+//     every row of a thirty-row list.
+//   - Decorative hides the whole disc from the reader, for the case where the name
+//     is already beside it. An avatar read next to its own name is not twice the
+//     information; it is a person hearing the same words again.
+//
+// Sizes are the three this shelf has and an unknown one falls back to md, as every
+// other variant here does. `Href` without any name at all renders a plain disc:
+// a link that cannot say who it goes to is a mystery to the one person who cannot
+// see where it points, and an unnameable person is not a person to link to.
+func Avatar(p AvatarProps) g.Node {
+	name := strings.TrimSpace(p.Name)
+	label := name
+	if p.AriaLabel != "" {
+		label = p.AriaLabel
+	}
+
+	var inner g.Node
+	switch {
+	case p.Src != "":
+		// The picture goes through Media, so alt text, lazy loading and "the bytes
+		// never arrived" are decided once in this package and not again here.
+		inner = Media(MediaProps{Src: p.Src, Alt: label, Fit: "cover", Lazy: true})
+	case name != "":
+		inner = h.Span(h.Class(clAvatarInitials.Compile()), g.Attr("aria-hidden", "true"), g.Text(initials(name)))
+	default:
+		inner = Icon(IconProps{Name: "user", Size: "md"})
+	}
+
+	// A disc that links is the anchor itself rather than a div inside one: Link is
+	// a text link and cannot hold a picture, and Card in this file already becomes
+	// its own anchor rather than nesting two elements to do the same job.
+	disc := clAvatar.Merge(variantOr(clAvatarSize, p.Size, "md"))
+	if p.Href != "" {
+		disc = disc.Merge(clAvatarLink)
+	}
+	attrs := []g.Node{classes(disc.Compile(), p.Class)}
+	attrs = append(attrs, baseAttrs(p.ComponentProps)...)
+	// aria-hidden on the anchor would take the whole link out of the accessibility
+	// tree: a keyboard user could reach a person and a reader would announce
+	// nothing. The name goes on the anchor and only the contents stay quiet — which
+	// they already are, since initials are hidden where they appear.
+	if p.Href != "" && label != "" {
+		attrs = append(attrs, h.Href(p.Href), g.Attr("aria-label", label))
+		return h.A(append(attrs, inner)...)
+	}
+	if p.Decorative {
+		attrs = append(attrs, g.Attr("aria-hidden", "true"))
+	} else if label != "" {
+		attrs = append(attrs, g.Attr("role", "img"), g.Attr("aria-label", label))
+	}
+	return h.Div(append(attrs, inner)...)
+}
+
+// initials is the derivation, stated once so every product spells a person the
+// same way: the first letter of the first word and of the last word, upper-cased.
+// One word yields one letter — a name is not a puzzle to be solved for its middle.
+// Letters are taken as runes, so a name in any script yields its own first
+// characters instead of being cut in half by byte arithmetic.
+func initials(name string) string {
+	fields := strings.Fields(name)
+	switch len(fields) {
+	case 0:
+		return ""
+	case 1:
+		return strings.ToUpper(string([]rune(fields[0])[:1]))
+	default:
+		first, last := []rune(fields[0]), []rune(fields[len(fields)-1])
+		return strings.ToUpper(string([]rune{first[0], last[0]}))
+	}
 }
 
 // mediaAbsent renders the states where there is no picture to show. Failed and

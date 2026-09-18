@@ -557,6 +557,31 @@ type TableSkeletonProps struct {
 	Compact bool `json:"compact,omitempty"`
 }
 
+// AvatarProps is a person as a disc: the thing every member row, comment and
+// attendee list needs, and therefore the thing every product otherwise hand-rolls
+// as a coloured div with a letter in it.
+type AvatarProps struct {
+	ComponentProps
+
+	// Name is the person as they are called. It is the accessible name of the
+	// disc and the source of the initials; nothing here invents a substitute for
+	// a caller who left it empty.
+	Name string `json:"name,omitempty" maxLength:"120"`
+	// Src is their picture, when one exists. It goes through Media, so alt text,
+	// lazy loading and the four ways a picture fails are decided once.
+	Src string `json:"src,omitempty" maxLength:"2048"`
+	// Href makes the disc a link to the person. Link is a text link and cannot
+	// hold a picture, so this disc becomes the anchor itself, the way Card does.
+	Href string `json:"href,omitempty" maxLength:"2048"`
+	Size string `json:"size,omitempty" enum:",sm,md,lg" enumStrict:"true"`
+	// Decorative says the name is already on screen beside this disc, so the disc
+	// says nothing at all. Left false, the disc carries the name itself.
+	Decorative bool `json:"decorative,omitempty"`
+	// AriaLabel names the disc when the caller's word for the person is not the
+	// name to show — "Signed out", or a role where a name would be a claim.
+	AriaLabel string `json:"ariaLabel,omitempty"`
+}
+
 // MediaStatus is where a picture has got to. It exists because a picture that
 // has not arrived yet, a picture that never will, and a picture somebody is not
 // allowed to see all look the same — a broken-image glyph — to the only renderer
@@ -630,4 +655,9 @@ type MediaProps struct {
 	// a long list of them wants. Left unset it loads eagerly, because a picture
 	// above the fold that waits for a scroll is a picture nobody asked to wait for.
 	Lazy bool `json:"lazy,omitempty"`
+	// Fit is what the box does with a picture of another shape: "cover" crops to
+	// fill it, "contain" keeps the whole subject inside. It is the caller's call
+	// because it is a claim about the picture — a face cropped is a different
+	// picture — and not about the box. Empty leaves the source's own aspect.
+	Fit string `json:"fit,omitempty" enum:",contain,cover" enumStrict:"true"`
 }

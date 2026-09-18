@@ -58,7 +58,13 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// output, so no card example moves. Tokens, themes and icons are identical —
 	// verified by platformkit-mobile's own token suite, which pins its fixture by
 	// provenance and stays green until somebody refreshes it deliberately.
-	if legacy.SHA256 != "515fb2a7c82d5ab2bffdbc8c06236c10cda2bef9173493b2d6a63731fa5d6b02" {
+	// Avatar adds one component, six examples and a composed member row; Media gains
+	// the Fit property, which was declared and ignored until then. The crop had been
+	// baked into the card image geometry, so `fit: "contain"` used to emit
+	// `object-cover object-contain` and let the stylesheet decide — the two crops are
+	// named classlists now and exactly one is merged per picture. Card's own bytes
+	// are unchanged: same classes, same order. Tokens, themes and icons are identical.
+	if legacy.SHA256 != "401264a411e03891451840989637a49a14cc3116d8ba59ecde833cf07860127d" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
