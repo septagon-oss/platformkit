@@ -91,6 +91,56 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	})
 }
 
+// SetHandle claims or renames a handle. See contracts.Service.SetHandle.
+//
+// The write goes through crud.Update, so a lost race against another claimant
+// surfaces as the unique index users_tenant_handle and kit/crud maps that to
+// ErrConflict rather than a 500 — the pre-check below is for the good message, not
+// for correctness.
+func (s *Service) SetHandle(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, handle string) (*contracts.User, error) {
+	u, err := crud.Get[*contracts.User](tx, id)
+	if err != nil {
+		return nil, err
+	}
+	want := strings.ToLower(strings.TrimSpace(handle))
+	if want == "" {
+		return nil, fmt.Errorf("%w: a handle cannot be released once claimed", crud.ErrInvalid)
+	}
+	if u.Handle == want {
+		return u, nil
+	}
+	if contracts.ReservedHandle(want) {
+		return nil, fmt.Errorf("%w: handle %q names the platform or a role, not a person", crud.ErrInvalid, want)
+	}
+	if taken, err := s.ByHandle(ctx, tx, want); err == nil && taken.ID != u.ID {
+		// The name of the rule, not the name of the person: "ada is taken" tells a
+		// probe nothing, "ada is Ada Lovelace" tells them who is here.
+		return nil, fmt.Errorf("%w: that handle is already claimed in this tenant", crud.ErrConflict)
+	}
+	was := u.Handle
+	u.Handle = want
+	if err := crud.Update(ctx, tx, u, "handle", "updated_at"); err != nil {
+		return nil, err
+	}
+	return u, events.Publish(ctx, tx, contracts.EventHandleSet, contracts.HandleSet{
+		UserID: u.ID, Was: was, Now: want, At: db.Now(),
+	})
+}
+
+// ByHandle is the human lookup. See contracts.Service.ByHandle.
+func (s *Service) ByHandle(_ context.Context, tx db.Tx[db.Tenant], handle string) (*contracts.User, error) {
+	var u contracts.User
+	err := tx.DB().Where("lower(handle) = ? AND deleted_at IS NULL",
+		strings.ToLower(strings.TrimSpace(handle))).Take(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, crud.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("user: find by handle: %w", err)
+	}
+	return &u, nil
+}
+
 // Deactivate stops the user signing in. Deactivating them again changes nothing.
 func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
 	u, err := lockedUser(tx, id)

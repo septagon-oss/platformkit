@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -175,5 +176,117 @@ func TestProvisionIsTheBootstrapsDoorAndNobodyElses(t *testing.T) {
 	}
 	if events != 1 {
 		t.Errorf("Provision published %d events for the tenant, want one", events)
+	}
+}
+
+// TestAHandleIsPerTenantAndRenameableWithoutMovingThePerson is the pair of
+// decisions the handle was built on, tested where the published conformance
+// harness structurally cannot reach them: that harness is one tenant, so it can
+// say "unique" but not "per tenant", and it has one transaction, so it cannot
+// watch a rename against another tenant holding the same name.
+func TestAHandleIsPerTenantAndRenameableWithoutMovingThePerson(t *testing.T) {
+	_, conn := dbtest.Schema(t, user.Migrations)
+	svc := internal.NewService()
+
+	var acmeID, globexID, probeID uuid.UUID
+	asAcme := func(want string, fn func(context.Context, db.Tx[db.Tenant]) error) {
+		t.Helper()
+		if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, fn); err != nil && want != "" {
+			t.Fatalf("%s: %v", want, err)
+		}
+	}
+
+	asAcme("claim in acme", func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		u, err := svc.Invite(ctx, tx, "sam@acme.test", "Sam A")
+		if err != nil {
+			return err
+		}
+		acmeID = u.ID
+		_, err = svc.SetHandle(ctx, tx, u.ID, " Sam ")
+		return err
+	})
+
+	// The same name in the other tenant: per tenant is the decision, so this has to
+	// succeed rather than discover somebody else's claim.
+	if err := db.Run(tenancy.WithTenant(t.Context(), globex), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		u, err := svc.Invite(ctx, tx, "sam@globex.test", "Sam B")
+		if err != nil {
+			return err
+		}
+		globexID = u.ID
+		if _, err = svc.SetHandle(ctx, tx, u.ID, "sam"); err != nil {
+			return err
+		}
+		found, err := svc.ByHandle(ctx, tx, "sam")
+		if err != nil {
+			return err
+		}
+		if found.ID != globexID {
+			t.Errorf("globex resolved sam to %s, want its own row", found.ID)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("globex claiming the handle acme holds: %v", err)
+	}
+
+	asAcme("second claim in one tenant", func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		u, err := svc.Invite(ctx, tx, "sam2@acme.test", "Sam C")
+		if err != nil {
+			return err
+		}
+		if _, err := svc.SetHandle(ctx, tx, u.ID, "sam"); !errors.Is(err, crud.ErrConflict) {
+			t.Errorf("a second claim in one tenant = %v, want ErrConflict", err)
+		}
+		found, err := svc.ByHandle(ctx, tx, "SAM")
+		if err != nil {
+			return err
+		}
+		if found.ID != acmeID {
+			t.Errorf("ByHandle found %s, want acme's row and not globex's %s", found.ID, globexID)
+		}
+		return nil
+	})
+
+	// The rename: the handle moves, the person does not. Every foreign key, event
+	// subject and audit row ever written names acmeID, and after this call it still
+	// does — which is the whole argument for keeping the uuid as the key.
+	asAcme("rename and release", func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		renamed, err := svc.SetHandle(ctx, tx, acmeID, "sam.example")
+		if err != nil {
+			return err
+		}
+		if renamed.ID != acmeID {
+			t.Errorf("renaming moved the person from %s to %s", acmeID, renamed.ID)
+		}
+		if _, err := svc.ByHandle(ctx, tx, "sam"); !errors.Is(err, crud.ErrNotFound) {
+			t.Errorf("the released handle still resolves to somebody: %v", err)
+		}
+		// Released rather than held-and-renamed, so the next person can have it —
+		// which only works because the unique index is partial on the same rule the
+		// service enforces.
+		d, err := svc.Invite(ctx, tx, "sam3@acme.test", "Sam D")
+		if err != nil {
+			return err
+		}
+		if _, err := svc.SetHandle(ctx, tx, d.ID, "sam"); err != nil {
+			return err
+		}
+		e, err := svc.Invite(ctx, tx, "sam4@acme.test", "Sam E")
+		if err != nil {
+			return err
+		}
+		probeID = e.ID
+		return nil
+	})
+
+	// And the database, not the service, holds the line: E takes the name D holds,
+	// through the raw table with no SetHandle and no Validate in between. It gets
+	// its own transaction, because Postgres ends a transaction the moment it
+	// refuses a statement, and a probe that poisons the block it is measuring
+	// proves nothing about what came after it.
+	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		return tx.DB().Exec("UPDATE users SET handle = 'sam' WHERE id = ?", probeID).Error
+	}); err == nil {
+		t.Error("a write through the raw table took a name somebody else holds in this tenant")
 	}
 }

@@ -20,5 +20,5 @@ var schema embed.FS
 var Migrations = db.MigrationSource{
 	Owner:  "user",
 	Files:  db.Sub(schema, "migrations"),
-	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7}}},
+	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7, 25}}},
 }

@@ -127,6 +127,15 @@ func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 		t.Errorf("patching displayName = %d %s, want 200", code, body)
 	}
 
+	// handle is refused by name for the same reason roles is: it publishes
+	// user.handle_set and the trail has to say who held the name before. A handle
+	// a caller could PATCH beside a display name is a handle that changed hands
+	// while nobody was told.
+	code, body = call(t, router, http.MethodPatch, at+"/"+id, `{"handle":"ada"}`)
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "route of its own") {
+		t.Errorf("patching handle = %d %s, want 422 naming the door", code, body)
+	}
+
 	// status is refused by name, because Deactivate owns it and publishes
 	// user.deactivated: a caller who could patch it would deactivate somebody
 	// and tell nobody.

@@ -43,7 +43,7 @@ var spec = rest.Spec[*contracts.User]{
 	// so the field did not exist as far as a patch was concerned. It exists
 	// now, it renders, and it is refused by name — which is also what tells the
 	// caller which door to use.
-	Immutable: []string{"status", "roles"},
+	Immutable: []string{"status", "roles", "handle"},
 }
 
 // Why the generated create screen does not offer roles, since the review asked.
@@ -91,6 +91,7 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 			contracts.EventCreated, contracts.EventUpdated, contracts.EventDeleted,
 			contracts.EventInvited, contracts.EventPasswordSet,
 			contracts.EventRolesSet, contracts.EventDeactivated,
+			contracts.EventHandleSet,
 			contracts.EventRegistrationPending, contracts.EventRegistrationApproved,
 			contracts.EventRegistrationUnverified, contracts.EventEmailVerified,
 		},
