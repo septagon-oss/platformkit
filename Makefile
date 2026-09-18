@@ -72,6 +72,9 @@ check-packages: ## Fail when the app links too many first-party packages
 check-gucs: ## Fail when anything outside kit/db writes a tenancy setting
 	./scripts/check_gucs.sh
 
+check-ui: ## Fail when a layer's markup reaches past the tokens or emits a class it never styles
+	./scripts/check_ui_layers.sh
+
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
 
@@ -95,7 +98,7 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
-check: build vet fmt-check check-loc check-packages check-gucs check-versions ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh

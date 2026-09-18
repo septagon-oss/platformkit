@@ -361,4 +361,50 @@ printf 'package fixture\nfunc' > "$formatting/bad.go"
 rejects 'formatter syntax error' 'bad.go' "${formatter[@]}" "${format_check[@]}"
 rm "$formatting/bad.go"
 rejects 'toolchain discovery failure' 'fixture go env failed' "${formatter[@]}" FAIL_GO_ENV=1 "${format_check[@]}"
+# The composition gate. A layer may name a thing and style it in its own sheet, or
+# ask the foundation for a token; it may not paint with a utility class, and it may
+# not emit a class on its own that no rule answers.
+uilayers_repo="$temporary/uilayers"
+mkdir -p "$uilayers_repo/modules/planner/internal/ui" "$uilayers_repo/apps/shop"
+cat > "$uilayers_repo/modules/planner/internal/ui/render.go" <<'GO'
+package ui
+
+func Board() string { return h.Class("plan-day-board") + h.Class("home-contact home-wrap") }
+GO
+cat > "$uilayers_repo/modules/planner/internal/ui/styles.go" <<'GO'
+package ui
+
+func Styles(s *css.Sheet) {
+	s.Select(".plan-day-board", css.Decl("display", css.Literal("grid")))
+	s.Select(".home-wrap", css.Decl("max-width", css.Literal("68rem")))
+}
+GO
+printf 'package main
+
+var _ = h.Class(style.New().Bg(style.SurfacePrimary).Compile())
+' > "$uilayers_repo/apps/shop/main.go"
+uilayers=(bash "$scripts/check_ui_layers.sh" "$uilayers_repo")
+"${uilayers[@]}" >/dev/null
+
+printf 'func Board() string { return h.Class("plan-day-board bg-red-500") }
+' >> "$uilayers_repo/modules/planner/internal/ui/render.go"
+rejects 'a raw utility class' 'RAW UTILITY CLASSES' "${uilayers[@]}"
+sed -i 's/ h.Class("plan-day-board bg-red-500")//' "$uilayers_repo/modules/planner/internal/ui/render.go"
+
+# `.plan-day-board` must not be allowed to answer for `.plan-day`: a prefix match
+# once reported this gate clean while classes went unstyled.
+printf 'func Day() string { return h.Class("plan-day") }
+' >> "$uilayers_repo/modules/planner/internal/ui/render.go"
+rejects 'a class answered only by a longer selector' 'UNSTYLED CLASSES' "${uilayers[@]}"
+sed -i '/func Day() string/d' "$uilayers_repo/modules/planner/internal/ui/render.go"
+
+# A marker riding beside a styled class is a labelled anchor, not a defect; a class
+# written alone with nothing behind it is markup claiming a design nobody wrote.
+printf 'func Orphan() string { return h.Class("plan-orphan") }
+' >> "$uilayers_repo/modules/planner/internal/ui/render.go"
+rejects 'a class emitted alone and never styled' 'plan-orphan' "${uilayers[@]}"
+sed -i '/func Orphan() string/d' "$uilayers_repo/modules/planner/internal/ui/render.go"
+"${uilayers[@]}" >/dev/null
+echo 'ui layers: naming, tokens and companion markers accepted; utilities and orphan hooks rejected'
+
 echo 'formatting: selected toolchain and formatter errors passed'
