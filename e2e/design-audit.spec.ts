@@ -108,14 +108,23 @@ async function inspect(page: Page, targets: boolean) {
     };
     const out: string[] = [];
 
-    // A box that scrolls horizontally and cannot take focus hides its own right-hand
-    // columns from a keyboard (WCAG 2.1.1). An aria-hidden box is exempt: a skeleton is a
-    // placeholder, and announcing it would be its own defect.
+    // A box that scrolls horizontally and cannot take focus is unreachable in the
+    // strongest sense a page can guarantee from markup alone: no keyboard user can
+    // even arrive at it, and a screen reader never enters it. (aria-hidden boxes are
+    // exempt: a skeleton is a placeholder, and announcing it is its own defect.)
+    //
+    // This is a necessary condition, not a sufficient one, and the difference is not
+    // academic. Verified on this box: a bare `tabindex=0` `overflow:auto` div in an
+    // otherwise empty document does not move its scrollLeft on ArrowRight, End or
+    // Space under Chromium. Focusability is what the markup can promise; scrolling a
+    // focused region with the keyboard is behaviour, and behaviour is asserted where
+    // behaviour is asserted - e2e/known-defects.spec.ts, as an expected failure, so
+    // this rule can never be mistaken for the whole requirement.
     for (const el of Array.from(document.querySelectorAll('*'))) {
       if (!/auto|scroll/.test(getComputedStyle(el).overflowX) || !shown(el)) continue;
       if ((el as HTMLElement).scrollWidth <= el.clientWidth + 1) continue;
       if (el.closest('[aria-hidden="true"]') || (el as HTMLElement).tabIndex >= 0) continue;
-      out.push(`"${label(el)}" scrolls horizontally (${(el as HTMLElement).scrollWidth}px of ${el.clientWidth}px visible) and cannot take focus`);
+      out.push(`"${label(el)}" scrolls horizontally (${(el as HTMLElement).scrollWidth}px of ${el.clientWidth}px visible) and is not in the tab order at all`);
     }
 
     if (checkTargets) {
