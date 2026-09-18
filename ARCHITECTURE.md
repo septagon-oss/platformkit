@@ -519,8 +519,8 @@ frame asks the Authorizer about, `page.Serve` reads it off the request, and its
 `Chrome`, `View`, `Render` and notices are the document's under the names shells
 already use. [ui/resource](ui/resource/) renders list, detail and form screens
 from an entity schema and rows the same way; [ui/screens](ui/screens/) adapts an
-`httpx.Resource` to it, mounts the seven operations and describes the resource
-catalog at `/api/v1/admin/resources`. Value words — how a boolean, an enum or an
+`httpx.Resource` to it, mounts the screens its mounted routes answer and describes the
+resource catalog at `/api/v1/admin/resources`. Value words — how a boolean, an enum or an
 instant reads — are [kit/entity/display](kit/entity/display/display.go)'s, with
 `kit/rest` delegating. The admin module and downstream storefronts call these
 packages rather than maintaining separate document or stylesheet machinery.

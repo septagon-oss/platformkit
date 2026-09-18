@@ -37,10 +37,16 @@ type (
 	}
 )
 
-// Mount is the seven operations of one resource, each a renderer behind
-// page.Serve. Everything about them comes from the resource — the path from its
-// API path, the guards from its two permissions, the columns and the controls
-// from its schema.
+// Mount is the screens of one resource, each a renderer behind page.Serve.
+// Everything about them comes from the resource — the path from its API path, the
+// guards from its two permissions, the columns and the controls from its schema,
+// and the doors it has from which operations it actually mounted.
+//
+// A collection gets the seven: list, new, create, read, edit, update, delete. A
+// singleton gets the two it has routes behind, because rest.Singleton mounts one
+// read and one write on the resource's own path with no id in it — mounting the
+// rest is what produced a settings page that listed one row, offered to create a
+// second one, and linked an id of all zeros. See mountSingleton.
 //
 // Both declarations come off the resource: a screen must preserve the API's
 // operator boundary for private reads as well as writes. A customer's wildcard
@@ -50,6 +56,10 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 	at := Path(r, o)
 	id := "screen-" + r.Module + "-" + r.Entity + "-"
 	read, write := r.ReadAuth(), r.WriteAuth()
+	if r.Singleton {
+		mountSingleton(api, s, o, r, at, id, read, write)
+		return
+	}
 
 	page.Serve(api, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: at, Summary: "The " + r.Entity + " list"}, read,
 		func(ctx context.Context, req page.Request, in *listInput) (page.View, error) {
@@ -123,6 +133,49 @@ func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
 				return page.View{}, err
 			}
 			return page.View{}, httpx.SeeOther(at)
+		})
+}
+
+// mountSingleton mounts the screens a singleton has routes for: the record page at
+// its path, and the form that writes it. No list, no new, no delete — not because
+// they would look wrong but because rest.Singleton mounts no such route, so a page
+// offering one is a page that sends a person to a refusal.
+//
+// The verbs are the collection's own verbs, so a screen of any resource is named the
+// same way whatever shape it has. Get takes the nil id because rest.Singleton ignores
+// it on purpose: there is one row, and a screen that asked for another would be
+// asking about a tenant it cannot see.
+func mountSingleton(api *httpx.API, s page.Shell, o Options, r httpx.Resource, at, id string, read, write httpx.Auth) {
+	page.Serve(api, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: at, Summary: "The " + r.Entity + " record"}, read,
+		func(ctx context.Context, req page.Request, _ *page.Empty) (page.View, error) {
+			row, err := r.Get(ctx, uuid.Nil)
+			if err != nil {
+				return page.View{}, err
+			}
+			return Detail(r, localized(o, req), row, r.Writable(ctx)), nil
+		})
+
+	page.Serve(api, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: at + "/edit", Summary: "The edit-" + r.Entity + " form"}, write,
+		func(ctx context.Context, req page.Request, _ *page.Empty) (page.View, error) {
+			row, err := r.Get(ctx, uuid.Nil)
+			if err != nil {
+				return page.View{}, err
+			}
+			o := localized(o, req)
+			return Form(r, o, at, o.Text("screens.edit_item", "Edit %s", r.Entity), row, nil, "", false), nil
+		})
+
+	page.Serve(api, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: at, Summary: "Update the " + r.Entity}, write,
+		func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
+			sent, err := rest.UpdateValues(in.RawBody, r.Schema.Fields, nil)
+			if err == nil {
+				if _, err = r.Update(ctx, uuid.Nil, rest.Writable(sent, r.Immutable)); err == nil {
+					return page.View{}, httpx.SeeOther(at)
+				}
+			}
+			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
+			o := localized(o, req)
+			return Form(r, o, at, o.Text("screens.edit_item", "Edit %s", r.Entity), sent, errs, detail, false), nil
 		})
 }
 

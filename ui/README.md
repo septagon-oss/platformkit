@@ -17,7 +17,7 @@ explains the boundaries; this page maps the packages and the rules the gates enf
 | [ui/document](document/document.go) | Chrome, a plain Request, View, `Document`, `Render`, the recovery notices: an HTML document as values. | kit/locale, ui, ui/components/examples. |
 | [ui/resource](resource/resource.go) | List, detail and form screens rendered from an entity schema and plain rows. | kit/entity, kit/entity/display, ui/forms, ui/document. |
 | [ui/page](page/README.md) | The typed Request, `Serve`, `Render` into an `httpx.Page`, navigation, the locale seam; aliases the document types. | kit/httpx, ui/document. |
-| [ui/screens](screens/render.go) | The seven operations of an `httpx.Resource` behind `page.Serve`, and the resource catalog; aliases the renderers. | kit/rest, ui/page, ui/resource. |
+| [ui/screens](screens/render.go) | The screens of an `httpx.Resource` behind `page.Serve` — the seven of a collection, the two of a resource that is not one — and the resource catalog; aliases the renderers. | kit/rest, ui/page, ui/resource. |
 | [ui/export](export/README.md) | Snapshots, DTCG tokens, proposals, the Storybook composition. | ui, ui/components/examples. |
 | [ui/source](source/source.go) | Development-time persistence of proposals into Go source. | ui/export, go/packages, dst. |
 | [ui/storybook](storybook/README.md) | The optional Storybook.js build (Node). | An `export.Export` snapshot. |

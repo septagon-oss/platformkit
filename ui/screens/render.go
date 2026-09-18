@@ -8,6 +8,11 @@
 // same schema beside its guarded closures — and Mount is the fold that puts the
 // renderers behind page.Serve. Describe is the same knowledge as a document,
 // for a shell that is not a browser.
+//
+// The claim "adding an entity adds screens and no code" is true of a collection,
+// which gets seven. A resource that is not a collection gets the screens its routes
+// answer and no more, because a door behind which no route answers is not a screen,
+// it is a refusal with a button on it.
 package screens
 
 import (
@@ -24,10 +29,19 @@ import (
 // resource.Options; Mount sets Locale per request from page.Request.
 type Options = resource.Options
 
-// described is the half of a registered resource the renderers read: its
-// schema and the fields a command owns. The closures stay with the caller.
+// described is the half of a registered resource the renderers read: its schema,
+// the fields a command owns, and whether the tenant has one of these or a shelf of
+// them. The guarded closures stay with this adapter — that is the boundary docs/
+// adr/0007 draws, and ui/resource's package doc holds it.
+//
+// The last field is the reason this is a function and not a struct literal at each
+// call site. Singleton was carried to the native shell (catalog.go) and never to the
+// web ones, which is how a tenant's one row of settings came to be rendered as a
+// shelf of one, with a New button that answered 405 and a Delete that answered 409.
+// A field the renderers read has to be delivered here, and
+// TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
-	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable}
+	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton}
 }
 
 // Path is where a resource's list screen lives: /api/v1/task/tasks is served at

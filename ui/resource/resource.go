@@ -36,6 +36,14 @@ import (
 type Resource struct {
 	Schema    entity.Schema
 	Immutable []string
+	// Singleton says a tenant has one of these and its API has no id in the
+	// path. A screen needs to know, because the doors a collection shows are
+	// the doors this resource has no routes behind: New would post to a create
+	// that answers 405, Delete would post to one that answers 409, and a row
+	// link would name an id the row does not have. kit/httpx documents the same
+	// duty on httpx.Resource.Singleton, and ui/screens/catalog.go has always
+	// carried it to the native shell; ui/screens carries it here.
+	Singleton bool
 }
 
 // PerPage is a screenful, and the page the list renders and links. kit/crud's
@@ -92,6 +100,13 @@ func Path(r Resource, o Options) string {
 // List is the list screen: a toolbar with the count, the rows, the pager. The
 // New button is drawn only for a caller who may write — a person who may not is
 // not shown a form that would refuse them.
+//
+// A singleton has no list screen, and this renderer is not called for one:
+// ui/screens mounts the screens the mounted routes answer, and a singleton's
+// routes are one read and one write on its own path. The renderers do not
+// duplicate that refusal, because a screen defending against a caller who would
+// have to be the adapter is a second answer to one question, and only one of the
+// two is checked by anyone.
 func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
 	at, title := Path(r, o), display.Humanize(r.Schema.Entity)
 	var actions []g.Node
@@ -117,13 +132,25 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 // eleven of them saying "Task" is eleven of them saying nothing.
 func Detail(r Resource, o Options, row map[string]any, writable bool) document.View {
 	at := Path(r, o)
-	item := at + "/" + display.Text(row["id"])
+	// A singleton is reached at its own path, which is the only place its API is
+	// reached too: an id in this path would be an id nobody issued, and the row
+	// map does not carry one.
+	item := at
+	if !r.Singleton {
+		item = at + "/" + display.Text(row["id"])
+	}
 	named := label(row, r.Schema.Fields)
 	var actions []g.Node
 	if writable {
-		actions = []g.Node{
-			components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"}),
-			deleteForm(o, item, r.Schema.Entity),
+		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"})}
+		// A singleton is not created and not removed, whatever Create and Delete
+		// answer when they are asked. kit/rest makes those two refuse rather than
+		// nil because the generator calls all five closures — which is right for a
+		// closure and wrong for a door: a refusal is a sentence about a mistake
+		// somebody just made, and an absent door is the same truth told before the
+		// mistake. See kit/rest/singleton.go.
+		if !r.Singleton {
+			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
 		}
 	}
 	return document.View{Title: named, Body: []g.Node{

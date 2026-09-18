@@ -47,8 +47,12 @@ about entities.
 
 ## Consequences
 
-- Adding an entity to this application adds seven screens and no code. Adding a
-  field to an entity adds it to every screen, in the same commit as the API.
+- Adding an entity to this application adds its screens and no code: the seven of a
+  collection — list, new, create, read, edit, update, delete — and the two of a
+  resource that is not a collection, because `rest.Singleton` mounts one read and one
+  write with no id in the path and a derived screen may not offer a door behind which
+  no route answers. Adding a field to an entity adds it to every screen, in the same
+  commit as the API.
 - The screens cannot outlive the API's rules. They call the same closures the
   routes do, in the same request transaction, so a write from a form publishes
   the same events, refuses the same read-only fields and answers with the same
