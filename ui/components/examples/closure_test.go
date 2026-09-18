@@ -114,18 +114,19 @@ func TestAccessibilityStructure(t *testing.T) {
 		captures[example.ID] = example
 	}
 	for id, wants := range map[string][]string{
-		"pk-ui.component.input/invalid":      {`aria-invalid="true"`, `aria-describedby="pk-input-slug-error"`},
-		"pk-ui.component.input/email":        {`for="pk-input-email"`},
-		"pk-ui.component.alert/danger":       {`role="alert"`},
-		"pk-ui.component.alert/info":         {`role="status"`},
-		"pk-ui.component.breadcrumb/default": {`aria-current="page"`, `aria-label="Breadcrumb"`},
-		"pk-ui.component.pagination/default": {`aria-current="page"`, `aria-label="Pagination, twelve pages"`},
-		"pk-ui.component.sidebar/collapsed":  {`aria-label="Sidebar example, collapsed"`},
-		"pk-ui.component.tabs/default":       {`aria-selected="true"`},
-		"pk-ui.component.button/with-icon":   {`aria-hidden="true"`},
-		"pk-ui.component.link/external":      {`rel="noopener noreferrer"`},
-		"pk-ui.component.button/loading":     {`aria-busy="true"`},
-		"pk-ui.component.table/default":      {`scope="col"`},
+		"pk-ui.component.input/invalid":       {`aria-invalid="true"`, `aria-describedby="pk-input-slug-error"`},
+		"pk-ui.component.input/email":         {`for="pk-input-email"`},
+		"pk-ui.component.alert/danger":        {`role="alert"`},
+		"pk-ui.component.alert/info":          {`role="status"`},
+		"pk-ui.component.breadcrumb/default":  {`aria-current="page"`, `aria-label="Breadcrumb"`},
+		"pk-ui.component.pagination/default":  {`aria-current="page"`, `aria-label="Pagination, twelve pages"`},
+		"pk-ui.component.sidebar/collapsed":   {`aria-label="Sidebar example, collapsed"`},
+		"pk-ui.component.tabs/default":        {`aria-selected="true"`},
+		"pk-ui.component.button/with-icon":    {`aria-hidden="true"`},
+		"pk-ui.component.link/external":       {`rel="noopener noreferrer"`},
+		"pk-ui.component.button/loading":      {`aria-busy="true"`},
+		"pk-ui.component.table/default":       {`scope="col"`},
+		"pk-ui.component.table/scroll-region": {`role="region"`, `tabindex="0"`, `aria-label="People"`},
 	} {
 		t.Run(id, func(t *testing.T) {
 			example, ok := captures[id]

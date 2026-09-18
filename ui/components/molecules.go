@@ -584,6 +584,25 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 	wrap = append(wrap,
 		classes(clTableWrap.Compile(), p.Class),
 		g.Attr("data-component", "table"),
+	)
+	if label := strings.TrimSpace(p.Label); label != "" {
+		// A caller that declared one of these for itself is honoured, and is not
+		// written over: two attributes of the same name are invalid HTML, and a
+		// browser keeps the first, which is the caller's — so emitting ours as well
+		// would only make the markup claim an attribute that does not apply.
+		// What refuses a scroll box nobody can reach is e2e/design-audit.spec.ts,
+		// which measures the rendered page rather than trusting this function.
+		if _, named := p.Attrs["role"]; !named {
+			wrap = append(wrap, h.Role("region"))
+		}
+		if _, focused := p.Attrs["tabindex"]; !focused {
+			wrap = append(wrap, g.Attr("tabindex", "0"))
+		}
+		if _, labelled := p.Attrs["aria-label"]; !labelled {
+			wrap = append(wrap, g.Attr("aria-label", label))
+		}
+	}
+	wrap = append(wrap,
 		h.Table(
 			h.Class(clTable.Compile()),
 			h.THead(head...),
