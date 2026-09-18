@@ -467,6 +467,29 @@ var (
 		"lg": style.New().Width(style.S16).Height(style.S16).Rounded(style.RadiusFull),
 	}
 
+	// A person, as a disc. The neutral surface is deliberate: a hue chosen by the
+	// renderer signifies nothing to the person it stands for, and the palette
+	// ceiling in ui/style/README.md is there to stop exactly that kind of
+	// invention. See Avatar for the naming rules the markup has to honour.
+	clAvatar = style.New().
+			Display(style.DisplayFlex).Items(style.ItemsCenter).Justify(style.JustifyCenter).
+			Overflow(style.OverflowHidden).FlexShrink0().
+			Bg(style.SurfaceSecondary).TextColor(style.FgSecondary).FontWeight(style.FontSemibold)
+	clAvatarSize = map[string]style.ClassList{
+		"sm": style.New().Width(style.S8).Height(style.S8).Rounded(style.RadiusFull),
+		"md": style.New().Width(style.S12).Height(style.S12).Rounded(style.RadiusFull),
+		"lg": style.New().Width(style.S16).Height(style.S16).Rounded(style.RadiusFull),
+	}
+	clAvatarInitials = style.New().FontSize(style.TextSM)
+	// The labelled form: disc then name on one line, aligned on the middle of both.
+	// Inline-flex and not flex because it sits inside a table cell, and a table cell
+	// is not a flex container.
+	clAvatarLabel = style.New().
+			Display(style.DisplayInlineFlex).Items(style.ItemsCenter).Gap(style.S2)
+	// The focus ring belongs on the disc when the disc is the link, which is what
+	// a caller can reach with a Tab and what the design audit then looks for.
+	clAvatarLink = clFocusRing
+
 	clEmpty = style.New().
 		Display(style.DisplayFlex).FlexDir(style.FlexCol).Items(style.ItemsCenter).
 		Justify(style.JustifyCenter).Gap(style.S3).TextAlign(style.TextCenter)
@@ -570,13 +593,39 @@ var (
 			On(style.StateHover, func(c style.ClassList) style.ClassList { return c.Shadow(style.ShadowLG) })
 	clCardTitle = style.New().FontFamily(style.FontSerif).FontSize(style.TextLG).
 			FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
-	clCardDesc            = style.New().FontSize(style.TextSM).TextColor(style.FgMuted)
-	clCardHeader          = style.New().BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
-	clCardFooter          = style.New().BorderTop(style.Border1).BorderColor(style.BorderPrimary).Bg(style.SurfaceSecondary)
-	clCardImageVertical   = style.New().Width(style.SFull).ObjectCover()
-	clCardImageHorizontal = style.New().Width(style.S48).ObjectCover()
-	clCardHorizontal      = style.New().Display(style.DisplayFlex)
-	clCardVertical        = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1()
+	clCardDesc   = style.New().FontSize(style.TextSM).TextColor(style.FgMuted)
+	clCardHeader = style.New().BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
+	clCardFooter = style.New().BorderTop(style.Border1).BorderColor(style.BorderPrimary).Bg(style.SurfaceSecondary)
+	// clMediaFigure holds a picture and its caption as the pair they are; the
+	// caption is markup of its own so a reader can navigate to it, which alt text
+	// cannot be.
+	// The three absent states differ in tone as well as in words, because a
+	// refusal that borrows the empty shelf's markup is a page telling a lie about
+	// nobody being home. Each one is a bordered panel carrying the caller's
+	// sentence; which border and which ground is the only visual difference, and
+	// it is enough for a stranger to tell "ask for access" from "look elsewhere".
+	clMediaAbsent  = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S2)
+	clMediaFailed  = style.New().Padding(style.S6).Rounded(style.RadiusLG).Border(style.Border1).BorderColor(style.BorderWarning).Bg(style.SurfaceWarningSoft)
+	clMediaRefused = style.New().Padding(style.S6).Rounded(style.RadiusLG).Border(style.Border1).BorderColor(style.BorderPrimary).Bg(style.SurfaceTertiary)
+
+	clMediaFigure  = style.New().Display(style.DisplayBlock)
+	clMediaCaption = style.New().FontSize(style.TextSM).TextColor(style.FgMuted).PaddingTop(style.S3)
+
+	// Geometry only. The crop used to live here, which meant a caller who asked
+	// for `fit: "contain"` got `object-cover object-contain` on one element and
+	// whichever the stylesheet happened to declare last won — the caller's sentence
+	// about the picture lost to source order. The crop is Media's Fit to answer, in
+	// one place, in whatever order the classes arrive.
+	clCardImageVertical   = style.New().Width(style.SFull)
+	clCardImageHorizontal = style.New().Width(style.S48)
+	// The two crops, named. They are declared here rather than built inline where
+	// they are used, because a class the registry cannot see is a class the
+	// stylesheet may never grow — TestRenderedClassesAreDeclared failed on exactly
+	// that the first time, and `object-cover` would have shipped unstyled.
+	clImageCover     = style.New().ObjectCover()
+	clImageContain   = style.New().ObjectContain()
+	clCardHorizontal = style.New().Display(style.DisplayFlex)
+	clCardVertical   = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1()
 
 	// Breadcrumb.
 	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
@@ -730,6 +779,12 @@ func GalleryClassLists() []style.ClassList {
 	out := []style.ClassList{
 		clDividerH, clDividerV, clDividerText, clDividerTextLine, clDividerTextLabel,
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
+		// Media's panels stay here while only the gallery can produce them. Card's
+		// picture routes through Media too, so the first screen that passes a Status
+		// — a cut-out still being cut, an artwork somebody may not look at — has to
+		// move clMediaAbsent, clMediaFailed and clMediaRefused into the shell list
+		// with it, or that panel arrives unstyled on the page that needed it.
+		clMediaFigure, clMediaCaption, clMediaAbsent, clMediaFailed, clMediaRefused,
 		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
 		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay,
 		clModalPanel, clModalHeader, clModalTitleBlock, clModalTitle,
@@ -743,7 +798,7 @@ func GalleryClassLists() []style.ClassList {
 		clTabsBadge, clTabsPanels, clTabsPanel, clTabsLazy, clTabsLazyLabel,
 	}
 	for _, m := range []map[string]style.ClassList{
-		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize, clModalPanelSize,
+		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize, clModalPanelSize, clAvatarSize,
 	} {
 		for _, cl := range m {
 			out = append(out, cl)
@@ -760,6 +815,10 @@ func ShellClassLists() []style.ClassList {
 		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions,
 		clConfirmDialog, clConfirmTitle, clConfirmMessage,
 		clIcon, clFocusRing, clButtonBase, clButtonFull, clButtonIconOnly, clButtonDisabledLink,
+		// A person, as read by the generated list: ui/resource composes a cell out of
+		// these whenever a field says `ui:"present:person"`, so they are on every page
+		// of an application that has people in it, not on the gallery alone.
+		clAvatar, clAvatarInitials, clAvatarLink, clAvatarLabel,
 		clBadgeBase, clBadgeDot, clBadgeCount, clBadgeRemove,
 		clAlertBase, clAlertRegular, clAlertCompact, clAlertBordered,
 		clAlertTitle, clAlertMessage, clAlertBody, clAlertIcon, clAlertActions, clAlertClose,
@@ -783,6 +842,7 @@ func ShellClassLists() []style.ClassList {
 		clCardShadowSmall, clCardShadowMedium, clCardShadowLarge,
 		clCardClickable, clCardHoverable, clCardTitle, clCardDesc,
 		clCardHeader, clCardFooter, clCardImageVertical, clCardImageHorizontal,
+		clImageCover, clImageContain,
 		clCardHorizontal, clCardVertical,
 		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur,
 		clSidebarRootAdmin, clSidebarRootContent, clSidebarWidthCollapsed,

@@ -257,7 +257,16 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 		// The first column is the way in. A whole row that is a link cannot
 		// hold a link of its own, and a row that is a click handler is not a
 		// row a keyboard can reach.
+		// The read axis is answered in this one slot rather than beside it: two slots
+		// for one cell would be one slot silently winning. A field that names a
+		// presentation composes, and the identity column composes *as* the link
+		// instead of instead of losing it.
 		Cell: func(row components.TableRow, c components.TableColumn) g.Node {
+			if f, known := fieldFor(r.Schema.Fields, c.Key); known {
+				if node := compose(f, row, c.Primary, at); node != nil {
+					return node
+				}
+			}
 			if !c.Primary {
 				return nil
 			}

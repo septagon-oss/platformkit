@@ -1206,8 +1206,12 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
-	if len(before) != 24 {
-		t.Fatalf("the old layout applied %d files, want 24", len(before))
+	// 24 became 25 when modules/user/000025 added the handle column. The number is
+	// the point of the assertion: an upgrade fixture that silently stopped counting
+	// a migration would pass while upgrading a real installation past a file it
+	// should have applied, so a new migration has to arrive here and say so.
+	if len(before) != 25 {
+		t.Fatalf("the old layout applied %d files, want 25", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with
@@ -1218,8 +1222,8 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	ledger(owners, "SELECT version, owner FROM schema_migrations")
 	after := map[int64]string{}
 	ledger(after, "SELECT version, applied_at::text FROM schema_migrations")
-	if len(owners) != 24 {
-		t.Fatalf("the upgrade left %d applied files, want the same 24", len(owners))
+	if len(owners) != 25 {
+		t.Fatalf("the upgrade left %d applied files, want the same 25", len(owners))
 	}
 	for version, when := range before {
 		if after[version] != when {

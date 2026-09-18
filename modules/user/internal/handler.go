@@ -98,6 +98,14 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 			return svc.SetRoles(ctx, tx, id, in.Roles)
 		}, rest.CommandOptions{})
 
+	rest.Command(api, spec, "handle",
+		"Claim or change a user's handle",
+		"The lower-case name this person answers to in this tenant, used in URLs and mentions. Renameable, because every key and audit entry names the uuid and nothing has to follow the name: the previous holder stays in user.handle_set. A handle somebody else holds is a conflict that names the rule and not the holder, and a handle cannot be released.",
+		[]string{contracts.EventHandleSet},
+		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in handleBody) (*contracts.User, error) {
+			return svc.SetHandle(ctx, tx, id, in.Handle)
+		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionUserManage)})
+
 	rest.Command(api, spec, "deactivate",
 		"Deactivate a user",
 		"Stops the person signing in. Their sessions stop working with them, because a session is only honoured for an active user, so there is no list of sessions to walk. Deactivating them again changes nothing.",
@@ -112,6 +120,10 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 // sends no body at all.
 type passwordBody struct {
 	Password string `json:"password" minLength:"12" maxLength:"256" doc:"The new password; at least twelve characters"`
+}
+
+type handleBody struct {
+	Handle string `json:"handle" minLength:"3" maxLength:"32" doc:"Lower-case letters, digits and interior . _ -, three to thirty-two characters, and not a name that stands for the platform" example:"ada"`
 }
 
 type rolesBody struct {

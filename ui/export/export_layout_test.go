@@ -56,9 +56,29 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// Table gains an optional Label that makes its scroll wrapper a keyboard-
 	// reachable named region, and one new gallery example exercises it. Only the
 	// new example's HTML and one new source property are in this delta; tokens,
-	// CSS and every other example are byte-identical, so the native token fixture
-	// does not move.
-	if legacy.SHA256 != "20108b1930de20cec554efc2d4cb8fc70ddb44209b4604cb85aeb6c6c4408b21" {
+	// CSS and every other example are byte-identical.
+	// Media adds one component and six gallery examples (its five states and a
+	// captioned picture); Card's picture now delegates to it with byte-identical
+	// output, so no card example moves. Tokens, themes and icons are identical —
+	// verified by platformkit-mobile's own token suite, which pins its fixture by
+	// provenance and stays green until somebody refreshes it deliberately.
+	// Avatar adds one component, six examples and a composed member row; Media gains
+	// the Fit property, which was declared and ignored until then. The crop had been
+	// baked into the card image geometry, so `fit: "contain"` used to emit
+	// `object-cover object-contain` and let the stylesheet decide — the two crops are
+	// named classlists now and exactly one is merged per picture. Card's own bytes
+	// are unchanged: same classes, same order. Tokens, themes and icons are identical.
+	// Avatar gains `label`, the name beside the disc, and with it the rule that the
+	// name is audible from exactly one place: labelled and linked is now one anchor
+	// around disc and name rather than a labelled disc inside a named one, which said
+	// the person's name twice. Avatar's classes move from the gallery-only list to
+	// the shell list, because ui/resource composes a person cell with them.
+	//
+	// This is the digest of the two branches together, measured on the merged tree
+	// rather than inherited from either: neither pin above describes a vocabulary
+	// that exists after this merge, and a digest copied from one side would be a
+	// number that certifies a thing nobody shipped.
+	if legacy.SHA256 != "cc4ae73f932192080a7f7f2c270769fc49d615d2d746aadc1243fe94334b5bdd" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

@@ -30,6 +30,13 @@ import (
 
 // Gallery is every component this package renders, once each per variant worth
 // distinguishing.
+// mediaSpecimen is a 160×90 picture that exists: an inline SVG, so a specimen
+// cannot rot the day a static path moves, and so the browser eye can tell "the
+// image decoded" from "the alt attribute is present" instead of trusting either.
+const mediaSpecimen = "data:image/svg+xml," +
+	"%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='90' viewBox='0 0 160 90'%3E" +
+	"%3Crect width='160' height='90' fill='%23cfd9d3'/%3E%3Ccircle cx='80' cy='45' r='26' fill='%23b45f3a'/%3E%3C/svg%3E"
+
 func Gallery() []Example {
 	// IDs are explicit and survive changes to labels, grouping and display order.
 	info := func(id, group, name string) ExampleInfo {
@@ -308,6 +315,61 @@ func Gallery() []Example {
 						components.ButtonProps{Label: "Create", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 				}, components.FormActions).Node,
 			}, components.Form),
+		// Media is where a picture says what it is doing instead of failing silently.
+		// The five states are shown together, in this order, because the interesting
+		// question is not what a picture looks like — it is whether a stranger can
+		// tell a refusal from an empty shelf at a glance, and that is only answerable
+		// with both on the same screen.
+		//
+		// The source is a data: URI rather than a path: a specimen whose image 404s
+		// would prove nothing, and e2e/design-audit.spec.ts measures whether every
+		// image on this page actually decodes and carries alt text.
+		ExampleOf(info("pk-ui.component.media/ready", "Media", "Picture / ready"),
+			components.MediaProps{Src: mediaSpecimen, Alt: "Die-cut proof plate, 592 by 400 millimetres", Width: 160, Height: 90}, components.Media),
+		ExampleOf(info("pk-ui.component.media/captioned", "Media", "Picture / with a caption"),
+			components.MediaProps{Src: mediaSpecimen, Alt: "Die-cut proof plate", Width: 160, Height: 90,
+				Caption: "Proof plate, 592×400 mm — the caption is markup, not alt text"}, components.Media),
+		ExampleOf(info("pk-ui.component.media/loading", "Media", "Picture / waiting"),
+			components.MediaProps{Status: components.MediaLoading, Alt: "Cutting the subject out", Width: 160, Height: 90}, components.Media),
+		ExampleOf(info("pk-ui.component.media/empty", "Media", "Picture / nothing here"),
+			components.MediaProps{Status: components.MediaEmpty, Reason: "No artwork on this album yet."}, components.Media),
+		ExampleOf(info("pk-ui.component.media/failed", "Media", "Picture / it failed"),
+			components.MediaProps{Status: components.MediaFailed, Reason: "The cut-out engine is not answering. Ask for it again."}, components.Media),
+		ExampleOf(info("pk-ui.component.media/refused", "Media", "Picture / not permitted"),
+			components.MediaProps{Status: components.MediaRefused, Reason: "This artwork belongs to a tier you are not in."}, components.Media),
+
+		// Avatar is the same argument as Media in a smaller shape: every product
+		// that ever showed a person invented a coloured div with a letter in it.
+		// The specimens are ordered so the interesting pair sits together — the one
+		// that speaks and the one that stays quiet because its name is already on
+		// screen, which is the difference between a reader saying a person's name
+		// once and saying it twice.
+		ExampleOf(info("pk-ui.component.avatar/initials", "Avatar", "Person / no picture"),
+			components.AvatarProps{Name: "Jean-Paul Reyes"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/sizes", "Avatar", "Person / three sizes"),
+			components.AvatarProps{Name: "Ada Lovelace", Size: "lg"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/picture", "Avatar", "Person / with a picture"),
+			components.AvatarProps{Name: "Jean-Paul Reyes", Src: mediaSpecimen}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/linked", "Avatar", "Person / linking to them"),
+			components.AvatarProps{Name: "Ada Lovelace", Href: "/admin/_gallery"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/unknown", "Avatar", "Person / nothing known"),
+			components.AvatarProps{}, components.Avatar),
+		// The decorative case cannot be a lone disc or the specimen would prove
+		// nothing: what makes it decorative is the name sitting beside it, so the
+		// pair is shown as a toolbar would show it in a member row.
+		// This one is a Toolbar specimen and not an Avatar specimen, and the export
+		// says why: every occurrence of a component must present one interface, so
+		// an Avatar cannot be the thing that holds others. The pair is shown under
+		// the component that actually composes it — which is what a member row is.
+		ExampleWithChildren(info("pk-ui.component.toolbar/member", "Frame", "Toolbar / a member row"),
+			components.ToolbarProps{Title: "A member row", Subtitle: "The disc stays quiet because the name is right there"},
+			[]g.Node{
+				ExampleOf(ExampleInfo{ID: "avatar", ComponentID: "pk-ui.component.avatar"},
+					components.AvatarProps{Name: "Jean-Paul Reyes", Decorative: true, Size: "sm"}, components.Avatar).Node,
+				ExampleOf(ExampleInfo{ID: "name", ComponentID: "pk-ui.component.text"},
+					components.TextProps{Content: "Jean-Paul Reyes"}, components.Text).Node,
+			}, components.Toolbar),
+
 		// Shell is not in this list, and cannot be: it renders <main>, and the
 		// page this gallery is on is itself a Shell, so an example would be a
 		// second main landmark inside the first — two documents in one, which

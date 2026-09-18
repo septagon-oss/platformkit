@@ -460,6 +460,9 @@ func (s Spec[T]) check() {
 	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())
 	}
+	if bad == "" {
+		bad = presentationFault(crud.Fields[T]())
+	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Path + ": " + bad)
 	}
@@ -475,6 +478,7 @@ func (s Spec[T]) check() {
 // so `widget:file` gave an installation a file component in the library and not
 // one form that could ask for it. The vocabulary is kit/entity's because
 // ui/forms draws the controls, and a kernel package below the presentation
+// layer cannot import it to ask what a name means.
 // layer cannot import it to ask what a name means.
 func widgetFault(fields []crud.Field) string {
 	for _, f := range fields {

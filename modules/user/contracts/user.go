@@ -89,6 +89,30 @@ type User struct {
 	// address and nothing else.
 	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
 
+	// Handle is what a person is *called* in this tenant: the thing they type,
+	// say out loud, and see in a URL. It is not the key — users.id is, and every
+	// foreign key, event subject and audit row already points at that uuid, which
+	// is exactly why this field can be renamed: nothing has to follow it.
+	//
+	// Unique per tenant, case-insensitively, like Email: two tenants can each have
+	// a `sam`. Empty means unclaimed, and an invited person who has never claimed
+	// one is unclaimed rather than nameless.
+	//
+	// It is refused by name in module.go's Immutable list: a handle arrives by
+	// command, publishes user.handle_set, and lands in the trail. A handle you
+	// could PATCH alongside a display name is a handle that changed hands while
+	// nobody was told — which is the same argument the module already makes about
+	// roles and status, one paragraph above.
+	//
+	// `present:"person"` is the read axis saying what this value *is* rather than
+	// how to paint it. The generated list, the description list and the native
+	// shell's resource document all read the one word, and each renderer decides
+	// what a person looks like in its own medium. A plain cell printing `sam` would
+	// look no worse — which is exactly why the declaration is governed, and why a
+	// name outside the vocabulary refuses to mount instead of quietly meaning
+	// nothing.
+	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
+
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
 	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" doc:"Lifecycle state" default:"invited" required:"false"`
@@ -131,6 +155,18 @@ func (u *User) Validate(context.Context) error {
 	if u.Status == "" {
 		u.Status = StatusInvited
 	}
+	// Folded the way the address is, so two callers cannot disagree about whether
+	// "Ada" and "ada" are one handle — and so the unique index, which compares
+	// lower(handle), is comparing what this struct believes.
+	u.Handle = strings.ToLower(strings.TrimSpace(u.Handle))
+	if u.Handle != "" {
+		if !handleForm.MatchString(u.Handle) {
+			return fmt.Errorf("handle %q is not 3 to 32 characters of lower-case letters, digits and interior . _ -", u.Handle)
+		}
+		if ReservedHandle(u.Handle) {
+			return fmt.Errorf("handle %q is reserved: it names the platform or a role, not a person", u.Handle)
+		}
+	}
 	if !slices.Contains(statuses, u.Status) {
 		return fmt.Errorf("status %q is not a lifecycle state", u.Status)
 	}
@@ -140,6 +176,62 @@ func (u *User) Validate(context.Context) error {
 		}
 	}
 	return nil
+}
+
+// handleForm is the shape of a claimable handle, and migrations/000025 states it
+// a second time so a psql session cannot get a name the entity would refuse.
+var handleForm = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,30}[a-z0-9]$`)
+
+// reservedHandles are refused to anybody. This is a judgement call made once, in
+// the open, rather than an emergent property of whoever registered first.
+//
+// Three kinds of name are here. Names that impersonate the platform or a
+// function of it, because `support` sending a password email is a phish with an
+// internal handle behind it: admin, root, owner, support, help, security, privacy,
+// terms, abuse, webmaster, postmaster, moderator, staff, team, service, noadmin.
+// Names that collide with the doors this API answers through, because a handle is
+// also a path segment: me, user, users, people, api, admin-api, settings, account,
+// accounts, billing, signin, signup, login, logout, oauth, oidc, auth, password,
+// invitations, verify, health, live, metrics, admin, assets, static, docs.
+// And names that break a thing downstream in a way nobody will debug twice: null,
+// true, false, undefined, nan, none.
+//
+// It is deliberately short. A long list becomes a list people route around, and a
+// tenant that wants to keep `ada` free for the person who should have it is a
+// tenant-admin problem, not a kernel problem. Renames are allowed, so an early
+// claim is not permanent; the trail shows who held it.
+var reservedHandles = map[string]bool{}
+
+func init() {
+	for _, name := range []string{
+		"admin", "administrator", "root", "owner", "moderator", "staff", "team",
+		"support", "help", "security", "privacy", "terms", "abuse", "service",
+		"webmaster", "postmaster",
+		"me", "user", "users", "people", "person", "account", "accounts",
+		"settings", "billing", "api", "auth", "oauth", "oidc", "password",
+		"signin", "signup", "login", "logout", "verify", "invitations",
+		"health", "live", "ready", "metrics", "assets", "static", "docs",
+		"null", "true", "false", "undefined", "nan", "none",
+		"platformkit", "septagon",
+	} {
+		reservedHandles[name] = true
+	}
+}
+
+// ReservedHandle reports whether a name may not be claimed. Exported because the
+// form a claim is made through has to say why it refused, and "invalid" is not an
+// answer that lets anybody do anything.
+func ReservedHandle(handle string) bool {
+	return reservedHandles[strings.ToLower(strings.TrimSpace(handle))]
+}
+
+// ValidHandle reports whether a name is claimable in principle: right shape, not
+// reserved. It does not look at the database, so it answers "can this be typed"
+// and never "is this free" — ByHandle answers that, and only inside a transaction
+// that can see the tenant's rows.
+func ValidHandle(handle string) bool {
+	handle = strings.ToLower(strings.TrimSpace(handle))
+	return handleForm.MatchString(handle) && !reservedHandles[handle]
 }
 
 // Service is the user lifecycle: explicit commands generic CRUD cannot safely
@@ -174,6 +266,27 @@ type Service interface {
 
 	// Get is one user of this tenant.
 	Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
+
+	// SetHandle claims or changes a handle. It is a command and not a PATCH for
+	// the reason roles and status are: the handle is how somebody else finds this
+	// person, so "who held `ada` before, and when did it move" has to have an
+	// answer. It is renameable — that is the point — and nothing needs to follow
+	// it, because every key, event subject and audit row names the uuid.
+	//
+	// The same handle again changes nothing and publishes nothing. A handle
+	// somebody else holds is a conflict naming the rule and not the holder: the
+	// answer must not confirm that a given person is in this tenant to somebody
+	// who is probing for it. An empty handle conflicts too — an alias you can
+	// release leaves a name free while somebody is still being called it.
+	SetHandle(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, handle string) (*User, error)
+
+	// ByHandle is the human lookup: the user of this tenant who answers to that
+	// name, compared without case. ErrNotFound for a name nobody claimed.
+	//
+	// It is deliberately not a login door. Signing in by handle is a separate
+	// decision with an enumeration surface of its own, and it belongs to the auth
+	// module, which owns what a failed attempt costs.
+	ByHandle(ctx context.Context, tx db.Tx[db.Tenant], handle string) (*User, error)
 
 	// ByEmail is the login lookup: the user of this tenant with that address,
 	// compared without case. It is ErrNotFound for an address nobody has.

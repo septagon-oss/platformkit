@@ -137,6 +137,49 @@ func (f *Fake) ByEmail(_ context.Context, _ db.Tx[db.Tenant], email string) (*co
 	return nil, crud.ErrNotFound
 }
 
+func (f *Fake) SetHandle(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, handle string) (*contracts.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, err := f.get(id)
+	if err != nil {
+		return nil, err
+	}
+	// Mirrors internal.Service.SetHandle, rules and all: the published fake is the
+	// contract test other modules write against, so a fake that skipped the rules
+	// would let a caller pass here and fail in production.
+	want := strings.ToLower(strings.TrimSpace(handle))
+	if want == "" {
+		return nil, fmt.Errorf("%w: a handle cannot be released once claimed", crud.ErrInvalid)
+	}
+	if u.Handle == want {
+		return u, nil
+	}
+	if !contracts.ValidHandle(want) {
+		return nil, fmt.Errorf("%w: handle %q is not claimable", crud.ErrInvalid, handle)
+	}
+	for other, held := range f.users {
+		if other != id && held.Handle == want {
+			return nil, fmt.Errorf("%w: that handle is already claimed in this tenant", crud.ErrConflict)
+		}
+	}
+	u.Handle, u.UpdatedAt = want, db.Now()
+	f.users[id] = *u
+	f.published = append(f.published, contracts.EventHandleSet)
+	return u, nil
+}
+
+func (f *Fake) ByHandle(_ context.Context, _ db.Tx[db.Tenant], handle string) (*contracts.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	want := strings.ToLower(strings.TrimSpace(handle))
+	for id, u := range f.users {
+		if strings.ToLower(u.Handle) == want && want != "" {
+			return f.get(id)
+		}
+	}
+	return nil, crud.ErrNotFound
+}
+
 // Provision mirrors internal.Service.Provision.
 func (f *Fake) Provision(_ context.Context, _ db.Tx[db.System], tenantID uuid.UUID,
 	email, displayName, password string, roles []string,
