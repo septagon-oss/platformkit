@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.1.1] - 2026-09-18
+
+A tooling patch. No exported API moved and no shipped behaviour moved: the diff from
+v1.1.0 is one browser assertion under `tools/designexport/openpencil` and seven lines
+of [RELEASE.md](RELEASE.md).
+
+It exists because the Gitea run for v1.1.0 (88) concluded **failure** on the step
+*Native browser observations*, and that step drives a file shipped inside this module:
+anybody who checked out the tag and ran `npm run test:browser` in
+`tools/designexport/openpencil` got the same `TimeoutError`. The suite now follows the
+label-to-field association instead of asserting the literal control id
+`pk-textarea-description`, which v1.1.0's namespace change had replaced. The full
+browser suite is 265 of 265.
+
+The prose change is the part that outlives this defect. `make check` and `make e2e` do
+not run `test:browser` — the CI job does, as its own step — and when it failed on
+v1.1.0, everything after it was skipped, including `make e2e` and the budget ratchet.
+So RELEASE.md now states that an unread CI result is not a green one and that a release
+is not ready while the verdict for the exact commit cannot be read. v1.1.0 was tagged
+with that verdict unread: that, not the assertion, is the defect being repaired.
+
 ## [1.1.0] - 2026-09-18
 
 **This release is not source-compatible with v1.0.0.** The pinned comparison
