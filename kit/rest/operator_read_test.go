@@ -134,9 +134,18 @@ func TestOperatorReadBoundary(t *testing.T) {
 				if code != http.StatusOK || strings.Contains(body, r.Path) != tc.reads {
 					t.Errorf("discovery = %d %s, want visible=%v", code, body, tc.reads)
 				}
-				paths := []string{r.Path, screens.Path(r, opts), screens.Path(r, opts) + "/" + rowID.String()}
+				paths := []string{r.Path, screens.Path(r, opts)}
+				gone := []string{}
 				if shape == "collection" {
-					paths = append(paths, r.Path+"/"+rowID.String())
+					paths = append(paths, r.Path+"/"+rowID.String(), screens.Path(r, opts)+"/"+rowID.String())
+				} else {
+					// A singleton's API has no id in its path, and neither may its screens.
+					// This assertion used to demand 200 from the screen's id-shaped path, which
+					// is how the defect survived: the route existed, so the check passed, and the
+					// settings page it served listed one row, offered New, and linked an id of all
+					// zeros. Reproduced and required absent in
+					// TestTheScreensOfASingletonOfferOnlyWhatItsRoutesServe.
+					gone = []string{r.Path + "/" + rowID.String(), screens.Path(r, opts) + "/" + rowID.String()}
 				}
 				for _, path := range paths {
 					code, body := call(t, router, http.MethodGet, path, "")
@@ -146,6 +155,13 @@ func TestOperatorReadBoundary(t *testing.T) {
 					}
 					if code != want || strings.Contains(body, title) != tc.reads {
 						t.Errorf("GET %s = %d %s, want %d with visible=%v", path, code, body, want, tc.reads)
+					}
+				}
+				for _, path := range gone {
+					// No route at all, whatever the caller's grants: a 403 here would mean a
+					// route exists and is merely guarded, which is the shape of the bug.
+					if code, _ := call(t, router, http.MethodGet, path, ""); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+						t.Errorf("GET %s = %d, want no such route behind a singleton's id", path, code)
 					}
 				}
 				if tc.private && !tc.operator && f.asked != 0 {

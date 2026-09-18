@@ -98,6 +98,19 @@ type Command struct {
 	Collection           bool
 	Auth                 Auth
 	Fields               []entity.Field
+	// Run performs the command with the values a caller submitted, inside the
+	// request's own transaction, and is the closure the command's HTTP route
+	// calls. It has to be here because docs/adr/0007 promises a derived screen
+	// "calls the same closures the routes do, in the same request transaction …
+	// there is no second implementation to keep honest", and until now a command
+	// was the one thing a screen could advertise and not perform: recording the
+	// verb, the guard and the fields without the work left a shell with no door
+	// to offer and no way to say so. A Command whose Run is nil is a description
+	// only, and a screen must not turn one into a button.
+	//
+	// The id is uuid.Nil for a Collection command. A command that takes no
+	// arguments receives an empty values map and runs anyway.
+	Run func(ctx context.Context, id uuid.UUID, values map[string]any) error
 }
 
 // CommandsFor is the commands this caller may call. One they may not is left
