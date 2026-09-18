@@ -8,9 +8,11 @@
 # This workflow is scheduled and reports. It is deliberately not a required check
 # on a pull request, for two reasons that are each other's opposite: the published
 # version is a fact about the proxy, not about the diff, and scripts/PUBLIC-API.md
-# asks that the API report stay out of `make check` until the known v1.0.0
-# incompatibilities and the major-version baseline are resolved. Suppressing that
-# report would be worse than running it weekly.
+# asks that the API comparison stay out of `make check` because it resolves
+# published revisions over a network. Since v1.1.0 it compares the exported surface
+# against that tag with no accepted-break baseline, so the step is a clean-line gate:
+# it passes while nothing new breaks, and a break that reaches `main` is found the
+# Tuesday after rather than never.
 name: public-consumption
 
 on:
@@ -61,21 +63,17 @@ jobs:
           python3 scripts/check_public_module.py "$version" > "$RUNNER_TEMP/public-module.json"
           echo "the example compiled, tested and vetted against $version with no replace directive"
 
-      # Gates on the delta, not on the whole report. apidiff finds 71 changes against
-      # v1.0.0: deliberate moves made after the tag, each one in CHANGELOG.md, which
-      # is why the /v2 line in RELEASE.md is open rather than closed. Running that
-      # report unfiltered every week yields a step that is always red, and a step that
-      # is always red tells nobody whether anything is wrong — the finding this
-      # repository already learned about a gate that never passes. So the accepted
-      # changes are enumerated in scripts/PUBLIC-API-BASELINE.json, and this fails on a
-      # line the baseline does not name and on a named line that stops being reported.
-      # Both directions were checked by running it: a baseline with one entry removed
-      # and one invented prints `NEW ./design.CSS: removed` and
-      # `GONE ./kit/db.FakeThing: removed` and exits 1.
+      # Gates on the whole report, because the line has no accepted break from
+      # itself. Before v1.1.0 this step was continue-on-error: apidiff found 71
+      # changes against v1.0.0 and every run was red, which is a check that has
+      # stopped working — an accidental break arrived in the same red step as fifty
+      # reviewed ones. Those 71 shipped in v1.1.0 rather than being reverted, so the
+      # supported tag now carries them and the comparison starts clean.
+      # scripts/PUBLIC-API.md documents --baseline for a line that accumulates
+      # accepted breaks again before its next major.
       - name: Exported surface against the supported tag
         run: |
-          python3 scripts/check_public_api.py v1.0.0 HEAD \
-            --baseline scripts/PUBLIC-API-BASELINE.json > "$RUNNER_TEMP/public-api.json"
+          python3 scripts/check_public_api.py v1.1.0 HEAD > "$RUNNER_TEMP/public-api.json"
 
       # The scripts print a JSON report and remove their own fixtures and caches.
       # The job log carries the report; no artifact action is referenced here

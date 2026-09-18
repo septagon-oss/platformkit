@@ -14,27 +14,35 @@ do not enable automation or grant runners publication credentials implicitly.
 
 ## Choose the compatible release line
 
-The stable v1.0.0 tag establishes a public API contract. Current development has
-breaking changes, so the next stable breaking release requires a `/v2` module
-and import migration under [Go's versioning rules](https://go.dev/doc/modules/major-version).
-A v1 release must instead restore and verify v1 compatibility. The migration
-remains unfinished; pseudo-versions do not establish compatibility.
+The stable **v1.1.0** tag (2026-09-18) is the public API contract, and it is what
+every compatibility question is now measured against. It is also a break in the
+line: v1.0.0 → v1.1.0 is not an upgrade path, published as a minor although
+71 exported changes required a major, because no consumer sat on the v1.0.0 stable
+line and the owner chose to move rather than revert the kernel boundary. The
+reasoning, the apidiff evidence and the exact-pin warning are in
+[CHANGELOG.md](CHANGELOG.md). Do not read that decision as precedent for the next
+one: from v1.1.0 forward a breaking change requires a `/v2` module and import
+migration under [Go's versioning rules](https://go.dev/doc/modules/major-version),
+and a v1 release must restore and verify compatibility with v1.1.0. The `/v2`
+migration remains unfinished; pseudo-versions do not establish compatibility.
 
 Use `Deprecated:` comments with working replacements and retain compatible
-delegation through the supported major line. Before a major release, record the
+delegation through the supported major line — knowing what they cannot do. An
+alias repairs a *removal*; it does not repair a *move*, because apidiff resolves
+the alias and still reports the change, which is how the 29 moved types in
+v1.1.0 came to be unrepairable. Before a major release, record the
 complete API review, consumer migration instructions and v1 support/security-fix
 policy, including supported versions and dates. Run the [pinned API comparison](scripts/PUBLIC-API.md)
 on committed revisions and resolve its report before release. Review aliases,
 function/interface changes, wire, behavioral and database compatibility with real
 consumers; a type report alone cannot establish compatibility.
 
-The changes already accepted on this line are enumerated in
-[PUBLIC-API-BASELINE.json](scripts/PUBLIC-API-BASELINE.json), so a new break is
-distinguishable from the ones already reviewed. Publishing a stable release ends
-that file: measure against the new tag and delete it, rather than carrying a list
-of excuses into the next line. Restoring v1 compatibility instead of releasing
-`/v2` means the same file shrinking line by line, which is how you would know it
-was working.
+A line that comes to carry breaking changes somebody will not revert may record
+them with `--baseline` and `--write-baseline` rather than leaving the report
+permanently red; v1.1.0 needed that file and retired it, and carries no accepted
+break from itself. A baseline that cannot go stale is a list of excuses, and
+publishing the next stable release ends it: measure against the new tag rather
+than carrying a list forward
 
 When the source migration is authorized, update imports, package guards and
 proofs together, then foundation, catalog and clients in dependency order.

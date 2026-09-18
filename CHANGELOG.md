@@ -1,6 +1,28 @@
 # Changelog
 
-## Unreleased
+## [1.1.0] - 2026-09-18
+
+**This release is not source-compatible with v1.0.0.** The pinned comparison
+reports 71 exported changes between them — `kit/crud`'s row types are
+`kit/entity`'s, `httpx.Document/Fragment/Script` and `design.CSS` moved into
+`ui/page` and `ui`, `events.Memory()` became `memory.New()`, `migrations/` is the
+kernel's schema alone, five methods joined `user/contracts.Registrations`, and
+`ui.Compose` returns a `Sheet`. No `Deprecated:` shim repairs the 29 that are type
+*moves*: apidiff resolves an alias and still reports
+`contracts.User.Base: changed from crud.Base to entity.Base`, verified against a
+two-revision module before this decision was taken.
+
+It was taken deliberately rather than by omission. No consumer sits on the v1.0.0
+stable line — the commercial catalog and the client application both pin
+pseudo-versions of `main`, which establish no compatibility — so a v1.1.0 that
+keeps the number breaks a build nobody has. It also breaks one nobody has *yet*:
+`go get -u` from v1.0.0 now lands here and fails to compile, so **pin an exact
+version**. What is owed and not yet paid is unchanged: an outside consumer needs
+the `/v2` module path and import migration described in
+[RELEASE.md](RELEASE.md#choose-the-compatible-release-line), and v1.1.0 is now the
+tag every compatibility question is measured against. The
+[accepted-break baseline](scripts/PUBLIC-API.md) that stood in for a release line
+went with this tag; the line has no accepted break from itself.
 
 The kernel stops deciding what it does not own. `ui/document` and `ui/resource`
 render a document and a resource's screens from values — no database, no router

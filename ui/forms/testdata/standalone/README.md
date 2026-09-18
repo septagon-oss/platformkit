@@ -8,14 +8,17 @@ composition fixture, not an adopted client product.
 From the foundation root, verify one exact published version:
 
 ```sh
-python3 scripts/check_public_module.py v1.0.1-0.20260917134124-d3f81bdc2cab > /tmp/platformkit-public-module.json
+python3 scripts/check_public_module.py v1.1.0 > /tmp/platformkit-public-module.json
 ```
 
-That version is the tip of `main` at the time of writing, not a release: the
-`/v2` line in [RELEASE](../../../../RELEASE.md#choose-the-compatible-release-line)
-is still open, so an outside consumer takes a pseudo-version the way the
-commercial catalog and a client application do. When the version changes, change
-it here; the weekly
+That version is a published tag, so the check above is the proof an outside
+consumer gets: one `go get` of a real version, no workspace, no `replace`, no
+branch. Pin an exact version rather than a range — v1.1.0 is not source-compatible
+with v1.0.0, by decision and not by accident, and [CHANGELOG](../../../../CHANGELOG.md#110---2026-09-18)
+says what moved and why. The `/v2` module path and import migration in
+[RELEASE](../../../../RELEASE.md#choose-the-compatible-release-line) remain owed to
+any consumer outside this organisation. When the version changes, change it here;
+the weekly
 [public-consumption workflow](../../../../.gitea/workflows/public-consumption.yml)
 reads this line, fails if the version it names does not resolve through the
 public proxy, and fails if it is not a commit of this repository.

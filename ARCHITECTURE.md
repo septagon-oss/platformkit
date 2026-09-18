@@ -596,8 +596,8 @@ publishes anything until [RELEASE.md](RELEASE.md#publish-an-approved-version)
 agrees one with the owner. The weekly
 [public-consumption workflow](.gitea/workflows/public-consumption.yml) runs the
 published-module and exported-API checks that `make check` deliberately does not,
-the second gated on [the API changes this line already accepted](scripts/PUBLIC-API-BASELINE.json),
-so a new break stands out from the ones the open `/v2` decision covers.
+the second against the v1.1.0 contract with no accepted-break baseline, so a new
+exported break fails the step instead of joining a pile nobody reads.
 
 A type check proves types, a test proves its exercised cases, and a product
 journey proves its observed outcome. None alone proves production readiness,
