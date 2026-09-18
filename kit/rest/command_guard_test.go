@@ -188,3 +188,40 @@ func TestACommandNamedAfterAScreenVerbRefusesToMount(t *testing.T) {
 		screens.Mount(api, shell, screens.Options{Root: "/admin"}, r)
 	}
 }
+
+// TestAReaderIsNotOfferedTheWriteDoors is the second finding from the same review. The
+// list screen has taken a `writable bool` since before this branch existed, and its
+// comment claims "a person who may not is not shown a form that would refuse them" —
+// but no test asked a caller without the write permission what their list looked like.
+// A claim about what is hidden is only worth as much as the request that proves it.
+//
+// The doors are then pushed as well as looked for. Hiding a form is presentation; the
+// route behind it has to refuse on its own, and the delete form's route is the screen's
+// own POST, not the API's DELETE, so it is a door this package owns and must guard.
+func TestAReaderIsNotOfferedTheWriteDoors(t *testing.T) {
+	w := mountGuarded(t, "task:write")
+
+	_, list := call(t, w.router, http.MethodGet, "/admin/tasks/task", "")
+	if strings.Contains(list, `href="/admin/tasks/task/new"`) {
+		t.Errorf("a caller who may not write was offered the New door: %s", around(list, "new"))
+	}
+	if !strings.Contains(list, `href="/admin/tasks/task/`) {
+		t.Fatalf("the list renders no rows at all, so the assertion above proves nothing: %s", around(list, "table"))
+	}
+
+	_, record := call(t, w.router, http.MethodGet, w.screen, "")
+	if strings.Contains(record, "delete") {
+		t.Errorf("a caller who may not write was shown a delete form: %s", around(record, "delete"))
+	}
+	if !strings.Contains(record, "guarded draft") {
+		t.Fatalf("the record did not render, so nothing about it is proven: %s", around(record, "dl"))
+	}
+
+	// And each hidden door refuses when asked for anyway.
+	if code, _ := call(t, w.router, http.MethodPost, "/api/tasks", `{"title":"forged"}`); code != http.StatusForbidden {
+		t.Errorf("the create route answered %d to a caller without the write permission", code)
+	}
+	if code, _, _ := postForm(t, w.router, w.screen+"/delete", ""); code != http.StatusForbidden {
+		t.Errorf("the screens' own delete route answered %d to a caller without the write permission", code)
+	}
+}
