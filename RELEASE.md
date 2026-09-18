@@ -67,6 +67,13 @@ A failed or unavailable check is not a pass. Resolve vulnerability findings or
 record a reviewed assessment of reachability and mitigation before publishing.
 Verify the active CI result for the exact release commit. An absent GitHub
 check is not a passing result, and pushing a tag does not rerun these gates.
+**An unread result is not a green one.** Read the Gitea Actions run for that
+commit and its conclusion before tagging; a tag is what an outside consumer
+trusts, and "the job was picked up" is not evidence about its outcome. v1.1.0 was
+tagged with this verdict unread and the run had failed, on a step no local
+aggregate runs — see the browser assertions in
+[tools/designexport/openpencil](tools/designexport/openpencil/README.md). If the
+verdict cannot be read, the release is not ready.
 Editor artifacts also require the native, browser and built-editor checks in
 the [design tooling guide](tools/designexport/openpencil/README.md).
 

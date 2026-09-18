@@ -140,7 +140,13 @@ func main() {
           await page.keyboard.press('Tab')
           assert.equal(await target.evaluate(node => node === document.activeElement && getComputedStyle(node).outlineStyle !== 'none'), true)
         }
-        await page.locator('label[for="pk-textarea-description"]').click()
+        // The field's own label must focus it. Which label that is is derived from the
+        // address the form posts to, so follow the association instead of naming an id:
+        // a literal would break on every namespace change and would still pass if some
+        // unrelated label happened to carry that id.
+        const label = page.locator(`label[for="${await area.getAttribute('id')}"]`)
+        assert.equal(await label.count(), 1, 'exactly one label owns the field')
+        await label.click()
         assert.equal(await area.evaluate(node => node === document.activeElement), true)
         await area.fill('First line'); await page.keyboard.press('End'); await page.keyboard.press('Enter'); await page.keyboard.type('Second line')
         assert.equal(await area.inputValue(), 'First line\nSecond line')
