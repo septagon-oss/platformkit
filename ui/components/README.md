@@ -19,6 +19,15 @@ Labels a screen reader hears — `Spinner.Label`, `Pagination.PreviousLabel`,
 with the authored English as defaults, so a localized shell supplies its own
 words through the same typed contract.
 
+One label deliberately has no default. `Table.Label` names the scroll wrapper so
+that a table wider than its box can be reached with a keyboard alone; a name
+invented by the renderer would be the renderer claiming to know what its
+caller's table is about. A table nobody names therefore stays an ordinary scroll
+box, exactly as it was, and [ui/resource](../resource/resource.go) names the
+generated list after its own heading. [e2e/design-audit.spec.ts](../../e2e/design-audit.spec.ts)
+refuses a scroll box that cannot take focus, so the affordance cannot quietly go
+missing again.
+
 The package imports [ui/style](../style/README.md) and [ui/icon](../icon/icon.go)
 and nothing that reflects. Capturing an invocation, describing its Props as
 JSON Schema and the `Gallery` of one example per component live in

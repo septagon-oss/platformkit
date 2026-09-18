@@ -53,7 +53,12 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// source schemas. Gallery HTML, CSS, props, tokens and icons remain identical.
 	// Pagination, Breadcrumb and Alert gain optional label properties, so ten
 	// source schemas change; HTML, CSS, props, tokens and icons are identical.
-	if legacy.SHA256 != "78c9571e6040424614609e49fe193bcb067e154b679238496996664d310b4671" {
+	// Table gains an optional Label that makes its scroll wrapper a keyboard-
+	// reachable named region, and one new gallery example exercises it. Only the
+	// new example's HTML and one new source property are in this delta; tokens,
+	// CSS and every other example are byte-identical, so the native token fixture
+	// does not move.
+	if legacy.SHA256 != "20108b1930de20cec554efc2d4cb8fc70ddb44209b4604cb85aeb6c6c4408b21" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

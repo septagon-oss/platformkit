@@ -357,6 +357,18 @@ type TableProps struct {
 	Striped    bool          `json:"striped,omitempty"`
 	Compact    bool          `json:"compact,omitempty"`
 	EmptyText  string        `json:"emptyText,omitempty"`
+
+	// Label names the scroll wrapper so a table wider than its box can be read
+	// with a keyboard alone. The wrapper is `overflow: auto`, and a scroll box
+	// that cannot take focus scrolls only for a pointer: the columns past the
+	// right edge exist in the DOM and are unreachable for a person who never
+	// touches a mouse (WCAG 2.1.1). Making it focusable without naming it would
+	// add a landmark a screen reader announces as "region" with nothing to
+	// identify it, eleven times on a dashboard. So the wrapper becomes a named
+	// region when a caller supplies a name, and stays exactly what it was when
+	// nobody does. There is deliberately no default: an invented name would be
+	// the renderer claiming to know what its caller's table is about.
+	Label string `json:"label,omitempty"`
 }
 
 // TableColumn defines a table column.

@@ -93,14 +93,15 @@ func Path(r Resource, o Options) string {
 // New button is drawn only for a caller who may write — a person who may not is
 // not shown a form that would refuse them.
 func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
-	at, title := Path(r, o), display.Humanize(r.Schema.Entity)
+	at, one := Path(r, o), display.Humanize(r.Schema.Entity)
+	title := listName(one)
 	var actions []g.Node
 	if writable {
 		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", r.Schema.Entity), Href: at + "/new"})}
 	}
-	return document.View{Title: title + "s", Body: []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: title + "s", Subtitle: o.count(total, title)}, actions...),
-		table(o, r, at, rows, sort),
+	return document.View{Title: title, Body: []g.Node{
+		components.Toolbar(components.ToolbarProps{Title: title, Subtitle: o.count(total, one)}, actions...),
+		table(o, r, at, title, rows, sort),
 		components.Pagination(components.PaginationProps{
 			HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 			CurrentPage: pageNo, TotalPages: pages(total), BaseURL: at + "?sort=" + sort,
@@ -201,12 +202,17 @@ func formField(f entity.Field) forms.Field {
 	return forms.Field{Definition: f, Label: display.FieldLabel(f), Options: options}
 }
 
+// listName is the heading a list screen wears. It is also the accessible name of
+// that screen's scrolling table region, in the same words: the region is the
+// list, so giving the two different names would be two names for one thing.
+func listName(one string) string { return one + "s" }
+
 // table is the list screen's rows: the field a row is known by first, as the
 // link into it, then every other field the schema does not hide.
 //
 // The id is not a column. It is the row's identity and it is already the link's
 // href; a table that leads with a UUID is a table nobody can read.
-func table(o Options, r Resource, at string, rows []map[string]any, sort string) g.Node {
+func table(o Options, r Resource, at, title string, rows []map[string]any, sort string) g.Node {
 	primary := known(r.Schema.Fields)
 	shown := []entity.Field{primary}
 	for _, f := range r.Schema.Fields {
@@ -232,6 +238,7 @@ func table(o Options, r Resource, at string, rows []map[string]any, sort string)
 	return components.TableWithSlots(components.TableProps{
 		HTMXProps: components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 		Sortable:  true, Columns: columns, Rows: out,
+		Label:     title,
 		EmptyText: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity),
 	}, components.TableSlots{
 		// Sorting is a link the server answers, not a script that reorders what

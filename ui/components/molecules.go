@@ -584,6 +584,11 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 	wrap = append(wrap,
 		classes(clTableWrap.Compile(), p.Class),
 		g.Attr("data-component", "table"),
+	)
+	if label := strings.TrimSpace(p.Label); label != "" {
+		wrap = append(wrap, h.Role("region"), g.Attr("tabindex", "0"), g.Attr("aria-label", label))
+	}
+	wrap = append(wrap,
 		h.Table(
 			h.Class(clTable.Compile()),
 			h.THead(head...),

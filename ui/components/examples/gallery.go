@@ -181,6 +181,14 @@ func Gallery() []Example {
 				{ID: "u1", Cells: map[string]any{"name": "Ada", "role": "admin"}},
 				{ID: "u2", Cells: map[string]any{"name": "Lin", "role": 7}},
 			}}, components.TableSlots{}, components.TableWithSlots),
+		// A table wider than its box is only readable with a keyboard when the
+		// scrolling box takes focus and says what it is scrolling.
+		ExampleWithSlots(info("pk-ui.component.table/scroll-region", "Data", "Table / named scroll region"), components.TableProps{
+			Label:   "People",
+			Columns: []components.TableColumn{{Key: "name", Label: "Name"}, {Key: "role", Label: "Role"}},
+			Rows: []components.TableRow{
+				{ID: "u1", Cells: map[string]any{"name": "Ada", "role": "admin"}},
+			}}, components.TableSlots{}, components.TableWithSlots),
 		ExampleWithSlots(info("pk-ui.component.table/empty", "Data", "Table / empty"), components.TableProps{
 			Columns: []components.TableColumn{{Key: "a", Label: "A"}}, EmptyText: "No rows.", Compact: true}, components.TableSlots{}, components.TableWithSlots),
 		ExampleWithSlots(info("pk-ui.component.table/sortable", "Data", "Table / sortable"), components.TableProps{
@@ -343,7 +351,11 @@ func Documentation(e Example) g.Node {
 		facts = append(facts, components.Text(components.TextProps{Size: "sm", Color: "muted",
 			Content: "No typed properties: " + cmp.Or(described.Reason, "captured as a rendered node")}))
 	case len(rows) > 0:
-		facts = append(facts, components.Table(components.TableProps{Compact: true, Rows: rows, Columns: []components.TableColumn{
+		// Named, because five columns will not fit a phone and the gallery is read
+		// on one: a table that scrolls without a focusable wrapper hides its own
+		// Description column from a keyboard, and this is the page the family
+		// points at when it says a component is accessible.
+		facts = append(facts, components.Table(components.TableProps{Compact: true, Rows: rows, Label: described.Name + " properties", Columns: []components.TableColumn{
 			{Key: "name", Label: "Property", Primary: true},
 			{Key: "type", Label: "Type"},
 			{Key: "value", Label: "This example"},
