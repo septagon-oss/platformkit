@@ -231,6 +231,9 @@ func (s Singleton[T]) check() {
 	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())
 	}
+	if bad == "" {
+		bad = presentationFault(crud.Fields[T]())
+	}
 	if bad != "" {
 		panic("rest: Singleton for " + s.Path + ": " + bad)
 	}

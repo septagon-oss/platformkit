@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/entity"
 )
 
@@ -151,3 +152,59 @@ func TestAnUnrelatedBaseMethodDoesNotSatisfyEntity(t *testing.T) {
 		t.Fatal("an unrelated private method opened the Entity constraint")
 	}
 }
+
+// TestPresentDirectiveParsesOrSaysWhy, the parse half of the read axis. The mount
+// gate in kit/rest can only judge a word it was actually given: a directive that
+// parsed to "" is indistinguishable from a field that named nothing, so a malformed
+// `present:` has to fail here, at the tag, rather than arrive at the gate as silence.
+func TestPresentDirectiveParsesOrSaysWhy(t *testing.T) {
+	fields := entity.Fields[*presented]()
+	byName := map[string]entity.Field{}
+	for _, f := range fields {
+		byName[f.Name] = f
+	}
+	for _, c := range []struct{ name, want string }{
+		{"plain", ""}, {"person", "person"}, {"mask", "person"},
+	} {
+		if got := byName[c.name].Present; got != c.want {
+			t.Errorf("field %q presents %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// presented is a schema with one field on the read axis, one beside it, and one that
+// names both axes at once — the combination the directive grammar has to survive
+// because a date can be both a control and a way of being read.
+type presented struct {
+	crud.Base
+	Plain    string `json:"plain"`
+	Person   string `json:"person" ui:"present:person"`
+	WithMask string `json:"mask" ui:"widget:email;present:person"`
+}
+
+func (presented) TableName() string { return "presented" }
+
+// TestAnEmptyPresentationMeansNothingRatherThanSomething: `ui:"present:"` with nothing
+// after the colon parses to the empty value, which is the same answer as writing no
+// directive at all. That is the existing behaviour of this parser — it has no error
+// channel, FieldsOf returns fields and nothing else, which is why the mount gate in
+// kit/rest is what refuses a *name* nobody renders. Recorded here rather than in a
+// TODO because a typo of this shape is silent, and the next person to read the tag
+// should know which typos are caught and which are not.
+func TestAnEmptyPresentationMeansNothingRatherThanSomething(t *testing.T) {
+	fields := entity.Fields[*blankPresent]()
+	f, ok := entity.FieldNamed(fields, "empty")
+	if !ok {
+		t.Fatal("the field is missing from its own schema")
+	}
+	if f.Present != "" {
+		t.Errorf("an empty directive read as %q, want the silence that means plain", f.Present)
+	}
+}
+
+type blankPresent struct {
+	crud.Base
+	Empty string `json:"empty" ui:"present:"`
+}
+
+func (blankPresent) TableName() string { return "blank_present" }

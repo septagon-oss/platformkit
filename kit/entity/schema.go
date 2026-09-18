@@ -58,6 +58,23 @@ type Field struct {
 	// name refuses to mount, because a name no renderer knows used to draw a
 	// plain text input in silence.
 	Widget string `json:"widget,omitempty"`
+	// Present is how a *read* renders the value: `ui:"present:person"`. It must be
+	// a name Presentations admits, and a Spec whose entity names anything else
+	// refuses to mount for the same reason Widget does — a name no renderer knows
+	// would draw the raw value in silence and the declaration would mean nothing.
+	//
+	// It is a separate axis from Widget rather than another widget name, and the
+	// reason is in Widgets' own comment: the control a widget names is drawn by
+	// ui/forms. `select` is a thing a person types into; `person` is a way a value
+	// is read, and there is no control to type a person's *name* into that a
+	// read-only cell needs. Forcing every read form through the form vocabulary
+	// would buy exactly one fake control per read form. Where a field genuinely is
+	// both, name both: `ui:"widget:entity-picker;present:person"`.
+	//
+	// It reaches the native consumer without further work: ui/screens' Entry
+	// embeds entity.Schema, so /api/v1/admin/resources carries this field, and the
+	// native renderer decides what a person looks like there.
+	Present string `json:"present,omitempty"`
 	// Enum is the closed set of values, from `enum:"open,done"`.
 	Enum []string `json:"enum,omitempty"`
 	// Required comes from `validate:"required"`.
@@ -104,6 +121,34 @@ var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
 	"textarea", "time", "url", "week",
+}
+
+// Presentations is every name `ui:"present:…"` may carry, and it is the read-axis
+// twin of Widgets. The same argument binds it: the composition each name renders
+// lives in ui/resource, which a kernel package below the presentation layer cannot
+// import, so what ties the two together is a test there that names a rendered
+// composition for every entry here, plus the mount-time refusal in kit/rest.
+//
+// One entry, on purpose. ADR 0012 requires an adopted consumer's benefit, and a
+// vocabulary invented with no second caller in sight is how you get an alias of a
+// Go type you have to keep explaining. `text` is deliberately absent: the empty
+// string already means "derive it from the type", and an enum value, a timestamp
+// and a boolean each have a reading that needs no name.
+var Presentations = []string{"person"}
+
+// ValidPresentation reports whether a screen renders the named presentation. The
+// empty string is valid: it means "derive from Type and Enum", which is most
+// fields and every field written before this axis existed.
+func ValidPresentation(present string) bool {
+	if present == "" {
+		return true
+	}
+	for _, p := range Presentations {
+		if p == present {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidWidget reports whether a screen can draw the named widget. The empty
@@ -211,6 +256,8 @@ func derive(t reflect.Type) []Field {
 			switch key, value, _ := strings.Cut(part, ":"); key {
 			case "widget":
 				f.Widget = value
+			case "present":
+				f.Present = value
 			case "hide":
 				f.HideList = f.HideList || value == "list"
 			}
