@@ -1,6 +1,7 @@
 // Package resource renders the screens of a schema-described resource — the
-// list, the detail and the two forms — from plain values: the entity's schema,
-// the rows a handler read, and the words the request's locale chose.
+// list, the detail, the two forms, and one control per command the caller was
+// given — from plain values: the entity's schema, the rows a handler read, and
+// the words the request's locale chose.
 //
 // It is the pure half of the generated screens behind docs/adr/0007. Nothing
 // here names a task or a user, opens a transaction or reads a request; what a
@@ -44,6 +45,12 @@ type Resource struct {
 	// duty on httpx.Resource.Singleton, and ui/screens/catalog.go has always
 	// carried it to the native shell; ui/screens carries it here.
 	Singleton bool
+	// Commands are the lifecycle routes this caller may use, in the order the API
+	// declared them, each with the path its route was mounted on. Empty for a
+	// screen rendered without a caller — a design export, a golden file — because
+	// "may I do this?" has no answer there, and a control that would be refused is
+	// not worth drawing. ui/screens fills this in from httpx.Resource.
+	Commands []Command
 }
 
 // PerPage is a screenful, and the page the list renders and links. kit/crud's
@@ -113,17 +120,21 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	if writable {
 		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", r.Schema.Entity), Href: at + "/new"})}
 	}
-	return document.View{Title: title + "s", Body: []g.Node{
+	body := []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: title + "s", Subtitle: o.count(total, title)}, actions...),
 		table(o, r, at, rows, sort),
-		components.Pagination(components.PaginationProps{
-			HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
-			CurrentPage: pageNo, TotalPages: pages(total), BaseURL: at + "?sort=" + sort,
-			NavigationLabel: o.Text("screens.pagination", "Pagination"),
-			PreviousLabel:   o.Text("screens.previous", "Previous page"),
-			NextLabel:       o.Text("screens.next", "Next page"),
-		}),
-	}}
+	}
+	// A command over the whole collection posts beside the list it acts on, and
+	// above the pager so a person who changes page has not lost the door.
+	body = append(body, commandForms(o, r.Commands, at, true)...)
+	body = append(body, components.Pagination(components.PaginationProps{
+		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
+		CurrentPage: pageNo, TotalPages: pages(total), BaseURL: at + "?sort=" + sort,
+		NavigationLabel: o.Text("screens.pagination", "Pagination"),
+		PreviousLabel:   o.Text("screens.previous", "Previous page"),
+		NextLabel:       o.Text("screens.next", "Next page"),
+	}))
+	return document.View{Title: title + "s", Body: body}
 }
 
 // Detail is one row: every field, in schema order, and the write affordances
@@ -153,11 +164,15 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
 		}
 	}
-	return document.View{Title: named, Body: []g.Node{
+	body := []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		details(r, row),
-	}}
+	}
+	// Below the record rather than above it: what a person comes to read is the
+	// row, and a command is what they may do to it once they have read it.
+	body = append(body, commandForms(o, r.Commands, item, false)...)
+	return document.View{Title: named, Body: body}
 }
 
 // Form is the create and edit screen: one control per writable field, derived

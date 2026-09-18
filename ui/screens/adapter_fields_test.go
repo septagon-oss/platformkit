@@ -35,6 +35,17 @@ func TestTheAdapterCarriesEveryFieldTheRenderersRead(t *testing.T) {
 			continue
 		}
 		t.Run(f.Name, func(t *testing.T) {
+			if proof, scoped := callerScoped[f.Name]; scoped {
+				// A caller-scoped field cannot be compared without a caller, so the
+				// rule is stricter instead of looser: the exemption has to name the
+				// test that delivers it through a real Mount, which is the only place a
+				// caller exists. An exemption that names no test is the hole again with
+				// better grammar, so it fails.
+				if !strings.Contains(proof, "Test") {
+					t.Fatalf("field %q is exempted as caller-scoped but names no test that delivers it: %q", f.Name, proof)
+				}
+				return
+			}
 			a, b, render, ok := shapesFor(f.Name)
 			if !ok {
 				t.Fatalf("no case for field %q. Either the renderers do not read it, or %s", f.Name,
@@ -45,6 +56,21 @@ func TestTheAdapterCarriesEveryFieldTheRenderersRead(t *testing.T) {
 			}
 		})
 	}
+}
+
+// callerScoped lists the fields whose value depends on who is asking, which no
+// comparison of two registered resources can answer — there is no caller to compare
+// them with. Each exemption names the test that delivers the field through a real
+// Mount, because "the adapter carries it" is still a claim that can be false and still
+// has to be proved somewhere.
+//
+// Commands is one because it is projected by view(r, ctx, at) inside the handlers
+// Mount builds: it is filtered by httpx.Resource.CommandsFor, which answers "may this
+// caller use this route", and an answer to that question needs the request. The
+// exported trio below deliberately renders no commands, so a design export or a golden
+// file cannot show doors nobody authorized.
+var callerScoped = map[string]string{
+	"Commands": "TestACommandIsADoorOnTheScreenThatShowsTheRow in kit/rest/screens_commands_test.go",
 }
 
 // shapesFor is one field in both its shapes, beside the screen that has to notice

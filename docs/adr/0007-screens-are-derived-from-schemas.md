@@ -56,7 +56,9 @@ about entities.
 - The screens cannot outlive the API's rules. They call the same closures the
   routes do, in the same request transaction, so a write from a form publishes
   the same events, refuses the same read-only fields and answers with the same
-  three errors. There is no second implementation to keep honest.
+  three errors. There is no second implementation to keep honest. A command is
+  covered by that sentence too: `httpx.Command` records the closure its own route
+  calls, and a form performs it through `rest.Fault`, the same mapping.
 - The screens cannot be more permissive than the API. Each declares
   `Permission(resource.Read)` or `Permission(resource.Write)` — the resource's
   own — so the boot gate sees them and the request-time middleware enforces
@@ -67,11 +69,19 @@ about entities.
   whose screens were already generated — which is to say, were not.
 - **The cost is that a generated screen is generic.** It cannot know that
   `assigneeId` is a person: it renders the identifier and says there is no
-  picker for it. It cannot know that `Assign` is the door that field belongs
-  to: it renders the field read-only and says a command owns it. Those are
-  honest and they are not good, and the answer when one of them matters is a
-  hand-written screen for that interaction — not a tag that makes the generator
-  cleverer.
+  picker for it. Those are honest and they are not good, and the answer when one
+  of them matters is a hand-written screen for that interaction — not a tag that
+  makes the generator cleverer.
+
+  One cost the ADR used to list here is gone. It read: "It cannot know that
+  `Assign` is the door that field belongs to: it renders the field read-only and
+  says a command owns it" — and treated a hand-written screen as the only answer.
+  That was a missing delivery, not an inherent cost: the API already knew every
+  command it mounted, its guard and its arguments, and recorded none of the work
+  beside it. `httpx.Command.Run` is that work, and `ui/screens` now mounts one
+  POST per declared command and `ui/resource` renders one control each, guarded
+  per caller by the same authorizer the route uses. The generator still is not
+  cleverer about what a command means — it is told, by the route table.
 - A schema that describes nothing renders nothing. A field whose Go type is
   outside `crud.FieldType`'s closed set is in the JSON and on no screen, which
   is the same rule the sort and the filter already followed.

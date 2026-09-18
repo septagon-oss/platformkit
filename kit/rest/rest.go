@@ -330,11 +330,32 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 		op.Extensions = map[string]any{httpx.EventsExtension: events}
 	}
 	// The same declaration, recorded on the resource, so a shell generated
-	// from the catalog offers this door rather than inventing one.
+	// from the catalog offers this door rather than inventing one — and recorded
+	// with the work beside it, because "offers this door" was always a promise
+	// this line could not keep. A screen's write goes through the closure below,
+	// so the form and the JSON route perform one implementation through one
+	// guard. See docs/adr/0007 and httpx.Command.Run.
+	fields := crud.FieldsOf(reflect.TypeFor[I]())
 	api.AddCommand(spec.Module, spec.Entity, httpx.Command{
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
-		Fields: crud.FieldsOf(reflect.TypeFor[I]()),
+		Fields: fields,
+		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
+			tx, ok := httpx.TxFrom(ctx)
+			if !ok {
+				return problem.New(http.StatusServiceUnavailable,
+					"this command is only performed inside a request")
+			}
+			// The same decode the PATCH route uses: one set of rules for "3" as an
+			// int and for null as an empty pointer, and a field the command does not
+			// take is refused rather than quietly dropped.
+			var in I
+			if _, err := merge(&in, fields, nil, values); err != nil {
+				return err
+			}
+			_, err := run(ctx, tx, id, in)
+			return err
+		},
 	})
 	// The two mounts differ in their input type and in nothing else, and the
 	// type is what tells huma whether there is a path parameter to bind. That
