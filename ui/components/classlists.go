@@ -481,6 +481,11 @@ var (
 		"lg": style.New().Width(style.S16).Height(style.S16).Rounded(style.RadiusFull),
 	}
 	clAvatarInitials = style.New().FontSize(style.TextSM)
+	// The labelled form: disc then name on one line, aligned on the middle of both.
+	// Inline-flex and not flex because it sits inside a table cell, and a table cell
+	// is not a flex container.
+	clAvatarLabel = style.New().
+			Display(style.DisplayInlineFlex).Items(style.ItemsCenter).Gap(style.S2)
 	// The focus ring belongs on the disc when the disc is the link, which is what
 	// a caller can reach with a Tab and what the design audit then looks for.
 	clAvatarLink = clFocusRing
@@ -774,8 +779,12 @@ func GalleryClassLists() []style.ClassList {
 	out := []style.ClassList{
 		clDividerH, clDividerV, clDividerText, clDividerTextLine, clDividerTextLabel,
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
+		// Media's panels stay here while only the gallery can produce them. Card's
+		// picture routes through Media too, so the first screen that passes a Status
+		// — a cut-out still being cut, an artwork somebody may not look at — has to
+		// move clMediaAbsent, clMediaFailed and clMediaRefused into the shell list
+		// with it, or that panel arrives unstyled on the page that needed it.
 		clMediaFigure, clMediaCaption, clMediaAbsent, clMediaFailed, clMediaRefused,
-		clAvatar, clAvatarInitials, clAvatarLink,
 		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
 		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay,
 		clModalPanel, clModalHeader, clModalTitleBlock, clModalTitle,
@@ -806,6 +815,10 @@ func ShellClassLists() []style.ClassList {
 		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions,
 		clConfirmDialog, clConfirmTitle, clConfirmMessage,
 		clIcon, clFocusRing, clButtonBase, clButtonFull, clButtonIconOnly, clButtonDisabledLink,
+		// A person, as read by the generated list: ui/resource composes a cell out of
+		// these whenever a field says `ui:"present:person"`, so they are on every page
+		// of an application that has people in it, not on the gallery alone.
+		clAvatar, clAvatarInitials, clAvatarLink, clAvatarLabel,
 		clBadgeBase, clBadgeDot, clBadgeCount, clBadgeRemove,
 		clAlertBase, clAlertRegular, clAlertCompact, clAlertBordered,
 		clAlertTitle, clAlertMessage, clAlertBody, clAlertIcon, clAlertActions, clAlertClose,

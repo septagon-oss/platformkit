@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -1779,16 +1780,47 @@ func Avatar(p AvatarProps) g.Node {
 	// tree: a keyboard user could reach a person and a reader would announce
 	// nothing. The name goes on the anchor and only the contents stay quiet — which
 	// they already are, since initials are hidden where they appear.
-	if p.Href != "" && label != "" {
-		attrs = append(attrs, h.Href(p.Href), g.Attr("aria-label", label))
-		return h.A(append(attrs, inner)...)
+	// Four exits, and one rule decides between them: the name may be audible from
+	// exactly one place, the disc's own label or the text beside it. Everything below
+	// follows from refusing to let both speak.
+	if p.Href != "" {
+		if p.Label != "" {
+			// The link is the whole line — disc and name. The name in the text is the
+			// anchor's accessible name, so the disc goes quiet inside it, and the tap
+			// target is the width of the person rather than a 32-pixel disc.
+			quiet := append(slices.Clone(attrs), g.Attr("aria-hidden", "true"))
+			return h.A(append(baseAttrs(p.ComponentProps), h.Href(p.Href),
+				h.Class(clAvatarLabel.Merge(clAvatarLink).Compile()),
+				h.Div(append(quiet, inner)...), h.Span(g.Text(p.Label)))...)
+		}
+		if label != "" {
+			attrs = append(attrs, h.Href(p.Href), g.Attr("aria-label", label))
+			return h.A(append(attrs, inner)...)
+		}
+		// A link with no name to give it is not a link: an unnameable person is not a
+		// person to link to, and an anchor that says nothing is what a caller with
+		// neither a name nor a label would otherwise get.
 	}
-	if p.Decorative {
+	switch {
+	case p.Decorative || p.Label != "":
+		// A visible name beside the disc, or a caller who says the name is already on
+		// screen: either way the disc has nothing to add a reader does not have.
 		attrs = append(attrs, g.Attr("aria-hidden", "true"))
-	} else if label != "" {
+	case label != "":
 		attrs = append(attrs, g.Attr("role", "img"), g.Attr("aria-label", label))
 	}
-	return h.Div(append(attrs, inner)...)
+	return labelled(p, h.Div(append(attrs, inner)...))
+}
+
+// labelled puts the visible name beside a disc. It is a function and not another
+// branch inside Avatar because the exits need it in different combinations, and a
+// component whose labelled form only works in one of them is a component with a
+// hole in it.
+func labelled(p AvatarProps, disc g.Node) g.Node {
+	if p.Label == "" {
+		return disc
+	}
+	return h.Div(h.Class(clAvatarLabel.Compile()), disc, h.Span(g.Text(p.Label)))
 }
 
 // initials is the derivation, stated once so every product spells a person the

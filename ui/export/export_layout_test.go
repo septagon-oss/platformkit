@@ -64,7 +64,12 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// `object-cover object-contain` and let the stylesheet decide — the two crops are
 	// named classlists now and exactly one is merged per picture. Card's own bytes
 	// are unchanged: same classes, same order. Tokens, themes and icons are identical.
-	if legacy.SHA256 != "401264a411e03891451840989637a49a14cc3116d8ba59ecde833cf07860127d" {
+	// Avatar gains `label`, the name beside the disc, and with it the rule that the
+	// name is audible from exactly one place: labelled and linked is now one anchor
+	// around disc and name rather than a labelled disc inside a named one, which said
+	// the person's name twice. Avatar's classes move from the gallery-only list to
+	// the shell list, because ui/resource composes a person cell with them.
+	if legacy.SHA256 != "ecd0ea8b76172162cfe98c7dae248ce2a52f394bebd8557a8e09897568bceb80" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

@@ -577,6 +577,13 @@ type AvatarProps struct {
 	// Decorative says the name is already on screen beside this disc, so the disc
 	// says nothing at all. Left false, the disc carries the name itself.
 	Decorative bool `json:"decorative,omitempty"`
+	// Label shows the name beside the disc instead of only behind it, which is the
+	// form a list cell, a comment row and the generated read axis all need. It is a
+	// prop on this component rather than a second component because the alternative
+	// is every caller putting a disc and a text node in a box and aligning them
+	// differently. With Label set the disc goes quiet and the text carries the name
+	// — see Avatar.
+	Label string `json:"label,omitempty" maxLength:"120"`
 	// AriaLabel names the disc when the caller's word for the person is not the
 	// name to show — "Signed out", or a role where a name would be a claim.
 	AriaLabel string `json:"ariaLabel,omitempty"`

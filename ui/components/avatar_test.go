@@ -150,3 +150,28 @@ func TestMediaFitIsHonoured(t *testing.T) {
 		t.Errorf("contain asked for and not delivered: %s", each)
 	}
 }
+
+// TestALabelledLinkedAvatarIsOneLineAndSaysTheNameOnce is the case that was wrong
+// when it was written: the anchor named itself and the label beside it said the same
+// word, so a reader heard "ada" twice for one person. The fix makes the whole line
+// the link, which also widens the tap target from a 32-pixel disc to the person.
+func TestALabelledLinkedAvatarIsOneLineAndSaysTheNameOnce(t *testing.T) {
+	out := html(t, components.Avatar(components.AvatarProps{
+		Name: "ada", Label: "ada", Href: "/people/ada",
+	}))
+	if !strings.HasPrefix(out, `<a `) || !strings.Contains(out, `href="/people/ada"`) {
+		t.Fatalf("a labelled linked person should be one line that is the link: %s", out)
+	}
+	if n := strings.Count(out, ">ada<"); n != 1 {
+		t.Errorf("the name is audible %d times, want once: %s", n, out)
+	}
+	if strings.Contains(out, "aria-label") {
+		t.Errorf("the visible name is the anchor's name; a label too is a duplicate: %s", out)
+	}
+	if !strings.Contains(out, `aria-hidden="true"`) {
+		t.Errorf("the disc inside the named line must be quiet: %s", out)
+	}
+	if !strings.Contains(out, "focus-visible:ring") {
+		t.Errorf("the line is a link and must show where it is focused: %s", out)
+	}
+}
