@@ -570,9 +570,24 @@ var (
 			On(style.StateHover, func(c style.ClassList) style.ClassList { return c.Shadow(style.ShadowLG) })
 	clCardTitle = style.New().FontFamily(style.FontSerif).FontSize(style.TextLG).
 			FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
-	clCardDesc            = style.New().FontSize(style.TextSM).TextColor(style.FgMuted)
-	clCardHeader          = style.New().BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
-	clCardFooter          = style.New().BorderTop(style.Border1).BorderColor(style.BorderPrimary).Bg(style.SurfaceSecondary)
+	clCardDesc   = style.New().FontSize(style.TextSM).TextColor(style.FgMuted)
+	clCardHeader = style.New().BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
+	clCardFooter = style.New().BorderTop(style.Border1).BorderColor(style.BorderPrimary).Bg(style.SurfaceSecondary)
+	// clMediaFigure holds a picture and its caption as the pair they are; the
+	// caption is markup of its own so a reader can navigate to it, which alt text
+	// cannot be.
+	// The three absent states differ in tone as well as in words, because a
+	// refusal that borrows the empty shelf's markup is a page telling a lie about
+	// nobody being home. Each one is a bordered panel carrying the caller's
+	// sentence; which border and which ground is the only visual difference, and
+	// it is enough for a stranger to tell "ask for access" from "look elsewhere".
+	clMediaAbsent  = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S2)
+	clMediaFailed  = style.New().Padding(style.S6).Rounded(style.RadiusLG).Border(style.Border1).BorderColor(style.BorderWarning).Bg(style.SurfaceWarningSoft)
+	clMediaRefused = style.New().Padding(style.S6).Rounded(style.RadiusLG).Border(style.Border1).BorderColor(style.BorderPrimary).Bg(style.SurfaceTertiary)
+
+	clMediaFigure  = style.New().Display(style.DisplayBlock)
+	clMediaCaption = style.New().FontSize(style.TextSM).TextColor(style.FgMuted).PaddingTop(style.S3)
+
 	clCardImageVertical   = style.New().Width(style.SFull).ObjectCover()
 	clCardImageHorizontal = style.New().Width(style.S48).ObjectCover()
 	clCardHorizontal      = style.New().Display(style.DisplayFlex)
@@ -730,6 +745,7 @@ func GalleryClassLists() []style.ClassList {
 	out := []style.ClassList{
 		clDividerH, clDividerV, clDividerText, clDividerTextLine, clDividerTextLabel,
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
+		clMediaFigure, clMediaCaption, clMediaAbsent, clMediaFailed, clMediaRefused,
 		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
 		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay,
 		clModalPanel, clModalHeader, clModalTitleBlock, clModalTitle,

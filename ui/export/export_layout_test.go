@@ -53,7 +53,12 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// source schemas. Gallery HTML, CSS, props, tokens and icons remain identical.
 	// Pagination, Breadcrumb and Alert gain optional label properties, so ten
 	// source schemas change; HTML, CSS, props, tokens and icons are identical.
-	if legacy.SHA256 != "78c9571e6040424614609e49fe193bcb067e154b679238496996664d310b4671" {
+	// Media adds one component and six gallery examples (its five states and a
+	// captioned picture); Card's picture now delegates to it with byte-identical
+	// output, so no card example moves. Tokens, themes and icons are identical —
+	// verified by platformkit-mobile's own token suite, which pins its fixture by
+	// provenance and stays green until somebody refreshes it deliberately.
+	if legacy.SHA256 != "515fb2a7c82d5ab2bffdbc8c06236c10cda2bef9173493b2d6a63731fa5d6b02" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
