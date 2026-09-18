@@ -44,8 +44,12 @@ const surfaces: [string, string][] = [
 /**
  * Seed through the generated form rather than the JSON API: this spec has no business
  * discovering the shape of a create request, and admin-tasks.spec.ts already proves that
- * form works. One specimen row is enough — the geometry of a row is not a function of how
- * many there are, and an empty table measures nothing about a row's hit area.
+ * form works. Exactly one specimen row is enough — the geometry of a row is not a function
+ * of how many there are, and an empty table measures nothing about a row's hit area. One
+ * row also keeps this file honest about the shared fixture: every other spec's assertions
+ * are scoped to a title of its own, and session-recovery.spec.ts compares a page's items to
+ * its total, which holds while a page holds everything. Two or three hundred rows would
+ * make this file responsible for another one's failure.
  */
 test.beforeAll(async ({ browser }) => {
   const context = await browser.newContext();

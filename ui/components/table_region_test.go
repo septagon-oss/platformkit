@@ -78,6 +78,33 @@ func TestOnlyTheScrollWrapperCarriesTheRegion(t *testing.T) {
 	}
 }
 
+func TestACallersOwnAttributesAreHonouredNotDuplicated(t *testing.T) {
+	t.Parallel()
+
+	// ComponentProps.Attrs is a free-form map emitted verbatim, so a caller can
+	// declare tabindex or role itself. Two attributes of one name are invalid HTML,
+	// and the browser keeps the first, so the only honest outcomes are "theirs" or
+	// "ours" - never both, and never a tag claiming an attribute that does not apply.
+	owned := tableProps("Tasks")
+	owned.Attrs = map[string]string{"tabindex": "-1", "role": "group", "aria-label": "Named by its caller"}
+	out := renderNode(t, Table(owned))
+
+	for _, name := range []string{"tabindex", "role", "aria-label"} {
+		if n := strings.Count(out, name+"="); n != 1 {
+			t.Errorf("expected exactly one %s attribute, found %d: %s", name, n, out)
+		}
+	}
+	if !strings.Contains(out, `tabindex="-1"`) {
+		t.Errorf("the caller's own tabindex was overwritten: %s", out)
+	}
+	if !strings.Contains(out, `role="group"`) {
+		t.Errorf("the caller named the element something else and the renderer argued: %s", out)
+	}
+	if !strings.Contains(out, `aria-label="Named by its caller"`) {
+		t.Errorf("the caller supplied the name and the renderer's was emitted anyway: %s", out)
+	}
+}
+
 // The table skeleton stands in for a table that has not arrived, and is hidden
 // from assistive technology while it does: naming a placeholder would announce
 // a region whose contents are shimmer.

@@ -26,21 +26,31 @@ test.beforeEach(async ({ page }) => {
 
 test('the section navigation is reachable below the sidebar breakpoint', async ({ page }) => {
   test.fail(); // Not fixed: the admin sidebar is `display: none` below lg and nothing discloses it.
-  await page.setViewportSize({ width: 390, height: 844 });
+
+  const visible = (locator: import('@playwright/test').Locator) =>
+    locator.evaluateAll((nodes) =>
+      nodes.filter((el) => {
+        const box = el.getBoundingClientRect();
+        return box.width > 0 && box.height > 0;
+      }).length);
+
+  // Precondition first, because a test that can only fail can also fail for the wrong
+  // reason forever. If the selector stopped matching anything, this file would keep
+  // reporting a defect after the defect was fixed, and the ratchet would never fire. At
+  // desktop width the same locator must see section links; if it does not, the broken
+  // thing here is the test.
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/admin');
+  const sectionLinks = page.locator('a[data-nav]');
+  expect(await visible(sectionLinks), 'no a[data-nav] link is visible at 1280px: this test is broken, not the shell').toBeGreaterThan(0);
 
   // The honest question is not "is some <nav> visible" — a pagination nav has three links
   // and would answer it yes. It is whether a person on a phone can move to another part of
   // the application at all: either a section link they can see, or a control that discloses
   // the links.
-  const shown = (locator: import('@playwright/test').Locator) => locator.evaluateAll((nodes) =>
-    nodes.filter((el) => {
-      const box = el.getBoundingClientRect();
-      return box.width > 0 && box.height > 0;
-    }).length);
-
-  const links = await shown(page.locator('a[data-nav]'));
-  const disclosure = await shown(
+  await page.setViewportSize({ width: 390, height: 844 });
+  const links = await visible(sectionLinks);
+  const disclosure = await visible(
     page.locator('button, summary, a[href]').filter({ hasText: /^(Menu|Navigation|Sections)$/i }),
   );
   expect(links + disclosure, 'no visible section link and no control that discloses one at 390px').toBeGreaterThan(0);
