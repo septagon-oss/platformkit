@@ -79,3 +79,11 @@ is a judgement call that now lives in code and can be argued about in one place,
 a name claimed badly can be claimed again badly by someone else only through the
 same audited command. Nothing can sign in with a handle, so the enumeration question
 is unopened rather than answered.
+
+What a person is *called on screen* is this decision's other half, and it has a
+mechanism now: `Handle` carries `ui:"present:person"`, `kit/entity` owns that
+vocabulary and `kit/rest` refuses a name no screen renders, the same gate the write
+axis already had. `ui/resource` composes the cell — a disc with the person's initial,
+quiet to a screen reader, the name beside it — so a screen that renders the field
+renders a person without the table, the module or a stylesheet being told. Unclaimed
+reads as a dash, because a generic face would claim the screen knows whose is missing.

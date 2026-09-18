@@ -103,7 +103,15 @@ type User struct {
 	// could PATCH alongside a display name is a handle that changed hands while
 	// nobody was told — which is the same argument the module already makes about
 	// roles and status, one paragraph above.
-	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
+	//
+	// `present:"person"` is the read axis saying what this value *is* rather than
+	// how to paint it. The generated list, the description list and the native
+	// shell's resource document all read the one word, and each renderer decides
+	// what a person looks like in its own medium. A plain cell printing `sam` would
+	// look no worse — which is exactly why the declaration is governed, and why a
+	// name outside the vocabulary refuses to mount instead of quietly meaning
+	// nothing.
+	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
 
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
