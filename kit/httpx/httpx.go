@@ -294,6 +294,22 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// beside Static. See headers.go.
 	root.Use(a.headers)
 
+	// What chi itself answers when nothing matched, or matched but not for this verb.
+	//
+	// These are the refusals a browser runs into most often — a mistyped address, a
+	// bookmark left over from an earlier deployment, a form action that outlived the
+	// route it pointed at — and none of them reaches a module handler, so the answer used
+	// to be net/http's plain-text "404 page not found": a note meant for a developer,
+	// displayed in a browser window with no way onward. Through a.fail they are the same
+	// verdict as every other refusal and take the shape the client asked for, which is
+	// also what keeps a monitor seeing a problem document it can parse.
+	root.NotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.fail(w, r, http.StatusNotFound, "nothing is served at this address")
+	}))
+	root.MethodNotAllowed(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.fail(w, r, http.StatusMethodNotAllowed, "this address does not accept "+r.Method+" requests")
+	}))
+
 	// The net/http half of the chain, in order, and before any route: chi
 	// refuses a middleware added after the first one is mounted, and the huma
 	// adapter below mounts huma's own.

@@ -41,7 +41,11 @@ predict it, and a reviewer could not see it.
    introduced.
 2. `kit/httpx` gains exactly one function — `(*API).fail` — that answers a refusal the
    kernel makes for itself. Every such refusal goes through it. A second writer of problem
-   bodies in that package is a second answer to the question this ADR asks.
+   bodies in that package is a second answer to the question this ADR asks. That includes
+   the two the router decides before any middleware or handler is involved: an address
+   nothing is mounted at, and an address mounted but not for that verb. Left alone, the
+   browser got net/http's plain-text `404 page not found` — the same defect, arriving
+   through a different door, and far more often.
 3. `httpx.Options` gains one field, `Fault`. The kernel asks the client, not the route: a
    request that named `text/html` (or came from htmx, which swaps what it is given into
    the page) is offered the document; `Accept: */*` is deliberately *not* a request for a
@@ -81,6 +85,9 @@ reason telling one story.
 
 ## Consequences
 
+- A mistyped address and a stale bookmark are now the common case this handles: a person
+  who typed the wrong thing is told so, in a page with a way back, and a monitor asking the
+  same address still receives a parseable document with `"status":404`.
 - Guards and handlers stop disagreeing about what a browser sees. The defect is invisible
   in an API test suite because API tests read JSON, and it is invisible in a screenshot of
   a working page. It is caught here by asking one refusal of several kinds of client.

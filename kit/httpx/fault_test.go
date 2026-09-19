@@ -50,6 +50,9 @@ func setupFault(t *testing.T, fault httpx.Fault) (*httpx.API, *chi.Mux) {
 		OperationID: "write-widget", Method: http.MethodPost, Path: "/widgets",
 	}, httpx.Public(), ok)
 	httpx.Register(api, huma.Operation{
+		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets/quiet",
+	}, httpx.Public(), ok)
+	httpx.Register(api, huma.Operation{
 		OperationID: "explode-widget", Method: http.MethodPost, Path: "/widgets/explode",
 	}, httpx.Public(), func(context.Context, *struct{}) (*struct{}, error) {
 		panic("a handler that fell over")
@@ -202,5 +205,73 @@ func TestARendererThatDeclinesFallsBackToTheProblemDocument(t *testing.T) {
 	}
 	if got.Code != http.StatusForbidden {
 		t.Errorf("falling back changed the verdict to %d", got.Code)
+	}
+}
+
+// ask is a request with no session cookie and no body: an address typed into a browser,
+// not a form submitted from one.
+func ask(t *testing.T, h http.Handler, method, path, accept string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+host+path, nil)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w
+}
+
+// TestAMistypedAddressAnswersABrowserWithAPageAndAClientWithAValue. No module handler
+// ever sees this request: chi decided nothing matches. Before this, a browser was shown
+// net/http's plain-text "404 page not found" — a note written for a developer, which the
+// person in front of the window cannot act on and which names no way onward.
+func TestAMistypedAddressAnswersABrowserWithAPageAndAClientWithAValue(t *testing.T) {
+	_, router := setupFault(t, documentFault)
+
+	page := ask(t, router, http.MethodGet, "/no-such-address", browserAccept)
+	if page.Code != http.StatusNotFound {
+		t.Fatalf("an unknown address = %d, want 404: %s", page.Code, page.Body.String())
+	}
+	if ct := page.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("a browser at an unknown address got %s, not a page: %s", ct, page.Body.String())
+	}
+	if body := page.Body.String(); !strings.Contains(body, "refused:Not Found") ||
+		!strings.Contains(body, "nothing is served at this address") {
+		t.Errorf("the 404 page does not say which verdict it is: %s", body)
+	}
+
+	value := ask(t, router, http.MethodGet, "/no-such-address", "")
+	if value.Code != http.StatusNotFound {
+		t.Errorf("the verdict changed for a client: %d", value.Code)
+	}
+	if ct := value.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
+		t.Errorf("a client at an unknown address got %s: %s", ct, value.Body.String())
+	}
+	if !strings.Contains(value.Body.String(), `"status":404`) {
+		t.Errorf("the problem document lost its status: %s", value.Body.String())
+	}
+}
+
+// TestAFormPointedAtTheWrongVerbIsRefusedInBothShapes. A form action that outlived the
+// route it pointed at is the other refusal a mux decides alone. The verb is named, because
+// "nothing is served here" would send a person to look for a page that is actually there.
+func TestAFormPointedAtTheWrongVerbIsRefusedInBothShapes(t *testing.T) {
+	_, router := setupFault(t, documentFault)
+
+	page := ask(t, router, http.MethodPost, "/widgets/quiet", browserAccept)
+	if page.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("a POST to a GET-only address = %d, want 405: %s", page.Code, page.Body.String())
+	}
+	if body := page.Body.String(); !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") ||
+		!strings.Contains(body, "does not accept POST requests") {
+		t.Errorf("the 405 is not a page that names the verb: %s", body)
+	}
+
+	value := ask(t, router, http.MethodPost, "/widgets/quiet", "")
+	if value.Code != http.StatusMethodNotAllowed {
+		t.Errorf("the verdict changed for a client: %d", value.Code)
+	}
+	if !strings.HasPrefix(value.Header().Get("Content-Type"), "application/problem+json") {
+		t.Errorf("a client got %s: %s", value.Header().Get("Content-Type"), value.Body.String())
 	}
 }
