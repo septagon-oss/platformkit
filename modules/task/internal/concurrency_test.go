@@ -297,7 +297,12 @@ func taskIsolationSchema(t *testing.T, isolation string) (*sql.DB, *db.Conn) {
 	}
 	q := u.Query()
 	q.Set("default_transaction_isolation", isolation)
-	u.RawQuery = q.Encode()
+	// Encode writes an encoded space as "+", which a libpq-compatible DSN parser
+	// reads as a literal plus — "repeatable+read" is not an isolation level, and
+	// the server refuses the connection (SQLSTATE 22023). Percent-encode the
+	// space instead: every "+" left in the encoded query came from a space, since
+	// a "+" in the value itself is already escaped as "%2B".
+	u.RawQuery = strings.ReplaceAll(q.Encode(), "+", "%20")
 	conn, err := db.Open(t.Context(), u.String())
 	if err != nil {
 		t.Fatal(err)
