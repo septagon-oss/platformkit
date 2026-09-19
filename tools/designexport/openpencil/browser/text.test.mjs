@@ -97,28 +97,42 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     }
   }
   t.diagnostic(JSON.stringify({ accepted, refused, captureRefused }))
+  // "Accepted" below means the construction reproduced the source's geometry and its
+  // text, which is what this loop and the adapter's own gates verify. No built fill,
+  // stroke or radius is compared with the browser's computed style here; only
+  // browser/media.test.mjs makes that claim today, for Media's two error states.
   assert.deepEqual(accepted, [
     'pk-ui.component.alert/bordered', 'pk-ui.component.alert/compact', 'pk-ui.component.alert/danger',
     'pk-ui.component.alert/dismissible', 'pk-ui.component.alert/info', 'pk-ui.component.alert/success',
-    'pk-ui.component.button/as-link', 'pk-ui.component.button/danger', 'pk-ui.component.button/disabled-link',
-    'pk-ui.component.button/ghost', 'pk-ui.component.button/info', 'pk-ui.component.button/link', 'pk-ui.component.button/primary',
-    'pk-ui.component.button/secondary', 'pk-ui.component.button/success', 'pk-ui.component.button/warning', 'pk-ui.component.button/with-icon',
+    'pk-ui.component.avatar/initials', 'pk-ui.component.avatar/linked', 'pk-ui.component.avatar/sizes',
+    'pk-ui.component.avatar/unknown', 'pk-ui.component.button/as-link', 'pk-ui.component.button/danger',
+    'pk-ui.component.button/disabled-link', 'pk-ui.component.button/ghost', 'pk-ui.component.button/info',
+    'pk-ui.component.button/link', 'pk-ui.component.button/primary', 'pk-ui.component.button/secondary',
+    'pk-ui.component.button/success', 'pk-ui.component.button/warning', 'pk-ui.component.button/with-icon',
     'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form/default', 'pk-ui.component.grid/default',
     'pk-ui.component.input/bare', 'pk-ui.component.input/invalid', 'pk-ui.component.input/read-only',
-    'pk-ui.component.select/default', 'pk-ui.component.select/invalid',
-    'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
+    'pk-ui.component.media/failed', 'pk-ui.component.media/refused', 'pk-ui.component.select/default',
+    'pk-ui.component.select/invalid', 'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
     'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 84)
-  const sectionRefusals = {
+  assert.equal(refused.length, 91)
+  const namedRefusals = {
     'pk-ui.component.grid/responsive': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.heading/display': 'Native component: composition text requires one supplied actual face',
     'pk-ui.component.hero/default': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.section-header/default': 'Native component: inline composition cannot flatten a source component or non-inline child',
     'pk-ui.component.section/default': 'Native component: typed, nonopaque source composition required',
+    // Media's two error panels are the only Media state that constructs today, so the
+    // states beside them are named here: a picture needing an aspect ratio, a waiting
+    // picture with no bytes, and a refusal that delegates to the shelf.
+    'pk-ui.component.media/ready': 'Native component: source box requires a width-led border-box flex aspect ratio',
+    'pk-ui.component.media/captioned': 'Native component: source box requires a width-led border-box flex aspect ratio',
+    'pk-ui.component.media/loading': 'Native component: source members require distinct boxed element members; dormant content and text ranges need their own conversion',
+    'pk-ui.component.media/empty': 'Native component: composition text requires one supplied actual face',
+    'pk-ui.component.avatar/picture': 'Native component: composition constrained sizing requires further conversion',
   }
-  assert.deepEqual(Object.fromEntries(refused.filter(item => Object.hasOwn(sectionRefusals, item.id))
-    .map(({ id, reason }) => [id, reason])), sectionRefusals)
+  assert.deepEqual(Object.fromEntries(refused.filter(item => Object.hasOwn(namedRefusals, item.id))
+    .map(({ id, reason }) => [id, reason])), namedRefusals)
   assert.deepEqual(captureRefused, ['pk-ui.component.video/default', 'pk-ui.component.video/disabled'])
   assert.equal(browser.contexts().length, 0)
 })
