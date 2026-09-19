@@ -90,11 +90,21 @@ fmt-check: ## Fail when any file is not gofmt'd
 # relay, the request's lazy transaction, the advisory locks, the limit counters,
 # the router's per-request state. Five package guides tell a contributor to run
 # `go test -race` by hand; a claim nobody runs is not a gate, so this is the
-# target that runs them and CI is what calls it on every change. It is separate
+# target that runs them and CI calls it as a step of its own. It is separate
 # from `check` rather than inside it because -race roughly doubles the suite and a
 # local loop should not pay that to find out whether one file compiles.
+#
+# The two module packages are in the standing list rather than in one change's
+# override, because the advisory lock over a tenant's administration is shipped
+# code, not a branch: modules/auth takes it before the read that decides and
+# modules/user takes it after the subject's row lock, in the opposite order, and a
+# lock held past — or released before — the commit that needed it is invisible to
+# every other gate in this file. apps/platformkit is here because that is where the
+# two halves are composed and where the only test that can watch a write in one
+# module queue behind a write in the other lives.
 # RACE_PACKAGES overrides the list when a change reaches somewhere else.
-RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx
+RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
+	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 

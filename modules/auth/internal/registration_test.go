@@ -87,7 +87,11 @@ func TestRegistrationCreatesOnlyAnInvitedMemberAfterTheRequest(t *testing.T) {
 func TestRegistrationPreservesExistingAccountsAndIsTenantScoped(t *testing.T) {
 	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, true)
-	id := person(t, conn, "student@example.com", contracts.RoleAdmin)
+	// A member and not an administrator, and the change is the user module's
+	// floor rather than a preference: deactivating a tenant's last
+	// administrator is refused now, and what this case is about is an existing
+	// account surviving a repeat registration — any role would do.
+	id := person(t, conn, "student@example.com", contracts.RoleMember)
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		_, err := realUsers().Deactivate(ctx, tx, id)
 		return err

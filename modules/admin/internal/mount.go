@@ -1,5 +1,5 @@
 // Package internal is the shell's implementation: one chrome, one frame, the
-// five pages written by hand, the catalog, and the screens ui/screens generates
+// six pages written by hand, the catalog, and the screens ui/screens generates
 // for every resource kit/rest registered before this module was composed.
 package internal
 
@@ -29,7 +29,11 @@ type Shell struct {
 	Nav       []module.NavEntry
 	Authorize httpx.Authorizer
 	Tenants   tenantcontracts.Service
-	Token     tenancy.SystemToken
+	// Roles is the auth module's role administration, for the screen that
+	// module's nav entry names. Nil mounts no screen, and then Mount reports
+	// the entry as unserved, which is what it is.
+	Roles Roles
+	Token tenancy.SystemToken
 	// Theme is the installation's two palettes: the one thing about the look of
 	// this shell that belongs to whoever runs it. See design.Pair.
 	Theme     design.Pair
@@ -53,6 +57,8 @@ const (
 	// tenantsPath is where the switcher lives: the path the tenant module's
 	// nav entry names.
 	tenantsPath = adminRoot + "/tenant/tenants"
+	// rolesPath is the auth module's nav entry, for the same reason.
+	rolesPath = adminRoot + "/auth/roles"
 	// brand is what the shell calls itself when the tenant has no name.
 	brand = "PlatformKit"
 )
@@ -83,6 +89,9 @@ func Mount(api *httpx.API, s Shell) {
 		served = append(served, screens.Path(r, opts), screens.Path(r, opts)+"/new")
 	}
 	served = append(served, adminRoot, loginPath, healthPath, galleryPath, tenantsPath)
+	if s.Roles != nil {
+		served = append(served, rolesPath)
+	}
 	nav := page.NewNavigation(s.Nav, served, api.Required())
 	// A nav entry nothing answers is a mistake in a module's manifest, and it
 	// is reported here, once, at boot — not rendered as a disabled row that
@@ -106,7 +115,10 @@ func Mount(api *httpx.API, s Shell) {
 	for _, r := range resources {
 		screens.Mount(api, shell, opts, r)
 	}
-	pages{Shell: s, shell: shell, resources: resources}.mount(api)
+	// The catalogue as the kernel read it off every manifest, taken here
+	// because this module is composed last and it is therefore complete. The
+	// roles screen offers it as checkboxes; auth checks a write against it.
+	pages{Shell: s, shell: shell, resources: resources, declared: api.Permissions()}.mount(api)
 	mountCatalog(api, resources)
 }
 

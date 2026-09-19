@@ -19,13 +19,23 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
-// Service is the user lifecycle. It has no fields: everything a command needs
-// arrives with the transaction it is given, which is what lets one instance
-// serve a request, a job and an event handler at once.
-type Service struct{}
+// Service is the user lifecycle. Everything a command needs arrives with the
+// transaction it is given, which is what lets one instance serve a request, a
+// job and an event handler at once; the one field is the question this module
+// cannot answer for itself.
+type Service struct {
+	// administering answers which of this tenant's roles can change a role
+	// again. That answer is the auth module's table and this module must not
+	// read it, so the application supplies it. See contracts.Administration
+	// and floor.
+	administering contracts.Administration
+}
 
-// NewService returns the lifecycle commands. module.go constructs it.
-func NewService() *Service { return &Service{} }
+// NewService returns the lifecycle commands. module.go constructs it, and
+// module.go is where a composition with no Administration is refused.
+func NewService(administering contracts.Administration) *Service {
+	return &Service{administering: administering}
+}
 
 var _ contracts.Service = (*Service)(nil)
 
@@ -72,8 +82,16 @@ func (s *Service) SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 // SetRoles replaces the roles this user holds. The same set again — in any
 // order — changes nothing and publishes nothing: a retried click must not
 // appear twice in an audit of who was made an administrator.
+//
+// Taking the last administrator's roles away is refused, because afterwards
+// nobody in the tenant could grant them back. See floor.
 func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, roles []string) (*contracts.User, error) {
-	u, err := crud.Get[*contracts.User](tx, id)
+	// Locked, and not the plain read it was. The floor below decides on what
+	// this row holds today, so a concurrent write to it between the read and
+	// the update is the decision being made about a row that no longer exists
+	// in that form — and two clicks on one person's roles would also have lost
+	// one of them outright.
+	u, err := lockedUser(tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +99,11 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	was := slices.Clone([]string(u.Roles))
 	if slices.Equal(was, want) {
 		return u, nil
+	}
+	after := *u
+	after.Roles = want
+	if err := s.floor(ctx, tx, u, &after); err != nil {
+		return nil, err
 	}
 	u.Roles = want
 	if err := crud.Update(ctx, tx, u, "roles", "updated_at"); err != nil {
@@ -142,6 +165,9 @@ func (s *Service) ByHandle(_ context.Context, tx db.Tx[db.Tenant], handle string
 }
 
 // Deactivate stops the user signing in. Deactivating them again changes nothing.
+//
+// Deactivating the last administrator is refused, because afterwards nobody in
+// the tenant could activate anybody. See floor.
 func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
 	u, err := lockedUser(tx, id)
 	if err != nil {
@@ -149,6 +175,11 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	}
 	if u.Status == contracts.StatusInactive {
 		return u, nil
+	}
+	after := *u
+	after.Status = contracts.StatusInactive
+	if err := s.floor(ctx, tx, u, &after); err != nil {
+		return nil, err
 	}
 	u.Status = contracts.StatusInactive
 	if err := crud.Update(ctx, tx, u, "status", "updated_at"); err != nil {

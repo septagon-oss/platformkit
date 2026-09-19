@@ -23,16 +23,65 @@ var (
 	errRollback = errors.New("rolled back on purpose")
 )
 
+// administering is this package's role system: one name, the same one the
+// conformance suite and the fake use. The real answer is the auth module's
+// table (auth.AdministeringRoles), which this schema does not have — the user
+// module's migrations own users and nothing else — so the harness answers
+// directly, through the one adapter the module ships for answering without a
+// roles table.
+func administering(context.Context, db.Tx[db.Tenant]) ([]string, error) {
+	return []string{usertest.Administering}, nil
+}
+
+// newService is the service every case here is wired with: the floor included,
+// because a test against a service with no floor would not be a test of the
+// service the application composes.
+func newService() *internal.Service {
+	return internal.NewService(&contracts.AdministrationFunc{Ask: administering})
+}
+
 // TestServiceConforms runs the same suite the fake runs, against the real
 // service, a real Postgres and a real tenant transaction.
 func TestServiceConforms(t *testing.T) {
 	usertest.RunService(t, func(t *testing.T, run func(usertest.Fixture)) {
 		_, conn := dbtest.Schema(t, user.Migrations)
-		svc := internal.NewService()
+		svc := newService()
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(usertest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
 				Published: func() []string { return outbox(t, tx) },
+				// What rest.Spec.deleteRow does, in the order it does it: the
+				// row read and locked, the soft delete, then the hook that
+				// carries the floor. The suite drives the same door the
+				// generated route drives.
+				Delete: func(id uuid.UUID) error {
+					// The savepoint is what the request would be. kit/rest
+					// deletes the row and then runs the hook, and a refusing
+					// hook is an error out of the handler, which rolls the
+					// request's transaction back; a suite that runs every case
+					// in one transaction has to undo the write itself or the
+					// row stays deleted after a refusal that the product would
+					// have unwound.
+					if err := tx.DB().SavePoint("beforedelete").Error; err != nil {
+						return err
+					}
+					err := func() error {
+						u, err := crud.GetForUpdate[*contracts.User](tx, id)
+						if err != nil {
+							return err
+						}
+						if err := crud.Delete[*contracts.User](tx, id, true); err != nil {
+							return err
+						}
+						return svc.RefuseLastAdministrator(ctx, tx, u)
+					}()
+					if err != nil {
+						if back := tx.DB().RollbackTo("beforedelete").Error; back != nil {
+							return back
+						}
+					}
+					return err
+				},
 			})
 			return errRollback
 		})
@@ -58,7 +107,7 @@ func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 // each protected by its own tenant's policy, and neither can see the other.
 func TestOneAddressPerTenantAndNotOnePerInstallation(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations)
-	svc := internal.NewService()
+	svc := newService()
 
 	ids := map[string]uuid.UUID{}
 	for _, tenant := range []tenancy.Tenant{acme, globex} {
@@ -103,7 +152,7 @@ func TestOneAddressPerTenantAndNotOnePerInstallation(t *testing.T) {
 // anybody's password, so it is pinned here rather than assumed.
 func TestAPasswordIsNeverStoredAndTheHashCarriesItsParameters(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations)
-	svc := internal.NewService()
+	svc := newService()
 	const password = "correct horse battery staple"
 
 	var id uuid.UUID
@@ -138,7 +187,7 @@ func TestAPasswordIsNeverStoredAndTheHashCarriesItsParameters(t *testing.T) {
 // administer, which belongs to no tenant.
 func TestProvisionIsTheBootstrapsDoorAndNobodyElses(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations)
-	svc := internal.NewService()
+	svc := newService()
 
 	var id uuid.UUID
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -186,7 +235,7 @@ func TestProvisionIsTheBootstrapsDoorAndNobodyElses(t *testing.T) {
 // watch a rename against another tenant holding the same name.
 func TestAHandleIsPerTenantAndRenameableWithoutMovingThePerson(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations)
-	svc := internal.NewService()
+	svc := newService()
 
 	var acmeID, globexID, probeID uuid.UUID
 	asAcme := func(want string, fn func(context.Context, db.Tx[db.Tenant]) error) {

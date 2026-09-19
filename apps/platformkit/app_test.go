@@ -39,6 +39,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // The two hosts the tests are served at. Two, because the claim worth proving
@@ -590,6 +591,79 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	// One route kind is only worth having if something declares it.
 	if operators == 0 {
 		t.Error("no route declares an operator permission; the control plane is guarded by an ordinary one")
+	}
+}
+
+// knownUnservedNav is the debt this gate is adopted against: two nav entries
+// this repository declares and does not serve yet, each with the reason it is
+// not a line of work this gate can force.
+//
+// Neither is a mistake to delete — both are promised by their own module's
+// README — and neither can be served the way the roles screen was. The real
+// blocker is the same for both and is not in either module: there is no
+// read-only generated screen. ui/screens.Mount registers create, edit and
+// delete unconditionally and takes Resource.WriteAuth(), and httpx.Permission("")
+// panics at the mount site, so a module whose rows are read-only cannot
+// register a resource and get its list and detail from the generator. Giving
+// httpx.Resource and ui/screens a read-only mode serves both of these from the
+// generator and takes this map with it; a seventh and eighth hand-written page
+// in the shell would not.
+//
+// A name is removed from this map by serving the entry, never by moving an
+// entry into it. The gate below refuses a stale name for exactly that reason.
+var knownUnservedNav = map[string]string{
+	"/admin/file/files":   "modules/file declares it; no read-only generated screen exists yet",
+	"/admin/audit/events": "modules/audit declares it; no read-only generated screen exists yet",
+}
+
+// TestEveryNavEntryLeadsSomewhere is the same question the shell asks at boot,
+// asked where a failure stops a release rather than scrolling past in a log.
+//
+// modules/admin logs one warning per unserved entry and carries on, which is
+// right for a running installation — a broken sidebar link must not be an
+// outage — and useless as a gate: the entry that names a screen nobody wrote
+// ships, and every operator sees a menu item that leads to a 404. That is how
+// /admin/auth/roles survived from the commit that introduced it until a
+// consumer's own gate found it.
+//
+// The composition is mounted in its own order, the shell last, so api.Recorded()
+// holds every GET the application answers, generated screens and hand-written
+// pages alike; page.Navigation decides the rest, so this gate and the shell
+// cannot disagree about what "served" means.
+func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
+	_, cfg := configure(t)
+	_, conn := dbtest.Schema(t)
+	c := compose(cfg)
+	api, _ := httpx.New(httpx.Options{
+		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
+		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
+	})
+	var entries []module.NavEntry
+	for _, m := range c.modules {
+		entries = append(entries, m.Nav...)
+		if m.Routes != nil {
+			m.Routes(api)
+		}
+	}
+	if len(entries) == 0 {
+		t.Fatal("no module declares a nav entry; this gate would pass an empty application")
+	}
+	nav := page.NewNavigation(entries, page.Served(api.Recorded()), api.Required())
+	unserved := map[string]bool{}
+	for _, e := range nav.Unserved() {
+		unserved[e.Path] = true
+		if _, known := knownUnservedNav[e.Path]; !known {
+			t.Errorf("the nav entry %q leads to %s, which no route serves: either serve the screen or drop the entry",
+				e.Label, e.Path)
+		}
+	}
+	// And the debt shrinks only by being paid. A path that is served again is
+	// removed from the map here, in the change that served it, so the list
+	// cannot quietly outlive the reason for it.
+	for path, why := range knownUnservedNav {
+		if !unserved[path] {
+			t.Errorf("%s is served now (%s): remove it from knownUnservedNav", path, why)
+		}
 	}
 }
 

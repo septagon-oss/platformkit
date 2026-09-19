@@ -60,9 +60,16 @@ type composition struct {
 
 // compose constructs complete dependencies in order: users, tenants,
 // notification delivery, then authentication. Role provisioning is independent
-// of the authentication service, so the graph needs no late binding.
+// of the authentication service, so the graph needs no late binding — the user
+// module's floor below included, because it asks the roles table a question
+// rather than the authentication service.
 func compose(cfg config.Config) composition {
-	users, userModule := user.Module(user.Deps{})
+	// auth.AdministeringRoles is what makes "the last person who can still
+	// administer this tenant" answerable at all: the user module owns who holds
+	// a role, the auth module owns what a role grants, and neither reads the
+	// other's rows. This is where the two meet, and the only line in this
+	// application that decides administration is made of roles.
+	users, userModule := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
 
 	tenants, tenantModule := tenant.Module(tenant.Deps{
 		OnCreate: []tenantcontracts.Hook{seedRoles},
@@ -149,7 +156,7 @@ func compose(cfg config.Config) composition {
 	// that changes when they do: everything above the tokens is written in
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
-		Modules: mods, Authorize: auths, Tenants: tenants, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
+		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
 		Messages: page.FromCatalog(admin.Messages()), Locale: loginLocale}))
 
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,

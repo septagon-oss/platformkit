@@ -226,9 +226,11 @@ func (f *Fake) Roles(_ context.Context, _ db.Tx[db.Tenant]) ([]*contracts.Role, 
 	return out, nil
 }
 
-// SetRole mirrors internal.Service.SetRole, both refusals included: a
-// permission nothing declares and an operator permission outside the operator's
-// own tenant are what the route promises to refuse, so the fake refuses them.
+// SetRole mirrors internal.Service.SetRole, all three refusals included: a
+// permission nothing declares, an operator permission outside the operator's
+// own tenant, and the write that would leave the tenant with no role able to
+// change a role again. They are what the route promises to refuse, so the fake
+// refuses them.
 func (f *Fake) SetRole(_ context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
 	name, err := contracts.ValidRoleName(name)
 	if err != nil {
@@ -242,8 +244,22 @@ func (f *Fake) SetRole(_ context.Context, tx db.Tx[db.Tenant], name string, perm
 	f.mu.Lock()
 	was, existed := f.roles[name]
 	same := existed && slices.Equal([]string(was), []string(want))
-	f.roles[name] = want
+	// The third refusal, and the same rule: the last role that can administer
+	// roles cannot stop. The closure reads the map under the lock this holds.
+	err = contracts.CheckedAdministration(name, was, want, func() ([]*contracts.Role, error) {
+		others := make([]*contracts.Role, 0, len(f.roles))
+		for other, grants := range f.roles {
+			others = append(others, &contracts.Role{Name: other, Grants: grants})
+		}
+		return others, nil
+	})
+	if err == nil {
+		f.roles[name] = want
+	}
 	f.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	if !same {
 		f.record(contracts.EventRoleSet)
 	}
