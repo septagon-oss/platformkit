@@ -37,9 +37,9 @@ func ValidRoleName(name string) (string, error) {
 // grants it.
 //
 // After that write nobody in the tenant can change a role again — not through
-// an admin screen and not through PUT /api/v1/auth/roles/{name}. An operator
-// cannot sign in and repair it either: a session does not cross into a
-// customer's tenant.
+// an admin screen and not through PUT /api/v1/auth/roles/{name}. Signing in as
+// the operator does not undo it either — an ordinary session does not cross
+// tenants; the separately authorized cross-tenant invite route below does.
 //
 // One supported way back in survives, and it is worth being exact about what it
 // recovers. POST /api/v1/tenant/tenants/{id}/invite runs in a system
@@ -72,16 +72,20 @@ func ValidRoleName(name string) (string, error) {
 // that one asks whether a person still holds a role that does. Somebody who can
 // sign in holds a role that grants role:manage — the property both are for — is
 // asked by neither. Two sequences reach a locked-out tenant with every
-// individual write permitted and no concurrency at all, and both have been run:
+// individual write permitted and no concurrency at all. Only the first is a case
+// in this repository; the second is described here and has no test behind it:
 //
-//   - One write. Create a role granting role:manage and give it to nobody:
-//     nothing is taken away, so both floors allow it. Then empty the role
+//   - One write, and the tested one. apps.platformkit's
+//     TestTheTwoFloorsStillDoNotComposeIntoOneInvariant asserts it and fails the
+//     day the hole closes. Create a role granting role:manage and give it to
+//     nobody: nothing is taken away, so both floors allow it. Then empty the role
 //     everybody actually holds. This check sees the new role still granting and
 //     allows. Everybody now holds a role that grants nothing.
-//   - Two writes, in either order. ada holds admin and grace holds ops, both
-//     granting role:manage. Stripping ada's roles passes the user module's
-//     floor because grace is still there; emptying ops passes this one because
-//     admin still grants. Nobody can administer.
+//   - Two writes, in either order, and no case. Each of two people holds a
+//     different administering role. Stripping the first one's roles passes the
+//     user module's floor because the second is still there; emptying that second
+//     role passes this one because the first role still grants. Nobody can
+//     administer.
 //
 // Serializing the two does not help and was never meant to. The advisory lock
 // both modules take — see internal.administrationLock — stops two concurrent
