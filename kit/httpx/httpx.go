@@ -146,6 +146,16 @@ type Options struct {
 	// must not read as "you are not signed in".
 	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error)
 
+	// Fault renders a refusal as a document, for a request that came from a browser
+	// rather than a client. It is here rather than inside the kernel because the kernel
+	// knows the verdict and nothing about chrome, stylesheets or where "back" is; the
+	// application registers ui/page's renderer (or its own) and every guard in this
+	// package then answers a person with a page instead of a JSON body.
+	//
+	// Nil — the default — keeps the previous behaviour exactly: every kernel refusal is
+	// an RFC 9457 problem+json document, including for a browser navigation.
+	Fault Fault
+
 	// Log receives the reason behind every denial and every rolled-back
 	// transaction. Defaults to slog.Default().
 	Log *slog.Logger

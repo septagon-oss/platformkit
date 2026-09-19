@@ -126,7 +126,7 @@ func (a *API) respond(next http.Handler) http.Handler {
 				a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: handler panicked",
 					"method", r.Method, "path", r.URL.Path, "panic", v, "stack", string(debug.Stack()))
 				if b.reset() {
-					writeProblem(b, http.StatusInternalServerError, requestIDFrom(r.Context()), "")
+					a.fail(b, r, http.StatusInternalServerError, "")
 				}
 			}
 			b.send()
@@ -421,7 +421,7 @@ func (a *API) csrf(next http.Handler) http.Handler {
 		}
 		a.rlog(r.Context()).InfoContext(r.Context(), "httpx: cross-site write refused",
 			"method", r.Method, "path", r.URL.Path, "site", r.Header.Get("Sec-Fetch-Site"), "origin", r.Header.Get("Origin"))
-		writeProblem(w, http.StatusForbidden, requestIDFrom(r.Context()),
+		a.fail(w, r, http.StatusForbidden,
 			"csrf: this request carries a session cookie and came from another site")
 	})
 }

@@ -114,14 +114,7 @@ func startApp(args []string) error {
 		return err
 	}
 
-	a, err := app.New(ctx, cfg, c.modules, app.Options{
-		Tenants:      c.tenants,
-		Authorize:    c.auth,
-		Entitle:      c.plans,
-		Authenticate: c.auth.Authenticate,
-		Role:         app.All,
-		Transports:   transports(),
-	})
+	a, err := app.New(ctx, cfg, c.modules, appOptions(c, app.All))
 	if err != nil {
 		return err
 	}

@@ -64,6 +64,17 @@ type Options struct {
 	Authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error)
 	Log          *slog.Logger
 
+	// Fault renders a kernel refusal as a document, for the client that came to be
+	// looked at rather than to read a value. page.FaultHandler is the implementation for
+	// an application with a shell; nil keeps every kernel refusal as problem+json, which
+	// is what an application without a shell wants and what every application did before
+	// the field existed.
+	//
+	// It is supplied here rather than composed inside kit/app because a failure page is
+	// chrome — brand, stylesheet, where "back" goes — and chrome is ui, which kit may not
+	// import. The application that owns the look owns the failure page too.
+	Fault httpx.Fault
+
 	// Role defaults to All.
 	Role Role
 
@@ -314,6 +325,7 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		Authorize:    a.opts.Authorize,
 		Entitle:      a.opts.Entitle,
 		Authenticate: a.opts.Authenticate,
+		Fault:        a.opts.Fault,
 		Log:          a.log,
 		// The ceiling on the one route that reads its own request. Every other
 		// body is bounded at httpx.MaxBodyBytes, and a schema'd one is bounded

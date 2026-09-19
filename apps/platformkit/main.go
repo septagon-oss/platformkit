@@ -78,14 +78,7 @@ func run(args []string) error {
 		// and the ones asking for mail are logged instead of sent.
 		slog.WarnContext(ctx, "app: mail is not configured, so notifications marked for email are recorded and not sent; set mail.host")
 	}
-	a, err := app.New(ctx, cfg, c.modules, app.Options{
-		Tenants:      c.tenants,
-		Authorize:    c.auth,
-		Entitle:      c.plans,
-		Authenticate: c.auth.Authenticate,
-		Role:         app.Role(*role),
-		Transports:   transports(),
-	})
+	a, err := app.New(ctx, cfg, c.modules, appOptions(c, app.Role(*role)))
 	if err != nil {
 		return err
 	}
