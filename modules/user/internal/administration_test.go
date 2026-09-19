@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -119,6 +120,149 @@ func blockedOnAdministration(t *testing.T, admin *sql.DB, tenant uuid.UUID) {
 			t.Fatalf("nothing is queued for %q; the second write was not blocked by the first", key)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// administrationOffered asks, from a session of the case's own, whether the
+// agreed administration lock for one tenant can be taken right now. The try form
+// answers instead of waiting, which is what makes a claim about the lock's scope
+// testable at all: a plain pg_advisory_xact_lock would park the case on a lock it
+// is only asking about.
+//
+// It spells the key from the tenant rather than pinning the literal, because the
+// question here is which tenants share a key. That the key is the one the two
+// modules agreed on is TestTheAdministrationLockIsTheAgreedKey's job, and that
+// case writes the literal out on purpose.
+func administrationOffered(t *testing.T, admin *sql.DB, tenant tenancy.Tenant) bool {
+	t.Helper()
+	var offered bool
+	const q = `SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))`
+	if err := admin.QueryRowContext(t.Context(), q, "administration/"+tenant.ID.String()).Scan(&offered); err != nil {
+		t.Fatalf("try the administration lock for %s: %v", tenant.Slug, err)
+	}
+	return offered
+}
+
+// TestTheAdministrationLockIsPerTenantAndNotPerInstallation is the scope the key
+// is keyed on: one tenant's write holds one tenant's key.
+//
+// TestTheAdministrationLockIsTheAgreedKey proves the key's spelling, and it would
+// pass unchanged for a lock taken once per installation — a constant key still
+// matches a constant key. That is the difference between "these two writes
+// serialize" and "nobody else's administration does too", and internal.floor
+// claims the second: one customer's administrators do not queue behind another's.
+// So this holds acme's key open in one session and asks the question of both
+// tenants from a third: acme's must be refused, globex's must be free.
+func TestTheAdministrationLockIsPerTenantAndNotPerInstallation(t *testing.T) {
+	conn, ctx, admin := tenantWatched(t)
+	svc := newService()
+	ada := administratorIn(t, ctx, conn, svc, "ada@acme.example.com")
+	administratorIn(t, ctx, conn, svc, "grace@acme.example.com")
+
+	held, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	// Releasing is cleanup, not the last statement: every assertion below may
+	// fail, and a case that returns with acme's write still open leaves a
+	// transaction holding a key while dbtest tries to drop the schema out from
+	// under it. One release for both paths — the happy end and the cleanup — or
+	// the second close takes the test binary down. The buffer on done is what
+	// lets the goroutine finish either way.
+	letGo := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(letGo)
+	go func() {
+		done <- db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			// Legitimate on its own — grace is left behind — and it keeps the
+			// tenant's key open for as long as a request in flight would.
+			if _, err := svc.SetRoles(ctx, tx, ada, nil); err != nil {
+				return err
+			}
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+
+	// Either the write is open and holding, or it never got there and the case
+	// says so instead of waiting on a close that will not come.
+	select {
+	case <-held:
+	case err := <-done:
+		t.Fatalf("the write meant to hold acme's key = %v, want it allowed and still open", err)
+	}
+
+	if administrationOffered(t, admin, acme) {
+		t.Error("a second session was granted the key this module holds for acme")
+	}
+	if !administrationOffered(t, admin, globex) {
+		t.Error("acme's write also holds another tenant's administration key: the lock is per " +
+			"installation, so every customer queues behind every other customer's admin writes")
+	}
+
+	letGo()
+	if err := <-done; err != nil {
+		t.Fatalf("the holding write: %v", err)
+	}
+	if got := administratorsIn(t, ctx, conn); len(got) != 1 {
+		t.Errorf("%v can still administer acme, want the one this case left", got)
+	}
+}
+
+// TestAnotherTenantsAdministratorDoesNotRescueThisOne is the floor's read of
+// "somebody else who could administer this tenant", read across two tenants.
+//
+// otherAdministrators is a hand-written Where on the transaction's DB rather than
+// a crud read, so nothing about it inherits the tenant scoping the rest of the
+// service gets for free: whether row-level security confines it is what this
+// asserts. A reader that crossed tenants would open all three doors for every
+// customer at once, and every other case in this file uses one tenant, so none of
+// them could see it.
+func TestAnotherTenantsAdministratorDoesNotRescueThisOne(t *testing.T) {
+	_, conn := dbtest.Schema(t, user.Migrations)
+
+	// loseOne appoints one active administrator in one tenant and then tries to
+	// take that same person's roles away: the answer is the floor's verdict.
+	loseOne := func(tenant tenancy.Tenant, email string) {
+		t.Helper()
+		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), tenant), conn)
+		svc := newService()
+		id := administratorIn(t, ctx, conn, svc, email)
+		err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			_, err := svc.SetRoles(ctx, tx, id, nil)
+			return err
+		})
+		if !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("%s: stripping its only administrator = %v, want ErrInvalid", tenant.Slug, err)
+		}
+		if got := administratorsIn(t, ctx, conn); len(got) != 1 {
+			t.Errorf("%s keeps %v after a refusal, want the one it had: the refusal wrote something",
+				tenant.Slug, got)
+		}
+	}
+
+	// globex has an active administering person of its own and refuses to lose
+	// them, so the floor is not hard-wired to the tenant its own cases use.
+	loseOne(globex, "boss@globex.example.com")
+	// And acme still refuses with that person sitting in another tenant's rows:
+	// globex's administrator is not readable as acme's backup.
+	loseOne(acme, "ada@acme.example.com")
+
+	// The control that makes those two refusals mean something. With a second
+	// active administering person in the SAME tenant the same write is allowed,
+	// so "the floor refused" is not equally true of a read that could never find
+	// anybody. It also says the read finds a same-tenant holder when one exists,
+	// which is the half the refusals above depend on.
+	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), globex), conn)
+	svc := newService()
+	second := administratorIn(t, ctx, conn, svc, "deputy@globex.example.com")
+	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		_, err := svc.SetRoles(ctx, tx, second, nil)
+		return err
+	}); err != nil {
+		t.Errorf("globex: one of two active administrators stood down = %v, want it allowed: "+
+			"the floor cannot see a same-tenant administrator either", err)
+	}
+	if got := administratorsIn(t, ctx, conn); len(got) != 1 {
+		t.Errorf("globex keeps %v administering people, want the one left standing", got)
 	}
 }
 
