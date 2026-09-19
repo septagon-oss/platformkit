@@ -131,6 +131,21 @@ had never run outside a contributor's shell. ci.yml now runs it after `make chec
 and this change widens `RACE_PACKAGES` to `./modules/auth/internal/...` and
 `./modules/user/internal/...` beside the defaults, because that is where the advisory
 locks above live.
+
+Two direct dependencies moved, and one test helper had to be told why. `dave/dst` goes
+to v0.28.0 and `jackc/pgx/v5` to v5.11.0, each on the requirement line Dependabot
+proposed; the one graph move beyond them is dst's own `dave/jennifer` 1.5.0 → 1.7.1,
+which `go.sum` carries and nothing in `./...` links. Nothing unrelated came with them.
+pgx 5.11 rewrote its connection-string
+parser to match libpq, which reads `+` as a literal, and `modules/task`'s isolation
+DSN was built with `url.Values.Encode`, which writes an encoded space as `+` — so
+all 34 `TestConcurrentTaskCommands` subtests refused to connect, asking PostgreSQL
+for an isolation level called `repeatable+read`. Percent-encoding the space is
+correct on both pgx versions, so that is a repair here rather than something the
+bump has to work around. What could reach a consumer is dst's own floor: it moved to
+`go 1.26.0`, which this module clears and a pinning module on an older toolchain
+would not.
+
 ## [1.1.1] - 2026-09-18
 
 A tooling patch. No exported API moved and no shipped behaviour moved: the diff from
