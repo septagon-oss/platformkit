@@ -8,14 +8,15 @@
 // subscriptions, schedules the periodic jobs and answers the two probes; all
 // does both in one process. The order is written here, once, in the order it
 // happens — which is the whole argument of docs/adr/0002: a startup sequence
-// that is read rather than derived.
+// that is read rather than derived. Run owns the listener it serves on; Start
+// hands the same sequence, up to the point of listening, to an application that
+// owns a listener of its own.
 package app
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -226,43 +227,27 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
 }
 
-// Run migrates, then serves or works or both, and returns when ctx is done.
+// Run migrates, then serves or works or both, and returns when ctx is done. It is
+// Start, whichever halves this process's role names, and Close; a caller that owns
+// its own listener uses those parts directly instead. See lifecycle.go.
 func (a *App) Run(ctx context.Context) error {
-	if err := a.migrate(ctx); err != nil {
-		return err
-	}
-	conn, err := a.openConn(ctx)
+	rt, err := a.Start(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	// Start opened the transport the role names, so nothing listens until a broker
+	// that is down has already refused this boot; Close releases both halves.
+	defer rt.Close()
 
-	// The gates run in every role, and the router they produce is discarded by
-	// the roles that do not serve. A worker that skipped them would deploy a
-	// composition the web role refuses — the same image, the same modules, two
-	// answers to "will this start?" — and the rollout would look half healthy.
-	// The cost is building an API nobody mounts, which is a few milliseconds.
-	router, err := a.buildAPI(ctx, conn)
-	if err != nil {
-		return err
-	}
 	if a.opts.Role == Web {
-		return a.serve(ctx, router)
-	}
-
-	transport, err := a.transport()
-	if err != nil {
-		return err
-	}
-	if closer, ok := transport.(io.Closer); ok {
-		defer closer.Close()
+		return a.serve(ctx, rt.handler)
 	}
 	if a.opts.Role == Worker {
-		return a.work(ctx, conn, transport, a.probes(conn))
+		return a.work(ctx, rt.conn, rt.transport, rt.handler)
 	}
 	// One process, both halves. The web half owns the listener, so the worker
 	// half is given no handler of its own.
-	return a.both(ctx, conn, transport, router)
+	return a.both(ctx, rt.conn, rt.transport, rt.handler)
 }
 
 // migrate applies the ledger as the owner role. Every role does, worker
@@ -278,10 +263,12 @@ func (a *App) openConn(ctx context.Context) (*db.Conn, error) {
 	return db.OpenWithPool(ctx, a.cfg.Database.URL, databasePool(a.cfg.Database))
 }
 
-// transport is the event transport this role uses: the injected one, or the
-// one the application's constructor for the selected mode builds. New has
-// already refused a missing constructor, so the second error here is the
-// constructor's own — a broker that cannot be reached.
+// transport is the event transport this role uses: the injected one, or the one
+// the application's constructor for the selected mode builds. New has already
+// refused a missing constructor, so the errors here are the constructor's own — a
+// broker that cannot be reached, or one that answered with nothing at all. The two
+// refusals below name the option the application owns, in the same words
+// Transports.constructor uses for a constructor that is missing.
 func (a *App) transport() (events.Transport, error) {
 	if a.opts.Transport != nil {
 		return a.opts.Transport, nil
@@ -294,7 +281,22 @@ func (a *App) transport() (events.Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	return build(a.cfg.NATS)
+	transport, err := build(a.cfg.NATS)
+	if err != nil {
+		return nil, err
+	}
+	// A constructor that returns (nil, nil) has not supplied a transport, it has
+	// reported that it did. Nothing downstream recovers from that: the worker half
+	// would be a scheduler handing outbox rows to a nil interface, and the caller of
+	// Start would hold a Runtime whose work half cannot work. So it is refused at the
+	// boot, where the connection comes back, rather than at the first tick.
+	if transport == nil {
+		if broker {
+			return nil, errors.New("app: nats.transport selects jetstream and Options.Transports.JetStream answered with no transport and no error")
+		}
+		return nil, errors.New("app: nats.transport selects memory and Options.Transports.Memory answered with no transport and no error")
+	}
+	return transport, nil
 }
 
 func useJetStream(mode string, role Role) (bool, error) {

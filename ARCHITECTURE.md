@@ -64,6 +64,15 @@ versioned consumption without the application runtime, and the weekly
 because a check that lives in a guide runs when somebody remembers. Neither
 proves scale or adoption by an external product.
 
+Product value tiers are a different axis from package boundaries and are not a
+layer described here: [ADR 0016](docs/adr/0016-value-tiers-are-acceptance-levels.md)
+(accepted 2026-09-19) fixes T1 Capture through T5 Assure as the acceptance
+evidence a product must produce for itself — not a package layout, a billing
+plan or an implemented capability — and separates the dependency direction those
+positions aim at from what the package gate above enforces, which is a recorded
+subset. The record qualifies no application: naming a tier authorizes no package
+and claims no deployment, and a product reaches a tier with its own evidence.
+
 ## Start at the composition
 
 [apps/platformkit/modules.go](apps/platformkit/modules.go) is an ordered list
@@ -566,6 +575,20 @@ configuration directory.
 The reference binary supports `--role web|worker|all`. Those roles do not make
 every deployment topology safe: shared storage, schema compatibility, migration
 ownership and provider behavior need environment-specific verification.
+
+`Run` takes the address it serves on, so one process holds one composition per
+address. [kit/app](kit/app/app.go) also exports `Start`: the same migration,
+connection and boot gates, handing back a `Runtime` — its `Handler`, whose surface
+is the whole API for `web` and `all` and the two probes for `worker`, its `Work`
+half and its release — for an application that owns a listener of its own. Which
+host reaches which composition stays the application's decision above each
+handler: the kernel gains no registry, host list or second configuration namespace
+from the seam, and each handler carries its own routes, asset prefixes and theme
+because it is a separate router. That decision is therefore the caller's to make and
+to make correctly: a started composition answers a host it was not composed for, and
+only a route that must resolve a tenant refuses such a request — a public route and
+the static tree answer with that composition's own page and own stylesheet. The
+seam separates routers, not hosts.
 
 [kit/httpx](kit/httpx/) sets response security headers and a request-nonce
 content security policy. Inline style attributes remain an explicit allowance.
