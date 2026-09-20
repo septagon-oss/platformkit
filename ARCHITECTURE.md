@@ -82,15 +82,35 @@ dependency types; composition tests check required values and selected modules.
 
 The same composition can also be read as data. `platformkit describe` prints
 [kit/app.Describe](kit/app/describe.go)'s projection of the values `app.New`
-checked: each module's permissions, events, subscriptions, jobs, navigation,
-migration files and adopted history, the routes it registered with the
-authorization each declares, and the resources the generated screens are built
-from. [apps/platformkit/testdata/composition.json](apps/platformkit/testdata/composition.json)
+checked: each module's permissions, events with the JSON Schema of each declared
+payload, subscriptions, jobs, navigation, migration files and adopted history, the
+routes it registered with the authorization each declares, and the resources the
+generated screens are built from. [apps/platformkit/testdata/composition.json](apps/platformkit/testdata/composition.json)
 is that document for the reference application, kept honest by
 `TestDescribeMatchesTheCommittedComposition`. It is a projection of the typed
 composition and not a registry: nothing reads it to decide anything at runtime,
 and no manifest field exists to satisfy it. It proves what is declared and how
 it is wired, not what the running application does.
+
+`describe --format` picks which of three readings of that description to print.
+`json` is the description itself. `asyncapi` is
+[kit/app/asyncapi.go](kit/app/asyncapi.go)'s AsyncAPI 3.0 document: one channel per
+event at the `platformkit.<name>` subject the NATS provider publishes on, one message
+per event whose payload is the CloudEvents envelope with its `data` pinned to the
+declared payload schema, a send operation per emitting module and a receive per
+subscription, and the broker's host when the selected transport is JetStream. An event
+whose module declared no payload type is published with `data` left open, which is the
+document admitting it knows the name only. `backstage` is
+[kit/app/backstage.go](kit/app/backstage.go)'s catalog descriptors: a Component per
+module that depends on the modules whose events it subscribes to and provides
+`api:<module>-events` when it emits anything and `api:<module>-http` when it registers
+routes, each definition a reference to a document rather than a copy of one. The
+last two are for readers outside this repository — an event bridge, a schema registry, a
+service catalog — and they are projections with no runtime effect, in the same sense as
+the description: nothing serves them, `describe` prints them and exits, and no manifest
+field exists to satisfy them. What a module publishes is one manifest field, `Payloads`,
+so all three can say what an event contains; [the events guide](kit/events/README.md#declared-payloads)
+owns that field's rule.
 
 Tenant creation uses [auth.SeedRoles](modules/auth/module.go) inside its existing
 transaction. Provisioning is independent of the authentication service, so

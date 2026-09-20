@@ -29,11 +29,39 @@ import (
 // away.
 const goldenComposition = "testdata/composition.json"
 
+// goldenCatalog is the same composition as Backstage descriptors — the system,
+// the components and the APIs — and it moves for the same reasons and only those.
+const goldenCatalog = "testdata/catalog-info.yaml"
+
 func TestDescribeMatchesTheCommittedComposition(t *testing.T) {
+	d := describedComposition(t)
+	out, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		t.Fatalf("encode the description: %v", err)
+	}
+	checkGolden(t, goldenComposition, append(out, '\n'))
+}
+
+// TestBackstageMatchesTheCommittedCatalog is the same claim about the same
+// composition in the catalog's format: which components exist, which of them
+// depend on which, and which APIs each provides. A subscription added somewhere
+// else in the composition has to show up here as an edge somebody reviewed.
+func TestBackstageMatchesTheCommittedCatalog(t *testing.T) {
+	raw, err := app.Backstage(describedComposition(t))
+	if err != nil {
+		t.Fatalf("Backstage: %v", err)
+	}
+	checkGolden(t, goldenCatalog, raw)
+}
+
+// describedComposition is the reference application's description, read back
+// through the boot gates Run runs. The connection is the one httpx.New insists
+// on, on a schema of this test's own: Describe issues no query against it, and
+// migrating is what makes the schema a real application's rather than an empty
+// one.
+func describedComposition(t *testing.T) app.Description {
+	t.Helper()
 	_, cfg := configure(t)
-	// The connection is the one httpx.New insists on, on a schema of this test's
-	// own. Describe issues no query against it; migrating is what makes the
-	// schema a real application's rather than an empty one.
 	_, conn := dbtest.Schema(t)
 
 	c := compose(cfg)
@@ -41,31 +69,33 @@ func TestDescribeMatchesTheCommittedComposition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("app.New: %v", err)
 	}
-	got, err := a.Describe(t.Context(), conn)
+	d, err := a.Describe(t.Context(), conn)
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
-	out, err := json.MarshalIndent(got, "", "  ")
-	if err != nil {
-		t.Fatalf("encode the description: %v", err)
-	}
-	out = append(out, '\n')
+	return d
+}
 
+// checkGolden compares what the composition just produced with what is committed,
+// and rewrites the file when PLATFORMKIT_UPDATE_GOLDEN says to. It is the same
+// bargain for a JSON description and a YAML stream: bytes, not parsed equality,
+// because a file nobody can diff is a file nobody reviews.
+func checkGolden(t *testing.T, path string, got []byte) {
+	t.Helper()
 	if os.Getenv("PLATFORMKIT_UPDATE_GOLDEN") == "1" {
-		if err := os.WriteFile(goldenComposition, out, 0o644); err != nil {
-			t.Fatalf("write %s: %v", goldenComposition, err)
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
 		}
-		t.Logf("rewrote %s", goldenComposition)
+		t.Logf("rewrote %s", path)
 		return
 	}
-
-	want, err := os.ReadFile(goldenComposition)
+	want, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read %s: %v; regenerate it with PLATFORMKIT_UPDATE_GOLDEN=1", goldenComposition, err)
+		t.Fatalf("read %s: %v; regenerate it with PLATFORMKIT_UPDATE_GOLDEN=1", path, err)
 	}
-	if !bytes.Equal(out, want) {
+	if !bytes.Equal(got, want) {
 		t.Errorf("%s is not what this composition describes.%s\nRerun with PLATFORMKIT_UPDATE_GOLDEN=1 and commit the file with the change that moved it.",
-			goldenComposition, firstDifference(out, want))
+			path, firstDifference(got, want))
 	}
 }
 
@@ -176,5 +206,68 @@ func TestTheCommittedCompositionCarriesWhatOnlyTheCompositionKnows(t *testing.T)
 	if len(doc.Modules[by["site"]].Resources) == 0 || len(doc.Modules[by["billing"]].Resources) == 0 {
 		t.Errorf("site carries %d resources and billing %d",
 			len(doc.Modules[by["site"]].Resources), len(doc.Modules[by["billing"]].Resources))
+	}
+}
+
+// TestEveryEventInTheCompositionSaysWhatItCarries is the claim the manifest field
+// exists for: a name is not the whole story, and every event this application
+// emits also says what arrives in it.
+//
+// The CRUD events are checked against the resource the generated screens are
+// built from rather than against a schema written into this test, because that is
+// the fact being asserted: kit/rest publishes the entity it just wrote, so
+// task.task.created carries exactly the task the mounted Spec describes. A
+// Payloads entry naming the wrong struct — a DTO somebody kept, the plan for a
+// task — fails here. A lifecycle event is the module's own to type, so only its
+// presence is checked.
+func TestEveryEventInTheCompositionSaysWhatItCarries(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "composition.json"))
+	if err != nil {
+		t.Fatalf("read the committed description: %v", err)
+	}
+	var doc struct {
+		Modules []struct {
+			Name   string `json:"name"`
+			Events []struct {
+				Name   string          `json:"name"`
+				Schema json.RawMessage `json:"schema"`
+			} `json:"events"`
+			Resources []struct {
+				Entity string          `json:"entity"`
+				Schema json.RawMessage `json:"schema"`
+			} `json:"resources"`
+		} `json:"modules"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("the committed description is not JSON: %v", err)
+	}
+
+	events := 0
+	for _, m := range doc.Modules {
+		// Both sides of the comparison below are written by the same encoder, so
+		// bytes are the equality that means "the same fields".
+		mounted := map[string]json.RawMessage{}
+		for _, r := range m.Resources {
+			mounted[r.Entity] = r.Schema
+		}
+		for _, e := range m.Events {
+			events++
+			if len(e.Schema) == 0 {
+				t.Errorf("module %q: event %q carries no payload schema", m.Name, e.Name)
+				continue
+			}
+			owner, rest, _ := strings.Cut(e.Name, ".")
+			entity, verb, isCRUD := strings.Cut(rest, ".")
+			resource, ok := mounted[entity]
+			if !isCRUD || owner != m.Name || !ok || verb != "created" && verb != "updated" && verb != "deleted" {
+				continue
+			}
+			if !bytes.Equal(e.Schema, resource) {
+				t.Errorf("module %q: event %q is not the %q the mounted resource describes", m.Name, e.Name, entity)
+			}
+		}
+	}
+	if events < 40 {
+		t.Errorf("the composition emits %d events, which is fewer than the committed document carries", events)
 	}
 }

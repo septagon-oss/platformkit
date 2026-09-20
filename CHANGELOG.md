@@ -156,6 +156,28 @@ roles, and do not run a previous worker against a newer web role afterwards: the
 previous shape still decodes but is no longer produced, and the direction that does
 not work is the old reader meeting the new envelope.
 
+**A manifest can say what an event carries, and `describe` prints two standard
+documents.** `module.Module` gains one field, `Payloads []transport.Declared`, written
+with `transport.Declare[T](name)` beside the event names and payload structs a module's
+`contracts/` package already holds. The field is **additive**: `Events` is unchanged,
+`Publish` still takes any value, nothing on the delivery path reads the list, and a
+manifest that declares no payloads validates and boots as it did. `module.Validate`
+refuses a payload for an event the module does not emit and refuses one name twice; what
+nothing can check is the pairing of a declared type with what `Publish` is handed, which
+[the events guide](kit/events/README.md#declared-payloads) states as the module's rule.
+Every event the reference composition emits carries one now, which is why `describe`'s
+`events` entries are objects with `name` and `schema` — and why `DescribeVersion` is 2:
+the entries of an existing key changed meaning, and a reader that expected a bare name
+has to be refused rather than misread. `describe --format asyncapi` writes AsyncAPI 3.0
+— a channel per event at the `platformkit.<name>` subject, one CloudEvents message per
+event with its payload schema in `data`, a send operation per emitting module and a
+receive per subscription, and the broker's host only when the transport is JetStream —
+and `--format backstage` writes Backstage's catalog descriptors, a Component per module
+with `dependsOn` the modules whose events it subscribes to and an API per surface written
+as a reference rather than a copy. Both are projections with no runtime effect, printed by
+a command that exits: neither is served, and each reference composition is a committed
+golden. See [the composition](ARCHITECTURE.md#start-at-the-composition).
+
 ## [1.1.1] - 2026-09-18
 
 A tooling patch. No exported API moved and no shipped behaviour moved: the diff from

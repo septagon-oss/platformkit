@@ -1,0 +1,360 @@
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: platformkit
+spec: {}
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: admin
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  providesApis:
+    - api:admin-http
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: audit
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  dependsOn:
+    - component:auth
+    - component:billing
+    - component:content
+    - component:file
+    - component:notification
+    - component:site
+    - component:task
+    - component:tenant
+    - component:user
+  providesApis:
+    - api:audit-http
+  consumesApis:
+    - api:auth-events
+    - api:billing-events
+    - api:content-events
+    - api:file-events
+    - api:notification-events
+    - api:site-events
+    - api:task-events
+    - api:tenant-events
+    - api:user-events
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: auth
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  dependsOn:
+    - component:auth
+    - component:user
+  providesApis:
+    - api:auth-events
+    - api:auth-http
+  consumesApis:
+    - api:auth-events
+    - api:user-events
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: billing
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  providesApis:
+    - api:billing-events
+    - api:billing-http
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: content
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  providesApis:
+    - api:content-events
+    - api:content-http
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: file
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  dependsOn:
+    - component:file
+  providesApis:
+    - api:file-events
+    - api:file-http
+  consumesApis:
+    - api:file-events
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: notification
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  dependsOn:
+    - component:notification
+  providesApis:
+    - api:notification-events
+    - api:notification-http
+  consumesApis:
+    - api:notification-events
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: site
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  providesApis:
+    - api:site-events
+    - api:site-http
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: task
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  providesApis:
+    - api:task-events
+    - api:task-http
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: tenant
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  providesApis:
+    - api:tenant-events
+    - api:tenant-http
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: user
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  providesApis:
+    - api:user-events
+    - api:user-http
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: web
+spec:
+  type: service
+  lifecycle: production
+  owner: platformkit
+  system: platformkit
+  providesApis:
+    - api:web-http
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: admin-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: audit-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: auth-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: auth-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: billing-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: billing-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: content-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: content-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: file-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: file-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: notification-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: notification-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: site-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: site-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: task-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: task-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: tenant-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: tenant-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: user-events
+spec:
+  type: asyncapi
+  definition: '$text: ./asyncapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: user-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: web-http
+spec:
+  type: openapi
+  definition: '$text: /openapi.json'
