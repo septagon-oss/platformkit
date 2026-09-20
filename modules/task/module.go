@@ -122,6 +122,7 @@ func Module(deps Deps) module.Module {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
+		Payloads:    contracts.Payloads,
 		Nav: []module.NavEntry{
 			{Label: "Tasks", Path: "/admin/task/tasks", Permission: contracts.PermissionTaskRead},
 		},

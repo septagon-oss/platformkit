@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The three events this module emits. There are no CRUD events, because this
@@ -40,6 +42,21 @@ const (
 var Events = []string{
 	EventLoggedIn, EventLoggedOut, EventLoginFailed,
 	EventResetRequested, EventPasswordReset, EventRoleSet, EventRegistrationRequested, EventVerificationRequested,
+}
+
+// Payloads is the type of each of those events' payload, for the manifest and
+// the documents the composition projects from it. Each one names the struct the
+// publishing call builds: a session is not an entity, so nothing here is a
+// rest.Spec's record and every event has a payload type of its own.
+var Payloads = []transport.Declared{
+	transport.Declare[LoggedIn](EventLoggedIn),
+	transport.Declare[LoggedOut](EventLoggedOut),
+	transport.Declare[LoginFailed](EventLoginFailed),
+	transport.Declare[ResetRequested](EventResetRequested),
+	transport.Declare[PasswordReset](EventPasswordReset),
+	transport.Declare[RoleSet](EventRoleSet),
+	transport.Declare[RegistrationRequested](EventRegistrationRequested),
+	transport.Declare[VerificationRequested](EventVerificationRequested),
 }
 
 // ResetRequested is the payload of EventResetRequested: this address asked for

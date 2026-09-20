@@ -133,6 +133,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 			contracts.EventRegistrationPending, contracts.EventRegistrationApproved,
 			contracts.EventRegistrationUnverified, contracts.EventEmailVerified,
 		},
+		Payloads: contracts.Payloads,
 		Nav: []module.NavEntry{
 			{Label: "Users", Path: "/admin/user/users", Permission: contracts.PermissionUserRead},
 		},

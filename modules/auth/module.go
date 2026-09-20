@@ -121,6 +121,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
+		Payloads:    contracts.Payloads,
 		// The one entry, and the shell serves it: a role is keyed by its name
 		// rather than by an id, so no generated screen could answer this path
 		// and modules/admin writes the page. The two routes below are what it

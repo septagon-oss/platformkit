@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -22,6 +23,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 )
@@ -30,7 +32,12 @@ import (
 // screens.CatalogVersion does: it goes up when an existing key changes meaning,
 // so a reader that cannot have understood the change refuses the document
 // instead of misreading it. An added optional key does not raise it.
-const DescribeVersion = 1
+//
+// Version 2 is events: each entry was a bare name and is now an object, because
+// a module's manifest can carry the type of a payload and the document says what
+// that payload looks like. A reader that expected a string has to be told the
+// name moved inside an object rather than be handed one.
+const DescribeVersion = 2
 
 // kernelModule names the pseudo-module that owns what no module registered: the
 // routes huma mounts for itself — /openapi.json, /openapi.yaml, /docs and the
@@ -76,7 +83,7 @@ type PoolDescription struct {
 type ModuleDescription struct {
 	Name          string                  `json:"name"`
 	Permissions   []PermissionDescription `json:"permissions,omitempty"`
-	Events        []string                `json:"events,omitempty"`
+	Events        []EventDescription      `json:"events,omitempty"`
 	Subscriptions []string                `json:"subscriptions,omitempty"`
 	SubscribeAll  bool                    `json:"subscribeAll,omitempty"`
 	Jobs          []JobDescription        `json:"jobs,omitempty"`
@@ -91,6 +98,19 @@ type ModuleDescription struct {
 type PermissionDescription struct {
 	Key      string `json:"key"`
 	Operator bool   `json:"operator,omitempty"`
+}
+
+// EventDescription is one event a module emits, and the JSON Schema 2020-12 of
+// the payload its manifest declares for that name.
+//
+// Schema is absent when the module declared no type, which is the difference
+// between "this event carries the user" and "this event carries something", and
+// the reason a module fills in Payloads at all. Like a resource's schema it is
+// projected from the fields on the way out and stored nowhere, so it cannot
+// drift from the struct it came from.
+type EventDescription struct {
+	Name   string          `json:"name"`
+	Schema json.RawMessage `json:"schema,omitempty"`
 }
 
 // JobDescription is one periodic job and its schedule. Exactly one of Cron and
@@ -248,8 +268,11 @@ func (a *App) describeModule(m module.Module, routes []RouteDescription, resourc
 	}
 	sort.Slice(out.Permissions, func(i, j int) bool { return out.Permissions[i].Key < out.Permissions[j].Key })
 
-	out.Events = append(out.Events, m.Events...)
-	sort.Strings(out.Events)
+	events, err := describeEvents(m)
+	if err != nil {
+		return out, fmt.Errorf("app: describe module %q: %w", m.Name, err)
+	}
+	out.Events = events
 
 	for _, s := range m.Subscriptions {
 		out.Subscriptions = append(out.Subscriptions, s.Name)
@@ -290,6 +313,39 @@ func (a *App) describeModule(m module.Module, routes []RouteDescription, resourc
 		sort.Slice(out.Adopts[i].Versions, func(x, y int) bool { return out.Adopts[i].Versions[x] < out.Adopts[i].Versions[y] })
 	}
 	return out, nil
+}
+
+// describeEvents is one manifest's events, sorted, each with the schema of the
+// payload the manifest declared for it. A name no module declared a type for
+// carries no schema rather than an empty object: the document says what this
+// composition knows, and for that event it knows the name only.
+func describeEvents(m module.Module) ([]EventDescription, error) {
+	out := make([]EventDescription, 0, len(m.Events))
+	for _, name := range m.Events {
+		e := EventDescription{Name: name}
+		if t, ok := declaredPayload(m.Payloads, name); ok {
+			raw, err := schemaJSON(entity.FieldsOf(t))
+			if err != nil {
+				return nil, fmt.Errorf("event %q: %w", name, err)
+			}
+			e.Schema = raw
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// declaredPayload is the type a manifest paired with one event name. The list is
+// a handful of entries and this runs once per module at boot, so a scan is
+// cheaper than the map it would replace.
+func declaredPayload(payloads []transport.Declared, name string) (reflect.Type, bool) {
+	for _, p := range payloads {
+		if p.Name == name {
+			return p.Type, true
+		}
+	}
+	return nil, false
 }
 
 // migrationFiles are the SQL files this owner's filesystem carries, in name

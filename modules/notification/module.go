@@ -76,6 +76,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
+		Payloads:    contracts.Payloads,
 		// No nav entry, and it is the same fact as the empty Permissions: a
 		// nav entry names the permission that decides who sees the link, and
 		// there is no permission here to name. Everybody's notifications are

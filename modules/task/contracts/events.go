@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The six events this module emits. The first three are kit/rest's, published
@@ -25,6 +27,19 @@ const (
 
 // Events is every event this module emits, for the manifest.
 var Events = []string{EventCreated, EventUpdated, EventDeleted, EventAssigned, EventResolved, EventSLABreached}
+
+// Payloads is the type of each of those events' payload, for the manifest and
+// the documents the composition projects from it. kit/rest publishes the first
+// three with the task itself, because that is what it has just written; the
+// lifecycle's three name the struct their command builds.
+var Payloads = []transport.Declared{
+	transport.Declare[Task](EventCreated),
+	transport.Declare[Task](EventUpdated),
+	transport.Declare[Task](EventDeleted),
+	transport.Declare[Assigned](EventAssigned),
+	transport.Declare[Resolved](EventResolved),
+	transport.Declare[SLABreached](EventSLABreached),
+}
 
 // Assigned is the payload of EventAssigned: somebody is now responsible.
 type Assigned struct {

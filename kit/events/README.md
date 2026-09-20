@@ -50,6 +50,29 @@ durables across processes. When using the SQL outbox, handling and terminal
 claims commit atomically, and unfinished memory deliveries leave rows pending.
 External effects still require provider idempotency.
 
+## Declared payloads
+
+`transport.Declare[T](name)` pairs an event name with the Go type of its payload, and
+a module's manifest carries the pairs as `module.Module`'s `Payloads`. Nothing on the
+delivery path reads them: `Publish` still takes any value, the outbox stores what it was
+given, and a module that declares none validates, boots and publishes exactly as it did.
+What they feed is the description and the AsyncAPI and Backstage documents projected from
+it — which is how a document can say that `task.assigned` carries `taskId`, `assigneeId`,
+`status` and `at` instead of "some JSON". A declared type is projected with
+`entity.JSONSchema(entity.FieldsOf(t))`, the same projection an entity gets, so a payload
+struct is written with `json` tags and nothing else.
+
+The type has to be the one `Publish` is given for that name, and that rule is the
+module's: no code can see a call site it cannot reach. `module.Validate` refuses a payload
+for an event the module does not emit and refuses one name twice, and the composition's
+committed description shows a missing or wrong entry as a diff, but neither reads the
+publisher. So declare the payloads in `contracts/events.go`, where the names and the
+structs already are, and change the pair in the commit that changes either — a document
+that describes the wrong record misleads a generated client, which is worse than the
+nothing an undeclared event gets. A module's own contracts test is where the pair can be
+asserted, and no module's does today: until one does, the pairing between a `Declare` and
+a `Publish` is a reviewer's.
+
 ## Wire format
 
 Every event a transport carries is a [CloudEvents 1.0](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md)

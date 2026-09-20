@@ -25,6 +25,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 )
@@ -49,6 +50,16 @@ type Module struct {
 	// Subscriptions are the events this module handles. The worker role
 	// subscribes each one; the name has to be an event some module emits.
 	Subscriptions []events.Subscription
+
+	// Payloads pairs some of this module's Events with the Go type of their
+	// payload. Events says what a module lets out; this says what arrives in it,
+	// and it is read by the composition description and by the AsyncAPI and
+	// Backstage documents projected from it. Nothing on the delivery path reads
+	// it — Publish still takes any value, and the outbox stores what it was
+	// given — so a module may declare none and its events are then documented as
+	// carrying anything. The type must be the one the publisher passes; a
+	// module's contracts test is where that is asserted.
+	Payloads []transport.Declared
 
 	// SubscribeAll says this module handles every event the application emits,
 	// whichever module emits it: the kernel expands the one subscription above
@@ -184,6 +195,21 @@ func Validate(mods []Module) error {
 			if !strings.HasPrefix(e, m.Name+".") {
 				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e)
 			}
+		}
+
+		// A payload is declared for an event the module promised to emit, and
+		// once only: one name carrying two types would leave the description to
+		// pick whichever entry its scan reached first, and the document would
+		// describe a payload nobody publishes.
+		declared := map[string]bool{}
+		for _, p := range m.Payloads {
+			switch {
+			case !slices.Contains(m.Events, p.Name):
+				add("module %q: declares the payload of %q, which it does not emit", m.Name, p.Name)
+			case declared[p.Name]:
+				add("module %q: declares the payload of %q twice", m.Name, p.Name)
+			}
+			declared[p.Name] = true
 		}
 	}
 

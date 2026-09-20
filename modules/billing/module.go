@@ -118,6 +118,7 @@ func Module(deps Deps) (httpx.Entitler, module.Module) {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
+		Payloads:    contracts.Payloads,
 		Nav: []module.NavEntry{
 			{Label: "Billing", Path: "/admin/billing/plans", Permission: contracts.PermissionBillingRead},
 		},

@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The three events this module emits. They are written from the transaction
@@ -18,6 +20,16 @@ const (
 	EventSuspended = "tenant.suspended"
 	EventHostAdded = "tenant.host_added"
 )
+
+// Payloads is the type of each of those events' payload, for the manifest and
+// the documents the composition projects from it. None is a rest.Spec event:
+// the control plane belongs to no tenant, so there is no Spec to publish a
+// Tenant row, and each event names what a subscriber would act on instead.
+var Payloads = []transport.Declared{
+	transport.Declare[Created](EventCreated),
+	transport.Declare[Suspended](EventSuspended),
+	transport.Declare[HostAdded](EventHostAdded),
+}
 
 // Created is the payload of EventCreated: there is a new customer.
 type Created struct {

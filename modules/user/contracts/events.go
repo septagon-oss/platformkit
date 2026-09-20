@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The base events this module emits. The first three are kit/rest's, published
@@ -22,6 +24,25 @@ const (
 	EventHandleSet   = "user.handle_set"
 	EventDeactivated = "user.deactivated"
 )
+
+// Payloads is the type of each event's payload, for the manifest and the
+// documents the composition projects from it: kit/rest's three carry the user
+// itself, and the rest name the struct their command builds, including the four
+// registration events this file does not declare the names of.
+var Payloads = []transport.Declared{
+	transport.Declare[User](EventCreated),
+	transport.Declare[User](EventUpdated),
+	transport.Declare[User](EventDeleted),
+	transport.Declare[Invited](EventInvited),
+	transport.Declare[PasswordSet](EventPasswordSet),
+	transport.Declare[RolesSet](EventRolesSet),
+	transport.Declare[HandleSet](EventHandleSet),
+	transport.Declare[Deactivated](EventDeactivated),
+	transport.Declare[RegistrationPending](EventRegistrationPending),
+	transport.Declare[RegistrationApproved](EventRegistrationApproved),
+	transport.Declare[RegistrationUnverified](EventRegistrationUnverified),
+	transport.Declare[EmailVerified](EventEmailVerified),
+}
 
 // Invited is the payload of EventInvited: a user account now exists in this
 // tenant. It is published by Invite and by the bootstrap's Provision alike —

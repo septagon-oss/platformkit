@@ -6,6 +6,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"regexp"
 	"time"
 
@@ -44,6 +45,34 @@ var eventName = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 
 // ValidName reports whether name is a well-formed event name.
 func ValidName(name string) bool { return eventName.MatchString(name) }
+
+// Declared is one event name and the Go type of its payload.
+//
+// It is a declaration and not a constraint: Publish still takes any value, and
+// nothing on the delivery path reads these. What they buy is a document that
+// can say what an event contains — the composition description, and the
+// AsyncAPI and Backstage documents projected from it — which a bare name
+// cannot. A module that declares none is not broken; its events are simply
+// documented as carrying whatever the publisher sent.
+type Declared struct {
+	Name string
+	Type reflect.Type
+}
+
+// Declare pairs an event name with the type of its payload at the place both
+// are already written: Declare[contracts.Assigned](contracts.EventAssigned).
+//
+// The type has to be the one Publish is handed for that name — nothing here
+// can check a call site it cannot see — so a module declares payloads beside
+// the events it emits and its contracts test names the pair. The two drift
+// apart silently otherwise: an event whose document describes the wrong record
+// is worse than one with no document.
+func Declare[T any](name string) Declared {
+	// The pointer-to-nil idiom rather than reflect.TypeOf(zero T): a nil T of
+	// interface type would report nothing, and a payload named by an interface
+	// is still named.
+	return Declared{Name: name, Type: reflect.TypeOf((*T)(nil)).Elem()}
+}
 
 // Transport carries committed events. Publish may return nil only after the
 // event is durably accepted by the broker or every local subscription has

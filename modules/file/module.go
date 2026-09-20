@@ -117,6 +117,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
+		Payloads:    contracts.Payloads,
 		Nav: []module.NavEntry{
 			{Label: "Files", Path: "/admin/file/files", Permission: contracts.PermissionFileRead},
 		},

@@ -8,6 +8,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 )
 
@@ -63,6 +64,37 @@ func TestValidateAcceptsAWellFormedComposition(t *testing.T) {
 	}
 	if err := Validate(nil); err != nil {
 		t.Fatalf("Validate(nil): %v", err)
+	}
+}
+
+// TestValidateRefusesAPayloadThatContradictsTheEvents: a payload is declared for
+// an event the module promised to emit, and once only. A name nobody emits is a
+// type for a message nothing sends, and one name carrying two types would leave
+// the description to document whichever entry its scan reached first.
+//
+// The other half of the rule is what the well-formed composition above proves
+// without saying it: a manifest that declares no payloads at all is valid, so
+// every module keeps booting until it writes the list.
+func TestValidateRefusesAPayloadThatContradictsTheEvents(t *testing.T) {
+	err := Validate([]Module{{
+		Name:   "notes",
+		Events: []string{"notes.created"},
+		Payloads: []transport.Declared{
+			transport.Declare[string]("notes.created"),
+			transport.Declare[string]("notes.created"),
+			transport.Declare[string]("notes.deleted"),
+		},
+	}})
+	if err == nil {
+		t.Fatal("Validate accepted payloads that contradict the module's events")
+	}
+	for _, want := range []string{
+		`module "notes": declares the payload of "notes.created" twice`,
+		`module "notes": declares the payload of "notes.deleted", which it does not emit`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not report %s\ngot:\n%v", want, err)
+		}
 	}
 }
 

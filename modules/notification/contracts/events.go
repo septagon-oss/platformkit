@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The three events this module emits. A subscriber names one of these constants
@@ -24,6 +26,16 @@ const (
 
 // Events is every event this module emits, for the manifest.
 var Events = []string{EventCreated, EventEmailRequested, EventRead}
+
+// Payloads is the type of each of those events' payload, for the manifest and
+// the documents the composition projects from it. All three carry identifiers
+// and no content, which is the convention this module's own comment makes
+// explicit; the schema says so without anybody having to read that comment.
+var Payloads = []transport.Declared{
+	transport.Declare[Created](EventCreated),
+	transport.Declare[EmailRequested](EventEmailRequested),
+	transport.Declare[Read](EventRead),
+}
 
 // Created is the payload of EventCreated: somebody was told something.
 type Created struct {

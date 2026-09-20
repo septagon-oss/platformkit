@@ -74,6 +74,7 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
+		Payloads:    contracts.Payloads,
 		Nav: []module.NavEntry{
 			{Label: "Site", Path: "/admin/site/settings", Permission: contracts.PermissionSiteManage},
 		},

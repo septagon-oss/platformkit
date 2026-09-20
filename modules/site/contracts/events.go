@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The one event this module emits. There is no created and no deleted: the
@@ -14,6 +16,14 @@ const EventSettingsUpdated = "site.settings_updated"
 
 // Events is every event this module emits, for the manifest.
 var Events = []string{EventSettingsUpdated}
+
+// Payloads is the type of that event's payload, for the manifest and the
+// documents the composition projects from it. rest.Singleton names the event;
+// what the save puts in it is SettingsUpdated, the values a cache keys on,
+// rather than the whole settings row.
+var Payloads = []transport.Declared{
+	transport.Declare[SettingsUpdated](EventSettingsUpdated),
+}
 
 // SettingsUpdated is the payload: what the site is now. It carries the values a
 // cache would key on rather than only an id, because the subscriber this exists

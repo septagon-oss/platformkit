@@ -1,5 +1,5 @@
 {
-  "describeVersion": 1,
+  "describeVersion": 2,
   "role": "all",
   "transport": "memory",
   "pool": {
@@ -22,18 +22,391 @@
         }
       ],
       "events": [
-        "user.deactivated",
-        "user.email_verified",
-        "user.handle_set",
-        "user.invited",
-        "user.password_set",
-        "user.registration_approved",
-        "user.registration_pending",
-        "user.registration_unverified",
-        "user.roles_set",
-        "user.user.created",
-        "user.user.deleted",
-        "user.user.updated"
+        {
+          "name": "user.deactivated",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.email_verified",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.handle_set",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "now": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "was": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.invited",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.password_set",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.registration_approved",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "actor": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.registration_pending",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.registration_unverified",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.roles_set",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "now": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "was": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.user.created",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "displayName": {
+                "description": "Name to show",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "email": {
+                "description": "Address this person signs in with, unique within the tenant",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "handle": {
+                "description": "Lower-case name this person answers to in this tenant, empty until claimed",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "roles": {
+                "description": "Roles this person holds in this tenant",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "default": "invited",
+                "description": "Lifecycle state",
+                "enum": [
+                  "invited",
+                  "pending",
+                  "unverified",
+                  "active",
+                  "inactive"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "email"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.user.deleted",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "displayName": {
+                "description": "Name to show",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "email": {
+                "description": "Address this person signs in with, unique within the tenant",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "handle": {
+                "description": "Lower-case name this person answers to in this tenant, empty until claimed",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "roles": {
+                "description": "Roles this person holds in this tenant",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "default": "invited",
+                "description": "Lifecycle state",
+                "enum": [
+                  "invited",
+                  "pending",
+                  "unverified",
+                  "active",
+                  "inactive"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "email"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "user.user.updated",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "displayName": {
+                "description": "Name to show",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "email": {
+                "description": "Address this person signs in with, unique within the tenant",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "handle": {
+                "description": "Lower-case name this person answers to in this tenant, empty until claimed",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "roles": {
+                "description": "Roles this person holds in this tenant",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "default": "invited",
+                "description": "Lifecycle state",
+                "enum": [
+                  "invited",
+                  "pending",
+                  "unverified",
+                  "active",
+                  "inactive"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "email"
+            ],
+            "type": "object"
+          }
+        }
       ],
       "nav": [
         {
@@ -374,9 +747,78 @@
         }
       ],
       "events": [
-        "tenant.created",
-        "tenant.host_added",
-        "tenant.suspended"
+        {
+          "name": "tenant.created",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "tenant.host_added",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "primary": {
+                "type": "boolean"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "tenant.suspended",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
       ],
       "nav": [
         {
@@ -463,9 +905,75 @@
     {
       "name": "notification",
       "events": [
-        "notification.created",
-        "notification.email_requested",
-        "notification.read"
+        {
+          "name": "notification.created",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "notification.email_requested",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "notification.read",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
       ],
       "subscriptions": [
         "notification.email_requested"
@@ -513,14 +1021,180 @@
         }
       ],
       "events": [
-        "auth.logged_in",
-        "auth.logged_out",
-        "auth.login_failed",
-        "auth.password_reset",
-        "auth.registration_requested",
-        "auth.reset_requested",
-        "auth.role_set",
-        "auth.verification_requested"
+        {
+          "name": "auth.logged_in",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "ip": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "sessionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "auth.logged_out",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "sessionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "auth.login_failed",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "ip": {
+                "type": "string"
+              },
+              "locked": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "auth.password_reset",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "auth.registration_requested",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "auth.reset_requested",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "auth.role_set",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "now": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "role": {
+                "type": "string"
+              },
+              "was": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "auth.verification_requested",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
       ],
       "subscriptions": [
         "auth.reset_requested",
@@ -664,12 +1338,392 @@
         }
       ],
       "events": [
-        "task.assigned",
-        "task.resolved",
-        "task.sla_breached",
-        "task.task.created",
-        "task.task.deleted",
-        "task.task.updated"
+        {
+          "name": "task.assigned",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "assigneeId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "taskId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "task.resolved",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              },
+              "taskId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "task.sla_breached",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "deadline": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "priority": {
+                "type": "string"
+              },
+              "taskId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "task.task.created",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "assigneeId": {
+                "description": "User responsible for the task",
+                "format": "uuid",
+                "type": "string",
+                "x-platformkit-widget": "entity-picker"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "description": {
+                "description": "Detailed description of the task",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "dueAt": {
+                "description": "Soft target completion time",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "priority": {
+                "default": "normal",
+                "description": "Task priority",
+                "enum": [
+                  "low",
+                  "normal",
+                  "high",
+                  "critical"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "resolution": {
+                "description": "How the task was resolved",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "resolvedAt": {
+                "description": "When the task was resolved",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "slaBreached": {
+                "default": false,
+                "description": "True once the deadline elapsed with the task unresolved",
+                "type": "boolean",
+                "x-platformkit-widget": "checkbox"
+              },
+              "slaDeadline": {
+                "description": "Hard SLA deadline; a breach is measured against this",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "source": {
+                "description": "Origin of the task",
+                "type": "string"
+              },
+              "sourceRef": {
+                "description": "Reference into the source system",
+                "type": "string"
+              },
+              "status": {
+                "default": "open",
+                "description": "Lifecycle state",
+                "enum": [
+                  "open",
+                  "acknowledged",
+                  "in_progress",
+                  "resolved",
+                  "closed"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "Short summary of the task",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "task.task.deleted",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "assigneeId": {
+                "description": "User responsible for the task",
+                "format": "uuid",
+                "type": "string",
+                "x-platformkit-widget": "entity-picker"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "description": {
+                "description": "Detailed description of the task",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "dueAt": {
+                "description": "Soft target completion time",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "priority": {
+                "default": "normal",
+                "description": "Task priority",
+                "enum": [
+                  "low",
+                  "normal",
+                  "high",
+                  "critical"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "resolution": {
+                "description": "How the task was resolved",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "resolvedAt": {
+                "description": "When the task was resolved",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "slaBreached": {
+                "default": false,
+                "description": "True once the deadline elapsed with the task unresolved",
+                "type": "boolean",
+                "x-platformkit-widget": "checkbox"
+              },
+              "slaDeadline": {
+                "description": "Hard SLA deadline; a breach is measured against this",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "source": {
+                "description": "Origin of the task",
+                "type": "string"
+              },
+              "sourceRef": {
+                "description": "Reference into the source system",
+                "type": "string"
+              },
+              "status": {
+                "default": "open",
+                "description": "Lifecycle state",
+                "enum": [
+                  "open",
+                  "acknowledged",
+                  "in_progress",
+                  "resolved",
+                  "closed"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "Short summary of the task",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "task.task.updated",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "assigneeId": {
+                "description": "User responsible for the task",
+                "format": "uuid",
+                "type": "string",
+                "x-platformkit-widget": "entity-picker"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "description": {
+                "description": "Detailed description of the task",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "dueAt": {
+                "description": "Soft target completion time",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "priority": {
+                "default": "normal",
+                "description": "Task priority",
+                "enum": [
+                  "low",
+                  "normal",
+                  "high",
+                  "critical"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "resolution": {
+                "description": "How the task was resolved",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "resolvedAt": {
+                "description": "When the task was resolved",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "slaBreached": {
+                "default": false,
+                "description": "True once the deadline elapsed with the task unresolved",
+                "type": "boolean",
+                "x-platformkit-widget": "checkbox"
+              },
+              "slaDeadline": {
+                "description": "Hard SLA deadline; a breach is measured against this",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "source": {
+                "description": "Origin of the task",
+                "type": "string"
+              },
+              "sourceRef": {
+                "description": "Reference into the source system",
+                "type": "string"
+              },
+              "status": {
+                "default": "open",
+                "description": "Lifecycle state",
+                "enum": [
+                  "open",
+                  "acknowledged",
+                  "in_progress",
+                  "resolved",
+                  "closed"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "Short summary of the task",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          }
+        }
       ],
       "jobs": [
         {
@@ -991,13 +2045,337 @@
         }
       ],
       "events": [
-        "billing.cancelled",
-        "billing.past_due",
-        "billing.plan.created",
-        "billing.plan.deleted",
-        "billing.plan.updated",
-        "billing.renewed",
-        "billing.subscribed"
+        {
+          "name": "billing.cancelled",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "endsAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "immediate": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "subscriptionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "billing.past_due",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "amountCents": {
+                "type": "integer"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "attempt": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "endsAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "since": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "subscriptionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "billing.plan.created",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "active": {
+                "description": "Whether this plan accepts new subscriptions",
+                "type": "boolean",
+                "x-platformkit-widget": "checkbox"
+              },
+              "code": {
+                "description": "Stable identifier, unique within the tenant",
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "currency": {
+                "description": "ISO 4217 code",
+                "type": "string"
+              },
+              "features": {
+                "description": "Feature names this plan includes",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "interval": {
+                "default": "month",
+                "description": "How long one period lasts",
+                "enum": [
+                  "month",
+                  "year"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "name": {
+                "description": "Display name",
+                "type": "string"
+              },
+              "priceCents": {
+                "default": 0,
+                "description": "Price of one interval, in the currency's minor unit",
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "currency"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "billing.plan.deleted",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "active": {
+                "description": "Whether this plan accepts new subscriptions",
+                "type": "boolean",
+                "x-platformkit-widget": "checkbox"
+              },
+              "code": {
+                "description": "Stable identifier, unique within the tenant",
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "currency": {
+                "description": "ISO 4217 code",
+                "type": "string"
+              },
+              "features": {
+                "description": "Feature names this plan includes",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "interval": {
+                "default": "month",
+                "description": "How long one period lasts",
+                "enum": [
+                  "month",
+                  "year"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "name": {
+                "description": "Display name",
+                "type": "string"
+              },
+              "priceCents": {
+                "default": 0,
+                "description": "Price of one interval, in the currency's minor unit",
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "currency"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "billing.plan.updated",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "active": {
+                "description": "Whether this plan accepts new subscriptions",
+                "type": "boolean",
+                "x-platformkit-widget": "checkbox"
+              },
+              "code": {
+                "description": "Stable identifier, unique within the tenant",
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "currency": {
+                "description": "ISO 4217 code",
+                "type": "string"
+              },
+              "features": {
+                "description": "Feature names this plan includes",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "interval": {
+                "default": "month",
+                "description": "How long one period lasts",
+                "enum": [
+                  "month",
+                  "year"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "name": {
+                "description": "Display name",
+                "type": "string"
+              },
+              "priceCents": {
+                "default": 0,
+                "description": "Price of one interval, in the currency's minor unit",
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "currency"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "billing.renewed",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "periodEnd": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "periodStart": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "receipt": {
+                "type": "string"
+              },
+              "subscriptionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "billing.subscribed",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "periodEnd": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "planCode": {
+                "type": "string"
+              },
+              "planId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "subscriptionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
       ],
       "jobs": [
         {
@@ -1209,12 +2587,309 @@
         }
       ],
       "events": [
-        "content.archived",
-        "content.content.created",
-        "content.content.deleted",
-        "content.content.updated",
-        "content.published",
-        "content.unpublished"
+        {
+          "name": "content.archived",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "contentId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "content.content.created",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "author": {
+                "description": "The user who created this",
+                "format": "uuid",
+                "type": "string"
+              },
+              "body": {
+                "description": "The content itself, in Markdown",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "kind": {
+                "default": "post",
+                "description": "page or post",
+                "enum": [
+                  "page",
+                  "post"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "publishedAt": {
+                "description": "When this was published",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "slug": {
+                "description": "URL name, unique within the tenant",
+                "type": "string"
+              },
+              "status": {
+                "default": "draft",
+                "description": "Lifecycle state",
+                "enum": [
+                  "draft",
+                  "published",
+                  "archived"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "slug",
+              "title"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "content.content.deleted",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "author": {
+                "description": "The user who created this",
+                "format": "uuid",
+                "type": "string"
+              },
+              "body": {
+                "description": "The content itself, in Markdown",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "kind": {
+                "default": "post",
+                "description": "page or post",
+                "enum": [
+                  "page",
+                  "post"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "publishedAt": {
+                "description": "When this was published",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "slug": {
+                "description": "URL name, unique within the tenant",
+                "type": "string"
+              },
+              "status": {
+                "default": "draft",
+                "description": "Lifecycle state",
+                "enum": [
+                  "draft",
+                  "published",
+                  "archived"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "slug",
+              "title"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "content.content.updated",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "author": {
+                "description": "The user who created this",
+                "format": "uuid",
+                "type": "string"
+              },
+              "body": {
+                "description": "The content itself, in Markdown",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "kind": {
+                "default": "post",
+                "description": "page or post",
+                "enum": [
+                  "page",
+                  "post"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "publishedAt": {
+                "description": "When this was published",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "slug": {
+                "description": "URL name, unique within the tenant",
+                "type": "string"
+              },
+              "status": {
+                "default": "draft",
+                "description": "Lifecycle state",
+                "enum": [
+                  "draft",
+                  "published",
+                  "archived"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "slug",
+              "title"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "content.published",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "contentId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "content.unpublished",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "contentId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
       ],
       "nav": [
         {
@@ -1462,7 +3137,33 @@
         }
       ],
       "events": [
-        "site.settings_updated"
+        {
+          "name": "site.settings_updated",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "homeSlug": {
+                "type": "string"
+              },
+              "settingsId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "theme": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
       ],
       "nav": [
         {
@@ -1592,8 +3293,63 @@
         }
       ],
       "events": [
-        "file.deleted",
-        "file.uploaded"
+        {
+          "name": "file.deleted",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "size": {
+                "type": "integer"
+              },
+              "storageKey": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "name": "file.uploaded",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "contentType": {
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer"
+              },
+              "visibility": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
       ],
       "subscriptions": [
         "file.deleted"

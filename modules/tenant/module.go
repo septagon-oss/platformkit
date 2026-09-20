@@ -53,6 +53,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Name:        "tenant",
 		Permissions: permissions,
 		Events:      []string{contracts.EventCreated, contracts.EventSuspended, contracts.EventHostAdded},
+		Payloads:    contracts.Payloads,
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above
 		// because a module's Events are the ones it owns: kit/app checks a

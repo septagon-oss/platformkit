@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The two events this module emits. There is no rest.Spec here, so there is no
@@ -16,6 +18,15 @@ const (
 
 // Events is every event this module emits, for the manifest.
 var Events = []string{EventUploaded, EventDeleted}
+
+// Payloads is the type of each of those events' payload, for the manifest and
+// the documents the composition projects from it. Neither is a rest.Spec event:
+// the two routes that move bytes publish these, and Deleted carries the storage
+// key the row no longer has by the time anybody handles it.
+var Payloads = []transport.Declared{
+	transport.Declare[Uploaded](EventUploaded),
+	transport.Declare[Deleted](EventDeleted),
+}
 
 // Uploaded is the payload of EventUploaded. It carries the digest as well as
 // the size because the subscriber this exists for is whatever indexes or scans

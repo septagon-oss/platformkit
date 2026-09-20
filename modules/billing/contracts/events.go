@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
 // The seven events this module emits: kit/rest's three for the plan catalogue,
@@ -27,6 +29,20 @@ const (
 var Events = []string{
 	EventPlanCreated, EventPlanUpdated, EventPlanDeleted,
 	EventSubscribed, EventCancelled, EventRenewed, EventPastDue,
+}
+
+// Payloads is the type of each of those events' payload, for the manifest and
+// the documents the composition projects from it. kit/rest publishes the
+// catalogue's three with the plan itself in the payload, so those three name
+// Plan; the subscription's four name the struct their command builds.
+var Payloads = []transport.Declared{
+	transport.Declare[Plan](EventPlanCreated),
+	transport.Declare[Plan](EventPlanUpdated),
+	transport.Declare[Plan](EventPlanDeleted),
+	transport.Declare[Subscribed](EventSubscribed),
+	transport.Declare[Cancelled](EventCancelled),
+	transport.Declare[Renewed](EventRenewed),
+	transport.Declare[PastDue](EventPastDue),
 }
 
 // Subscribed is the payload of EventSubscribed: the tenant is on a plan. It
