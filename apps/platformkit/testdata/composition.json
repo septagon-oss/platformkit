@@ -201,6 +201,66 @@
           "path": "/api/v1/user/users",
           "read": "user:read",
           "write": "user:manage",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "displayName": {
+                "description": "Name to show",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "email": {
+                "description": "Address this person signs in with, unique within the tenant",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "handle": {
+                "description": "Lower-case name this person answers to in this tenant, empty until claimed",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "roles": {
+                "description": "Roles this person holds in this tenant",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "default": "invited",
+                "description": "Lifecycle state",
+                "enum": [
+                  "invited",
+                  "pending",
+                  "unverified",
+                  "active",
+                  "inactive"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "email"
+            ],
+            "type": "object"
+          },
           "immutable": [
             "handle",
             "roles",
@@ -235,7 +295,18 @@
                   "name": "handle",
                   "type": "string"
                 }
-              ]
+              ],
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "handle": {
+                    "description": "Lower-case letters, digits and interior . _ -, three to thirty-two characters, and not a name that stands for the platform",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
             },
             {
               "verb": "roles",
@@ -249,7 +320,21 @@
                   "name": "roles",
                   "type": "list"
                 }
-              ]
+              ],
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "roles": {
+                    "description": "The roles this person holds from now on",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
             },
             {
               "verb": "set-password",
@@ -263,7 +348,18 @@
                   "name": "password",
                   "type": "string"
                 }
-              ]
+              ],
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "password": {
+                    "description": "The new password; at least twelve characters",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
             }
           ]
         }
@@ -708,6 +804,108 @@
           "path": "/api/v1/task/tasks",
           "read": "task:read",
           "write": "task:update",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "assigneeId": {
+                "description": "User responsible for the task",
+                "format": "uuid",
+                "type": "string",
+                "x-platformkit-widget": "entity-picker"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "description": {
+                "description": "Detailed description of the task",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "dueAt": {
+                "description": "Soft target completion time",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "priority": {
+                "default": "normal",
+                "description": "Task priority",
+                "enum": [
+                  "low",
+                  "normal",
+                  "high",
+                  "critical"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "resolution": {
+                "description": "How the task was resolved",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "resolvedAt": {
+                "description": "When the task was resolved",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "slaBreached": {
+                "default": false,
+                "description": "True once the deadline elapsed with the task unresolved",
+                "type": "boolean",
+                "x-platformkit-widget": "checkbox"
+              },
+              "slaDeadline": {
+                "description": "Hard SLA deadline; a breach is measured against this",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "source": {
+                "description": "Origin of the task",
+                "type": "string"
+              },
+              "sourceRef": {
+                "description": "Reference into the source system",
+                "type": "string"
+              },
+              "status": {
+                "default": "open",
+                "description": "Lifecycle state",
+                "enum": [
+                  "open",
+                  "acknowledged",
+                  "in_progress",
+                  "resolved",
+                  "closed"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "Short summary of the task",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          },
           "immutable": [
             "assigneeId",
             "resolution",
@@ -727,7 +925,19 @@
                   "name": "assigneeId",
                   "type": "uuid"
                 }
-              ]
+              ],
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "assigneeId": {
+                    "description": "The user who becomes responsible",
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
             },
             {
               "verb": "check-sla",
@@ -749,7 +959,18 @@
                   "name": "resolution",
                   "type": "string"
                 }
-              ]
+              ],
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "resolution": {
+                    "description": "How the task was resolved",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
             }
           ]
         }
@@ -907,7 +1128,73 @@
           "path": "/api/v1/billing/plans",
           "read": "billing:read",
           "write": "billing:catalog",
-          "operatorWrite": true
+          "operatorWrite": true,
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "active": {
+                "description": "Whether this plan accepts new subscriptions",
+                "type": "boolean",
+                "x-platformkit-widget": "checkbox"
+              },
+              "code": {
+                "description": "Stable identifier, unique within the tenant",
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "currency": {
+                "description": "ISO 4217 code",
+                "type": "string"
+              },
+              "features": {
+                "description": "Feature names this plan includes",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "interval": {
+                "default": "month",
+                "description": "How long one period lasts",
+                "enum": [
+                  "month",
+                  "year"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "name": {
+                "description": "Display name",
+                "type": "string"
+              },
+              "priceCents": {
+                "default": 0,
+                "description": "Price of one interval, in the currency's minor unit",
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "currency"
+            ],
+            "type": "object"
+          }
         }
       ]
     },
@@ -1062,6 +1349,77 @@
           "path": "/api/v1/content/contents",
           "read": "content:read",
           "write": "content:manage",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "author": {
+                "description": "The user who created this",
+                "format": "uuid",
+                "type": "string"
+              },
+              "body": {
+                "description": "The content itself, in Markdown",
+                "type": "string",
+                "x-platformkit-widget": "textarea"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "kind": {
+                "default": "post",
+                "description": "page or post",
+                "enum": [
+                  "page",
+                  "post"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "publishedAt": {
+                "description": "When this was published",
+                "format": "date-time",
+                "type": "string",
+                "x-platformkit-widget": "datetime"
+              },
+              "slug": {
+                "description": "URL name, unique within the tenant",
+                "type": "string"
+              },
+              "status": {
+                "default": "draft",
+                "description": "Lifecycle state",
+                "enum": [
+                  "draft",
+                  "published",
+                  "archived"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "slug",
+              "title"
+            ],
+            "type": "object"
+          },
           "immutable": [
             "author",
             "publishedAt",
@@ -1164,6 +1522,61 @@
           "path": "/api/v1/site/settings",
           "read": "site:manage",
           "write": "site:manage",
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              },
+              "homeSlug": {
+                "description": "Slug of the content served at /",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "readOnly": true,
+                "type": "string"
+              },
+              "logoFileId": {
+                "description": "File id of the logo",
+                "format": "uuid",
+                "type": "string"
+              },
+              "primaryColor": {
+                "default": "#2563eb",
+                "description": "Brand colour, #rrggbb",
+                "type": "string"
+              },
+              "tagline": {
+                "description": "The line under the name",
+                "type": "string"
+              },
+              "theme": {
+                "default": "system",
+                "description": "Colour scheme, or system to follow the visitor's",
+                "enum": [
+                  "light",
+                  "dark",
+                  "system"
+                ],
+                "type": "string",
+                "x-platformkit-widget": "select"
+              },
+              "title": {
+                "description": "The site's name",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "readOnly": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "singleton": true
         }
       ]

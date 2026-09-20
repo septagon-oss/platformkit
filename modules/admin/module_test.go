@@ -816,11 +816,17 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 		Module, Entity, Path string
 		Writable             bool
 		Immutable            []string
-		Fields               []struct{ Name, Type string }
-		Commands             []struct {
+		// Schema is the JSON Schema 2020-12 projection of Fields. Reading the
+		// document into a type that only gained this member is also the point:
+		// a shell written before it existed still decodes what it knows, which is
+		// the whole reason catalogVersion stays where it is.
+		Schema   json.RawMessage `json:"schema"`
+		Fields   []struct{ Name, Type string }
+		Commands []struct {
 			Verb, Summary string
 			Collection    bool
 			Fields        []struct{ Name, Type string }
+			Schema        json.RawMessage `json:"schema"`
 		}
 	}
 	read := func(t *testing.T, router http.Handler, at string) []entry {
@@ -860,6 +866,20 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 	if len(note.Fields) == 0 || note.Fields[0].Name != "id" || note.Fields[0].Type != "uuid" {
 		t.Errorf("the schema does not lead with the id: %+v", note.Fields)
 	}
+	// And so is the projection of it, out through huma's encoder and past this
+	// caller's own authorization. ui/screens' golden test holds the two renderings
+	// to one projection; this says the route carries it to a shell that would
+	// rather read a JSON Schema than learn what a FieldType is.
+	var projected map[string]any
+	if err := json.Unmarshal(note.Schema, &projected); err != nil {
+		t.Errorf("note's schema is not a JSON object: %s (%v)", note.Schema, err)
+	}
+	if got, want := projected["$schema"], "https://json-schema.org/draft/2020-12/schema"; got != want {
+		t.Errorf("note's schema is written in dialect %v, want %v", got, want)
+	}
+	if props, ok := projected["properties"].(map[string]any); !ok || props["id"] == nil {
+		t.Errorf("note's schema has no id property: %s", note.Schema)
+	}
 
 	// The commands are the doors beyond the five, and the catalog carries the
 	// ones this caller may open: both, for an administrator, each with the
@@ -879,6 +899,12 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 	}
 	if len(note.Commands[1].Fields) != 0 {
 		t.Errorf("a command that takes no argument carries no fields: %+v", note.Commands[1].Fields)
+	}
+	if at := string(note.Commands[0].Schema); !strings.Contains(at, `"at"`) {
+		t.Errorf("publish's schema does not describe the one field it takes: %s", at)
+	}
+	if len(note.Commands[1].Schema) != 0 {
+		t.Errorf("a command that takes no argument carries no schema either: %s", note.Commands[1].Schema)
 	}
 	if plan.Commands != nil {
 		t.Errorf("a resource with no commands carries none: %+v", plan.Commands)

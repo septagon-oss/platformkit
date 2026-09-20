@@ -35,6 +35,38 @@ tenant access. CRUD retains tenant stamping, validation-error mapping and SQL
 operations. Tags still describe storage columns and presentation hints, but
 schema derivation neither writes a value nor executes those operations.
 
+## The JSON Schema projection
+
+`JSONSchema(fields)` projects a field list onto JSON Schema 2020-12 — the shape
+an OpenAPI document, an MCP tool definition or a form validator already reads,
+none of which has to learn what a `FieldType` is. It returns an object schema
+that admits no property nobody declared. `TypeString` and `TypeText` become a
+`string`, `TypeInt` an `integer`, `TypeFloat` a `number`, `TypeBool` a
+`boolean`, `TypeTime` a string of `format: date-time`, `TypeUUID` a string of
+`format: uuid`, and `TypeList` an `array` of whatever `Elem` maps to. `Enum`
+becomes `enum`, `Doc` a `description` and `ReadOnly` sets `readOnly`; the
+required names are the ones a caller must send, so a field the server owns is
+not among them. A `Default` arrives as the property's own JSON type — `"3"`
+beside an `integer` is `3`, `"true"` beside a `boolean` is `true` — and a
+default that will not parse as the type beside it is a returned error rather
+than a string where a number belongs. A `Widget` travels as
+`x-platformkit-widget`, and a `text` column with none declared gets `textarea`,
+since a paragraph and a line are the only difference a control cares about.
+`HideList` and `Present` are not in it: which screen shows a column, and how a
+value reads, are not facts about the record a caller sends.
+
+The function is pure, deterministic, and derives everything on the call —
+`Field` stays authoritative and the document is stored nowhere, so there is
+nothing to keep in step. It guarantees the shape and JSON type of a record the
+API accepts and the names that cannot be omitted. It does not say who may send
+the record, which transition a value permits, that an instant or identifier is
+one because it matches its `format`, or what an amount is denominated in:
+[ADR 0012](../../docs/adr/0012-independent-parts.md) keeps those with the
+product. `testdata/task.schema.json` is the projection of the task entity's
+fields, kept honest by `TestTaskSchemaIsTheProjectedShape` in `modules/task`.
+`ui/screens` and `kit/app` carry the projection beside the fields each already
+carried.
+
 ## The widget vocabulary
 
 `ui:"widget:select"` names the control a screen draws. `Widgets` is every name it

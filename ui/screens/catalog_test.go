@@ -1,6 +1,7 @@
 package screens_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
@@ -115,8 +117,50 @@ func TestCatalogGolden(t *testing.T) {
 	if back.Resources[0].Singleton || !back.Resources[2].Singleton {
 		t.Fatal("singleton did not survive the trip")
 	}
+	// Both renderings of the same record are in the document now, so the one
+	// thing the addition cannot be is a second opinion: every `schema` is what
+	// entity.JSONSchema makes of the `fields` beside it, entity or command.
+	for _, e := range back.Resources {
+		assertSchemaIsTheProjection(t, e.Entity, e.JSONSchema, e.Fields)
+		for _, c := range e.Commands {
+			assertSchemaIsTheProjection(t, e.Entity+" command "+c.Verb, c.Schema, c.Fields)
+		}
+	}
 	if _, has := jsonKeys(t, got)["readable"]; has {
 		t.Fatal("the document carries a readable flag; an unreadable resource is omitted instead")
+	}
+}
+
+// assertSchemaIsTheProjection compares a schema the document carries with the
+// one entity.JSONSchema makes of the fields beside it, as the bytes each side
+// encodes to. Schema and fields describe one record, and a shell that reads one
+// and a shell that reads the other have to be told the same record.
+func assertSchemaIsTheProjection(t *testing.T, what string, got json.RawMessage, fields []entity.Field) {
+	t.Helper()
+	if len(fields) == 0 {
+		if len(got) != 0 {
+			t.Errorf("%s carries a schema built out of no fields: %s", what, got)
+		}
+		return
+	}
+	doc, err := entity.JSONSchema(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The document is indented, and a raw member keeps the whitespace it was
+	// read with, so the comparison is of the two compact forms. Both sides are
+	// bytes encoding/json wrote, which is what makes their key order one order
+	// and not one per run.
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, got); err != nil {
+		t.Fatalf("%s: the schema in the document is not JSON: %v", what, err)
+	}
+	if !bytes.Equal(compact.Bytes(), want) {
+		t.Errorf("%s: the served schema is not entity.JSONSchema of the fields beside it\n got %s\nwant %s", what, compact.String(), want)
 	}
 }
 

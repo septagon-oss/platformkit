@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assigneeId": {
+      "description": "User responsible for the task",
+      "format": "uuid",
+      "type": "string",
+      "x-platformkit-widget": "entity-picker"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+    },
+    "description": {
+      "description": "Detailed description of the task",
+      "type": "string",
+      "x-platformkit-widget": "textarea"
+    },
+    "dueAt": {
+      "description": "Soft target completion time",
+      "format": "date-time",
+      "type": "string",
+      "x-platformkit-widget": "datetime"
+    },
+    "id": {
+      "format": "uuid",
+      "readOnly": true,
+      "type": "string"
+    },
+    "priority": {
+      "default": "normal",
+      "description": "Task priority",
+      "enum": [
+        "low",
+        "normal",
+        "high",
+        "critical"
+      ],
+      "type": "string",
+      "x-platformkit-widget": "select"
+    },
+    "resolution": {
+      "description": "How the task was resolved",
+      "type": "string",
+      "x-platformkit-widget": "textarea"
+    },
+    "resolvedAt": {
+      "description": "When the task was resolved",
+      "format": "date-time",
+      "type": "string",
+      "x-platformkit-widget": "datetime"
+    },
+    "slaBreached": {
+      "default": false,
+      "description": "True once the deadline elapsed with the task unresolved",
+      "type": "boolean",
+      "x-platformkit-widget": "checkbox"
+    },
+    "slaDeadline": {
+      "description": "Hard SLA deadline; a breach is measured against this",
+      "format": "date-time",
+      "type": "string",
+      "x-platformkit-widget": "datetime"
+    },
+    "source": {
+      "description": "Origin of the task",
+      "type": "string"
+    },
+    "sourceRef": {
+      "description": "Reference into the source system",
+      "type": "string"
+    },
+    "status": {
+      "default": "open",
+      "description": "Lifecycle state",
+      "enum": [
+        "open",
+        "acknowledged",
+        "in_progress",
+        "resolved",
+        "closed"
+      ],
+      "type": "string",
+      "x-platformkit-widget": "select"
+    },
+    "title": {
+      "description": "Short summary of the task",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "type": "object"
+}

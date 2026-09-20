@@ -134,10 +134,15 @@ type RouteDescription struct {
 
 // ResourceDescription is one entity kit/rest mounted, as the generated screens
 // see it: the same two permissions the routes carry, the fields a command owns,
-// and whether the tenant has one of these or many. It does not repeat the field
-// list — /api/v1/admin/resources serves that schema from the same
-// httpx.Resources this reads, and a second copy of every entity in the
-// description would be a second thing to keep in step.
+// and whether the tenant has one of these or many.
+//
+// Schema is the entity's fields in JSON Schema 2020-12 rather than the
+// entity.Field list again. /api/v1/admin/resources serves that list to the shell
+// that renders screens from it; what a description adds is the reading for a
+// consumer that never compiled against PlatformKit, and this document is the one
+// a reviewer reads and diffs, so it is the one worth writing in a public
+// vocabulary. Nothing stores it: it is projected from the fields on the way out,
+// which is what keeps it from being a second copy to keep in step.
 type ResourceDescription struct {
 	Entity        string               `json:"entity"`
 	Path          string               `json:"path"`
@@ -145,6 +150,7 @@ type ResourceDescription struct {
 	Write         string               `json:"write"`
 	OperatorRead  bool                 `json:"operatorRead,omitempty"`
 	OperatorWrite bool                 `json:"operatorWrite,omitempty"`
+	Schema        json.RawMessage      `json:"schema,omitempty"`
 	Immutable     []string             `json:"immutable,omitempty"`
 	Singleton     bool                 `json:"singleton,omitempty"`
 	Commands      []CommandDescription `json:"commands,omitempty"`
@@ -152,13 +158,16 @@ type ResourceDescription struct {
 
 // CommandDescription is one lifecycle route beyond the five, and who may call
 // it. Fields is the shape of its argument, in the order the request body
-// declares it — the same order the catalog gives a generated form.
+// declares it — the same order the catalog gives a generated form. Schema is the
+// same argument as JSON Schema 2020-12, and a command with no argument has
+// neither: it is a POST with no body at all.
 type CommandDescription struct {
 	Verb       string             `json:"verb"`
 	Summary    string             `json:"summary,omitempty"`
 	Collection bool               `json:"collection,omitempty"`
 	Auth       json.RawMessage    `json:"auth,omitempty"`
 	Fields     []FieldDescription `json:"fields,omitempty"`
+	Schema     json.RawMessage    `json:"schema,omitempty"`
 }
 
 // FieldDescription is one field of a command's argument, by name and type.
@@ -318,6 +327,29 @@ func authJSON(a httpx.Auth) (json.RawMessage, error) {
 	return raw, nil
 }
 
+// schemaJSON is entity.JSONSchema encoded for one entity or one command's
+// argument. An argument with no fields has no schema to carry — it is a POST
+// with no body, and the description says so by carrying nothing rather than an
+// object with nothing in it.
+//
+// A declaration that cannot be projected fails the whole description rather
+// than arriving in it as a string where a number belongs: nothing reads this
+// document at runtime, so the one thing it has to be is true.
+func schemaJSON(fields []entity.Field) (json.RawMessage, error) {
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	doc, err := entity.JSONSchema(fields)
+	if err != nil {
+		return nil, fmt.Errorf("app: describe: %w", err)
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("app: describe: the projected schema did not encode: %w", err)
+	}
+	return raw, nil
+}
+
 // routesByOwner groups every recorded operation under the module it belongs to,
 // and returns the ones no module owns. Three signals, in order of how much they
 // can be trusted: see ownerOf.
@@ -408,6 +440,10 @@ func resourcesByOwner(resources []httpx.Resource, mods []module.Module) (map[str
 			OperatorRead: r.OperatorRead, OperatorWrite: r.OperatorWrite,
 			Immutable: append([]string(nil), r.Immutable...), Singleton: r.Singleton,
 		}
+		var err error
+		if out.Schema, err = schemaJSON(r.Schema.Fields); err != nil {
+			return nil, nil, err
+		}
 		sort.Strings(out.Immutable)
 		for _, c := range r.Commands {
 			cmd := CommandDescription{Verb: c.Verb, Summary: c.Summary, Collection: c.Collection}
@@ -417,6 +453,9 @@ func resourcesByOwner(resources []httpx.Resource, mods []module.Module) (map[str
 					return nil, nil, err
 				}
 				cmd.Auth = raw
+			}
+			if cmd.Schema, err = schemaJSON(c.Fields); err != nil {
+				return nil, nil, err
 			}
 			for _, f := range c.Fields {
 				cmd.Fields = append(cmd.Fields, FieldDescription{Name: f.Name, Type: f.Type})

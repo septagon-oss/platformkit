@@ -2,6 +2,7 @@ package screens
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -39,8 +40,15 @@ type Catalog struct {
 // look at, they are not told exists.
 type Entry struct {
 	entity.Schema
-	Immutable []string `json:"immutable,omitempty"`
-	Writable  bool     `json:"writable"`
+	// JSONSchema is those same fields in JSON Schema 2020-12, for the consumer
+	// that reads a schema it did not compile against — an MCP tool, a generated
+	// client, a validator — rather than learning FieldType to use one. Fields
+	// stays: it says which control draws the value and which screen shows it,
+	// which a schema for the record has no business saying. It is not called
+	// Schema because the embedded entity.Schema already owns that name.
+	JSONSchema json.RawMessage `json:"schema,omitempty"`
+	Immutable  []string        `json:"immutable,omitempty"`
+	Writable   bool            `json:"writable"`
 	// Commands are the doors this caller may open beyond the five: the
 	// lifecycle routes the resource carries. A command the caller may not call
 	// is absent for the same reason an unreadable resource is.
@@ -63,6 +71,11 @@ type Command struct {
 	Description string         `json:"description,omitempty"`
 	Collection  bool           `json:"collection,omitempty"`
 	Fields      []entity.Field `json:"fields,omitempty"`
+	// Schema is Fields as JSON Schema 2020-12: the body this command takes, for
+	// a client that will not compile against the entity either. A command with
+	// no argument has no fields and so no schema, which is the same answer as
+	// "POST it with no body".
+	Schema json.RawMessage `json:"schema,omitempty"`
 }
 
 // Describe is the catalog for this caller: the readable resources, in the
@@ -87,12 +100,41 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // write it". It is the pure half of Describe, and what the golden test builds
 // from without an authorizer.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	e := Entry{Schema: r.Schema, Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton}
+	e := Entry{
+		Schema: r.Schema, JSONSchema: mustSchema(r.Entity, r.Schema.Fields),
+		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
+	}
 	for _, c := range r.Commands {
 		e.Commands = append(e.Commands, Command{
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
 			Collection: c.Collection, Fields: c.Fields,
+			Schema: mustSchema(r.Entity+" command "+c.Verb, c.Fields),
 		})
 	}
 	return e
+}
+
+// mustSchema is the projection, or the reason this request fails.
+//
+// The one way entity.JSONSchema refuses is a `default:"…"` that does not parse
+// as the type beside it, which is a mistake in the declaration rather than in
+// anything a caller did. It is the same class as a widget name no renderer
+// knows, and kit/rest already refuses to mount over that one. Refusing loudly is
+// the alternative to serving a catalog that left a schema out of the entry a
+// shell is generating its screens from. kit/httpx's own recovery turns the panic
+// into a 500 and a log line naming the field, so a bad declaration costs one
+// request and says which field to go and fix.
+func mustSchema(what string, fields []entity.Field) json.RawMessage {
+	if len(fields) == 0 {
+		return nil
+	}
+	doc, err := entity.JSONSchema(fields)
+	if err != nil {
+		panic("screens: " + what + ": " + err.Error())
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		panic("screens: " + what + ": the projected schema did not encode: " + err.Error())
+	}
+	return raw
 }

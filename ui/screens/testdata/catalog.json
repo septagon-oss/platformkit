@@ -56,6 +56,59 @@
           "elem": "string"
         }
       ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "string",
+            "x-platformkit-widget": "textarea"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "readOnly": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "status": {
+            "default": "open",
+            "enum": [
+              "open",
+              "done"
+            ],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "What this note is about",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
       "immutable": [
         "status"
       ],
@@ -71,7 +124,18 @@
               "type": "string",
               "doc": "When it goes out; now if left empty"
             }
-          ]
+          ],
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "description": "When it goes out; now if left empty",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
         },
         {
           "verb": "archive",
@@ -136,6 +200,59 @@
           "elem": "string"
         }
       ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "string",
+            "x-platformkit-widget": "textarea"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "readOnly": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "status": {
+            "default": "open",
+            "enum": [
+              "open",
+              "done"
+            ],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "What this note is about",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
       "writable": false
     },
     {
@@ -193,6 +310,59 @@
           "elem": "string"
         }
       ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "string",
+            "x-platformkit-widget": "textarea"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "readOnly": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "status": {
+            "default": "open",
+            "enum": [
+              "open",
+              "done"
+            ],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "What this note is about",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
       "writable": true,
       "singleton": true
     }
