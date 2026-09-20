@@ -29,7 +29,10 @@ import (
 // everything outside that module. The compiler is the boundary (idea 3), and
 // this line is a test being held to it like anything else.
 func realUsers() usercontracts.Service {
-	svc, _ := user.Module(user.Deps{})
+	// The same wiring apps/platformkit uses: the user module's floor asks the
+	// roles table who can still administer the tenant, and this is the function
+	// that answers it.
+	svc, _ := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
 	return svc
 }
 

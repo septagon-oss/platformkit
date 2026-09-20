@@ -79,7 +79,7 @@ func mountOn(t *testing.T, conn *db.Conn, oidc auth.OIDC) (chi.Router, *db.Conn,
 func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration bool, configure ...func(*auth.Deps)) (chi.Router, *db.Conn, contracts.Auth) {
 	t.Helper()
 	mailbox, notices = &authtest.Mailbox{}, &authtest.Notices{}
-	users, userModule := user.Module(user.Deps{})
+	users, userModule := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
 	var registrar contracts.RegistrationUsers
 	if registration {
 		registrar = users
@@ -517,6 +517,11 @@ func TestTheRolesRoutesAreGuardedAndChecked(t *testing.T) {
 		{"editor", `{"permissions":["ghost:read"]}`, "ghost:read"},
 		{"operator", `{"permissions":["tenant:manage"]}`, "tenant:manage"},
 		{"1editor", `{"permissions":[]}`, "lower-case"},
+		// The write with no way back, at the route it was always reachable
+		// from: admin holds the wildcard and is the only role here that grants
+		// role:manage, so emptying it would leave this tenant unable to change
+		// a role through any door it has.
+		{contracts.RoleAdmin, `{"permissions":[]}`, "last role that grants role:manage"},
 	} {
 		res := put(tt.name, tt.body)
 		if res.Code != http.StatusUnprocessableEntity {
@@ -526,10 +531,13 @@ func TestTheRolesRoutesAreGuardedAndChecked(t *testing.T) {
 			t.Errorf("the refusal does not name %q: %s", tt.want, res.Body.String())
 		}
 	}
-	// And the refused writes changed nothing.
+	// And the refused writes changed nothing, the wildcard included.
 	res = call(t, router, http.MethodGet, "/api/v1/auth/roles", "", withSession(admin))
 	if strings.Contains(res.Body.String(), "ghost:read") || strings.Contains(res.Body.String(), "tenant:manage") {
 		t.Errorf("a refused write reached the table: %s", res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), `"permissions":["*"]`) {
+		t.Errorf("admin lost the wildcard to a refused write: %s", res.Body.String())
 	}
 }
 

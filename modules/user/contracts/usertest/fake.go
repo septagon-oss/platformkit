@@ -22,13 +22,76 @@ import (
 // which is slow on purpose, and is what makes the fake honest here rather than
 // fast.
 type Fake struct {
-	mu        sync.Mutex
-	users     map[uuid.UUID]contracts.User
-	published []string
+	mu sync.Mutex
+	// administering is this fake's whole role system: the names it treats as
+	// granting the permission that can grant every other one back. The real
+	// service asks the application through contracts.Administration; a fake
+	// with no database is handed the answer instead.
+	administering []string
+	users         map[uuid.UUID]contracts.User
+	published     []string
 }
 
-// NewFake returns an empty store.
-func NewFake() *Fake { return &Fake{users: map[uuid.UUID]contracts.User{}} }
+// NewFake returns an empty store whose tenant has no role system at all: no
+// role it treats as administering, so the floor never refuses anything.
+//
+// That is what this constructor answered before the floor existed and what it
+// still answers, so a consumer's tests written against v1.1.0 keep compiling and
+// keep meaning the same thing — this package is published, and RELEASE.md
+// measures a break against v1.1.0 with no accepted-break baseline. The
+// signature is therefore frozen, and what changed is where the answer comes
+// from: a tenant with a role system asks NewFakeWithAdministration for one.
+//
+// The cost of freezing it is worth naming rather than leaving to the reader: a
+// test that means to exercise the floor and reaches for NewFake gets a store
+// that cannot refuse, and nothing complains. RunService is where that case is
+// closed — TestFakeConforms runs the same suite the real service runs against a
+// fake built by NewFakeWithAdministration, so the two implementations cannot
+// drift apart here quietly, and a consumer's own floor case has to ask for it.
+func NewFake() *Fake {
+	return NewFakeWithAdministration(nil)
+}
+
+// NewFakeWithAdministration returns an empty store whose tenant treats the
+// given role names as the ones able to change a role again — the fake's whole
+// role system, and the answer it needs to keep contracts.Service's promises the
+// same way the real service does.
+//
+// It is a second constructor rather than a variadic first one. Variadic, every
+// call written before the floor existed went on compiling and silently got nil,
+// which is the state user.Module panics rather than allow, reintroduced in the
+// one place a consumer tests against. A distinct name leaves NewFake's callers
+// alone and makes a test that wants the floor say so where it builds the store.
+func NewFakeWithAdministration(administering []string) *Fake {
+	return &Fake{administering: administering, users: map[uuid.UUID]contracts.User{}}
+}
+
+// Delete soft-deletes somebody, the way the generated CRUD route does, and
+// refuses the same write rest.Spec's AfterDelete hook refuses.
+//
+// It is not a contracts.Service method, because deleting a user is generic CRUD
+// and there is no Delete on the interface; it takes no transaction for the same
+// reason the rest of this fake ignores the one it is handed. It is here so the
+// conformance suite can hold both implementations to the floor at that door too
+// — without it the third door is tested against the real composition and
+// against nothing else. The check is before the write rather than after it,
+// because there is no transaction here to roll one back.
+func (f *Fake) Delete(_ context.Context, id uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, err := f.get(id)
+	if err != nil {
+		return err
+	}
+	if err := f.floor(u, nil); err != nil {
+		return err
+	}
+	at := db.Now()
+	u.DeletedAt, u.UpdatedAt = &at, at
+	f.users[id] = *u
+	f.published = append(f.published, contracts.EventDeleted)
+	return nil
+}
 
 var _ contracts.Service = (*Fake)(nil)
 
@@ -79,7 +142,7 @@ func (f *Fake) SetPassword(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, 
 	return nil
 }
 
-// SetRoles mirrors internal.Service.SetRoles.
+// SetRoles mirrors internal.Service.SetRoles, the floor included.
 func (f *Fake) SetRoles(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, roles []string) (*contracts.User, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -91,6 +154,11 @@ func (f *Fake) SetRoles(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, rol
 	if slices.Equal([]string(u.Roles), want) {
 		return u, nil
 	}
+	after := *u
+	after.Roles = want
+	if err := f.floor(u, &after); err != nil {
+		return nil, err
+	}
 	u.Roles, u.UpdatedAt = want, db.Now()
 	if err := u.Validate(context.Background()); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
@@ -100,7 +168,7 @@ func (f *Fake) SetRoles(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, rol
 	return f.get(id)
 }
 
-// Deactivate mirrors internal.Service.Deactivate.
+// Deactivate mirrors internal.Service.Deactivate, the floor included.
 func (f *Fake) Deactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -110,6 +178,11 @@ func (f *Fake) Deactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 	}
 	if u.Status == contracts.StatusInactive {
 		return u, nil
+	}
+	after := *u
+	after.Status = contracts.StatusInactive
+	if err := f.floor(u, &after); err != nil {
+		return nil, err
 	}
 	u.Status, u.UpdatedAt = contracts.StatusInactive, db.Now()
 	f.users[id] = *u
@@ -209,12 +282,27 @@ func (f *Fake) Provision(_ context.Context, _ db.Tx[db.System], tenantID uuid.UU
 	return f.get(u.ID)
 }
 
+// floor is internal.Service.floor without a database: the same decision, from
+// the same function, so the fake and the service cannot disagree about who the
+// last administrator is. The caller holds the lock the closure reads under.
+func (f *Fake) floor(before, after *contracts.User) error {
+	return contracts.CheckedAdministration(before, after, f.administering, func() ([]*contracts.User, error) {
+		others := make([]*contracts.User, 0, len(f.users))
+		for id, stored := range f.users {
+			if id != before.ID && stored.DeletedAt == nil {
+				others = append(others, &stored)
+			}
+		}
+		return others, nil
+	})
+}
+
 // get is a copy of the stored user, so a caller that mutates what it was handed
 // does not reach into the store — which is what a database would do. The caller
 // holds the lock.
 func (f *Fake) get(id uuid.UUID) (*contracts.User, error) {
 	stored, ok := f.users[id]
-	if !ok {
+	if !ok || stored.DeletedAt != nil {
 		return nil, crud.ErrNotFound
 	}
 	stored.Roles = slices.Clone(stored.Roles)

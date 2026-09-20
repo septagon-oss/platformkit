@@ -15,12 +15,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
-	"github.com/septagon-oss/platformkit/modules/user/internal"
 )
 
 func TestPendingRegistrationsKeepTenantOwnershipAndRollBackTogether(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations)
-	svc := internal.NewService()
+	svc := newService()
 	const password = "correct horse battery staple"
 	var ids []uuid.UUID
 	for _, tenant := range []tenancy.Tenant{acme, globex} {
@@ -88,7 +87,7 @@ func TestConcurrentLifecycleChangesCannotBeUndoneByActivation(t *testing.T) {
 	for _, change := range []struct{ operation, field string }{{"password", "status"}, {"approval", "status"}, {"verification", "status"}, {"verification", "email"}} {
 		t.Run(change.operation+"/"+change.field, func(t *testing.T) {
 			admin, conn := dbtest.Schema(t, user.Migrations)
-			svc := internal.NewService()
+			svc := newService()
 			var id uuid.UUID
 			if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 				register := svc.RegisterPending

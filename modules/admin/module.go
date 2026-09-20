@@ -5,11 +5,13 @@
 // detail and form come from an entity's schema, and kit/httpx carries that
 // schema for every resource kit/rest mounted. The generated screens are
 // ui/screens'; this module composes them with its own chrome, frame and
-// navigation, adds the five pages no schema describes — the dashboard, the
-// health page, the sign-in page, the gallery and the tenant switcher — and
-// serves the same knowledge as JSON at /api/v1/admin/resources for a shell that
-// is not a browser. A sixth hand-written page arrives only when an interaction
-// cannot be derived.
+// navigation, adds the six pages no schema describes — the dashboard, the
+// health page, the sign-in page, the gallery, the tenant switcher and the roles
+// screen — and serves the same knowledge as JSON at /api/v1/admin/resources for
+// a shell that is not a browser. A seventh hand-written page arrives only when
+// an interaction cannot be derived, which is what the roles screen is: a role is
+// keyed by its name rather than by an id, and a generated screen's item path is
+// a UUID.
 //
 // It is composed last, and that is load-bearing rather than tidy: kit/app calls
 // each module's Routes in composition order, so a module mounted after this one
@@ -29,6 +31,11 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
+// Roles is what the shell needs of the auth module to administer roles. See
+// internal.Roles: the alias keeps the declaration beside its one implementation
+// and the name beside the Deps field that takes it.
+type Roles = internal.Roles
+
 // Deps is what the shell cannot make for itself.
 type Deps struct {
 	// Modules is the composition, for navigation. The shell draws the sidebar
@@ -46,6 +53,15 @@ type Deps struct {
 	// Tenants is the control plane, for the switcher. It is the one cross-tenant
 	// read in this module, and it needs the token Routes is handed.
 	Tenants tenantcontracts.Service
+
+	// Roles is the auth module's role administration, for the screen that
+	// module's nav entry names. It is the same value main hands the kernel as
+	// the authorizer, seen through the two methods this screen uses.
+	//
+	// Nil mounts no screen. A composition that has no auth module has no roles
+	// nav entry either, so the two agree; a composition that has one and wires
+	// nothing here is told at boot that the entry leads nowhere.
+	Roles Roles
 
 	// Theme is the installation's two palettes. The zero value is the palette
 	// this repository ships; a client with its own colours sets this and
@@ -71,8 +87,10 @@ const PermissionGalleryRead = "gallery:read"
 // Module is the manifest.
 //
 // It declares gallery:read for the selected design composition. Other pages
-// use the permissions of the modules that own their data. It declares neither
-// events nor a navigation entry of its own.
+// use the permissions of the modules that own their data — the tenant
+// switcher's and the roles screen's included, which is what keeps a screen and
+// its module's API refusing the same callers. It declares neither events nor a
+// navigation entry of its own.
 func Module(deps Deps) module.Module {
 	return module.Module{
 		Name:          "admin",
@@ -86,6 +104,7 @@ func Module(deps Deps) module.Module {
 				Nav:       navigation(deps.Modules),
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
+				Roles:     deps.Roles,
 				Theme:     theme(deps.Theme),
 				Storybook: deps.Storybook,
 				Messages:  deps.Messages,

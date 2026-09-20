@@ -10,6 +10,8 @@ import (
 )
 
 func TestFakeVerificationChecksTheCurrentPasswordAndEmail(t *testing.T) {
+	// No role system: this file is about verification, and that is the world it
+	// wants. A case that means to exercise the floor asks for one.
 	f := NewFake()
 	var tx db.Tx[db.Tenant]
 	u, err := f.RegisterUnverified(t.Context(), tx, contracts.PasswordRegistration{Email: "ada@example.com", Password: good})

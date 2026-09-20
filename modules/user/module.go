@@ -1,9 +1,10 @@
 // Package user is the module manifest: the people in a tenant.
 //
 // It is the exemplar's shape with one entity, one Spec and explicit lifecycle
-// commands, and it takes no dependencies at all: a user belongs to a tenant by
-// carrying its id, which row-level security matches on, so there is nothing for
-// this module to ask the tenant module for.
+// commands. A user belongs to a tenant by carrying its id, which row-level
+// security matches on, so there is nothing for this module to ask the tenant
+// module for; its one dependency is Deps.Administration, and that is a question
+// about roles rather than about users.
 package user
 
 import (
@@ -19,10 +20,26 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user/internal"
 )
 
-// Deps is what this module cannot make for itself, and it is empty. That is
-// worth a struct rather than no parameter: the day it needs something, every
-// call site gains a named field instead of a new argument.
-type Deps struct{}
+// Deps is what this module cannot make for itself, and it is one thing.
+//
+// It used to be empty, and the day it needed something was the day the floor
+// under a tenant's last administrator was written: whether somebody can still
+// administer their tenant depends on what the roles they hold grant, and what a
+// role grants is the auth module's table. This module reads no other module's
+// rows, so the application answers instead.
+type Deps struct {
+	// Administration answers which of a tenant's roles grant the permission
+	// that can grant every other one back. Wire
+	// &contracts.AdministrationFunc{Ask: auth.AdministeringRoles}, or the
+	// equivalent for whatever owns roles in this composition; take the
+	// adapter's address, which is what keeps this struct comparable.
+	//
+	// It is required rather than optional because the alternative is a product
+	// that composes this module, silently gets no floor, and finds out when a
+	// customer locks themselves out — the same argument as file.Deps.Storage
+	// and notification.Deps.Mailer, which panic for the same reason.
+	Administration contracts.Administration
+}
 
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads.
@@ -78,10 +95,31 @@ var permissions = []module.Permission{
 
 // Module is the manifest, and the service it is built on: the auth module takes
 // this value from main, because signing somebody in means finding them first.
-func Module(_ Deps) (contracts.Service, module.Module) {
-	svc := internal.NewService()
+func Module(deps Deps) (contracts.Service, module.Module) {
+	if deps.Administration == nil {
+		panic("user.Module: Deps.Administration is required; wire auth.AdministeringRoles so the floor under a tenant's last administrator has something to ask")
+	}
+	// An interface is not nil just because what it holds is. &contracts.
+	// AdministrationFunc{} satisfies the field, reaches this composition looking
+	// wired, and would answer "nobody administers this tenant" to every question
+	// the floor asks — the missing floor again, one struct field deeper. Refused
+	// here for the same reason a nil is: composition happens in main, before
+	// there is anywhere to report to. contracts.AdministrationFunc.Administering
+	// answers the same way as an error, so a hand-written implementation that
+	// cannot answer fails the write rather than passing it.
+	if asked, ok := deps.Administration.(*contracts.AdministrationFunc); ok && (asked == nil || asked.Ask == nil) {
+		panic("user.Module: Deps.Administration is an adapter with no Ask; wire auth.AdministeringRoles, do not hand the floor an empty adapter")
+	}
+	svc := internal.NewService(deps.Administration)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate
+	// The third door, and the one that is not a lifecycle command: DELETE
+	// {id} soft-deletes the row, which hides it from ByEmail and from every
+	// other read, so deleting the sole administrator locks the tenant out
+	// exactly as emptying their roles does. There is no Delete method for the
+	// rule to live in, so it is the Spec's hook — which runs inside the
+	// request's transaction, so a refusal rolls the delete back.
+	mounted.AfterDelete = svc.RefuseLastAdministrator
 	return svc, module.Module{
 		Name:        "user",
 		Migrations:  Migrations.Files,

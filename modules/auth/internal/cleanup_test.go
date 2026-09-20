@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/migrations"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/user"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 func TestDetachedAuthWritesSurviveCancellation(t *testing.T) {
@@ -114,7 +115,7 @@ func authCleanupFixture(t *testing.T, maxOpen int) (*sql.DB, *db.Conn, context.C
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "cleanup", Name: "Cleanup"}
 	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), tenant), conn)
 	hash := contracts.Hash(uuid.NewString())
-	users, _ := user.Module(user.Deps{})
+	users, _ := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: AdministeringRoles}})
 	err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		person, err := users.Invite(ctx, tx, "ada@example.com", "Ada")
 		if err != nil {

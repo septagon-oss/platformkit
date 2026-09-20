@@ -18,6 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 const (
@@ -26,6 +27,14 @@ const (
 )
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
+
+// administering is this file's role system. The real answer is the auth
+// module's table — auth.AdministeringRoles — and this schema is the user
+// module's own migrations, which own users and nothing else; the floor takes a
+// function for exactly that reason.
+func administering(context.Context, db.Tx[db.Tenant]) ([]string, error) {
+	return []string{"owner"}, nil
+}
 
 // everything is the tenant loader and the authorizer for this file: one host,
 // and a caller who holds every permission. What is under test is what the
@@ -53,7 +62,7 @@ func mount(t *testing.T) chi.Router {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, m := user.Module(user.Deps{})
+	_, m := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: administering}})
 	m.Routes(api)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -192,4 +201,98 @@ func field(t *testing.T, body, name string) string {
 		t.Fatalf("no %s in %s", name, body)
 	}
 	return s
+}
+
+// TestTheLastAdministratorCannotBeRemovedThroughAnyDoor.
+//
+// Three writes on the generated user screen reached the same state, and all
+// three answered 2xx: setting the sole administrator's roles to none,
+// deactivating them, and deleting them. After any of them nobody in the tenant
+// could change a role again — the roles screen, the roles route and the users
+// route all answer 403 — and the installation's operator cannot repair a
+// customer's tenant, because a session does not cross into one. In the
+// operator's own tenant the same three clicks take the control plane with them.
+//
+// The refusal is 422 and names the person and the role, because it is a rule
+// about the request and not an outage. The PATCH route is not in this list: its
+// two fields are Immutable and TestALifecycleChangeHasExactlyOneDoor covers
+// them, which is why the door count here is three and not five.
+func TestTheLastAdministratorCannotBeRemovedThroughAnyDoor(t *testing.T) {
+	router := mount(t)
+	ada := administrator(t, router, "ada@acme.test")
+
+	doors := []struct {
+		name, method, path, body string
+	}{
+		{"roles", http.MethodPost, at + "/" + ada + "/roles", `{"roles":[]}`},
+		{"deactivate", http.MethodPost, at + "/" + ada + "/deactivate", ``},
+		{"delete", http.MethodDelete, at + "/" + ada, ``},
+	}
+	for _, door := range doors {
+		code, body := call(t, router, door.method, door.path, door.body)
+		if code != http.StatusUnprocessableEntity {
+			t.Errorf("%s on the last administrator = %d %s, want 422", door.name, code, body)
+			continue
+		}
+		if !strings.Contains(body, "ada@acme.test") || !strings.Contains(body, "owner") {
+			t.Errorf("%s refused without naming the person or the role: %s", door.name, body)
+		}
+	}
+
+	// Every refusal rolled its whole transaction back, so ada is where she
+	// was: still active, still holding the role, still readable.
+	code, body := call(t, router, http.MethodGet, at+"/"+ada, ``)
+	if code != http.StatusOK || !strings.Contains(body, `"owner"`) || !strings.Contains(body, `"active"`) {
+		t.Fatalf("after three refusals ada is %d %s", code, body)
+	}
+
+	// And the floor is the last one leaving rather than a headcount: a second
+	// administrator makes every one of those three writes ordinary again.
+	grace := administrator(t, router, "grace@acme.test")
+	if code, body = call(t, router, http.MethodPost, at+"/"+ada+"/roles", `{"roles":[]}`); code != http.StatusOK {
+		t.Errorf("standing down while grace administers = %d %s, want 200", code, body)
+	}
+	if code, body = call(t, router, http.MethodDelete, at+"/"+grace, ``); code != http.StatusUnprocessableEntity {
+		t.Errorf("deleting grace, now the last administrator = %d %s, want 422", code, body)
+	}
+}
+
+// administrator invites somebody and grants them the role this file's
+// Administration treats as able to change a role again, then returns their id.
+func administrator(t *testing.T, router chi.Router, email string) string {
+	t.Helper()
+	code, body := call(t, router, http.MethodPost, at, `{"email":"`+email+`"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("creating %s = %d %s", email, code, body)
+	}
+	id := field(t, body, "id")
+	if code, body = call(t, router, http.MethodPost, at+"/"+id+"/roles", `{"roles":["owner"]}`); code != http.StatusOK {
+		t.Fatalf("granting owner to %s = %d %s", email, code, body)
+	}
+	// Active, so the case is about the floor and not about a lifecycle state:
+	// a password is what makes an invited person somebody who can sign in.
+	if code, body = call(t, router, http.MethodPost, at+"/"+id+"/set-password",
+		`{"password":"correct horse battery staple"}`); code != http.StatusOK {
+		t.Fatalf("setting %s's password = %d %s", email, code, body)
+	}
+	return id
+}
+
+// TestAModuleWithNoRoleSystemIsRefusedAtComposition.
+//
+// Deps.Administration is required, and this is what "required" means: a
+// product that composes this module without it stops at boot with a message
+// naming the field, rather than serving an application whose floor silently
+// permits every lockout. file.Deps.Storage and notification.Deps.Mailer are the
+// precedent and the reason the failure is a panic and not a returned error —
+// composition happens in main, before there is anywhere to report to.
+func TestAModuleWithNoRoleSystemIsRefusedAtComposition(t *testing.T) {
+	defer func() {
+		reason, ok := recover().(string)
+		if !ok || !strings.Contains(reason, "Deps.Administration") {
+			t.Fatalf("composing without an Administration panicked with %v, want the field named", reason)
+		}
+	}()
+	user.Module(user.Deps{})
+	t.Fatal("composing without an Administration was allowed")
 }

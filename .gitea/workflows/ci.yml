@@ -77,6 +77,18 @@ jobs:
       - name: make check
         run: make check
 
+      # Second, and load-bearing: the outbox, the request transaction, the advisory
+      # locks over a tenant's administration, the limit counters and the router under
+      # the race detector. The Makefile target has existed since the concurrency
+      # kernel and CONTRIBUTING has said CI runs it, but no workflow ever called it —
+      # so the one gate that would notice a lock released before the commit that needs
+      # it has only ever run in a contributor's shell. It stays a separate step from
+      # `make check` because -race roughly doubles the suite; the packages it covers
+      # are the Makefile's standing RACE_PACKAGES list, widened by the commit that put
+      # advisory locks in modules/auth and modules/user.
+      - name: make check-race
+        run: make check-race
+
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 

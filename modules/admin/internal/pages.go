@@ -11,8 +11,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
-	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -27,6 +27,7 @@ type pages struct {
 	Shell
 	shell     page.Shell
 	resources []httpx.Resource
+	declared  []tenancy.Grant
 }
 
 func (p pages) mount(api *httpx.API) {
@@ -48,6 +49,7 @@ func (p pages) mount(api *httpx.API) {
 		})
 
 	p.mountGallery(api)
+	p.mountRoles(api)
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -217,7 +219,7 @@ func checks(ctx context.Context) []result {
 func (p pages) tenants(ctx context.Context) (page.View, error) {
 	conn, reachable := httpx.ConnFrom(ctx)
 	if !reachable {
-		return page.View{}, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
+		return page.View{}, unreachable
 	}
 	var all []*tenantcontracts.Tenant
 	err := db.RunSystem(db.Detached(ctx), conn, p.Token, func(ctx context.Context, tx db.Tx[db.System]) error {

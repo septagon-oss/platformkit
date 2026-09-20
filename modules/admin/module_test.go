@@ -160,6 +160,14 @@ func mount(t *testing.T) chi.Router { return mountAs(t, caller{}) }
 // generated screens and on the dashboard's cards are tested with.
 func mountAs(t *testing.T, authorize httpx.Authorizer, configure ...func(*admin.Deps)) chi.Router {
 	t.Helper()
+	_, router := mountWithAPI(t, authorize, configure...)
+	return router
+}
+
+// mountWithAPI is mountAs keeping the kernel, for the cases that ask what the
+// composition recorded rather than what it answers.
+func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*admin.Deps)) (*httpx.API, chi.Router) {
+	t.Helper()
 	adminDB, app := dbtest.Schema(t)
 	if _, err := adminDB.ExecContext(t.Context(), ddl+plansDDL); err != nil {
 		t.Fatalf("create the tables: %v", err)
@@ -218,6 +226,16 @@ func mountAs(t *testing.T, authorize httpx.Authorizer, configure ...func(*admin.
 	if err := module.Validate([]module.Module{notes, catalogue, shell}); err != nil {
 		t.Fatalf("the composition is invalid: %v", err)
 	}
+	// The catalogue before the routes, as kit/app declares it at boot: the roles
+	// screen offers what the composition defines, and a harness that declared
+	// nothing would render an empty one and prove nothing.
+	var declared []tenancy.Grant
+	for _, m := range []module.Module{notes, catalogue, shell} {
+		for _, permission := range m.Permissions {
+			declared = append(declared, tenancy.Grant{Permission: permission.Key, Operator: permission.Operator})
+		}
+	}
+	api.Declare(declared)
 	notes.Routes(api)
 	catalogue.Routes(api)
 	shell.Routes(api)
@@ -225,7 +243,7 @@ func mountAs(t *testing.T, authorize httpx.Authorizer, configure ...func(*admin.
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("a screen does not declare its authorization: %v", err)
 	}
-	return router
+	return api, router
 }
 
 func call(t *testing.T, r http.Handler, method, path, body string) (int, string, string) {

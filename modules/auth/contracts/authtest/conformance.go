@@ -434,6 +434,76 @@ func cases() map[string]func(*testing.T, Fixture) {
 			published(t, f, contracts.EventRoleSet)
 		},
 
+		"the last role that can administer roles cannot be emptied": func(t *testing.T, f Fixture) {
+			manage := tenancy.Grant{Permission: contracts.PermissionRoleManage}
+			// The wildcard is the only way this catalogue can grant role:manage
+			// — Declared is deliberately nobody's real permissions — and it
+			// grants it the way it grants every ordinary permission.
+			if _, err := f.Service.SetRole(f.Ctx, f.Tx, "owner", []string{contracts.Wildcard}, Declared); err != nil {
+				t.Fatalf("SetRole owner: %v", err)
+			}
+			// Whatever else this fixture seeded, owner is now the only role that
+			// can administer roles. Emptying the others is allowed, one at a
+			// time, which is the rule read from the other side.
+			roles, err := f.Service.Roles(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Roles: %v", err)
+			}
+			for _, role := range roles {
+				if role.Name == "owner" || !contracts.Grants(role.Grants, manage) {
+					continue
+				}
+				if _, err := f.Service.SetRole(f.Ctx, f.Tx, role.Name, nil, Declared); err != nil {
+					t.Fatalf("emptying %s while owner can still administer = %v", role.Name, err)
+				}
+			}
+			// Emptying the last one is what a person does by unticking a box
+			// and pressing save. It is refused, because afterwards nobody in
+			// this tenant could change a role again through any door.
+			_, err = f.Service.SetRole(f.Ctx, f.Tx, "owner", nil, Declared)
+			if !errors.Is(err, crud.ErrInvalid) {
+				t.Fatalf("emptying the last administering role = %v, want ErrInvalid", err)
+			}
+			if !strings.Contains(err.Error(), contracts.PermissionRoleManage) {
+				t.Errorf("the refusal does not name the permission: %v", err)
+			}
+			if held, err := f.Service.Permissions(f.Ctx, f.Tx, []string{"owner"}); err != nil || !contracts.Grants(held, manage) {
+				t.Errorf("owner holds %v (%v) after a refused write, want what it had", held, err)
+			}
+			// A second role that can administer makes the first ordinary again.
+			// This is the rule's boundary and not a statement about the
+			// product: the rule must not be stricter, or a tenant with a
+			// mistake in its roles could not be repaired. It is also the shape
+			// of what the rule cannot see — a role nobody holds satisfies it
+			// just as well. See contracts.CheckedAdministration.
+			if _, err := f.Service.SetRole(f.Ctx, f.Tx, "second", []string{contracts.Wildcard}, Declared); err != nil {
+				t.Fatalf("SetRole second: %v", err)
+			}
+			if _, err := f.Service.SetRole(f.Ctx, f.Tx, "owner", nil, Declared); err != nil {
+				t.Errorf("emptying a role that is not the last administrator = %v", err)
+			}
+			// And a role that never granted it is never the last one: this is a
+			// grant leaving, not a demand that one exist.
+			if _, err := f.Service.SetRole(f.Ctx, f.Tx, "reader", []string{"widget:read"}, Declared); err != nil {
+				t.Errorf("SetRole reader: %v", err)
+			}
+		},
+
+		"a role name is bounded": func(t *testing.T, f Fixture) {
+			// The route's path parameter and the screen's control both declare
+			// 64; without the rule underneath them, a caller that is neither
+			// stores whatever it likes.
+			long := strings.Repeat("a", contracts.MaxRoleName+1)
+			_, err := f.Service.SetRole(f.Ctx, f.Tx, long, []string{"widget:read"}, Declared)
+			if !errors.Is(err, crud.ErrInvalid) {
+				t.Fatalf("a %d-character role name = %v, want ErrInvalid", len(long), err)
+			}
+			if _, err := f.Service.SetRole(f.Ctx, f.Tx, long[:contracts.MaxRoleName], []string{"widget:read"}, Declared); err != nil {
+				t.Errorf("a role name of exactly %d characters = %v", contracts.MaxRoleName, err)
+			}
+			published(t, f, contracts.EventRoleSet)
+		},
+
 		"an operator permission cannot be granted in a customer's tenant": func(t *testing.T, f Fixture) {
 			// This tenant is a customer's — every fixture's is — so naming the
 			// installation's own permission in one of its roles is refused. It
