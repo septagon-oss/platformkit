@@ -13,6 +13,10 @@ import (
 )
 
 // Event is one thing that happened in one tenant.
+//
+// The JSON tags below are the shape this package published before it adopted
+// CloudEvents 1.0 and still decodes; the envelope in cloudevents.go is what
+// encoding/json writes now, so these tags describe the old wire form only.
 type Event struct {
 	// ID is the deduplication key. A handler that has already seen it has
 	// already done the work when its sink claims deliveries transactionally.

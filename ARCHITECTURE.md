@@ -224,7 +224,11 @@ durability. Terminal recording remains retryable after the handler attempt cap;
 
 JetStream delivery is at least once. Database claims prevent repeated committed
 handling; external effects still need the provider's own idempotency contract.
-[kit/jobs](kit/jobs/) schedules work through that event path.
+[kit/jobs](kit/jobs/) schedules work through that event path. The envelope on that
+path is CloudEvents 1.0, and because its previous shape still decodes but is no
+longer produced, worker roles roll out before web roles and a previous worker does
+not run against a newer web role
+([wire format](kit/events/README.md#wire-format)).
 
 ## Evolve the schema by owner
 

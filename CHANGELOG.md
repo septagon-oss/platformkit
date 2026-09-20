@@ -146,6 +146,16 @@ bump has to work around. What could reach a consumer is dst's own floor: it move
 `go 1.26.0`, which this module clears and a pinning module on an older toolchain
 would not.
 
+**Events cross a broker as CloudEvents 1.0 envelopes.** `transport.Event`'s JSON is
+now the CloudEvents 1.0 structured-content form — `specversion`, `id`, `source`,
+`type`, `time`, `datacontenttype`, `data`, and the `tenantid` and `actor` extensions
+— while its Go fields, the outbox columns, the `platformkit.<name>` subjects and the
+stream and durable names are unchanged, so [the wire format](kit/events/README.md#wire-format)
+is what a bridge or an AsyncAPI document sees. Roll worker roles out before web
+roles, and do not run a previous worker against a newer web role afterwards: the
+previous shape still decodes but is no longer produced, and the direction that does
+not work is the old reader meeting the new envelope.
+
 ## [1.1.1] - 2026-09-18
 
 A tooling patch. No exported API moved and no shipped behaviour moved: the diff from

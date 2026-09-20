@@ -50,6 +50,42 @@ durables across processes. When using the SQL outbox, handling and terminal
 claims commit atomically, and unfinished memory deliveries leave rows pending.
 External effects still require provider idempotency.
 
+## Wire format
+
+Every event a transport carries is a [CloudEvents 1.0](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md)
+envelope in structured content mode, so a broker bridge, an event router or an
+AsyncAPI document can read a PlatformKit event without importing this package.
+`Event` stays the Go programming model — the outbox stores columns, not
+envelopes — so only the JSON representation changed.
+
+| Member | Value |
+| --- | --- |
+| `specversion` | `"1.0"` |
+| `id` | `Event.ID` |
+| `source` | `"/" + module`: the first dot-separated segment of `Event.Name` (`task.assigned` → `/task`); a name with no dot uses the whole name |
+| `type` | `Event.Name` |
+| `time` | `Event.At` in RFC 3339 with nanoseconds, UTC |
+| `datacontenttype` | `"application/json"` |
+| `data` | `Event.Payload`, omitted when empty |
+| `tenantid` | `Event.TenantID`, an extension attribute, required |
+| `actor` | `Event.Actor`, an extension attribute, omitted when it is the nil UUID |
+
+Extension attribute names are lower-case, as the specification requires. Decoding
+checks `source` against `type` rather than trusting either, and still decodes the
+previous shape (`id`, `name`, `tenantId`, `payload`, `at`, `actor`), which it never
+produces.
+
+**Roll out worker roles before web roles, and do not run a previous worker against a
+newer web role after that.** The previous shape still decodes, so a worker on this
+release reads what an old web role publishes, and the subject, stream and durable
+names are unchanged: that is the window a rolling restart lives in. The reverse is
+not safe. `id`, `tenantid` and `actor` differ from the old member names only in
+case, and JSON member names are matched case-insensitively, so a previous worker
+reading an envelope takes its tenant and its id but finds no `name`, no `payload`
+and no `at` — a handler that ignores its payload then claims and acknowledges an
+event whose contents it never saw. `kit/events/transport` pins both shapes in
+`testdata/`.
+
 Run `go test -race ./kit/events/transport ./kit/events/providers/...` for portable
 envelope, memory delivery and local NATS TLS/credential checks. The SQL/broker
 recovery tests remain in `kit/events`; run them with the development PostgreSQL
