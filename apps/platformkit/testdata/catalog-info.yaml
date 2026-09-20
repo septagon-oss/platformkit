@@ -58,13 +58,11 @@ spec:
   owner: platformkit
   system: platformkit
   dependsOn:
-    - component:auth
     - component:user
   providesApis:
     - api:auth-events
     - api:auth-http
   consumesApis:
-    - api:auth-events
     - api:user-events
 ---
 apiVersion: backstage.io/v1alpha1
@@ -102,13 +100,9 @@ spec:
   lifecycle: production
   owner: platformkit
   system: platformkit
-  dependsOn:
-    - component:file
   providesApis:
     - api:file-events
     - api:file-http
-  consumesApis:
-    - api:file-events
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -119,13 +113,9 @@ spec:
   lifecycle: production
   owner: platformkit
   system: platformkit
-  dependsOn:
-    - component:notification
   providesApis:
     - api:notification-events
     - api:notification-http
-  consumesApis:
-    - api:notification-events
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

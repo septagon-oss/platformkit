@@ -9,7 +9,7 @@ For an application that owns its own persistence, import the parts directly:
 
 | Import beneath `github.com/septagon-oss/platformkit/` | Responsibility |
 | --- | --- |
-| [`kit/events/transport`](transport/) | `Event`, `Transport`, `Sink`, `ValidName`; only standard library and UUID dependencies |
+| [`kit/events/transport`](transport/) | `Event`, `Transport`, `Sink`, `ValidName`, `Declared` and `Declare`; only standard library and UUID dependencies |
 | [`kit/events/providers/memory`](providers/memory/) | `New()` delivers within one process and waits for handling or terminal recording |
 | [`kit/events/providers/nats`](providers/nats/) | `JetStream(url, options...)` and `Connect(config.NATS)` select the existing NATS transport |
 

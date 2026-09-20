@@ -77,15 +77,15 @@ func TestBackstageDescribesTheComposition(t *testing.T) {
 	if got := listOf(audit["consumesApis"]); !same(got, []string{"api:billing-events", "api:task-events"}) {
 		t.Errorf("audit consumesApis = %v", got)
 	}
-	// A module that listens to an event of its own says so, rather than the edge
-	// being quietly dropped: file does this for real, to delete bytes after the
-	// row's transaction commits.
+	// Listening to an event of one's own is not a dependency edge. task hears
+	// task.assigned and nothing else, so it depends on nobody and consumes no
+	// other module's API; TestBackstageKeepsAComponentsOwnEvents… is where the rule
+	// is pinned down, with a cross-module edge beside it.
 	task := specOf(t, docs, "Component", "task")
-	if got := listOf(task["dependsOn"]); !same(got, []string{"component:task"}) {
-		t.Errorf("task dependsOn = %v, want its own component", got)
-	}
-	if got := listOf(task["consumesApis"]); !same(got, []string{"api:task-events"}) {
-		t.Errorf("task consumesApis = %v", got)
+	for _, field := range []string{"dependsOn", "consumesApis"} {
+		if v, listed := task[field]; listed {
+			t.Errorf("task lists %v under %s and subscribes only to its own events", v, field)
+		}
 	}
 	for key, want := range map[string]string{"type": "service", "lifecycle": "production",
 		"owner": "platformkit", "system": "platformkit"} {
@@ -204,4 +204,50 @@ func listOf(v any) []string {
 
 func same(got, want []string) bool {
 	return len(got) == len(want) && strings.Join(got, ",") == strings.Join(want, ",")
+}
+
+// TestBackstageKeepsAComponentsOwnEventsOutOfItsDependencies: dependsOn is a
+// relation to another entity, and a component that lists itself renders as a
+// cycle of one. Handling an event of your own is real — modules/file removes a
+// blob that way, after the transaction that removed the row commits, and modules/auth
+// listens for its own reset request — but it is a fact about the surface a module
+// provides, not an edge in the graph. The self edge must go and the cross-module
+// edges beside it must not move.
+func TestBackstageKeepsAComponentsOwnEventsOutOfItsDependencies(t *testing.T) {
+	route := func(id string) []RouteDescription {
+		return []RouteDescription{{OperationID: id, Method: "GET", Path: "/" + id}}
+	}
+	raw, err := Backstage(Description{Modules: []ModuleDescription{
+		{Name: "file", Events: []EventDescription{{Name: "file.deleted"}},
+			Subscriptions: []string{"file.deleted", "user.user.updated"}, Routes: route("file")},
+		// note hears nothing but itself, so it gains no dependency at all.
+		{Name: "note", Events: []EventDescription{{Name: "note.created"}},
+			Subscriptions: []string{"note.created"}},
+		{Name: "user", Events: []EventDescription{{Name: "user.user.updated"}}, Routes: route("user")},
+	}})
+	if err != nil {
+		t.Fatalf("Backstage: %v", err)
+	}
+	docs := catalogDocs(t, raw)
+
+	file := specOf(t, docs, "Component", "file")
+	if got := listOf(file["dependsOn"]); !same(got, []string{"component:user"}) {
+		t.Errorf("file dependsOn = %v, want component:user alone: its own event is not one of its dependencies", got)
+	}
+	if got := listOf(file["consumesApis"]); !same(got, []string{"api:user-events"}) {
+		t.Errorf("file consumesApis = %v, want api:user-events alone", got)
+	}
+	if got := listOf(file["providesApis"]); !same(got, []string{"api:file-events", "api:file-http"}) {
+		t.Errorf("file providesApis = %v, want its own events API and its HTTP surface", got)
+	}
+
+	note := specOf(t, docs, "Component", "note")
+	for _, field := range []string{"dependsOn", "consumesApis"} {
+		if v, listed := note[field]; listed {
+			t.Errorf("note lists %v under %s, and it subscribes to no other module", v, field)
+		}
+	}
+	if got := listOf(note["providesApis"]); !same(got, []string{"api:note-events"}) {
+		t.Errorf("note providesApis = %v, want the events it emits and handles itself", got)
+	}
 }

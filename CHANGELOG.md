@@ -173,7 +173,7 @@ has to be refused rather than misread. `describe --format asyncapi` writes Async
 event with its payload schema in `data`, a send operation per emitting module and a
 receive per subscription, and the broker's host only when the transport is JetStream —
 and `--format backstage` writes Backstage's catalog descriptors, a Component per module
-with `dependsOn` the modules whose events it subscribes to and an API per surface written
+with `dependsOn` the other modules whose events it subscribes to and an API per surface written
 as a reference rather than a copy. Both are projections with no runtime effect, printed by
 a command that exits: neither is served, and each reference composition is a committed
 golden. See [the composition](ARCHITECTURE.md#start-at-the-composition).

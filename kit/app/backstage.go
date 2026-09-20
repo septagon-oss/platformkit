@@ -110,19 +110,23 @@ func Backstage(d Description) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// subscribedAs is every module this one subscribes to, named by the prefix of the
-// event's name and formatted for the field it is heading to. A subscription is
-// the composition's only dependency edge, so dependsOn and consumesApis are the
+// subscribedAs is every other module this one subscribes to, named by the prefix
+// of the event's name and formatted for the field it is heading to. A subscription
+// is the composition's only dependency edge, so dependsOn and consumesApis are the
 // same list twice in two vocabularies rather than two things to keep in step.
 //
-// A module that listens to an event of its own appears here too: it does consume
-// its own events, and leaving it out would say the edge does not exist.
+// The module's own name is not among them. dependsOn relates a component to
+// another entity, so a self-edge is drawn as a cycle of one and every reader of the
+// graph is told a module cannot stand up without itself. A module that handles an
+// event of its own — modules/file unlinks a blob that way, after the transaction
+// that removed the row commits — still says so with providesApis: one fact about the
+// surface it owns, rather than two about the graph.
 func subscribedAs(m ModuleDescription, format string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, s := range m.Subscriptions {
 		owner, _, _ := strings.Cut(s, ".")
-		if seen[owner] {
+		if owner == m.Name || seen[owner] {
 			continue
 		}
 		seen[owner] = true

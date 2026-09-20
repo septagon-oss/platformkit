@@ -102,7 +102,8 @@ subscription, and the broker's host when the selected transport is JetStream. An
 whose module declared no payload type is published with `data` left open, which is the
 document admitting it knows the name only. `backstage` is
 [kit/app/backstage.go](kit/app/backstage.go)'s catalog descriptors: a Component per
-module that depends on the modules whose events it subscribes to and provides
+module that depends on the other modules whose events it subscribes to — never on
+itself, which a catalog draws as a cycle of one — and provides
 `api:<module>-events` when it emits anything and `api:<module>-http` when it registers
 routes, each definition a reference to a document rather than a copy of one. The
 last two are for readers outside this repository — an event bridge, a schema registry, a
