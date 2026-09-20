@@ -251,6 +251,40 @@ longer produced, worker roles roll out before web roles and a previous worker do
 not run against a newer web role
 ([wire format](kit/events/README.md#wire-format)).
 
+## Trace one request across processes
+
+Four boundaries are instrumented, and the two where work moves to another process
+are bridged by context the publisher leaves beside the event itself.
+
+| Boundary | One span is |
+|---|---|
+| HTTP request | one request through [kit/httpx](kit/httpx/) (`otelhttp` in `httpx.New`), named for the operation id the router resolved rather than the URL a client typed, carrying method, matched route, status, latency, and the resolved tenant and caller when both resolved |
+| Outbox relay | one relay pass, carrying how many rows it moved — not one per row, which would make the worker's trace queue housekeeping |
+| Event delivery | one *attempt*, carrying the event id, name, tenant id, attempt number and failure |
+| Job run | one run, and one per tenant inside a `PerTenant`/`PerTenantConcurrent` walk, which is what makes "which tenant took the eight seconds" answerable |
+
+The delivery span belongs to the publisher's trace because the trace context is a
+column: `events.Publish` writes the W3C `traceparent`/`tracestate` of its own span into
+`platformkit_outbox` in the same transaction as the event
+([000026](migrations/000026_tracing.up.sql)), the relay carries them as CloudEvents
+extension attributes instead of losing them at the broker, and `Consume` re-attaches
+them, so a handler in another process or hours later is a child of the request that
+caused it. A publisher with no span leaves both columns `NULL` and its delivery starts
+a trace of its own.
+
+An operator turns this on with the `telemetry` block ([config.example.yaml](config.example.yaml)):
+an OTLP/HTTP collector, a service name and a sample ratio, readable from the
+environment like every other key. An empty `telemetry.otlp_endpoint` records nothing,
+which is **not** the same as dropping context: [kit/telemetry](kit/telemetry/)
+installs the W3C propagators whatever the endpoint says, so an untraced process still
+forwards a parent it was handed and still leaves a context on the outbox row for a
+traced one to read. Sampling is parent-based, so a sampled trace stays one trace
+through the outbox and the worker; the ratio decides only traces this process starts.
+A span carries no body, header, query value, credential or plaintext PII — a trace
+backend is a second place data goes, reachable by one configuration key. The tenant is
+an id on the delivery and relay paths, where a slug would cost a query per delivery,
+and the slug on the request path, where it was already resolved.
+
 ## Evolve the schema by owner
 
 The foundation and each selected module supply ordered `db.MigrationSource`

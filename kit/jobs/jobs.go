@@ -26,11 +26,19 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
+
+// tracer is this package's instrumentation scope: one span per scheduled run, and
+// one per tenant inside a run that walks them.
+var tracer = otel.Tracer("github.com/septagon-oss/platformkit/kit/jobs")
 
 // Job is one piece of periodic work. Exactly one of Cron and Every says when.
 type Job struct {
@@ -184,21 +192,44 @@ func (s *Scheduler) Run(ctx context.Context) error {
 // run takes the job's lock and runs it, or reports that somebody else has it.
 // A job that fails is logged and scheduled again; there is no retry of its own,
 // because the next tick is the retry. A Parallel job takes no lock.
+//
+// The span covers the attempt whatever its outcome, including the outcome where
+// another replica holds the lock: "this replica wanted to run it and did not" is
+// the visible half of what an advisory lock costs, and the one a log line at
+// Debug will not show you during an incident.
 func (s *Scheduler) run(ctx context.Context, j Job) {
+	ctx, span := tracer.Start(ctx, j.Name+" run",
+		trace.WithAttributes(attribute.Bool("platformkit.job.parallel", j.Parallel)))
+	// One attribute, three values, written once on the way out — before End, so
+	// this defer must be registered after it — because a span that says "ok"
+	// merely because a new return path forgot to change a variable is worse than
+	// a span that says nothing.
+	outcome := "ok"
+	defer func() {
+		span.SetAttributes(attribute.String("platformkit.job.outcome", outcome))
+		span.End()
+	}()
 	if !j.Parallel {
 		unlock, ok, err := db.TryLock(ctx, s.conn, "job:"+j.Name)
 		if err != nil {
+			outcome = "lock refused"
 			s.log.ErrorContext(ctx, "jobs: could not take the lock", "job", j.Name, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return
 		}
 		if !ok {
+			outcome = "another replica"
 			s.log.DebugContext(ctx, "jobs: another instance is running this", "job", j.Name)
 			return
 		}
 		defer unlock()
 	}
 	if err := j.Run(ctx, s.conn); err != nil {
+		outcome = "error"
 		s.log.ErrorContext(ctx, "jobs: job failed", "job", j.Name, "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 	}
 }
 
@@ -287,8 +318,17 @@ func PerTenantConcurrent(ctx context.Context, conn *db.Conn, lister TenantLister
 			return
 		}
 		tenant := tenants[i]
-		if err := fn(tenancy.WithTenant(ctx, tenant), conn, tenant); err != nil {
+		// One span per tenant, under the job's: a job that took nine seconds over
+		// four hundred tenants has one tenant that took eight of them, and that is
+		// the fact a reader needs. The slug is this path's tenant name, because a
+		// job that lists tenants has it, unlike a delivery that has only an id.
+		tctx, span := tracer.Start(ctx, tenant.Slug+" tenant",
+			trace.WithAttributes(attribute.String("platformkit.tenant", tenant.Slug)))
+		defer span.End()
+		if err := fn(tenancy.WithTenant(tctx, tenant), conn, tenant); err != nil {
 			slog.ErrorContext(ctx, "jobs: a tenant failed; continuing with the rest", "tenant", tenant.Slug, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			failed[i] = fmt.Errorf("tenant %s: %w", tenant.Slug, err)
 		}
 	}

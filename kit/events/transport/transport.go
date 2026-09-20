@@ -36,6 +36,21 @@ type Event struct {
 	// event. The publishing owner supplies this trusted fact. The PlatformKit
 	// outbox reads it from kit/tenancy's context rather than request input.
 	Actor uuid.UUID `json:"actor"`
+	// TraceParent and TraceState are the W3C trace context of the work that
+	// published this, carried on the wire as the CloudEvents distributed tracing
+	// extension attributes. They are the reason a handler's span is a child of
+	// the request that caused the event rather than an island in the worker:
+	// the outbox row keeps them, so the trace crosses the database and the
+	// broker, and kit/events reads them back when it runs a handler. A
+	// publisher with no span leaves them empty and the delivery starts a trace
+	// of its own.
+	TraceParent string `json:"-"`
+	TraceState  string `json:"-"`
+	// Attempt is which try at this delivery this is, 1 on the first. It is
+	// transport state, like an acknowledgement, so it is never on the wire: an
+	// adapter counts it if its broker counts it and leaves it 0 otherwise, and
+	// the delivery span says nothing about attempts rather than inventing one.
+	Attempt int `json:"-"`
 }
 
 // eventName is the grammar of an event name: the module's name, a dot, and a
@@ -93,4 +108,16 @@ type Transport interface {
 type Sink struct {
 	Handle func(ctx context.Context, ev Event) error
 	Dead   func(ctx context.Context, ev Event, cause error) error
+}
+
+// SystemNamer is an optional Transport method that names the messaging system it
+// delivers through, in the vocabulary the OpenTelemetry messaging conventions
+// use: "nats", "memory". It is a question only the adapter can answer — the
+// outbox holds a Transport, and which one it was given is the composition's
+// decision, not something a Go type or a configuration key can be trusted to
+// still agree with at delivery time — and it is optional for the same reason an
+// injected transport is: an adapter that does not name itself leaves the
+// attribute off the delivery span instead of guessing at it.
+type SystemNamer interface {
+	MessagingSystem() string
 }

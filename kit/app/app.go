@@ -31,6 +31,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/telemetry"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -139,6 +140,15 @@ type App struct {
 	// written that way instead of guessing from a list that happens to be the
 	// whole event set.
 	subscribeAll map[string]bool
+
+	// traces is the flush kit/telemetry handed back when New installed the
+	// tracer. Run is the only thing that can use it: the provider is a process
+	// global, New is where the process decided what it should be, and only Run is
+	// told when the process is ending. A caller that composes Start and Close
+	// itself therefore gets the batches the processor exported on its own schedule
+	// and not the last few seconds of spans — which is why Close does not claim to
+	// release the tracer.
+	traces func(context.Context) error
 }
 
 // shutdownGrace bounds the wait for in-flight requests once the context is done.
@@ -237,13 +247,35 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == All && opts.Transport == nil && cfg.NATS.Transport != "jetstream" {
 		log.WarnContext(ctx, "app: in-process events reach only this replica; set nats.transport to jetstream to share events between replicas")
 	}
-	return &App{cfg: cfg, mods: mods, opts: opts, log: log, subscribeAll: all}, nil
+	// The tracer is installed after the logger exists, because its first act is to
+	// say what it decided, and before anything is opened, so that a composition
+	// which fails a gate below has at least been described by a process that knew
+	// it would fail. An endpoint that is not a URL is a wiring mistake like every
+	// other error this function returns.
+	traces, err := telemetry.Start(ctx, cfg.Telemetry, log)
+	if err != nil {
+		return nil, err
+	}
+	return &App{cfg: cfg, mods: mods, opts: opts, log: log, subscribeAll: all, traces: traces}, nil
 }
 
 // Run migrates, then serves or works or both, and returns when ctx is done. It is
 // Start, whichever halves this process's role names, and Close; a caller that owns
 // its own listener uses those parts directly instead. See lifecycle.go.
 func (a *App) Run(ctx context.Context) error {
+	// Registered first so it runs last, after the listener and the work have
+	// stopped and after Close has returned the connection: the last thing a traced
+	// process does is push the spans its own request handlers made. It gets the
+	// same grace the requests got, on a context the cancelled shutdown cannot cut
+	// short, and it cannot fail the run — spans nobody flushed are a loss, and a
+	// shutdown that did not finish is a worse one.
+	defer func() {
+		grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
+		defer cancel()
+		if err := a.traces(grace); err != nil {
+			a.log.ErrorContext(ctx, "app: traces were not flushed", "error", err)
+		}
+	}()
 	rt, err := a.Start(ctx)
 	if err != nil {
 		return err

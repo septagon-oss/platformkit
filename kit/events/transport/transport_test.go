@@ -15,8 +15,8 @@ import (
 
 // goldenEvent is the event every wire-format case reads: fully populated, so each
 // member of the CloudEvents envelope is present and named, with an actor that is
-// not the nil UUID and a timestamp whose fraction is long enough to show that
-// nothing truncated it.
+// not the nil UUID, a timestamp whose fraction is long enough to show that nothing
+// truncated it, and a trace context in the shape W3C writes it.
 func goldenEvent() transport.Event {
 	return transport.Event{
 		ID:       uuid.MustParse("6a123a70-01b9-4b96-9bc2-1aa316200532"),
@@ -25,6 +25,10 @@ func goldenEvent() transport.Event {
 		Payload:  json.RawMessage(`{"title":"Draft"}`),
 		At:       time.Date(2026, 9, 13, 12, 0, 0, 123456789, time.UTC),
 		Actor:    uuid.MustParse("11111111-2222-3333-4444-555555555555"),
+		// The canonical example of the specification, so a reader can tell a
+		// PlatformKit spelling from the one every other producer writes.
+		TraceParent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		TraceState:  "rojo=00f067aa0ba902b7,congo=t61rcWkgMzE",
 	}
 }
 
@@ -61,6 +65,15 @@ func TestEnvelopeRoundTrips(t *testing.T) {
 		omitted []string
 	}{
 		{"fully populated", goldenEvent(), nil},
+		// A traced publish with no vendor state: the two members are optional
+		// separately, and tracestate is absent more often than not.
+		{"traced with no vendor state", transport.Event{
+			ID:          uuid.MustParse("6a123a70-01b9-4b96-9bc2-1aa316200532"),
+			Name:        "task.assigned",
+			TenantID:    uuid.MustParse("b3f1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d"),
+			At:          time.Date(2026, 9, 13, 12, 0, 0, 123456789, time.UTC),
+			TraceParent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		}, []string{"actor", "data", "tracestate"}},
 		// The relay reads a null actor column as the nil UUID, and an event whose
 		// publisher marshalled nothing has no payload at all: both are ordinary,
 		// and neither is allowed to come back as a different event.
@@ -106,7 +119,13 @@ func TestPreviousShapeStillDecodes(t *testing.T) {
 	if err := json.Unmarshal([]byte(fixture(t, "legacy.json")), &got); err != nil {
 		t.Fatalf("the previous shape no longer decodes: %s", err)
 	}
-	if want := goldenEvent(); !reflect.DeepEqual(want, got) {
+	want := goldenEvent()
+	// The previous shape had no trace members, which is the point of reading it
+	// rather than a loss to paper over: an event a previous build published has no
+	// trace to continue, so the worker that handles one starts a trace of its own
+	// and the two are joined by the id and not by a made-up parent.
+	want.TraceParent, want.TraceState = "", ""
+	if !reflect.DeepEqual(want, got) {
 		t.Errorf("previous shape =\n%+v\nwant\n%+v", got, want)
 	}
 }

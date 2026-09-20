@@ -23,6 +23,11 @@ func TestIndependentMemoryCompositionsWaitForTheirOwnHandling(t *testing.T) {
 	defer cancel()
 	if err := first.Subscribe(ctx, "notes-index", event.Name, transport.Sink{
 		Handle: func(_ context.Context, got transport.Event) error {
+			// The attempt count first: it is transport state, which is why it is
+			// json:"-" and never reaches the wire, and this assertion is about the
+			// envelope a subscriber was handed. Leaving it in would compare a
+			// delivery against a publication and call the count a mutation.
+			got.Attempt = 0
 			if !reflect.DeepEqual(got, event) {
 				t.Error("delivery changed the event envelope")
 			}

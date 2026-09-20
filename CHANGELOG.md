@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Two entries, one property: a tenant keeps somebody who can administer it. Each half
+Three entries. Two of them, one property: a tenant keeps somebody who can administer it. Each half
 was written because the state was reachable, not because a race was reported, and
 each says below what it leaves open rather than leaving that to a reader who depends
 on it.
@@ -177,6 +177,33 @@ with `dependsOn` the other modules whose events it subscribes to and an API per 
 as a reference rather than a copy. Both are projections with no runtime effect, printed by
 a command that exits: neither is served, and each reference composition is a committed
 golden. See [the composition](ARCHITECTURE.md#start-at-the-composition).
+
+**A trace now survives the outbox.** Four boundaries are instrumented: every HTTP
+request (`otelhttp` in `httpx.New`, named for the operation id the router resolved
+rather than the URL a client typed, carrying method, matched route, status, latency and
+the resolved tenant and caller), one span per relay pass, one per delivery *attempt*,
+and one per job run plus one per tenant inside `PerTenant`/`PerTenantConcurrent` — that
+last one is what makes "which of four hundred tenants took the eight seconds" a
+question with an answer. Continuity is why the trace context is a column: `Publish`
+writes the W3C `traceparent`/`tracestate` of the span it is running inside into
+`platformkit_outbox` in the same transaction as the event
+([000026](migrations/000026_tracing.up.sql)), the relay carries them into the envelope
+as CloudEvents extension attributes rather than losing them at the broker
+([wire format](kit/events/README.md#wire-format)), and `Consume` re-attaches them, so a
+handler running in another process, or hours later, is a child of the request that
+caused it rather than an orphan in whichever worker woke up. An operator turns it on
+with the new `telemetry` block — `telemetry.otlp_endpoint`, `telemetry.service_name`,
+`telemetry.sample_ratio`, read from the environment like every other key — pointed at
+any OTLP/HTTP collector; sampling is parent-based, so a trace that began sampled stays
+one trace through the outbox and the worker. An empty endpoint, the default, exports
+nothing, which is **not** the same as dropping context: `kit/telemetry` installs the
+W3C propagators whatever the endpoint says, so an untraced process still forwards a
+parent it was handed and still leaves a context on the outbox row for a traced process
+to read. What a span never carries is a body, a header, a query value, a credential or
+plaintext PII. What an upgrade leaves open: rows already published when 000026 runs
+hold no context, so their deliveries start traces of their own, and nothing written
+before this release can be joined to a request afterwards. See
+[the architecture](ARCHITECTURE.md#trace-one-request-across-processes).
 
 ## [1.1.1] - 2026-09-18
 

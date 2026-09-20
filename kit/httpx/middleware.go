@@ -19,6 +19,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -100,6 +102,39 @@ func givenID(s string) string {
 		}
 	}
 	return s
+}
+
+// traced names the request's span after the operation that answered it, and says
+// which route that operation is.
+//
+// It runs first among the operation middlewares and last among them to be
+// written, because it is the answer to a question otelhttp could not ask: the
+// span has to exist before routing, or a request that matches nothing has no span
+// at all, and before routing there is no operation. chi leaves no pattern on the
+// request the way net/http's ServeMux does, so the operation is the only place
+// this router's route is written down, and its id is the name the OpenAPI
+// document already gives the call. A request that reaches no operation keeps
+// otelhttp's own name — the method — which is honest about what was matched.
+func (a *API) traced(ctx huma.Context, next func(huma.Context)) {
+	span := trace.SpanFromContext(ctx.Context())
+	if op := ctx.Operation(); op.OperationID != "" && span.IsRecording() {
+		span.SetName(op.OperationID)
+		span.SetAttributes(attribute.String("http.route", op.Path))
+	}
+	next(ctx)
+}
+
+// spanAttr records one fact on the span otelhttp opened for this request.
+//
+// It is a call at the place the fact is learned rather than a list assembled in
+// one middleware, because the tenant resolves in one middleware and the caller in
+// another, and a request that resolves neither must not have an attribute that
+// guesses at them: an unresolved host is not a tenant, and the id of a tenant
+// nobody resolved would read in a trace as if somebody had. A request outside a
+// span — a build with no collector configured, or a sampled-out trace — has a span
+// that records nothing, so this costs a method call and no allocation.
+func spanAttr(ctx context.Context, key, value string) {
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String(key, value))
 }
 
 // respond decides what the client finally sees.
@@ -518,6 +553,7 @@ func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
 	// kit/events stamps on every event this request publishes. Deriving the
 	// second here rather than at each Publish is what keeps "who did this" out
 	// of every module's argument lists.
+	spanAttr(ctx.Context(), "enduser.id", p.UserID.String())
 	next(huma.WithContext(ctx, tenancy.WithActor(tenancy.WithPrincipal(ctx.Context(), p), p.UserID)))
 }
 
@@ -670,6 +706,7 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 	host := HostOnly(ctx.Host())
 	t, err := a.resolve(ctx.Context(), host)
 	if err == nil {
+		spanAttr(ctx.Context(), "platformkit.tenant", t.Slug)
 		next(huma.WithContext(ctx, tenancy.WithTenant(ctx.Context(), t)))
 		return
 	}

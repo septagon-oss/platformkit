@@ -78,7 +78,16 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// rather than inherited from either: neither pin above describes a vocabulary
 	// that exists after this merge, and a digest copied from one side would be a
 	// number that certifies a thing nobody shipped.
-	if legacy.SHA256 != "cc4ae73f932192080a7f7f2c270769fc49d615d2d746aadc1243fe94334b5bdd" {
+	//
+	// NOTICE now names the OpenTelemetry packages tracing adds, and an export
+	// redistributes the licence text, so every other field's digest moves with a
+	// paragraph of attribution. Nothing rendered moved: themes, CSS, tokens, icons,
+	// props and gallery HTML are the bytes the previous digest pinned
+	// (cc4ae73f932192080a7f7f2c270769fc49d615d2d746aadc1243fe94334b5bdd), and the
+	// attribution field is the only difference — which is what the check above this
+	// one, that the embedded notices carry the current LICENSE and NOTICE, exists to
+	// force.
+	if legacy.SHA256 != "4d7d35abd6cffc2b939b25e19d605a4996f86e96ebd26ac88a091e8509b9df89" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

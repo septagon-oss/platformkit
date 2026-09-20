@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events/internal/delivery"
@@ -25,7 +27,10 @@ var (
 )
 
 // row is one outbox record as the relay reads it. Actor is a pointer because
-// the column is null for everything nobody asked for.
+// the column is null for everything nobody asked for. The last two are matched by
+// an explicit column name because gorm matches a field to the snake_case of its
+// name, and `traceparent` is one word: without the tag the field stays empty and
+// the trace context disappears on its way to the broker without a word about it.
 type row struct {
 	ID        uuid.UUID
 	TenantID  uuid.UUID
@@ -33,6 +38,12 @@ type row struct {
 	Payload   []byte
 	CreatedAt time.Time
 	Actor     *uuid.UUID
+	// The publisher's trace context, empty for everything that was not traced.
+	// The relay does not read it into its own span — one batch is many
+	// unrelated traces — it carries it to the envelope, where kit/events puts it
+	// back on the handler's context. See trace.go.
+	TraceParent string `gorm:"column:traceparent"`
+	TraceState  string `gorm:"column:tracestate"`
 }
 
 // Relay moves every unpublished row to the transport, a batch at a time, and
@@ -63,11 +74,19 @@ func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
 //
 // The publish happens before the stamp, so a crash in between redelivers rather
 // than loses — see the package comment on idempotency.
+//
+// One span for the pass, not one per row: what a reader wants from a relay span
+// is whether the queue is draining and how long a pass took, and a burst of a
+// hundred events would otherwise make the worker's own trace a hundred spans of
+// queue housekeeping. A pass that published nothing still makes one, because "the
+// relay runs and moves nothing" is the answer to a question somebody asked.
 func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
+	ctx, span := tracer.Start(ctx, "outbox relay batch")
+	defer span.End()
 	var moved int
 	err := db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var rows []row
-		const q = `SELECT id, tenant_id, name, payload, created_at, actor FROM ` + table + `
+		const q = `SELECT id, tenant_id, name, payload, created_at, actor, traceparent, tracestate FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
@@ -77,7 +96,8 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		}
 		ids := make([]uuid.UUID, 0, len(rows))
 		for _, r := range rows {
-			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt}
+			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt,
+				TraceParent: r.TraceParent, TraceState: r.TraceState}
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
 			}
@@ -94,6 +114,11 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		moved = len(ids)
 		return nil
 	})
+	span.SetAttributes(attribute.Int("platformkit.events.relayed", moved))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
 	return moved, err
 }
 

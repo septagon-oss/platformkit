@@ -119,6 +119,7 @@ export PATH="$selected_root/bin:$PATH"
 for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/flags kit/tenancy \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/app kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
+    kit/telemetry \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
     kit/db kit/httpx kit/config modules/auth/contracts; do
@@ -159,6 +160,10 @@ boundary_rejects kit/events/internal/delivery "$foundation/kit/db" kit/events/pr
 fixture_import kit/events/providers/memory "$foundation/kit/events/internal/delivery"
 boundary_rejects kit/events/internal/delivery "$foundation/kit/db" kit/events/providers/memory
 boundary_rejects kit/events "$foundation/kit/events/providers/nats"
+# Making a span is allowed of the outbox; installing the tracer is not. kit/events
+# goes through the global propagator and the global tracer precisely so this edge
+# stays closed — the package that names a collector is kit/telemetry, alone.
+boundary_rejects kit/events "$foundation/kit/telemetry"
 boundary_rejects kit/tenancy/providers/topaz "$foundation/modules/auth/contracts"
 boundary_rejects kit/flags/providers/openfeature "$foundation/kit/flags/providers/ofrep"
 boundary_rejects kit/flags/providers/ofrep "$foundation/ui/components"

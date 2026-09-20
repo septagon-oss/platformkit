@@ -49,6 +49,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/metric/noop"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -292,7 +294,33 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// never reached a handler are all responses a browser acts on. chi refuses
 	// a middleware added after the first route, so this is here rather than
 	// beside Static. See headers.go.
-	root.Use(a.headers)
+	// The span, outermost, on the same router as the headers: everything the
+	// router serves is inside it, including a static file, a probe and a 404
+	// that never reached a handler. otelhttp opens the span before routing and
+	// records the standard HTTP conventions on it — method, path, scheme, server
+	// and client address, user agent, protocol, status. The server conventions
+	// record url.path and not url.full, which is the difference between a span
+	// that carries the address a client typed and one that carries the token
+	// somebody put in its query: url.full is the client convention's attribute,
+	// and a request's span stays on the path. What this package adds is in
+	// traced, tenant and authenticate: the operation id as the span name, the
+	// route, the tenant and the caller. Nothing here adds a body, a header or a
+	// query value of its own.
+	//
+	// The empty operation is honest rather than tidy: on this middleware path
+	// otelhttp names a server span from its HTTP semantic-convention formatter —
+	// the method, and the matched pattern where the server records one — and the
+	// operation argument reaches that formatter only on the NewHandler path, so a
+	// name passed here would be decoration. A request that matches nothing keeps
+	// the method as its name, which is what was actually matched.
+	//
+	// The no-op meter is this repository's promise, not otelhttp's: the same
+	// middleware registers HTTP server instruments, and left to the global they
+	// would be live the moment a composition installed a meter provider for a
+	// reason unrelated to this router. The kernel promises traces and no metrics
+	// (config.example.yaml); a deployment that wants these instruments makes that
+	// decision on purpose, here, with its own reader and its own cardinality.
+	root.Use(otelhttp.NewMiddleware("", otelhttp.WithMeterProvider(noop.NewMeterProvider())), a.headers)
 
 	// What chi itself answers when nothing matched, or matched but not for this verb.
 	//
@@ -341,7 +369,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// Bodies last, after every guard and before the handler, which is where the
 	// two things it does both belong: nothing above it reads a body, and the
 	// transaction it ends for a streaming route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.transaction, a.authenticate, a.authorize, a.bodies)
+	a.api.UseMiddleware(a.traced, a.tenant, a.transaction, a.authenticate, a.authorize, a.bodies)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.

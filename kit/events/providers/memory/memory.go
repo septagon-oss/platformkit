@@ -91,9 +91,16 @@ func (m *memory) Subscribe(ctx context.Context, _, name string, sink transport.S
 	return nil
 }
 
+// MessagingSystem names this transport on the delivery span. It is the whole of
+// what transport.SystemNamer asks for, and this transport can answer it from its
+// own existence: there is no broker, and "memory" is what that is called in the
+// messaging conventions.
+func (*memory) MessagingSystem() string { return "memory" }
+
 func (m *memory) deliver(ctx context.Context, ev transport.Event, sink transport.Sink) error {
 	var cause error
 	for attempt := 1; ; attempt++ {
+		ev.Attempt = attempt
 		if attempt <= deliverypolicy.MaxDeliveries {
 			cause = sink.Handle(ctx, ev)
 			if cause == nil {

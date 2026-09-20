@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/codes"
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -86,7 +87,10 @@ func PublishFor(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, na
 // write is the one INSERT. The actor is whatever kit/tenancy has on the
 // context and NULL otherwise, passed as an untyped nil so the column is null
 // rather than the nil UUID: "nobody" and "the user 00000000-…" are different
-// answers and only one of them is true.
+// answers and only one of them is true. The trace context is whatever span the
+// caller is inside and NULL otherwise, for the same reason and with the same
+// consequence: the row records what caused the event, in the transaction that
+// caused it, and the process that relays it is a different one.
 func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, payload any) error {
 	if !ValidName(name) {
 		return fmt.Errorf("events: %q is not %q", name, "<module>.<event>")
@@ -99,9 +103,10 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if id, ok := tenancy.ActorFrom(ctx); ok {
 		actor = id
 	}
+	parent, state := traceContext(ctx)
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor) VALUES (?, ?, ?, ?::jsonb, ?)",
-		uuid.New(), tenantID, name, string(body), actor,
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?)",
+		uuid.New(), tenantID, name, string(body), actor, parent, state,
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
@@ -142,6 +147,12 @@ func (s Subscription) durable() string {
 // Each delivery is claimed before the handler runs, so a handler sees each
 // event once however many times the transport delivers it. See claim.
 func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscription) error {
+	// Which messaging system this is is the adapter's fact, not this package's:
+	// see transport.SystemNamer.
+	var system string
+	if named, ok := t.(transport.SystemNamer); ok {
+		system = named.MessagingSystem()
+	}
 	for _, s := range subs {
 		if s.Handler == nil {
 			return fmt.Errorf("events: subscription %s to %s has no handler", s.Module, s.Name)
@@ -161,13 +172,22 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				// Only the id is known here. It is all kit/db needs to scope
 				// the transaction, and it is what row-level security reads.
 				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
-				return db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				// One span per attempt, on the trace of the work that published
+				// the event rather than of the worker that woke up. See trace.go.
+				ctx, span := startDelivery(ctx, ev, system)
+				defer span.End()
+				err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 					first, err := claim(tx, ev.ID, durable)
 					if err != nil || !first {
 						return err
 					}
 					return h(ctx, tx, ev)
 				})
+				if err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, err.Error())
+				}
+				return err
 			},
 			Dead: func(ctx context.Context, ev Event, cause error) error {
 				return deadLetter(ctx, conn, ev, durable, cause)

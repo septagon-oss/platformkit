@@ -503,3 +503,12 @@ one command, and it is a release precondition:
 
   go install github.com/google/go-licenses@latest
   go-licenses report ./...
+
+The tracing dependencies are named here rather than left to go.mod alone, because
+they are the ones an operator switches on from configuration, and turning them on
+sends request metadata to a collector somebody else runs: go.opentelemetry.io/otel
+and its sdk, metric and trace/noop packages,
+go.opentelemetry.io/otel/exporters/otlp/otlptrace and its otlptracehttp client,
+go.opentelemetry.io/proto/otlp and go.opentelemetry.io/auto/sdk are Apache-2.0;
+google.golang.org/protobuf, which the OTLP client pulls in, is BSD-3-Clause. None
+of them is copyleft, and none ships a NOTICE file of its own to carry forward.

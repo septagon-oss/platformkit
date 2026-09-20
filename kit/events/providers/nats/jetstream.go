@@ -88,6 +88,11 @@ type jetstream struct {
 	js nats.JetStreamContext
 }
 
+// MessagingSystem names this transport on the delivery span, as
+// transport.SystemNamer asks. Only the adapter knows which broker it is talking
+// to; the outbox holds a Transport and nothing else.
+func (*jetstream) MessagingSystem() string { return "nats" }
+
 func (j *jetstream) Publish(ctx context.Context, ev transport.Event) error {
 	body, err := json.Marshal(ev)
 	if err != nil {
@@ -308,6 +313,10 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 			slog.ErrorContext(ctx, "events: delivery metadata unavailable", "error", err)
 			return
 		}
+		// The broker's own count, which survives a restart — unlike the memory
+		// transport's, and unlike anything kit/events could keep. It is the
+		// attempt number on the delivery span.
+		ev.Attempt = int(meta.NumDelivered)
 		// Broker retries remain available after the handler cap, including across
 		// restarts. Those deliveries retry only terminal persistence, never the
 		// provider action. The last handler cause is logged before recording; a

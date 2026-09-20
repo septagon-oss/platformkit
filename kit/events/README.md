@@ -92,6 +92,24 @@ envelopes — so only the JSON representation changed.
 | `data` | `Event.Payload`, omitted when empty |
 | `tenantid` | `Event.TenantID`, an extension attribute, required |
 | `actor` | `Event.Actor`, an extension attribute, omitted when it is the nil UUID |
+| `traceparent` | `Event.TraceParent`, the W3C trace context of the work that published the event; omitted when it published none |
+| `tracestate` | `Event.TraceState`, the vendor trace state carried with that parent; omitted when empty |
+
+An event name is `<module>.<event>` — `transport.ValidName` is the grammar, `source`
+is the module part of it, and `messaging.` is refused as a prefix because that
+namespace is what the two rows above and the attributes beside them already mean to a
+tool that has not read this repository.
+
+`traceparent` and `tracestate` are the only members of the envelope that are not the
+module's own. `Publish` takes them from the span it is running inside and stores them
+in `platformkit_outbox.traceparent` and `.tracestate`
+([000026](../../migrations/000026_tracing.up.sql)) beside the event rather than inside
+its `payload`: the outbox keeps columns and the envelope is the wire form, and a
+module's payload is not where somebody else's transport state belongs. The relay reads
+them back and `Consume` puts them on the handler's context, so the handler's span is a
+child of the request that caused the event rather than an orphan in whichever worker
+woke up; [the architecture](../../ARCHITECTURE.md#trace-one-request-across-processes)
+owns that path and what an operator turns it on with.
 
 Extension attribute names are lower-case, as the specification requires. Decoding
 checks `source` against `type` rather than trusting either, and still decodes the

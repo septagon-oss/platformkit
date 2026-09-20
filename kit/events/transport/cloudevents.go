@@ -33,9 +33,11 @@ const (
 
 // envelope is Event's JSON form. Field order is encoding/json's output order,
 // and testdata/cloudevent.json is its byte-for-byte record: the required
-// context attributes, then data, then PlatformKit's two extension attributes.
+// context attributes, then data, then PlatformKit's four extension attributes.
 // Extension names are lower-case — the specification makes attribute names
-// case-insensitive, so lower-case is the spelling every consumer accepts.
+// case-insensitive, so lower-case is the spelling every consumer accepts — except
+// the two trace members, which the distributed tracing extension fixes as
+// traceparent and tracestate and every W3C reader expects verbatim.
 type envelope struct {
 	SpecVersion     string          `json:"specversion"`
 	ID              string          `json:"id"`
@@ -46,6 +48,13 @@ type envelope struct {
 	Data            json.RawMessage `json:"data,omitempty"`
 	TenantID        string          `json:"tenantid"`
 	Actor           string          `json:"actor,omitempty"`
+	// The two distributed tracing extension attributes the CloudEvents
+	// specification names: traceparent and tracestate, spelled exactly as W3C
+	// spells them, so a collector or a bridge that understands one understands
+	// this. They are absent when the publisher had no trace, which is what a
+	// periodic job and a relay always are.
+	TraceParent string `json:"traceparent,omitempty"`
+	TraceState  string `json:"tracestate,omitempty"`
 }
 
 // MarshalJSON writes the CloudEvents form of the event.
@@ -66,6 +75,9 @@ func (e Event) MarshalJSON() ([]byte, error) {
 	if e.Actor != uuid.Nil {
 		doc.Actor = e.Actor.String()
 	}
+	// Same rule, and the reason is the same: an event with no trace is the
+	// normal case, not a trace with an empty parent.
+	doc.TraceParent, doc.TraceState = e.TraceParent, e.TraceState
 	return json.Marshal(doc)
 }
 
@@ -98,7 +110,13 @@ func (e *Event) UnmarshalJSON(body []byte) error {
 		if err := json.Unmarshal(body, &old); err != nil {
 			return fmt.Errorf("events: %w", err)
 		}
-		*e = Event(old)
+		// Field by field rather than a conversion, which is what the two types
+		// allowed while they were identical: the shape a previous build published
+		// has no trace context to read and no attempt counted, so both are left
+		// empty, and the delivery span starts its own trace instead of pretending
+		// to know which one the publisher was part of.
+		*e = Event{ID: old.ID, Name: old.Name, TenantID: old.TenantID,
+			Payload: old.Payload, At: old.At, Actor: old.Actor}
 		return nil
 	}
 	return e.unmarshalCloud(*header.SpecVersion, body)
@@ -147,7 +165,8 @@ func (e *Event) unmarshalCloud(version string, body []byte) error {
 			return err
 		}
 	}
-	*e = Event{ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor}
+	*e = Event{ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor,
+		TraceParent: doc.TraceParent, TraceState: doc.TraceState}
 	return nil
 }
 

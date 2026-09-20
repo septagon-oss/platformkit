@@ -39,7 +39,7 @@ done
 parts=(kit/entity kit/entity/display kit/locale kit/flags kit/tenancy modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
-    kit/tenancy/providers/topaz kit/flags/providers/openfeature
+    kit/telemetry kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
 metadata="$(cd "$root" && go list -deps -f '{{.ImportPath}}|{{.Standard}}|{{join .Deps " "}}|{{if .Module}}{{.Module.Path}}{{end}}' "${parts[@]/#/./}")"
 printf '%s\n' "$metadata" | awk -F '|' '
@@ -61,8 +61,13 @@ printf '%s\n' "$metadata" | awk -F '|' '
                 if (index(dep, p) != 1 && module[dep] != "" && contains(modules, module[dep])) bad = 0
             }
             # UUID exposes sql/driver values; that is not a database runner.
-            if (dep == "database/sql" && mode != "sql" && mode != "web") bad = 1
-            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web") bad = 1
+            # "trace" is the mode of a SQL kernel package that makes spans: the
+            # propagation carrier of the tracing API is an interface over
+            # net/http.Header, so the API module drags net/http with it even
+            # though nothing here opens a request. Broker SDKs stay refused by the
+            # module list, which is what this SQL boundary actually protects.
+            if (dep == "database/sql" && mode != "sql" && mode != "web" && mode != "trace") bad = 1
+            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web" && mode != "trace") bad = 1
             if (bad) {
                 print "OUT OF BOUNDS: " name " transitively depends on " dep > "/dev/stderr"
                 failed = 1
@@ -75,13 +80,25 @@ printf '%s\n' "$metadata" | awk -F '|' '
         uuid = "github.com/google/uuid"
         identity = p "kit/tenancy " p "kit/internal/syscap"
         delivery = p "kit/events/transport " p "kit/events/internal/delivery"
-        sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
+        # The OpenTelemetry API family: the span-making half of the kernel reaches
+        # these and nothing else from OpenTelemetry. auto/sdk, logr and xxhash are
+        # inside the own closure of the API module, not a second dependency.
+        otel = "go.opentelemetry.io/otel go.opentelemetry.io/otel/trace go.opentelemetry.io/otel/metric go.opentelemetry.io/otel/metric/noop go.opentelemetry.io/auto/sdk github.com/go-logr/logr github.com/go-logr/stdr github.com/cespare/xxhash/v2"
+        sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm " otel
+        # What kit/telemetry alone reaches: the SDK, the OTLP/HTTP exporter and
+        # everything the protobuf wire costs. A provider edge, so net/http is
+        # allowed: the exporter is an HTTP client, and it is the only part of the
+        # kernel that makes one because of tracing.
+        exporter = "go.opentelemetry.io/otel/sdk go.opentelemetry.io/otel/exporters/otlp/otlptrace go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp go.opentelemetry.io/proto/otlp github.com/cenkalti/backoff/v5 github.com/grpc-ecosystem/grpc-gateway/v2 github.com/google/uuid golang.org/x/net golang.org/x/sys golang.org/x/text google.golang.org/genproto/googleapis/api google.golang.org/genproto/googleapis/rpc google.golang.org/grpc google.golang.org/protobuf gopkg.in/yaml.v3"
+        # The instrumentation of the router: kit/httpx wraps the router in it, so
+        # every closure that carries the router carries it too.
+        otelhttp = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp github.com/felixge/httpsnoop"
         outbox = identity " " delivery " " p "kit/db"
         # The recorded closure of the page composition layer (see the comment above parts).
         kernel = p "kit/config " identity " " p "kit/db " p "kit/entity " p "kit/crud " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module"
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
-        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3"
+        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otelhttp
         check("kit/entity", uuid)
         check("kit/entity/display", uuid " " p "kit/entity")
         check("kit/locale", "")
@@ -95,11 +112,17 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("ui/page", kernel " " presentation, web, "web")
         check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
         # The kernel runner selects a transport by name and builds none: neither
-        # provider package is in its closure.
-        check("kit/app", kernel " " p "kit/health " p "migrations", web, "web")
+        # provider package is in its closure. It links the tracer because New
+        # installs one, and the exporters that reaches belong to kit/telemetry.
+        check("kit/app", kernel " " p "kit/health " p "kit/telemetry " p "migrations", web " " exporter, "web")
+        # The tracer is a provider: it is the one package that names a collector,
+        # and the only one whose closure holds an exporter. kit/config is in the
+        # allowed first-party set because Start takes the block it validates; the
+        # module set is OpenTelemetry and nothing outside it.
+        check("kit/telemetry", p "kit/config", exporter " " otel, "provider")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
-        check("kit/events", outbox, sql, "sql")
+        check("kit/events", outbox, sql, "trace")
         check("kit/events/providers/nats", p "kit/config " delivery,
             uuid " github.com/nats-io/nats.go github.com/nats-io/nkeys github.com/nats-io/nuid github.com/klauspost/compress golang.org/x/crypto golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("kit/tenancy/providers/topaz", identity,

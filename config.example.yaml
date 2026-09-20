@@ -65,6 +65,25 @@ log:
   # debug | info | warn | error
   level: "info"
 
+# Where traces go. Traces only: this runtime emits no metrics and bridges no
+# logs, so a collector gets spans for the four kernel boundaries — a request, an
+# outbox batch, one handler attempt, one scheduled job — and nothing else. See
+# ARCHITECTURE.md for what each span carries.
+telemetry:
+  # OTLP/HTTP collector URL, e.g. https://collector.example:4318. Empty — the
+  # default — traces nothing: the process still propagates a trace it was given,
+  # but records no span of its own and exports nothing, so a deployment that has
+  # not chosen a backend yet needs no collector to boot.
+  otlp_endpoint: ""
+  # What this process is called in a trace. Every replica of one deployment
+  # should answer the same name, and different deployments different ones.
+  service_name: "platformkit"
+  # Fraction of new traces kept, 0 to 1. A trace that arrives with a sampled
+  # parent is kept whatever this says, so an event handled in a worker stays
+  # part of the request that caused it; this is the rate for traces the process
+  # starts itself. Omit it to keep everything; 0 keeps no new trace.
+  sample_ratio: 1.0
+
 # The optional identity provider. An empty issuer — which is the default — means
 # there is none, and the two OIDC routes are not registered at all: a route that
 # would answer "this application has no identity provider" is a route with

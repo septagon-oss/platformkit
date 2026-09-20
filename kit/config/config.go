@@ -26,14 +26,15 @@ var levels = []string{"debug", "info", "warn", "error"}
 
 // Config is the whole configuration of the reference app. See config.example.yaml.
 type Config struct {
-	Server   Server   `yaml:"server"`
-	Database Database `yaml:"database"`
-	NATS     NATS     `yaml:"nats"`
-	Log      Log      `yaml:"log"`
-	Auth     Auth     `yaml:"auth"`
-	Mail     Mail     `yaml:"mail"`
-	Audit    Audit    `yaml:"audit"`
-	Files    Files    `yaml:"files"`
+	Server    Server    `yaml:"server"`
+	Database  Database  `yaml:"database"`
+	NATS      NATS      `yaml:"nats"`
+	Log       Log       `yaml:"log"`
+	Telemetry Telemetry `yaml:"telemetry"`
+	Auth      Auth      `yaml:"auth"`
+	Mail      Mail      `yaml:"mail"`
+	Audit     Audit     `yaml:"audit"`
+	Files     Files     `yaml:"files"`
 	// Bootstrap is read by `platformkit bootstrap` alone; the server never
 	// looks at it. It is in the configuration surface so the one secret the
 	// command takes arrives the way every other secret does, through kit/config
@@ -41,6 +42,45 @@ type Config struct {
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
 }
+
+// Telemetry is where this process's traces go. Traces only: no metrics and no
+// logs bridge have a producer here, so there is no key for them either.
+type Telemetry struct {
+	// OTLPEndpoint is the OTLP/HTTP collector spans are exported to, spelled as
+	// a URL because the scheme is the transport's TLS decision:
+	// "https://collector.example:4318" is HTTPS and "http://" is not. Empty —
+	// the default — installs a no-op tracer provider and exports nothing, which
+	// is how a deployment that has not decided yet says so.
+	OTLPEndpoint string `yaml:"otlp_endpoint"`
+	// ServiceName is what this process is called in a trace. Every span in the
+	// deployment carries it, so it names the deployment rather than the binary.
+	ServiceName string `yaml:"service_name"`
+	// SampleRatio is the fraction of new traces kept, 0 to 1. It is a pointer
+	// because 0 is an answer and an omitted key is not: a deployment that wrote
+	// 0 means "record no new trace", while one that wrote nothing means
+	// "everything". A trace that arrives with a sampled parent continues to be
+	// recorded whatever this says, which is the only way an event handled in a
+	// worker stays part of the request that caused it. Ratio is the one place
+	// the difference is resolved, so kit/telemetry and this check agree on it.
+	SampleRatio *float64 `yaml:"sample_ratio"`
+}
+
+// Ratio is the configured fraction of new traces to keep.
+func (t Telemetry) Ratio() float64 {
+	if t.SampleRatio == nil {
+		return DefaultSampleRatio
+	}
+	return *t.SampleRatio
+}
+
+// DefaultServiceName is what a process that names itself in no key is called,
+// and DefaultSampleRatio is what an omitted ratio means. Both are exported
+// because kit/telemetry reports them at boot and a reader of the boot log should
+// be able to find the number's owner.
+const (
+	DefaultServiceName = "platformkit"
+	DefaultSampleRatio = 1.0
+)
 
 // Bootstrap is what the first-run command cannot decide for itself: the first
 // administrator's password. Empty means the command generates one and prints
@@ -360,6 +400,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if err := c.NATS.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := c.Telemetry.validate(path); err != nil {
+		return Config{}, err
+	}
 	if err := c.Auth.OIDC.validate(path); err != nil {
 		return Config{}, err
 	}
@@ -438,6 +481,32 @@ func (m *Mail) validate(path string) error {
 	}
 	if m.Password != "" && m.Username == "" {
 		return fmt.Errorf("config %s: mail.password is set and mail.username is empty", path)
+	}
+	return nil
+}
+
+// validate refuses an endpoint that is not an OTLP/HTTP URL and a ratio that is
+// not a fraction. It names the keys and never echoes the endpoint: the collector
+// address is a host an attacker can probe, and the message is read by whoever
+// will paste it into an issue.
+func (t *Telemetry) validate(path string) error {
+	if t.ServiceName == "" {
+		t.ServiceName = DefaultServiceName
+	}
+	if r := t.Ratio(); r < 0 || r > 1 {
+		return fmt.Errorf("config %s: telemetry.sample_ratio is %g; it is a fraction of new traces to keep, so it is between 0 and 1", path, r)
+	}
+	if t.OTLPEndpoint == "" {
+		return nil
+	}
+	u, err := url.Parse(t.OTLPEndpoint)
+	// The path is the collector's to choose — /v1/traces is the default and a
+	// gateway may mount it anywhere — but credentials, a query and a fragment
+	// are each a value the exporter would either drop or send somewhere the
+	// operator did not mean.
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		(u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("config %s: telemetry.otlp_endpoint must be an http:// or https:// URL with a host, such as https://collector.example:4318", path)
 	}
 	return nil
 }
