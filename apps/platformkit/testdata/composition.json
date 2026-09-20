@@ -1,0 +1,2020 @@
+{
+  "describeVersion": 1,
+  "role": "all",
+  "transport": "memory",
+  "pool": {
+    "maxOpenConns": 16,
+    "maxIdleConns": 4,
+    "connMaxLifetime": "30m0s"
+  },
+  "modules": [
+    {
+      "name": "user",
+      "permissions": [
+        {
+          "key": "user:approve"
+        },
+        {
+          "key": "user:manage"
+        },
+        {
+          "key": "user:read"
+        }
+      ],
+      "events": [
+        "user.deactivated",
+        "user.email_verified",
+        "user.handle_set",
+        "user.invited",
+        "user.password_set",
+        "user.registration_approved",
+        "user.registration_pending",
+        "user.registration_unverified",
+        "user.roles_set",
+        "user.user.created",
+        "user.user.deleted",
+        "user.user.updated"
+      ],
+      "nav": [
+        {
+          "label": "Users",
+          "path": "/admin/user/users",
+          "permission": "user:read"
+        }
+      ],
+      "migrations": [
+        "000007_user.up.sql",
+        "000025_handle.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            7,
+            25
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "user-invitation-create",
+          "method": "POST",
+          "path": "/api/v1/user/invitations",
+          "summary": "Invite somebody into this tenant",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          },
+          "events": [
+            "user.invited",
+            "user.roles_set"
+          ]
+        },
+        {
+          "operationId": "user-user-list",
+          "method": "GET",
+          "path": "/api/v1/user/users",
+          "summary": "List users",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:read"
+          }
+        },
+        {
+          "operationId": "user-user-create",
+          "method": "POST",
+          "path": "/api/v1/user/users",
+          "summary": "Create a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          },
+          "events": [
+            "user.user.created"
+          ]
+        },
+        {
+          "operationId": "user-user-delete",
+          "method": "DELETE",
+          "path": "/api/v1/user/users/{id}",
+          "summary": "Delete a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          },
+          "events": [
+            "user.user.deleted"
+          ]
+        },
+        {
+          "operationId": "user-user-read",
+          "method": "GET",
+          "path": "/api/v1/user/users/{id}",
+          "summary": "Read a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:read"
+          }
+        },
+        {
+          "operationId": "user-user-update",
+          "method": "PATCH",
+          "path": "/api/v1/user/users/{id}",
+          "summary": "Update a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          },
+          "events": [
+            "user.user.updated"
+          ]
+        },
+        {
+          "operationId": "user-user-approve-registration",
+          "method": "POST",
+          "path": "/api/v1/user/users/{id}/approve-registration",
+          "summary": "Approve a pending registration",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:approve"
+          },
+          "events": [
+            "user.registration_approved"
+          ]
+        },
+        {
+          "operationId": "user-user-deactivate",
+          "method": "POST",
+          "path": "/api/v1/user/users/{id}/deactivate",
+          "summary": "Deactivate a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          },
+          "events": [
+            "user.deactivated"
+          ]
+        },
+        {
+          "operationId": "user-user-handle",
+          "method": "POST",
+          "path": "/api/v1/user/users/{id}/handle",
+          "summary": "Claim or change a user's handle",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          },
+          "events": [
+            "user.handle_set"
+          ]
+        },
+        {
+          "operationId": "user-user-roles",
+          "method": "POST",
+          "path": "/api/v1/user/users/{id}/roles",
+          "summary": "Set a user's roles",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          },
+          "events": [
+            "user.roles_set"
+          ]
+        },
+        {
+          "operationId": "user-user-set-password",
+          "method": "POST",
+          "path": "/api/v1/user/users/{id}/set-password",
+          "summary": "Set a user's password",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          },
+          "events": [
+            "user.password_set"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "entity": "user",
+          "path": "/api/v1/user/users",
+          "read": "user:read",
+          "write": "user:manage",
+          "immutable": [
+            "handle",
+            "roles",
+            "status"
+          ],
+          "commands": [
+            {
+              "verb": "approve-registration",
+              "summary": "Approve a pending registration",
+              "auth": {
+                "kind": "permission",
+                "permission": "user:approve"
+              }
+            },
+            {
+              "verb": "deactivate",
+              "summary": "Deactivate a user",
+              "auth": {
+                "kind": "permission",
+                "permission": "user:manage"
+              }
+            },
+            {
+              "verb": "handle",
+              "summary": "Claim or change a user's handle",
+              "auth": {
+                "kind": "permission",
+                "permission": "user:manage"
+              },
+              "fields": [
+                {
+                  "name": "handle",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "verb": "roles",
+              "summary": "Set a user's roles",
+              "auth": {
+                "kind": "permission",
+                "permission": "user:manage"
+              },
+              "fields": [
+                {
+                  "name": "roles",
+                  "type": "list"
+                }
+              ]
+            },
+            {
+              "verb": "set-password",
+              "summary": "Set a user's password",
+              "auth": {
+                "kind": "permission",
+                "permission": "user:manage"
+              },
+              "fields": [
+                {
+                  "name": "password",
+                  "type": "string"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tenant",
+      "permissions": [
+        {
+          "key": "tenant:manage",
+          "operator": true
+        }
+      ],
+      "events": [
+        "tenant.created",
+        "tenant.host_added",
+        "tenant.suspended"
+      ],
+      "nav": [
+        {
+          "label": "Tenants",
+          "path": "/admin/tenant/tenants",
+          "permission": "tenant:manage"
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "tenant-tenant-list",
+          "method": "GET",
+          "path": "/api/v1/tenant/tenants",
+          "summary": "List the tenants",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "tenant:manage"
+          }
+        },
+        {
+          "operationId": "tenant-tenant-create",
+          "method": "POST",
+          "path": "/api/v1/tenant/tenants",
+          "summary": "Create a tenant",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "tenant:manage"
+          },
+          "events": [
+            "tenant.created"
+          ]
+        },
+        {
+          "operationId": "tenant-tenant-read",
+          "method": "GET",
+          "path": "/api/v1/tenant/tenants/{id}",
+          "summary": "Read a tenant",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "tenant:manage"
+          }
+        },
+        {
+          "operationId": "tenant-tenant-add-host",
+          "method": "POST",
+          "path": "/api/v1/tenant/tenants/{id}/hosts",
+          "summary": "Give a tenant another host",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "tenant:manage"
+          },
+          "events": [
+            "tenant.host_added"
+          ]
+        },
+        {
+          "operationId": "tenant-tenant-invite",
+          "method": "POST",
+          "path": "/api/v1/tenant/tenants/{id}/invite",
+          "summary": "Give a tenant its first administrator",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "tenant:manage"
+          },
+          "events": [
+            "user.invited"
+          ]
+        },
+        {
+          "operationId": "tenant-tenant-suspend",
+          "method": "POST",
+          "path": "/api/v1/tenant/tenants/{id}/suspend",
+          "summary": "Suspend a tenant",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "tenant:manage"
+          },
+          "events": [
+            "tenant.suspended"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "notification",
+      "events": [
+        "notification.created",
+        "notification.email_requested",
+        "notification.read"
+      ],
+      "subscriptions": [
+        "notification.email_requested"
+      ],
+      "migrations": [
+        "000011_notification.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            11
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "notification-notification-list",
+          "method": "GET",
+          "path": "/api/v1/notification/notifications",
+          "summary": "List my notifications",
+          "auth": {
+            "kind": "signed_in"
+          }
+        },
+        {
+          "operationId": "notification-notification-read",
+          "method": "POST",
+          "path": "/api/v1/notification/notifications/{id}/read",
+          "summary": "Mark one of my notifications read",
+          "auth": {
+            "kind": "signed_in"
+          },
+          "events": [
+            "notification.read"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "auth",
+      "permissions": [
+        {
+          "key": "role:manage"
+        }
+      ],
+      "events": [
+        "auth.logged_in",
+        "auth.logged_out",
+        "auth.login_failed",
+        "auth.password_reset",
+        "auth.registration_requested",
+        "auth.reset_requested",
+        "auth.role_set",
+        "auth.verification_requested"
+      ],
+      "subscriptions": [
+        "auth.reset_requested",
+        "user.invited"
+      ],
+      "jobs": [
+        {
+          "name": "auth-sweep",
+          "cron": "0 * * * *"
+        }
+      ],
+      "nav": [
+        {
+          "label": "Roles",
+          "path": "/admin/auth/roles",
+          "permission": "role:manage"
+        }
+      ],
+      "migrations": [
+        "000008_auth.up.sql",
+        "000013_session_hash.up.sql",
+        "000014_password_tokens.up.sql",
+        "000024_email_verification.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            8,
+            13,
+            14,
+            24
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "auth-login",
+          "method": "POST",
+          "path": "/api/v1/auth/login",
+          "summary": "Sign in with a password",
+          "auth": {
+            "kind": "public"
+          },
+          "events": [
+            "auth.logged_in",
+            "auth.login_failed"
+          ]
+        },
+        {
+          "operationId": "auth-logout",
+          "method": "POST",
+          "path": "/api/v1/auth/logout",
+          "summary": "Sign out",
+          "auth": {
+            "kind": "signed_in"
+          },
+          "events": [
+            "auth.logged_out"
+          ]
+        },
+        {
+          "operationId": "auth-me",
+          "method": "GET",
+          "path": "/api/v1/auth/me",
+          "summary": "Who am I",
+          "auth": {
+            "kind": "signed_in"
+          }
+        },
+        {
+          "operationId": "auth-password-change",
+          "method": "POST",
+          "path": "/api/v1/auth/password",
+          "summary": "Change my password",
+          "auth": {
+            "kind": "signed_in"
+          },
+          "events": [
+            "user.password_set"
+          ]
+        },
+        {
+          "operationId": "auth-password-forgot",
+          "method": "POST",
+          "path": "/api/v1/auth/password/forgot",
+          "summary": "Send me a reset link",
+          "auth": {
+            "kind": "public"
+          },
+          "events": [
+            "auth.reset_requested"
+          ]
+        },
+        {
+          "operationId": "auth-password-reset",
+          "method": "POST",
+          "path": "/api/v1/auth/password/reset",
+          "summary": "Set a password with a link",
+          "auth": {
+            "kind": "public"
+          },
+          "events": [
+            "auth.password_reset",
+            "user.password_set"
+          ]
+        },
+        {
+          "operationId": "auth-role-list",
+          "method": "GET",
+          "path": "/api/v1/auth/roles",
+          "summary": "List this tenant's roles",
+          "auth": {
+            "kind": "permission",
+            "permission": "role:manage"
+          }
+        },
+        {
+          "operationId": "auth-role-set",
+          "method": "PUT",
+          "path": "/api/v1/auth/roles/{name}",
+          "summary": "Set what a role grants",
+          "auth": {
+            "kind": "permission",
+            "permission": "role:manage"
+          },
+          "events": [
+            "auth.role_set"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "task",
+      "permissions": [
+        {
+          "key": "task:read"
+        },
+        {
+          "key": "task:update"
+        }
+      ],
+      "events": [
+        "task.assigned",
+        "task.resolved",
+        "task.sla_breached",
+        "task.task.created",
+        "task.task.deleted",
+        "task.task.updated"
+      ],
+      "jobs": [
+        {
+          "name": "task-sla-sweep",
+          "every": "1m0s"
+        }
+      ],
+      "nav": [
+        {
+          "label": "Tasks",
+          "path": "/admin/task/tasks",
+          "permission": "task:read"
+        }
+      ],
+      "migrations": [
+        "000004_task.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            4
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "task-task-list",
+          "method": "GET",
+          "path": "/api/v1/task/tasks",
+          "summary": "List tasks",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:read"
+          }
+        },
+        {
+          "operationId": "task-task-create",
+          "method": "POST",
+          "path": "/api/v1/task/tasks",
+          "summary": "Create a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          },
+          "events": [
+            "task.sla_breached",
+            "task.task.created"
+          ]
+        },
+        {
+          "operationId": "task-task-delete",
+          "method": "DELETE",
+          "path": "/api/v1/task/tasks/{id}",
+          "summary": "Delete a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          },
+          "events": [
+            "task.sla_breached",
+            "task.task.deleted"
+          ]
+        },
+        {
+          "operationId": "task-task-read",
+          "method": "GET",
+          "path": "/api/v1/task/tasks/{id}",
+          "summary": "Read a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:read"
+          }
+        },
+        {
+          "operationId": "task-task-update",
+          "method": "PATCH",
+          "path": "/api/v1/task/tasks/{id}",
+          "summary": "Update a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          },
+          "events": [
+            "task.sla_breached",
+            "task.task.updated"
+          ]
+        },
+        {
+          "operationId": "task-task-assign",
+          "method": "POST",
+          "path": "/api/v1/task/tasks/{id}/assign",
+          "summary": "Assign a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          },
+          "events": [
+            "task.assigned"
+          ]
+        },
+        {
+          "operationId": "task-task-check-sla",
+          "method": "POST",
+          "path": "/api/v1/task/tasks/{id}/check-sla",
+          "summary": "Check a task's SLA",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          },
+          "events": [
+            "task.sla_breached"
+          ]
+        },
+        {
+          "operationId": "task-task-resolve",
+          "method": "POST",
+          "path": "/api/v1/task/tasks/{id}/resolve",
+          "summary": "Resolve a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          },
+          "events": [
+            "task.resolved"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "entity": "task",
+          "path": "/api/v1/task/tasks",
+          "read": "task:read",
+          "write": "task:update",
+          "immutable": [
+            "assigneeId",
+            "resolution",
+            "resolvedAt",
+            "slaBreached"
+          ],
+          "commands": [
+            {
+              "verb": "assign",
+              "summary": "Assign a task",
+              "auth": {
+                "kind": "permission",
+                "permission": "task:update"
+              },
+              "fields": [
+                {
+                  "name": "assigneeId",
+                  "type": "uuid"
+                }
+              ]
+            },
+            {
+              "verb": "check-sla",
+              "summary": "Check a task's SLA",
+              "auth": {
+                "kind": "permission",
+                "permission": "task:update"
+              }
+            },
+            {
+              "verb": "resolve",
+              "summary": "Resolve a task",
+              "auth": {
+                "kind": "permission",
+                "permission": "task:update"
+              },
+              "fields": [
+                {
+                  "name": "resolution",
+                  "type": "string"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "billing",
+      "permissions": [
+        {
+          "key": "billing:catalog",
+          "operator": true
+        },
+        {
+          "key": "billing:manage"
+        },
+        {
+          "key": "billing:read"
+        }
+      ],
+      "events": [
+        "billing.cancelled",
+        "billing.past_due",
+        "billing.plan.created",
+        "billing.plan.deleted",
+        "billing.plan.updated",
+        "billing.renewed",
+        "billing.subscribed"
+      ],
+      "jobs": [
+        {
+          "name": "billing-renew",
+          "cron": "15 2 * * *"
+        }
+      ],
+      "nav": [
+        {
+          "label": "Billing",
+          "path": "/admin/billing/plans",
+          "permission": "billing:read"
+        }
+      ],
+      "migrations": [
+        "000016_billing.up.sql",
+        "000022_billing_anchor.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            16,
+            22
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "billing-plan-list",
+          "method": "GET",
+          "path": "/api/v1/billing/plans",
+          "summary": "List plans",
+          "auth": {
+            "kind": "permission",
+            "permission": "billing:read"
+          }
+        },
+        {
+          "operationId": "billing-plan-create",
+          "method": "POST",
+          "path": "/api/v1/billing/plans",
+          "summary": "Create a plan",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "billing:catalog"
+          },
+          "events": [
+            "billing.plan.created"
+          ]
+        },
+        {
+          "operationId": "billing-plan-delete",
+          "method": "DELETE",
+          "path": "/api/v1/billing/plans/{id}",
+          "summary": "Delete a plan",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "billing:catalog"
+          },
+          "events": [
+            "billing.plan.deleted"
+          ]
+        },
+        {
+          "operationId": "billing-plan-read",
+          "method": "GET",
+          "path": "/api/v1/billing/plans/{id}",
+          "summary": "Read a plan",
+          "auth": {
+            "kind": "permission",
+            "permission": "billing:read"
+          }
+        },
+        {
+          "operationId": "billing-plan-update",
+          "method": "PATCH",
+          "path": "/api/v1/billing/plans/{id}",
+          "summary": "Update a plan",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "billing:catalog"
+          },
+          "events": [
+            "billing.plan.updated"
+          ]
+        },
+        {
+          "operationId": "billing-subscription-read",
+          "method": "GET",
+          "path": "/api/v1/billing/subscription",
+          "summary": "Read this tenant's subscription",
+          "auth": {
+            "kind": "permission",
+            "permission": "billing:read"
+          }
+        },
+        {
+          "operationId": "billing-subscription-cancel",
+          "method": "POST",
+          "path": "/api/v1/billing/subscription/cancel",
+          "summary": "Cancel this tenant's subscription",
+          "auth": {
+            "kind": "permission",
+            "permission": "billing:manage"
+          },
+          "events": [
+            "billing.cancelled"
+          ]
+        },
+        {
+          "operationId": "billing-subscription-subscribe",
+          "method": "POST",
+          "path": "/api/v1/billing/subscription/subscribe",
+          "summary": "Subscribe this tenant to a plan",
+          "auth": {
+            "kind": "permission",
+            "permission": "billing:manage"
+          },
+          "events": [
+            "billing.subscribed"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "entity": "plan",
+          "path": "/api/v1/billing/plans",
+          "read": "billing:read",
+          "write": "billing:catalog",
+          "operatorWrite": true
+        }
+      ]
+    },
+    {
+      "name": "content",
+      "permissions": [
+        {
+          "key": "content:manage"
+        },
+        {
+          "key": "content:read"
+        }
+      ],
+      "events": [
+        "content.archived",
+        "content.content.created",
+        "content.content.deleted",
+        "content.content.updated",
+        "content.published",
+        "content.unpublished"
+      ],
+      "nav": [
+        {
+          "label": "Content",
+          "path": "/admin/content/contents",
+          "permission": "content:read"
+        }
+      ],
+      "migrations": [
+        "000017_content.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            17
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "content-content-list",
+          "method": "GET",
+          "path": "/api/v1/content/contents",
+          "summary": "List contents",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:read"
+          }
+        },
+        {
+          "operationId": "content-content-create",
+          "method": "POST",
+          "path": "/api/v1/content/contents",
+          "summary": "Create a content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          },
+          "events": [
+            "content.content.created"
+          ]
+        },
+        {
+          "operationId": "content-content-delete",
+          "method": "DELETE",
+          "path": "/api/v1/content/contents/{id}",
+          "summary": "Delete a content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          },
+          "events": [
+            "content.content.deleted"
+          ]
+        },
+        {
+          "operationId": "content-content-read",
+          "method": "GET",
+          "path": "/api/v1/content/contents/{id}",
+          "summary": "Read a content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:read"
+          }
+        },
+        {
+          "operationId": "content-content-update",
+          "method": "PATCH",
+          "path": "/api/v1/content/contents/{id}",
+          "summary": "Update a content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          },
+          "events": [
+            "content.content.updated"
+          ]
+        },
+        {
+          "operationId": "content-content-archive",
+          "method": "POST",
+          "path": "/api/v1/content/contents/{id}/archive",
+          "summary": "Archive content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          },
+          "events": [
+            "content.archived"
+          ]
+        },
+        {
+          "operationId": "content-content-publish",
+          "method": "POST",
+          "path": "/api/v1/content/contents/{id}/publish",
+          "summary": "Publish content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          },
+          "events": [
+            "content.published"
+          ]
+        },
+        {
+          "operationId": "content-content-unpublish",
+          "method": "POST",
+          "path": "/api/v1/content/contents/{id}/unpublish",
+          "summary": "Unpublish content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          },
+          "events": [
+            "content.unpublished"
+          ]
+        },
+        {
+          "operationId": "content-content-public",
+          "method": "GET",
+          "path": "/api/v1/content/public/{slug}",
+          "summary": "Read published content by slug",
+          "auth": {
+            "kind": "public"
+          }
+        }
+      ],
+      "resources": [
+        {
+          "entity": "content",
+          "path": "/api/v1/content/contents",
+          "read": "content:read",
+          "write": "content:manage",
+          "immutable": [
+            "author",
+            "publishedAt",
+            "status"
+          ],
+          "commands": [
+            {
+              "verb": "archive",
+              "summary": "Archive content",
+              "auth": {
+                "kind": "permission",
+                "permission": "content:manage"
+              }
+            },
+            {
+              "verb": "publish",
+              "summary": "Publish content",
+              "auth": {
+                "kind": "permission",
+                "permission": "content:manage"
+              }
+            },
+            {
+              "verb": "unpublish",
+              "summary": "Unpublish content",
+              "auth": {
+                "kind": "permission",
+                "permission": "content:manage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "site",
+      "permissions": [
+        {
+          "key": "site:manage"
+        }
+      ],
+      "events": [
+        "site.settings_updated"
+      ],
+      "nav": [
+        {
+          "label": "Site",
+          "path": "/admin/site/settings",
+          "permission": "site:manage"
+        }
+      ],
+      "migrations": [
+        "000018_site.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            18
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "site-settings-read",
+          "method": "GET",
+          "path": "/api/v1/site/settings",
+          "summary": "Read this tenant's settings",
+          "auth": {
+            "kind": "permission",
+            "permission": "site:manage"
+          }
+        },
+        {
+          "operationId": "site-settings-save",
+          "method": "PUT",
+          "path": "/api/v1/site/settings",
+          "summary": "Save this tenant's settings",
+          "auth": {
+            "kind": "permission",
+            "permission": "site:manage"
+          },
+          "events": [
+            "site.settings_updated"
+          ]
+        },
+        {
+          "operationId": "site-settings-public",
+          "method": "GET",
+          "path": "/api/v1/site/settings/public",
+          "summary": "Read this settings as a visitor sees it",
+          "auth": {
+            "kind": "public"
+          }
+        }
+      ],
+      "resources": [
+        {
+          "entity": "settings",
+          "path": "/api/v1/site/settings",
+          "read": "site:manage",
+          "write": "site:manage",
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "name": "file",
+      "permissions": [
+        {
+          "key": "file:manage"
+        },
+        {
+          "key": "file:read"
+        }
+      ],
+      "events": [
+        "file.deleted",
+        "file.uploaded"
+      ],
+      "subscriptions": [
+        "file.deleted"
+      ],
+      "jobs": [
+        {
+          "name": "file-reconcile",
+          "cron": "45 3 * * *"
+        }
+      ],
+      "nav": [
+        {
+          "label": "Files",
+          "path": "/admin/file/files",
+          "permission": "file:read"
+        }
+      ],
+      "migrations": [
+        "000019_file.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            19
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "file-file-list",
+          "method": "GET",
+          "path": "/api/v1/file/files",
+          "summary": "List files",
+          "auth": {
+            "kind": "permission",
+            "permission": "file:read"
+          }
+        },
+        {
+          "operationId": "file-file-upload",
+          "method": "POST",
+          "path": "/api/v1/file/files",
+          "summary": "Upload a file",
+          "auth": {
+            "kind": "permission",
+            "permission": "file:manage"
+          },
+          "events": [
+            "file.uploaded"
+          ]
+        },
+        {
+          "operationId": "file-file-delete",
+          "method": "DELETE",
+          "path": "/api/v1/file/files/{id}",
+          "summary": "Delete a file",
+          "auth": {
+            "kind": "permission",
+            "permission": "file:manage"
+          },
+          "events": [
+            "file.deleted"
+          ]
+        },
+        {
+          "operationId": "file-file-read",
+          "method": "GET",
+          "path": "/api/v1/file/files/{id}",
+          "summary": "Read a file's record",
+          "auth": {
+            "kind": "permission",
+            "permission": "file:read"
+          }
+        },
+        {
+          "operationId": "file-file-content",
+          "method": "GET",
+          "path": "/api/v1/file/files/{id}/content",
+          "summary": "Download a file",
+          "auth": {
+            "kind": "permission",
+            "permission": "file:read"
+          }
+        },
+        {
+          "operationId": "file-file-content-head",
+          "method": "HEAD",
+          "path": "/api/v1/file/files/{id}/content",
+          "summary": "Download a file",
+          "auth": {
+            "kind": "permission",
+            "permission": "file:read"
+          }
+        },
+        {
+          "operationId": "file-file-public",
+          "method": "GET",
+          "path": "/api/v1/file/public/{id}",
+          "summary": "Download a public file",
+          "auth": {
+            "kind": "public"
+          }
+        },
+        {
+          "operationId": "file-file-public-head",
+          "method": "HEAD",
+          "path": "/api/v1/file/public/{id}",
+          "summary": "Download a public file",
+          "auth": {
+            "kind": "public"
+          }
+        }
+      ]
+    },
+    {
+      "name": "web",
+      "routes": [
+        {
+          "operationId": "web-home",
+          "method": "GET",
+          "path": "/",
+          "summary": "The site's home page",
+          "auth": {
+            "kind": "public"
+          }
+        },
+        {
+          "operationId": "web-page",
+          "method": "GET",
+          "path": "/{slug}",
+          "summary": "One published page",
+          "auth": {
+            "kind": "public"
+          }
+        }
+      ]
+    },
+    {
+      "name": "audit",
+      "permissions": [
+        {
+          "key": "audit:read"
+        }
+      ],
+      "subscriptions": [
+        "auth.logged_in",
+        "auth.logged_out",
+        "auth.login_failed",
+        "auth.password_reset",
+        "auth.registration_requested",
+        "auth.reset_requested",
+        "auth.role_set",
+        "auth.verification_requested",
+        "billing.cancelled",
+        "billing.past_due",
+        "billing.plan.created",
+        "billing.plan.deleted",
+        "billing.plan.updated",
+        "billing.renewed",
+        "billing.subscribed",
+        "content.archived",
+        "content.content.created",
+        "content.content.deleted",
+        "content.content.updated",
+        "content.published",
+        "content.unpublished",
+        "file.deleted",
+        "file.uploaded",
+        "notification.created",
+        "notification.email_requested",
+        "notification.read",
+        "site.settings_updated",
+        "task.assigned",
+        "task.resolved",
+        "task.sla_breached",
+        "task.task.created",
+        "task.task.deleted",
+        "task.task.updated",
+        "tenant.created",
+        "tenant.host_added",
+        "tenant.suspended",
+        "user.deactivated",
+        "user.email_verified",
+        "user.handle_set",
+        "user.invited",
+        "user.password_set",
+        "user.registration_approved",
+        "user.registration_pending",
+        "user.registration_unverified",
+        "user.roles_set",
+        "user.user.created",
+        "user.user.deleted",
+        "user.user.updated"
+      ],
+      "subscribeAll": true,
+      "jobs": [
+        {
+          "name": "audit-retention",
+          "cron": "0 * * * *"
+        }
+      ],
+      "nav": [
+        {
+          "label": "Audit",
+          "path": "/admin/audit/events",
+          "permission": "audit:read"
+        }
+      ],
+      "migrations": [
+        "000010_audit.up.sql",
+        "000015_audit_event_unique.up.sql",
+        "000023_audit_records.up.sql"
+      ],
+      "adopts": [
+        {
+          "owner": "platformkit",
+          "versions": [
+            10,
+            15,
+            23
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "audit-event-list",
+          "method": "GET",
+          "path": "/api/v1/audit/events",
+          "summary": "List the audit trail",
+          "auth": {
+            "kind": "permission",
+            "permission": "audit:read",
+            "feature": "audit-trail"
+          }
+        },
+        {
+          "operationId": "audit-event-read",
+          "method": "GET",
+          "path": "/api/v1/audit/events/{id}",
+          "summary": "Read one audit event",
+          "auth": {
+            "kind": "permission",
+            "permission": "audit:read",
+            "feature": "audit-trail"
+          }
+        }
+      ]
+    },
+    {
+      "name": "admin",
+      "permissions": [
+        {
+          "key": "gallery:read"
+        }
+      ],
+      "routes": [
+        {
+          "operationId": "admin-dashboard",
+          "method": "GET",
+          "path": "/admin",
+          "summary": "The dashboard",
+          "auth": {
+            "kind": "signed_in"
+          }
+        },
+        {
+          "operationId": "admin-gallery",
+          "method": "GET",
+          "path": "/admin/_gallery",
+          "summary": "The tenant's component gallery",
+          "auth": {
+            "kind": "permission",
+            "permission": "gallery:read"
+          }
+        },
+        {
+          "operationId": "admin-gallery-export",
+          "method": "GET",
+          "path": "/admin/_gallery/export",
+          "auth": {
+            "kind": "permission",
+            "permission": "gallery:read"
+          }
+        },
+        {
+          "operationId": "admin-gallery-preview",
+          "method": "GET",
+          "path": "/admin/_gallery/preview",
+          "auth": {
+            "kind": "permission",
+            "permission": "gallery:read"
+          }
+        },
+        {
+          "operationId": "admin-storybook-file",
+          "method": "GET",
+          "path": "/admin/_gallery/storybook/*",
+          "auth": {
+            "kind": "permission",
+            "permission": "gallery:read"
+          }
+        },
+        {
+          "operationId": "admin-roles",
+          "method": "GET",
+          "path": "/admin/auth/roles",
+          "summary": "What each role grants in this tenant",
+          "auth": {
+            "kind": "permission",
+            "permission": "role:manage"
+          }
+        },
+        {
+          "operationId": "admin-role-set",
+          "method": "POST",
+          "path": "/admin/auth/roles",
+          "summary": "Set what a role grants",
+          "auth": {
+            "kind": "permission",
+            "permission": "role:manage"
+          }
+        },
+        {
+          "operationId": "screen-billing-plan-list",
+          "method": "GET",
+          "path": "/admin/billing/plans",
+          "summary": "The plan list",
+          "auth": {
+            "kind": "permission",
+            "permission": "billing:read"
+          }
+        },
+        {
+          "operationId": "screen-billing-plan-create",
+          "method": "POST",
+          "path": "/admin/billing/plans",
+          "summary": "Create a plan",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "billing:catalog"
+          }
+        },
+        {
+          "operationId": "screen-billing-plan-new",
+          "method": "GET",
+          "path": "/admin/billing/plans/new",
+          "summary": "The new-plan form",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "billing:catalog"
+          }
+        },
+        {
+          "operationId": "screen-billing-plan-read",
+          "method": "GET",
+          "path": "/admin/billing/plans/{id}",
+          "summary": "One plan",
+          "auth": {
+            "kind": "permission",
+            "permission": "billing:read"
+          }
+        },
+        {
+          "operationId": "screen-billing-plan-update",
+          "method": "POST",
+          "path": "/admin/billing/plans/{id}",
+          "summary": "Update a plan",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "billing:catalog"
+          }
+        },
+        {
+          "operationId": "screen-billing-plan-delete",
+          "method": "POST",
+          "path": "/admin/billing/plans/{id}/delete",
+          "summary": "Delete a plan",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "billing:catalog"
+          }
+        },
+        {
+          "operationId": "screen-billing-plan-edit",
+          "method": "GET",
+          "path": "/admin/billing/plans/{id}/edit",
+          "summary": "The edit-plan form",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "billing:catalog"
+          }
+        },
+        {
+          "operationId": "screen-content-content-list",
+          "method": "GET",
+          "path": "/admin/content/contents",
+          "summary": "The content list",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:read"
+          }
+        },
+        {
+          "operationId": "screen-content-content-create",
+          "method": "POST",
+          "path": "/admin/content/contents",
+          "summary": "Create a content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          }
+        },
+        {
+          "operationId": "screen-content-content-new",
+          "method": "GET",
+          "path": "/admin/content/contents/new",
+          "summary": "The new-content form",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          }
+        },
+        {
+          "operationId": "screen-content-content-read",
+          "method": "GET",
+          "path": "/admin/content/contents/{id}",
+          "summary": "One content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:read"
+          }
+        },
+        {
+          "operationId": "screen-content-content-update",
+          "method": "POST",
+          "path": "/admin/content/contents/{id}",
+          "summary": "Update a content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          }
+        },
+        {
+          "operationId": "screen-content-content-archive",
+          "method": "POST",
+          "path": "/admin/content/contents/{id}/archive",
+          "summary": "Archive content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          }
+        },
+        {
+          "operationId": "screen-content-content-delete",
+          "method": "POST",
+          "path": "/admin/content/contents/{id}/delete",
+          "summary": "Delete a content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          }
+        },
+        {
+          "operationId": "screen-content-content-edit",
+          "method": "GET",
+          "path": "/admin/content/contents/{id}/edit",
+          "summary": "The edit-content form",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          }
+        },
+        {
+          "operationId": "screen-content-content-publish",
+          "method": "POST",
+          "path": "/admin/content/contents/{id}/publish",
+          "summary": "Publish content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          }
+        },
+        {
+          "operationId": "screen-content-content-unpublish",
+          "method": "POST",
+          "path": "/admin/content/contents/{id}/unpublish",
+          "summary": "Unpublish content",
+          "auth": {
+            "kind": "permission",
+            "permission": "content:manage"
+          }
+        },
+        {
+          "operationId": "admin-health",
+          "method": "GET",
+          "path": "/admin/health",
+          "summary": "Health",
+          "auth": {
+            "kind": "signed_in"
+          }
+        },
+        {
+          "operationId": "admin-login",
+          "method": "GET",
+          "path": "/admin/login",
+          "summary": "Sign in",
+          "auth": {
+            "kind": "public"
+          }
+        },
+        {
+          "operationId": "screen-site-settings-read",
+          "method": "GET",
+          "path": "/admin/site/settings",
+          "summary": "The settings record",
+          "auth": {
+            "kind": "permission",
+            "permission": "site:manage"
+          }
+        },
+        {
+          "operationId": "screen-site-settings-update",
+          "method": "POST",
+          "path": "/admin/site/settings",
+          "summary": "Update the settings",
+          "auth": {
+            "kind": "permission",
+            "permission": "site:manage"
+          }
+        },
+        {
+          "operationId": "screen-site-settings-edit",
+          "method": "GET",
+          "path": "/admin/site/settings/edit",
+          "summary": "The edit-settings form",
+          "auth": {
+            "kind": "permission",
+            "permission": "site:manage"
+          }
+        },
+        {
+          "operationId": "screen-task-task-list",
+          "method": "GET",
+          "path": "/admin/task/tasks",
+          "summary": "The task list",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:read"
+          }
+        },
+        {
+          "operationId": "screen-task-task-create",
+          "method": "POST",
+          "path": "/admin/task/tasks",
+          "summary": "Create a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          }
+        },
+        {
+          "operationId": "screen-task-task-new",
+          "method": "GET",
+          "path": "/admin/task/tasks/new",
+          "summary": "The new-task form",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          }
+        },
+        {
+          "operationId": "screen-task-task-read",
+          "method": "GET",
+          "path": "/admin/task/tasks/{id}",
+          "summary": "One task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:read"
+          }
+        },
+        {
+          "operationId": "screen-task-task-update",
+          "method": "POST",
+          "path": "/admin/task/tasks/{id}",
+          "summary": "Update a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          }
+        },
+        {
+          "operationId": "screen-task-task-assign",
+          "method": "POST",
+          "path": "/admin/task/tasks/{id}/assign",
+          "summary": "Assign a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          }
+        },
+        {
+          "operationId": "screen-task-task-check-sla",
+          "method": "POST",
+          "path": "/admin/task/tasks/{id}/check-sla",
+          "summary": "Check a task's SLA",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          }
+        },
+        {
+          "operationId": "screen-task-task-delete",
+          "method": "POST",
+          "path": "/admin/task/tasks/{id}/delete",
+          "summary": "Delete a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          }
+        },
+        {
+          "operationId": "screen-task-task-edit",
+          "method": "GET",
+          "path": "/admin/task/tasks/{id}/edit",
+          "summary": "The edit-task form",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          }
+        },
+        {
+          "operationId": "screen-task-task-resolve",
+          "method": "POST",
+          "path": "/admin/task/tasks/{id}/resolve",
+          "summary": "Resolve a task",
+          "auth": {
+            "kind": "permission",
+            "permission": "task:update"
+          }
+        },
+        {
+          "operationId": "admin-tenants",
+          "method": "GET",
+          "path": "/admin/tenant/tenants",
+          "summary": "The tenants of this installation",
+          "auth": {
+            "kind": "operator_permission",
+            "permission": "tenant:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-list",
+          "method": "GET",
+          "path": "/admin/user/users",
+          "summary": "The user list",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:read"
+          }
+        },
+        {
+          "operationId": "screen-user-user-create",
+          "method": "POST",
+          "path": "/admin/user/users",
+          "summary": "Create a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-new",
+          "method": "GET",
+          "path": "/admin/user/users/new",
+          "summary": "The new-user form",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-read",
+          "method": "GET",
+          "path": "/admin/user/users/{id}",
+          "summary": "One user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:read"
+          }
+        },
+        {
+          "operationId": "screen-user-user-update",
+          "method": "POST",
+          "path": "/admin/user/users/{id}",
+          "summary": "Update a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-approve-registration",
+          "method": "POST",
+          "path": "/admin/user/users/{id}/approve-registration",
+          "summary": "Approve a pending registration",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:approve"
+          }
+        },
+        {
+          "operationId": "screen-user-user-deactivate",
+          "method": "POST",
+          "path": "/admin/user/users/{id}/deactivate",
+          "summary": "Deactivate a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-delete",
+          "method": "POST",
+          "path": "/admin/user/users/{id}/delete",
+          "summary": "Delete a user",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-edit",
+          "method": "GET",
+          "path": "/admin/user/users/{id}/edit",
+          "summary": "The edit-user form",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-handle",
+          "method": "POST",
+          "path": "/admin/user/users/{id}/handle",
+          "summary": "Claim or change a user's handle",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-roles",
+          "method": "POST",
+          "path": "/admin/user/users/{id}/roles",
+          "summary": "Set a user's roles",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "screen-user-user-set-password",
+          "method": "POST",
+          "path": "/admin/user/users/{id}/set-password",
+          "summary": "Set a user's password",
+          "auth": {
+            "kind": "permission",
+            "permission": "user:manage"
+          }
+        },
+        {
+          "operationId": "admin-resources",
+          "method": "GET",
+          "path": "/api/v1/admin/resources",
+          "summary": "The resources this caller may reach, with their schemas",
+          "auth": {
+            "kind": "signed_in"
+          }
+        }
+      ]
+    },
+    {
+      "name": "kernel",
+      "routes": [
+        {
+          "operationId": "",
+          "method": "GET",
+          "path": "/docs",
+          "auth": {
+            "kind": "public"
+          }
+        },
+        {
+          "operationId": "",
+          "method": "GET",
+          "path": "/openapi-3.0.json",
+          "auth": {
+            "kind": "public"
+          }
+        },
+        {
+          "operationId": "",
+          "method": "GET",
+          "path": "/openapi-3.0.yaml",
+          "auth": {
+            "kind": "public"
+          }
+        },
+        {
+          "operationId": "",
+          "method": "GET",
+          "path": "/openapi.json",
+          "auth": {
+            "kind": "public"
+          }
+        },
+        {
+          "operationId": "",
+          "method": "GET",
+          "path": "/openapi.yaml",
+          "auth": {
+            "kind": "public"
+          }
+        },
+        {
+          "operationId": "",
+          "method": "GET",
+          "path": "/schemas/{schema}",
+          "auth": {
+            "kind": "public"
+          }
+        }
+      ]
+    }
+  ]
+}

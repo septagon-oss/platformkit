@@ -1,6 +1,7 @@
 // Command platformkit is the reference application: one binary, one image, and
-// two subcommands — `run`, which serves, and `bootstrap`, which creates the
-// first tenant of an empty installation.
+// four subcommands — `run`, which serves, `bootstrap`, which creates the first
+// tenant of an empty installation, `start`, which does both from nothing but Go,
+// and `describe`, which prints the composition instead of running it.
 //
 // It is short on purpose. Everything it does is read a configuration, compose
 // the modules, choose the three implementations the kernel cannot choose for
@@ -38,8 +39,10 @@ func main() {
 		err = bootstrap(args)
 	case "start":
 		err = startApp(args)
+	case "describe":
+		err = describe(args)
 	default:
-		err = fmt.Errorf("%q is not a command; there are three: run, bootstrap and start", command)
+		err = fmt.Errorf("%q is not a command; there are four: run, bootstrap, start and describe", command)
 	}
 	if err != nil {
 		// The error goes to stderr rather than through the logger, because the

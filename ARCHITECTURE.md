@@ -80,6 +80,18 @@ of module constructors. Each constructor accepts a typed `Deps` struct and
 returns a manifest. There is no runtime discovery step. The compiler checks
 dependency types; composition tests check required values and selected modules.
 
+The same composition can also be read as data. `platformkit describe` prints
+[kit/app.Describe](kit/app/describe.go)'s projection of the values `app.New`
+checked: each module's permissions, events, subscriptions, jobs, navigation,
+migration files and adopted history, the routes it registered with the
+authorization each declares, and the resources the generated screens are built
+from. [apps/platformkit/testdata/composition.json](apps/platformkit/testdata/composition.json)
+is that document for the reference application, kept honest by
+`TestDescribeMatchesTheCommittedComposition`. It is a projection of the typed
+composition and not a registry: nothing reads it to decide anything at runtime,
+and no manifest field exists to satisfy it. It proves what is declared and how
+it is wired, not what the running application does.
+
 Tenant creation uses [auth.SeedRoles](modules/auth/module.go) inside its existing
 transaction. Provisioning is independent of the authentication service, so
 tenants, host lookup and active-tenant enumeration exist before notification

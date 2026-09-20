@@ -99,6 +99,18 @@ is a separate goal because -race roughly doubles the suite.
 `make e2e` adds browser journeys. Both pass before pushing; `make check`
 passes before committing.
 
+When a change alters the composition — a module selected or dropped, a route, a
+permission, a migration file — rewrite
+[apps/platformkit/testdata/composition.json](apps/platformkit/testdata/composition.json)
+and commit it with the change:
+
+```sh
+PLATFORMKIT_UPDATE_GOLDEN=1 make test TEST_PACKAGES=./apps/platformkit TEST_FLAGS=-count=1
+```
+
+Read that diff before committing it: every line that moved is a declaration
+somebody added or removed.
+
 Browser checks also require Node, npm, `psql`, `curl` and Playwright Chromium.
 Install the browser dependencies once, then run with the same service ports:
 

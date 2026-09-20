@@ -132,6 +132,13 @@ type App struct {
 	mods []module.Module
 	opts Options
 	log  *slog.Logger
+	// subscribeAll names the modules whose manifest said they hear every event
+	// the application emits. Expand replaces that one subscription with one per
+	// event and clears the flag on the manifest it returns, so the declared fact
+	// has to be kept beside the expanded list: Describe says which modules were
+	// written that way instead of guessing from a list that happens to be the
+	// whole event set.
+	subscribeAll map[string]bool
 }
 
 // shutdownGrace bounds the wait for in-flight requests once the context is done.
@@ -204,6 +211,12 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	// Expanded before it is checked: a module that subscribes to everything is
 	// given the names here, once every manifest is in hand, so where it sits in
 	// the list cannot change what it hears.
+	all := make(map[string]bool)
+	for _, m := range mods {
+		if m.SubscribeAll {
+			all[m.Name] = true
+		}
+	}
 	mods = module.Expand(mods)
 	if err := module.Validate(mods); err != nil {
 		return nil, err
@@ -224,7 +237,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == All && opts.Transport == nil && cfg.NATS.Transport != "jetstream" {
 		log.WarnContext(ctx, "app: in-process events reach only this replica; set nats.transport to jetstream to share events between replicas")
 	}
-	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
+	return &App{cfg: cfg, mods: mods, opts: opts, log: log, subscribeAll: all}, nil
 }
 
 // Run migrates, then serves or works or both, and returns when ctx is done. It is
@@ -315,10 +328,20 @@ func useJetStream(mode string, role Role) (bool, error) {
 	}
 }
 
-// buildAPI builds the API, lets every module register its routes and checks,
-// and runs the boot gates. It returns before anything listens, so a composition
-// that fails a gate never takes the port.
-func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error) {
+// builtAPI is what buildAPI assembles: the API every module registered into, with
+// the recording Describe reads, and the router it is mounted on, which is what
+// would serve. A caller takes one field or the other — Start serves the router
+// and never asks the API a question, Describe reads the API and throws the
+// router away.
+type builtAPI struct {
+	api    *httpx.API
+	router http.Handler
+}
+
+// buildAPI builds the API, lets every module register its routes and checks, and
+// runs the boot gates. It returns before anything listens, so a composition that
+// fails a gate never takes the port.
+func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (builtAPI, error) {
 	api, router := httpx.New(httpx.Options{
 		PublicHost:   a.cfg.Server.PublicHost,
 		Docs:         a.cfg.Server.Docs,
@@ -363,16 +386,16 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	// no deployment to migrate and no reason to run a build it knows is
 	// unprotected, unreachable or unannounced.
 	if err := api.ValidateDeclarations(); err != nil {
-		return nil, err
+		return builtAPI{}, err
 	}
 	if err := validatePermissions(api, a.mods); err != nil {
-		return nil, err
+		return builtAPI{}, err
 	}
 	if err := validateEvents(api, a.mods); err != nil {
-		return nil, err
+		return builtAPI{}, err
 	}
 	a.log.InfoContext(ctx, "app: operations declared", "count", len(api.Recorded()), "events", len(api.Events()))
-	return router, nil
+	return builtAPI{api: api, router: router}, nil
 }
 
 // work is the worker role: the outbox relay, the outbox purge, every module's

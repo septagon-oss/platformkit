@@ -71,12 +71,12 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	handler, err := a.buildAPI(ctx, conn)
+	built, err := a.buildAPI(ctx, conn)
 	if err != nil {
 		_ = conn.Close() // a composition that failed a gate is never mounted
 		return nil, err
 	}
-	rt := &Runtime{app: a, conn: conn, handler: handler}
+	rt := &Runtime{app: a, conn: conn, handler: built.router}
 	if a.opts.Role == Worker {
 		// The routes were built and gated above and are then set aside: the two
 		// probes are the whole surface Run gives a worker today.
