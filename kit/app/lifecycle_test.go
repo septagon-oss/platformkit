@@ -1,8 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -479,5 +481,68 @@ func TestWorkAfterCloseIsRefused(t *testing.T) {
 	// mistake and not a shutdown mechanism.
 	if err := rt.Work(ctx); err == nil || !strings.Contains(err.Error(), "closed") {
 		t.Errorf("a second Work after Close = %v, want the same refusal", err)
+	}
+}
+
+// TestCloseFlushesTheTracesTheRuntimePathMade is the difference between Run and
+// this seam, spelled as an assertion rather than a comment. Run is told when the
+// process ends, so it can push what the batch processor still holds; a caller that
+// owns its listener never calls Run, and Close is the only teardown that path has.
+// Without the flush such a process loses every span recorded since the processor's
+// last export — and one that started and finished inside a single batch interval
+// keeps none of its trace at all.
+func TestCloseFlushesTheTracesTheRuntimePathMade(t *testing.T) {
+	cfg, opts := compose(t)
+	// The flush failure has to surface somewhere, and Close's error is not it; the
+	// logger is, which is where Run reports the same loss.
+	var logged bytes.Buffer
+	opts.Log = slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelError}))
+	a, err := New(t.Context(), cfg, []module.Module{brand("tracer", "tracer-stylesheet")}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// New installed the shutdown an empty endpoint gives, which is a function that
+	// does nothing. This replaces it with one that counts and fails, so both that
+	// Close calls it and what Close does with its failure are observable.
+	var flushes atomic.Int64
+	a.traces = func(ctx context.Context) error {
+		flushes.Add(1)
+		if err := ctx.Err(); err != nil {
+			t.Errorf("the flush was handed a context already past its deadline: %v", err)
+		}
+		return errors.New("the collector did not answer")
+	}
+
+	rt, err := a.Start(t.Context())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got := flushes.Load(); got != 0 {
+		t.Fatalf("Start flushed %d times, want the flush to belong to the end of the lifecycle", got)
+	}
+
+	if err := rt.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if got := flushes.Load(); got != 1 {
+		t.Fatalf("Close flushed %d times, want the last batch pushed once", got)
+	}
+	// Spans nobody read are a loss; a shutdown that did not finish is a worse one,
+	// so Close still answers nil and the log carries the cause. Same bargain Run
+	// makes, and the reason the failure is logged rather than returned.
+	for range 2 {
+		if err := rt.Close(); err != nil {
+			t.Errorf("Close again = %v, want the first call's result", err)
+		}
+	}
+	// Run's own deferred flush, reached here directly: a process that goes through
+	// Run hits Close and then that defer, and the Once is what keeps the provider
+	// from being shut down twice on the only path that does both.
+	a.flushTraces(t.Context())
+	if got := flushes.Load(); got != 1 {
+		t.Errorf("the provider was shut down %d times, want once however many teardowns", got)
+	}
+	if !strings.Contains(logged.String(), "the collector did not answer") {
+		t.Errorf("Close swallowed the flush failure; the log says: %q", logged.String())
 	}
 }

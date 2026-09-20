@@ -140,9 +140,14 @@ func TestPerTenantSpansOneTenantEach(t *testing.T) {
 		t.Fatal("PerTenant reported no failure for a tenant whose work failed")
 	}
 
+	// Both names on a span from a job that walks tenants, because such a job is
+	// given the slug with the row: the slug is what a reader recognises and the
+	// id is what matches this span to the same tenant's delivery spans.
 	wantAttribute(t, ended(t, "acme tenant"), "platformkit.tenant", "acme")
+	wantAttribute(t, ended(t, "acme tenant"), "platformkit.tenant.id", tenants[0].ID.String())
 	globex := ended(t, "globex tenant")
 	wantAttribute(t, globex, "platformkit.tenant", "globex")
+	wantAttribute(t, globex, "platformkit.tenant.id", tenants[1].ID.String())
 	if status := globex.Status(); status.Code != codes.Error || status.Description != bad.Error() {
 		t.Errorf("the failed tenant is %v, want an error status saying %q", status, bad)
 	}
@@ -157,8 +162,10 @@ func TestPerTenantConcurrentSpansEveryTenant(t *testing.T) {
 	fresh(t)
 	want := []string{"one", "two", "three", "four"}
 	tenants := make(lister, len(want))
+	ids := map[string]string{}
 	for i, slug := range want {
 		tenants[i] = tenancy.Tenant{ID: uuid.New(), Slug: slug}
+		ids[slug] = tenants[i].ID.String()
 	}
 	if err := PerTenantConcurrent(t.Context(), conn, tenants, 3, func(context.Context, *db.Conn, tenancy.Tenant) error {
 		return nil
@@ -166,6 +173,8 @@ func TestPerTenantConcurrentSpansEveryTenant(t *testing.T) {
 		t.Fatalf("PerTenantConcurrent: %v", err)
 	}
 	for _, slug := range want {
-		wantAttribute(t, ended(t, slug+" tenant"), "platformkit.tenant", slug)
+		span := ended(t, slug+" tenant")
+		wantAttribute(t, span, "platformkit.tenant", slug)
+		wantAttribute(t, span, "platformkit.tenant.id", ids[slug])
 	}
 }

@@ -320,10 +320,14 @@ func PerTenantConcurrent(ctx context.Context, conn *db.Conn, lister TenantLister
 		tenant := tenants[i]
 		// One span per tenant, under the job's: a job that took nine seconds over
 		// four hundred tenants has one tenant that took eight of them, and that is
-		// the fact a reader needs. The slug is this path's tenant name, because a
-		// job that lists tenants has it, unlike a delivery that has only an id.
+		// the fact a reader needs. This path has both names for the tenant — a job
+		// that lists tenants is given the slug with the row — so it carries both, and
+		// the id is what matches this span to the delivery spans of the events the
+		// tenant's own work published.
 		tctx, span := tracer.Start(ctx, tenant.Slug+" tenant",
-			trace.WithAttributes(attribute.String("platformkit.tenant", tenant.Slug)))
+			trace.WithAttributes(
+				attribute.String("platformkit.tenant", tenant.Slug),
+				attribute.String("platformkit.tenant.id", tenant.ID.String())))
 		defer span.End()
 		if err := fn(tenancy.WithTenant(tctx, tenant), conn, tenant); err != nil {
 			slog.ErrorContext(ctx, "jobs: a tenant failed; continuing with the rest", "tenant", tenant.Slug, "error", err)

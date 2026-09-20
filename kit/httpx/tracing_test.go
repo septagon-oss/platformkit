@@ -111,6 +111,7 @@ func TestOneRequestMakesOneSpanNamedForItsOperation(t *testing.T) {
 		"http.request.method":       "GET",
 		"http.route":                "/widgets/{id}",
 		"platformkit.tenant":        f.tenant.Slug,
+		"platformkit.tenant.id":     f.tenant.ID.String(),
 		"enduser.id":                f.principal.UserID.String(),
 		"http.response.status_code": "200",
 	}, "a-secret-in-a-url")
@@ -123,7 +124,7 @@ func TestOneRequestMakesOneSpanNamedForItsOperation(t *testing.T) {
 // tenant either: an id invented for a request that resolved nothing would read in
 // a trace as a tenant that exists.
 func TestAnAnonymousRequestCarriesNoCaller(t *testing.T) {
-	api, router, _ := setup(t)
+	api, router, f := setup(t)
 	// A public operation, so the request reaches the handler with no caller at
 	// all: a permissioned one would answer 403 first, which is the right answer
 	// and says nothing about the span.
@@ -135,7 +136,12 @@ func TestAnAnonymousRequestCarriesNoCaller(t *testing.T) {
 	if w := get(t, router, "/public"); w.Code != 200 {
 		t.Fatalf("the request was answered %d", w.Code)
 	}
-	span := wantOneSpan(t, map[string]string{"platformkit.tenant": "acme"}, "")
+	// The id beside the slug, on a request that named no caller at all: the site
+	// resolved, and both of its names are worth having.
+	span := wantOneSpan(t, map[string]string{
+		"platformkit.tenant":    "acme",
+		"platformkit.tenant.id": f.tenant.ID.String(),
+	}, "")
 	if _, found := attributeOf(span, "enduser.id"); found {
 		t.Error("an anonymous request carries an enduser.id")
 	}
@@ -148,8 +154,10 @@ func TestAnAnonymousRequestCarriesNoCaller(t *testing.T) {
 		t.Fatalf("the public request was answered %d", w.Code)
 	}
 	for _, span := range spans.Ended() {
-		if _, found := attributeOf(span, "platformkit.tenant"); found {
-			t.Errorf("%s names a tenant for a host that resolved to none", span.Name())
+		for _, key := range []string{"platformkit.tenant", "platformkit.tenant.id"} {
+			if _, found := attributeOf(span, key); found {
+				t.Errorf("%s names a tenant for a host that resolved to none", span.Name())
+			}
 		}
 	}
 }

@@ -281,9 +281,18 @@ forwards a parent it was handed and still leaves a context on the outbox row for
 traced one to read. Sampling is parent-based, so a sampled trace stays one trace
 through the outbox and the worker; the ratio decides only traces this process starts.
 A span carries no body, header, query value, credential or plaintext PII — a trace
-backend is a second place data goes, reachable by one configuration key. The tenant is
-an id on the delivery and relay paths, where a slug would cost a query per delivery,
-and the slug on the request path, where it was already resolved.
+backend is a second place data goes, reachable by one configuration key. Two keys
+name the tenant, because not every path holds both names for one:
+
+| Key | Holds | Written by |
+|---|---|---|
+| `platformkit.tenant` | the slug, which is what a person reading a trace recognises | the request span and a job's per-tenant span — the two places a tenant resolves or is listed with its slug |
+| `platformkit.tenant.id` | the tenant UUID | every span above, plus a delivery's, which has only the id the event names and would cost a query per delivery to ask for a slug |
+
+A filter asks one question of one key, so a key carrying a slug on one span and a
+UUID on another cannot be filtered on at all. Where both names are in hand both are
+written, and the id is the one that joins a request's span to the delivery spans of
+the events it published.
 
 ## Evolve the schema by owner
 
@@ -651,7 +660,10 @@ ownership and provider behavior need environment-specific verification.
 address. [kit/app](kit/app/app.go) also exports `Start`: the same migration,
 connection and boot gates, handing back a `Runtime` — its `Handler`, whose surface
 is the whole API for `web` and `all` and the two probes for `worker`, its `Work`
-half and its release — for an application that owns a listener of its own. Which
+half and its release — for an application that owns a listener of its own. That
+release also flushes the tracer, and has to: `Run` pushes the batched spans because
+`Run` is told when the process ends, and a caller that composed `Start` and `Close`
+itself is never inside `Run`. Which
 host reaches which composition stays the application's decision above each
 handler: the kernel gains no registry, host list or second configuration namespace
 from the seam, and each handler carries its own routes, asset prefixes and theme

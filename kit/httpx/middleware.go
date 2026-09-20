@@ -706,7 +706,12 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 	host := HostOnly(ctx.Host())
 	t, err := a.resolve(ctx.Context(), host)
 	if err == nil {
+		// Both keys, because they answer two different questions: the slug is what
+		// a person reading a trace recognises, the id is what joins this span to a
+		// delivery's or a job's, and only the id is the same on all three. See
+		// ARCHITECTURE's tracing section for what each key holds.
 		spanAttr(ctx.Context(), "platformkit.tenant", t.Slug)
+		spanAttr(ctx.Context(), "platformkit.tenant.id", t.ID.String())
 		next(huma.WithContext(ctx, tenancy.WithTenant(ctx.Context(), t)))
 		return
 	}

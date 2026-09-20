@@ -22,6 +22,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -142,13 +143,16 @@ type App struct {
 	subscribeAll map[string]bool
 
 	// traces is the flush kit/telemetry handed back when New installed the
-	// tracer. Run is the only thing that can use it: the provider is a process
-	// global, New is where the process decided what it should be, and only Run is
-	// told when the process is ending. A caller that composes Start and Close
-	// itself therefore gets the batches the processor exported on its own schedule
-	// and not the last few seconds of spans — which is why Close does not claim to
-	// release the tracer.
+	// tracer: the batched spans have to be pushed before the process is gone,
+	// because a collector nobody is told about does not come and fetch them.
+	// Nothing but a whole lifecycle needs it, so it is held here rather than
+	// passed around — see flushTraces for who calls it.
 	traces func(context.Context) error
+
+	// traceOnce makes that flush one per process. Run and Runtime.Close both end a
+	// lifecycle and Run does both of them, so without it a traced process would
+	// shut its provider down twice and log the same failure twice.
+	traceOnce sync.Once
 }
 
 // shutdownGrace bounds the wait for in-flight requests once the context is done.
@@ -259,22 +263,43 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log, subscribeAll: all, traces: traces}, nil
 }
 
+// flushTraces pushes what the batch processor still holds to the collector, at
+// most once per App.
+//
+// Two callers reach it, which is the whole reason it is a method with a Once
+// inside rather than a defer in one function: Run is told when the process ends
+// and flushes on the way out, and a caller that owns its listener is never
+// inside Run at all, for whom Runtime.Close is the only teardown there is. Both
+// run the flush last, after the listener, the work and the connection are gone,
+// so a traced process's final act is to hand over the spans its own handlers
+// made — and a process that goes through Run reaches the Once twice and exports
+// once.
+//
+// It cannot fail a shutdown. Spans nobody flushed are a loss of information and
+// a shutdown that did not finish is a worse one, so the cause goes to the log at
+// the level a person looking for a missing trace will be reading, and the error
+// stays where the loss is: nowhere else.
+func (a *App) flushTraces(ctx context.Context) {
+	a.traceOnce.Do(func() {
+		if err := a.traces(ctx); err != nil {
+			a.log.ErrorContext(ctx, "app: traces were not flushed", "error", err)
+		}
+	})
+}
+
 // Run migrates, then serves or works or both, and returns when ctx is done. It is
 // Start, whichever halves this process's role names, and Close; a caller that owns
 // its own listener uses those parts directly instead. See lifecycle.go.
 func (a *App) Run(ctx context.Context) error {
-	// Registered first so it runs last, after the listener and the work have
-	// stopped and after Close has returned the connection: the last thing a traced
-	// process does is push the spans its own request handlers made. It gets the
-	// same grace the requests got, on a context the cancelled shutdown cannot cut
-	// short, and it cannot fail the run — spans nobody flushed are a loss, and a
-	// shutdown that did not finish is a worse one.
+	// Registered first so it runs last — after the listener and the work have
+	// stopped and after Close has returned the connection, which is also what
+	// flushes, so this defer is the case Start never reached: a composition that
+	// failed a gate or an open still gets its spans out. It gets the same grace the
+	// requests got, on a context the cancelled shutdown cannot cut short.
 	defer func() {
 		grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 		defer cancel()
-		if err := a.traces(grace); err != nil {
-			a.log.ErrorContext(ctx, "app: traces were not flushed", "error", err)
-		}
+		a.flushTraces(grace)
 	}()
 	rt, err := a.Start(ctx)
 	if err != nil {

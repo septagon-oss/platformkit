@@ -139,7 +139,10 @@ func TestADeliveryContinuesTheTraceThatPublishedIt(t *testing.T) {
 	// one handle that joins a trace to the outbox row and to the claim.
 	wantAttribute(t, delivery, "messaging.message.id", deliveredTo.ID.String())
 	wantAttribute(t, delivery, "messaging.destination.name", "tracing.published")
-	wantAttribute(t, delivery, "platformkit.tenant", tenant.ID.String())
+	// The id and not the slug, under the key a delivery can always answer: this
+	// path has the id the event names and no slug, and one key carrying a slug on
+	// one span and a UUID on another cannot be filtered on at all.
+	wantAttribute(t, delivery, "platformkit.tenant.id", tenant.ID.String())
 	wantAttribute(t, delivery, "platformkit.events.attempt", "1")
 
 	batch := ended(t, "outbox relay batch")

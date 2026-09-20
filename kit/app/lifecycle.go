@@ -129,14 +129,21 @@ func (r *Runtime) Work(ctx context.Context) error {
 	return r.app.work(ctx, r.conn, r.transport, nil)
 }
 
-// Close releases the transport, then the connection, and is safe to call more
-// than once: the second call returns the first call's result. Call it once the
-// served requests and the work have stopped — an in-flight handler holds a
-// detached transaction on this pool, and a running Work keeps its ticks until its
-// own context is done. Work started after this returns is refused: what Close
-// released — the connection, and the transport whether Start built it or the
-// application injected it — is not reusable, so a new lifecycle starts from a new
-// App rather than from this Runtime again.
+// Close releases the transport, then the connection, and flushes what the tracer
+// still holds, and is safe to call more than once: the second call returns the
+// first call's result. Call it once the served requests and the work have stopped
+// — an in-flight handler holds a detached transaction on this pool, and a running
+// Work keeps its ticks until its own context is done. Work started after this
+// returns is refused: what Close released — the connection, and the transport
+// whether Start built it or the application injected it — is not reusable, so a new
+// lifecycle starts from a new App rather than from this Runtime again.
+//
+// The flush is here because Close is the only teardown a caller that owns its
+// listener has. Run flushes because Run is told when the process ends; this path is
+// not Run, and a process that started and stopped inside one batch interval would
+// otherwise keep none of the trace it recorded. It runs last, after the connection
+// is released, in the order Run leaves the same act in, and its failure is logged
+// rather than returned: a span nobody read is not a shutdown that failed to finish.
 func (r *Runtime) Close() error {
 	r.closeOnce.Do(func() {
 		r.closed.Store(true)
@@ -146,6 +153,12 @@ func (r *Runtime) Close() error {
 		if err := r.conn.Close(); r.closeErr == nil {
 			r.closeErr = err
 		}
+		// Not the caller's context, whatever it is by now: Close is called from
+		// shutdown paths whose context is already cancelled, and the flush needs
+		// the same bounded grace Run gives it rather than an immediate deadline.
+		grace, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		r.app.flushTraces(grace)
 	})
 	return r.closeErr
 }

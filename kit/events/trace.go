@@ -46,7 +46,11 @@ func startDelivery(ctx context.Context, ev Event, system string) (context.Contex
 	attrs := []attribute.KeyValue{
 		attribute.String("messaging.message.id", ev.ID.String()),
 		attribute.String("messaging.destination.name", ev.Name),
-		attribute.String("platformkit.tenant", ev.TenantID.String()),
+		// The id, under the name the id alone ever gets: a delivery has no slug,
+		// and one key carrying a slug on a request's span and a UUID on this one
+		// could not be filtered on by anybody who did not know which span they were
+		// looking at. See ARCHITECTURE's tracing section for the two keys.
+		attribute.String("platformkit.tenant.id", ev.TenantID.String()),
 	}
 	if system != "" {
 		attrs = append(attrs, attribute.String("messaging.system", system))
