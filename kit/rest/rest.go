@@ -336,6 +336,13 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 	// so the form and the JSON route perform one implementation through one
 	// guard. See docs/adr/0007 and httpx.Command.Run.
 	fields := crud.FieldsOf(reflect.TypeFor[I]())
+	// The argument is a schema too — the catalog carries it next to the entity's
+	// — so it is refused here rather than at the mount of the Spec, which knows
+	// nothing about I. Naming the verb is the point: one message per door, so an
+	// operator restarting a module that will not boot is told which one.
+	if bad := schemaFault(fields); bad != "" {
+		panic("rest: " + spec.Path + " command " + verb + ": " + bad)
+	}
 	api.AddCommand(spec.Module, spec.Entity, httpx.Command{
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
@@ -484,6 +491,9 @@ func (s Spec[T]) check() {
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
 	}
+	if bad == "" {
+		bad = schemaFault(crud.Fields[T]())
+	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Path + ": " + bad)
 	}
@@ -506,6 +516,23 @@ func widgetFault(fields []crud.Field) string {
 		if !entity.ValidWidget(f.Widget) {
 			return fmt.Sprintf("field %q names widget %q, which no screen can draw", f.Name, f.Widget)
 		}
+	}
+	return ""
+}
+
+// schemaFault is what entity.JSONSchema refuses, said in the words it already
+// returns, and "" when the fields project.
+//
+// The projection is what the native catalog and the composition description
+// carry beside the fields, so a field whose `default:"…"` does not parse as the
+// type next to it is a declaration that contradicts itself — the same class as
+// the widget name above, and until now the only place it surfaced was a request
+// for the catalog. That left the process running with a document nobody could
+// fetch, which is the failure this package has always refused to allow: an
+// application that cannot describe its own records does not start.
+func schemaFault(fields []crud.Field) string {
+	if _, err := entity.JSONSchema(fields); err != nil {
+		return err.Error()
 	}
 	return ""
 }

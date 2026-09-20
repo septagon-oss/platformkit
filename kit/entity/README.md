@@ -49,7 +49,11 @@ required names are the ones a caller must send, so a field the server owns is
 not among them. A `Default` arrives as the property's own JSON type — `"3"`
 beside an `integer` is `3`, `"true"` beside a `boolean` is `true` — and a
 default that will not parse as the type beside it is a returned error rather
-than a string where a number belongs. A `Widget` travels as
+than a string where a number belongs. `rest.Spec.Mount`, `rest.Singleton.Mount`
+and each `rest.Command` run this projection over the fields they are about to
+serve and refuse to mount on that error, so the mistake is an application that
+does not boot rather than one whose catalog answers 500 to everyone who asks
+what is in it. A `Widget` travels as
 `x-platformkit-widget`, and a `text` column with none declared gets `textarea`,
 since a paragraph and a line are the only difference a control cares about.
 `HideList` and `Present` are not in it: which screen shows a column, and how a

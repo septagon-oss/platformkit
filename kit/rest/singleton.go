@@ -234,6 +234,9 @@ func (s Singleton[T]) check() {
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
 	}
+	if bad == "" {
+		bad = schemaFault(crud.Fields[T]())
+	}
 	if bad != "" {
 		panic("rest: Singleton for " + s.Path + ": " + bad)
 	}

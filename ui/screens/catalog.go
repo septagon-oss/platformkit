@@ -117,13 +117,20 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 // mustSchema is the projection, or the reason this request fails.
 //
 // The one way entity.JSONSchema refuses is a `default:"…"` that does not parse
-// as the type beside it, which is a mistake in the declaration rather than in
-// anything a caller did. It is the same class as a widget name no renderer
-// knows, and kit/rest already refuses to mount over that one. Refusing loudly is
-// the alternative to serving a catalog that left a schema out of the entry a
-// shell is generating its screens from. kit/httpx's own recovery turns the panic
-// into a 500 and a log line naming the field, so a bad declaration costs one
-// request and says which field to go and fix.
+// as the type beside it, and kit/rest now refuses that when a Spec, a Singleton
+// or a command's argument mounts, so a composition that reaches this line has
+// already projected these fields once. For anything mounted through those the
+// panic below is unreachable — which is the arrangement it wants: the
+// declaration is refused at boot rather than paid for by whoever asked for the
+// catalog.
+//
+// It stays because httpx.Resource is not only filled in by kit/rest. A resource
+// built by hand in Go, or by a registration path that is not a Spec, arrives
+// here with fields nothing checked, and the alternative to refusing is a catalog
+// that left a schema out of the entry a shell is generating its screens from.
+// kit/httpx's recovery turns that refusal into a 500 and a log line naming the
+// field, so the worst this can do to a booted application is one request that
+// says which declaration to go and fix.
 func mustSchema(what string, fields []entity.Field) json.RawMessage {
 	if len(fields) == 0 {
 		return nil
