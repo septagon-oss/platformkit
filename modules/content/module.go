@@ -36,7 +36,7 @@ type Deps struct{}
 var spec = rest.Spec[*contracts.Content]{
 	Module:     "content",
 	Entity:     "content",
-	Path:       "/api/v1/content/contents",
+	Path:       "/contents",
 	Read:       contracts.PermissionContentRead,
 	Write:      contracts.PermissionContentManage,
 	SoftDelete: true,
@@ -70,16 +70,16 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{
-			{Label: "Content", Path: "/admin/content/contents", Permission: contracts.PermissionContentRead},
+			{Label: "Content", Screen: "content/contents", Permission: contracts.PermissionContentRead},
 		},
 		// No periodic work: nothing about a page happens because time passed.
 		// No subscriptions: this module has no opinion about anybody else's
 		// events, and the site that reads it takes the read route.
 		Jobs:          nil,
 		Subscriptions: nil,
-		Routes: func(api *httpx.API) {
-			spec.Mount(api)
-			internal.RegisterRoutes(api, spec, svc)
+		Routes: func(s httpx.Surfaces) {
+			spec.Mount(s)
+			internal.RegisterRoutes(s, spec, svc)
 		},
 	}
 }

@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page, type Request } from '@playwright/test';
 
-const tasks = '/admin/task/tasks';
+const tasks = '/app/task/tasks';
 const api = '/api/v1/task/tasks';
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? '';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
@@ -26,7 +26,7 @@ test.beforeEach(async ({ page, request }) => {
   // when the browser's session is revoked through the ordinary logout API.
   const observer = await request.post('/api/v1/auth/login', { data: { email, password } });
   expect(observer.status()).toBe(200);
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await signIn(page);
 });
 
@@ -34,7 +34,7 @@ async function signIn(page: Page, address = email, secret = password) {
   await page.getByRole('textbox', { name: 'Email', exact: true }).fill(address);
   await page.getByLabel('Password').fill(secret);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
 }
 
 async function matchingTasks(request: APIRequestContext, title: string) {
@@ -52,7 +52,7 @@ async function openSignIn(page: Page, notice: string) {
   await expect(link).toHaveAttribute('target', '_blank');
   await expect(link).toHaveAttribute('rel', /\bnoopener\b/);
   await expect(link).toHaveAttribute('rel', /\bnoreferrer\b/);
-  await expect(link).toHaveAttribute('href', '/admin/login');
+  await expect(link).toHaveAttribute('href', '/app/admin/login');
   // The notice follows the retained form. Tab from Save reaches the real
   // link; Enter uses the browser's ordinary new-tab behavior.
   await page.getByRole('button', { name: 'Save', exact: true }).focus();
@@ -61,7 +61,7 @@ async function openSignIn(page: Page, notice: string) {
   const opened = page.context().waitForEvent('page');
   await page.keyboard.press('Enter');
   const tab = await opened;
-  await expect(tab).toHaveURL(/\/admin\/login$/);
+  await expect(tab).toHaveURL(/\/app\/admin\/login$/);
   expect(await tab.evaluate(() => window.opener === null)).toBe(true);
   return tab;
 }
@@ -128,7 +128,7 @@ for (const width of [1280, 390]) {
           await wrong.getByRole('button', { name: 'Sign in', exact: true }).click();
           expect((await incorrect).status()).toBe(401);
           await expect(wrong.locator('[data-login-error]')).toBeVisible();
-          await expect(wrong).toHaveURL(/\/admin\/login$/);
+          await expect(wrong).toHaveURL(/\/app\/admin\/login$/);
         } finally {
           await wrong.close();
         }
@@ -156,7 +156,7 @@ for (const width of [1280, 390]) {
         new URL(result.url()).pathname === endpoint && result.request().method() === 'POST');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       expect((await saved).status()).toBe(204);
-      await expect(page).toHaveURL(/\/admin\/task\/tasks\/[0-9a-f-]{36}$/);
+      await expect(page).toHaveURL(/\/app\/task\/tasks\/[0-9a-f-]{36}$/);
       const persisted = await matchingTasks(request, title);
       expect(persisted).toEqual([expect.objectContaining({ title, description, priority: 'high' })]);
       if (id) expect(persisted[0].id).toBe(id);
@@ -188,7 +188,7 @@ test('an account changed in another tab cannot receive the original form write',
   const principal = await page.locator('html').getAttribute('data-principal');
   const otherTab = await page.context().newPage();
   try {
-    await otherTab.goto('/admin/login');
+    await otherTab.goto('/app/admin/login');
     await signIn(otherTab, secondEmail, secondPassword);
   } finally {
     await otherTab.close();
@@ -215,7 +215,7 @@ test('an account changed in another tab cannot receive the original form write',
   await page.bringToFront();
   expect(await matchingTasks(request, title)).toEqual([]);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin\/task\/tasks\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/app\/task\/tasks\/[0-9a-f-]{36}$/);
   expect(await matchingTasks(request, title)).toHaveLength(1);
 });
 
@@ -229,7 +229,7 @@ for (const width of [1280, 390]) test(`a recovery notice survives validation rep
   // the create screen of this entity owns this one. It is spelled out rather than
   // derived here on purpose: a TypeScript copy of the Go rule would agree with it
   // by coincidence and drift silently, while this selector fails when they part.
-  const oldForm = await page.locator('#admin-task-tasks-form').elementHandle();
+  const oldForm = await page.locator('#app-task-tasks-form').elementHandle();
   if (!oldForm) throw new Error('The generated form is missing');
   const submit = async (status: number) => {
     const received = page.waitForResponse(response =>
@@ -256,7 +256,7 @@ for (const width of [1280, 390]) test(`a recovery notice survives validation rep
   }
   await page.bringToFront();
   // Whitespace passes native required validation but the real domain refuses
-  // it. HTMX replaces #admin-task-tasks-form with the returned 422 form, not this notice.
+  // it. HTMX replaces #app-task-tasks-form with the returned 422 form, not this notice.
   await field.fill('   ');
   await submit(422);
   await expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -272,7 +272,7 @@ for (const width of [1280, 390]) test(`a recovery notice survives validation rep
   await expect(notice).toBeVisible();
   await expect(field).toHaveValue(title);
   await expect(page.locator('[data-request-notice]:visible')).toHaveCount(1);
-  expect(await page.locator('#admin-task-tasks-form').evaluate(node => node.nextElementSibling?.id)).toBe('pk-auth-anonymous');
+  expect(await page.locator('#app-task-tasks-form').evaluate(node => node.nextElementSibling?.id)).toBe('pk-auth-anonymous');
   expect(await retainedNotice.evaluate(node => node.isConnected)).toBe(true);
   expect(await matchingTasks(request, title)).toEqual([]);
   await oldForm.dispose();
@@ -397,7 +397,7 @@ test('coded refusals and ambiguous responses keep input without an automatic ret
     // A completed ordinary save supplies the positive control and clears stale
     // notices. None of the injected responses is treated as write success.
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page).toHaveURL(/\/admin\/task\/tasks\/[0-9a-f-]{36}$/);
+    await expect(page).toHaveURL(/\/app\/task\/tasks\/[0-9a-f-]{36}$/);
     expect(await matchingTasks(request, title)).toHaveLength(1);
     for (const name of ['anonymous', 'denied', 'changed', 'uncertain']) {
       await expect(page.locator(`#pk-auth-${name}`)).toBeHidden();

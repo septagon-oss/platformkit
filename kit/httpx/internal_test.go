@@ -40,7 +40,7 @@ func TestReachingAroundRegisterIsStillRecorded(t *testing.T) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	Register(a, huma.Operation{
+	Register(a.Surfaces("probe").App, huma.Operation{
 		OperationID: "declared", Method: http.MethodGet, Path: "/declared",
 	}, Public(), func(context.Context, *struct{}) (*struct{}, error) { return nil, nil })
 	if err := a.ValidateDeclarations(); err != nil {
@@ -89,6 +89,31 @@ func TestHostOnlyIsTheKeyEveryLoaderSees(t *testing.T) {
 	} {
 		if got := HostOnly(tt.in); got != tt.want {
 			t.Errorf("HostOnly(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// TestNoAliasChainsAndNoAliasEscapes is the table's own shape, which is only
+// checkable from inside the package: an old address must land on an address the
+// table does not itself redirect from (a chain is a loop waiting to be cut wrong),
+// and every target is a path on this origin. One row per target is also required,
+// because alias walks the table in order and a shadowed row would never be seen.
+func TestNoAliasChainsAndNoAliasEscapes(t *testing.T) {
+	seen := map[string]bool{}
+	for _, row := range aliasTable {
+		if seen[row.from] {
+			t.Errorf("two rows redirect from %q, and only the first is ever consulted", row.from)
+		}
+		seen[row.from] = true
+		_, again := alias(row.to)
+		if again {
+			t.Errorf("%s redirects to %s, which redirects again; a chain of one-release addresses is a loop somebody will get wrong", row.from, row.to)
+		}
+		if !LocalPath(row.to) {
+			t.Errorf("%s redirects to %q, which is not a path of this site", row.from, row.to)
+		}
+		if row.to == row.from || strings.HasPrefix(row.to, row.from+"/") {
+			t.Errorf("%s redirects to %q, which is itself or beneath itself", row.from, row.to)
 		}
 	}
 }

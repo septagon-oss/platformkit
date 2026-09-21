@@ -26,13 +26,13 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 	f.signedIn()
 	f.allow = true
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets",
 	}, httpx.Public(), ok)
 
 	// An HTML response, written by hand the way modules/admin's shell writes
 	// one: a document, so it is the response that gets a policy.
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-page", Method: http.MethodGet, Path: "/page",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*huma.StreamResponse, error) {
 		// The policy allows an inline script only with the request's nonce, so
@@ -47,9 +47,9 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 		}}, nil
 	})
 
-	api.Static("/assets", fstest.MapFS{"app.css": &fstest.MapFile{Data: []byte(":root{}")}})
+	api.Surfaces(probe).App.Static("/assets", fstest.MapFS{"app.css": &fstest.MapFile{Data: []byte(":root{}")}})
 
-	for _, at := range []string{"/widgets", "/page", "/assets/app.css", "/nothing-here"} {
+	for _, at := range []string{at(api, "/widgets"), at(api, "/page"), "/assets/app.css", "/nothing-here"} {
 		h := get(t, router, at).Header()
 		switch {
 		case h.Get("X-Frame-Options") != "DENY":
@@ -63,7 +63,7 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 
 	// The policy is on the document and on nothing else: a JSON body executes
 	// nothing, and a policy on every response is a header nobody reads.
-	page := get(t, router, "/page")
+	page := get(t, router, at(api, "/page"))
 	csp := page.Header().Get("Content-Security-Policy")
 	// base-uri and form-action are the two the review found missing, and they
 	// are the two that make the rest hold: without the first an injected <base>
@@ -76,7 +76,7 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 			t.Errorf("the document's policy is %q, which does not say %s", csp, want)
 		}
 	}
-	if json := get(t, router, "/widgets").Header().Get("Content-Security-Policy"); json != "" {
+	if json := get(t, router, at(api, "/widgets")).Header().Get("Content-Security-Policy"); json != "" {
 		t.Errorf("a JSON body carries a document policy: %q", json)
 	}
 
@@ -87,7 +87,7 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 	if !strings.Contains(page.Body.String(), `nonce="`+nonce+`"`) {
 		t.Errorf("the policy names %q and the page wrote %q", nonce, page.Body.String())
 	}
-	if again := get(t, router, "/page").Header().Get("Content-Security-Policy"); again == csp {
+	if again := get(t, router, at(api, "/page")).Header().Get("Content-Security-Policy"); again == csp {
 		t.Error("two requests were served the same nonce")
 	}
 
@@ -115,10 +115,14 @@ func TestALocalDeploymentIsNotToldToUseHTTPS(t *testing.T) {
 	_ = admin
 	f := &fixture{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}, app: app, logs: &lines{}}
 	api, router := httpx.New(httpx.Options{
-		PublicHost: "platformkit.localhost:8080", Tenants: f, Conn: app,
+		// The installation is reached at the same host as the tenant, so a probe mounted on
+		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
+		// where the gate itself is tested.
+		Installation: host,
+		PublicHost:   "platformkit.localhost:8080", Tenants: f, Conn: app,
 		Authorize: f, Authenticate: f.authenticate, Log: slog.New(slog.DiscardHandler),
 	})
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets",
 	}, httpx.Public(), ok)
 	req := httptest.NewRequest(http.MethodGet, "http://platformkit.localhost:8080/widgets", nil)
@@ -133,7 +137,7 @@ func TestALocalDeploymentIsNotToldToUseHTTPS(t *testing.T) {
 // a policy that allows nothing at all, and the middleware must not widen it.
 func TestAHandlerKeepsItsOwnPolicy(t *testing.T) {
 	api, router, _ := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-blob", Method: http.MethodGet, Path: "/blob",
 	}, httpx.Public(), func(_ context.Context, _ *struct{}) (*huma.StreamResponse, error) {
 		return &huma.StreamResponse{Body: func(hctx huma.Context) {
@@ -142,7 +146,7 @@ func TestAHandlerKeepsItsOwnPolicy(t *testing.T) {
 			hctx.SetStatus(http.StatusOK)
 		}}, nil
 	})
-	if got := get(t, router, "/blob").Header().Get("Content-Security-Policy"); got != "default-src 'none'; sandbox" {
+	if got := get(t, router, at(api, "/blob")).Header().Get("Content-Security-Policy"); got != "default-src 'none'; sandbox" {
 		t.Errorf("the handler's own policy became %q", got)
 	}
 }

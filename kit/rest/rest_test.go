@@ -96,7 +96,7 @@ func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.T
 func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
 
 var spec = rest.Spec[*Task]{
-	Module: "tasks", Entity: "task", Path: "/api/tasks",
+	Module: "tasks", Entity: "task", Path: "/task",
 	Read: "task:read", Write: "task:write", SoftDelete: true,
 }
 
@@ -112,21 +112,35 @@ func mount(t *testing.T, s rest.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
 }
 
 // mountAs is mount for a caller who does not hold everything, which is what the
-// resource closures' own authorization is tested with.
+// resource closures' own authorization is tested with. The same value answers
+// both of the kernel's questions when it can — as it does in the application,
+// where one auth module is both the host resolver and the authorizer — so a case
+// that needs the request to resolve to a different tenant (the operator's, for a
+// control-plane route) brings its own resolver rather than mounting a second API.
 func mountAs[T crud.Entity](t *testing.T, s rest.Spec[T], authorize httpx.Authorizer) (*httpx.API, chi.Router, *sql.DB) {
 	t.Helper()
 	admin, app := dbtest.Schema(t)
 	if _, err := admin.ExecContext(t.Context(), ddl); err != nil {
 		t.Fatalf("create tasks: %v", err)
 	}
+	loader := httpx.TenantLoader(caller{})
+	if l, ok := authorize.(httpx.TenantLoader); ok {
+		loader = l
+	}
 	api, router := httpx.New(httpx.Options{
-		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: authorize,
+		PublicHost: host, Tenants: loader, Conn: app, Authorize: authorize,
+		// The installation is reached at the same host the customer is, in this
+		// harness, so a control-plane route is mounted and reachable and the
+		// answer a case sees is the authorizer's rather than the host gate's.
+		// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx is where the
+		// host gate itself is tested.
+		Installation: host,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: principal}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	s.Mount(api)
+	s.Mount(api.Surfaces(s.Module))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -166,7 +180,7 @@ func id(t *testing.T, body string) string {
 func TestTheFiveRoutesAnswer(t *testing.T) {
 	_, router, _ := mounted(t)
 
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"first","priority":2}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"first","priority":2}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s, want 201", code, body)
 	}
@@ -174,41 +188,41 @@ func TestTheFiveRoutesAnswer(t *testing.T) {
 
 	// The server owns the id and the timestamps: what the caller sent for them
 	// is discarded rather than honoured.
-	code, body = call(t, router, http.MethodPost, "/api/tasks",
+	code, body = call(t, router, http.MethodPost, "/api/v1/tasks/task",
 		`{"title":"second","id":"00000000-0000-0000-0000-000000000001"}`)
 	if code != http.StatusCreated || id(t, body) == "00000000-0000-0000-0000-000000000001" {
 		t.Fatalf("POST with a chosen id = %d %s", code, body)
 	}
 
-	if code, body = call(t, router, http.MethodGet, "/api/tasks", ""); code != http.StatusOK ||
+	if code, body = call(t, router, http.MethodGet, "/api/v1/tasks/task", ""); code != http.StatusOK ||
 		!strings.Contains(body, `"total":2`) {
 		t.Errorf("GET collection = %d %s, want 200 and two rows", code, body)
 	}
-	if code, body = call(t, router, http.MethodGet, "/api/tasks?sort=-priority&limit=1", ""); code != http.StatusOK ||
+	if code, body = call(t, router, http.MethodGet, "/api/v1/tasks/task?sort=-priority&limit=1", ""); code != http.StatusOK ||
 		!strings.Contains(body, `"first"`) || strings.Contains(body, `"second"`) {
 		t.Errorf("sorted page = %d %s", code, body)
 	}
-	if code, body = call(t, router, http.MethodGet, "/api/tasks?filter=title:second", ""); code != http.StatusOK ||
+	if code, body = call(t, router, http.MethodGet, "/api/v1/tasks/task?filter=title:second", ""); code != http.StatusOK ||
 		!strings.Contains(body, `"total":1`) || !strings.Contains(body, `"second"`) {
 		t.Errorf("filtered page = %d %s", code, body)
 	}
 
-	if code, body = call(t, router, http.MethodGet, "/api/tasks/"+first, ""); code != http.StatusOK ||
+	if code, body = call(t, router, http.MethodGet, "/api/v1/tasks/task/"+first, ""); code != http.StatusOK ||
 		!strings.Contains(body, `"first"`) {
 		t.Errorf("GET item = %d %s", code, body)
 	}
-	if code, _ = call(t, router, http.MethodGet, "/api/tasks/"+uuid.NewString(), ""); code != http.StatusNotFound {
+	if code, _ = call(t, router, http.MethodGet, "/api/v1/tasks/task/"+uuid.NewString(), ""); code != http.StatusNotFound {
 		t.Errorf("GET a row nobody has = %d, want 404", code)
 	}
 
-	if code, body = call(t, router, http.MethodPatch, "/api/tasks/"+first, `{"status":"done"}`); code != http.StatusOK ||
+	if code, body = call(t, router, http.MethodPatch, "/api/v1/tasks/task/"+first, `{"status":"done"}`); code != http.StatusOK ||
 		!strings.Contains(body, `"done"`) {
 		t.Errorf("PATCH = %d %s", code, body)
 	}
-	if code, _ = call(t, router, http.MethodDelete, "/api/tasks/"+first, ""); code != http.StatusNoContent {
+	if code, _ = call(t, router, http.MethodDelete, "/api/v1/tasks/task/"+first, ""); code != http.StatusNoContent {
 		t.Errorf("DELETE = %d, want 204", code)
 	}
-	if code, _ = call(t, router, http.MethodDelete, "/api/tasks/"+first, ""); code != http.StatusNotFound {
+	if code, _ = call(t, router, http.MethodDelete, "/api/v1/tasks/task/"+first, ""); code != http.StatusNotFound {
 		t.Errorf("DELETE twice = %d, want 404", code)
 	}
 }
@@ -217,7 +231,7 @@ func TestTheFiveRoutesAnswer(t *testing.T) {
 // is the one that says what happened.
 func TestTheRoutesRefuseWithAProblem(t *testing.T) {
 	_, router, _ := mounted(t)
-	if code, _ := call(t, router, http.MethodPost, "/api/tasks", `{"title":"only one"}`); code != http.StatusCreated {
+	if code, _ := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"only one"}`); code != http.StatusCreated {
 		t.Fatalf("POST = %d", code)
 	}
 	for _, tt := range []struct {
@@ -227,20 +241,20 @@ func TestTheRoutesRefuseWithAProblem(t *testing.T) {
 		body   string
 		want   int
 	}{
-		{"a title the entity refuses", http.MethodPost, "/api/tasks", `{"title":"   "}`, http.StatusUnprocessableEntity},
-		{"a title already taken", http.MethodPost, "/api/tasks", `{"title":"only one"}`, http.StatusConflict},
-		{"an edit to a title already taken", http.MethodPatch, "/api/tasks/%s", `{"title":"only one"}`, http.StatusConflict},
-		{"a field that does not exist", http.MethodPatch, "/api/tasks/%s", `{"nonesuch":1}`, http.StatusUnprocessableEntity},
-		{"a field the server owns", http.MethodPatch, "/api/tasks/%s", `{"createdAt":"2020-01-01T00:00:00Z"}`, http.StatusUnprocessableEntity},
-		{"a filter on nothing", http.MethodGet, "/api/tasks?filter=nonesuch:1", "", http.StatusUnprocessableEntity},
-		{"a sort on nothing", http.MethodGet, "/api/tasks?sort=nonesuch", "", http.StatusUnprocessableEntity},
+		{"a title the entity refuses", http.MethodPost, "/api/v1/tasks/task", `{"title":"   "}`, http.StatusUnprocessableEntity},
+		{"a title already taken", http.MethodPost, "/api/v1/tasks/task", `{"title":"only one"}`, http.StatusConflict},
+		{"an edit to a title already taken", http.MethodPatch, "/api/v1/tasks/task/%s", `{"title":"only one"}`, http.StatusConflict},
+		{"a field that does not exist", http.MethodPatch, "/api/v1/tasks/task/%s", `{"nonesuch":1}`, http.StatusUnprocessableEntity},
+		{"a field the server owns", http.MethodPatch, "/api/v1/tasks/task/%s", `{"createdAt":"2020-01-01T00:00:00Z"}`, http.StatusUnprocessableEntity},
+		{"a filter on nothing", http.MethodGet, "/api/v1/tasks/task?filter=nonesuch:1", "", http.StatusUnprocessableEntity},
+		{"a sort on nothing", http.MethodGet, "/api/v1/tasks/task?sort=nonesuch", "", http.StatusUnprocessableEntity},
 	} {
 		t.Run(tt.what, func(t *testing.T) {
 			// Each refusal needs its own row, because a statement Postgres
 			// refuses ends the request's transaction with it.
 			path := tt.path
 			if strings.Contains(path, "%s") {
-				_, created := call(t, router, http.MethodPost, "/api/tasks", `{"title":"`+tt.what+`"}`)
+				_, created := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"`+tt.what+`"}`)
 				path = strings.Replace(path, "%s", id(t, created), 1)
 			}
 			code, body := call(t, router, tt.method, path, tt.body)
@@ -330,7 +344,7 @@ func TestBothWriteDoorsRefuseTheFieldsACommandOwns(t *testing.T) {
 		// null is a value a caller sent, not an absence.
 		{"status", `{"title":"forged","status":null}`},
 	} {
-		code, body := call(t, router, http.MethodPost, "/api/tasks", tt.create)
+		code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", tt.create)
 		if code != http.StatusUnprocessableEntity {
 			t.Errorf("POST %s = %d %s, want 422", tt.create, code, body)
 		}
@@ -338,15 +352,15 @@ func TestBothWriteDoorsRefuseTheFieldsACommandOwns(t *testing.T) {
 			t.Errorf("POST %s answered %s, which does not say which field it refused", tt.create, body)
 		}
 	}
-	if code, body := call(t, router, http.MethodGet, "/api/tasks", ""); !strings.Contains(body, `"total":0`) {
+	if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task", ""); !strings.Contains(body, `"total":0`) {
 		t.Errorf("a refused create stored a row anyway: %d %s", code, body)
 	}
 
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"owned"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"owned"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 
 	for _, tt := range []struct{ field, patch string }{
 		{"status", `{"status":"done"}`},
@@ -386,11 +400,11 @@ func TestACommandOwnedFieldRefusesUnderTheDecodersOwnFolding(t *testing.T) {
 	owned.Immutable = []string{"status", "notes"}
 	_, router, _ := mount(t, owned)
 
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"owned"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"owned"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 
 	capital := func(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
 	for _, sent := range []struct {
@@ -416,7 +430,7 @@ func TestACommandOwnedFieldRefusesUnderTheDecodersOwnFolding(t *testing.T) {
 				!strings.Contains(body, field+" belongs to a route of its own") {
 				t.Errorf(`PATCH {"%s":…} = %d %s, want 422 naming %q`, key, code, body, field)
 			}
-			if code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"forged","`+key+`":"done"}`); code != http.StatusUnprocessableEntity ||
+			if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"forged","`+key+`":"done"}`); code != http.StatusUnprocessableEntity ||
 				!strings.Contains(body, field+" belongs to a route of its own") {
 				t.Errorf(`POST {"%s":…} = %d %s, want 422 naming %q`, key, code, body, field)
 			}
@@ -425,7 +439,7 @@ func TestACommandOwnedFieldRefusesUnderTheDecodersOwnFolding(t *testing.T) {
 
 	// A refused write leaves nothing, the mutable field of the same body
 	// included: the door refuses the write, it does not trim the field from it.
-	if code, body := call(t, router, http.MethodGet, "/api/tasks", ""); code != http.StatusOK ||
+	if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task", ""); code != http.StatusOK ||
 		!strings.Contains(body, `"total":1`) || strings.Contains(body, "forged") {
 		t.Errorf("a refused write left a row: %d %s", code, body)
 	}
@@ -435,7 +449,7 @@ func TestACommandOwnedFieldRefusesUnderTheDecodersOwnFolding(t *testing.T) {
 	// at the patch, whose body is a map and so never folds at all. Both are
 	// today's behaviour, pinned so that no later edit for consistency moves one
 	// without saying so here.
-	if code, body := call(t, router, http.MethodPost, "/api/tasks", `{"Title":"Mutable"}`); code != http.StatusCreated ||
+	if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"Title":"Mutable"}`); code != http.StatusCreated ||
 		!strings.Contains(body, `"title":"Mutable"`) {
 		t.Errorf(`POST {"Title":"Mutable"} = %d %s, want 201 with the title bound as the decoder binds it`, code, body)
 	}
@@ -448,7 +462,7 @@ func TestACommandOwnedFieldRefusesUnderTheDecodersOwnFolding(t *testing.T) {
 	// one's: the guard reads the same bytes and asks one question, and a body it
 	// cannot read names no field at all.
 	for _, notAnObject := range []string{`[]`, `null`, `"a"`} {
-		if _, body := call(t, router, http.MethodPost, "/api/tasks", notAnObject); !strings.Contains(body, "expected object") {
+		if _, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", notAnObject); !strings.Contains(body, "expected object") {
 			t.Errorf("POST %s answered %s, want the decoder's own refusal", notAnObject, body)
 		}
 		if _, body := call(t, router, http.MethodPatch, at, notAnObject); !strings.Contains(body, "expected object") {
@@ -467,11 +481,11 @@ func TestACommandOwnedFieldRefusesUnderTheDecodersOwnFolding(t *testing.T) {
 // runs the same rule: a row that did not change is not something that happened.
 func TestAPatchThatNamesNoColumnWritesNothingAndPublishesNothing(t *testing.T) {
 	_, router, admin := mounted(t)
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"untouched"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"untouched"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	created, at := stampedAt(t, body), "/api/tasks/"+id(t, body)
+	created, at := stampedAt(t, body), "/api/v1/tasks/task/"+id(t, body)
 	stored := stampedRowAt(t, admin, at)
 
 	if code, body := call(t, router, http.MethodPatch, at, `{}`); code != http.StatusOK {
@@ -549,7 +563,7 @@ func TestAHooksEventsAreDeclaredWhereTheGateLooks(t *testing.T) {
 	}
 	// And it is published all the same: the hook runs, the row is written, and
 	// no gate anywhere saw it coming. That is the hole HookEvents closes.
-	if code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"escalated"}`); code != http.StatusCreated {
+	if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"escalated"}`); code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
 	if got := count(t, admin, hooked); got != 1 {
@@ -600,18 +614,18 @@ func count(t *testing.T, admin *sql.DB, name string) int {
 // write that was refused leaves neither.
 func TestAWriteAndItsEventCommitTogether(t *testing.T) {
 	_, router, admin := mounted(t)
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"audited"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"audited"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
 	created := id(t, body)
-	if code, _ := call(t, router, http.MethodPatch, "/api/tasks/"+created, `{"status":"done"}`); code != http.StatusOK {
+	if code, _ := call(t, router, http.MethodPatch, "/api/v1/tasks/task/"+created, `{"status":"done"}`); code != http.StatusOK {
 		t.Fatalf("PATCH = %d", code)
 	}
-	if code, _ := call(t, router, http.MethodDelete, "/api/tasks/"+created, ""); code != http.StatusNoContent {
+	if code, _ := call(t, router, http.MethodDelete, "/api/v1/tasks/task/"+created, ""); code != http.StatusNoContent {
 		t.Fatalf("DELETE = %d", code)
 	}
-	if code, _ := call(t, router, http.MethodPost, "/api/tasks", `{"title":" "}`); code != http.StatusUnprocessableEntity {
+	if code, _ := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":" "}`); code != http.StatusUnprocessableEntity {
 		t.Fatalf("the invalid POST = %d", code)
 	}
 
@@ -645,7 +659,7 @@ func TestAWriteAndItsEventCommitTogether(t *testing.T) {
 func TestARequestWithNoBodyIsARefusalAndNotAPanic(t *testing.T) {
 	_, router, _ := mounted(t)
 	for _, body := range []string{"", "null"} {
-		code, out := call(t, router, http.MethodPost, "/api/tasks", body)
+		code, out := call(t, router, http.MethodPost, "/api/v1/tasks/task", body)
 		if code != http.StatusUnprocessableEntity && code != http.StatusBadRequest {
 			t.Errorf("POST with body %q = %d %s, want a refusal", body, code, out)
 		}
@@ -655,7 +669,7 @@ func TestARequestWithNoBodyIsARefusalAndNotAPanic(t *testing.T) {
 	}
 	// And the route still works, which is what says the refusal is the body's
 	// and not the route's.
-	if code, out := call(t, router, http.MethodPost, "/api/tasks", `{"title":"present"}`); code != http.StatusCreated {
+	if code, out := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"present"}`); code != http.StatusCreated {
 		t.Errorf("POST with a body = %d %s, want 201", code, out)
 	}
 }
@@ -664,11 +678,11 @@ func TestARequestWithNoBodyIsARefusalAndNotAPanic(t *testing.T) {
 // handler writes the columns the body named and no others.
 func TestTwoPatchesOfDifferentFieldsBothSurvive(t *testing.T) {
 	_, router, _ := mounted(t)
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"shared","priority":1}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"shared","priority":1}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 
 	if code, body = call(t, router, http.MethodPatch, at, `{"priority":99}`); code != http.StatusOK {
 		t.Fatalf("the first PATCH = %d %s", code, body)
@@ -698,7 +712,7 @@ func TestSpecRefusesToMountNonsense(t *testing.T) {
 					t.Error("Mount accepted it")
 				}
 			}()
-			spec.Mount(&httpx.API{})
+			spec.Mount(httpx.Surfaces{})
 		})
 	}
 }
@@ -736,8 +750,8 @@ func TestAWidgetNoScreenCanDrawIsRefusedAtMount(t *testing.T) {
 			t.Errorf("Mount refused for another reason: %v", recovered)
 		}
 	}()
-	rest.Spec[*Prefs]{Module: "prefs", Entity: "pref", Path: "/api/prefs",
-		Read: "pref:read", Write: "pref:write"}.Mount(&httpx.API{})
+	rest.Spec[*Prefs]{Module: "prefs", Entity: "pref", Path: "/preferences",
+		Read: "pref:read", Write: "pref:write"}.Mount(httpx.Surfaces{})
 }
 
 // TestASchemaCarriesAListAndNothingSortsOnIt. A list renders — a user's roles
@@ -759,8 +773,8 @@ func TestASchemaCarriesAListAndNothingSortsOnIt(t *testing.T) {
 	}
 
 	for _, q := range []string{"?sort=tags", "?filter=tags:red"} {
-		if code, body := call(t, router, http.MethodGet, "/api/tasks"+q, ""); code != http.StatusUnprocessableEntity {
-			t.Errorf("GET /api/tasks%s = %d %s, want 422", q, code, body)
+		if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task"+q, ""); code != http.StatusUnprocessableEntity {
+			t.Errorf("GET /api/v1/tasks/task%s = %d %s, want 422", q, code, body)
 		}
 	}
 
@@ -784,7 +798,7 @@ func TestASchemaCarriesAListAndNothingSortsOnIt(t *testing.T) {
 func TestAnEventNamesTheCallerWhoCausedIt(t *testing.T) {
 	_, router, admin := mounted(t)
 
-	if code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"first"}`); code != http.StatusCreated {
+	if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"first"}`); code != http.StatusCreated {
 		t.Fatalf("POST = %d %s, want 201", code, body)
 	}
 	var actor *uuid.UUID

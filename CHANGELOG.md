@@ -170,6 +170,51 @@ exported name, and a nil entity answers it `ErrInvalid` as every other door in
 `kit/crud` does. `db.Now` stamps the three timestamp columns, so an
 answer carries the instant the column holds. What stays open: a `Singleton`
 declares no command-owned field.
+**The address an operation is mounted on now says which surface it belongs to, and a
+module no longer writes one.** A module's `Routes` receives `httpx.Surfaces` — the
+public face, the workspace and the control plane — and the router composes the address
+from the surface and the module: a relative path that repeats either is refused at mount,
+so `/api/v1/tasks/tasks` cannot be written again. The workspace keeps its JSON addresses;
+what moved is where its documents are (`/admin/<module>/<entity>` is now
+`/app/<module>/<entity>`, the shell at `/app/admin/…`), and the anonymous doors of
+`auth`, `content`, `file` and `site`, which took `/api/v1/public/…`. Each surface has its
+own chain: the public one reads no session, sets no cookie (a handler that mints one gets
+`PUBLIC_SETS_A_COOKIE` withheld at the writer at every body size, and a 500 of that
+name wherever the response can still be replaced) and is cacheable for sixty seconds;
+its anonymous writes are counted by tenant, route and address, so one customer's
+office does not exhaust another's budget;
+A page whose body its owner can republish asks that cache to revalidate rather than answer
+from what it kept, so a publish is on the site the next time the page is loaded;
+the workspace is `no-store`, `noindex`, and admits an anonymous caller only at a route
+that declares `Public()` — and boot prints those doors rather than keeping a list of them;
+the control plane is served at `server.installation_host` and answers as an unmounted
+address at every other host — the same status, the same body and the same headers every
+other refusal of that host carries, because the host gate runs inside the middleware
+that writes them — including to a tenant that is not the installation's, which
+is the second half of the tenant-API incident recorded in
+[ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)'s neighbourhood and
+in [`modules/tenant`](modules/tenant/README.md). `modules/tenant`'s routes and
+`modules/billing`'s plan catalog therefore moved to `/api/v1/ops/…`.
+`GET /api/v1/admin/resources` is now `GET /api/v1/app/resources` and is mounted by
+`kit/app`, with the document supplied by the composition
+(`app.Options.WorkspaceCatalog` = `screens.Describe`); every catalog entry gained a
+`screen` key, a `write_path` key and a command a `path` key — each only where the
+derivation from the entry's own `path` is no longer true, so a document that could
+always be read the same way still is. The workspace is described as an empty surface
+in OpenAPI, stamped `x-platformkit-surface` per operation.
+
+What a caller sees: `/admin`, the admin module's own pages beneath it (`/admin/login`,
+`/admin/health`, `/admin/assets`, `/admin/_gallery`), `/api/v1/admin` and the four
+public doors answer with a 302 (307 for a write, never a cached 301) for one release,
+and are deleted in v1.3.0 — see [aliases.go](kit/httpx/aliases.go).
+`/api/v1/tenant/tenants` deliberately has no alias: a control plane does not announce
+itself by leaving the old door open at every customer's host. Refusals now name a code
+in the JSON `detail` — `AUTH_ANONYMOUS`, `AUTH_DENIED`, `AUTH_NOT_OPERATOR`,
+`AUTH_NO_TENANT`, `AUTH_PRINCIPAL_CHANGED`, `CSRF_ORIGIN`, `PUBLIC_SETS_A_COOKIE` and
+`WRITE_ELSEWHERE` (a write of a resource whose writes are served on another surface,
+answered at its read door, naming `write_path`) — where the sentence used to be a
+lowercase prefix. See
+[ADR 0017](docs/adr/0017-three-surfaces-by-path.md) for what this costs a module.
 
 ## [1.1.1] - 2026-09-18
 

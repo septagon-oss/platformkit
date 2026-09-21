@@ -27,12 +27,15 @@ func (Note) TableName() string { return "notes" }
 
 func note() resource.Resource {
 	return resource.Resource{
-		Schema:    entity.Schema{Module: "note", Entity: "note", Path: "/api/v1/note/notes", Fields: entity.Fields[*Note]()},
+		Schema: entity.Schema{Module: "note", Entity: "note", Path: "/api/v1/note/notes", Fields: entity.Fields[*Note]()},
+		// Where this resource's screens are, as the kernel composed it. Every
+		// link the renderer draws is built from it.
+		Screen:    "/app/note/notes",
 		Immutable: []string{"status"},
 	}
 }
 
-var opts = resource.Options{Root: "/admin", Home: "Dashboard"}
+var opts = resource.Options{Workspace: "/app", Home: "Dashboard"}
 
 func render(t *testing.T, nodes []g.Node) string {
 	t.Helper()
@@ -43,17 +46,11 @@ func render(t *testing.T, nodes []g.Node) string {
 	return b.String()
 }
 
-func TestPathMirrorsTheAPIPath(t *testing.T) {
-	t.Parallel()
-	if got := resource.Path(note(), opts); got != "/admin/note/notes" {
-		t.Fatalf("path = %q", got)
-	}
-	r := note()
-	r.Schema.Path = "/notes"
-	if got := resource.Path(r, opts); got != "/admin/note/note" {
-		t.Fatalf("a path outside /api/v1 falls back to module/entity, got %q", got)
-	}
-}
+// TestPathMirrorsTheAPIPath is gone with the helper it tested: a resource's
+// screen address is composed by the kernel at registration (httpx.Resource.
+// Screen) and asserted there — see kit/httpx's TestThePrefixTable. A shell that
+// derived it locally was a second answer to where a screen is, and the second
+// answer is what let a screen and its API disagree.
 
 func TestListLeadsWithTheKnownFieldAndHidesWhatTheSchemaHides(t *testing.T) {
 	t.Parallel()
@@ -63,7 +60,7 @@ func TestListLeadsWithTheKnownFieldAndHidesWhatTheSchemaHides(t *testing.T) {
 		t.Fatalf("view = %+v", v)
 	}
 	out := render(t, v.Body)
-	for _, want := range []string{"1 note", `href="/admin/note/notes/new"`, `href="/admin/note/notes/1"`, "Buy milk", "Open", "Yes", "a, b"} {
+	for _, want := range []string{"1 note", `href="/app/note/notes/new"`, `href="/app/note/notes/1"`, "Buy milk", "Open", "Yes", "a, b"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("list lacks %q:\n%s", want, out)
 		}
@@ -71,7 +68,7 @@ func TestListLeadsWithTheKnownFieldAndHidesWhatTheSchemaHides(t *testing.T) {
 	if strings.Contains(out, "Two litres") {
 		t.Fatal("a hide:list field is on the list")
 	}
-	if strings.Contains(render(t, resource.List(note(), opts, rows, 1, 1, "", false).Body), `href="/admin/note/notes/new"`) {
+	if strings.Contains(render(t, resource.List(note(), opts, rows, 1, 1, "", false).Body), `href="/app/note/notes/new"`) {
 		t.Fatal("a caller who may not write is offered New")
 	}
 }
@@ -84,7 +81,7 @@ func TestDetailShowsEveryFieldAndTheWriteAffordances(t *testing.T) {
 		t.Fatalf("the detail's title is %q, want the row's name", v.Title)
 	}
 	out := render(t, v.Body)
-	for _, want := range []string{"Two litres", "Done", "No", `href="/admin/note/notes/1/edit"`, "data-confirm", "Delete", `href="/admin"`, "Dashboard"} {
+	for _, want := range []string{"Two litres", "Done", "No", `href="/app/note/notes/1/edit"`, "data-confirm", "Delete", `href="/app"`, "Dashboard"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("detail lacks %q:\n%s", want, out)
 		}
@@ -97,7 +94,7 @@ func TestDetailShowsEveryFieldAndTheWriteAffordances(t *testing.T) {
 
 func TestFormDerivesControlsFromTheSchema(t *testing.T) {
 	t.Parallel()
-	v := resource.Form(note(), opts, "/admin/note/notes", "New note", nil, nil, "", true)
+	v := resource.Form(note(), opts, "/app/note/notes", "New note", nil, nil, "", true)
 	if v.Status != 0 {
 		t.Fatalf("an unrefused form has status %d", v.Status)
 	}
@@ -110,11 +107,11 @@ func TestFormDerivesControlsFromTheSchema(t *testing.T) {
 	if strings.Contains(out, `name="status"`) {
 		t.Fatal("an immutable field is on the create form")
 	}
-	edit := render(t, resource.Form(note(), opts, "/admin/note/notes/1", "Edit note", map[string]any{"status": "done"}, nil, "", false).Body)
+	edit := render(t, resource.Form(note(), opts, "/app/note/notes/1", "Edit note", map[string]any{"status": "done"}, nil, "", false).Body)
 	if !strings.Contains(edit, `<select`) || !strings.Contains(edit, "Changed by a command of its own") {
 		t.Fatal("an immutable enum is not a disabled select on edit")
 	}
-	refused := resource.Form(note(), opts, "/admin/note/notes", "New note",
+	refused := resource.Form(note(), opts, "/app/note/notes", "New note",
 		map[string]any{"title": ""}, map[string]string{"title": "a note needs a title"}, "a note needs a title", true)
 	if refused.Status != http.StatusUnprocessableEntity {
 		t.Fatalf("a refused form has status %d, want 422", refused.Status)

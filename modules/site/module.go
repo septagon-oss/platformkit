@@ -15,6 +15,7 @@ import (
 	"context"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
@@ -44,7 +45,7 @@ var permissions = []module.Permission{{Key: contracts.PermissionSiteManage}}
 func Module(_ Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
 	settings := rest.Singleton[*contracts.SiteSettings]{
-		Module: "site", Entity: "settings", Path: "/api/v1/site/settings",
+		Module: "site", Entity: "settings", Path: "/settings",
 		Read:   contracts.PermissionSiteManage,
 		Write:  contracts.PermissionSiteManage,
 		Event:  contracts.EventSettingsUpdated,
@@ -75,10 +76,10 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{
-			{Label: "Site", Path: "/admin/site/settings", Permission: contracts.PermissionSiteManage},
+			{Label: "Site", Screen: "site/settings", Permission: contracts.PermissionSiteManage},
 		},
 		Jobs:          nil,
 		Subscriptions: nil,
-		Routes:        settings.Mount,
+		Routes:        func(s httpx.Surfaces) { settings.Mount(s) },
 	}
 }

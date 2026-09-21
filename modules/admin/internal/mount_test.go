@@ -61,20 +61,24 @@ func TestEveryHandWrittenPageDeclaresTheAuthorizationItsDataNeeds(t *testing.T) 
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	Mount(api, Shell{Authorize: allow(true), Theme: design.Default()})
+	// The addresses below are what the kernel composes for this module on the
+	// workspace surface — /app/app/admin/login and its neighbours — spelled out
+	// rather than recomputed with the same helper Mount uses, so that a change
+	// to the table fails this test instead of moving both halves together.
+	Mount(api.Surfaces("admin"), Shell{Authorize: allow(true), Theme: design.Default()})
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("a page has no declaration: %v", err)
 	}
+	const shell = "/app/admin"
 	want := map[string]httpx.Auth{
-		loginPath:                    httpx.Public(),
-		adminRoot:                    httpx.SignedIn(),
-		healthPath:                   httpx.SignedIn(),
-		catalogPath:                  httpx.SignedIn(),
-		tenantsPath:                  httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
-		galleryPath:                  httpx.Permission("gallery:read"),
-		galleryPath + "/preview":     httpx.Permission("gallery:read"),
-		galleryPath + "/export":      httpx.Permission("gallery:read"),
-		galleryPath + "/storybook/*": httpx.Permission("gallery:read"),
+		shell + "/login":                httpx.Public(),
+		httpx.AppRoot:                   httpx.SignedIn(),
+		shell + "/health":               httpx.SignedIn(),
+		"/app/admin/tenants":            httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
+		shell + "/_gallery":             httpx.Permission("gallery:read"),
+		shell + "/_gallery/preview":     httpx.Permission("gallery:read"),
+		shell + "/_gallery/export":      httpx.Permission("gallery:read"),
+		shell + "/_gallery/storybook/*": httpx.Permission("gallery:read"),
 	}
 	seen := map[string]bool{}
 	for _, op := range api.Recorded() {
@@ -105,7 +109,14 @@ func TestTheSidebarOffersTheGalleryOnlyToACallerWhoMayOpenIt(t *testing.T) {
 	denied := func(context.Context) (export.Storybook, error) {
 		return export.Storybook{}, problem.New(http.StatusForbidden, "no storybook")
 	}
-	signedIn := page.Request{SignedIn: true, Principal: tenancy.Principal{UserID: uuid.New()}, Path: adminRoot}
+	shellAddresses := addresses{
+		workspace: route{"/", "/app"},
+		dashboard: route{"/", "/app"},
+		assets:    route{"/assets", "/app/app/admin/assets"},
+		health:    route{"/health", "/app/app/admin/health"},
+		gallery:   route{"/_gallery", "/app/app/admin/_gallery"},
+	}
+	signedIn := page.Request{SignedIn: true, Principal: tenancy.Principal{UserID: uuid.New()}, Path: "/app"}
 	nav := page.NewNavigation(nil, nil, nil)
 	for _, tc := range []struct {
 		name      string
@@ -117,14 +128,14 @@ func TestTheSidebarOffersTheGalleryOnlyToACallerWhoMayOpenIt(t *testing.T) {
 		{"allowed with a composition", allow(true), book, signedIn, true},
 		{"permission refused", allow(false), book, signedIn, false},
 		{"no composition for this tenant", allow(true), denied, signedIn, false},
-		{"anonymous", allow(true), book, page.Request{Path: loginPath}, false},
+		{"anonymous", allow(true), book, page.Request{Path: "/app/app/admin/login"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := render(t, frame(nav, tc.authorize, tc.storybook)(context.Background(), tc.r, nil))
-			if got := strings.Contains(body, `href="`+galleryPath+`"`); got != tc.offered {
+			body := render(t, frame(shellAddresses, nav, tc.authorize, tc.storybook)(context.Background(), tc.r, nil))
+			if got := strings.Contains(body, `href="/app/app/admin/_gallery"`); got != tc.offered {
 				t.Fatalf("gallery link offered = %v, want %v:\n%s", got, tc.offered, body)
 			}
-			if !strings.Contains(body, `href="`+healthPath+`"`) || !strings.Contains(body, "data-confirm-accept") {
+			if !strings.Contains(body, `href="/app/app/admin/health"`) || !strings.Contains(body, "data-confirm-accept") {
 				t.Fatal("the frame lost its health entry or its confirm dialog")
 			}
 		})
@@ -174,7 +185,7 @@ func TestThePreviewDocumentIsSandboxedAndCarriesItsOwnStylesheet(t *testing.T) {
 	t.Parallel()
 	example := examples.ExampleOf(examples.ExampleInfo{ID: "product/button", ComponentID: "product.button", Name: "Button"},
 		components.ButtonProps{Label: "Buy"}, components.Button)
-	out, err := galleryPreview(export.Storybook{Theme: design.Default()}, example, "dark")
+	out, err := galleryPreview(export.Storybook{Theme: design.Default()}, example, "dark", "/app/app/admin/assets")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,12 +196,12 @@ func TestThePreviewDocumentIsSandboxedAndCarriesItsOwnStylesheet(t *testing.T) {
 		t.Errorf("preview headers = %+v", out)
 	}
 	body := string(out.Body)
-	for _, want := range []string{"<!doctype html>", `<html lang="en" data-theme="dark">`, "--pk-color-surface-canvas:", ">Buy<", assetPrefix + "/js/gallery-preview.js"} {
+	for _, want := range []string{"<!doctype html>", `<html lang="en" data-theme="dark">`, "--pk-color-surface-canvas:", ">Buy<", "/app/app/admin/assets/js/gallery-preview.js"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("preview lacks %q", want)
 		}
 	}
-	system, _ := galleryPreview(export.Storybook{Theme: design.Default()}, example, "system")
+	system, _ := galleryPreview(export.Storybook{Theme: design.Default()}, example, "system", "/app/app/admin/assets")
 	if strings.Contains(string(system.Body), `<html lang="en" data-theme=`) {
 		t.Error("a system preview pinned a theme")
 	}
@@ -216,12 +227,12 @@ func TestTheHealthPageNamesEachCheckAndItsState(t *testing.T) {
 // and the authored English when none is composed.
 func TestTheSignInPageSpeaksTheRequestLanguage(t *testing.T) {
 	t.Parallel()
-	english := render(t, g.Group(login(context.Background(), nil).Body))
-	if !strings.Contains(english, ">Sign in<") || !strings.Contains(english, `data-next="`+adminRoot+`"`) {
+	english := render(t, g.Group(login(context.Background(), nil, "/app", "/api/v1/auth/login").Body))
+	if !strings.Contains(english, ">Sign in<") || !strings.Contains(english, `data-next="/app"`) {
 		t.Fatalf("english sign-in:\n%s", english)
 	}
 	pt := &page.Locale{Language: "pt-PT", Formatter: words{"admin.login.title": "Iniciar sessão", "admin.login.password": "Palavra-passe"}}
-	view := login(context.Background(), pt)
+	view := login(context.Background(), pt, "/app", "/api/v1/auth/login")
 	body := render(t, g.Group(view.Body))
 	if view.Title != "Iniciar sessão" || !strings.Contains(body, "Palavra-passe") || !strings.Contains(body, ">Email<") {
 		t.Fatalf("localized sign-in lost a translation or its fallback:\n%s", body)

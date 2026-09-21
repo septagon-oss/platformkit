@@ -49,8 +49,8 @@ func (o oneHost) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenanc
 func brand(which, sheet string) module.Module {
 	return module.Module{
 		Name: "brand" + which,
-		Routes: func(api *httpx.API) {
-			httpx.Register(api, huma.Operation{OperationID: "which", Method: http.MethodGet, Path: "/hello"},
+		Routes: func(s httpx.Surfaces) {
+			httpx.Register(s.App, huma.Operation{OperationID: "which", Method: http.MethodGet, Path: "/hello"},
 				httpx.Public(), func(context.Context, *struct{}) (*helloOut, error) {
 					out := &helloOut{}
 					out.Body.Tenant = which
@@ -60,12 +60,21 @@ func brand(which, sheet string) module.Module {
 			// tenant to answer at all, which is what makes it host-authoritative where
 			// the public route and the asset tree are not. No permission is declared, so
 			// an anonymous request reaches the route and is refused by the auth gate.
-			httpx.Register(api, huma.Operation{OperationID: "guarded", Method: http.MethodGet, Path: "/guarded"},
+			httpx.Register(s.App, huma.Operation{OperationID: "guarded", Method: http.MethodGet, Path: "/guarded"},
 				httpx.SignedIn(), func(context.Context, *struct{}) (*helloOut, error) { return &helloOut{}, nil })
-			api.Static("/assets", fstest.MapFS{"site.txt": {Data: []byte(sheet)}})
+			s.App.Static("/assets", fstest.MapFS{"site.txt": {Data: []byte(sheet)}})
 		},
 	}
 }
+
+// where is the address one of brand's routes answers at. A route is relative to
+// its module and its surface, so the composition's own name is what puts the
+// prefix on it — /api/v1/brandalpha/hello and /app/brandalpha/assets/site.txt —
+// and this is the one place in this file a test says so.
+func where(which, rel string) string { return "/api/v1/brand" + which + rel }
+
+// sheetIs is where a composition's own stylesheet answers.
+func sheetIs(which string) string { return "/app/brand" + which + "/assets/site.txt" }
 
 // ask answers one request of a handler without taking an address: the seam exists
 // so that the caller owns the listener, so these checks do not need one.
@@ -130,10 +139,10 @@ func TestTwoStartedCompositionsAnswerOnlyTheirOwnHost(t *testing.T) {
 	// that are identical in both. Asserted on the bytes, not the status: a 200
 	// from the wrong brand is exactly what a shared mount table produces.
 	for _, which := range []string{"alpha", "beta"} {
-		if code, body := at(which, "/hello"); code != http.StatusOK || !strings.Contains(body, which) {
+		if code, body := at(which, where(which, "/hello")); code != http.StatusOK || !strings.Contains(body, which) {
 			t.Errorf("%s /hello = %d %s, want %s's page", which, code, body, which)
 		}
-		code, body := at(which, "/assets/site.txt")
+		code, body := at(which, sheetIs(which))
 		if code != http.StatusOK || body != which+"-stylesheet" {
 			t.Errorf("%s /assets/site.txt = %d %q, want %s's own sheet", which, code, body, which)
 		}
@@ -142,7 +151,7 @@ func TestTwoStartedCompositionsAnswerOnlyTheirOwnHost(t *testing.T) {
 	// And a host nobody composed, as this fixture's dispatcher chooses it: it answers
 	// 404 itself and asks no Handler at all. That is the caller's default branch, not a
 	// property of the seam, and the next block is what the seam actually guarantees.
-	if code, body := at("elsewhere", "/hello"); code != http.StatusNotFound || strings.Contains(body, "alpha") || strings.Contains(body, "beta") {
+	if code, body := at("elsewhere", where("alpha", "/hello")); code != http.StatusNotFound || strings.Contains(body, "alpha") || strings.Contains(body, "beta") {
 		t.Errorf("unknown host /hello = %d %s, want a 404 that leaks no composition", code, body)
 	}
 
@@ -155,16 +164,16 @@ func TestTwoStartedCompositionsAnswerOnlyTheirOwnHost(t *testing.T) {
 	// stylesheet to anybody the caller routes here. A dispatcher with a permissive
 	// default branch therefore serves alpha's sheet at any Host — the collision this
 	// pair of compositions exists to make avoidable, and the caller's to get right.
-	if code, _ := ask(sites["alpha"].Handler(), "alpha.test", "/guarded"); code == http.StatusNotFound {
+	if code, _ := ask(sites["alpha"].Handler(), "alpha.test", where("alpha", "/guarded")); code == http.StatusNotFound {
 		t.Errorf("own host /guarded = 404, want the anonymous request to reach the route and be refused by the auth gate")
 	}
-	if code, _ := ask(sites["alpha"].Handler(), "beta.test", "/guarded"); code != http.StatusNotFound {
+	if code, _ := ask(sites["alpha"].Handler(), "beta.test", where("alpha", "/guarded")); code != http.StatusNotFound {
 		t.Errorf("foreign host /guarded = %d, want the 404 that says no site is served at that host", code)
 	}
-	if code, body := ask(sites["alpha"].Handler(), "beta.test", "/hello"); code != http.StatusOK || !strings.Contains(body, "alpha") {
+	if code, body := ask(sites["alpha"].Handler(), "beta.test", where("alpha", "/hello")); code != http.StatusOK || !strings.Contains(body, "alpha") {
 		t.Errorf("foreign host /hello = %d %s, want alpha's public page: a public route resolves no tenant", code, body)
 	}
-	if code, body := ask(sites["alpha"].Handler(), "beta.test", "/assets/site.txt"); code != http.StatusOK || body != "alpha-stylesheet" {
+	if code, body := ask(sites["alpha"].Handler(), "beta.test", sheetIs("alpha")); code != http.StatusOK || body != "alpha-stylesheet" {
 		t.Errorf("foreign host /assets/site.txt = %d %q, want alpha's own sheet: the static tree carries no host either", code, body)
 	}
 }
@@ -174,8 +183,8 @@ func TestTwoStartedCompositionsAnswerOnlyTheirOwnHost(t *testing.T) {
 // that owns the listener learns of a bad composition the same way Run does.
 func TestStartRefusesACompositionAndTakesNoAddress(t *testing.T) {
 	cfg, opts := compose(t)
-	ghost := module.Module{Name: "ghost", Routes: func(api *httpx.API) {
-		httpx.Register(api, huma.Operation{OperationID: "haunt", Method: http.MethodGet, Path: "/haunt"},
+	ghost := module.Module{Name: "ghost", Routes: func(s httpx.Surfaces) {
+		httpx.Register(s.App, huma.Operation{OperationID: "haunt", Method: http.MethodGet, Path: "/haunt"},
 			httpx.Permission("ghost:read"), func(context.Context, *struct{}) (*helloOut, error) { return &helloOut{}, nil })
 	}}
 	a, err := New(t.Context(), cfg, []module.Module{ghost}, opts)
@@ -216,7 +225,10 @@ func TestWorkRunsTheComposedJobsWithoutAnAddress(t *testing.T) {
 			return nil
 		},
 	}}}
-	a, err := New(t.Context(), cfg, []module.Module{ticker}, opts)
+	// A process that plays both roles answers a person, so the composition needs
+	// a workspace in it; brand is the cheapest thing that has one, and this case
+	// is about the scheduler's lifecycle rather than about the gate.
+	a, err := New(t.Context(), cfg, []module.Module{ticker, brand("all", "unused")}, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -357,10 +369,10 @@ func TestAWorkerServesItsProbesAndNoProductRoute(t *testing.T) {
 	if code, body := ask(rt.Handler(), tenantHost, "/ready"); code != http.StatusOK {
 		t.Errorf("/ready as role worker = %d %s, want 200", code, body)
 	}
-	if code, body := ask(rt.Handler(), tenantHost, "/hello"); code != http.StatusNotFound {
+	if code, body := ask(rt.Handler(), tenantHost, where("alpha", "/hello")); code != http.StatusNotFound {
 		t.Errorf("/hello as role worker = %d %s, want 404: a worker composes no product route", code, body)
 	}
-	if code, body := ask(rt.Handler(), tenantHost, "/assets/site.txt"); code != http.StatusNotFound {
+	if code, body := ask(rt.Handler(), tenantHost, sheetIs("alpha")); code != http.StatusNotFound {
 		t.Errorf("/assets/site.txt as role worker = %d %s, want 404: no static tree either", code, body)
 	}
 }
@@ -411,7 +423,7 @@ func TestTheBrokerIsAskedOfTheRoleThatNeedsIt(t *testing.T) {
 		t.Errorf("Work as role web = %v, want the refusal that says this half is not composed", err)
 	}
 	rec := httptest.NewRecorder()
-	rt.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+tenantHost+"/hello", nil))
+	rt.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+tenantHost+where("alpha", "/hello"), nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "alpha") {
 		t.Errorf("/hello as role web = %d %s, want the composition's own page", rec.Code, rec.Body.String())
 	}
@@ -440,7 +452,12 @@ func TestWorkAfterCloseIsRefused(t *testing.T) {
 			return nil
 		},
 	}}}
-	a, err := New(t.Context(), cfg, []module.Module{ticker}, opts)
+	// A process that plays both roles answers a person, so the composition needs a
+	// workspace in it. brand is the cheapest thing that has one, and this case is
+	// about the scheduler's lifecycle rather than about that gate — which is
+	// TestWorkRunsTheComposedJobsWithoutAnAddress and the worker's exemption in
+	// composeGates.
+	a, err := New(t.Context(), cfg, []module.Module{ticker, brand("all", "unused")}, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

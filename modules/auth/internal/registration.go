@@ -21,10 +21,10 @@ import (
 // RegisterRegistrationRoutes is called only by compositions that supply a
 // registrar. Registration and password recovery share the public mail-request
 // budget, so switching endpoints cannot multiply the allowed traffic.
-func RegisterRegistrationRoutes(api *httpx.API, svc *Service) {
-	httpx.Register(api, huma.Operation{
+func RegisterRegistrationRoutes(surfaces httpx.Surfaces, svc *Service) {
+	httpx.Register(surfaces.Public, huma.Operation{
 		OperationID: "auth-register", Method: http.MethodPost,
-		Path: Path + "/register", Summary: "Request a member account",
+		Path: "/register", Summary: "Request a member account",
 		Description: "Queues registration in this tenant. Check your email to choose a password; existing accounts keep their roles and status. The acknowledgment does not reveal whether the account exists.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
 		Errors:     []int{http.StatusTooManyRequests, http.StatusServiceUnavailable},

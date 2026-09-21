@@ -7,7 +7,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
-// CatalogVersion is the shape of the document at /api/v1/admin/resources — the
+// CatalogVersion is the shape of the document at /api/v1/app/resources — the
 // contract a shipped native shell renders from — and it is the one number in
 // this repository that cannot be revised by the person who changes it.
 //
@@ -39,8 +39,25 @@ type Catalog struct {
 // look at, they are not told exists.
 type Entry struct {
 	entity.Schema
+	// Screen is the workspace address of the generated screen — /app/task/tasks
+	// — stated because the kernel composed it and a shell cannot derive it any
+	// more. It used to derive the screen's path from the API's, by cutting
+	// "/api/v1" off one and pasting in where it believed the shell to be; the
+	// moment a resource's reads and writes stood on different surfaces, that
+	// derivation was a guess. It is still optional, so a build already installed
+	// keeps working from the address it can derive.
+	Screen    string   `json:"screen,omitempty"`
 	Immutable []string `json:"immutable,omitempty"`
 	Writable  bool     `json:"writable"`
+	// WritePath is the address the writes of this resource are answered at, for
+	// the one resource whose writes do not answer at its own Path: a price list is
+	// read by the tenant that pays for it on the workspace surface and written by
+	// the installation on the control plane. It is printed on the same rule as a
+	// command's Path — only when the derivation is no longer true, so an entry a
+	// shell could always read the same way still reads that way — and only for a
+	// caller who may write, because this document is what this caller may do, and
+	// an address they cannot reach is neither true nor theirs to be told.
+	WritePath string `json:"write_path,omitempty"`
 	// Commands are the doors this caller may open beyond the five: the
 	// lifecycle routes the resource carries. A command the caller may not call
 	// is absent for the same reason an unreadable resource is.
@@ -54,14 +71,19 @@ type Entry struct {
 // for the same reason Entry carries no readable flag: the document is what this
 // caller may do, not a description of the API's guards.
 //
-// The path is not carried either, because it is derived the way every other
-// path here is: POST {Path}/{id}/{verb}, or {Path}/{verb} when Collection. A
-// shell that had to be told would be a shell that could be told wrong.
+// Path is carried only when the derivation is no longer true. A command the
+// installation owns lives on the control plane, whose address does not start
+// from the resource's own, so POST {Path}/{id}/{verb} would send a caller to an
+// address nothing answers at. Absent means what it always meant: derive it that
+// way, which is what every command that shares its resource's surface is still
+// reachable by — so a document written before this key existed is read the same
+// way it always was.
 type Command struct {
 	Verb        string         `json:"verb"`
 	Summary     string         `json:"summary,omitempty"`
 	Description string         `json:"description,omitempty"`
 	Collection  bool           `json:"collection,omitempty"`
+	Path        string         `json:"path,omitempty"`
 	Fields      []entity.Field `json:"fields,omitempty"`
 }
 
@@ -87,12 +109,34 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // write it". It is the pure half of Describe, and what the golden test builds
 // from without an authorizer.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	e := Entry{Schema: r.Schema, Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton}
+	e := Entry{Schema: r.Schema, Screen: r.Screen, Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton}
+	if writable {
+		e.WritePath = r.WritePath
+	}
 	for _, c := range r.Commands {
 		e.Commands = append(e.Commands, Command{
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
-			Collection: c.Collection, Fields: c.Fields,
+			Collection: c.Collection, Path: derived(r, c), Fields: c.Fields,
 		})
 	}
 	return e
+}
+
+// derived is the command's address when a shell could not work it out itself,
+// and empty when it could. The empty answer is the whole point: this document is
+// a contract a build in somebody's pocket parses, and the entries that still
+// follow the rule must read exactly as they did before the rule stopped always
+// being true.
+func derived(r httpx.Resource, c httpx.Command) string {
+	if c.Endpoint == "" || c.Endpoint == r.Schema.Path+itemish(r, c)+"/"+c.Verb {
+		return ""
+	}
+	return c.Endpoint
+}
+
+func itemish(r httpx.Resource, c httpx.Command) string {
+	if c.Collection || r.Singleton {
+		return ""
+	}
+	return "/{id}"
 }

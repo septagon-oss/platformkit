@@ -23,7 +23,7 @@ import (
 func ExampleFormExample() {
 	resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes",
 		Schema: crud.Schema{Fields: []crud.Field{{Name: "description", Type: crud.TypeText, Widget: "textarea"}}}}
-	form := screens.FormExample("notes/new", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note",
+	form := screens.FormExample("notes/new", resource, screens.Options{Workspace: "/app"}, "/app/notes", "New note",
 		map[string]any{"description": "A synthetic design example."}, nil, "", true)
 	snapshot, err := export.Export(design.Default(), []examples.Example{form})
 	if err != nil {
@@ -57,12 +57,12 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 			input.Schema.Fields = slices.Clone(r.Schema.Fields)
 			row := map[string]any{"title": "Field notes", "body": "\nA description\n", "status": "done", "pinned": true}
 			errs := map[string]string{"title": state.detail}
-			form := screens.FormExample("notes/"+state.id, input, opts, "/admin/note/notes", "A note", row, errs, state.detail, state.create)
+			form := screens.FormExample("notes/"+state.id, input, opts, "/app/note/notes", "A note", row, errs, state.detail, state.create)
 			description, err := form.Describe()
 			if err != nil {
 				t.Fatal(err)
 			}
-			view := screens.Form(input, opts, "/admin/note/notes", "A note", row, errs, state.detail, state.create)
+			view := screens.Form(input, opts, "/app/note/notes", "A note", row, errs, state.detail, state.create)
 			if got := render(t, []g.Node{view.Body[len(view.Body)-1]}); got != description.HTML {
 				t.Fatal("the runtime form and its design invocation render different HTML")
 			}
@@ -113,21 +113,21 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 			// above compares their HTML byte for byte. What these markers hold is the
 			// rest: the encoding, the swap targets and the label-to-control pairing
 			// a native renderer and a screen reader both depend on.
-			const fieldID = "admin-note-notes-field-"
+			const fieldID = "app-note-notes-field-"
 			titleID, bodyID := fieldID+"7469746c65", fieldID+"626f6479"
-			for _, marker := range []string{`id="admin-note-notes-form"`, `method="post"`, `hx-post="/admin/note/notes"`,
-				`hx-target="#admin-note-notes-form"`, `hx-select="#admin-note-notes-form"`, `aria-label="A note"`,
+			for _, marker := range []string{`id="app-note-notes-form"`, `method="post"`, `hx-post="/app/note/notes"`,
+				`hx-target="#app-note-notes-form"`, `hx-select="#app-note-notes-form"`, `aria-label="A note"`,
 				`for="` + titleID + `"`, `id="` + titleID + `"`,
-				`for="` + bodyID + `"`, `id="` + bodyID + `"`, `rows="5"`, `href="/admin/note/notes"`, `type="submit"`} {
+				`for="` + bodyID + `"`, `id="` + bodyID + `"`, `rows="5"`, `href="/app/note/notes"`, `type="submit"`} {
 				if !strings.Contains(description.HTML, marker) {
-					t.Fatalf("form lost runtime or native control attribute %s", marker)
+					t.Fatalf("form lost runtime or native control attribute %s in %s", marker, description.HTML)
 				}
 			}
 			if state.detail != "" && !strings.Contains(description.HTML, `aria-describedby="`+titleID+`-error `+titleID+`-help"`) {
 				t.Fatal("the invalid field lost its error and help association")
 			}
 			slices.Reverse(input.Schema.Fields)
-			reordered, err := screens.FormExample(form.ID, input, opts, "/admin/note/notes", "A note", row, errs, state.detail, state.create).Describe()
+			reordered, err := screens.FormExample(form.ID, input, opts, "/app/note/notes", "A note", row, errs, state.detail, state.create).Describe()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -150,7 +150,7 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 
 func TestGeneratedFormComposesSourceEditsAndReplacements(t *testing.T) {
 	t.Parallel()
-	form := screens.FormExample("notes/edit", resource(), opts, "/admin/note/notes/1", "Edit note",
+	form := screens.FormExample("notes/edit", resource(), opts, "/app/note/notes/1", "Edit note",
 		map[string]any{"title": "Original", "body": "Before", "status": "done"}, nil, "", false)
 	source := []examples.Example{form}
 	base, err := export.Export(design.Default(), source)

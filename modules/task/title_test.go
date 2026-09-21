@@ -33,7 +33,7 @@ func TestTitleLimitsAgreeAcrossWritePaths(t *testing.T) {
 		}
 	}
 	type output struct{ Body any }
-	httpx.Register(api, huma.Operation{OperationID: "title-probe", Method: http.MethodPost, Path: "/probe/{door}", Hidden: true},
+	httpx.Register(surfacesOf(api).App, huma.Operation{OperationID: "title-probe", Method: http.MethodPost, Path: "/probe/{door}", Hidden: true},
 		httpx.SignedIn(), func(ctx context.Context, in *input) (*output, error) {
 			values := map[string]any{"title": in.Body.Title}
 			var result any
@@ -83,8 +83,14 @@ func TestTitleLimitsAgreeAcrossWritePaths(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if tt.name == "ascii-limit" {
+				for _, m := range api.Mounted() {
+					t.Logf("mounted %s %s (%s)", m.Method, m.Path, m.Surface)
+				}
+				t.Logf("probe address %s", surfacesOf(api).App.Path("/probe/x"))
+			}
 			for _, door := range []string{"json-create", "json-update", "resource-create", "resource-update", "crud-create", "crud-update"} {
-				method, at, want := http.MethodPost, "/probe/"+door, http.StatusOK
+				method, at, want := http.MethodPost, surfacesOf(api).App.Path("/probe/"+door), http.StatusOK
 				if door == "json-create" {
 					at, want = path, http.StatusCreated
 				}

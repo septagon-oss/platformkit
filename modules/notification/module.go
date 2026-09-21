@@ -86,6 +86,6 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
 		Subscriptions: []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Secure)},
-		Routes:        func(api *httpx.API) { internal.RegisterRoutes(api, svc) },
+		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc) },
 	}
 }

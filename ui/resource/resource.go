@@ -37,6 +37,13 @@ import (
 type Resource struct {
 	Schema    entity.Schema
 	Immutable []string
+	// Screen is the workspace address of this resource's collection screen:
+	// /app/<module>/<entity>, composed by the kernel at registration. Every
+	// link a renderer writes is built from it, which is the whole reason the
+	// renderer needs it and no reason it needs to know how it was made. A
+	// screen rendered without a kernel behind it — a design export, a golden
+	// file — names one itself.
+	Screen string
 	// Singleton says a tenant has one of these and its API has no id in the
 	// path. A screen needs to know, because the doors a collection shows are
 	// the doors this resource has no routes behind: New would post to a create
@@ -61,9 +68,14 @@ const PerPage = 50
 
 // Options is what a shell decides about its generated screens.
 type Options struct {
-	// Root is where the screens live: Root + the API path without /api/v1.
-	Root string
-	// Home is the breadcrumb's first entry, linking to Root.
+	// Workspace is the address the breadcrumb's first entry links to: the
+	// workspace's own root. It is not a prefix the renderer composes paths
+	// from — a screen is mounted at an address the kernel derived, and the
+	// renderer is handed it. There used to be a Root here, and every module's
+	// nav entry derived its link from it, which is how a shell's location
+	// became nine modules' business.
+	Workspace string
+	// Home is the breadcrumb's first entry's label, linking to Workspace.
 	Home string
 	// Locale is the request's selected language when the shell composes
 	// page.Shell.Messages; the adapter sets it per request. The fixed labels
@@ -95,15 +107,6 @@ func (o Options) count(total int64, noun string) string {
 	return o.Text("screens.count", "%d %s", total, noun)
 }
 
-// Path is where a resource's list screen lives: /api/v1/task/tasks is served at
-// Root/task/tasks, which is what every module's nav entry already says.
-func Path(r Resource, o Options) string {
-	if rest, ok := strings.CutPrefix(r.Schema.Path, "/api/v1"); ok {
-		return o.Root + rest
-	}
-	return o.Root + "/" + r.Schema.Module + "/" + r.Schema.Entity
-}
-
 // List is the list screen: a toolbar with the count, the rows, the pager. The
 // New button is drawn only for a caller who may write — a person who may not is
 // not shown a form that would refuse them.
@@ -115,7 +118,7 @@ func Path(r Resource, o Options) string {
 // have to be the adapter is a second answer to one question, and only one of the
 // two is checked by anyone.
 func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
-	at, one := Path(r, o), display.Humanize(r.Schema.Entity)
+	at, one := r.Screen, display.Humanize(r.Schema.Entity)
 	title := listName(one)
 	var actions []g.Node
 	if writable {
@@ -143,7 +146,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 // entity's: a browser tab, a bookmark and a history entry all read it, and
 // eleven of them saying "Task" is eleven of them saying nothing.
 func Detail(r Resource, o Options, row map[string]any, writable bool) document.View {
-	at := Path(r, o)
+	at := r.Screen
 	// A singleton is reached at its own path, which is the only place its API is
 	// reached too: an id in this path would be an id nobody issued, and the row
 	// map does not carry one.
@@ -183,7 +186,7 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 // kernel rolls the transaction back past 400, and htmx swaps a 422 in place
 // rather than treating it as an error nobody sees.
 func Form(r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) document.View {
-	at := Path(r, o)
+	at := r.Screen
 	status := 0
 	if detail != "" {
 		status = statusUnprocessableEntity
@@ -224,7 +227,7 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
-		Action:    action, CancelURL: Path(r, o), Title: title,
+		Action:    action, CancelURL: r.Screen, Title: title,
 	})
 }
 
@@ -348,7 +351,7 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 	return components.Breadcrumb(components.BreadcrumbProps{
 		NavigationLabel: o.Text("screens.breadcrumb", "Breadcrumb"),
 		Items: []components.BreadcrumbItem{
-			{Label: o.Home, Href: o.Root}, {Label: collection, Href: at}, {Label: here},
+			{Label: o.Home, Href: o.Workspace}, {Label: collection, Href: at}, {Label: here},
 		}})
 }
 

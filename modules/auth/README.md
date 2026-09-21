@@ -4,8 +4,10 @@
 one OpenID Connect provider, the roles that decide what a caller may do, and
 the three opt-in registration modes described in
 [ARCHITECTURE.md](../../ARCHITECTURE.md#start-at-the-composition). Routes live
-under `/api/v1/auth`; `role:manage` guards both the two roles routes and the
-screen the shell serves for them at `/admin/auth/roles`. A write is refused when
+under `/api/v1/auth`, and the doors an anonymous caller may use — the ones
+the public surface serves — under `/api/v1/public/auth`; `role:manage` guards
+both the two roles routes and the screen the shell serves for them at
+`/app/auth/roles`. A write is refused when
 it would leave the tenant with no *role* granting `role:manage`; it counts roles
 and not the people holding them, so it is a floor and not a guarantee. The user
 module has a floor over the people, and the two do not compose: a sequence in

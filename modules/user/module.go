@@ -46,7 +46,7 @@ type Deps struct {
 var spec = rest.Spec[*contracts.User]{
 	Module:     "user",
 	Entity:     "user",
-	Path:       "/api/v1/user/users",
+	Path:       "/users",
 	Read:       contracts.PermissionUserRead,
 	Write:      contracts.PermissionUserManage,
 	SoftDelete: true,
@@ -134,13 +134,13 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 			contracts.EventRegistrationUnverified, contracts.EventEmailVerified,
 		},
 		Nav: []module.NavEntry{
-			{Label: "Users", Path: "/admin/user/users", Permission: contracts.PermissionUserRead},
+			{Label: "Users", Screen: "user/users", Permission: contracts.PermissionUserRead},
 		},
 		Jobs:          nil,
 		Subscriptions: nil,
-		Routes: func(api *httpx.API) {
-			mounted.Mount(api)
-			internal.RegisterRoutes(api, mounted, svc)
+		Routes: func(s httpx.Surfaces) {
+			mounted.Mount(s)
+			internal.RegisterRoutes(s, mounted, svc)
 		},
 	}
 }

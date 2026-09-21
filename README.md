@@ -23,11 +23,11 @@ This starts the reference application from `main`, with its own PostgreSQL 16
 database and an initial tenant. No separate database or message broker is needed.
 The HTTP server listens only on your machine.
 
-Open [the sign-in page](http://platformkit.localhost:8080/admin/login) and use
+Open [the sign-in page](http://platformkit.localhost:8080/app/admin/login) and use
 `admin@platformkit.localhost` with the password printed in your terminal.
 Keep that password: it is shown only when the administrator is first created.
 After signing in, explore the administration screens and the
-[component gallery](http://platformkit.localhost:8080/admin/_gallery).
+[component gallery](http://platformkit.localhost:8080/app/admin/_gallery).
 Product applications configure [tenant storybooks](modules/admin/README.md) to
 show only the examples selected for the signed-in tenant.
 An optional [Storybook.js adapter](ui/storybook/README.md) adds Storybook's native
@@ -88,7 +88,7 @@ send requests to the configured tenant host.
 The local evaluation exposes [interactive API documentation](http://platformkit.localhost:8080/docs).
 For a configured application, `/docs` and `/openapi.json` are available when
 `server.docs` is enabled; they are public endpoints, so enable them deliberately.
-`GET /api/v1/admin/resources` describes the resources available to an authorized
+`GET /api/v1/app/resources` describes the resources available to an authorized
 shell. `GET /health` and `GET /ready` report process and dependency readiness.
 
 ## Contributing and project information

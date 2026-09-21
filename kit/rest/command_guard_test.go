@@ -68,7 +68,7 @@ func mountGuarded(t *testing.T, permission string) guardedWorld {
 		t.Fatal(err)
 	}
 
-	rest.Command(api, spec, "publish", "Publish a note", "Makes it visible to everybody.", nil,
+	rest.Command(api.Surfaces(spec.Module), spec, "publish", "Publish a note", "Makes it visible to everybody.", nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in publishBody) (*Task, error) {
 			*ran++
 			var out Task
@@ -79,7 +79,7 @@ func mountGuarded(t *testing.T, permission string) guardedWorld {
 			return &out, crud.Update(ctx, tx, &out, "notes")
 		}, rest.CommandOptions{Auth: httpx.Permission("task:publish")})
 
-	rest.Command(api, spec, "archive", "Archive a task", "Takes it out of the list.", nil,
+	rest.Command(api.Surfaces(spec.Module), spec, "archive", "Archive a task", "Takes it out of the list.", nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*Task, error) {
 			*ran++
 			var out Task
@@ -94,13 +94,13 @@ func mountGuarded(t *testing.T, permission string) guardedWorld {
 		return g.Group(body)
 	}}
 	for _, r := range api.Resources() {
-		screens.Mount(api, shell, screens.Options{Root: "/admin"}, r)
+		screens.Mount(api.Surfaces(r.Module).App, shell, screens.Options{Workspace: "/app"}, r)
 	}
 	return guardedWorld{
 		router:  router,
 		ran:     ran,
-		screen:  "/admin/tasks/task/" + rowID.String(),
-		apiItem: "/api/tasks/" + rowID.String(),
+		screen:  "/app/tasks/task/" + rowID.String(),
+		apiItem: "/api/v1/tasks/task/" + rowID.String(),
 	}
 }
 
@@ -172,7 +172,7 @@ func TestACommandNamedAfterAScreenVerbRefusesToMount(t *testing.T) {
 	}()
 
 	api, _, _ := mounted(t)
-	rest.Command(api, spec, "edit", "Edit it", "A verb the screens already own.", nil,
+	rest.Command(api.Surfaces(spec.Module), spec, "edit", "Edit it", "A verb the screens already own.", nil,
 		func(context.Context, db.Tx[db.Tenant], uuid.UUID, struct{}) (*Task, error) { return nil, nil },
 		rest.CommandOptions{})
 
@@ -185,7 +185,7 @@ func TestACommandNamedAfterAScreenVerbRefusesToMount(t *testing.T) {
 		return g.Group(body)
 	}}
 	for _, r := range api.Resources() {
-		screens.Mount(api, shell, screens.Options{Root: "/admin"}, r)
+		screens.Mount(api.Surfaces(r.Module).App, shell, screens.Options{Workspace: "/app"}, r)
 	}
 }
 
@@ -201,11 +201,11 @@ func TestACommandNamedAfterAScreenVerbRefusesToMount(t *testing.T) {
 func TestAReaderIsNotOfferedTheWriteDoors(t *testing.T) {
 	w := mountGuarded(t, "task:write")
 
-	_, list := call(t, w.router, http.MethodGet, "/admin/tasks/task", "")
-	if strings.Contains(list, `href="/admin/tasks/task/new"`) {
+	_, list := call(t, w.router, http.MethodGet, "/app/tasks/task", "")
+	if strings.Contains(list, `href="/app/tasks/task/new"`) {
 		t.Errorf("a caller who may not write was offered the New door: %s", around(list, "new"))
 	}
-	if !strings.Contains(list, `href="/admin/tasks/task/`) {
+	if !strings.Contains(list, `href="/app/tasks/task/`) {
 		t.Fatalf("the list renders no rows at all, so the assertion above proves nothing: %s", around(list, "table"))
 	}
 
@@ -218,7 +218,7 @@ func TestAReaderIsNotOfferedTheWriteDoors(t *testing.T) {
 	}
 
 	// And each hidden door refuses when asked for anyway.
-	if code, _ := call(t, w.router, http.MethodPost, "/api/tasks", `{"title":"forged"}`); code != http.StatusForbidden {
+	if code, _ := call(t, w.router, http.MethodPost, "/api/v1/tasks/task", `{"title":"forged"}`); code != http.StatusForbidden {
 		t.Errorf("the create route answered %d to a caller without the write permission", code)
 	}
 	if code, _, _ := postForm(t, w.router, w.screen+"/delete", ""); code != http.StatusForbidden {

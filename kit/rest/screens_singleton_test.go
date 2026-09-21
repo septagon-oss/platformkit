@@ -24,9 +24,9 @@ import (
 // really ships — site's settings — reproduced from a running app rather than
 // imagined:
 //
-//	GET  /admin/site/settings                    200   a list, sortable on every field
-//	       href="/admin/site/settings/new"              a door no route serves
-//	       href="/admin/site/settings/0000…0000"        a row id invented from nothing
+//	GET  /app/site/settings                    200   a list, sortable on every field
+//	       href="/app/site/settings/new"              a door no route serves
+//	       href="/app/site/settings/0000…0000"        a row id invented from nothing
 //	       a Delete form
 //	GET  /api/v1/site/settings/0000…0000         404   the API never heard of that id
 //	POST /api/v1/site/settings                   405   the API will not create one
@@ -45,7 +45,7 @@ func mountSingletonScreens(t *testing.T, s rest.Singleton[*Settings]) chi.Router
 		return g.Group(body)
 	}}
 	for _, r := range api.Resources() {
-		screens.Mount(api, shell, screens.Options{Root: "/admin"}, r)
+		screens.Mount(api.Surfaces(r.Module).App, shell, screens.Options{Workspace: "/app"}, r)
 	}
 	return router
 }
@@ -75,7 +75,7 @@ func postForm(t *testing.T, r http.Handler, path, body string) (int, string, str
 // TestTheScreensOfASingletonOfferOnlyWhatItsRoutesServe is the reproduction.
 func TestTheScreensOfASingletonOfferOnlyWhatItsRoutesServe(t *testing.T) {
 	router := mountSingletonScreens(t, singleton(true, false))
-	const at = "/admin/site/settings"
+	const at = "/app/site/settings"
 
 	code, body := call(t, router, http.MethodGet, at, "")
 	if code != http.StatusOK {
@@ -122,7 +122,7 @@ func TestTheScreensOfASingletonOfferOnlyWhatItsRoutesServe(t *testing.T) {
 // path would be asking about a tenant the caller cannot see.
 func TestASingletonEditsItselfWithNoIDAnywhere(t *testing.T) {
 	router := mountSingletonScreens(t, singleton(true, false))
-	const at = "/admin/site/settings"
+	const at = "/app/site/settings"
 
 	code, body := call(t, router, http.MethodGet, at+"/edit", "")
 	if code != http.StatusOK {
@@ -167,8 +167,8 @@ func TestACollectionsScreensKeepEveryDoorTheyHad(t *testing.T) {
 	shell := page.Shell{Tag: "admin", Frame: func(_ context.Context, _ page.Request, body []g.Node) g.Node {
 		return g.Group(body)
 	}}
-	screens.Mount(api, shell, screens.Options{Root: "/admin"}, api.Resources()[0])
-	const at = "/admin/tasks/task"
+	screens.Mount(api.Surfaces("tasks").App, shell, screens.Options{Workspace: "/app"}, api.Resources()[0])
+	const at = "/app/tasks/task"
 
 	_, list := call(t, router, http.MethodGet, at, "")
 	if !strings.Contains(list, at+"/new") {

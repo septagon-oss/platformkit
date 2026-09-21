@@ -50,14 +50,14 @@ func TestAFragmentIsTheSameHTMLWithoutTheDoctype(t *testing.T) {
 // mounts through the real kernel because the nonce is the kernel's.
 func TestAnInlineScriptCarriesThePolicysOwnNonce(t *testing.T) {
 	_, conn := dbtest.Schema(t)
-	api, router := httpx.New(httpx.Options{
+	kernel, router := httpx.New(httpx.Options{
 		PublicHost: "localhost", Tenants: privacyTenant{}, Conn: conn, Authorize: privacyTenant{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{}, false, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	httpx.HTML(api, huma.Operation{
+	httpx.HTML(public(kernel), huma.Operation{
 		OperationID: "read-shell", Method: http.MethodGet, Path: "/shell",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*httpx.Page, error) {
 		return page.Render(h.HTML(h.Head(page.InlineScript(ctx, `var t=1`))), http.StatusOK)
@@ -97,3 +97,9 @@ func between(s, open, shut string) string {
 	}
 	return rest[:j]
 }
+
+// public is the composition's own router on the public surface: a page prefix of
+// its own (there is none, which is what "public" means) and no module segment, so
+// a foundation test mounts at the address it names. A module would bind its own
+// name — api.Surfaces("task") — and take the prefix that comes with it.
+func public(a *httpx.API) *httpx.Router { return a.Surfaces("").Public }

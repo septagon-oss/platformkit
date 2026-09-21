@@ -38,13 +38,13 @@ package httpx
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -169,6 +169,40 @@ type Options struct {
 	// deployment that mounts no streaming route needs no larger number, and a
 	// test that mounts one is not testing the ceiling.
 	MaxUpload int64
+
+	// Installation is the host the installation itself is reached at — the one
+	// address that serves the control plane (the Ops surface). It is a
+	// composition's fact and not a tenant's: no TenantLoader answers it, because
+	// the host names the installation rather than a customer.
+	//
+	// Empty means the installation has named no host of its own. The Ops surface
+	// still mounts, every request to it is a 404 exactly as an address nobody
+	// mounted is, and boot says so once: a control plane nobody can reach is
+	// worth a line in the log rather than a silent surprise on the first
+	// incident.
+	Installation string
+
+	// WriteLimiter counts the anonymous writes of the Public surface, which are
+	// the writes with no account to lock out. Nil leaves them uncounted — a
+	// deployment that mounts nothing anonymous never needs one, and a test that
+	// mounts one route is not testing a limit.
+	//
+	// The counter runs on a detached context, outside the request's transaction
+	// and on the limiter's own budget: a refused public write must not be a
+	// transaction that rolled back an attempt nobody made, and a counted one must
+	// survive the refusal that followed it. That is the same argument the auth
+	// module makes for its lockout.
+	WriteLimiter WriteLimiter
+}
+
+// WriteLimiter is the counting this kernel asks for and nothing more: it is the
+// shape one method wide, declared by the consumer rather than imported from the
+// provider, so that a page renderer that reaches for the router does not
+// inherit a dependency on how the counting is stored. kit/limit's Limiter
+// satisfies it — a Postgres counter or an in-memory one, at the composition's
+// choice — and a test satisfies it with a counter.
+type WriteLimiter interface {
+	Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error)
 }
 
 // The two body ceilings, and the reason there are two.
@@ -230,6 +264,19 @@ type API struct {
 	mu       sync.Mutex
 	ops      []*huma.Operation
 	declared []tenancy.Grant
+	// mounts is every route this composition mounted, with the surface it was
+	// mounted on; refusals is every mount-time refusal collected on the way;
+	// homes records which module took which surface's root; known is the set of
+	// module names the composition registered, which is what bounds
+	// Router.ForModule. All four are written only while Routes runs, which is
+	// before anything serves, and read under the mutex beside the operations.
+	mounts   []mounted
+	refusals []string
+	homes    map[Surface]string
+	known    map[string]bool
+	// opsHost is Options.Installation normalised once, so the gate that runs on
+	// every request compares two already-normalised strings.
+	opsHost string
 	// resources are the entities kit/rest has mounted, for the screens that
 	// are generated from them rather than written. See schemas.go.
 	resources []Resource
@@ -286,13 +333,23 @@ func New(cfg Options) (*API, *chi.Mux) {
 	if a.log == nil {
 		a.log = slog.Default()
 	}
+	a.opsHost = HostOnly(cfg.Installation)
 
-	// The security headers, outermost and on the router that carries the static
-	// tree as well as the API: a stylesheet, a 404 from chi and a panic that
-	// never reached a handler are all responses a browser acts on. chi refuses
-	// a middleware added after the first route, so this is here rather than
-	// beside Static. See headers.go.
-	root.Use(a.headers)
+	// Which surface is this address, then the security headers that surface
+	// decided, then whether the address is served here at all — outermost and on
+	// the router that carries the static tree as well as the API: a stylesheet, a
+	// 404 from chi and a panic that never reached a handler are all responses a
+	// browser acts on. chi refuses a middleware added after the first route, so
+	// all three are here rather than beside Static.
+	//
+	// The gate runs *inside* the headers, and that order is the whole of its
+	// secrecy: the answer it gives for an address it refuses is the answer an
+	// address nobody mounted gets, and to be that answer it has to be dressed by
+	// the same layer that dresses every other answer of this host. A gate that
+	// answered ahead of the headers was distinguishable from an unmounted address
+	// by five response headers, which is the one fact it exists to hide. See
+	// surfaces.go and headers.go.
+	root.Use(a.requestID, a.surface, a.headers, a.address)
 
 	// What chi itself answers when nothing matched, or matched but not for this verb.
 	//
@@ -306,22 +363,25 @@ func New(cfg Options) (*API, *chi.Mux) {
 	root.NotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, http.StatusNotFound, "nothing is served at this address")
 	}))
-	root.MethodNotAllowed(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		a.fail(w, r, http.StatusMethodNotAllowed, "this address does not accept "+r.Method+" requests")
-	}))
+	root.MethodNotAllowed(http.HandlerFunc(a.methodNotAllowed))
 
 	// The net/http half of the chain, in order, and before any route: chi
 	// refuses a middleware added after the first one is mounted, and the huma
 	// adapter below mounts huma's own.
 	//
-	// The request id goes first, because everything below logs it and every
-	// problem body carries it. respond is second, holding the response and
-	// catching a panic, outside the transaction on purpose. csrf is third: a
-	// cross-site write is refused before it reaches a router, a tenant or a
-	// transaction. carry is last and does nothing but put the request itself on
-	// the context, for the authentication hook further down, which runs inside
-	// the tenant transaction and still has to read the caller's cookies.
-	inner.Use(a.requestID, a.respond, a.csrf, a.carry)
+	// respond is first, holding the response and catching a panic, outside the
+	// transaction on purpose. csrf is second: a cross-site write is refused
+	// before it reaches a router, a tenant or a transaction. carry is last and
+	// does nothing but put the request itself on the context, for the
+	// authentication hook further down, which runs inside the tenant transaction
+	// and still has to read the caller's cookies.
+	//
+	// The request id is not here: it went to the root router with the surfaces,
+	// so that the refusals chi answers for itself — an address nobody mounted —
+	// carry one too. A person quoting a 404 and an operator reading the log have
+	// to land on the same request, and the 404 is the response most likely to be
+	// quoted.
+	inner.Use(a.respond, a.csrf, a.carry)
 
 	// huma.NewAPI mounts its own documentation routes through the adapter it is
 	// handed, so the recorder declares those Public as they arrive: they serve
@@ -333,20 +393,48 @@ func New(cfg Options) (*API, *chi.Mux) {
 	a.adapter = rec
 
 	// The huma half of the chain, in order. Tenant first, because everything
-	// after it is scoped to one. Transaction second, so that authentication and
-	// authorization can read the tenant's own rows: both are queries, and they
-	// belong inside the same transaction as the work they guard. Authentication
-	// third, because a session is a row of the tenant that has just resolved.
-	// Authorization fourth, so a denial rolls that transaction back untouched.
-	// Bodies last, after every guard and before the handler, which is where the
-	// two things it does both belong: nothing above it reads a body, and the
-	// transaction it ends for a streaming route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.transaction, a.authenticate, a.authorize, a.bodies)
+	// after it is scoped to one. The public write limit second, and that place is
+	// the point twice over: the key it counts under names the tenant the host just
+	// resolved, and it is still ahead of the transaction, so a refused anonymous
+	// write is not a request that opened a transaction to be told no and the count
+	// survives the refusal by being written on a detached context of its own.
+	// Transaction third, so that authentication and authorization can read the
+	// tenant's own rows: both are queries, and they belong inside the same
+	// transaction as the work they guard. Authentication fourth, because a session
+	// is a row of the tenant that has just resolved. Authorization fifth, so a
+	// denial rolls that transaction back untouched. Bodies last, after every guard
+	// and before the handler, which is where the two things it does both belong:
+	// nothing above it reads a body, and the transaction it ends for a streaming
+	// route is the one the guards opened.
+	a.api.UseMiddleware(a.tenant, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
 	root.Mount("/", inner)
 	return a, root
+}
+
+// methodNotAllowed answers an address that is served but does not take this
+// verb. It is chi's answer, with one exception that is not chi's: a resource
+// whose reads answer at this address and whose writes answer on the surface its
+// write permission belongs on — a price list, read by the tenant that pays for it
+// and written by the installation — is asked at its read door by exactly the
+// caller who derived that door from the catalog and derived it wrong.
+//
+// For them chi's sentence, "this address does not accept POST requests", is the
+// one an address that never heard of the resource also says, and the catalog they
+// are holding does name the door: it is the entry's write_path, which is the same
+// sentence this answer gives. The write is still refused, and refused it writes
+// nothing and publishes nothing — what changes is that the refusal carries the
+// way out. See API.writeElsewhere for when the address is named at all.
+func (a *API) methodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	if at, entity := a.writeElsewhere(r); at != "" {
+		a.rlog(r.Context()).InfoContext(r.Context(), "httpx: a write of a split resource was asked at its read door",
+			"code", CodeWriteElsewhere, "method", r.Method, "path", r.URL.Path, "writes", at, "entity", entity)
+		a.fail(w, r, http.StatusForbidden, CodeWriteElsewhere+": this address reads the "+entity+" and does not write it; write it at "+at)
+		return
+	}
+	a.fail(w, r, http.StatusMethodNotAllowed, "this address does not accept "+r.Method+" requests")
 }
 
 // SystemToken is the capability that opens a cross-tenant transaction, handed
@@ -364,16 +452,6 @@ func New(cfg Options) (*API, *chi.Mux) {
 // opens the system transaction on a detached context (db.Detached) — two
 // transactions, and the control-plane one commits on its own.
 func (a *API) SystemToken() tenancy.SystemToken { return a.system }
-
-// Static mounts a file tree beside the API, on the router that carries neither
-// the request middleware nor the transaction. Static assets are not operations:
-// there is no handler to authorize, no tenant transaction to open and nothing
-// to declare, so they never appear in Recorded and never hold a response in
-// memory waiting for a commit.
-func (a *API) Static(prefix string, fsys fs.FS) {
-	at := strings.TrimSuffix(prefix, "/")
-	a.root.Handle(at+"/*", http.StripPrefix(at, http.FileServerFS(fsys)))
-}
 
 // Probes mounts handlers beside the API, on the router that carries neither the
 // request middleware nor a transaction. kit/health is the only caller, and the
@@ -445,6 +523,19 @@ func (a *API) Recorded() []*huma.Operation {
 // middleware denies the same operations, so this turns a 403 nobody notices
 // into a startup failure someone has to fix.
 func (a *API) ValidateDeclarations() error {
+	// Huma mounts a route of its own — /schemas/{schema}, which a problem
+	// document's $schema points at — and it was not mounted through a router, so
+	// nothing stamped its surface. The address is the answer, and it is the same
+	// function the request chain runs: an operation that reaches the document
+	// without saying where it lives is stated here rather than left unstated.
+	for _, op := range a.Recorded() {
+		if op.Extensions == nil {
+			op.Extensions = map[string]any{}
+		}
+		if _, ok := op.Extensions[SurfaceExtension]; !ok {
+			op.Extensions[SurfaceExtension] = string(classify(op.Path))
+		}
+	}
 	var bad, unanswerable []string
 	for _, op := range a.Recorded() {
 		auth, ok := declarationOf(op)
@@ -462,6 +553,13 @@ func (a *API) ValidateDeclarations() error {
 			len(unanswerable), strings.Join(unanswerable, "\n  "))
 	}
 	if len(bad) == 0 {
+		// The surface gate runs last and only when nothing else failed, because
+		// a route that was never declared has no surface either and the two
+		// messages together would read as two faults where one was made.
+		if refusals := a.validateSurfaces(); len(refusals) > 0 {
+			return fmt.Errorf("httpx: %d route(s) contradict the router they are mounted on:\n  %s",
+				len(refusals), strings.Join(refusals, "\n  "))
+		}
 		return nil
 	}
 	sort.Strings(bad)

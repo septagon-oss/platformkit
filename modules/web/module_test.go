@@ -56,11 +56,18 @@ func site(t *testing.T) (http.Handler, *sitetest.Fake, *contenttest.Fake) {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	settings, contents := sitetest.NewFake(), contenttest.NewFake()
-	m := web.Module(web.Deps{Site: settings, Content: contents, Theme: design.Default()})
+	m := web.Module(web.Deps{
+		Site: settings, Content: contents, Theme: design.Default(),
+		// Two addresses this module links and does not own: the workspace's
+		// sign-in page and the file module's public door. The composition names
+		// them, which is why this fixture names them too.
+		SignInPath:    "/app/admin/login",
+		PublicFileURL: func(id string) string { return "/api/v1/public/file/files/" + id },
+	})
 	if err := module.Validate([]module.Module{m}); err != nil {
 		t.Fatalf("manifest: %v", err)
 	}
-	m.Routes(api)
+	m.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("declarations: %v", err)
 	}
@@ -83,7 +90,7 @@ func TestAFreshSiteSaysSoAndPointsAtTheAdmin(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status %d: %s", status, body)
 	}
-	for _, want := range []string{"Nothing published yet", `href="/admin/login"`, `<title>Welcome · Acme</title>`} {
+	for _, want := range []string{"Nothing published yet", `href="/app/admin/login"`, `<title>Welcome · Acme</title>`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
@@ -155,3 +162,9 @@ func TestAnUnknownHostServesNoSite(t *testing.T) {
 		t.Fatalf("status %d", rec.Code)
 	}
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.
+func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("web") }

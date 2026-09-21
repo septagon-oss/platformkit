@@ -47,6 +47,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
+// review6Module is the module these cases mount their catalogue as. Every
+// address below is composed from it and the surface the permissions choose;
+// nothing here writes a prefix.
+const review6Module = "billing"
+
 // sharedCatalogue is mountCatalog's mount given the soft-delete flag and the
 // API, so one case can ask both statements a delete becomes and reach the two
 // closures a page calls as well as the five routes.
@@ -67,9 +72,9 @@ func sharedCatalogue(t *testing.T, soft bool) (*httpx.API, http.Handler, *sql.DB
 		Log: slog.New(slog.DiscardHandler),
 	})
 	rest.Spec[*Plan]{
-		Module: "billing", Entity: "plan", Path: "/api/v1/billing/plans",
+		Module: review6Module, Entity: "plan", Path: "/plans",
 		Read: "billing:read", Write: "billing:catalog", SoftDelete: soft,
-	}.Mount(api)
+	}.Mount(api.Surfaces(review6Module))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -131,10 +136,15 @@ func stampOf(t *testing.T, admin *sql.DB, key string) string {
 // carries. What the closures did is collected in fail rather than returned: a
 // returned error would be answered through the kernel's own mapping, and these
 // cases are about the input to that mapping.
+//
+// The route is the billing module's own, on the surface that module's
+// permissions put it on, so the kernel composes its address from the module and
+// the surface — the callers ask it back with app.Path rather than spelling an
+// address this file does not own.
 func inPage(t *testing.T, api *httpx.API, path, verb string, fail *[]string,
 	body func(context.Context, httpx.Resource, *[]string)) {
 	t.Helper()
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(review6Module).App, huma.Operation{
 		OperationID: "review6-" + verb, Method: http.MethodPost, Path: path,
 		Hidden: true, DefaultStatus: http.StatusNoContent,
 	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{}, error) {
@@ -318,7 +328,7 @@ func TestThePageDoorRefusesARowAnotherTenantOwnsTheWayTheRouteDoes(t *testing.T)
 
 	// The foreign row first, and the counts asked before the control runs, so a
 	// published event cannot be attributed to the wrong half of the case.
-	if code, out := askAs(t, router, "reader.test", http.MethodPost, "/review6/foreign", ""); code != http.StatusNoContent {
+	if code, out := askAs(t, router, "reader.test", http.MethodPost, api.Surfaces(review6Module).App.Path("/review6/foreign"), ""); code != http.StatusNoContent {
 		t.Fatalf("the foreign-row probe request = %d %s, want 204 so the closures were reached", code, out)
 	}
 	for _, f := range refused {
@@ -334,7 +344,7 @@ func TestThePageDoorRefusesARowAnotherTenantOwnsTheWayTheRouteDoes(t *testing.T)
 		t.Errorf("the page's refused delete published %d billing.plan.deleted events, want none", n)
 	}
 
-	if code, out := askAs(t, router, "reader.test", http.MethodPost, "/review6/own", ""); code != http.StatusNoContent {
+	if code, out := askAs(t, router, "reader.test", http.MethodPost, api.Surfaces(review6Module).App.Path("/review6/own"), ""); code != http.StatusNoContent {
 		t.Fatalf("the own-row probe request = %d %s, want 204 so the control ran", code, out)
 	}
 	for _, f := range control {

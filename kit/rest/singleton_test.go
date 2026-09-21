@@ -29,7 +29,7 @@ type Settings = Task
 // is smaller than the row.
 func singleton(save bool, public bool) rest.Singleton[*Settings] {
 	s := rest.Singleton[*Settings]{
-		Module: "site", Entity: "settings", Path: "/api/v1/site/settings",
+		Module: "site", Entity: "settings", Path: "/settings",
 		Read:  "task:read",
 		Event: "site.settings_updated",
 		Load: func(_ context.Context, tx db.Tx[db.Tenant]) (*Settings, error) {
@@ -78,7 +78,7 @@ func mountSingleton(t *testing.T, s rest.Singleton[*Settings]) (*httpx.API, chi.
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	s.Mount(api)
+	s.Mount(api.Surfaces(s.Module))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -91,6 +91,7 @@ func mountSingleton(t *testing.T, s rest.Singleton[*Settings]) (*httpx.API, chi.
 func TestASingletonReadsWritesAndShowsAFace(t *testing.T) {
 	api, router := mountSingleton(t, singleton(true, true))
 	const at = "/api/v1/site/settings"
+	const door = "/api/v1/public/site/settings"
 
 	code, body := call(t, router, http.MethodGet, at, "")
 	if code != http.StatusOK || !strings.Contains(body, `"title":"unnamed"`) {
@@ -103,8 +104,10 @@ func TestASingletonReadsWritesAndShowsAFace(t *testing.T) {
 		t.Errorf("the read after the PUT = %d %s", code, body)
 	}
 
-	// The public door serves the face and not the row.
-	req := httptest.NewRequest(http.MethodGet, "http://"+host+at+"/public", nil)
+	// The public door serves the face and not the row, and it is served on the
+	// public surface: a door anybody may knock on has no part of a customer's
+	// workspace in its address.
+	req := httptest.NewRequest(http.MethodGet, "http://"+host+door, nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	switch {
@@ -114,6 +117,12 @@ func TestASingletonReadsWritesAndShowsAFace(t *testing.T) {
 		t.Errorf("the public face is %s", w.Body.String())
 	case strings.Contains(w.Body.String(), "priority") || strings.Contains(w.Body.String(), "createdAt"):
 		t.Errorf("the public door served the whole row: %s", w.Body.String())
+	}
+
+	// Where the door used to be answers the redirect, for one release, and never
+	// a second mount: the same face is served, at the address above.
+	if code, _ := call(t, router, http.MethodGet, at+"/public", ""); code != http.StatusFound {
+		t.Errorf("the address the public door used to answer at = %d, want the redirect", code)
 	}
 
 	// There is no item path, no create and no delete: a tenant has one, and it
@@ -134,7 +143,7 @@ func TestASingletonReadsWritesAndShowsAFace(t *testing.T) {
 	for _, r := range api.Resources() {
 		if r.Module == "site" && r.Entity == "settings" {
 			found = true
-			if r.Write != "task:write" || r.Path != at {
+			if r.Write != "task:write" || r.Path != "/settings" || r.Schema.Path != at {
 				t.Errorf("the resource is %+v", r)
 			}
 		}
@@ -157,7 +166,7 @@ func TestAReadOnlySingletonHasNoWriteAndNoScreen(t *testing.T) {
 	if code, _ := call(t, router, http.MethodPut, at, `{"title":"Acme"}`); code != http.StatusMethodNotAllowed && code != http.StatusNotFound {
 		t.Errorf("a PUT on a read-only singleton = %d, want no such route", code)
 	}
-	if code, _ := call(t, router, http.MethodGet, at+"/public", ""); code != http.StatusMethodNotAllowed && code != http.StatusNotFound {
+	if code, _ := call(t, router, http.MethodGet, "/api/v1/public/site/settings", ""); code != http.StatusMethodNotAllowed && code != http.StatusNotFound {
 		t.Errorf("a public door nobody asked for = %d, want no such route", code)
 	}
 	for _, r := range api.Resources() {
@@ -171,11 +180,11 @@ func TestAReadOnlySingletonHasNoWriteAndNoScreen(t *testing.T) {
 // broken routes fail where they are written.
 func TestASingletonRefusesAWiringMistake(t *testing.T) {
 	for what, s := range map[string]rest.Singleton[*Settings]{
-		"no Load":          {Module: "site", Entity: "settings", Path: "/api/v1/site/settings", Read: "task:read"},
+		"no Load":          {Module: "site", Entity: "settings", Path: "/settings", Read: "task:read"},
 		"a path with no /": {Module: "site", Entity: "settings", Path: "api/v1", Read: "task:read", Load: singleton(false, false).Load},
-		"public with no Face": {Module: "site", Entity: "settings", Path: "/api/v1/site/settings", Read: "task:read",
+		"public with no Face": {Module: "site", Entity: "settings", Path: "/settings", Read: "task:read",
 			Load: singleton(false, false).Load, Public: true},
-		"a write with no Save": {Module: "site", Entity: "settings", Path: "/api/v1/site/settings", Read: "task:read",
+		"a write with no Save": {Module: "site", Entity: "settings", Path: "/settings", Read: "task:read",
 			Load: singleton(false, false).Load, Write: "task:write"},
 	} {
 		t.Run(what, func(t *testing.T) {
@@ -188,7 +197,7 @@ func TestASingletonRefusesAWiringMistake(t *testing.T) {
 					t.Errorf("%s mounted with %v; want the wiring refusal", what, got)
 				}
 			}()
-			s.Mount(nil)
+			s.Mount(httpx.Surfaces{})
 		})
 	}
 }

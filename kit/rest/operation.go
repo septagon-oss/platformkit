@@ -24,10 +24,10 @@ type OperationOptions struct {
 // The callback receives the request's tenant transaction and principal ID; a
 // Public operation may receive uuid.Nil. SignedIn and Permission still require
 // identity through httpx.Register. Returning an error rolls back the transaction.
-func Operation[I, O any](api *httpx.API, op huma.Operation, access httpx.Auth,
+func Operation[I, O any](r *httpx.Router, op huma.Operation, access httpx.Auth,
 	run func(context.Context, db.Tx[db.Tenant], uuid.UUID, *I) (O, error), opts OperationOptions,
 ) {
-	httpx.Register(api, op, access, func(ctx context.Context, in *I) (*operationResponse[O], error) {
+	httpx.Register(r, op, access, func(ctx context.Context, in *I) (*operationResponse[O], error) {
 		tx, err := transaction(ctx)
 		if err != nil {
 			return nil, err

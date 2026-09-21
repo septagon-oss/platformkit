@@ -108,12 +108,14 @@ var pageErrors = []int{http.StatusNotFound, http.StatusUnprocessableEntity, http
 // visitor is sent to (SignIn). What is not the caller's is the shape of the
 // answer, which is why a SeeOther returned by the handler becomes the redirect
 // here rather than in each of the seven screens that return one.
-func HTML[I any](api *API, op huma.Operation, auth Auth, handler func(context.Context, *I) (*Page, error)) {
+func HTML[I any](r *Router, op huma.Operation, auth Auth, handler func(context.Context, *I) (*Page, error)) {
 	op.Hidden = true
 	if len(op.Errors) == 0 {
 		op.Errors = pageErrors
 	}
-	Register(api, op, auth, func(ctx context.Context, in *I) (*Page, error) {
+	op.Path = r.compose(op.Path, true)
+	prepare(r, &op, auth, true)
+	huma.Register(r.api.api, op, func(ctx context.Context, in *I) (*Page, error) {
 		out, err := handler(ctx, in)
 		if to, ok := errors.AsType[SeeOther](err); ok {
 			return Redirect(ctx, string(to)), nil

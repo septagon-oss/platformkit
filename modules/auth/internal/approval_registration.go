@@ -16,9 +16,9 @@ import (
 // RegisterApprovalRegistrationRoutes composes a trusted user registrar with
 // the same public abuse budget as email signup and password recovery. Passwords
 // travel directly to the user owner; neither credentials nor hashes enter events.
-func RegisterApprovalRegistrationRoutes(api *httpx.API, svc *Service, policy contracts.ApprovalRegistration) {
-	httpx.Register(api, huma.Operation{
-		OperationID: "auth-register", Method: http.MethodPost, Path: Path + "/register",
+func RegisterApprovalRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, policy contracts.ApprovalRegistration) {
+	httpx.Register(surfaces.Public, huma.Operation{
+		OperationID: "auth-register", Method: http.MethodPost, Path: "/register",
 		Summary:     "Request an account requiring approval",
 		Description: "Accepts a password, matching confirmation and terms consent. New accounts await operator approval before sign-in. Existing accounts retain their identity, credentials, roles and status; every accepted request receives the same acknowledgment.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,

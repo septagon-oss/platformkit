@@ -33,7 +33,7 @@ func TestConcurrentEmailVerificationConsumesOnlyOnce(t *testing.T) {
 	for range 2 {
 		callers.Go(func() {
 			<-start
-			res := call(t, router, http.MethodPost, "/api/v1/auth/verify-email", body, func(r *http.Request) {
+			res := call(t, router, http.MethodPost, "/api/v1/public/auth/verify-email", body, func(r *http.Request) {
 				*r = *r.WithContext(ctx)
 			})
 			if len(res.Result().Cookies()) != 0 {
@@ -85,7 +85,7 @@ func TestEmailVerificationRechecksCredentialAfterAdvisoryWait(t *testing.T) {
 			defer callers.Wait()
 			defer blocker.Rollback()
 			callers.Go(func() {
-				res := call(t, router, http.MethodPost, "/api/v1/auth/verify-email", body, func(r *http.Request) {
+				res := call(t, router, http.MethodPost, "/api/v1/public/auth/verify-email", body, func(r *http.Request) {
 					*r = *r.WithContext(ctx)
 				})
 				response <- res.Code
@@ -121,7 +121,7 @@ func TestEmailVerificationRechecksCredentialAfterAdvisoryWait(t *testing.T) {
 			}
 			assertVerificationState(t, admin, u, user.StatusUnverified, 1, 0)
 			if change == "rotation" {
-				res := call(t, router, http.MethodPost, "/api/v1/auth/verify-email", verificationBody(t, replacement))
+				res := call(t, router, http.MethodPost, "/api/v1/public/auth/verify-email", verificationBody(t, replacement))
 				if res.Code != http.StatusOK {
 					t.Fatalf("the replacement verification credential = %d", res.Code)
 				}
@@ -139,7 +139,7 @@ func TestEmailVerificationEventFailureRollsBackConsumption(t *testing.T) {
 	if _, err := admin.ExecContext(t.Context(), "ALTER TABLE platformkit_outbox ADD CONSTRAINT reject_verification_event CHECK (name <> 'user.email_verified')"); err != nil {
 		t.Fatal(err)
 	}
-	res := call(t, router, http.MethodPost, "/api/v1/auth/verify-email", body)
+	res := call(t, router, http.MethodPost, "/api/v1/public/auth/verify-email", body)
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("verification with a refused durable event = %d", res.Code)
 	}
@@ -147,7 +147,7 @@ func TestEmailVerificationEventFailureRollsBackConsumption(t *testing.T) {
 	if _, err := admin.ExecContext(t.Context(), "ALTER TABLE platformkit_outbox DROP CONSTRAINT reject_verification_event"); err != nil {
 		t.Fatal(err)
 	}
-	res = call(t, router, http.MethodPost, "/api/v1/auth/verify-email", body)
+	res = call(t, router, http.MethodPost, "/api/v1/public/auth/verify-email", body)
 	if res.Code != http.StatusOK {
 		t.Fatalf("the same credential after rolling back failed delivery of its event = %d", res.Code)
 	}
@@ -180,7 +180,7 @@ func TestEmailVerificationRechecksAccountAfterIssuance(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			res := call(t, router, http.MethodPost, "/api/v1/auth/verify-email", verificationBody(t, token))
+			res := call(t, router, http.MethodPost, "/api/v1/public/auth/verify-email", verificationBody(t, token))
 			if res.Code != http.StatusUnauthorized || len(res.Result().Cookies()) != 0 {
 				t.Fatalf("verification after account %s = %d", change, res.Code)
 			}

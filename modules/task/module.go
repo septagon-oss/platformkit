@@ -54,7 +54,7 @@ const sweepEvery = time.Minute
 var spec = rest.Spec[*contracts.Task]{
 	Module:     "task",
 	Entity:     "task",
-	Path:       "/api/v1/task/tasks",
+	Path:       "/tasks",
 	Read:       contracts.PermissionTaskRead,
 	Write:      contracts.PermissionTaskUpdate,
 	SoftDelete: true,
@@ -123,15 +123,15 @@ func Module(deps Deps) module.Module {
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{
-			{Label: "Tasks", Path: "/admin/task/tasks", Permission: contracts.PermissionTaskRead},
+			{Label: "Tasks", Screen: "task/tasks", Permission: contracts.PermissionTaskRead},
 		},
 		Jobs: []jobs.Job{internal.SLASweep(deps.Tenants, svc, every)},
 		// Written out so the absence is a decision: a task is raised by whoever
 		// raises it, and this module has no opinion about anybody else's events.
 		Subscriptions: nil,
-		Routes: func(api *httpx.API) {
-			mounted.Mount(api)
-			internal.RegisterRoutes(api, mounted, svc)
+		Routes: func(s httpx.Surfaces) {
+			mounted.Mount(s)
+			internal.RegisterRoutes(s, mounted, svc)
 		},
 	}
 }

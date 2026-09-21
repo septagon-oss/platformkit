@@ -135,7 +135,29 @@ func compose(cfg config.Config) composition {
 		fileModule,
 		// The public site reads what the two above publish and claims the root.
 		// A product with a storefront of its own composes that instead.
-		web.Module(web.Deps{Site: sites, Content: contents, Theme: design.Default()}),
+		web.Module(web.Deps{
+			Site: sites, Content: contents, Theme: design.Default(),
+			// The two addresses the public site links and does not serve. They
+			// are written here because they are this product's facts: which
+			// shell it composed, and which door of which module answers for a
+			// file a visitor may see. A module that named them would be naming a
+			// surface it does not serve (see web.Deps), and a composition that
+			// writes one is pinning an address the kernel composed — which is
+			// only safe because a test asks the running server: the sign-in page
+			// by TestPinnedAddresses, and the logo's file by
+			// TestThePublicPageLinksOnlyAddressesTheInstallationServes, which
+			// uploads a public file, sets it as the tenant's logo, reads the src
+			// back off the public home page and fetches it.
+			//
+			// The file address is the file module's public door as the surface
+			// composes it — /api/v1/public/<module>/<rel> — and not the /files/<id>
+			// the module used to spell for itself: that spelling is a *document*
+			// address, and the module that claims the public root answers
+			// documents at /{slug}, so a two-segment /files/<id> is served by
+			// nothing at all.
+			SignInPath:    pinnedSignIn,
+			PublicFileURL: func(id string) string { return pinnedPublicFile + "/" + id },
+		}),
 	}
 	// The trail is this reference product's worked example of something a plan
 	// includes or does not. The name is the price list's, and it is chosen here
@@ -157,7 +179,9 @@ func compose(cfg config.Config) composition {
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
 		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
-		Messages: page.FromCatalog(admin.Messages()), Locale: loginLocale}))
+		Messages: page.FromCatalog(admin.Messages()), Locale: loginLocale,
+		// The form on the shell's login page posts to the auth module's door.
+		SignIn: pinnedSignInAPI}))
 
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
 		notify: notify, mail: mail, plans: plans}

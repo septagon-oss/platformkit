@@ -27,6 +27,20 @@ type Deps struct {
 	Site    sitecontracts.Service
 	Content contentcontracts.Service
 	Theme   design.Pair
+
+	// SignInPath is where a visitor who wants to sign in is sent. The site has
+	// no sign-in of its own — the auth module mints the session and the shell
+	// owns the form — so the address belongs to whoever composed the two, and
+	// this is the line that says where the workspace ended up. A literal here
+	// would be this module naming a surface it does not serve, which is why the
+	// composition writes it and app_test.go asks the running server that the
+	// address it wrote is the address that answers.
+	SignInPath string
+
+	// PublicFileURL answers the address of a file a visitor may see, which is
+	// the file module's business and this composition's knowledge. The logo is
+	// the one file the site renders.
+	PublicFileURL func(id string) string
 }
 
 // Module is the manifest: two public routes and nothing else to declare.
@@ -34,14 +48,20 @@ func Module(deps Deps) module.Module {
 	if deps.Site == nil || deps.Content == nil {
 		panic("web: Deps.Site and Deps.Content are required; the site renders what they publish")
 	}
+	if deps.SignInPath == "" || deps.PublicFileURL == nil {
+		panic("web: Deps.SignInPath and Deps.PublicFileURL are required; the site links a sign-in it does not serve and a file it does not store")
+	}
 	return module.Module{
 		Name:          "web",
 		Permissions:   nil,
 		Events:        nil,
 		Jobs:          nil,
 		Subscriptions: nil,
-		Routes: func(api *httpx.API) {
-			internal.Mount(api, internal.Site{Settings: deps.Site, Content: deps.Content, Theme: deps.Theme})
+		Routes: func(r httpx.Surfaces) {
+			internal.Mount(r, internal.Site{
+				Settings: deps.Site, Content: deps.Content, Theme: deps.Theme,
+				SignIn: deps.SignInPath, File: deps.PublicFileURL,
+			})
 		},
 	}
 }

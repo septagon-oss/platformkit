@@ -1,7 +1,6 @@
 package httpx
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -189,13 +188,27 @@ func declare(op *huma.Operation, auth Auth) {
 	op.Extensions[AuthExtension] = auth
 }
 
-// Register mounts an operation together with the authorization it declares. It
-// is the only way a module registers a handler, and the declaration is a
-// parameter rather than a field, so an operation cannot be written without one.
-func Register[I, O any](api *API, op huma.Operation, auth Auth, handler func(context.Context, *I) (*O, error)) {
-	if !auth.Declared() {
-		panic("httpx.Register: " + describe(&op) + " was passed the zero Auth; use Permission, Public or SignedIn")
+// String is the declaration as prose: what a refusal message, a Mounted record
+// and the boot log print. It is the same four names the OpenAPI document
+// carries, spelled the way a person quotes them — "permission task:read" rather
+// than a JSON object — because the place it is read most is an error message
+// somebody has to act on.
+func (a Auth) String() string {
+	switch a.kind {
+	case kindPermission:
+		return "permission " + a.permission
+	case kindOperator:
+		return "operator_permission " + a.permission
+	case kindPublic:
+		return "public"
+	case kindSignedIn:
+		return "signed_in"
 	}
-	declare(&op, auth)
-	huma.Register(api.api, op, handler)
+	return "undeclared"
 }
+
+// Operator reports whether this declaration is the installation's rather than a
+// customer's. The question is asked in two places — kit/rest, to decide which
+// router a command belongs on, and this package's own authorizer, before it
+// asks anybody's roles table — and it is one question, so it has one answer.
+func (a Auth) Operator() bool { return a.kind == kindOperator }

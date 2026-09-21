@@ -82,7 +82,7 @@ func Module(deps Deps) module.Module {
 		// None, and the absence is the decision: see the package comment.
 		Events: nil,
 		Nav: []module.NavEntry{
-			{Label: "Audit", Path: "/admin/audit/events", Permission: contracts.PermissionAuditRead},
+			{Label: "Audit", Screen: "audit/events", Permission: contracts.PermissionAuditRead},
 		},
 		Jobs: []jobs.Job{internal.Retention(deps.Tenants, days)},
 		// One handler, and the kernel writes the names: SubscribeAll is
@@ -91,6 +91,6 @@ func Module(deps Deps) module.Module {
 		// this one is audited by having emitted an event and by nothing else.
 		SubscribeAll:  true,
 		Subscriptions: []events.Subscription{{Module: "audit", Handler: svc.Record}},
-		Routes:        func(api *httpx.API) { internal.RegisterRoutes(api, svc, deps.Feature) },
+		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc, deps.Feature) },
 	}
 }

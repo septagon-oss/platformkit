@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -26,10 +27,20 @@ type Navigation struct {
 // NewNavigation takes the entries, the paths a GET answers, and the grants the
 // routes declared; the operator flag on a grant is what says an entry is the
 // installation's rather than a customer's.
+//
+// An entry names its screen relative to the workspace — "task/tasks" — and this
+// is where the workspace's own address goes in front of it, once, so that no
+// module's manifest has to know where the shell is mounted.
 func NewNavigation(entries []module.NavEntry, served []string, required []tenancy.Grant) Navigation {
-	n := Navigation{entries: entries, served: map[string]bool{}, operator: map[string]bool{}}
+	n := Navigation{entries: slices.Clone(entries), served: map[string]bool{}, operator: map[string]bool{}}
 	for _, p := range served {
 		n.served[p] = true
+	}
+	// The copy above is the point: the entries belong to the manifests that
+	// declared them, and writing a prefix into the caller's slice would be the
+	// composition editing somebody else's data.
+	for i := range n.entries {
+		n.entries[i].Screen = httpx.Workspace(n.entries[i].Screen)
 	}
 	for _, g := range required {
 		if g.Operator {
@@ -57,7 +68,7 @@ func Served(recorded []*huma.Operation) []string {
 func (n Navigation) Unserved() []module.NavEntry {
 	var out []module.NavEntry
 	for _, e := range n.entries {
-		if !n.served[e.Path] {
+		if !n.served[e.Screen] {
 			out = append(out, e)
 		}
 	}
@@ -70,10 +81,17 @@ func (n Navigation) Unserved() []module.NavEntry {
 // so a link that is shown is a link that works. A request that resolved no
 // tenant is asked nothing beyond served, which is what an unresolved host gets
 // everywhere else too.
+//
+// The entries come back carrying the resolved address, because the caller is a
+// shell rendering an href. That an entry names its screen relative to the
+// workspace is a manifest's claim about what it serves; by the time a page
+// renders it, it is a link, and this is the one place the two become each
+// other. Unserved quotes the same resolved address, which is the one a person
+// can go and look at.
 func (n Navigation) Visible(ctx context.Context, t tenancy.Tenant, authorize httpx.Authorizer) []module.NavEntry {
 	var out []module.NavEntry
 	for _, e := range n.entries {
-		if !n.served[e.Path] {
+		if !n.served[e.Screen] {
 			continue
 		}
 		grant := tenancy.Grant{Permission: e.Permission, Operator: n.operator[e.Permission]}

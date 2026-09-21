@@ -16,7 +16,8 @@ npm --prefix ui/storybook run build -- /tmp/platformkit-storybook < /tmp/platfor
 
 Set `server.storybook_dir: /tmp/platformkit-storybook` in the reference app's
 local configuration, then start or restart that app using that configuration.
-Sign in on the operator tenant and open `/admin/_gallery/storybook/index.html`,
+Sign in on the operator tenant and open
+`/app/admin/_gallery/storybook/index.html`,
 or follow **Open Storybook** in the gallery. Building files alone publishes nothing.
 Keep build directories immutable; select a new directory after rebuilding.
 

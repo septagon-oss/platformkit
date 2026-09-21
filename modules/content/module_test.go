@@ -24,7 +24,7 @@ import (
 const (
 	host   = "acme.test"
 	path   = "/api/v1/content/contents"
-	public = "/api/v1/content/public/"
+	public = "/api/v1/public/content/contents/"
 )
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
@@ -52,7 +52,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	_, contents := content.Module(content.Deps{})
-	contents.Routes(api)
+	contents.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -348,3 +348,9 @@ func quote(s string) string {
 	}
 	return string(out)
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.
+func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("content") }

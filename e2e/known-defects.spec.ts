@@ -15,14 +15,14 @@ import { expect, test } from '@playwright/test';
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
-const tasks = '/admin/task/tasks';
+const tasks = '/app/task/tasks';
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
 });
 
 test('the section navigation is reachable below the sidebar breakpoint', async ({ page }) => {
@@ -41,7 +41,7 @@ test('the section navigation is reachable below the sidebar breakpoint', async (
   // desktop width the same locator must see section links; if it does not, the broken
   // thing here is the test.
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto('/admin');
+  await page.goto('/app');
   const sectionLinks = page.locator('a[data-nav]');
   expect(await visible(sectionLinks), 'no a[data-nav] link is visible at 1280px: this test is broken, not the shell').toBeGreaterThan(0);
 

@@ -88,10 +88,22 @@ func Nonce(ctx context.Context) string {
 	return n
 }
 
+// noindex is what the workspace and the control plane answer with. A crawler
+// that indexes a signed-in page has read somebody's list into a search engine,
+// and no amount of correct caching afterwards takes that back. The public face
+// sets nothing at all: a tenant's public pages exist to be found, and this is
+// the only place the difference is written.
+const noindex = "noindex, nofollow"
+
 // headers sets the three unconditional headers on the way in and the policy on
 // the way out, because whether a response is a document is something only the
 // response knows. A handler that set a policy of its own — the file download
 // does, and it is a stricter one — keeps it.
+//
+// The surface decides the caching and indexing half of the policy, and it is
+// known here and nowhere later: the writer below sees a status, a content type
+// and a method. Everything else the three surfaces share is shared exactly as
+// before this file existed.
 func (a *API) headers(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -102,10 +114,11 @@ func (a *API) headers(next http.Handler) http.Handler {
 			h.Set("Strict-Transport-Security", hsts)
 		}
 		n := nonce()
-		// Whether the caller presented a credential is what decides no-store,
-		// and it is known here and nowhere later: the writer below sees a
-		// content type and no request.
-		next.ServeHTTP(&secured{ResponseWriter: w, nonce: n, private: credentialed(r)},
+		s := SurfaceOf(r.Context())
+		if s != SurfacePublic {
+			h.Set("X-Robots-Tag", noindex)
+		}
+		next.ServeHTTP(&secured{ResponseWriter: w, nonce: n, surface: s, method: r.Method},
 			r.WithContext(context.WithValue(r.Context(), nonceKey{}, n)))
 	})
 }
@@ -114,41 +127,76 @@ func (a *API) headers(next http.Handler) http.Handler {
 // written, which is the first moment the content type is known.
 type secured struct {
 	http.ResponseWriter
-	nonce string
-	// private is a request that presented a credential, so its HTML is
-	// somebody's own and not a page a cache may keep.
-	private bool
+	nonce   string
+	surface Surface
+	method  string
 	done    bool
 }
 
 func (s *secured) WriteHeader(status int) {
-	s.policy()
+	s.policy(status)
 	s.ResponseWriter.WriteHeader(status)
 }
 
 // Write covers the handler that writes a body without a status: net/http calls
 // WriteHeader(200) itself, and by then it is too late to add a header.
 func (s *secured) Write(p []byte) (int, error) {
-	s.policy()
+	s.policy(http.StatusOK)
 	return s.ResponseWriter.Write(p)
 }
 
-func (s *secured) policy() {
+func (s *secured) policy(status int) {
 	if s.done {
 		return
 	}
 	s.done = true
 	h := s.Header()
-	if h.Get("Content-Security-Policy") != "" {
-		return // the handler has a stricter one; see modules/file
-	}
-	if strings.Contains(h.Get("Content-Type"), "html") {
-		h.Set("Content-Security-Policy", strings.Replace(htmlPolicy, "%", s.nonce, 1))
-		// An authenticated document is one tenant's own. A handler that has
-		// already said something about caching keeps it.
-		if s.private && h.Get("Cache-Control") == "" {
-			h.Set("Cache-Control", noStore)
+	if h.Get("Content-Security-Policy") == "" && strings.Contains(h.Get("Content-Type"), "html") {
+		policy := htmlPolicy
+		if s.surface != SurfacePublic {
+			// The workspace may embed nothing. A document that can hold an
+			// <object> can hold a form somebody else's session submits, and
+			// there is no reason a page of a workspace should ever need one.
+			// A handler may narrow the policy further — never widen it: the
+			// stricter value is the one a handler sets beside its own response,
+			// and this line is what it declines to overwrite.
+			policy += "; object-src 'none'"
 		}
+		h.Set("Content-Security-Policy", strings.Replace(policy, "%", s.nonce, 1))
+	}
+	s.caching(status)
+}
+
+// caching is the difference between a face and a workspace, stated once:
+//
+//   - The workspace and the control plane are never cacheable, and that now
+//     covers a JSON answer as much as a page. Leaving the JSON uncached was a
+//     gap rather than a decision: a proxy in front of a workspace would happily
+//     hold one tenant's list of users and hand it to the next person through,
+//     and the response carried nothing to stop it.
+//   - The public face is cacheable by default — public, one minute — on the
+//     safe methods and a success, because a public page that cannot be cached
+//     is a public page served from this process forever, and a 404 that a
+//     cache may keep is a refusal nobody can recover from without a hard
+//     reload.
+//
+// Either way a handler that said something about caching first is believed: it
+// knows whether the bytes are somebody's own, and this function does not.
+func (s *secured) caching(status int) {
+	if h := s.Header(); h.Get("Cache-Control") != "" {
+		return
+	}
+	switch {
+	case s.surface != SurfacePublic:
+		s.Header().Set("Cache-Control", noStore)
+	case status >= 200 && status < 300 && !unsafeMethod(s.method):
+		s.Header().Set("Cache-Control", publicMaxAge)
+	default:
+		// A refusal is never storable, on any surface. Say so rather than
+		// saying nothing: an uncached-by-default 404 is still heuristically
+		// cacheable by a browser, which is how a temporary condition becomes a
+		// page somebody has to hard-reload to get rid of.
+		s.Header().Set("Cache-Control", noStore)
 	}
 }
 
@@ -157,7 +205,7 @@ func (s *secured) policy() {
 func (s *secured) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 func (s *secured) Flush() {
-	s.policy()
+	s.policy(http.StatusOK)
 	if f, ok := s.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

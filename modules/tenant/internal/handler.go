@@ -31,7 +31,7 @@ import (
 // five routes declare httpx.OperatorPermission: the kernel refuses the request
 // at any tenant but the operator's own before it asks the roles table anything,
 // and no wildcard satisfies the grant even there.
-const path = "/api/v1/tenant/tenants"
+const path = "/tenants"
 
 // RegisterRoutes mounts the five control-plane routes.
 //
@@ -45,7 +45,7 @@ const path = "/api/v1/tenant/tenants"
 // system transaction cannot widen a tenant one: db.Detached is what says so out
 // loud. The consequence is written down where it matters — a tenant created
 // here is created whether or not the response afterwards reaches the caller.
-func RegisterRoutes(api *httpx.API, svc contracts.Service, invite contracts.Inviter, token tenancy.SystemToken) {
+func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inviter, token tenancy.SystemToken) {
 	system := func(ctx context.Context, fn func(context.Context, db.Tx[db.System]) error) error {
 		conn, ok := httpx.ConnFrom(ctx)
 		if !ok {
@@ -54,7 +54,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, invite contracts.Invi
 		return db.RunSystem(db.Detached(ctx), conn, token, fn)
 	}
 
-	httpx.Register(api, op("list", http.MethodGet, path, 0, "List the tenants",
+	httpx.Register(r, op("list", http.MethodGet, path, 0, "List the tenants",
 		"Every tenant of this installation, suspended ones included.", nil),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, _ *struct{}) (*listOutput, error) {
@@ -67,7 +67,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, invite contracts.Invi
 			return out, rest.Fault(err)
 		})
 
-	httpx.Register(api, op("create", http.MethodPost, path, http.StatusCreated, "Create a tenant",
+	httpx.Register(r, op("create", http.MethodPost, path, http.StatusCreated, "Create a tenant",
 		"Writes the tenant, its first host and the roles a tenant starts with, in one transaction.",
 		[]string{contracts.EventCreated}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
@@ -81,7 +81,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, invite contracts.Invi
 			return out, rest.Fault(err)
 		})
 
-	httpx.Register(api, op("read", http.MethodGet, path+"/{id}", 0, "Read a tenant", "", nil),
+	httpx.Register(r, op("read", http.MethodGet, path+"/{id}", 0, "Read a tenant", "", nil),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *idInput) (*itemOutput, error) {
 			out := &itemOutput{}
@@ -93,7 +93,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, invite contracts.Invi
 			return out, rest.Fault(err)
 		})
 
-	httpx.Register(api, op("suspend", http.MethodPost, path+"/{id}/suspend", 0, "Suspend a tenant",
+	httpx.Register(r, op("suspend", http.MethodPost, path+"/{id}/suspend", 0, "Suspend a tenant",
 		"Stops the tenant being served: its hosts answer as though no site were there. Suspending it again changes nothing.",
 		[]string{contracts.EventSuspended}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
@@ -109,13 +109,13 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, invite contracts.Invi
 				// a suspension that takes effect in half a minute is a
 				// suspension somebody has to explain.
 				for _, host := range out.Body.Hosts {
-					api.InvalidateHost(host)
+					r.InvalidateHost(host)
 				}
 			}
 			return out, rest.Fault(err)
 		})
 
-	httpx.Register(api, op("add-host", http.MethodPost, path+"/{id}/hosts", http.StatusCreated, "Give a tenant another host",
+	httpx.Register(r, op("add-host", http.MethodPost, path+"/{id}/hosts", http.StatusCreated, "Give a tenant another host",
 		"Adding a host the tenant already answers at changes nothing, unless it makes it the primary one. The primary host is what every absolute URL for this tenant is built on, so a link in a mail is a link to the name its people know.",
 		[]string{contracts.EventHostAdded}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
@@ -146,7 +146,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, invite contracts.Invi
 	// the mail that user.invited causes. So the worst an operator can do with
 	// it is offer somebody a way into a tenant, which is what the control plane
 	// is for.
-	httpx.Register(api, op("invite", http.MethodPost, path+"/{id}/invite", http.StatusCreated,
+	httpx.Register(r, op("invite", http.MethodPost, path+"/{id}/invite", http.StatusCreated,
 		"Give a tenant its first administrator",
 		"Creates an invited administrator in the named tenant and publishes user.invited, which is what mails them a link to choose a password. No password crosses the control plane, and the person cannot sign in until they have followed the link. Inviting an address the tenant already has is a conflict.",
 		[]string{usercontracts.EventInvited}),

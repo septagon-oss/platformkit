@@ -18,10 +18,12 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 )
 
-// PublicPath is where the site reads a page by name. It is a sibling of the
-// Spec's collection rather than a route under it, so that "everything under
-// /api/v1/content/contents needs content:read" stays true by looking.
-const PublicPath = "/api/v1/content/public/{slug}"
+// publicPath is where the site reads a page by name. It is a sibling of the
+// Spec's collection rather than a route under it, mounted on the public
+// surface, so that "everything under /api/v1/content/contents needs
+// content:read" stays true by looking — and the visitor's door is under
+// /api/v1/public/, which is where every anonymous read answers.
+const publicPath = "/contents/{slug}"
 
 // RegisterRoutes mounts the three lifecycle commands and the one public read.
 //
@@ -30,22 +32,22 @@ const PublicPath = "/api/v1/content/public/{slug}"
 // could write status="published" through the generic update would serve a page
 // with no publication time and tell nobody. spec.Immutable is the other half of
 // that argument.
-func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.Content], svc contracts.Service) {
-	rest.Command(api, spec, "publish",
+func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.Content], svc contracts.Service) {
+	rest.Command(surfaces, spec, "publish",
 		"Publish content", "Serves it to anybody, and records when. Publishing what is already published changes nothing; the publication time does not move.",
 		[]string{contracts.EventPublished},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
 			return svc.Publish(ctx, tx, id)
 		}, rest.CommandOptions{})
 
-	rest.Command(api, spec, "unpublish",
+	rest.Command(surfaces, spec, "unpublish",
 		"Unpublish content", "Takes it back to a draft, from published or from archived, and clears the publication time.",
 		[]string{contracts.EventUnpublished},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
 			return svc.Unpublish(ctx, tx, id)
 		}, rest.CommandOptions{})
 
-	rest.Command(api, spec, "archive",
+	rest.Command(surfaces, spec, "archive",
 		"Archive content", "Keeps it and serves it to nobody. Archiving twice changes nothing.",
 		[]string{contracts.EventArchived},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
@@ -57,10 +59,10 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.Content], svc cont
 	// because the tenant still comes from the request's own host and the query
 	// still runs under that tenant's policy: an anonymous caller reads one
 	// tenant's published rows and there is no parameter that could widen it.
-	httpx.Register(api, huma.Operation{
+	httpx.Register(surfaces.Public, huma.Operation{
 		OperationID: "content-content-public",
 		Method:      http.MethodGet,
-		Path:        PublicPath,
+		Path:        publicPath,
 		Summary:     "Read published content by slug",
 		Description: "The rendered, sanitized HTML of one published page or post. A draft, an archived page and a slug nobody has used are the same 404.",
 		Tags:        []string{"content"},

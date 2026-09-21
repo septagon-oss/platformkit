@@ -24,7 +24,7 @@ const bare = checkbox({ name: 'bareChoice', label: '', required: false });
 async function specimen(page: Page) {
   await page.route('**/__checkbox', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
     <html lang="en"><head><meta charset="utf-8"><title>Checkbox contract</title><style>${consent.css}</style>
-    <script defer src="/admin/assets/js/htmx.min.js"></script><script defer src="/admin/assets/js/components.js"></script></head>
+    <script defer src="/app/admin/assets/js/htmx.min.js"></script><script defer src="/app/admin/assets/js/components.js"></script></head>
     <body><main><h1>Checkbox contract</h1><form id="consent">
     <button type="button" id="before">Before controls</button><div>${consent.html}</div>
     <div>${checked.html}</div><div>${mixed.html}</div><div>${disabled.html}</div>${hidden.html}<div>${bare.html}</div>
@@ -134,8 +134,8 @@ test('focus and checked ink remain visible in both themes and forced colors', as
 });
 
 test('mixed state initializes once and form reset restores original native choices', async ({ page }) => {
-  await page.goto(new URL('/admin/login', process.env.PLATFORMKIT_E2E_URL ?? 'http://localhost:8099').href);
-  await expect(page.locator('script[src="/admin/assets/js/components.js"]')).toHaveCount(1);
+  await page.goto(new URL('/app/admin/login', process.env.PLATFORMKIT_E2E_URL ?? 'http://localhost:8099').href);
+  await expect(page.locator('script[src="/app/admin/assets/js/components.js"]')).toHaveCount(1);
   await specimen(page);
   const original = control(page, 'Existing choice');
   const partial = control(page, 'Mixed choice');

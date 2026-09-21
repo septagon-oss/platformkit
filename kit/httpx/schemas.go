@@ -44,7 +44,26 @@ import (
 // is a field name from Schema, and a value is whatever the entity's own JSON
 // says it is. There is no second serialization; it is encoding/json, once.
 type Resource struct {
+	// Module and Entity name it; Path is the collection path as the module
+	// wrote it, relative to itself ("/tasks"), which is what a generated screen
+	// mounts and links from. The composed addresses are Schema.Path — the API's
+	// own, on the surface the reads are on — and Screen below.
 	Module, Entity, Path string
+	// Screen is the workspace address of the generated screens: /app/<module>
+	// /<entity>. The kernel composed it at registration, from the module, the
+	// path and the surface a page can exist on, which is why neither the
+	// generating shell nor the module that owns the resource has to know where
+	// the workspace is mounted. Empty for a resource nobody may read from the
+	// workspace, which is a resource with no screens.
+	Screen string
+	// WritePath is the composed address the resource's writes answer at, for the
+	// one resource whose writes do not answer at Schema.Path: a price list is
+	// read by the tenant that pays for it on the workspace surface and written by
+	// the installation on the control plane, and nothing a caller can derive from
+	// the read address says so. Empty means the writes answer at Schema.Path,
+	// which is what nearly every resource's do — so a catalog entry that names no
+	// write address is saying the obvious thing rather than omitting one.
+	WritePath string
 	// Read and Write are the permissions the Spec declared. A screen carries
 	// the same ones, so a person who cannot use the API cannot use the screen.
 	Read, Write string
@@ -97,7 +116,14 @@ type Command struct {
 	Summary, Description string
 	Collection           bool
 	Auth                 Auth
-	Fields               []entity.Field
+	// Endpoint is the command's absolute address as the kernel composed it:
+	// /api/v1/ops/billing/subscription/cancel. A shell used to derive a
+	// command's path from the resource's own — {path}/{id}/{verb} — and that
+	// derivation broke the moment a command could live on the surface its
+	// resource's reads do not. The catalog publishes it for those commands and
+	// only those, so a document that could be derived still is.
+	Endpoint string
+	Fields   []entity.Field
 	// Run performs the command with the values a caller submitted, inside the
 	// request's own transaction, and is the closure the command's HTTP route
 	// calls. It has to be here because docs/adr/0007 promises a derived screen
@@ -345,6 +371,52 @@ func (a *API) Resources() []Resource {
 		out[i].Commands = a.commands[out[i].Module+"/"+out[i].Entity]
 	}
 	return out
+}
+
+// writeElsewhere answers the address that performs this request's write, and the
+// entity it is about, for the one case where the answer is not the address the
+// caller wrote to: a resource whose reads answer here and whose writes answer on
+// the surface its write permission belongs on — a price list, read by the tenant
+// that pays for it and written by the installation — asked with a verb that
+// changes something.
+//
+// It answers "" in every other case, and one case is refused on purpose: the
+// installation's own address is not named to a caller standing at a host the
+// control plane is not served at. An address nobody can reach is not a direction
+// worth giving, and a refusal that named one would say more about the control
+// plane than this host says about it anywhere else.
+func (a *API) writeElsewhere(r *http.Request) (at, entity string) {
+	if !unsafeMethod(r.Method) {
+		return "", ""
+	}
+	for _, res := range a.Resources() {
+		if res.WritePath == "" {
+			continue
+		}
+		tail, ok := res.itemTail(r.URL.Path)
+		if !ok {
+			continue
+		}
+		at = res.WritePath + tail
+		if classify(at) == SurfaceOps && !a.servesOps(r.Host) {
+			continue
+		}
+		return at, res.Entity
+	}
+	return "", ""
+}
+
+// itemTail reports whether path is this resource's collection address or one of
+// its rows, and names the row segment back so the other door can be given at the
+// same place in its own address.
+func (r Resource) itemTail(path string) (string, bool) {
+	if path == r.Schema.Path {
+		return "", true
+	}
+	if rest, moved := strings.CutPrefix(path, r.Schema.Path+"/"); moved && !strings.Contains(rest, "/") {
+		return "/" + rest, true
+	}
+	return "", false
 }
 
 // SignInExtension is where an operation names the form an anonymous caller

@@ -47,7 +47,7 @@ func TestResourceCountChecksPermissionOnceAndLoadsNoRows(t *testing.T) {
 			}
 			r := api.Resources()[0]
 			var queries []string
-			httpx.Register(api, huma.Operation{OperationID: "count-probe", Method: http.MethodGet, Path: "/count", Hidden: true},
+			httpx.Register(api.Surfaces("tasks").App, huma.Operation{OperationID: "count-probe", Method: http.MethodGet, Path: "/count", Hidden: true},
 				httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{ Body int64 }, error) {
 					tx, _ := httpx.TxFrom(ctx)
 					query := tx.DB().Callback().Query()
@@ -61,7 +61,7 @@ func TestResourceCountChecksPermissionOnceAndLoadsNoRows(t *testing.T) {
 					}
 					return &struct{ Body int64 }{Body: total}, nil
 				})
-			code, body := call(t, router, http.MethodGet, "/count", "")
+			code, body := call(t, router, http.MethodGet, "/api/v1/tasks/count", "")
 			if code != tt.status || auth.checks != 1 {
 				t.Fatalf("count = %d %s; authorization checks=%d", code, body, auth.checks)
 			}

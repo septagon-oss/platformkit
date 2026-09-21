@@ -226,7 +226,7 @@ func TestTheForgottenPasswordRouteCostsTheSameEitherWay(t *testing.T) {
 		// A fresh address each time, because this route has a per-address cap
 		// and forty requests from one would be refused half way through.
 		at := time.Now()
-		res := call(t, router, http.MethodPost, "/api/v1/auth/password/forgot",
+		res := call(t, router, http.MethodPost, "/api/v1/public/auth/password/forgot",
 			`{"email":"`+email+`"}`, from(fmt.Sprintf("198.51.100.%d", i)))
 		took := time.Since(at)
 		if res.Code != http.StatusOK {
@@ -268,7 +268,7 @@ func TestOneAddressCannotAskForUnboundedMail(t *testing.T) {
 	person(t, conn, "ada@acme.localhost")
 
 	forgot := func(addr string) int {
-		return call(t, router, http.MethodPost, "/api/v1/auth/password/forgot",
+		return call(t, router, http.MethodPost, "/api/v1/public/auth/password/forgot",
 			`{"email":"ada@acme.localhost"}`, from(addr)).Code
 	}
 	for i := range contracts.ResetRequests {

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
@@ -26,13 +27,16 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/ui"
+	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
 const (
 	host = "acme.test"
-	// operatorHost is where the installation's own tenant is served. The
-	// control plane answers at every host, so the difference between the two is
-	// the tenant the request resolved to and nothing else.
+	// operatorHost is where the installation's own tenant is served, and the
+	// installation host: the two are the same host here, which is what makes the
+	// control-plane routes reachable in this harness at all. The difference
+	// between the two hosts below is then the tenant a request resolves to — and,
+	// for a /ops route, whether it is served anywhere.
 	operatorHost = "operator.test"
 )
 
@@ -136,7 +140,7 @@ CREATE POLICY admin_plans_scope ON admin_plans
 	WITH CHECK (platformkit_tenant_match(tenant_id));`
 
 var plans = rest.Spec[*Plan]{
-	Module: "plans", Entity: "plan", Path: "/api/v1/plans/plans",
+	Module: "plan", Entity: "plan", Path: "/plans",
 	Read: "plan:read", Write: "plan:write", OperatorWrite: true,
 }
 
@@ -146,7 +150,7 @@ type publishBody struct {
 }
 
 var spec = rest.Spec[*Note]{
-	Module: "notes", Entity: "note", Path: "/api/v1/notes/notes",
+	Module: "note", Entity: "note", Path: "/notes",
 	Read: "note:read", Write: "note:write", SoftDelete: true,
 	Immutable: []string{"rank"},
 }
@@ -174,31 +178,32 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	}
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: authorize,
+		Installation: operatorHost,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New(), Roles: []string{"admin"}}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
 	notes := module.Module{
-		Name:        "notes",
+		Name:        "note",
 		Permissions: []module.Permission{{Key: "note:read"}, {Key: "note:write"}, {Key: "secret:read"}},
 		Events:      spec.Events(),
 		Nav: []module.NavEntry{
-			{Label: "Notes", Path: "/admin/notes/notes", Permission: "note:read"},
-			{Label: "Secrets", Path: "/admin/notes/secrets", Permission: "secret:read"},
+			{Label: "Notes", Screen: "note/notes", Permission: "note:read"},
+			{Label: "Secrets", Screen: "note/secrets", Permission: "secret:read"},
 		},
-		Routes: func(api *httpx.API) {
-			spec.Mount(api)
+		Routes: func(s httpx.Surfaces) {
+			spec.Mount(s)
 			// Two commands, so the catalog test can say which of them each
 			// caller is told about: one guarded by the Spec's write
 			// permission, one a command declares for itself.
-			rest.Command(api, spec, "publish", "Publish a note", "Makes it visible.", nil,
+			rest.Command(s, spec, "publish", "Publish a note", "Makes it visible.", nil,
 				func(_ context.Context, _ db.Tx[db.Tenant], _ uuid.UUID, in publishBody) (*Note, error) {
 					return &Note{Title: in.At}, nil
 				}, rest.CommandOptions{})
 			// The verb is not one of the five: an operation id is unique, so a
 			// command called "read" would collide with the row route at mount.
-			rest.Command(api, spec, "mark-read", "Mark as read", "For the reader, not the writer.", nil,
+			rest.Command(s, spec, "mark-read", "Mark as read", "For the reader, not the writer.", nil,
 				func(context.Context, db.Tx[db.Tenant], uuid.UUID, struct{}) (*Note, error) {
 					return &Note{}, nil
 				}, rest.CommandOptions{Auth: httpx.SignedIn()})
@@ -207,38 +212,70 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	// The second module is the installation's own data: every tenant reads the
 	// catalogue and only the operator writes it.
 	catalogue := module.Module{
-		Name:        "plans",
+		Name:        "plan",
 		Permissions: []module.Permission{{Key: "plan:read"}, {Key: "plan:write", Operator: true}},
 		Events:      plans.Events(),
 		Nav: []module.NavEntry{
-			{Label: "Plans", Path: "/admin/plans/plans", Permission: "plan:read"},
+			{Label: "Plans", Screen: "plan/plans", Permission: "plan:read"},
 			// The affordance the operator has and a customer does not: a nav
 			// entry guarded by the permission the routes declare as operator.
-			{Label: "Add a plan", Path: "/admin/plans/plans/new", Permission: "plan:write"},
+			{Label: "Add a plan", Screen: "plan/plans", Permission: "plan:write"},
 		},
-		Routes: func(api *httpx.API) { plans.Mount(api) },
+		Routes: func(s httpx.Surfaces) { plans.Mount(s) },
 	}
-	deps := admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: authorize}
+	// The auth module's manifest, as a composition carries it. The roles screen
+	// is written by this shell and mounted in that module's namespace, and its
+	// nav entry is the auth module's claim — which is the whole reason the
+	// harness needs a manifest named auth: without it there is no such namespace
+	// to mount into, and the screen would fall back to the shell's own.
+	rolesModule := module.Module{
+		Name:        "auth",
+		Permissions: []module.Permission{{Key: "auth:manage"}},
+		Nav:         []module.NavEntry{{Label: "Roles", Screen: "auth/roles", Permission: "auth:manage"}},
+	}
+	deps := admin.Deps{
+		Modules: []module.Module{notes, catalogue, rolesModule}, Authorize: authorize,
+		SignIn: "/api/v1/auth/login",
+	}
 	for _, apply := range configure {
 		apply(&deps)
 	}
 	shell := admin.Module(deps)
-	if err := module.Validate([]module.Module{notes, catalogue, shell}); err != nil {
+	if err := module.Validate([]module.Module{notes, catalogue, rolesModule, shell}); err != nil {
 		t.Fatalf("the composition is invalid: %v", err)
 	}
 	// The catalogue before the routes, as kit/app declares it at boot: the roles
 	// screen offers what the composition defines, and a harness that declared
 	// nothing would render an empty one and prove nothing.
 	var declared []tenancy.Grant
-	for _, m := range []module.Module{notes, catalogue, shell} {
+	for _, m := range []module.Module{notes, catalogue, rolesModule, shell} {
 		for _, permission := range m.Permissions {
 			declared = append(declared, tenancy.Grant{Permission: permission.Key, Operator: permission.Operator})
 		}
 	}
 	api.Declare(declared)
-	notes.Routes(api)
-	catalogue.Routes(api)
-	shell.Routes(api)
+	// Mounted the way kit/app mounts a composition: each manifest gets the
+	// three routers bound to its own name, and the shell last so its navigation
+	// and its catalog see everything the others recorded.
+	for _, m := range []module.Module{notes, catalogue, rolesModule, shell} {
+		if m.Routes == nil {
+			api.Surfaces(m.Name) // the namespace exists; the manifest mounts nothing
+			continue
+		}
+		m.Routes(api.Surfaces(m.Name))
+	}
+	// The catalog route, which a real composition mounts: it belongs to kit/app
+	// (only the kernel may compose /api/v1/app/…) and its body belongs to
+	// ui/screens (only ui may render the document), so this harness stands in
+	// for the composition and wires the two together the one line app.Options.
+	// WorkspaceCatalog exists for. TestTheWorkspaceCatalogIsTheScreenDocument
+	// asks the reference application the same question through its real wiring.
+	kernel := api.Surfaces("")
+	httpx.Register(kernel.App, huma.Operation{
+		OperationID: "app-resources", Method: http.MethodGet, Path: "/resources", Hidden: true,
+	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{ Body screens.Catalog }, error) {
+		return &struct{ Body screens.Catalog }{screens.Describe(ctx, api.Resources())}, nil
+	})
 	// The gate every route in this application passes, the shell's included.
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("a screen does not declare its authorization: %v", err)
@@ -274,7 +311,7 @@ func callAt(t *testing.T, r http.Handler, at, method, path, body string) (int, s
 func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 	router := mount(t)
 
-	code, body, _ := call(t, router, http.MethodGet, "/admin/notes/notes", "")
+	code, body, _ := call(t, router, http.MethodGet, "/app/note/notes", "")
 	if code != http.StatusOK {
 		t.Fatalf("the list = %d %s", code, body)
 	}
@@ -287,7 +324,7 @@ func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 		t.Error(`the list shows a field tagged ui:"...;hide:list"`)
 	}
 
-	code, form, _ := call(t, router, http.MethodGet, "/admin/notes/notes/new", "")
+	code, form, _ := call(t, router, http.MethodGet, "/app/note/notes/new", "")
 	if code != http.StatusOK {
 		t.Fatalf("the new form = %d %s", code, form)
 	}
@@ -329,20 +366,20 @@ func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 
 	// The one door a command's field is otherwise writable through. The form
 	// does not render it, so a value for it did not come from the form.
-	code, refused, _ := call(t, router, http.MethodPost, "/admin/notes/notes", "title=Hand+rolled&rank=9")
+	code, refused, _ := call(t, router, http.MethodPost, "/app/note/notes", "title=Hand+rolled&rank=9")
 	if code != http.StatusUnprocessableEntity {
 		t.Fatalf("a create carrying an immutable field = %d, want 422", code)
 	}
 	if !strings.Contains(refused, "rank belongs to a route of its own") {
 		t.Errorf("the refusal does not name the field: %s", refused[:min(len(refused), 400)])
 	}
-	if _, list, _ := call(t, router, http.MethodGet, "/admin/notes/notes", ""); strings.Contains(list, "Hand rolled") {
+	if _, list, _ := call(t, router, http.MethodGet, "/app/note/notes", ""); strings.Contains(list, "Hand rolled") {
 		t.Error("a create carrying an immutable field stored the row anyway")
 	}
 
 	// A refusal is a 422 that renders the form again with the message on it,
 	// which is what htmx swaps in place and what a browser without it shows.
-	code, refused, _ = call(t, router, http.MethodPost, "/admin/notes/notes", "title=&status=open")
+	code, refused, _ = call(t, router, http.MethodPost, "/app/note/notes", "title=&status=open")
 	if code != http.StatusUnprocessableEntity {
 		t.Fatalf("an empty title = %d, want 422", code)
 	}
@@ -350,12 +387,12 @@ func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 		t.Errorf("the refusal says nothing about the field: %s", refused)
 	}
 
-	code, body, location := call(t, router, http.MethodPost, "/admin/notes/notes",
+	code, body, location := call(t, router, http.MethodPost, "/app/note/notes",
 		"title=First+note&status=done&pinned=on&body=Some+prose&tags=a,+b")
 	if code != http.StatusSeeOther {
 		t.Fatalf("a create = %d %s", code, body)
 	}
-	id := strings.TrimPrefix(location, "/admin/notes/notes/")
+	id := strings.TrimPrefix(location, "/app/note/notes/")
 	if _, err := uuid.Parse(id); err != nil {
 		t.Fatalf("a create redirected to %q", location)
 	}
@@ -405,11 +442,11 @@ func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 		t.Errorf("the update did not land, or it wrote a field a command owns: %s", detail)
 	}
 
-	code, _, location = call(t, router, http.MethodPost, "/admin/notes/notes/"+id+"/delete", "")
-	if code != http.StatusSeeOther || location != "/admin/notes/notes" {
+	code, _, location = call(t, router, http.MethodPost, "/app/note/notes/"+id+"/delete", "")
+	if code != http.StatusSeeOther || location != "/app/note/notes" {
 		t.Fatalf("a delete = %d to %q", code, location)
 	}
-	if code, _, _ = call(t, router, http.MethodGet, "/admin/notes/notes/"+id, ""); code != http.StatusNotFound {
+	if code, _, _ = call(t, router, http.MethodGet, "/app/note/notes/"+id, ""); code != http.StatusNotFound {
 		t.Errorf("a deleted row still has a screen: %d", code)
 	}
 }
@@ -419,7 +456,7 @@ func TestTheScreensAreGeneratedFromTheSchema(t *testing.T) {
 // authorizer, so a link that is shown is a link that works.
 func TestTheSidebarShowsWhatTheCallerMayReach(t *testing.T) {
 	router := mount(t)
-	_, body, _ := call(t, router, http.MethodGet, "/admin", "")
+	_, body, _ := call(t, router, http.MethodGet, "/app", "")
 	if !strings.Contains(body, ">Notes<") {
 		t.Error("the sidebar hides a screen the caller may read")
 	}
@@ -462,12 +499,12 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 	// into gallery.css by mistake fails here.
 	both := ruled(ui.Compose(design.Default()).Body, ui.Gallery().Body)
 	for path, rules := range map[string]map[string]bool{
-		"/admin": app, "/admin/login": app, "/admin/health": app,
-		"/admin/notes/notes": app, "/admin/notes/notes/new": app,
-		"/admin/_gallery": both,
+		"/app": app, "/app/admin/login": app, "/app/admin/health": app,
+		"/app/note/notes": app, "/app/note/notes/new": app,
+		"/app/admin/_gallery": both,
 	} {
 		at := host
-		if path == "/admin/_gallery" {
+		if path == "/app/admin/_gallery" {
 			at = operatorHost
 		}
 		_, body, _ := callAt(t, router, at, http.MethodGet, path, "")
@@ -484,22 +521,22 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 		}
 	}
 	// And the second sheet is linked exactly where its classes are rendered.
-	_, gallery, _ := callAt(t, router, operatorHost, http.MethodGet, "/admin/_gallery?example=pk-ui.component.badge/outline", "")
-	if !strings.Contains(gallery, "/admin/assets/gallery.css?v="+ui.Gallery().Fingerprint) {
+	_, gallery, _ := callAt(t, router, operatorHost, http.MethodGet, "/app/admin/_gallery?example=pk-ui.component.badge/outline", "")
+	if !strings.Contains(gallery, "/app/admin/assets/gallery.css?v="+ui.Gallery().Fingerprint) {
 		t.Error("the gallery does not link the sheet its own components need")
 	}
-	_, dashboard, _ := call(t, router, http.MethodGet, "/admin", "")
+	_, dashboard, _ := call(t, router, http.MethodGet, "/app", "")
 	if strings.Contains(dashboard, "gallery.css") {
 		t.Error("an ordinary page downloads the gallery's stylesheet")
 	}
 	// It is offered where the design system is somebody's business, and not in
 	// every customer's sidebar.
-	_, customer, _ := call(t, router, http.MethodGet, "/admin", "")
-	if strings.Contains(customer, "/admin/_gallery") {
+	_, customer, _ := call(t, router, http.MethodGet, "/app", "")
+	if strings.Contains(customer, "/app/admin/_gallery") {
 		t.Error("a customer's administrator is offered the installation's component gallery")
 	}
-	_, operator, _ := callAt(t, router, operatorHost, http.MethodGet, "/admin", "")
-	if !strings.Contains(operator, "/admin/_gallery") {
+	_, operator, _ := callAt(t, router, operatorHost, http.MethodGet, "/app", "")
+	if !strings.Contains(operator, "/app/admin/_gallery") {
 		t.Error("the operator's own tenant is not offered the gallery")
 	}
 
@@ -513,7 +550,7 @@ func TestEveryClassTheShellRendersHasARule(t *testing.T) {
 	}
 	// And it narrows: one group is that group and not the other nine, so a
 	// person looking for a badge is not handed a hundred components.
-	_, one, _ := callAt(t, router, operatorHost, http.MethodGet, "/admin/_gallery?group=Status", "")
+	_, one, _ := callAt(t, router, operatorHost, http.MethodGet, "/app/admin/_gallery?group=Status", "")
 	if !strings.Contains(one, "pk-ui.component.badge%2Foutline") || strings.Contains(one, "pk-ui.component.modal/default") {
 		t.Error("the gallery does not narrow to one group")
 	}
@@ -542,20 +579,20 @@ func (m member) Allowed(_ context.Context, _ tenancy.Tenant, want tenancy.Grant)
 func TestTheDashboardCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 	// Signed in, and holding nothing: the dashboard is a page about what this
 	// caller may see, and this one may see none of it.
-	code, body, _ := call(t, mountAs(t, member{}), http.MethodGet, "/admin", "")
+	code, body, _ := call(t, mountAs(t, member{}), http.MethodGet, "/app", "")
 	if code != http.StatusOK {
 		t.Fatalf("the dashboard = %d %s", code, body)
 	}
-	// "In notes" is the card's own description, which nothing else on the page
+	// "In note" is the card's own description, which nothing else on the page
 	// renders — the sidebar's own filter is a separate claim, tested above.
-	if strings.Contains(body, "In notes") {
+	if strings.Contains(body, "In note") {
 		t.Error("the dashboard shows a card for an entity the caller may not read")
 	}
 
 	// The same page for a caller who may: the card is there, with the count its
 	// own list route would report.
-	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/admin", "")
-	if !strings.Contains(body, "In notes") || !strings.Contains(body, "0 Notes") {
+	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
+	if !strings.Contains(body, "In note") || !strings.Contains(body, "0 Notes") {
 		t.Errorf("the dashboard hides a card the caller may read: %s", body)
 	}
 }
@@ -567,10 +604,10 @@ func TestTheDashboardCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 // it is an enhancement on top of that.
 func TestASortHeaderIsALink(t *testing.T) {
 	router := mount(t)
-	_, body, _ := call(t, router, http.MethodGet, "/admin/notes/notes", "")
+	_, body, _ := call(t, router, http.MethodGet, "/app/note/notes", "")
 	head := body[strings.Index(body, "<thead"):strings.Index(body, "</thead>")]
 	for _, want := range []string{
-		`<a `, `href="/admin/notes/notes?sort=title"`, `href="/admin/notes/notes?sort=status"`,
+		`<a `, `href="/app/note/notes?sort=title"`, `href="/app/note/notes?sort=status"`,
 	} {
 		if !strings.Contains(head, want) {
 			t.Errorf("the table head has no %s: %s", want, head)
@@ -580,9 +617,9 @@ func TestASortHeaderIsALink(t *testing.T) {
 		t.Error("a server-sorted column is still a button")
 	}
 	// The same header, sorted, offers the other direction.
-	_, body, _ = call(t, router, http.MethodGet, "/admin/notes/notes?sort=title", "")
+	_, body, _ = call(t, router, http.MethodGet, "/app/note/notes?sort=title", "")
 	head = body[strings.Index(body, "<thead"):strings.Index(body, "</thead>")]
-	if !strings.Contains(head, `href="/admin/notes/notes?sort=-title"`) || !strings.Contains(head, `aria-sort="ascending"`) {
+	if !strings.Contains(head, `href="/app/note/notes?sort=-title"`) || !strings.Contains(head, `aria-sort="ascending"`) {
 		t.Errorf("a sorted column does not offer the other direction: %s", head)
 	}
 }
@@ -595,7 +632,7 @@ func TestASortHeaderIsALink(t *testing.T) {
 // picked, and there is nothing to write until they pick.
 func TestAPageWithNoStoredChoiceFollowsTheOperatingSystem(t *testing.T) {
 	router := mount(t)
-	for _, path := range []string{"/admin", "/admin/login", "/admin/health", "/admin/notes/notes"} {
+	for _, path := range []string{"/app", "/app/admin/login", "/app/admin/health", "/app/note/notes"} {
 		_, body, _ := call(t, router, http.MethodGet, path, "")
 		if strings.Contains(body, "data-theme=") {
 			t.Errorf("%s pins a theme rather than letting the operating system say", path)
@@ -630,10 +667,10 @@ func TestAnAnonymousBrowserIsSentToTheSignInForm(t *testing.T) {
 	const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 
 	for path, want := range map[string]string{
-		"/admin":                 "/admin/login?next=%2Fadmin",
-		"/admin/notes/notes":     "/admin/login?next=%2Fadmin%2Fnotes%2Fnotes",
-		"/admin/notes/notes/new": "/admin/login?next=%2Fadmin%2Fnotes%2Fnotes%2Fnew",
-		"/admin/health":          "/admin/login?next=%2Fadmin%2Fhealth",
+		"/app":                "/app/admin/login?next=%2Fapp",
+		"/app/note/notes":     "/app/admin/login?next=%2Fapp%2Fnote%2Fnotes",
+		"/app/note/notes/new": "/app/admin/login?next=%2Fapp%2Fnote%2Fnotes%2Fnew",
+		"/app/admin/health":   "/app/admin/login?next=%2Fapp%2Fadmin%2Fhealth",
 	} {
 		code, location := visit(t, router, path, browser)
 		if code != http.StatusSeeOther || location != want {
@@ -641,15 +678,15 @@ func TestAnAnonymousBrowserIsSentToTheSignInForm(t *testing.T) {
 		}
 	}
 	// The form itself is public, and does not redirect to itself.
-	if code, _ := visit(t, router, "/admin/login", browser); code != http.StatusOK {
+	if code, _ := visit(t, router, "/app/admin/login", browser); code != http.StatusOK {
 		t.Errorf("the sign-in form = %d", code)
 	}
 	// A program asking for JSON keeps the problem document.
-	if code, location := visit(t, router, "/api/v1/notes/notes", "application/json"); code != http.StatusForbidden || location != "" {
+	if code, location := visit(t, router, "/api/v1/note/notes", "application/json"); code != http.StatusForbidden || location != "" {
 		t.Errorf("an anonymous API call = %d to %q, want 403", code, location)
 	}
 	// And so does a program asking for a page's URL without asking for a page.
-	if code, location := visit(t, router, "/admin", "application/json"); code != http.StatusForbidden || location != "" {
+	if code, location := visit(t, router, "/app", "application/json"); code != http.StatusForbidden || location != "" {
 		t.Errorf("an anonymous JSON call to a page = %d to %q, want 403", code, location)
 	}
 }
@@ -664,13 +701,13 @@ func TestAnAnonymousBrowserIsSentToTheSignInForm(t *testing.T) {
 func TestTheSignInFormOnlyEverSendsSomebodyBackIntoTheSite(t *testing.T) {
 	router := mount(t)
 	for _, tt := range []struct{ next, want string }{
-		{"/admin/notes/notes", "/admin/notes/notes"},
-		{`/\evil.example`, "/admin"},
-		{"//evil.example", "/admin"},
-		{"https://evil.example", "/admin"},
-		{"", "/admin"},
+		{"/app/note/notes", "/app/note/notes"},
+		{`/\evil.example`, "/app"},
+		{"//evil.example", "/app"},
+		{"https://evil.example", "/app"},
+		{"", "/app"},
 	} {
-		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/admin/login?next="+url.QueryEscape(tt.next), nil)
+		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/app/admin/login?next="+url.QueryEscape(tt.next), nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -715,15 +752,15 @@ func TestANavEntryNoRouteServesIsABootWarning(t *testing.T) {
 	// permission filter cannot be what hides the entry: only the served one
 	// can. See TestTheSidebarShowsWhatTheCallerMayReach for the other half.
 	router := mountAs(t, member{"note:read": true, "note:write": true, "secret:read": true})
-	if !strings.Contains(log.String(), "/admin/notes/secrets") {
+	if !strings.Contains(log.String(), "/app/note/secrets") {
 		t.Errorf("boot said nothing about a nav entry no route serves: %s", log.String())
 	}
-	if strings.Contains(log.String(), "/admin/notes/notes") {
+	if strings.Contains(log.String(), "/app/note/notes") {
 		t.Errorf("boot complained about a nav entry that is served: %s", log.String())
 	}
 
-	_, body, _ := call(t, router, http.MethodGet, "/admin", "")
-	if strings.Contains(body, "/admin/notes/secrets") {
+	_, body, _ := call(t, router, http.MethodGet, "/app", "")
+	if strings.Contains(body, "/app/note/secrets") {
 		t.Error("the sidebar renders a link no route answers")
 	}
 	if strings.Contains(body, `aria-disabled="true"`) {
@@ -746,11 +783,11 @@ func TestAnOperatorsResourceOffersNoWriteToACustomer(t *testing.T) {
 	router := mount(t)
 
 	// The operator creates one, through the generated form.
-	code, body, at := callAt(t, router, operatorHost, http.MethodPost, "/admin/plans/plans", "name=Standard")
+	code, body, at := callAt(t, router, operatorHost, http.MethodPost, "/app/plan/plans", "name=Standard")
 	if code != http.StatusSeeOther {
 		t.Fatalf("the operator's create = %d %s", code, body)
 	}
-	if !strings.HasPrefix(at, "/admin/plans/plans/") {
+	if !strings.HasPrefix(at, "/app/plan/plans/") {
 		t.Fatalf("the create redirected to %q", at)
 	}
 
@@ -763,7 +800,7 @@ func TestAnOperatorsResourceOffersNoWriteToACustomer(t *testing.T) {
 		{"a customer's tenant", host, false},
 	} {
 		t.Run(tt.who, func(t *testing.T) {
-			_, list, _ := callAt(t, router, tt.host, http.MethodGet, "/admin/plans/plans", "")
+			_, list, _ := callAt(t, router, tt.host, http.MethodGet, "/app/plan/plans", "")
 			if got := strings.Contains(list, ">New plan<"); got != tt.wants {
 				t.Errorf("the list offers New plan = %v, want %v", got, tt.wants)
 			}
@@ -792,7 +829,7 @@ func TestAnOperatorsResourceOffersNoWriteToACustomer(t *testing.T) {
 				t.Errorf("the sidebar offers the new-plan entry = %v, want %v", got, tt.wants)
 			}
 			// The entry a customer does hold is there for both.
-			if !strings.Contains(list, `href="/admin/plans/plans"`) {
+			if !strings.Contains(list, `href="/app/plan/plans"`) {
 				t.Errorf("the sidebar dropped the catalogue itself: %s", list)
 			}
 		})
@@ -800,10 +837,10 @@ func TestAnOperatorsResourceOffersNoWriteToACustomer(t *testing.T) {
 
 	// The screens are not the guard, and this is what says so: the customer's
 	// tenant is refused at the door as well as offered nothing.
-	if code, body, _ := callAt(t, router, host, http.MethodGet, "/admin/plans/plans/new", ""); code != http.StatusForbidden {
+	if code, body, _ := callAt(t, router, host, http.MethodGet, "/app/plan/plans/new", ""); code != http.StatusForbidden {
 		t.Errorf("a customer opening the operator's form = %d %s, want 403", code, body)
 	}
-	if code, body, _ := callAt(t, router, host, http.MethodPost, "/admin/plans/plans", "name=Sneaky"); code != http.StatusForbidden {
+	if code, body, _ := callAt(t, router, host, http.MethodPost, "/app/plan/plans", "name=Sneaky"); code != http.StatusForbidden {
 		t.Errorf("a customer posting the operator's form = %d %s, want 403", code, body)
 	}
 }
@@ -825,7 +862,7 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 	}
 	read := func(t *testing.T, router http.Handler, at string) []entry {
 		t.Helper()
-		code, body, _ := callAt(t, router, at, http.MethodGet, "/api/v1/admin/resources", "")
+		code, body, _ := callAt(t, router, at, http.MethodGet, "/api/v1/app/resources", "")
 		if code != http.StatusOK {
 			t.Fatalf("resources = %d %s", code, body)
 		}
@@ -851,7 +888,7 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 	if note == nil || plan == nil {
 		t.Fatalf("the administrator's catalog lacks a resource: %+v", admin)
 	}
-	if !note.Writable || note.Path != "/api/v1/notes/notes" || len(note.Immutable) != 1 || note.Immutable[0] != "rank" {
+	if !note.Writable || note.Path != "/api/v1/note/notes" || len(note.Immutable) != 1 || note.Immutable[0] != "rank" {
 		t.Errorf("note = %+v", *note)
 	}
 	if plan.Writable {
@@ -905,3 +942,8 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 		t.Error("a member who may not read plans is told they exist")
 	}
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.

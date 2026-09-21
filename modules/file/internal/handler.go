@@ -22,8 +22,8 @@ import (
 // a visitor reaches. They are siblings rather than one path with two
 // authorizations, because a route is guarded by what it is and not by who asks.
 const (
-	path       = "/api/v1/file/files"
-	publicPath = "/api/v1/file/public/{id}"
+	path       = "/files"
+	publicPath = "/files/{id}"
 )
 
 // streams is the kernel's mark for a route that reads the request itself, and
@@ -44,8 +44,9 @@ var faults = []int{
 // is a multipart upload, the update does not exist because a file's bytes are
 // what they are, and the delete has an event to publish that the generic one
 // could not carry.
-func RegisterRoutes(api *httpx.API, svc contracts.Service) {
-	httpx.Register(api, huma.Operation{
+func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
+	app, public := surfaces.App, surfaces.Public
+	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-list",
 		Method:      http.MethodGet,
 		Path:        path,
@@ -68,7 +69,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 			return out, nil
 		})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-read",
 		Method:      http.MethodGet,
 		Path:        path + "/{id}",
@@ -89,7 +90,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 			return &rest.Item[*contracts.File]{Body: f}, nil
 		})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID:   "file-file-upload",
 		Method:        http.MethodPost,
 		Path:          path,
@@ -136,12 +137,12 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 	// not declare. The handler is the same one: http.ServeContent writes the
 	// headers and no body for a HEAD, which is the whole difference.
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		httpx.Register(api, huma.Operation{
+		httpx.Register(app, huma.Operation{
 			OperationID: "file-file-content" + suffix[method],
 			Method:      method,
 			Path:        path + "/{id}/content",
 			Summary:     "Download a file",
-			Description: "The bytes, whatever the file's visibility. Ranges are served. The public door is at " + publicPath + ".",
+			Description: "The bytes, whatever the file's visibility. Ranges are served. The public door is at " + public.Path(publicPath) + ".",
 			Tags:        []string{"file"},
 			Errors:      faults,
 		}, httpx.Permission(contracts.PermissionFileRead),
@@ -155,7 +156,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 	// host, the query still runs under that tenant's policy, and a file that is
 	// not public is not found rather than forbidden.
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		httpx.Register(api, huma.Operation{
+		httpx.Register(public, huma.Operation{
 			OperationID: "file-file-public" + suffix[method],
 			Method:      method,
 			Path:        publicPath,
@@ -171,7 +172,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		})
 	}
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID:   "file-file-delete",
 		Method:        http.MethodDelete,
 		Path:          path + "/{id}",

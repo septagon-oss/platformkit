@@ -23,21 +23,21 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	c.modules = append(c.modules, module.Module{Name: "locale_verification", Routes: func(api *httpx.API) {
+	c.modules = append(c.modules, module.Module{Name: "locale_verification", Routes: func(r httpx.Surfaces) {
 		shell := page.Shell{Messages: page.FromCatalog(admin.Messages()), Frame: func(_ context.Context, r page.Request, body []g.Node) g.Node {
 			return h.Main(h.Lang(r.Locale.Language), g.Group(body))
 		}}
 		ownedShell := shell
 		ownedShell.Messages = independentMessages{}
-		page.Serve(api, ownedShell, page.Route{ID: "locale-provider", Method: http.MethodGet, Path: "/_locale/provider"}, httpx.Public(),
+		page.Serve(r.App, ownedShell, page.Route{ID: "locale-provider", Method: http.MethodGet, Path: "/_locale/provider"}, httpx.Public(),
 			func(_ context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 				return page.View{Body: []g.Node{g.Text(r.Locale.Text("welcome", "Welcome, %s", "Camille"))}}, nil
 			})
-		page.Serve(api, shell, page.Route{ID: "locale-authored", Method: http.MethodGet, Path: "/_locale/english"}, httpx.Public(),
+		page.Serve(r.App, shell, page.Route{ID: "locale-authored", Method: http.MethodGet, Path: "/_locale/english"}, httpx.Public(),
 			func(context.Context, page.Request, *page.Empty) (page.View, error) {
 				return page.View{Language: "en", Body: []g.Node{g.Text("Authored English")}}, nil
 			})
-		page.Serve(api, shell, page.Route{ID: "locale-refusal", Method: http.MethodGet, Path: "/_locale/refusal"}, httpx.Public(),
+		page.Serve(r.App, shell, page.Route{ID: "locale-refusal", Method: http.MethodGet, Path: "/_locale/refusal"}, httpx.Public(),
 			func(context.Context, page.Request, *page.Empty) (page.View, error) {
 				return page.View{}, problem.New(http.StatusForbidden, "English refusal")
 			})
@@ -48,16 +48,16 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 		path, accepted, language, text string
 		status                         int
 	}{
-		{"/admin/login", "pt-PT, en;q=0.8", "pt-PT", "Palavra-passe", 200},
-		{"/admin/login?lang=en", "pt-PT", "en", "Password", 200},
-		{"/admin/login?lang=pt-PT", "en", "pt-PT", "Palavra-passe", 200},
-		{"/admin/login?lang=ja", "pt-PT", "pt-PT", "Palavra-passe", 200},
-		{"/admin/login?lang=en&lang=pt-PT", "en", "en", "Password", 200},
-		{"/admin/login", "ja", "en", "Password", 200},
-		{"/admin/login", "", "en", "Password", 200},
-		{"/_locale/provider", "en", "fr", "Bonjour, Camille", 200},
-		{"/_locale/english", "pt-PT", "en", "Authored English", 200},
-		{"/_locale/refusal", "pt-PT", "en", "English refusal", 403},
+		{"/app/admin/login", "pt-PT, en;q=0.8", "pt-PT", "Palavra-passe", 200},
+		{"/app/admin/login?lang=en", "pt-PT", "en", "Password", 200},
+		{"/app/admin/login?lang=pt-PT", "en", "pt-PT", "Palavra-passe", 200},
+		{"/app/admin/login?lang=ja", "pt-PT", "pt-PT", "Palavra-passe", 200},
+		{"/app/admin/login?lang=en&lang=pt-PT", "en", "en", "Password", 200},
+		{"/app/admin/login", "ja", "en", "Password", 200},
+		{"/app/admin/login", "", "en", "Password", 200},
+		{"/app/locale_verification/_locale/provider", "en", "fr", "Bonjour, Camille", 200},
+		{"/app/locale_verification/_locale/english", "pt-PT", "en", "Authored English", 200},
+		{"/app/locale_verification/_locale/refusal", "pt-PT", "en", "English refusal", 403},
 	} {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+cfg.Server.Addr+tc.path, nil)
 		if err != nil {
@@ -81,13 +81,13 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 		if response.Header.Get("Content-Language") != tc.language || response.Header.Get("Vary") != "Accept-Language" || response.Header.Get("Cache-Control") != "private, no-store" {
 			t.Fatalf("negotiated headers: language=%q vary=%q cache=%q", response.Header.Get("Content-Language"), response.Header.Get("Vary"), response.Header.Get("Cache-Control"))
 		}
-		if strings.HasPrefix(tc.path, "/_locale/") {
+		if strings.HasPrefix(tc.path, "/app/locale_verification/_locale/") {
 			if !strings.Contains(body, `<main lang="`+tc.language+`">`) {
 				t.Fatal("frame used a different language than the selected provider or view")
 			}
 			continue
 		}
-		for _, contract := range []string{`action="/api/v1/auth/login"`, `name="email"`, `name="password"`, `data-login-form`} {
+		for _, contract := range []string{`action="` + pinnedSignInAPI + `"`, `name="email"`, `name="password"`, `data-login-form`} {
 			if !strings.Contains(body, contract) {
 				t.Fatalf("localized form lost %s", contract)
 			}

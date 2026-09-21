@@ -79,9 +79,9 @@ func mountCatalog(t *testing.T) (http.Handler, *sql.DB) {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	rest.Spec[*Plan]{
-		Module: "billing", Entity: "plan", Path: "/api/v1/billing/plans",
+		Module: "billing", Entity: "plan", Path: "/plans",
 		Read: "billing:read", Write: "billing:catalog",
-	}.Mount(api)
+	}.Mount(api.Surfaces("billing"))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -166,11 +166,11 @@ func TestAPatchThatNamesNoColumnStillRefusesARowAnotherTenantOwns(t *testing.T) 
 // so DELETE keeps the row and hides it.
 func TestAPatchThatNamesNoColumnRefusesASoftDeletedRow(t *testing.T) {
 	_, router, admin := mounted(t)
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"buried"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"buried"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 	if code, out := call(t, router, http.MethodDelete, at, ""); code != http.StatusNoContent {
 		t.Fatalf("DELETE = %d %s", code, out)
 	}
@@ -199,9 +199,9 @@ func TestAPatchThatNamesNoColumnRefusesASoftDeletedRow(t *testing.T) {
 	}
 	// The control: the same body on a row that is there answers 200, so the 404
 	// above is the hidden row and not a route that stopped working.
-	if code, out := call(t, router, http.MethodPost, "/api/tasks", `{"title":"alive"}`); code != http.StatusCreated {
+	if code, out := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"alive"}`); code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, out)
-	} else if code, out = call(t, router, http.MethodPatch, "/api/tasks/"+id(t, out), `{}`); code != http.StatusOK {
+	} else if code, out = call(t, router, http.MethodPatch, "/api/v1/tasks/task/"+id(t, out), `{}`); code != http.StatusOK {
 		t.Errorf(`PATCH {} on a live row = %d %s, want 200`, code, out)
 	}
 }
@@ -215,11 +215,11 @@ func TestAPatchThatNamesNoColumnRefusesASoftDeletedRow(t *testing.T) {
 // command owns on the row, and none of them publishes.
 func TestThePatchDoorRefusesAFoldedNameUnderEveryBodyItDecodes(t *testing.T) {
 	router, admin := owned(t)
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"untouchable"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"untouchable"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 	row := func(column string) string {
 		t.Helper()
 		var s string
@@ -306,11 +306,11 @@ func TestThePatchOfNothingAnswersWhatTheReadDoorAnswers(t *testing.T) {
 	api, router, admin := mounted(t)
 	r := api.Resources()[0]
 
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"exact","priority":5}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"exact","priority":5}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 	read := func(t *testing.T, body string) map[string]any {
 		t.Helper()
 		var out map[string]any
@@ -342,7 +342,10 @@ func TestThePatchOfNothingAnswersWhatTheReadDoorAnswers(t *testing.T) {
 	// What the door beneath HTTP answers, from the same row.
 	var seen map[string]any
 	var failures []string
-	httpx.Register(api, huma.Operation{
+	// The probe is a route of the tasks module on the workspace surface, so its
+	// address is composed from that rather than written here.
+	probe := api.Surfaces(spec.Module).App
+	httpx.Register(probe, huma.Operation{
 		OperationID: "patch-nothing", Method: http.MethodPost, Path: "/probe/patch-nothing", Hidden: true,
 		DefaultStatus: http.StatusNoContent,
 	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{}, error) {
@@ -354,7 +357,7 @@ func TestThePatchOfNothingAnswersWhatTheReadDoorAnswers(t *testing.T) {
 		seen = out
 		return nil, nil
 	})
-	if code, out := call(t, router, http.MethodPost, "/probe/patch-nothing", ""); code != http.StatusNoContent {
+	if code, out := call(t, router, http.MethodPost, probe.Path("/probe/patch-nothing"), ""); code != http.StatusNoContent {
 		failures = append(failures, "the probe request = "+http.StatusText(code)+" "+out)
 	}
 	for _, f := range failures {

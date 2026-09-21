@@ -14,6 +14,6 @@ composes it with `dbtest.Schema(t, task.Migrations)`.
 
 Compose it with `task.Deps{Service, Policy, Tenants, SweepEvery}`; `Policy` is
 optional and [modules/auth/policies](../auth/policies/README.md) shows the
-Topaz adapter. The generated admin screens appear at `/admin/task/tasks` with
+Topaz adapter. The generated screens appear at `/app/task/tasks` with
 no code of the module's own. `make test TEST_PACKAGES=./modules/task/...`
 needs the development database; the domain package's tests need nothing.

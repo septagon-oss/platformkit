@@ -72,7 +72,7 @@ type Field struct {
 	// both, name both: `ui:"widget:entity-picker;present:person"`.
 	//
 	// It reaches the native consumer without further work: ui/screens' Entry
-	// embeds entity.Schema, so /api/v1/admin/resources carries this field, and the
+	// embeds entity.Schema, so /api/v1/app/resources carries this field, and the
 	// native renderer decides what a person looks like there.
 	Present string `json:"present,omitempty"`
 	// Enum is the closed set of values, from `enum:"open,done"`.

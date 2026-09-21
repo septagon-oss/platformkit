@@ -40,6 +40,7 @@ import (
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
 // The two hosts the tests are served at. Two, because the claim worth proving
@@ -54,10 +55,16 @@ const (
 	// is provisioned in-process, so neither of them could say it.
 	initechHost = "initech.localhost"
 
+	// The tenant API and the plan catalog are the installation's own: they are
+	// mounted on the control plane, which is served at the installation host and
+	// answered with a 404 everywhere else. Their read doors — the plans a customer
+	// may see — stay in that customer's workspace.
+	tenantPath = "/api/v1/ops/tenant/tenants"
+	plansWrite = "/api/v1/ops/billing/plans"
+
 	tasksPath   = "/api/v1/task/tasks"
 	usersPath   = "/api/v1/user/users"
 	invitePath  = "/api/v1/user/invitations"
-	tenantPath  = "/api/v1/tenant/tenants"
 	auditPath   = "/api/v1/audit/events"
 	noticePath  = "/api/v1/notification/notifications"
 	plansPath   = "/api/v1/billing/plans"
@@ -82,7 +89,11 @@ func configure(t *testing.T) (string, config.Config) {
 	// The file module keeps its bytes under a directory of this test's own, so
 	// a suite that uploads something leaves nothing behind and two suites
 	// running at once do not share a disk.
-	body := "server:\n  addr: \"" + freeAddr(t) + "\"\n  public_host: \"platformkit.localhost\"\n  docs: true\n" +
+	// The installation is reached at acme's host, which is the operator's own
+	// tenant (the bootstrap created it): the control plane is served where the
+	// installation is, and nowhere else. TestTheControlPlaneIsNotFoundAtATenantHost
+	// in kit/httpx is where globex's answer at the same address is proved.
+	body := "server:\n  addr: \"" + freeAddr(t) + "\"\n  public_host: \"platformkit.localhost\"\n  installation_host: \"" + acmeHost + "\"\n  docs: true\n" +
 		"database:\n  url: \"" + appURL + "\"\n  migrate_url: \"" + migrateURL + "\"\n" +
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
 		"log:\n  level: \"error\"\n" +
@@ -113,8 +124,24 @@ func install(t *testing.T, path string) {
 }
 
 // start runs the application in the background and returns when it is listening.
+//
+// A case that does not name a catalog renderer gets the product's own: the
+// composition gate refuses a composition that registers resources and renders no
+// workspace document, and a test that skipped it would be starting something the
+// product would never boot.
 func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Options) {
 	t.Helper()
+	if opts.WorkspaceCatalog == nil {
+		opts.WorkspaceCatalog = func(ctx context.Context, resources []httpx.Resource) (any, error) {
+			return screens.Describe(ctx, resources), nil
+		}
+	}
+	// Same for the installation's host: the control plane is served where the
+	// installation is reached, and a test that left it out would be starting a
+	// process that answers its own operator at no address at all.
+	if opts.Installation.Host == "" {
+		opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
+	}
 	a, err := app.New(t.Context(), cfg, mods, opts)
 	if err != nil {
 		t.Fatalf("app.New: %v", err)
@@ -198,10 +225,10 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// this application serves it before it asks for anything — and the
 	// subscription is a singleton, so there is one to read and no list. The
 	// plan includes the trail, which is what makes the reads below possible.
-	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, plansPath,
+	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, plansWrite,
 		`{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","interval":"month","active":true,"features":["audit-trail"]}`)
 	if code != http.StatusCreated {
-		t.Fatalf("POST %s = %d %s, want 201", plansPath, code, body)
+		t.Fatalf("POST %s = %d %s, want 201", plansWrite, code, body)
 	}
 	planID := field(t, body, "id")
 	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, subPath+"/subscribe", `{"planId":"`+planID+`"}`); code != http.StatusOK ||
@@ -362,9 +389,19 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// tenant's own host, because the control plane is served at every host and
 	// tenant:manage was an ordinary permission a wildcard satisfied.
 	//
-	// Globex's administrator holds the same wildcard now. Every one of these is
-	// a 403 before the roles table is consulted at all: the permission is
-	// declared Operator, and Globex is not the operator's tenant.
+	// Globex's administrator holds the same wildcard now, and it is worth them
+	// nothing here: these routes are mounted on the control plane, and the control
+	// plane is served at the installation's host and at no other. Globex's host
+	// therefore answers each one exactly as it answers an address nobody mounted —
+	// 404, no allow-list, nothing about the surface disclosed. It is refused before
+	// the host is even resolved to a tenant, and so before the roles table exists
+	// to be asked.
+	//
+	// The second, independent guarantee — that a tenant which is not the
+	// installation's cannot exercise an operator permission even at the
+	// installation host, however its roles are written — is
+	// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx, which holds the
+	// installation host fixed and changes only the tenant.
 	for _, probe := range []struct{ method, path, body string }{
 		{http.MethodGet, tenantPath, ""},
 		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
@@ -373,19 +410,20 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
 	} {
 		code, body = do(t, cfg, other, probe.method, globexHost, probe.path, probe.body)
-		if code != http.StatusForbidden {
-			t.Errorf("%s %s as globex's admin = %d %s, want 403", probe.method, probe.path, code, body)
-		}
-		if !strings.Contains(body, "AUTH_NOT_OPERATOR") {
-			t.Errorf("%s %s was refused for the wrong reason: %s", probe.method, probe.path, body)
+		if code != http.StatusNotFound {
+			t.Errorf("%s %s as globex's admin = %d %s, want 404: no control plane is served at this host",
+				probe.method, probe.path, code, body)
 		}
 	}
 	// And a role in a non-operator tenant that names the permission outright is
-	// still refused: the kernel never asks.
+	// still refused. The answer is the 404 of an address this host does not serve,
+	// which is the same thing a caller with no grant at all is told: what the
+	// control plane is not is nobody's business, and a 403 here would confirm that
+	// the surface exists and that the difference is somebody's role.
 	grant(t, cfg, globexID, "root@globex.localhost")
 	other = signIn(t, cfg, globexHost, "root@globex.localhost", adminPass)
-	if code, body = do(t, cfg, other, http.MethodGet, globexHost, tenantPath, ""); code != http.StatusForbidden {
-		t.Errorf("a globex role naming tenant:manage = %d %s, want 403", code, body)
+	if code, body = do(t, cfg, other, http.MethodGet, globexHost, tenantPath, ""); code != http.StatusNotFound {
+		t.Errorf("a globex role naming tenant:manage = %d %s, want 404: no control plane is served at this host", code, body)
 	}
 
 	// A host nobody serves is a 404, not a 500 and not somebody's data.
@@ -438,9 +476,10 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		t.Errorf("GET %s as initech's first administrator = %d %s", usersPath, code, body)
 	}
 	// And nobody else's. The control plane handed over a tenant, not the
-	// installation.
-	if code, body = do(t, cfg, boss, http.MethodGet, initechHost, tenantPath, ""); code != http.StatusForbidden {
-		t.Errorf("initech's administrator reached the control plane = %d %s, want 403", code, body)
+	// installation — and at initech's host the control plane is not served at all,
+	// which is the stronger of the two answers and the one the surface gives.
+	if code, body = do(t, cfg, boss, http.MethodGet, initechHost, tenantPath, ""); code != http.StatusNotFound {
+		t.Errorf("initech's administrator reached the control plane = %d %s, want 404", code, body)
 	}
 
 	// Inviting somebody is the loop this stage closes: the user module creates
@@ -518,10 +557,13 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	api, _ := httpx.New(httpx.Options{
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
 		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
+		// The installation is where the control plane is served, and this is the
+		// composition's own answer to that: the same value boot passes.
+		Installation: cfg.Server.InstallationHost,
 	})
 	for _, m := range c.modules {
 		if m.Routes != nil {
-			m.Routes(api)
+			m.Routes(api.Surfaces(m.Name))
 		}
 	}
 	health.Register(api, health.DatabaseCheck(conn))
@@ -612,8 +654,8 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 // A name is removed from this map by serving the entry, never by moving an
 // entry into it. The gate below refuses a stale name for exactly that reason.
 var knownUnservedNav = map[string]string{
-	"/admin/file/files":   "modules/file declares it; no read-only generated screen exists yet",
-	"/admin/audit/events": "modules/audit declares it; no read-only generated screen exists yet",
+	"/app/file/files":   "modules/file declares it; no read-only generated screen exists yet",
+	"/app/audit/events": "modules/audit declares it; no read-only generated screen exists yet",
 }
 
 // TestEveryNavEntryLeadsSomewhere is the same question the shell asks at boot,
@@ -637,12 +679,13 @@ func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
 	api, _ := httpx.New(httpx.Options{
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
 		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
+		Installation: cfg.Server.InstallationHost,
 	})
 	var entries []module.NavEntry
 	for _, m := range c.modules {
 		entries = append(entries, m.Nav...)
 		if m.Routes != nil {
-			m.Routes(api)
+			m.Routes(api.Surfaces(m.Name))
 		}
 	}
 	if len(entries) == 0 {
@@ -651,18 +694,18 @@ func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
 	nav := page.NewNavigation(entries, page.Served(api.Recorded()), api.Required())
 	unserved := map[string]bool{}
 	for _, e := range nav.Unserved() {
-		unserved[e.Path] = true
-		if _, known := knownUnservedNav[e.Path]; !known {
+		unserved[e.Screen] = true
+		if _, known := knownUnservedNav[e.Screen]; !known {
 			t.Errorf("the nav entry %q leads to %s, which no route serves: either serve the screen or drop the entry",
-				e.Label, e.Path)
+				e.Label, e.Screen)
 		}
 	}
 	// And the debt shrinks only by being paid. A path that is served again is
 	// removed from the map here, in the change that served it, so the list
 	// cannot quietly outlive the reason for it.
-	for path, why := range knownUnservedNav {
-		if !unserved[path] {
-			t.Errorf("%s is served now (%s): remove it from knownUnservedNav", path, why)
+	for screen, why := range knownUnservedNav {
+		if !unserved[screen] {
+			t.Errorf("%s is served now (%s): remove it from knownUnservedNav", screen, why)
 		}
 	}
 }
@@ -680,7 +723,7 @@ func TestWebPoolLeavesRoomForControlPlaneTransactions(t *testing.T) {
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	admin.Timeout = 3 * time.Second
-	for _, path := range []string{tenantPath, "/admin/tenant/tenants"} {
+	for _, path := range []string{tenantPath, "/app/tenant/tenants"} {
 		if code, body := do(t, cfg, admin, http.MethodGet, acmeHost, path, ""); code != http.StatusOK || !strings.Contains(body, "Acme Corporation") {
 			t.Fatalf("two-connection web pool GET %s = %d %s", path, code, body)
 		}
@@ -1333,5 +1376,173 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	admins := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	if code, body := do(t, cfg, admins, http.MethodGet, acmeHost, tasksPath, ""); code != http.StatusOK {
 		t.Fatalf("the upgraded installation's task list = %d %s", code, body)
+	}
+}
+
+// TestPinnedAddresses is why a deployment may name an address the kernel
+// composed. The failure page is rendered before any module has a chance to answer,
+// so it holds the workspace root, the sign-in page and the stylesheet prefix as
+// literals (see fault.go), and the admin shell's form posts to the auth module's
+// door by the same kind of pin. A pin that drifts is a failure page that links
+// nowhere, which is discovered by the one person who least needs it: whoever is
+// already looking at an outage. So the pins are asked of the running server here.
+func TestPinnedAddresses(t *testing.T) {
+	path, cfg := configure(t)
+	install(t, path)
+	c := compose(cfg)
+	start(t, cfg, c.modules, app.Options{
+		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Role: app.Web, Transport: memory.New(), Log: quiet(),
+	})
+
+	// The workspace root answers something — a document, or the redirect to sign
+	// in — and not the 404 an address nobody claimed gives.
+	// What the root answers an anonymous caller depends on what the caller says
+	// it is — a browser is sent to the sign-in page, anything else is refused the
+	// way an API refuses — and this helper's client says nothing either way. Both
+	// are answers; a 404 is not, because the root is claimed.
+	if code, body := do(t, cfg, nil, http.MethodGet, acmeHost, pinnedWorkspace, ""); code == http.StatusNotFound {
+		t.Errorf("the workspace root %s = 404; the first module in composition order claims it: %s", pinnedWorkspace, body)
+	}
+	if code, body := do(t, cfg, nil, http.MethodGet, acmeHost, pinnedSignIn, ""); code != http.StatusOK ||
+		!strings.Contains(body, "data-login-form") {
+		t.Errorf("the sign-in page %s = %d, want the form the shell is named for", pinnedSignIn, code)
+	}
+	// The stylesheet, because the fault page references it by prefix and nothing
+	// else checks that the prefix is where the files are.
+	if code, body := do(t, cfg, nil, http.MethodGet, acmeHost, pinnedAssets+"/app.css", ""); code != http.StatusOK {
+		t.Errorf("the shell's stylesheet at %s/app.css = %d %s", pinnedAssets, code, body)
+	}
+	// And the auth door the login form posts to: refused for the right reason is
+	// the proof that the address is the door rather than a hole near it.
+	if code, body := do(t, cfg, nil, http.MethodPost, acmeHost, pinnedSignInAPI,
+		`{"email":"nobody@acme.localhost","password":"not the passphrase"}`); code != http.StatusUnauthorized {
+		t.Errorf("POST %s with a wrong passphrase = %d %s, want the refusal the door gives", pinnedSignInAPI, code, body)
+	}
+	// The catalog, which is the kernel's own route and the whole reason a native
+	// client can be built against this installation at all.
+	if code, _ := do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/app/resources", ""); code == http.StatusNotFound {
+		t.Error("the workspace catalog is not mounted, so a native shell has nothing to read")
+	}
+	// The public file door, which the site's own markup links. An id that is not
+	// an id is refused by the door's own shape check, and that answer — not a 404 —
+	// is what says something is mounted behind the pin: TestThePublicPageLinksOnly
+	// AddressesTheInstallationServes asks the same address of a file that exists.
+	if code, body := do(t, cfg, nil, http.MethodGet, acmeHost, pinnedPublicFile+"/not-an-id", ""); code == http.StatusNotFound {
+		t.Errorf("the public file door %s/%s = 404; the site links it for its logo: %s", pinnedPublicFile, "not-an-id", body)
+	}
+}
+
+// TestAWriteOfAResourceWrittenOnTheControlPlaneIsTurnedTowardsItsDoor is the
+// reference composition's share of the split. modules/billing's plan catalog is the
+// one resource this installation reads on the workspace and writes on the control
+// plane — the arrangement the catalog had to start describing (its entry names
+// write_path) and the arrangement a derived client reads as an ordinary writable
+// resource, because every writable resource it has ever met was one. So the case is
+// written as that client writes it: read the document, then post to the address the
+// entry's own path gives.
+//
+// Three things are owed there. The write is refused, and a refused write reaches no
+// handler, publishes nothing and leaves no row. The refusal carries the way out,
+// because "this address does not accept POST" is also the sentence an address that
+// never heard of plans says. And the installation's own address is not spoken of at a
+// host that serves no control plane — the answer a caller gets about that surface is
+// the same at every host that does not serve it, which is the rule the host gate
+// exists to keep.
+func TestAWriteOfAResourceWrittenOnTheControlPlaneIsTurnedTowardsItsDoor(t *testing.T) {
+	path, cfg := configure(t)
+	install(t, path)
+	c := compose(cfg)
+	start(t, cfg, c.modules, app.Options{
+		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Role: app.All, Transport: memory.New(), Log: quiet(),
+	})
+
+	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
+
+	// The document says what the arrangement is, to the caller who may write.
+	_, doc := do(t, cfg, admin, http.MethodGet, acmeHost, "/api/v1/app/resources", "")
+	var catalog struct {
+		Resources []struct {
+			Path      string `json:"path"`
+			Writable  bool   `json:"writable"`
+			WritePath string `json:"write_path"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal([]byte(doc), &catalog); err != nil {
+		t.Fatalf("the catalog is not the document a shell parses: %v\n%s", err, doc)
+	}
+	seen := false
+	for _, e := range catalog.Resources {
+		if e.Path != plansPath {
+			continue
+		}
+		seen = true
+		if !e.Writable || e.WritePath != plansWrite {
+			t.Errorf("the catalog's %s entry says writable=%v write_path=%q, want writable and %s",
+				e.Path, e.Writable, e.WritePath, plansWrite)
+		}
+	}
+	if !seen {
+		t.Fatalf("the catalog carries no %s entry: %s", plansPath, doc)
+	}
+
+	// What stands behind the door is read through the door that reads it, rather
+	// than trusted from the body of a refusal.
+	total := func() int {
+		code, body := do(t, cfg, admin, http.MethodGet, acmeHost, plansPath, "")
+		if code != http.StatusOK {
+			t.Fatalf("the plan list = %d %s", code, body)
+		}
+		var page struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(body), &page); err != nil {
+			t.Fatalf("the plan list is not a page: %v\n%s", err, body)
+		}
+		return len(page.Items)
+	}
+	before := total()
+	if before == 0 {
+		if code, body := do(t, cfg, admin, http.MethodPost, acmeHost, plansWrite,
+			`{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","interval":"month","active":true}`); code != http.StatusCreated {
+			t.Fatalf("the plan this case counts = %d %s", code, body)
+		}
+		before = total()
+	}
+
+	id := uuid.New()
+	for _, ask := range []struct{ method, at, named string }{
+		{http.MethodPost, plansPath, plansWrite},
+		{http.MethodPatch, plansPath + "/" + id.String(), plansWrite + "/" + id.String()},
+	} {
+		code, body := do(t, cfg, admin, ask.method, acmeHost, ask.at,
+			`{"code":"wrong","name":"Wrong","priceCents":1,"currency":"EUR","interval":"month","active":true}`)
+		switch {
+		case code != http.StatusForbidden:
+			t.Errorf("%s %s = %d %s, want the refusal that names the door", ask.method, ask.at, code, body)
+		case !strings.Contains(body, httpx.CodeWriteElsewhere), !strings.Contains(body, ask.named):
+			t.Errorf("%s %s = %d %s, want %s and the address %s", ask.method, ask.at, code, body, httpx.CodeWriteElsewhere, ask.named)
+		}
+	}
+	if got := total(); got != before {
+		t.Errorf("the refused writes left %d plans where there were %d", got, before)
+	}
+
+	// The same ask where no control plane is served is the answer every unmounted
+	// address gets there, and it says nothing of the installation's own address.
+	// Globex's administrator holds the billing write inside their own tenant; it
+	// buys them no map of the surface they are not served at.
+	code, body := do(t, cfg, admin, http.MethodPost, acmeHost, tenantPath,
+		`{"slug":"globex","name":"Globex","host":"`+globexHost+`"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create globex = %d %s", code, body)
+	}
+	provision(t, cfg, uuid.MustParse(field(t, body, "id")), "root@globex.localhost")
+	globex := signIn(t, cfg, globexHost, "root@globex.localhost", adminPass)
+	if code, body := do(t, cfg, globex, http.MethodPost, globexHost, plansPath, `{"currency":"EUR"}`); code != http.StatusMethodNotAllowed ||
+		strings.Contains(body, "/api/v1/ops") {
+		t.Errorf("POST %s where no control plane is served = %d %s, want the 405 that host gives anybody and no word of %s",
+			plansPath, code, body, plansWrite)
 	}
 }

@@ -29,16 +29,16 @@ import AxeBuilder from '@axe-core/playwright';
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
-const tasks = '/admin/task/tasks';
+const tasks = '/app/task/tasks';
 
 /** 320 is the WCAG reflow floor, not a device. The others are the shell's own breakpoints. */
 const widths = [320, 390, 768, 1280];
 
 /** What a person meets without writing code: the shell, one generated list, the gallery. */
 const surfaces: [string, string][] = [
-  ['dashboard', '/admin'],
+  ['dashboard', '/app'],
   ['generated list', tasks],
-  ['component gallery', '/admin/_gallery'],
+  ['component gallery', '/app/admin/_gallery'],
 ];
 
 /**
@@ -54,9 +54,9 @@ const surfaces: [string, string][] = [
 test.beforeAll(async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await signIn(page);
-  await page.goto('/admin/task/tasks/new');
+  await page.goto('/app/task/tasks/new');
   await page.getByLabel('Title').fill('Design audit specimen');
   await page.getByLabel('Priority').selectOption('high');
   await page.getByLabel('Description').fill('Long enough that the description column has a real width to report.');
@@ -66,7 +66,7 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await signIn(page);
 });
 
@@ -74,7 +74,7 @@ async function signIn(page: Page) {
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
 }
 
 /**

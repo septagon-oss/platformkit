@@ -110,8 +110,8 @@ func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration b
 		{Permission: usercontracts.PermissionRegistrationApprove},
 		{Permission: "tenant:manage", Operator: true},
 	})
-	authModule.Routes(api)
-	userModule.Routes(api)
+	authModule.Routes(surfacesOf(api))
+	userModule.Routes(api.Surfaces("user"))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestACrossSiteWriteWithASessionCookieIsRefused(t *testing.T) {
 			if res.Code != tt.want {
 				t.Errorf("logout from %s = %d %s, want %d", tt.name, res.Code, res.Body.String(), tt.want)
 			}
-			if tt.want == http.StatusForbidden && !strings.Contains(res.Body.String(), "csrf") {
+			if tt.want == http.StatusForbidden && !strings.Contains(res.Body.String(), httpx.CodeCSRFOrigin) {
 				t.Errorf("the refusal does not say why: %s", res.Body.String())
 			}
 			if res.Code == http.StatusOK {
@@ -580,7 +580,7 @@ func TestTheForgottenPasswordRouteSaysTheSameThingToEverybody(t *testing.T) {
 	live := signIn(t, router, "ada@acme.localhost")
 
 	forgot := func(email string) *httptest.ResponseRecorder {
-		return call(t, router, http.MethodPost, "/api/v1/auth/password/forgot", `{"email":"`+email+`"}`)
+		return call(t, router, http.MethodPost, "/api/v1/public/auth/password/forgot", `{"email":"`+email+`"}`)
 	}
 	known, unknown := forgot("ada@acme.localhost"), forgot("nobody@acme.localhost")
 	if known.Code != http.StatusOK || unknown.Code != http.StatusOK {
@@ -637,8 +637,8 @@ func TestTheForgottenPasswordRouteSaysTheSameThingToEverybody(t *testing.T) {
 // unable to forge another's session cookie is not a hypothetical.
 func TestTheCookieCarriesTheHostPrefixWhenItIsSecure(t *testing.T) {
 	for _, tt := range []struct{ host, want string }{
-		{"acme.localhost", "platformkit_session"},
-		{"acme.example.com", "__Host-platformkit_session"},
+		{"acme.localhost", "session"},
+		{"acme.example.com", "__Host-session"},
 	} {
 		t.Run(tt.host, func(t *testing.T) {
 			if got := httpx.CookieName(httpx.SessionCookie, !config.Local(tt.host)); got != tt.want {
@@ -647,7 +647,7 @@ func TestTheCookieCarriesTheHostPrefixWhenItIsSecure(t *testing.T) {
 		})
 	}
 	// And the kernel recognises both, because a deployment is one or the other.
-	for _, name := range []string{"platformkit_session", "__Host-platformkit_session"} {
+	for _, name := range httpx.LegacySessionCookies() {
 		r := httptest.NewRequest(http.MethodGet, "https://acme.example.com/", nil)
 		r.AddCookie(&http.Cookie{Name: name, Value: "present"})
 		if _, ok := httpx.SessionCookieOf(r); !ok {

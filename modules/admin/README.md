@@ -1,6 +1,6 @@
 # Tenant component galleries
 
-The admin module serves the interactive gallery at `/admin/_gallery`. Sign in
+The admin module serves the interactive gallery at `/app/admin/_gallery`. Sign in
 with `gallery:read` (included by the administrator's wildcard). The default
 composition shows Core examples only on the operator tenant. Customer tenants
 receive 403 until the application supplies `admin.Deps.Storybook`.

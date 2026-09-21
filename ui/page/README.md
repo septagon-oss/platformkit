@@ -61,7 +61,7 @@ their behavior; untranslated recovery notices and faults keep their English tags
 The [reference application](../../apps/platformkit/modules.go) composes
 [`admin.Messages()`](../../modules/admin/messages.go) through `page.FromCatalog`
 for its sign-in page. Run the application as described in the [root README](../../README.md), then open
-`/admin/login?lang=pt-PT` or `/admin/login?lang=en`. The explicit URL wins over the
+`/app/admin/login?lang=pt-PT` or `/app/admin/login?lang=en`. The explicit URL wins over the
 browser's language. This translates the initial sign-in form, and the generated
 screens read their fixed labels (New, Edit, Delete, the count, the pager and the
 empty state) under `screens.*` keys with English fallbacks; entity names,

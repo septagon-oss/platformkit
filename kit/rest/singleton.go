@@ -42,7 +42,10 @@ type Singleton[T crud.Entity] struct {
 	// Module and Entity name it, as they do on a Spec: the operation ids, the
 	// tag and the generated screen's path come from them.
 	Module, Entity string
-	// Path is the resource: "/api/v1/site/settings". There is no item path.
+	// Path is the resource, relative to the module: "/settings". There is no
+	// item path. It is relative for the reason Spec.Path is: the address a route
+	// answers at is composed by the kernel from the module and the surface, and
+	// a module that wrote its own prefix was naming a surface it had not chosen.
 	Path string
 	// Read guards the read; Write guards the PUT. An empty Write mounts no PUT
 	// at all, which is the shape of a singleton whose changes are commands —
@@ -71,10 +74,23 @@ type Singleton[T crud.Entity] struct {
 
 // Mount registers the two routes, the public one when there is one, and the
 // resource the admin generator reads.
-func (s Singleton[T]) Mount(api *httpx.API) {
+func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
 	s.check()
 	auth := httpx.Resource{Read: s.Read, Write: s.Write,
 		OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite}
+	read, write := surfaces.App, surfaces.App
+	if s.OperatorRead {
+		read = surfaces.Ops
+	}
+	if s.OperatorWrite {
+		write = surfaces.Ops
+	}
+	res := s.resource()
+	res.Screen = surfaces.App.PagePath(s.Path)
+	res.Schema.Path = read.Prefix() + s.Path
+	if write.Prefix() != read.Prefix() {
+		res.WritePath = write.Prefix() + s.Path // the same sentence Spec.Mount writes
+	}
 	if s.Write != "" {
 		// Only a writable singleton is registered, and the reason is the
 		// generator rather than a preference: modules/admin mounts five pages
@@ -83,10 +99,10 @@ func (s Singleton[T]) Mount(api *httpx.API) {
 		// can hold. A read-only singleton — billing's subscription, which is
 		// moved by its commands — is served by its API route and by whatever
 		// page a module writes for it.
-		api.RegisterResource(s.resource())
+		surfaces.RegisterResource(res)
 	}
 
-	Operation(api, s.op("read", http.MethodGet, s.Path, "Read this tenant's "+s.Entity, "", nil),
+	Operation(read, s.op("read", http.MethodGet, s.Path, "Read this tenant's "+s.Entity, "", nil),
 		auth.ReadAuth(), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, _ *struct{}) (T, error) {
 			return s.Load(ctx, tx)
 		}, OperationOptions{})
@@ -96,7 +112,7 @@ func (s Singleton[T]) Mount(api *httpx.API) {
 		if s.Event != "" {
 			events = []string{s.Event}
 		}
-		Operation(api, s.op("save", http.MethodPut, s.Path, "Save this tenant's "+s.Entity,
+		Operation(write, s.op("save", http.MethodPut, s.Path, "Save this tenant's "+s.Entity,
 			"The whole of it: a PUT replaces what is there. Saving what is already stored publishes nothing.", events),
 			auth.WriteAuth(), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *bodyInput[T]) (T, error) {
 				crud.Reset(in.Body) // the four fields the server owns, whatever a body said
@@ -111,10 +127,10 @@ func (s Singleton[T]) Mount(api *httpx.API) {
 	// from the request's own host and the query still runs under that tenant's
 	// policy: an anonymous caller reads one tenant's row and there is no
 	// parameter that could widen it.
-	httpx.Register(api, huma.Operation{
+	httpx.Register(surfaces.Public, huma.Operation{
 		OperationID: s.Module + "-" + s.Entity + "-public",
 		Method:      http.MethodGet,
-		Path:        s.Path + "/public",
+		Path:        s.Path,
 		Summary:     "Read this " + s.Entity + " as a visitor sees it",
 		Description: "What a public site may show. Everything else a tenant configures is nobody else's business.",
 		Tags:        []string{s.Module},
@@ -227,6 +243,10 @@ func (s Singleton[T]) check() {
 		bad = "Write is declared and Save is nil, so the PUT would have nothing to write with"
 	case s.Public && s.Face == nil:
 		bad = "Public is set and Face is nil; a public route that served the whole row would be an admin screen anybody could read"
+	case s.Path == "/"+s.Module || strings.HasPrefix(s.Path, "/"+s.Module+"/") ||
+		strings.HasPrefix(s.Path, "/api/v1") || strings.HasPrefix(s.Path, "/app") ||
+		strings.HasPrefix(s.Path, "/ops") || strings.HasPrefix(s.Path, "/public"):
+		bad = fmt.Sprintf("Path %q must be relative to the module — %q", s.Path, "/"+strings.TrimPrefix(strings.TrimPrefix(s.Path, "/api/v1/"+s.Module), "/"))
 	}
 	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())
@@ -235,6 +255,6 @@ func (s Singleton[T]) check() {
 		bad = presentationFault(crud.Fields[T]())
 	}
 	if bad != "" {
-		panic("rest: Singleton for " + s.Path + ": " + bad)
+		panic("rest: Singleton for " + s.Module + "." + s.Entity + ": " + bad)
 	}
 }

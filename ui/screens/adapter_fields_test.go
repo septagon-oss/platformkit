@@ -79,7 +79,7 @@ var callerScoped = map[string]string{
 func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) string, ok bool) {
 	base := func() httpx.Resource {
 		return httpx.Resource{
-			Module: "note", Entity: "note", Path: "/api/v1/note/notes",
+			Module: "note", Entity: "note", Path: "/notes", Screen: "/app/note/notes",
 			Read: "note:read", Write: "note:write",
 			Schema: entity.Schema{Module: "note", Entity: "note", Path: "/api/v1/note/notes", Fields: noteFields()},
 		}
@@ -97,7 +97,15 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 		a, b := base(), base()
 		b.Immutable = []string{"status"}
 		return a, b, func(r httpx.Resource) string {
-			return renderView(screens.Form(r, opts, "/admin/note/notes", "Edit", row, nil, "", false))
+			return renderView(screens.Form(r, opts, "/app/note/notes", "Edit", row, nil, "", false))
+		}, true
+	case "Screen":
+		// Where the screens are is the kernel's answer, and every link on a
+		// screen is built from it: change it and the list's own New link moves.
+		a, b := base(), base()
+		b.Screen = "/workspace/note/notes"
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.List(r, opts, rows, 1, 1, "", true))
 		}, true
 	case "Singleton":
 		a, b := base(), base()

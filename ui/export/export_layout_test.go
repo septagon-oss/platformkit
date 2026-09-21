@@ -74,11 +74,28 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the person's name twice. Avatar's classes move from the gallery-only list to
 	// the shell list, because ui/resource composes a person cell with them.
 	//
+	// Three shipped examples navigated to addresses this installation retired. The
+	// empty state's link and two sidebar items named /admin/tenants/new,
+	// /admin/customers[/accounts] and /admin/reports; the alias table redirects the
+	// first two by its general row and the router then has nothing at the address it
+	// lands on, which is a dead link dressed as a live one. They now name composed
+	// addresses the reference application serves — /app/tenant/tenants/new,
+	// /app/user/users and /app/user/users/new, /app/billing/plans, with the sidebar
+	// labels changed to the screens they name, because an example whose label and
+	// address disagree is a different lie.
+	//
+	// Three examples' HTML, the source properties behind them, and one span offset
+	// that the moved markup shifts by five bytes are in this delta. Tokens, themes,
+	// CSS, icons and the other ninety-plus examples are byte-identical, measured as a
+	// leaf-by-leaf diff of the export before and after. What makes an address in this
+	// file safe to hold at all is §TestEveryAddressAShippedExampleNavigatesToIsStill
+	// Served, which asks a running server about every href in ui/components/examples.
+	//
 	// This is the digest of the two branches together, measured on the merged tree
 	// rather than inherited from either: neither pin above describes a vocabulary
 	// that exists after this merge, and a digest copied from one side would be a
 	// number that certifies a thing nobody shipped.
-	if legacy.SHA256 != "cc4ae73f932192080a7f7f2c270769fc49d615d2d746aadc1243fe94334b5bdd" {
+	if legacy.SHA256 != "b69e2daea357acbcfa31f9300734850ba370271796a7ff061d5e777b655d309b" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

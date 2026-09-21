@@ -16,7 +16,6 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/page"
-	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
 // pages are the screens no schema describes: the way in, the way around, and
@@ -25,31 +24,32 @@ import (
 // document around it is page.Serve's.
 type pages struct {
 	Shell
+	at        addresses
 	shell     page.Shell
 	resources []httpx.Resource
 	declared  []tenancy.Grant
 }
 
-func (p pages) mount(api *httpx.API) {
+func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	loginShell := p.shell
 	loginShell.Messages, loginShell.Locale = p.Messages, p.Locale
-	page.Serve(api, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: loginPath, Summary: "Sign in"},
+	page.Serve(app, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: p.at.login.rel, Summary: "Sign in"},
 		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return login(ctx, r.Locale), nil
+			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn), nil
 		})
 
-	page.Serve(api, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: adminRoot, Summary: "The dashboard"},
+	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
 		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
 			return p.dashboard(ctx), nil
 		})
 
-	page.Serve(api, p.shell, page.Route{ID: "admin-health", Method: http.MethodGet, Path: healthPath, Summary: "Health"},
+	page.Serve(app, p.shell, page.Route{ID: "admin-health", Method: http.MethodGet, Path: p.at.health.rel, Summary: "Health"},
 		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
 			return healthPage(checks(ctx)), nil
 		})
 
-	p.mountGallery(api)
-	p.mountRoles(api)
+	p.mountGallery(app)
+	p.mountRoles(s.App)
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -59,7 +59,7 @@ func (p pages) mount(api *httpx.API) {
 	// wildcard they hold in their own tenant must not answer a question about
 	// everybody's. The kernel refuses it before the Authorizer is asked; the
 	// sidebar drops the link for the same reason, so the two agree.
-	page.Serve(api, p.shell, page.Route{ID: "admin-tenants", Method: http.MethodGet, Path: tenantsPath, Summary: "The tenants of this installation"},
+	page.Serve(namespace(s.App, "tenant"), p.shell, page.Route{ID: "admin-tenants", Method: http.MethodGet, Path: p.at.tenants.rel, Summary: "The tenants of this installation"},
 		httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
 		func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
 			return p.tenants(ctx)
@@ -71,8 +71,7 @@ func (p pages) mount(api *httpx.API) {
 // and a second one that minted it differently is the duplicate most worth not
 // having. ui/assets/js/session.js is the thirty lines that make a form post
 // JSON. It is a bare page: somebody who has no session yet has no navigation.
-func login(ctx context.Context, locale *page.Locale) page.View {
-	next := adminRoot
+func login(ctx context.Context, locale *page.Locale, next, action string) page.View {
 	if r, ok := httpx.RequestFrom(ctx); ok {
 		// The kernel's rule, because this one used to be its own and was
 		// wrong: "/\\evil.example" has a leading slash and a second character
@@ -93,7 +92,7 @@ func login(ctx context.Context, locale *page.Locale) page.View {
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				"data-login-form": "", "data-next": next}},
-			Action: "/api/v1/auth/login", Label: title,
+			Action: action, Label: title,
 		},
 			components.Alert(components.AlertProps{
 				ComponentProps: components.ComponentProps{
@@ -131,7 +130,7 @@ func (p pages) dashboard(ctx context.Context) page.View {
 		count := strconv.FormatInt(total, 10)
 		cards = append(cards, components.Card(components.CardProps{
 			Title: count + " " + rest.Humanize(r.Entity) + "s", Description: "In " + r.Module,
-			Clickable: true, Href: screens.Path(r, opts),
+			Clickable: true, Href: r.Screen,
 		}))
 	}
 	var failed []string
@@ -261,7 +260,7 @@ func (p pages) tenants(ctx context.Context) (page.View, error) {
 					var links []g.Node
 					for _, host := range strings.Split(rest.Text(row.Cells["hosts"]), ", ") {
 						links = append(links, components.Link(components.LinkProps{
-							Label: host, Href: "https://" + host + adminRoot, External: true}))
+							Label: host, Href: "https://" + host + p.at.workspace.at, External: true}))
 					}
 					if len(links) == 0 {
 						return g.Text("—")

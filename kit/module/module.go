@@ -88,8 +88,12 @@ type Module struct {
 	// module that never shared an owner declares nothing. See db.Adoption.
 	Adopts []db.Adoption
 
-	// Routes registers this module's operations, each with its authorization.
-	Routes func(api *httpx.API)
+	// Routes registers this module's operations, each with its authorization,
+	// on the surface the kernel built for it. The module chooses a router —
+	// r.Public, r.App, r.Ops — and writes a path relative to it; the prefix, the
+	// module segment and the middleware chain are the kernel's to compose and
+	// its to refuse. See httpx.Surfaces.
+	Routes func(r httpx.Surfaces)
 }
 
 // Permission is one thing a role can be granted.
@@ -114,15 +118,36 @@ type Permission struct {
 // holds Permission. There is no Order: nav is rendered in composition order,
 // which is the order main lists the modules in, and a second ordering nothing
 // reads is a number every module would guess at.
+//
+// Screen names the workspace screen the entry leads to as the module and the
+// entity — "task/tasks" — and not as a URL. The old field was Path, and nine
+// manifests wrote "/admin/task/tasks" into it, which meant a module named the
+// surface its navigation lived on and every shell move was nine edits. The
+// workspace's own address is the kernel's to know (httpx.Workspace), and the
+// rename is what made every one of those nine a compile error rather than a
+// string that still resolves until somebody moves the shell.
 type NavEntry struct {
-	Label      string
-	Path       string
+	Label string
+	// Screen is "<module>/<entity>", relative to the workspace: "task/tasks".
+	Screen     string
 	Permission string
 }
 
 // moduleName is the grammar of a module name. It is the prefix of every event
 // the module emits, so it has to be an identifier.
 var moduleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// screenName is the grammar of a nav entry's Screen: the module and the entity,
+// one slash, no leading slash and no prefix. It is the shape the generated
+// screens are mounted at, which is the only reason a nav entry can name a
+// screen without naming where the shell lives.
+var screenName = regexp.MustCompile(`^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$`)
+
+// surfacesNames are the words that belong to the kernel: a module called
+// "public", "ops" or "app" would compose a route whose prefix and its surface
+// disagree, and the mount address would read as two things at once. "app" is the
+// composition's own namespace at /api/v1/app, which is why no module may take it.
+var surfacesNames = map[string]bool{"public": true, "ops": true, "app": true}
 
 // Validate checks a set of modules against the rules that make the namespacing
 // real: names are unique and well-formed, no two modules define the same
@@ -145,6 +170,8 @@ func Validate(mods []Module) error {
 			continue
 		case !moduleName.MatchString(m.Name):
 			add("module %q: a name is a lower-case identifier, because the events it emits are prefixed with it", m.Name)
+		case surfacesNames[m.Name]:
+			add("module %q: a module may not be named public or ops; the two name surfaces", m.Name)
 		}
 		if names[m.Name] {
 			add("module %q: declared twice", m.Name)
@@ -217,6 +244,9 @@ func Validate(mods []Module) error {
 			}
 		}
 		for _, n := range m.Nav {
+			if !screenName.MatchString(n.Screen) {
+				add("module %q: nav entry %q names Screen %q; a nav entry names its screen relative to the workspace — %q", m.Name, n.Label, n.Screen, "task/tasks")
+			}
 			if n.Permission == "" {
 				add("module %q: nav entry %q declares no permission; a link everyone sees is still a decision", m.Name, n.Label)
 				continue

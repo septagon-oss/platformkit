@@ -39,9 +39,16 @@ type (
 )
 
 // Mount is the screens of one resource, each a renderer behind page.Serve.
-// Everything about them comes from the resource — the path from its API path, the
-// guards from its two permissions, the columns and the controls from its schema,
-// and the doors it has from which operations it actually mounted.
+// Everything about them comes from the resource — its own path, its two
+// permissions, its schema, and the doors it has from which operations it
+// actually mounted.
+//
+// router is the workspace router of the resource's own module (`s.App.ForModule("task")`
+// for the task screens), so every address below is composed by the kernel from
+// the module and the surface rather than spelled out by the shell that generated
+// the page. A screen is always workspace work, whatever surface its API's reads
+// answer on: a person stands in front of it, and the page declares the same
+// permission the JSON route beside it does.
 //
 // A collection gets the seven: list, new, create, read, edit, update, delete. A
 // singleton gets the two it has routes behind, because rest.Singleton mounts one
@@ -53,90 +60,95 @@ type (
 // operator boundary for private reads as well as writes. A customer's wildcard
 // must not open a screen whose corresponding API route refused it.
 // See docs/adr/0008.
-func Mount(api *httpx.API, s page.Shell, o Options, r httpx.Resource) {
-	at := Path(r, o)
-	id := "screen-" + r.Module + "-" + r.Entity + "-"
-	read, write := r.ReadAuth(), r.WriteAuth()
-	if r.Singleton {
-		mountSingleton(api, s, o, r, at, id, read, write)
+func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
+	// at is where the screens are: /app/<module>/<entity>, composed by the kernel
+	// when the resource was registered. Every link is built from it. rel is the
+	// same address before the prefix, which is the only form a router accepts —
+	// the module wrote it, and it is the reason this shell never has to know
+	// where the workspace is mounted.
+	at, rel := res.Screen, res.Path
+	id := "screen-" + res.Module + "-" + res.Entity + "-"
+	read, write := res.ReadAuth(), res.WriteAuth()
+	if res.Singleton {
+		mountSingleton(router, s, o, res, at, rel, id, read, write)
 		return
 	}
 
-	page.Serve(api, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: at, Summary: "The " + r.Entity + " list"}, read,
+	page.Serve(router, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " list"}, read,
 		func(ctx context.Context, req page.Request, in *listInput) (page.View, error) {
 			pageNo := max(in.Page, 1)
-			rows, total, err := r.List(ctx, crud.Query{Limit: perPage, Offset: (pageNo - 1) * perPage, Sort: in.Sort})
+			rows, total, err := res.List(ctx, crud.Query{Limit: perPage, Offset: (pageNo - 1) * perPage, Sort: in.Sort})
 			if err != nil {
 				return page.View{}, err
 			}
-			return listView(r, ctx, localized(o, req), at, rows, total, pageNo, in.Sort, r.Writable(ctx)), nil
+			return listView(res, ctx, localized(o, req), at, rows, total, pageNo, in.Sort, res.Writable(ctx)), nil
 		})
 
-	page.Serve(api, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: at + "/new", Summary: "The new-" + r.Entity + " form"}, write,
+	page.Serve(router, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
 		func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 			o := localized(o, req)
-			return Form(r, o, at, o.Text("screens.new", "New %s", r.Entity), nil, nil, "", true), nil
+			return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), nil, nil, "", true), nil
 		})
 
-	page.Serve(api, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: at, Summary: "Create a " + r.Entity}, write,
+	page.Serve(router, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: rel, Summary: "Create a " + res.Entity}, write,
 		func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
 			// Immutable is refused here rather than dropped: this form does not
 			// render those fields at all, so a value for one did not come from
 			// it. See rest.Values.
-			sent, err := rest.Values(in.RawBody, r.Schema.Fields, r.Immutable)
+			sent, err := rest.Values(in.RawBody, res.Schema.Fields, res.Immutable)
 			if err == nil {
 				var row map[string]any
-				if row, err = r.Create(ctx, sent); err == nil {
+				if row, err = res.Create(ctx, sent); err == nil {
 					return page.View{}, httpx.SeeOther(at + "/" + rest.Text(row["id"]))
 				}
 			}
-			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
+			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
-			return Form(r, o, at, o.Text("screens.new", "New %s", r.Entity), sent, errs, detail, true), nil
+			return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), sent, errs, detail, true), nil
 		})
 
-	page.Serve(api, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: at + "/{id}", Summary: "One " + r.Entity}, read,
+	page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity}, read,
 		func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
-			row, err := r.Get(ctx, in.ID)
+			row, err := res.Get(ctx, in.ID)
 			if err != nil {
 				return page.View{}, err
 			}
-			return detailView(r, ctx, localized(o, req), at, row, r.Writable(ctx)), nil
+			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx)), nil
 		})
 
-	page.Serve(api, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: at + "/{id}/edit", Summary: "The edit-" + r.Entity + " form"}, write,
+	page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form"}, write,
 		func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
-			row, err := r.Get(ctx, in.ID)
+			row, err := res.Get(ctx, in.ID)
 			if err != nil {
 				return page.View{}, err
 			}
 			o := localized(o, req)
-			return Form(r, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", r.Entity), row, nil, "", false), nil
+			return Form(res, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", res.Entity), row, nil, "", false), nil
 		})
 
-	page.Serve(api, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: at + "/{id}", Summary: "Update a " + r.Entity}, write,
+	page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel + "/{id}", Summary: "Update a " + res.Entity}, write,
 		func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
 			item := at + "/" + in.ID.String()
-			sent, err := rest.UpdateValues(in.RawBody, r.Schema.Fields, nil)
+			sent, err := rest.UpdateValues(in.RawBody, res.Schema.Fields, nil)
 			if err == nil {
-				if _, err = r.Update(ctx, in.ID, rest.Writable(sent, r.Immutable)); err == nil {
+				if _, err = res.Update(ctx, in.ID, rest.Writable(sent, res.Immutable)); err == nil {
 					return page.View{}, httpx.SeeOther(item)
 				}
 			}
-			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
+			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
-			return Form(r, o, item, o.Text("screens.edit_item", "Edit %s", r.Entity), sent, errs, detail, false), nil
+			return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
 		})
 
-	page.Serve(api, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: at + "/{id}/delete", Summary: "Delete a " + r.Entity}, write,
+	page.Serve(router, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: rel + "/{id}/delete", Summary: "Delete a " + res.Entity}, write,
 		func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
-			if err := r.Delete(ctx, in.ID); err != nil {
+			if err := res.Delete(ctx, in.ID); err != nil {
 				return page.View{}, err
 			}
 			return page.View{}, httpx.SeeOther(at)
 		})
 
-	mountCommands(api, s, o, r, at, id)
+	mountCommands(router, s, o, res, at, rel, id)
 }
 
 // screens are the verbs this adapter already mounts a route behind. A command named
@@ -155,11 +167,11 @@ var taken = []string{"list", "new", "create", "read", "edit", "update", "delete"
 // A command whose Run is nil is not mounted. There is nothing to perform, and a route
 // that answers a form by doing nothing while reporting success is worse than no route:
 // the person leaves the page believing the thing happened.
-func mountCommands(api *httpx.API, s page.Shell, o Options, r httpx.Resource, at, id string) {
-	for _, c := range r.Commands {
+func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Resource, at, rel, id string) {
+	for _, c := range res.Commands {
 		for _, verb := range taken {
 			if c.Verb == verb {
-				panic("screens: " + r.Module + "." + r.Entity + " has a command called " + verb +
+				panic("screens: " + res.Module + "." + res.Entity + " has a command called " + verb +
 					", which is already a screen route of every entity; name a command after what it does")
 			}
 		}
@@ -179,14 +191,14 @@ func mountCommands(api *httpx.API, s page.Shell, o Options, r httpx.Resource, at
 				return page.View{}, httpx.SeeOther(at)
 			}
 			if len(c.Fields) == 0 {
-				page.Serve(api, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-					Path: strings.TrimSuffix(at, "/") + "/" + c.Verb, Summary: c.Summary}, c.Auth,
+				page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
+					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary}, c.Auth,
 					func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
 						return collection(ctx, nil)
 					})
 			} else {
-				page.Serve(api, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-					Path: strings.TrimSuffix(at, "/") + "/" + c.Verb, Summary: c.Summary}, c.Auth,
+				page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
+					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary}, c.Auth,
 					func(ctx context.Context, _ page.Request, in *formInput) (page.View, error) {
 						return collection(ctx, in.RawBody)
 					})
@@ -200,15 +212,15 @@ func mountCommands(api *httpx.API, s page.Shell, o Options, r httpx.Resource, at
 			return page.View{}, httpx.SeeOther(at + "/" + rowID.String())
 		}
 		if len(c.Fields) == 0 {
-			page.Serve(api, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-				Path: at + "/{id}/" + c.Verb, Summary: c.Summary}, c.Auth,
+			page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
+				Path: rel + "/{id}/" + c.Verb, Summary: c.Summary}, c.Auth,
 				func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
 					return item(ctx, in.ID, nil)
 				})
 			continue
 		}
-		page.Serve(api, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-			Path: at + "/{id}/" + c.Verb, Summary: c.Summary}, c.Auth,
+		page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
+			Path: rel + "/{id}/" + c.Verb, Summary: c.Summary}, c.Auth,
 			func(ctx context.Context, _ page.Request, in *itemFormInput) (page.View, error) {
 				return item(ctx, in.ID, in.RawBody)
 			})
@@ -243,37 +255,37 @@ func perform(c httpx.Command, ctx context.Context, id uuid.UUID, body []byte) er
 // same way whatever shape it has. Get takes the nil id because rest.Singleton ignores
 // it on purpose: there is one row, and a screen that asked for another would be
 // asking about a tenant it cannot see.
-func mountSingleton(api *httpx.API, s page.Shell, o Options, r httpx.Resource, at, id string, read, write httpx.Auth) {
-	page.Serve(api, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: at, Summary: "The " + r.Entity + " record"}, read,
+func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Resource, at, rel, id string, read, write httpx.Auth) {
+	page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " record"}, read,
 		func(ctx context.Context, req page.Request, _ *page.Empty) (page.View, error) {
-			row, err := r.Get(ctx, uuid.Nil)
+			row, err := res.Get(ctx, uuid.Nil)
 			if err != nil {
 				return page.View{}, err
 			}
-			return detailView(r, ctx, localized(o, req), at, row, r.Writable(ctx)), nil
+			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx)), nil
 		})
 
-	page.Serve(api, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: at + "/edit", Summary: "The edit-" + r.Entity + " form"}, write,
+	page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/edit", Summary: "The edit-" + res.Entity + " form"}, write,
 		func(ctx context.Context, req page.Request, _ *page.Empty) (page.View, error) {
-			row, err := r.Get(ctx, uuid.Nil)
+			row, err := res.Get(ctx, uuid.Nil)
 			if err != nil {
 				return page.View{}, err
 			}
 			o := localized(o, req)
-			return Form(r, o, at, o.Text("screens.edit_item", "Edit %s", r.Entity), row, nil, "", false), nil
+			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", res.Entity), row, nil, "", false), nil
 		})
 
-	page.Serve(api, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: at, Summary: "Update the " + r.Entity}, write,
+	page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel, Summary: "Update the " + res.Entity}, write,
 		func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
-			sent, err := rest.UpdateValues(in.RawBody, r.Schema.Fields, nil)
+			sent, err := rest.UpdateValues(in.RawBody, res.Schema.Fields, nil)
 			if err == nil {
-				if _, err = r.Update(ctx, uuid.Nil, rest.Writable(sent, r.Immutable)); err == nil {
+				if _, err = res.Update(ctx, uuid.Nil, rest.Writable(sent, res.Immutable)); err == nil {
 					return page.View{}, httpx.SeeOther(at)
 				}
 			}
-			errs, detail := rest.FieldErrors(err, r.Schema.Fields)
+			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
-			return Form(r, o, at, o.Text("screens.edit_item", "Edit %s", r.Entity), sent, errs, detail, false), nil
+			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
 		})
 }
 
