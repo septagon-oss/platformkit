@@ -79,41 +79,55 @@ func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int
 // denial, the public write limit, the host and control-plane gates, the transaction
 // that could not be opened or did not commit.
 //
-// Those guards hold a huma.Context where the ones above hold a ResponseWriter, and two
-// things follow that the one-line version of this fix — unwrap and call fail — gets
-// wrong, which is a 500 where a refusal was meant to be.
+// Those guards hold a huma.Context where the ones above hold a ResponseWriter, and one
+// thing follows that the one-line version of this fix — unwrap and call fail — gets
+// wrong, which is a 500 where a refusal was meant to be. The transaction middleware
+// decides commit or rollback on the status this response carries, and a refusal that
+// reached only the writer leaves that verdict at zero: an undecided response is rolled
+// back and replaced, so the refusal the caller was shown disappears and an outage takes
+// its place. declared is what carries the verdict to both places, and ctx.SetStatus is
+// the same call the anonymous-caller branch of authorize makes when it answers 303.
 //
-//   - The response is the one respond is holding, so the answer goes to the writer huma
-//     is carrying (humachi.Unwrap) and not to a new one. A body written past the buffer
-//     leaves the kernel with no status to commit against — the reason notHere has always
-//     answered through huma rather than onto the writer.
-//   - The transaction middleware decides commit or rollback on the status of this
-//     response, and a page the renderer wrote never passed through huma's writer, so it
-//     would leave the verdict at zero. An undecided response is rolled back and replaced
-//     with a 500: the refusal the person was shown disappears and an outage takes its
-//     place. ctx.SetStatus is what says the verdict is decided, and it is the same call
-//     the anonymous-caller branch of authorize makes when it answers 303 instead.
-//
-// The document a client that asked for a value gets is unchanged, byte for byte, and so
-// is the one an application that registers no renderer has always written. A renderer
-// that was asked and declined is owed that same one document: hence ask the renderer
-// here (show) rather than fail, which answers the fallback itself because a kernel-side
-// caller has no huma writer to fall back on, and then this line would be the second
-// writer of the same verdict.
+// The document is written by writeProblem, the one encoder this package has, and not by
+// huma's writer. That substitution is the reason this function is not just fail: huma's
+// writer answers this shape its own way — a "$schema" member inside the body and a Link
+// response header — so a refusal of an address that *is* served here would arrive in a
+// different shape, another Content-Length and one more header, from the refusal of an
+// address that is not served at all. kit/problem promises one error shape and README.md
+// promises that the control plane's 404 cannot be told from a never-mounted address; both
+// promises are this line, and a second encoder of the same body is what broke them. The
+// answer a client that asked for a value gets from the guards is therefore now the
+// shorter one, and it is the one every kernel-side refusal has always written.
 func (a *API) refuse(ctx huma.Context, status int, detail string) {
-	if a.opts.Fault != nil {
-		// The unwrap sits behind the same test show makes, because it is the only
-		// reason to reach past the huma context and it panics on a foreign one.
-		r, w := humachi.Unwrap(ctx)
-		if wantsDocument(r) {
-			ctx.SetStatus(status)
-			if a.show(w, r, requestIDFrom(r.Context()), status, detail) {
-				return
-			}
+	// The unwrap sits behind the same test show makes, because it is the reason to
+	// reach past the huma context and it panics on a foreign one.
+	r, w := humachi.Unwrap(ctx)
+	id := requestIDFrom(r.Context())
+	if wantsDocument(r) {
+		// The verdict is stated before the page is asked for, because a page the
+		// renderer wrote never passed through a writer that states one. A renderer
+		// that declines has written nothing, which is what lets the document below
+		// answer in the same buffer.
+		ctx.SetStatus(status)
+		if a.show(w, r, id, status, detail) {
+			return
 		}
 	}
-	_ = huma.WriteErr(a.api, ctx, status, detail)
+	writeProblem(declared{ResponseWriter: w, ctx: ctx}, status, id, detail)
 }
+
+// declared is the writer of a refusal made inside the huma chain: the headers and the
+// body are the writer huma is carrying, and the status line goes to the huma context as
+// well, because that context's status — shared by every copy of it — is the verdict the
+// transaction middleware reads to decide commit or rollback. Writing the status to the
+// writer alone would hold a response the kernel cannot decide about; writing it to the
+// context alone would write it twice into the same response.
+type declared struct {
+	http.ResponseWriter
+	ctx huma.Context
+}
+
+func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 
 // wantsDocument reports whether the client asked to be *shown* the answer rather than
 // handed a value.

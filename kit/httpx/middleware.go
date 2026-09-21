@@ -300,8 +300,11 @@ func bufferFrom(ctx context.Context) (*buffer, bool) {
 	return b, ok
 }
 
-// writeProblem answers with the one error shape, without huma: the recovery
-// runs outside any huma context, and a panic during routing has none at all.
+// writeProblem answers with the one error shape. It is the only encoder of it: the
+// recovery runs outside any huma context, a panic during routing has none at all, and a
+// refusal inside the chain reaches it through declared, because huma's writer stamps a
+// schema link into the body and answers a header this encoder does not, which would make
+// two shapes of the one problem. See fault.go.
 func writeProblem(w http.ResponseWriter, status int, id, detail string) {
 	p := problem.New(status, detail)
 	if id != "" {
