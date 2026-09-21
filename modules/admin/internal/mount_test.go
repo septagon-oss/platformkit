@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -238,4 +239,35 @@ func (w words) Text(key, fallback string, _ ...any) string {
 		return text
 	}
 	return fallback
+}
+
+// TestTheSignInFormIsNotOfferedAtATenantlessHost is the other half of the same
+// trap. The page reads no tenant, so it is Public and renders happily at an
+// address nobody serves a site at — and the form it renders posts to a route
+// that cannot answer there. Somebody who opens the deployment by IP meets a
+// working sign-in page that cannot sign anybody in, which reads as an
+// application with a broken password rather than as a mistyped address.
+//
+// Every other page at such a host is a 404; this one has to agree.
+func TestTheSignInFormIsNotOfferedAtATenantlessHost(t *testing.T) {
+	_, conn := dbtest.Schema(t)
+	api, router := httpx.New(httpx.Options{
+		PublicHost: "admin.test", Tenants: noTenants{}, Conn: conn, Authorize: allow(true),
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
+			return tenancy.Principal{}, false, nil
+		},
+		Log: slog.New(slog.DiscardHandler),
+	})
+	Mount(api, Shell{Authorize: allow(true), Theme: design.Default()})
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8080"+loginPath, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("%s at a host that serves no site = %d, want 404", loginPath, w.Code)
+	}
+	if strings.Contains(w.Body.String(), `type="password"`) {
+		t.Error("a form that no route can accept was rendered; the page offered a sign-in there is none to have")
+	}
 }

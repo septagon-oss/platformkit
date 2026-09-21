@@ -115,11 +115,18 @@ func RegisterOIDCRoutes(api *httpx.API, svc contracts.Service, users contracts.U
 		Summary:     "Begin single sign-on",
 		Description: "Redirects to the identity provider with PKCE and a state cookie.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusServiceUnavailable},
+		Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*redirectOutput, error) {
 		r, ok := httpx.RequestFrom(ctx)
 		if !ok {
 			return nil, problem.New(http.StatusInternalServerError, "")
+		}
+		// The provider is asked about the host this request arrived at, so a host
+		// that serves no site would otherwise spend a discovery round trip and
+		// hand the identity provider a redirect_uri nobody here owns. There is no
+		// tenant to sign in to there either.
+		if err := servedHere(ctx); err != nil {
+			return nil, err
 		}
 		provider, err := p.discover(ctx)
 		if err != nil {
@@ -145,7 +152,7 @@ func RegisterOIDCRoutes(api *httpx.API, svc contracts.Service, users contracts.U
 		Summary:     "Finish single sign-on",
 		Description: "Exchanges the code, verifies the id token, and opens a session for the user whose verified address it names. An address this tenant does not have is refused: nobody is created here.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusForbidden, http.StatusServiceUnavailable},
+		Errors:      []int{http.StatusForbidden, http.StatusNotFound, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedIn}},
 	}, httpx.Public(), func(ctx context.Context, in *callbackInput) (*redirectOutput, error) {
 		tx, err := transaction(ctx)

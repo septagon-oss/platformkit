@@ -27,13 +27,16 @@ func RegisterRegistrationRoutes(api *httpx.API, svc *Service) {
 		Path: Path + "/register", Summary: "Request a member account",
 		Description: "Queues registration in this tenant. Check your email to choose a password; existing accounts keep their roles and status. The acknowledgment does not reveal whether the account exists.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
-		Errors:     []int{http.StatusTooManyRequests, http.StatusServiceUnavailable},
+		Errors:     []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{contracts.EventRegistrationRequested}},
 	}, httpx.Public(), func(ctx context.Context, in *registrationInput) (*doneOutput, error) {
 		if svc.mail.Mailer == nil || svc.mail.Hosts == nil {
 			return nil, problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
 		}
 		r, _ := httpx.RequestFrom(ctx)
+		if err := servedHere(ctx); err != nil {
+			return nil, err
+		}
 		if !svc.MayAsk(ctx, ClientOf(r).IP) {
 			return nil, problem.New(http.StatusTooManyRequests, "too many account requests from this address; wait and try again")
 		}

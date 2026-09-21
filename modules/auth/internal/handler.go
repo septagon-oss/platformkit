@@ -37,7 +37,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		Summary:     "Sign in with a password",
 		Description: "Opens a session and sets the platformkit_session cookie. A wrong password and an address nobody has answer identically, and cost the same.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedIn, contracts.EventLoginFailed}},
 	}, httpx.Public(), func(ctx context.Context, in *loginInput) (*sessionOutput, error) {
 		// The verdict first, the sleep second, the transaction third, and that
@@ -73,6 +73,9 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 				"this sign-in came from another site; sign in from the page itself")
 		}
 		from := ClientOf(r)
+		if err := servedHere(ctx); err != nil {
+			return nil, err
+		}
 		if svc.Precheck(ctx, in.Body.Email, from.IP) == contracts.Delay {
 			pause(ctx, contracts.SoftDelay)
 		}
@@ -176,7 +179,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		Summary:     "Send me a reset link",
 		Description: "An address nobody has and an address somebody has are the same answer and the same work: this route publishes one event and the worker decides whether anybody is there, so neither the body nor a stopwatch tells them apart. The mail that does not arrive is the message. The 429 is about the address asking, never the address asked about.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusTooManyRequests, http.StatusServiceUnavailable},
+		Errors:      []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventResetRequested,
 		}},
@@ -188,6 +191,9 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		// limit on the address asked about — that would be the oracle this
 		// route exists not to be.
 		r, _ := httpx.RequestFrom(ctx)
+		if err := servedHere(ctx); err != nil {
+			return nil, err
+		}
 		if !svc.MayAsk(ctx, ClientOf(r).IP) {
 			return nil, problem.New(http.StatusTooManyRequests,
 				"too many reset requests from this address; wait and try again")
@@ -209,7 +215,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		Summary:     "Set a password with a link",
 		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds. A token that is unknown, spent or expired is one answer.",
 		Tags:        []string{"auth"},
-		Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity,
+		Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusUnprocessableEntity,
 			http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
@@ -220,6 +226,9 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		// can call in a loop needs a limit whether or not the thing it checks is
 		// hard to guess.
 		r, _ := httpx.RequestFrom(ctx)
+		if err := servedHere(ctx); err != nil {
+			return nil, err
+		}
 		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
 			return nil, problem.New(http.StatusTooManyRequests,
 				"too many reset attempts from this address; wait and try again")
@@ -335,13 +344,44 @@ func refusal(err error) error {
 	return rest.Fault(err)
 }
 
-// transaction is the request's, or a 503 saying why there is none.
+// servedHere is the question every public route of this module answers first:
+// did this request come to a host this installation serves a tenant at?
+//
+// kit/httpx serves a Public operation at a host its loader knows nothing about —
+// a probe addressing the pod, a browser that typed an address instead of a
+// site's name — with no tenant and so no transaction. That is right for a
+// documentation route and wrong for everything here: a sign-in asked about at
+// such a host has nobody's accounts to consult, no transaction to consult them
+// in and no tenant-prefixed counter to be rate limited by. The counters answer
+// ErrNoConnection, the limiter fails open on that, and every attempt is written
+// up as two ERROR lines about a database that is fine.
+//
+// modules/content, modules/web and kit/rest's public singleton answer the same
+// way at the same junction, with the status the kernel itself uses: an unknown
+// host is a 404, because a site that is not served and a site that does not
+// exist are the same fact from outside.
+func servedHere(ctx context.Context) error {
+	if _, ok := tenancy.FromContext(ctx); !ok {
+		return problem.NotFound("no site is served at this host")
+	}
+	return nil
+}
+
+// transaction is the request's, or the honest reason there is none.
+//
+// The kernel opens a pending transaction for every request that resolved a host
+// to a tenant, whatever the database then does, so arriving here without one
+// means the host named no tenant. It used to answer with the 503 that blames a
+// healthy database for somebody typing an address instead of a site's name.
 func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 	tx, ok := httpx.TxFrom(ctx)
-	if !ok {
-		return tx, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
+	if ok {
+		return tx, nil
 	}
-	return tx, nil
+	if err := servedHere(ctx); err != nil {
+		return tx, err
+	}
+	return tx, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
 }
 
 type loginInput struct {

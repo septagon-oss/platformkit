@@ -21,7 +21,7 @@ func RegisterEmailRegistrationRoutes(api *httpx.API, svc *Service, policy contra
 		Summary:     "Register with a password and email confirmation",
 		Description: "Accepts a password, matching confirmation and terms consent. New accounts await mailbox verification; existing accounts remain unchanged. Check your email after the neutral acknowledgment.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
-		Errors:     []int{http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable},
+		Errors:     []int{http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{user.EventRegistrationUnverified}},
 	}, httpx.Public(), func(ctx context.Context, in *passwordRegistrationInput) (*doneOutput, error) {
 		if err := emailRequest(ctx, svc); err != nil {
@@ -49,7 +49,7 @@ func RegisterEmailRegistrationRoutes(api *httpx.API, svc *Service, policy contra
 		Summary:     "Request another email verification link",
 		Description: "Queues a tenant-local request without revealing account existence, eligibility or recipient cooldown. A newly delivered link replaces the previous verification link.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
-		Errors:     []int{http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable},
+		Errors:     []int{http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{contracts.EventVerificationRequested}},
 	}, httpx.Public(), func(ctx context.Context, in *resendVerificationInput) (*doneOutput, error) {
 		if err := emailRequest(ctx, svc); err != nil {
@@ -78,12 +78,15 @@ func RegisterEmailRegistrationRoutes(api *httpx.API, svc *Service, policy contra
 		OperationID: "auth-verify-email", Method: http.MethodPost, Path: Path + "/verify-email",
 		Summary:     "Confirm the registered email address",
 		Description: "Consumes the current unexpired verification token and activates its exact unverified account in one transaction. It preserves the registered password and roles and issues no session.",
-		Tags:        []string{"auth"}, Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests},
+		Tags:        []string{"auth"}, Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests},
 		Extensions: map[string]any{httpx.EventsExtension: []string{user.EventEmailVerified}},
 	}, httpx.Public(), func(ctx context.Context, in *verifyEmailInput) (*doneOutput, error) {
 		r, _ := httpx.RequestFrom(ctx)
 		if !httpx.SameSite(r) {
 			return nil, problem.New(http.StatusForbidden, "confirm the email from the verification page itself")
+		}
+		if err := servedHere(ctx); err != nil {
+			return nil, err
 		}
 		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
 			return nil, problem.New(http.StatusTooManyRequests, "too many account link attempts; wait and try again")
@@ -105,6 +108,9 @@ func RegisterEmailRegistrationRoutes(api *httpx.API, svc *Service, policy contra
 // Registration and resend share delivery availability, request-origin and IP
 // controls. Recipient cooldown is neutral and belongs only to explicit resend.
 func emailRequest(ctx context.Context, svc *Service) error {
+	if err := servedHere(ctx); err != nil {
+		return err
+	}
 	r, _ := httpx.RequestFrom(ctx)
 	if !httpx.SameSite(r) {
 		return problem.New(http.StatusForbidden, "request an account email from this site itself")

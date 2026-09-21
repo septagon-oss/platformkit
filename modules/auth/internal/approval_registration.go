@@ -22,12 +22,15 @@ func RegisterApprovalRegistrationRoutes(api *httpx.API, svc *Service, policy con
 		Summary:     "Request an account requiring approval",
 		Description: "Accepts a password, matching confirmation and terms consent. New accounts await operator approval before sign-in. Existing accounts retain their identity, credentials, roles and status; every accepted request receives the same acknowledgment.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
-		Errors:     []int{http.StatusForbidden, http.StatusTooManyRequests},
+		Errors:     []int{http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests},
 		Extensions: map[string]any{httpx.EventsExtension: []string{user.EventRegistrationPending}},
 	}, httpx.Public(), func(ctx context.Context, in *passwordRegistrationInput) (*doneOutput, error) {
 		r, _ := httpx.RequestFrom(ctx)
 		if !httpx.SameSite(r) {
 			return nil, problem.New(http.StatusForbidden, "request an account from the registration page itself")
+		}
+		if err := servedHere(ctx); err != nil {
+			return nil, err
 		}
 		if !svc.MayAsk(ctx, ClientOf(r).IP) {
 			return nil, problem.New(http.StatusTooManyRequests, "too many account requests from this address; wait and try again")

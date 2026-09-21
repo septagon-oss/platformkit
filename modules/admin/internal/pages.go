@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -35,6 +36,13 @@ func (p pages) mount(api *httpx.API) {
 	loginShell.Messages, loginShell.Locale = p.Messages, p.Locale
 	page.Serve(api, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: loginPath, Summary: "Sign in"},
 		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			// The page reads nothing, so it is Public — and it is the page that
+			// decides what a visitor believes: a working sign-in form whose route
+			// cannot sign anybody in reads as a broken password, not as an address
+			// nobody serves a site at. Every other page there is a 404, so is this.
+			if _, ok := tenancy.FromContext(ctx); !ok {
+				return page.View{}, problem.NotFound("no site is served at this host")
+			}
 			return login(ctx, r.Locale), nil
 		})
 

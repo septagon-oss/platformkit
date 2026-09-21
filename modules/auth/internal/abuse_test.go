@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -482,5 +483,61 @@ func TestTheLimiterCountsAnAddressWithoutStoringIt(t *testing.T) {
 	}
 	if counted != len(want) {
 		t.Fatalf("counted %d keys, want all %d account and source counters", counted, len(want))
+	}
+}
+
+// TestSignInAtATenantlessHostIsRefusedWithoutCounting is the pair of ERROR lines
+// that sent an operator looking for a database that was there all along.
+//
+// A Public operation is served at a host the loader knows nothing about, so a
+// sign-in posted to an address rather than to a site's name reached this handler
+// with no tenant and so no transaction. Reading the counters failed — one ERROR
+// per counter per attempt, about a healthy database — the attempt was allowed
+// because the read failed, and the route answered 503 "the database is not
+// reachable right now".
+//
+// The answer blamed a dependency that is fine, and the attempt was counted
+// nowhere: the one route this module rate limits was unbounded for anybody who
+// posts it to a host that names nobody, at two log lines an attempt.
+func TestSignInAtATenantlessHostIsRefusedWithoutCounting(t *testing.T) {
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
+	router, _, _ := mountOn(t, conn, auth.OIDC{})
+	person(t, conn, "ada@acme.localhost")
+
+	// The limiter speaks through slog's default logger, not the API's own, so
+	// that is the one this case has to hold. Nothing else in this file runs in
+	// parallel, and the swap is undone for whatever runs next.
+	defaultLog := slog.Default()
+	logged := &strings.Builder{}
+	slog.SetDefault(slog.New(slog.NewTextHandler(logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(defaultLog) })
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/api/v1/auth/login",
+		strings.NewReader(`{"email":"ada@acme.localhost","password":"the wrong passphrase"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://127.0.0.1:8080")
+	req.RemoteAddr = "203.0.113.9:50000"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("a sign-in at an address that names no site = %d %s, want 404: no site is served here",
+			w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "no site is served at this host") {
+		t.Errorf("the answer does not name the host as the problem: %s", w.Body.String())
+	}
+	if strings.Contains(logged.String(), "limiter") {
+		t.Errorf("the limiter was asked about an attempt there is no tenant to count, and said so: %s", logged.String())
+	}
+
+	// And nothing was counted: the counters are the record of an attempt this
+	// installation took, and it took none.
+	var n int
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM platformkit_limits`).Scan(&n); err != nil {
+		t.Fatalf("count the counters: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("%d counter rows after a refused request, want none", n)
 	}
 }
