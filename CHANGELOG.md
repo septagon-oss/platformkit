@@ -156,7 +156,9 @@ it with `strings.EqualFold`, the comparison the decoder itself makes, and refuse
 the whole write naming the declared field rather than the spelling it arrived in.
 A `PATCH` that named no column moved `updated_at` and published
 `<module>.<entity>.updated` for a change nobody made; it now validates nothing,
-writes nothing, publishes nothing and returns the row as read — and `db.Now`
+writes nothing, publishes nothing and returns the row as read. The tenant-scope
+recheck a body naming a column triggers still runs first, so an empty `PATCH`
+of a row outside the request's tenant is 404 like any other body. `db.Now`
 stamps the three timestamp columns, so an answer carries the instant the column
 holds. What stays open: a `Singleton` declares no command-owned field.
 

@@ -247,8 +247,16 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// A body that named no column changed nothing, so this is not a write: no
 	// UPDATE, no validation, no moved timestamp, no event. merge applies one
 	// column per key it accepts and refuses every key it does not, so the entity
-	// is still the row as it was read under the lock — its caller's answer.
+	// is still the row as it was read under the lock — its caller's answer, once
+	// the row is the caller's at all. The lock says a row is there, not whose it
+	// is: on a table whose read policy shows one list to every tenant it is the
+	// write's tenant recheck that refuses, and this body never reaches that write.
+	// So ask the recheck here, and a foreign row answers 404 as it answers a body
+	// that names a column; the silence below is about writing, never about whose.
 	if len(columns) == 0 {
+		if err := crud.RecheckTenant(tx, e); err != nil {
+			return e, err
+		}
 		return e, nil
 	}
 	// Write only the submitted columns and timestamp. Untouched fields retain

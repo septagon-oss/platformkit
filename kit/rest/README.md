@@ -14,7 +14,8 @@ with its own body and authorization, and `Operation` is a typed projection
 with a custom path sharing the transaction and error handling. Updates and
 deletes lock the live row first — an update before merging, validating and
 snapshotting, a delete before removing the row — and a body that names no
-column stops at the lock, so it neither writes, validates nor publishes.
+column stops at that lock and at the tenant recheck the lock alone leaves
+open, so it neither writes, validates nor publishes.
 `Fault` maps kit/crud errors to problem documents; `FieldErrors`, `Values`,
 `UpdateValues` and `Writable` type a submitted form by the schema; `Display`,
 `Text`, `Humanize`, `FieldLabel` and `FieldHelp` delegate to
@@ -29,7 +30,11 @@ declared, and none of that body is stored. `UpdateValues` drops them instead: an
 edit form renders them read-only and a browser posts a read-only control back.
 `Singleton` declares none to refuse. A write that named no column changed
 nothing, so it says nothing: no `UPDATE`, no validation, no event, `updated_at`
-where it stood.
+where it stood. That silence is about writing and never about ownership: whose
+row it is gets settled first, the same way a body that names a column settles
+it, so a row the request's tenant may not write answers 404 whatever the body
+omits — on a table whose read policy shows one shared list to every tenant,
+row-level security lets the row be read, and it is the write that refuses.
 
 Prerequisites: an entity embedding `crud.Base` with a `TableName`, its
 migration, and the permissions the manifest declares. Tests need the
