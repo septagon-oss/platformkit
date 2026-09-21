@@ -6,7 +6,7 @@
 # Select the same compiler and tools even when PATH contains a newer Go release.
 # Child scripts and their Go subprocesses inherit this exact module version.
 export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
-.PHONY: help build test vet run e2e load-test check check-race check-loc check-packages check-gucs check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run e2e load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -74,6 +74,16 @@ check-gucs: ## Fail when anything outside kit/db writes a tenancy setting
 
 check-ui: ## Fail when a layer's markup reaches past the tokens or emits a class it never styles
 	./scripts/check_ui_layers.sh
+
+# Each design test embeds a real Go program and builds it before anything is
+# observed, so those programs are consumers of kit/httpx and ui/screens that live in
+# no Go package: a kernel change that renames a field they compose breaks the design
+# suite rather than the compiler. This compiles every one of them — no browser, no
+# database, ten seconds — with the tooling's own runner. It stays out of `check`
+# because it needs the tooling's own `npm ci`, which a Go-only loop should not have
+# to pay for; CI runs that same file as a step of its own, before its browser steps.
+check-fixtures: ## Compile the Go program every design test embeds
+	cd tools/designexport/openpencil && node --import ./register.mjs --test fixtures-compile.test.mjs
 
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
