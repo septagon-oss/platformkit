@@ -85,11 +85,11 @@ func (s Spec[T]) resource() httpx.Resource {
 			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
 				var e T
 				// The same refusal the JSON create gives, at the door a page
-				// uses. See refuseImmutable.
-				for _, name := range s.Immutable {
-					if _, named := values[name]; named {
-						return e, immutableRefusal(name)
-					}
+				// uses, folded the same way: decode hands these values to the
+				// same decoder, so a key that folds onto a reserved name binds
+				// into the entity rather than being ignored. See foldedName.
+				if name := foldedName(values, s.Immutable); name != "" {
+					return e, immutableRefusal(name)
 				}
 				e, err := decode[T](values)
 				if err != nil {
@@ -160,7 +160,7 @@ func decode[T crud.Entity](values map[string]any) (T, error) {
 // command's field is otherwise writable, so a value arriving for one did not
 // come from the form this function serves, and it is refused with a field error
 // rather than dropped: dropping it would store something other than what was
-// sent and say nothing. The JSON create enforces the same Immutable contract.
+// sent and say nothing. The name is matched folded, as at every other door.
 func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, error) {
 	return formValues(body, fields, refuse, false)
 }
@@ -177,18 +177,20 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 	if err != nil {
 		return nil, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
 	}
+	// Asked of every posted key before any field is read, so a key that folds
+	// onto a refused name is refused and not merely left out of the lookup.
+	if name := foldedName(form, refuse); name != "" {
+		return nil, invalid(name, "belongs to a route of its own, not to this form")
+	}
 	out := map[string]any{}
 	for _, f := range fields {
 		if f.ReadOnly {
 			continue
 		}
-		raw, sent := form[f.Name]
 		if slices.Contains(refuse, f.Name) {
-			if sent {
-				return nil, invalid(f.Name, "belongs to a route of its own, not to this form")
-			}
 			continue
 		}
+		raw, sent := form[f.Name]
 		if f.Type == crud.TypeBool {
 			// An unticked checkbox sends nothing at all, which is the one case
 			// where absence is a value.

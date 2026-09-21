@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-Two entries, one property: a tenant keeps somebody who can administer it. Each half
-was written because the state was reachable, not because a race was reported, and
-each says below what it leaves open rather than leaving that to a reader who depends
-on it.
+Two of these entries, one property: a tenant keeps somebody who can administer
+it. Each was written because the state was reachable, not because a race was
+reported, and each says below what it leaves open rather than leaving that to a
+reader who depends on it.
 
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
@@ -145,6 +145,31 @@ correct on both pgx versions, so that is a repair here rather than something the
 bump has to work around. What could reach a consumer is dst's own floor: it moved to
 `go 1.26.0`, which this module clears and a pinning module on an older toolchain
 would not.
+
+**A command-owned field is refused where a body is read, an empty `PATCH` says
+nothing, and a write asks whose row it is.** `refuseImmutable` asked whether the
+decoded map held the
+declared key while `encoding/json` binds a field a key merely folds onto, so
+`{"Author": …}` wrote the author through every generated create route of every
+module declaring `Immutable`. The five doors that read a body — create and patch,
+the two a page calls beneath HTTP, and `Values` beneath a create form — now ask
+it with `strings.EqualFold`, the comparison the decoder itself makes, and refuse
+the whole write naming the declared field rather than the spelling it arrived in.
+A `PATCH` that named no column moved `updated_at` and published
+`<module>.<entity>.updated` for a change nobody made; it now validates nothing,
+writes nothing, publishes nothing and returns the row as read. The tenant-scope
+recheck a body naming a column triggers still runs first, so an empty `PATCH`
+of a row outside the request's tenant is 404 like any other body. The `DELETE`
+asked that question of nothing at all: row-level security filters a delete by its
+`USING` clause alone, since a delete produces no new row for a `WITH CHECK`
+clause to inspect, so on a table every tenant may read, one tenant deleted
+another's row — 204, event and all — or answered 500 out of the policy violation
+where the Spec soft-deletes. Both doors now ask `crud.RecheckTenant`, the tenant
+compare `Update` already made, exported rather than copied: the change's one new
+exported name, and a nil entity answers it `ErrInvalid` as every other door in
+`kit/crud` does. `db.Now` stamps the three timestamp columns, so an
+answer carries the instant the column holds. What stays open: a `Singleton`
+declares no command-owned field.
 
 ## [1.1.1] - 2026-09-18
 

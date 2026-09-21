@@ -34,7 +34,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -193,6 +192,36 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 	return nil
 }
 
+// RecheckTenant is the tenant-scope recheck Update performs on the row before it
+// writes it: an entity carrying a tenant that is not the transaction's is not
+// this caller's row, and is answered ErrNotFound, the only thing the API may say
+// about it. A row carrying no tenant is the transaction's to stamp, which is what
+// Update then does with it. Nothing at all is answered ErrInvalid, the answer
+// Create and Update give for nothing to act on: the non-nil precondition cannot
+// be a sentence in the doc of an exported door, because the caller the export
+// exists for has no Update above it to pass the guard first.
+//
+// It is exported for a caller that read a row under the lock and then decided to
+// write nothing, which is where row-level security stops being the backstop. On a
+// table whose read policy shows one shared list to every tenant — the catalogue
+// shape of docs/adr/0008 — GetForUpdate answers a row the request may read and
+// may not write, and a write that never happens is one WITH CHECK never gets to
+// refuse. A patch body that names no column is that write, and the answer it gets
+// has to be the answer the same row gives a body that names a column.
+func RecheckTenant(tx db.Tx[db.Tenant], e Entity) error {
+	if isNil(e) {
+		return fmt.Errorf("%w: there is nothing to recheck", ErrInvalid)
+	}
+	b := entity.BaseOf(e)
+	if b.ID == uuid.Nil {
+		return ErrNotFound
+	}
+	if tenant := db.TenantOf(tx).ID; b.TenantID != uuid.Nil && b.TenantID != tenant {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Update writes an existing row back. It refuses an entity carrying another
 // tenant, which row-level security would refuse too; reporting it as not found
 // is the same answer the read would have given.
@@ -215,15 +244,10 @@ func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T, columns ...
 	if isNil(e) {
 		return fmt.Errorf("%w: there is nothing to update", ErrInvalid)
 	}
-	b := entity.BaseOf(e)
-	if b.ID == uuid.Nil {
-		return ErrNotFound
+	if err := RecheckTenant(tx, e); err != nil {
+		return err
 	}
-	tenant := db.TenantOf(tx).ID
-	if b.TenantID != uuid.Nil && b.TenantID != tenant {
-		return ErrNotFound
-	}
-	b.TenantID = tenant
+	entity.BaseOf(e).TenantID = db.TenantOf(tx).ID // a row that carried no tenant is this one's to stamp
 	if err := validate(ctx, e); err != nil {
 		return err
 	}
@@ -254,7 +278,8 @@ func Delete[T Entity](tx db.Tx[db.Tenant], id uuid.UUID, soft bool) error {
 	e := blank[T]()
 	res := tx.DB().Model(e).Where("id = ? AND deleted_at IS NULL", id)
 	if soft {
-		res = res.Update("deleted_at", time.Now())
+		// db.Now, because the stamp has to be the instant the column keeps.
+		res = res.Update("deleted_at", db.Now())
 	} else {
 		res = res.Delete(e)
 	}
