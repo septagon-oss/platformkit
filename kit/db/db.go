@@ -71,6 +71,12 @@ func OpenWithPool(ctx context.Context, url string, pool Pool) (*Conn, error) {
 		// plugins, no implicit transaction around a write.
 		Logger:                 logger.Discard,
 		SkipDefaultTransaction: true,
+		// The two columns GORM stamps for us — created_at and updated_at — come
+		// from the kernel's clock, not GORM's own time.Now(): a timestamptz
+		// drops everything past the microsecond, so a write that answers with
+		// the entity it stamped promises a row the database does not hold. See
+		// clock.go.
+		NowFunc: Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("db: open: %w", err)

@@ -94,8 +94,12 @@ func call(t *testing.T, r http.Handler, method, path, body string) (int, string)
 // the create and the two patches are all refused by Spec.Immutable, which names
 // the field so the caller is told which door to use. The create used to be the
 // module's own AfterCreate hook, which is now a second line of defence behind
-// the kernel's: kit/rest refuses an Immutable field at both write doors, for
-// every module at once. See rest.refuseImmutable.
+// the kernel's: kit/rest refuses an Immutable field at every door that reads a
+// body, for every module at once. See rest.foldedName. The folded block below
+// is that rule's module-level conformance case, run at this module's generated
+// routes through this file's own mount and call — the pattern every module
+// route test in this repository uses, because the kernel exports no route-test
+// helper — and it asks the kernel's rule, not the module's own hook.
 //
 // `roles` used to be refused by kit/crud's schema having no list type, which
 // meant it rendered nowhere either. The schema has one now, so the refusal is
@@ -151,6 +155,31 @@ func TestALifecycleChangeHasExactlyOneDoor(t *testing.T) {
 	code, body = call(t, router, http.MethodPatch, at+"/"+id, `{"status":"inactive"}`)
 	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "route of its own") {
 		t.Errorf("patching status = %d %s, want 422 naming the door", code, body)
+	}
+
+	// The same rule under the decoder's own folding: "ROLES" binds into Roles
+	// exactly as "roles" does, so the door in front of it has to name the
+	// declared field, and a refused create stores no part of its body.
+	for _, sent := range []struct{ body, field string }{
+		{`{"email":"folded@acme.test","ROLES":["admin"]}`, "roles"},
+		{`{"email":"folded2@acme.test","Handle":"ada"}`, "handle"},
+	} {
+		code, body := call(t, router, http.MethodPost, at, sent.body)
+		if code != http.StatusUnprocessableEntity ||
+			!strings.Contains(body, sent.field+" belongs to a route of its own") {
+			t.Errorf("%s = %d %s, want 422 naming the declared field %s", sent.body, code, body, sent.field)
+		}
+	}
+	if code, body := call(t, router, http.MethodGet, at, ""); code != http.StatusOK ||
+		strings.Contains(body, "folded") {
+		t.Errorf("a create the door refused left a row: %d %s", code, body)
+	}
+	// And the patch door names the field it refused, not the spelling it was
+	// sent, so the caller is pointed at Deactivate rather than at a field that
+	// does not exist.
+	if code, body := call(t, router, http.MethodPatch, at+"/"+id, `{"STATUS":"inactive"}`); code != http.StatusUnprocessableEntity ||
+		!strings.Contains(body, "status belongs to a route of its own") {
+		t.Errorf(`patching STATUS = %d %s, want 422 naming status`, code, body)
 	}
 
 	code, body = call(t, router, http.MethodPost, at+"/"+id+"/roles", `{"roles":["admin"]}`)

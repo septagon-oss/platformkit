@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -244,6 +243,13 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	columns, err := merge(e, fields, s.Immutable, values)
 	if err != nil {
 		return e, err
+	}
+	// A body that named no column changed nothing, so this is not a write: no
+	// UPDATE, no validation, no moved timestamp, no event. merge applies one
+	// column per key it accepts and refuses every key it does not, so the entity
+	// is still the row as it was read under the lock — its caller's answer.
+	if len(columns) == 0 {
+		return e, nil
 	}
 	// Write only the submitted columns and timestamp. Untouched fields retain
 	// the preceding committed values used by validation and the emitted event.
@@ -571,6 +577,15 @@ type bodyInput[T any] struct {
 }
 
 // patchInput is the update route's body: the fields to change, and no others.
+//
+// It keeps no RawBody: Body carries every top-level key the bytes carried, so
+// merge's foldedName sees what this route's decoder saw. The published media
+// types are not that question, and neither route's list is honest about it —
+// the create declares application/octet-stream, which huma's own registry then
+// answers 415 to, and both bind a +json suffix the document never declared.
+// Which bodies reach which door is pinned at the door, by
+// TestTheCreateDoorRefusesTheReservedNameUnderEveryMediaTypeItAdvertises; the
+// mismatch in the published list is older than the rule above it.
 type patchInput struct {
 	ID   uuid.UUID      `path:"id" format:"uuid" doc:"The row's id"`
 	Body map[string]any `doc:"The writable fields to change"`
@@ -664,10 +679,17 @@ func coerce(f crud.Field, raw string) (any, error) {
 // merge applies a PATCH body to an entity, field by field, through the schema,
 // and reports the database columns it changed so that Update writes those and
 // no others. A name the schema does not know, one it knows as read-only, or one
-// the Spec reserved to a route of its own is refused rather than ignored,
+// that folds onto a name the Spec reserved is refused rather than ignored,
 // because a caller who spells a field wrong — or reaches for the wrong door —
 // has to be told.
 func merge(e any, fields []crud.Field, immutable []string, patch map[string]any) ([]string, error) {
+	// The reserved names are asked of the whole body first, so the answer does
+	// not depend on map order, and folded, because this map is a decoded body:
+	// encoding/json binds "Status" into Status, and the exact lookup below
+	// would answer "there is no field" about a field that is there.
+	if name := foldedName(patch, immutable); name != "" {
+		return nil, immutableRefusal(name)
+	}
 	target := reflect.ValueOf(e).Elem()
 	columns := make([]string, 0, len(patch))
 	for name, value := range patch {
@@ -677,8 +699,6 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 			return nil, fmt.Errorf("%w: there is no field %q", crud.ErrInvalid, name)
 		case f.ReadOnly:
 			return nil, fmt.Errorf("%w: %s is read-only", crud.ErrInvalid, name)
-		case slices.Contains(immutable, name):
-			return nil, immutableRefusal(name)
 		}
 		// Round-tripping through JSON is what makes this the same decoder the
 		// request body went through: one set of rules for "3" as an int and for
@@ -702,7 +722,7 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 // the same question: a decoded entity cannot say whether the caller sent
 // "author": null, "author": "0000…" or nothing at all, and only the last is
 // allowed. So the create route asks for the bytes as well as the struct — huma
-// fills both from one read — and this is the whole of what it does with them.
+// fills both from one read — and foldedName names what it refuses.
 //
 // The refusal is the patch's, word for word, because it is the same rule: a
 // field a command owns is written by that command at every door. Read-only
@@ -719,17 +739,34 @@ func refuseImmutable(body []byte, immutable []string) error {
 		// one's: it has already failed to decode into the entity.
 		return nil
 	}
-	for _, name := range immutable {
-		if _, named := sent[name]; named {
-			return immutableRefusal(name)
-		}
+	if name := foldedName(sent, immutable); name != "" {
+		return immutableRefusal(name)
 	}
 	return nil
 }
 
-// immutableRefusal is the one message both write doors give, so a caller who
-// reaches for a field a command owns is told the same thing whether they
-// created or patched.
+// foldedName is the one question every write door asks of the top-level keys it
+// was handed — a request's bytes after one read, the map that decoded into a
+// struct, the form a browser posted — and asks it the way the decoder does:
+// strings.EqualFold, the Unicode simple case folding encoding/json binds a field
+// by when no key matches exactly, long s included. A map lookup is not that
+// question, and the decoder is the authority: a key it binds into a command's
+// field has to be refused by the door in front of it. It answers with the
+// declared field, or "" when the body names none; of two, the Spec's order wins.
+func foldedName[V any](sent map[string]V, immutable []string) string {
+	for _, name := range immutable {
+		for key := range sent {
+			if strings.EqualFold(key, name) {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
+// immutableRefusal is the one message every door but the form's gives, so a
+// caller who reaches for a field a command owns is told the same thing whether
+// they created or patched, over the wire or beneath the HTTP.
 func immutableRefusal(name string) error {
 	return fmt.Errorf("%w: %s belongs to a route of its own, not to this one", crud.ErrInvalid, name)
 }

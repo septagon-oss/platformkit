@@ -369,6 +369,163 @@ func TestBothWriteDoorsRefuseTheFieldsACommandOwns(t *testing.T) {
 	}
 }
 
+// TestACommandOwnedFieldRefusesUnderTheDecodersOwnFolding. The door has to ask
+// the question the decoder asks, and the decoder's question is not about
+// spelling: encoding/json binds a struct field when no key matches it exactly
+// and some key folds onto it. refuseImmutable asked instead whether a map had
+// that key, so it refused "status" and let "Status" through, and the row was
+// stored with the field a command owns — on every generated write route of
+// every module that declares Immutable. The door now folds the way the decoder
+// folds, with strings.EqualFold, and names the declared field rather than the
+// spelling it was sent: the field is what points at the route that owns it.
+//
+// status and notes are both text so that one body shape serves both names, and
+// two names say the guard folds per declared name rather than once.
+func TestACommandOwnedFieldRefusesUnderTheDecodersOwnFolding(t *testing.T) {
+	owned := spec
+	owned.Immutable = []string{"status", "notes"}
+	_, router, _ := mount(t, owned)
+
+	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"owned"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, body)
+	}
+	at := "/api/tasks/" + id(t, body)
+
+	capital := func(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
+	for _, sent := range []struct {
+		field string
+		keys  []string
+	}{
+		// The declared spelling, the two ASCII ones the decoder binds, and the
+		// long-s spelling: "\u017ftatus" names status to encoding/json because the
+		// decoder's comparison is Unicode simple case folding, not ASCII case.
+		// strings.EqualFold is that same comparison — every BMP rune as a whole
+		// key against twenty-six one-letter names, and every BMP rune in every
+		// position of two real names, and the keys it calls equal and the keys
+		// the decoder binds are the same set — so the door agrees with the
+		// decoder about which key names which field, and about nothing else.
+		{"status", []string{"status", "Status", "STATUS", "\u017ftatus"}},
+		{"notes", []string{"notes", capital("notes"), strings.ToUpper("notes")}},
+	} {
+		for _, key := range sent.keys {
+			field := sent.field
+			// The patch door has the map's exact keys to go on, so the sentence
+			// naming the declared field can only come from the bytes below it.
+			if code, body := call(t, router, http.MethodPatch, at, `{"`+key+`":"done"}`); code != http.StatusUnprocessableEntity ||
+				!strings.Contains(body, field+" belongs to a route of its own") {
+				t.Errorf(`PATCH {"%s":…} = %d %s, want 422 naming %q`, key, code, body, field)
+			}
+			if code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"forged","`+key+`":"done"}`); code != http.StatusUnprocessableEntity ||
+				!strings.Contains(body, field+" belongs to a route of its own") {
+				t.Errorf(`POST {"%s":…} = %d %s, want 422 naming %q`, key, code, body, field)
+			}
+		}
+	}
+
+	// A refused write leaves nothing, the mutable field of the same body
+	// included: the door refuses the write, it does not trim the field from it.
+	if code, body := call(t, router, http.MethodGet, "/api/tasks", ""); code != http.StatusOK ||
+		!strings.Contains(body, `"total":1`) || strings.Contains(body, "forged") {
+		t.Errorf("a refused write left a row: %d %s", code, body)
+	}
+
+	// What the fold does not reach. A mutable key still binds at the create, as
+	// the decoder has always bound it, and still gets the unknown-field refusal
+	// at the patch, whose body is a map and so never folds at all. Both are
+	// today's behaviour, pinned so that no later edit for consistency moves one
+	// without saying so here.
+	if code, body := call(t, router, http.MethodPost, "/api/tasks", `{"Title":"Mutable"}`); code != http.StatusCreated ||
+		!strings.Contains(body, `"title":"Mutable"`) {
+		t.Errorf(`POST {"Title":"Mutable"} = %d %s, want 201 with the title bound as the decoder binds it`, code, body)
+	}
+	if code, body := call(t, router, http.MethodPatch, at, `{"Title":"renamed"}`); code != http.StatusUnprocessableEntity ||
+		!strings.Contains(body, "there is no field") || strings.Contains(body, "route of its own") {
+		t.Errorf(`PATCH {"Title":"renamed"} = %d %s, want the unknown-field refusal it has always given`, code, body)
+	}
+
+	// And a body that is not an object stays the decoder's refusal, not this
+	// one's: the guard reads the same bytes and asks one question, and a body it
+	// cannot read names no field at all.
+	for _, notAnObject := range []string{`[]`, `null`, `"a"`} {
+		if _, body := call(t, router, http.MethodPost, "/api/tasks", notAnObject); !strings.Contains(body, "expected object") {
+			t.Errorf("POST %s answered %s, want the decoder's own refusal", notAnObject, body)
+		}
+		if _, body := call(t, router, http.MethodPatch, at, notAnObject); !strings.Contains(body, "expected object") {
+			t.Errorf("PATCH %s answered %s, want the decoder's own refusal", notAnObject, body)
+		}
+	}
+}
+
+// TestAPatchThatNamesNoColumnWritesNothingAndPublishesNothing. A PATCH whose
+// body names no column changed nothing, so it writes nothing and says nothing:
+// no UPDATE, no event, the row as it was read and updated_at where it stood.
+// The route used to timestamp and publish whatever the body said, so the only
+// body an entity whose every field a command owns accepts — {} — moved
+// updated_at and filled the outbox on every call, and a consumer of
+// <module>.<entity>.updated saw an update nobody made. The door beneath HTTP
+// runs the same rule: a row that did not change is not something that happened.
+func TestAPatchThatNamesNoColumnWritesNothingAndPublishesNothing(t *testing.T) {
+	_, router, admin := mounted(t)
+	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"untouched"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, body)
+	}
+	created, at := stampedAt(t, body), "/api/tasks/"+id(t, body)
+	stored := stampedRowAt(t, admin, at)
+
+	if code, body := call(t, router, http.MethodPatch, at, `{}`); code != http.StatusOK {
+		t.Fatalf("PATCH {} = %d %s", code, body)
+	} else if got := stampedAt(t, body); got != created {
+		t.Errorf("PATCH {} returned a row stamped %s, the create stamped it %s", got, created)
+	}
+	if got := stampedRowAt(t, admin, at); got != stored {
+		t.Errorf("PATCH {} wrote the row: updated_at went %s to %s", stored, got)
+	}
+	if n := count(t, admin, spec.Event(rest.Updated)); n != 0 {
+		t.Errorf("PATCH {} published %d %s events, want none", n, spec.Event(rest.Updated))
+	}
+
+	// The control, so the case above cannot pass because the route stopped
+	// working: a body that does name a column still writes, still stamps and
+	// still publishes.
+	if code, body := call(t, router, http.MethodPatch, at, `{"title":"touched"}`); code != http.StatusOK {
+		t.Fatalf(`PATCH {"title":"touched"} = %d %s`, code, body)
+	}
+	if got := stampedRowAt(t, admin, at); got == stored {
+		t.Errorf("a PATCH that names a column left updated_at at %s", got)
+	}
+	if n := count(t, admin, spec.Event(rest.Updated)); n != 1 {
+		t.Errorf("a PATCH that names a column published %d events, want the one", n)
+	}
+}
+
+// stampedAt is the stamp a response says the row carries.
+func stampedAt(t *testing.T, body string) string {
+	t.Helper()
+	var out struct {
+		UpdatedAt string `json:"updatedAt"`
+	}
+	if err := json.Unmarshal([]byte(body), &out); err != nil || out.UpdatedAt == "" {
+		t.Fatalf("no updatedAt in %s: %v", body, err)
+	}
+	return out.UpdatedAt
+}
+
+// stampedRowAt is the stamp the row carries in the database, which is the only
+// answer to "did this write reach it": an empty object returned unchanged can
+// come from a row nobody touched or from a row that was and was answered from
+// the snapshot.
+func stampedRowAt(t *testing.T, admin *sql.DB, at string) string {
+	t.Helper()
+	var got string
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT updated_at::text FROM rest_tasks WHERE id = $1`, at[strings.LastIndex(at, "/")+1:]).Scan(&got); err != nil {
+		t.Fatalf("read the row's stamp: %v", err)
+	}
+	return got
+}
+
 // TestAHooksEventsAreDeclaredWhereTheGateLooks. A hook publishes from inside
 // the write's transaction and nothing reads a hook, so a Spec has to say what
 // its hooks emit. HookEvents puts that on the write operations, which is the

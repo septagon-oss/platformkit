@@ -34,7 +34,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -254,7 +253,8 @@ func Delete[T Entity](tx db.Tx[db.Tenant], id uuid.UUID, soft bool) error {
 	e := blank[T]()
 	res := tx.DB().Model(e).Where("id = ? AND deleted_at IS NULL", id)
 	if soft {
-		res = res.Update("deleted_at", time.Now())
+		// db.Now, because the stamp has to be the instant the column keeps.
+		res = res.Update("deleted_at", db.Now())
 	} else {
 		res = res.Delete(e)
 	}

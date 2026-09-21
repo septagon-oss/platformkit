@@ -155,6 +155,82 @@ func TestTheResourceOperationsAreTheRoutesWithoutTheHTTP(t *testing.T) {
 	}
 }
 
+// TestTheInProcessDoorsRefuseAFoldedNameByTheSameRule is the kernel's case for
+// the doors beneath the HTTP ones. A page reaches the same two writes through
+// httpx.Resource closures rather than a request, and the map it hands over is
+// built by rest.Values from the schema's own names — except when a module's page
+// builds one by hand, which is where a key the person never typed arrives. decode
+// and merge both fold as the JSON decoder folds, so the rule the two HTTP doors
+// now enforce is the same predicate these two run. It is written here, in the
+// kernel, against the helpers every route test in this package already shares
+// (mount, call, count), because a rule every module has to re-probe is a rule
+// the kernel did not own. The kernel exports no route-test helper for a module
+// to inherit — every module writes its own mount and call — so the one case at
+// a module's own generated routes lives in that pattern instead: user_test.
+// TestALifecycleChangeHasExactlyOneDoor names the folded spellings at
+// modules/user's routes, which is what says this predicate runs under a module's
+// routes and not only under the kernel's.
+func TestTheInProcessDoorsRefuseAFoldedNameByTheSameRule(t *testing.T) {
+	owned := spec
+	owned.Immutable = []string{"status", "notes"}
+	api, router, admin := mount(t, owned)
+	r := api.Resources()[0]
+
+	var failures []string
+	fail := func(format string, args ...any) { failures = append(failures, fmt.Sprintf(format, args...)) }
+	httpx.Register(api, huma.Operation{
+		OperationID: "probe", Method: http.MethodPost, Path: "/probe", Hidden: true,
+		DefaultStatus: http.StatusNoContent,
+	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{}, error) {
+		created, err := r.Create(ctx, map[string]any{"title": "written by a page"})
+		if err != nil {
+			fail("Create: %v", err)
+			return nil, nil
+		}
+		at := uuid.MustParse(created["id"].(string))
+		for _, sent := range []struct{ field, key string }{
+			{"status", "status"}, {"status", "STATUS"}, {"status", "\u017ftatus"},
+			{"notes", "notes"}, {"notes", "NOTES"},
+		} {
+			// A body that mixes the two is refused whole, so the title each
+			// create carries differs: one unique violation would abort the
+			// request's transaction and answer for every case after it.
+			if _, err := r.Create(ctx, map[string]any{"title": "forged " + sent.key, sent.key: "mine"}); err == nil ||
+				!strings.Contains(err.Error(), sent.field+" belongs to a route of its own") {
+				fail(`Create names %q: %v, want the sentence naming %q`, sent.key, err, sent.field)
+			}
+			if _, err := r.Update(ctx, at, map[string]any{sent.key: "mine"}); err == nil ||
+				!strings.Contains(err.Error(), sent.field+" belongs to a route of its own") {
+				fail(`Update names %q: %v, want the sentence naming %q`, sent.key, err, sent.field)
+			}
+		}
+		// The empty write, at the door a page uses: a save that named no column
+		// changed no row, so it stamps no row and publishes no event.
+		after, err := r.Update(ctx, at, map[string]any{})
+		if err != nil {
+			fail("Update of nothing: %v", err)
+		} else if after["updatedAt"] != created["updatedAt"] {
+			fail("an Update that named no column returned a row stamped %v, the create stamped it %v", after["updatedAt"], created["updatedAt"])
+		}
+		// And none of those refusals stored anything: the door refused the
+		// write, it did not strip the field from it and keep the rest.
+		if _, total, err := r.List(ctx, crud.Query{Limit: 10}); err != nil || total != 1 {
+			fail("the tenant holds %d rows after the refusals, want the one row it created: %v", total, err)
+		}
+		return nil, nil
+	})
+
+	if code, body := call(t, router, http.MethodPost, "/probe", ""); code != http.StatusNoContent {
+		fail("the probe request = %d %s", code, body)
+	}
+	for _, f := range failures {
+		t.Error(f)
+	}
+	if n := count(t, admin, owned.Event(rest.Updated)); n != 0 {
+		t.Errorf("the doors beneath HTTP published %d %s events, want none", n, owned.Event(rest.Updated))
+	}
+}
+
 // member is an Authorizer that answers yes to exactly the permissions it holds,
 // which is what a role is.
 type member map[string]bool
