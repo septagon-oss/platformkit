@@ -97,11 +97,29 @@ func compose(cfg config.Config) composition {
 		// without it becoming a row first: a set-password link belongs in the
 		// mail and in nothing else. Everything else this application mails goes
 		// out of the notification worker, which renders a row.
-		Mailer:     mail,
-		Hosts:      hosts,
-		Tenants:    active,
-		OIDC:       auth.OIDC(cfg.Auth.OIDC),
-		PublicHost: cfg.Server.PublicHost,
+		Mailer:  mail,
+		Hosts:   hosts,
+		Tenants: active,
+		// Password-first signup with mailbox confirmation. This composition
+		// turns it on for one reason, and it is a promise the kernel made on the
+		// product's behalf: kit/httpx/aliases.go vouches for the three old
+		// inquiry doors — /api/v1/auth/register, /resend-verification and
+		// /verify-email — and an alias is only worth writing if the address it
+		// aims at answers at the installation reading it. The case
+		// TestEveryAliasRowOfTheReferenceApplicationLeadsSomewhereThatAnswers
+		// asks the running server exactly that, one row at a time; turning this
+		// line off takes those three rows out with it, and that case says so.
+		//
+		// What the mode gives a stranger is an account that cannot sign in:
+		// RegisterUnverified stores the chosen password against an `unverified`
+		// row and nothing activates it but the link in the mailbox — which, in a
+		// deployment with no SMTP configured, is the in-memory mailbox above, so
+		// no message leaves this machine. The roles come from here and never from
+		// the form, and the one named is the tenant's ordinary member: the least
+		// of the two the seed provisions.
+		EmailRegistration: &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}},
+		OIDC:              auth.OIDC(cfg.Auth.OIDC),
+		PublicHost:        cfg.Server.PublicHost,
 	})
 
 	// The file service is returned beside its manifest, as user's and

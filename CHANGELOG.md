@@ -210,16 +210,30 @@ and are deleted in v1.3.0 — see [aliases.go](kit/httpx/aliases.go).
 `/api/v1/tenant/tenants` deliberately has no alias: a control plane does not announce
 itself by leaving the old door open at every customer's host. Refusals now name a code
 in the JSON `detail` — `AUTH_ANONYMOUS`, `AUTH_DENIED`, `AUTH_NOT_OPERATOR`,
-`AUTH_NO_TENANT`, `AUTH_PRINCIPAL_CHANGED`, `CSRF_ORIGIN`, `PUBLIC_SETS_A_COOKIE` and
+`AUTH_NO_TENANT`, `AUTH_PRINCIPAL_CHANGED`, `CSRF_ORIGIN`, `PUBLIC_SETS_A_COOKIE`,
+`LIMIT_EXHAUSTED` (the public surface's own write limit) and
 `WRITE_ELSEWHERE` (a write of a resource whose writes are served on another surface,
 answered at its read door, naming `write_path`) — where the sentence used to be a
 lowercase prefix.
 
-Those codes are what a refusal *page* is translated by. `ui/page` holds the one table
-from a code to a catalog key (`fault.<CODE>`, and `fault.<status>` for the 404 and the
-500, which carry no code), the page is negotiated from the request's
+- The kernel answers every refusal it makes for itself in the shape the requester asked
+  for: the problem document to a client that wanted a value, the shell's own page — in the
+  request's language — to a client that came to be shown one. This includes an address
+  nothing is mounted at, an address mounted for other verbs, a CSRF failure and a panic
+  that escapes a handler. A guard's refusal — a missing session, a missing grant, a row of
+  another tenant, a route the plan excludes, the public surface's write limit — answers the
+  same way: it is the same decision, and it is the one a *navigating* person was being
+  shown JSON. An htmx write counts as a client that parses a value: its controller
+  (`ui/assets/js/htmx-config.js`) reads the refusal's code out of the problem body and
+  swaps nothing for a 4xx, so a page answered there would reach nobody.
+- Those codes are what a refusal *page* is translated by. `ui/page` holds the one table
+from a code to a catalog key (`fault.<CODE>`, and `fault.<status>` for the 404, the 405
+and the 500, which carry no code because the kernel wrote the sentence), the page is
+negotiated from the request's
 `Accept-Language` — a guard answers before a session, a tenant or a stored preference
-exists to ask one — and it carries `Content-Language` and `Vary: Accept-Language`. The
+exists to ask one — and it carries `Content-Language` and `Vary: Accept-Language`. A
+translated page keeps the code in front of the sentence (`AUTH_DENIED: Não pode fazer
+isto.`), because the code is what a person reads back to support. The
 declaration follows the sentence on the page: a shell with no catalog, or none for that
 code, says the kernel's English and declares `en`. Two narrower promises came with it:
 the pointer to a split resource's write door now goes to a caller holding the

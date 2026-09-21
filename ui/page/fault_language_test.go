@@ -37,9 +37,12 @@ type refusal struct {
 	key string
 }
 
-// refusals are the refusals a person meets without ever reaching a handler — the
-// three a guard of the session publishes, and the 404 and 500 the router and the
-// recoverer answer with, which are the two a person reaches most often of all.
+// refusals is every refusal the page can be shown: the nine codes kit/httpx
+// publishes and has a row in fault.go's table for, and the three verdicts that
+// carry no code because the router, the recoverer or chi wrote the sentence
+// themselves. A code with no page is not in it — that is the condition F1 of the
+// third review made a rule: the table carries exactly what a person is shown, so
+// every row of it gets a case here, in both of the shell's languages.
 var refusals = []refusal{
 	{
 		name: "a caller nobody recognised", status: http.StatusUnauthorized,
@@ -56,6 +59,34 @@ var refusals = []refusal{
 		portuguese: "Não pode fazer isto.",
 	},
 	{
+		name: "a grant that belongs to the operator", status: http.StatusForbidden,
+		detail:     httpx.CodeNotOperator + ": tenant:manage is the operator's, and this is not the operator's tenant",
+		key:        "fault." + httpx.CodeNotOperator,
+		english:    "This operation belongs to the operator, not to your tenant.",
+		portuguese: "Esta operação pertence à instalação, não ao seu tenant.",
+	},
+	{
+		name: "an operation that never said who may call it", status: http.StatusForbidden,
+		detail:     httpx.CodeUndeclared + ": this operation declares no authorization",
+		key:        "fault." + httpx.CodeUndeclared,
+		english:    "This operation never said who may call it.",
+		portuguese: "Esta operação nunca disse quem a pode chamar.",
+	},
+	{
+		name: "tenant work at a host that names no tenant", status: http.StatusForbidden,
+		detail:     httpx.CodeNoTenant + ": this operation is tenant work and the host resolved to none",
+		key:        "fault." + httpx.CodeNoTenant,
+		english:    "This work belongs to a tenant and this host names none.",
+		portuguese: "Este trabalho pertence a um tenant e esta morada não nomeia nenhum.",
+	},
+	{
+		name: "a write prepared by a different account", status: http.StatusForbidden,
+		detail:     httpx.CodePrincipalChanged + ": the signed-in account differs from the one that prepared this request",
+		key:        "fault." + httpx.CodePrincipalChanged,
+		english:    "The signed-in account is not the one that prepared this.",
+		portuguese: "A conta com sessão iniciada não é a que preparou este pedido.",
+	},
+	{
 		name: "a write that came from another site", status: http.StatusForbidden,
 		detail:     httpx.CodeCSRFOrigin + ": this request carries a session cookie and came from another site",
 		key:        "fault." + httpx.CodeCSRFOrigin,
@@ -63,11 +94,39 @@ var refusals = []refusal{
 		portuguese: "Este pedido veio de outro site, por isso nada foi escrito.",
 	},
 	{
+		// The public surface's own refusal: the one a person meets with no session,
+		// no tenant of their own and no account to be told anything to.
+		name: "the public write limit", status: http.StatusTooManyRequests,
+		detail:     httpx.CodeLimitExhausted + ": too many anonymous submissions from this address",
+		key:        "fault." + httpx.CodeLimitExhausted,
+		english:    "Too many submissions from this address. Wait and try again.",
+		portuguese: "Demasiados envios a partir deste endereço. Espere e tente de novo.",
+	},
+	{
+		// The public surface's promise, kept at the writer: the route broke it and
+		// the answer is a 500 with the cookie withheld. Its code is in the table
+		// because a person can be standing at the page when it happens.
+		name: "a public route that minted a cookie", status: http.StatusInternalServerError,
+		detail:     httpx.CodePublicSetsACookie + ": the public surface promises nobody is remembered, and this route broke the promise",
+		key:        "fault." + httpx.CodePublicSetsACookie,
+		english:    "This page promises nobody standing here is remembered.",
+		portuguese: "Esta página promete que ninguém aqui é lembrado.",
+	},
+	{
 		name: "an address nobody mounted", status: http.StatusNotFound,
 		detail:     "nothing is served at this address",
 		key:        "fault.404",
 		english:    "There is nothing to see at this address.",
 		portuguese: "Não há nada para ver nesta morada.",
+	},
+	{
+		// The sentence is kit/httpx's own methodNotAllowed, about the address and
+		// not about the caller's request, which is what puts it beside the 404.
+		name: "a verb this address does not take", status: http.StatusMethodNotAllowed,
+		detail:     "this address does not accept POST requests",
+		key:        "fault.405",
+		english:    "This address does not take this kind of request.",
+		portuguese: "Este endereço não aceita este pedido.",
 	},
 	{
 		// A 500 carries no detail on purpose, so this is the sentence the page
@@ -99,11 +158,13 @@ func twoLanguageRefusals(t *testing.T) page.Shell {
 	return s
 }
 
-// TestRefusalPagesSpeakBothLanguages is the brief's case (§9 test 16) for
-// AUTH_ANONYMOUS, AUTH_DENIED, CSRF_ORIGIN, 404 and 500: one refusal, two
-// languages, and the page saying which one it is in the attribute and the header
-// as well as the sentence. The verdict is asserted beside the translation, because
-// a refusal that translated itself into a 200 is a refusal nobody sees.
+// TestRefusalPagesSpeakBothLanguages is the brief's case (§9 test 16) widened to
+// the whole table: every refusal fault.go can answer a page for, in both of the
+// shell's languages, and the page saying which one it is in the attribute and the
+// header as well as the sentence. The verdict is asserted beside the translation,
+// because a refusal that translated itself into a 200 is a refusal nobody sees —
+// and so is the code, which is the half of "<CODE>: <sentence>" a person reads
+// back to support and an operator matches a log line against.
 func TestRefusalPagesSpeakBothLanguages(t *testing.T) {
 	s := twoLanguageRefusals(t)
 	for _, r := range refusals {
@@ -145,6 +206,14 @@ func TestRefusalPagesSpeakBothLanguages(t *testing.T) {
 				// the reference an operator reads a log by, and the one link out.
 				if !strings.Contains(body, "1111aaaa-2222-3333-4444-555566667777") || !strings.Contains(body, `href="/admin"`) {
 					t.Errorf("a translated refusal lost its reference or its way out: %s", firstLine(body))
+				}
+				// A refusal that carries a code keeps it, whatever language the
+				// sentence arrived in: it is the one part of the line both halves of
+				// this composition are written against.
+				if code, _, named := strings.Cut(r.detail, ": "); named {
+					if !strings.Contains(body, code+":") {
+						t.Errorf("the translation dropped the code %q from the page: %s", code, firstLine(body))
+					}
 				}
 			})
 		}

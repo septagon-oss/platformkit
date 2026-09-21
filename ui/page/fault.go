@@ -18,12 +18,14 @@ package page
 // A refusal has one value and two shapes (docs/adr/0015): the problem document a program
 // reads and the sentence a person is shown. The first is the same in every language
 // because a program reads a code; the second used to be English by construction, because
-// the sentence was a string literal in the guard that made it. The guards now publish the
-// codes they travel in (httpx's Code* constants), faultKeys below is the one table from a
-// code to the catalog key a sentence lives under, and the page is negotiated from the
-// request through the same contract every other page of this package uses — Shell.Messages
-// and SelectLocale and Formatter.Text, and the same two headers Serve writes for a page it
-// translated.
+// the sentence was a string literal in the guard that made it. The guards publish
+// the codes they travel in (httpx's Code* constants) and every guard that refuses
+// a request a person could be looking at answers through API.refuse, which is what
+// makes this table worth filling in the first place: a code no page is ever shown
+// for is a key nobody can ship copy under. The page is then negotiated from the
+// request through the same contract every other page of this package uses —
+// Shell.Messages and SelectLocale and Formatter.Text, and the same two headers
+// Serve writes for a page it translated.
 //
 // A shell that ships no catalog is shown the kernel's English sentence and keeps declaring
 // "en", which is what it always did and what the copy still is. Which languages a
@@ -45,9 +47,11 @@ import (
 // The code is namespaced, because a kernel refusal and a module's own copy share one
 // catalog and "AUTH_DENIED" on its own is a name either of them could want. A code with no
 // entry is shown the kernel's sentence, which is the same answer a shell with no catalog
-// gets — and CodeWriteElsewhere is absent on purpose rather than by oversight: its
-// sentence names an address, and an address is data the caller has to have rather than
-// copy to translate.
+// gets — and two codes are absent on purpose rather than by oversight, for one reason:
+// CodeWriteElsewhere names the address the write belongs at and CodePlanExcludes names
+// the feature to ask the plan for, and a sentence that carries something the caller has
+// to *have* cannot be replaced by one that only describes it — this mechanism swaps a
+// sentence and does not interpolate an argument.
 var faultKeys = map[string]string{
 	httpx.CodeAnonymous:         "fault.AUTH_ANONYMOUS",
 	httpx.CodeDenied:            "fault.AUTH_DENIED",
@@ -57,6 +61,7 @@ var faultKeys = map[string]string{
 	httpx.CodePrincipalChanged:  "fault.AUTH_PRINCIPAL_CHANGED",
 	httpx.CodeCSRFOrigin:        "fault.CSRF_ORIGIN",
 	httpx.CodePublicSetsACookie: "fault.PUBLIC_SETS_A_COOKIE",
+	httpx.CodeLimitExhausted:    "fault.LIMIT_EXHAUSTED",
 }
 
 // faultKey is the catalog key of the sentence a refusal is shown in, and whether
@@ -69,21 +74,31 @@ var faultKeys = map[string]string{
 // written — an unlisted code is a sentence this package has not read, and a shell's
 // generic copy standing in for it would hide whatever that sentence says.
 //
-// A refusal with no code at all is keyed by its verdict, and only for the two
-// verdicts whose sentence this layer writes because nobody else did: the 404 of an
-// address nobody mounted, and the 500 of a handler that broke. A 400, a 409 or a
-// 422 carries a sentence about the caller's own request, written by a module or by
-// the decoder, and translating that is the writer's share — a sentence about the
-// status would paper over the one thing the caller could act on.
+// A refusal with no code at all is keyed by its verdict, and only for the three
+// verdicts whose sentence this layer writes because nobody else wrote it: the 404
+// of an address nobody mounted, the 405 of an address that does not take the verb
+// it was asked with, and the 500 of a handler that broke. Every one of those three
+// sentences is kit/httpx's own, written for the page this package renders it on.
+//
+// A 400, a 409 or a 422 is not one of them: it carries a sentence about the
+// caller's own request, written by a module or by the decoder, and translating
+// that is the writer's share — a sentence about the status would paper over the
+// one thing the caller could act on. The 405 belongs with the 404 and the 500 on
+// that same ground and not beside the 400: "this address does not accept POST
+// requests" is the kernel's own words about the address and not about the
+// caller's request, and it is the refusal a derived client meets most often of
+// all — the catalog's write_path exists because the kernel keeps refusing clients
+// at the wrong verb.
 func faultKey(detail string, status int) (key string, lookup bool) {
 	if code, _, named := strings.Cut(detail, ": "); named {
 		key, shipped := faultKeys[code]
 		return key, shipped
 	}
-	if status != http.StatusNotFound && status != http.StatusInternalServerError {
-		return "", false
+	switch status {
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError:
+		return "fault." + strconv.Itoa(status), true
 	}
-	return "fault." + strconv.Itoa(status), true
+	return "", false
 }
 
 // refusalLocale is the language this refusal is answered in, or nil for a shell that ships
@@ -166,6 +181,12 @@ func FaultHandler(s Shell) httpx.Fault {
 // for is English copy whatever the caller asked for, and a document that declares
 // Portuguese over an English line lies in the same shape as the page that was English to
 // everybody.
+//
+// What the translation replaces is the sentence and not the guard's whole line. A guard
+// writes "<CODE>: <sentence>" and the code is the half of that a person reads back to
+// support and an operator greps a log for; it is in the problem document and the log
+// line whatever the page says, and dropping it here would leave the page the only place
+// the refusal has no name. So the code is kept and the copy after it is what changes.
 func fault(status int, detail string, loc *Locale, reference, back, backLabel string) View {
 	line := detail
 	if strings.TrimSpace(line) == "" {
@@ -178,6 +199,9 @@ func fault(status int, detail string, loc *Locale, reference, back, backLabel st
 		if key, lookup := faultKey(detail, status); lookup {
 			if text := loc.Text(key, line); text != line {
 				line, language = text, loc.Language
+				if code, _, named := strings.Cut(detail, ": "); named {
+					line = code + ": " + text
+				}
 			}
 		}
 	}

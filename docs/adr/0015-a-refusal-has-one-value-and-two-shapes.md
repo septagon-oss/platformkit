@@ -47,10 +47,10 @@ predict it, and a reviewer could not see it.
    browser got net/http's plain-text `404 page not found` — the same defect, arriving
    through a different door, and far more often.
 3. `httpx.Options` gains one field, `Fault`. The kernel asks the client, not the route: a
-   request that named `text/html` (or came from htmx, which swaps what it is given into
-   the page) is offered the document; `Accept: */*` is deliberately *not* a request for a
-   page, because that is what curl, probes, monitors and SDKs send and answering them with
-   markup is a quiet outage.
+   request that named `text/html` is offered the document; `Accept: */*` is deliberately
+   *not* a request for a page, because that is what curl, probes, monitors and SDKs send
+   and answering them with markup is a quiet outage. An htmx request asks with
+   `text/html,*/*` and is still a controller rather than a window — see `wantsDocument`.
 4. The document is supplied by the presentation layer: `page.FaultHandler(shell)` renders
    it with that shell's chrome, stylesheet and way back. `kit/app` cannot compose this —
    a failure page is chrome, chrome is `ui`, and kit may not import ui — so the

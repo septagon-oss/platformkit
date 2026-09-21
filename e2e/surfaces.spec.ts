@@ -57,3 +57,33 @@ test('a public page opens a session for nobody', async ({ page }) => {
   // response did send, and setting no cookie is the promise the surface makes.
   expect(res.headers()['set-cookie']).toBeUndefined();
 });
+
+// The three inquiry doors signup asks by email — an account that was created but
+// has not been confirmed talks to nothing else. kit/httpx/aliases.go vouches for
+// their old addresses because this repository's composition mounts signup
+// (apps/platformkit/modules.go); a row of that table is a claim about *this*
+// installation, and a claim that ages quietly is worse than no row at all, so it
+// is asked here from outside the process as well as inside it.
+for (const door of ['register', 'resend-verification', 'verify-email']) {
+  test(`the inquiry door ${door} is redirected to an address this installation serves`, async ({ page }) => {
+    const res = await page.request.get(`/api/v1/auth/${door}`);
+    expect(res.url(), `/api/v1/auth/${door} never moved`).toContain(`/api/v1/public/auth/${door}`);
+    // The point of the assertion is the one answer a bookmark must not get. The
+    // door takes a POST and not a GET, so 405 is the honest verdict here; 404
+    // would mean the table promises a door nobody mounted.
+    expect(res.status(), `the alias leads to an address nothing serves`).not.toBe(404);
+  });
+}
+
+test('the inquiry door that takes no GET answers a browser with a page', async ({ page }) => {
+  // Somebody followed a link. The verdict is the router's — that address takes no
+  // GET — and the router writes that sentence itself, so this is the refusal with
+  // no code to translate, shown as the kernel wrote it and not as a body of JSON
+  // in a window frame.
+  const res = await page.request.get('/api/v1/auth/register', { headers: { Accept: 'text/html' } });
+  const body = await res.text();
+  expect(res.status()).toBe(405);
+  expect(res.headers()['content-type'], body).toContain('text/html');
+  expect(body).toContain('this address does not accept GET requests');
+  expect(body, 'a refusal page with no way out is a dead end').toContain('href="/app"');
+});

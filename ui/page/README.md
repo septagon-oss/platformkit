@@ -62,10 +62,18 @@ same contract: it negotiates from the request's `Accept-Language` — a guard
 answers before a tenant, a session or a stored preference exists, so the header
 the caller brought is all there is to negotiate from — and shows the sentence this
 shell ships under `fault.<CODE>`, where the codes are `kit/httpx`'s published
-`Code*` constants and the table lives in `fault.go`. A refusal with no code is
-keyed by its status (`fault.404`, `fault.500`). The kernel's English text is the
-fallback, and the page declares the language of the sentence it actually shows:
-a catalog with no entry for the code leaves an English page declaring `en`.
+`Code*` constants and the table lives in `fault.go`. Every guard that can refuse a
+request a person may be looking at answers through that renderer
+(`API.refuse`), which is the condition that makes the table worth filling: a code
+no page is ever shown for is a key no copy can be written under. A refusal with no
+code is keyed by its status (`fault.404`, `fault.405`, `fault.500`) — the three
+verdicts whose sentence `kit/httpx` writes and no module does. What a translation
+replaces is the sentence and not the guard's whole line: a refusal that carries a
+code keeps it (`AUTH_DENIED: Não pode fazer isto.`), because the code is what a
+person reads back to support and an operator greps a log for. The kernel's English
+text is the fallback, and the page declares the language of the sentence it
+actually shows: a catalog with no entry for the code leaves an English page
+declaring `en`.
 
 The [reference application](../../apps/platformkit/modules.go) composes
 [`admin.Messages()`](../../modules/admin/messages.go) through `page.FromCatalog`

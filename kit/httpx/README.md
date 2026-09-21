@@ -61,10 +61,13 @@ Each surface has its own chain, and the difference is not cosmetic:
 workspace's at `/app` — and reports to the second claimant that it did not take
 it. `accepted` is the closed table of which declaration each surface will host; a
 contradiction is collected at mount and reported by `ValidateDeclarations`, so
-the process never listens on a route whose address and chain disagree. A refusal
-names itself (`AUTH_ANONYMOUS`, `AUTH_DENIED`, `AUTH_NOT_OPERATOR`, `AUTH_NO_TENANT`,
-`CSRF_ORIGIN`, `PUBLIC_SETS_A_COOKIE`, `WRITE_ELSEWHERE`), in the JSON `detail`
-and in the log.
+the process never listens on a route whose address and chain disagree. A refusal names
+itself with one of the published `Code*` constants (`AUTH_DENIED`, `LIMIT_EXHAUSTED`,
+`WRITE_ELSEWHERE`, …) in the `detail` and in the log, and every guard answers it in the
+shape the client asked for: the problem document for a value, the registered renderer's
+page for a navigation (see [ui/page](../../ui/page/README.md)). An htmx write is a client
+that parses a value — its controller reads the code and swaps nothing for a 4xx — so it is
+answered in JSON even though it asks with `Accept: text/html,*/*`.
 
 ### One release of the old addresses
 

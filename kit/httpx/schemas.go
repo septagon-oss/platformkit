@@ -311,17 +311,17 @@ func (a *API) guard(r Resource) Resource {
 func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 	t, hasTenant := tenancy.FromContext(ctx)
 	if !hasTenant {
-		return problem.New(http.StatusForbidden, "AUTH_NO_TENANT: this is tenant work and the host resolved to none")
+		return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
 	}
 	if !recognised(ctx) {
-		return problem.New(http.StatusForbidden, "AUTH_ANONYMOUS: this requires a signed-in caller")
+		return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
 	}
 	// The operator check comes before the Authorizer, exactly as it does in the
 	// request middleware: a customer's administrator holds the wildcard in
 	// their own tenant, so asking the roles table first would be asking a
 	// question whose answer is always yes.
 	if g.Operator && !t.Operator {
-		return problem.New(http.StatusForbidden, "AUTH_NOT_OPERATOR: "+g.Permission+" is the operator's, and this is not the operator's tenant")
+		return problem.New(http.StatusForbidden, CodeNotOperator+": "+g.Permission+" is the operator's, and this is not the operator's tenant")
 	}
 	allowed, err := a.opts.Authorize.Allowed(ctx, t, g)
 	if err != nil {
@@ -330,7 +330,7 @@ func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 		return problem.New(http.StatusServiceUnavailable, "authorization is temporarily unavailable")
 	}
 	if !allowed {
-		return problem.New(http.StatusForbidden, "AUTH_DENIED: this requires "+g.Permission)
+		return problem.New(http.StatusForbidden, CodeDenied+": this requires "+g.Permission)
 	}
 	return nil
 }

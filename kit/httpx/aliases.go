@@ -24,14 +24,18 @@ import "strings"
 //     remembered past this visit.
 //
 // Removal: every row here is deleted in v1.3.0, one release after they shipped,
-// as README.md and CHANGELOG.md say. The test over there (§TestTheAliasRedirectsAndNeverServes)
-// checks that every row redirects the way the table says, and the reference
-// application (§TestTheOldAddressesOfTheReferenceApp) asks its running server
-// whether the address each row points at actually answers — which is the half
-// no fixture in this package can prove, because the pages an alias aims at are
-// mounted by modules this package may not import. Without that second half a
-// row can name an address nothing serves, and the person holding the bookmark
-// gets a redirect into a 404.
+// as README.md and CHANGELOG.md say. Two tests hold the table, one per half of
+// what a row claims: §TestTheAliasRedirectsAndNeverServes, in this package,
+// checks that every row redirects the way the table says and that nothing is
+// served at the old address besides the redirect. The other half belongs to the
+// composition and no fixture here can prove it — the doors an alias aims at are
+// mounted by modules this package may not import — so
+// §TestEveryAliasRowOfTheReferenceApplicationLeadsSomewhereThatAnswers asks the
+// reference application's running server, row by row, whether the address each
+// row points at actually answers. Without that half a row can name an address
+// nothing serves, and the person holding the bookmark gets a redirect into a 404
+// — which is what makes a row about an optional door a decision rather than a
+// detail, and why the rows below say which composition they are written for.
 //
 // What is deliberately absent: /api/v1/tenant/tenants. Those routes moved to the
 // control plane, and a control plane does not announce its new address by
@@ -58,6 +62,13 @@ var aliasTable = []struct{ from, to string }{
 	{apiRoot + "/file/public", apiRoot + "/public/file/files"},
 	{apiRoot + "/site/settings/public", apiRoot + "/public/site/settings"},
 	{apiRoot + "/auth/password/forgot", apiRoot + "/public/auth/password/forgot"},
+	// The three inquiry doors of signup. They are in this table because this
+	// repository's composition mounts them — apps/platformkit/modules.go turns
+	// password-first signup on — and an alias that aimed at a door nobody
+	// mounted is the redirect into a 404 this file calls worse than the 404. A
+	// composition that leaves signup off takes these three rows out with it, and
+	// the case named above is what notices: it asks the running server rather
+	// than reading the table.
 	{apiRoot + "/auth/register", apiRoot + "/public/auth/register"},
 	{apiRoot + "/auth/resend-verification", apiRoot + "/public/auth/resend-verification"},
 	{apiRoot + "/auth/verify-email", apiRoot + "/public/auth/verify-email"},

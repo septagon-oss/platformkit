@@ -150,14 +150,23 @@ func TestAClientThatAskedForValueStillGetsTheProblemDocument(t *testing.T) {
 	}
 }
 
-// TestAnHTMXRequestGetsTheDocumentItWillSwap: htmx puts whatever arrives into the region
-// that asked, which is why the answer to a failed swap should be the markup.
-func TestAnHTMXRequestGetsTheDocumentItWillSwap(t *testing.T) {
+// TestAnHTMXWriteGetsTheProblemDocumentItsControllerParses. An htmx request asks with
+// `Accept: text/html,*/*`, and it is still a controller rather than a window: this
+// composition's htmx config swaps nothing for a 4xx and reads the refusal's code out of
+// the problem body to choose the recovery notice and retain the form's input. Answering
+// it with a page throws the body away in the library, so the person is left with a form
+// that silently did nothing. The swapped fragment an htmx write gets on a success is a
+// different matter and unchanged — see kit/httpx/html.go and session-recovery.spec.ts.
+func TestAnHTMXWriteGetsTheProblemDocumentItsControllerParses(t *testing.T) {
 	api, router := setupFault(t, documentFault)
 
 	got := postFrom(t, router, at(api, "/widgets"), "*/*", "http://elsewhere.test", true)
-	if !strings.HasPrefix(got.Header().Get("Content-Type"), "text/html") {
-		t.Errorf("an htmx request got %q: it will swap that into the page", got.Header().Get("Content-Type"))
+	if !strings.HasPrefix(got.Header().Get("Content-Type"), problem.ContentType) {
+		t.Errorf("an htmx request got %q, want the document its controller parses the code out of: %s",
+			got.Header().Get("Content-Type"), got.Body.String())
+	}
+	if !strings.Contains(got.Body.String(), httpx.CodeCSRFOrigin) {
+		t.Errorf("the refusal an htmx controller reads names no code: %s", got.Body.String())
 	}
 }
 
