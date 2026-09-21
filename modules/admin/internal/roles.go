@@ -87,7 +87,7 @@ type roleForm struct {
 // A composition that wires no Roles capability mounts nothing, and then the
 // auth module's nav entry is unserved and Mount says so at boot, which is the
 // truth: there is no screen.
-func (p pages) mountRoles(api *httpx.API) {
+func (p pages) mountRoles(app *httpx.Router) {
 	if p.Roles == nil {
 		return
 	}
@@ -96,13 +96,13 @@ func (p pages) mountRoles(api *httpx.API) {
 	// through the API; the screen is what makes that possible without curl.
 	guard := httpx.Permission(authcontracts.PermissionRoleManage)
 
-	page.Serve(api, p.shell, page.Route{ID: "admin-roles", Method: http.MethodGet, Path: rolesPath,
+	page.Serve(namespace(app, "auth"), p.shell, page.Route{ID: "admin-roles", Method: http.MethodGet, Path: p.at.roles.rel,
 		Summary: "What each role grants in this tenant", Errors: rolesReadFaults}, guard,
 		func(ctx context.Context, r page.Request, in *rolesInput) (page.View, error) {
 			return p.rolesView(ctx, r, in.Page, "")
 		})
 
-	page.Serve(api, p.shell, page.Route{ID: "admin-role-set", Method: http.MethodPost, Path: rolesPath,
+	page.Serve(namespace(app, "auth"), p.shell, page.Route{ID: "admin-role-set", Method: http.MethodPost, Path: p.at.roles.rel,
 		Summary: "Set what a role grants", Errors: rolesWriteFaults}, guard,
 		func(ctx context.Context, r page.Request, in *roleForm) (page.View, error) {
 			tx, live := httpx.TxFrom(ctx)
@@ -117,7 +117,7 @@ func (p pages) mountRoles(api *httpx.API) {
 			// both come back to what the person was reading.
 			at, _ := strconv.Atoi(form.Get("page"))
 			if _, err = p.Roles.SetRole(ctx, tx, form.Get("name"), form["permissions"], p.declared); err == nil {
-				return page.View{}, httpx.SeeOther(pageURL(at))
+				return page.View{}, httpx.SeeOther(pageURL(p.at.roles.at, at))
 			}
 			// A refusal names the role or the permission that caused it. The
 			// page comes back with that message on it rather than as the
@@ -147,7 +147,7 @@ func (p pages) rolesView(ctx context.Context, r page.Request, at int, detail str
 	if err != nil {
 		return page.View{}, rest.Fault(err)
 	}
-	return rolesPage(roles, p.declared, r.Tenant.Operator, at, detail), nil
+	return rolesPage(p.at.roles.at, roles, p.declared, r.Tenant.Operator, at, detail), nil
 }
 
 // rolesPage is the screen as a function of values: the roles there are, the
@@ -156,7 +156,7 @@ func (p pages) rolesView(ctx context.Context, r page.Request, at int, detail str
 // One form per role, each posting the whole list back. That is the shape of the
 // route underneath — a PUT replaces what a role grants — so a form that posted
 // a change instead would be describing a write the server does not have.
-func rolesPage(roles []*authcontracts.Role, declared []tenancy.Grant, operator bool, at int, detail string) page.View {
+func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Grant, operator bool, at int, detail string) page.View {
 	offered := offeredPermissions(declared, operator)
 	total := len(roles)
 	last := max((total+rolesPerPage-1)/rolesPerPage, 1)
@@ -177,15 +177,15 @@ func rolesPage(roles []*authcontracts.Role, declared []tenancy.Grant, operator b
 			Tone: "danger", Message: detail, Bordered: true}))
 	}
 	for _, role := range shown {
-		body = append(body, roleFieldset(role.Name, role.Grants, offered, at))
+		body = append(body, roleFieldset(where, role.Name, role.Grants, offered, at))
 	}
 	body = append(body,
 		components.Pagination(components.PaginationProps{
-			CurrentPage: at, TotalPages: last, BaseURL: rolesPath,
+			CurrentPage: at, TotalPages: last, BaseURL: where,
 			NavigationLabel: "Roles pagination",
 		}),
 		components.Divider(components.DividerProps{Text: "New role"}),
-		newRoleFieldset(offered, at))
+		newRoleFieldset(where, offered, at))
 	return page.View{Title: "Roles", Status: status, Body: body}
 }
 
@@ -199,11 +199,11 @@ func counted(total int) string {
 }
 
 // pageURL is where a write returns to: the screenful it was made on.
-func pageURL(at int) string {
+func pageURL(where string, at int) string {
 	if at <= 1 {
-		return rolesPath
+		return where
 	}
-	return rolesPath + "?page=" + strconv.Itoa(at)
+	return where + "?page=" + strconv.Itoa(at)
 }
 
 // offeredPermissions is every permission this tenant may name, the wildcard
@@ -227,7 +227,7 @@ func offeredPermissions(declared []tenancy.Grant, operator bool) []string {
 
 // roleFieldset is one role: its name, what it grants, and the one button that
 // writes the two together.
-func roleFieldset(name string, granted []string, offered []string, at int) g.Node {
+func roleFieldset(where string, name string, granted []string, offered []string, at int) g.Node {
 	form := "pk-role-" + name
 	nodes := []g.Node{
 		components.Heading(components.HeadingProps{Text: name, Level: 2}),
@@ -253,17 +253,17 @@ func roleFieldset(name string, granted []string, offered []string, at int) g.Nod
 		permissionBoxes(form, granted, offered),
 		components.FormActions(components.FormActionsProps{},
 			components.Button(components.ButtonProps{Label: "Save " + name, Type: "submit"})))
-	return components.Form(components.FormProps{Action: rolesPath, Label: "What " + name + " grants"}, nodes...)
+	return components.Form(components.FormProps{Action: where, Label: "What " + name + " grants"}, nodes...)
 }
 
 // newRoleFieldset is the same form with the name left to be typed. There is no
 // separate create route: SetRole writes the role it is given whether or not it
 // existed, so a second form would be a second door to one write.
-func newRoleFieldset(offered []string, at int) g.Node {
+func newRoleFieldset(where string, offered []string, at int) g.Node {
 	// A role name cannot contain a hyphen, so this prefix cannot collide with
 	// the form of a role somebody has actually called "new".
 	const form = "pk-new-role"
-	return components.Form(components.FormProps{Action: rolesPath, Label: "A new role"},
+	return components.Form(components.FormProps{Action: where, Label: "A new role"},
 		components.Input(components.InputProps{
 			ComponentProps: components.ComponentProps{ID: form + "-name"},
 			Name:           "name", Label: "Name", Required: true, MaxLength: authcontracts.MaxRoleName,

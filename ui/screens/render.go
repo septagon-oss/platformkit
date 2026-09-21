@@ -43,7 +43,7 @@ type Options = resource.Options
 // A field the renderers read has to be delivered here, and
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
-	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton}
+	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton, Screen: r.Screen}
 }
 
 // view is the whole of what a mounted screen knows: the resource's own shape, and
@@ -82,10 +82,6 @@ func commands(r httpx.Resource, ctx context.Context, at string) []resource.Comma
 	}
 	return out
 }
-
-// Path is where a resource's list screen lives: /api/v1/task/tasks is served at
-// Root/task/tasks, which is what every module's nav entry already says.
-func Path(r httpx.Resource, o Options) string { return resource.Path(described(r), o) }
 
 // listView, detailView and formView are the same renderers reached with a caller in
 // hand. Mount uses them; the exported trio below is what a caller without a request

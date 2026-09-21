@@ -64,7 +64,7 @@ func TestApprovalSignupValidatesInputWithoutEchoingCredentials(t *testing.T) {
 				v[test.field] = test.value
 			}
 		})
-		res := call(t, router, "POST", "/api/v1/auth/register", body, from("203.0.113."+strconv.Itoa(10+i)))
+		res := call(t, router, "POST", "/api/v1/public/auth/register", body, from("203.0.113."+strconv.Itoa(10+i)))
 		if res.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("invalid %s = %d", test.field, res.Code)
 		}
@@ -78,12 +78,12 @@ func TestApprovalSignupValidatesInputWithoutEchoingCredentials(t *testing.T) {
 	if err := admin.QueryRow("SELECT count(*) FROM users").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("invalid signup persisted a user: count=%d, err=%v", count, err)
 	}
-	if res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, "pending@example.com", nil), func(r *http.Request) {
+	if res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, "pending@example.com", nil), func(r *http.Request) {
 		r.Header.Set("Origin", "https://elsewhere.example")
 	}); res.Code != http.StatusForbidden {
 		t.Fatalf("cross-site signup = %d", res.Code)
 	}
-	res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, "Pending@EXAMPLE.com", nil))
+	res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, "Pending@EXAMPLE.com", nil))
 	if res.Code != http.StatusAccepted || len(res.Result().Cookies()) != 0 || strings.Contains(res.Body.String(), "pending") {
 		t.Fatalf("registration without email delivery = %d", res.Code)
 	}
@@ -125,7 +125,7 @@ func TestApprovalSignupPreservesExistingAccountsAndAcknowledgesDuplicates(t *tes
 		}); err != nil {
 			t.Fatal(err)
 		}
-		res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, strings.ToUpper(email), func(v map[string]any) {
+		res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, strings.ToUpper(email), func(v map[string]any) {
 			v["password"], v["confirmation"] = "replacement private password", "replacement private password"
 		}), from("203.0.113."+strconv.Itoa(10+i)))
 		if res.Code != http.StatusAccepted {
@@ -145,7 +145,7 @@ func TestApprovalSignupPreservesExistingAccountsAndAcknowledgesDuplicates(t *tes
 			t.Fatal(err)
 		}
 	}
-	fresh := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, "fresh@example.com", nil))
+	fresh := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, "fresh@example.com", nil))
 	if fresh.Code != http.StatusAccepted || fresh.Body.String() != acknowledged {
 		t.Fatal("fresh and existing accounts received different acknowledgments")
 	}
@@ -158,7 +158,7 @@ func TestConcurrentApprovalSignupsCreateOnePendingAccountAndNoCredentialEvent(t 
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Go(func() {
-			if res := call(t, router, "POST", "/api/v1/auth/register", body); res.Code != http.StatusAccepted {
+			if res := call(t, router, "POST", "/api/v1/public/auth/register", body); res.Code != http.StatusAccepted {
 				t.Errorf("concurrent signup = %d", res.Code)
 			}
 		})
@@ -187,18 +187,18 @@ func TestApprovalSignupSharesTheRecoveryLimitAndRollsBackFailedEvents(t *testing
 	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup)
 	for range contracts.ResetRequests {
-		if res := call(t, router, "POST", "/api/v1/auth/password/forgot", `{"email":"missing@example.com"}`, from("203.0.113.8")); res.Code != 200 {
+		if res := call(t, router, "POST", "/api/v1/public/auth/password/forgot", `{"email":"missing@example.com"}`, from("203.0.113.8")); res.Code != 200 {
 			t.Fatalf("recovery = %d", res.Code)
 		}
 	}
 	body := approvalBody(t, "pending@example.com", nil)
-	if res := call(t, router, "POST", "/api/v1/auth/register", body, from("203.0.113.8")); res.Code != 429 {
+	if res := call(t, router, "POST", "/api/v1/public/auth/register", body, from("203.0.113.8")); res.Code != 429 {
 		t.Fatalf("shared signup/recovery limit = %d", res.Code)
 	}
 	if _, err := admin.Exec("ALTER TABLE platformkit_outbox ADD CONSTRAINT refuse_pending_test CHECK (name <> 'user.registration_pending')"); err != nil {
 		t.Fatal(err)
 	}
-	if res := call(t, router, "POST", "/api/v1/auth/register", body); res.Code != 500 {
+	if res := call(t, router, "POST", "/api/v1/public/auth/register", body); res.Code != 500 {
 		t.Fatalf("failed account event = %d", res.Code)
 	}
 	var count int
@@ -216,7 +216,7 @@ func TestApprovalSignupDoesNotAcknowledgeAnUnrelatedDatabaseConflict(t *testing.
 		t.Fatal(err)
 	}
 	for i, email := range []string{"first@example.com", "second@example.com"} {
-		res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, email, nil))
+		res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, email, nil))
 		want := http.StatusAccepted
 		if i == 1 {
 			want = http.StatusConflict

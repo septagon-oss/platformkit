@@ -61,6 +61,15 @@ type Server struct {
 	// withholding during one. It defaults to false, so a deployment that says
 	// nothing says no.
 	Docs bool `yaml:"docs"`
+	// InstallationHost is the host the installation itself is reached at, and
+	// the only address that serves the control plane (the /ops surface). Empty
+	// means the installation has no host of its own: the routes mount and every
+	// request to them is a 404, which app logs once at boot.
+	//
+	// It is a host and not a tenant, and it is not public_host: that one names
+	// the address a customer's site is reached at and only decorates the OpenAPI
+	// document and the HSTS header. Two hosts per installation is the point.
+	InstallationHost string `yaml:"installation_host"`
 	// StorybookDir opts the operator tenant into a locally built Storybook.js.
 	// Product applications select private builds through admin.Deps.Storybook.
 	StorybookDir string `yaml:"storybook_dir"`
@@ -236,6 +245,7 @@ type key struct {
 var keys = []key{
 	{"server.addr", "PLATFORMKIT_SERVER_ADDR", func(c *Config) *string { return &c.Server.Addr }, true},
 	{"server.public_host", "PLATFORMKIT_SERVER_PUBLIC_HOST", func(c *Config) *string { return &c.Server.PublicHost }, true},
+	{"server.installation_host", "PLATFORMKIT_SERVER_INSTALLATION_HOST", func(c *Config) *string { return &c.Server.InstallationHost }, false},
 	{"database.url", "PLATFORMKIT_DATABASE_URL", func(c *Config) *string { return &c.Database.URL }, true},
 	{"database.migrate_url", "PLATFORMKIT_DATABASE_MIGRATE_URL", func(c *Config) *string { return &c.Database.MigrateURL }, true},
 	{"nats.url", "PLATFORMKIT_NATS_URL", func(c *Config) *string { return &c.NATS.URL }, true},
@@ -330,15 +340,19 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if !slices.Contains(levels, c.Log.Level) {
 		return Config{}, fmt.Errorf("config %s: log.level is %q, one of %v", path, c.Log.Level, levels)
 	}
-	// A host, and not a URL. It is the key most likely to be written by a
-	// template or by an overlay rather than by a person, and the mistake is
-	// always the same one: "https://acme.example.com/" is what somebody writes
-	// when a key is called a host, and then every absolute link the application
-	// builds carries a scheme twice and a path in the middle. Refusing it here
-	// names the key; accepting it is a support conversation about broken mail.
-	if !validHost(c.Server.PublicHost) {
-		return Config{}, fmt.Errorf("config %s: server.public_host is %q; it is a host, optionally with a port, and not a URL",
-			path, c.Server.PublicHost)
+	for _, h := range []struct{ key, value string }{
+		{"server.public_host", c.Server.PublicHost},
+		{"server.installation_host", c.Server.InstallationHost},
+	} {
+		// A host, and not a URL. It is the key most likely to be written by a
+		// template or by an overlay rather than by a person, and the mistake is
+		// always the same one: "https://ops.example.com/" is what somebody writes
+		// when a key is called a host. Refusing it here names the key; accepting
+		// it is a control plane that answers at no address at all.
+		if h.value != "" && !validHost(h.value) {
+			return Config{}, fmt.Errorf("config %s: %s is %q; it is a host, optionally with a port, and not a URL",
+				path, h.key, h.value)
+		}
 	}
 	// Both URLs are parsed here rather than by the driver, so a typo is a
 	// message naming the key instead of a dial error four steps later.

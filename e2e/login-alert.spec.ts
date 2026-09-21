@@ -5,7 +5,7 @@ for (const javaScriptEnabled of [true, false]) {
     const context = await browser.newContext({ javaScriptEnabled, viewport: { width: 320, height: 700 } });
     try {
       const page = await context.newPage();
-      await page.goto(new URL('/admin/login', process.env.PLATFORMKIT_E2E_URL ?? 'http://localhost:8099').href);
+      await page.goto(new URL('/app/admin/login', process.env.PLATFORMKIT_E2E_URL ?? 'http://localhost:8099').href);
       const error = page.locator('[data-login-error]');
       await expect(error).toBeHidden();
       expect(await error.boundingBox()).toBeNull();
@@ -21,7 +21,7 @@ for (const javaScriptEnabled of [true, false]) {
 }
 
 test('login reveals a real failure and hides it while retrying', async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test');
   await page.getByLabel('Password').fill('incorrect-password-for-this-test');
   const button = page.getByRole('button', { name: 'Sign in', exact: true });
@@ -41,6 +41,6 @@ test('login reveals a real failure and hides it while retrying', async ({ page }
     await expect(error).toBeHidden();
     expect(await error.boundingBox()).toBeNull();
   } finally { release(); }
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 });

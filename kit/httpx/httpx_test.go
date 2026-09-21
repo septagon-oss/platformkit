@@ -130,6 +130,23 @@ func (f *fixture) signedIn() {
 	f.principal = &tenancy.Principal{UserID: uuid.New()}
 }
 
+// probe is the module every file in this package mounts its probes as. A route
+// is relative to its module and its surface, so the name is written once here and
+// the addresses below are how a request names the door a probe answers at: the
+// workspace's JSON, a document of the workspace, the public door, and the control
+// plane. The installation of this fixture is reached at host, which is what makes
+// the last of them answer at all.
+const probe = "probe"
+
+func at(api *httpx.API, rel string) string   { return api.Surfaces(probe).App.Path(rel) }
+func page(api *httpx.API, rel string) string { return api.Surfaces(probe).App.PagePath(rel) }
+func publicly(api *httpx.API, rel string) string {
+	return api.Surfaces(probe).Public.Path(rel)
+}
+func onControlPlane(api *httpx.API, rel string) string {
+	return api.Surfaces(probe).Ops.Path(rel)
+}
+
 func setup(t *testing.T) (*httpx.API, *chi.Mux, *fixture) {
 	return setupWith(t, false)
 }
@@ -149,6 +166,10 @@ func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
 		}
 	}
 	api, router := httpx.New(httpx.Options{
+		// The installation is reached at the same host as the tenant, so a probe mounted on
+		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
+		// where the gate itself is tested.
+		Installation: host,
 		PublicHost:   host,
 		Docs:         docs,
 		Tenants:      f,
@@ -195,36 +216,36 @@ func request(t *testing.T, r http.Handler, method, path, h string) *httptest.Res
 // declaration can produce.
 func TestPermissionIsCheckedAgainstTheAuthorizer(t *testing.T) {
 	api, router, f := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets",
 	}, httpx.Permission("widget:read"), ok)
 
-	if got := get(t, router, "/widgets").Code; got != http.StatusForbidden {
+	if got := get(t, router, at(api, "/widgets")).Code; got != http.StatusForbidden {
 		t.Errorf("anonymous caller got %d, want 403", got)
 	}
 
 	// An identity hook that could not answer is an outage, not an anonymous
 	// caller: a session store nobody can read must not read as "not signed in".
 	f.authnErr = errors.New("the session store is unreachable")
-	if got := get(t, router, "/widgets").Code; got != http.StatusInternalServerError {
+	if got := get(t, router, at(api, "/widgets")).Code; got != http.StatusInternalServerError {
 		t.Errorf("a failing identity hook got %d, want 500", got)
 	}
 	f.authnErr = nil
 
 	f.signedIn()
 	f.allow = false
-	if got := get(t, router, "/widgets").Code; got != http.StatusForbidden {
+	if got := get(t, router, at(api, "/widgets")).Code; got != http.StatusForbidden {
 		t.Errorf("denied caller got %d, want 403", got)
 	}
 
 	f.allow = true
-	if got := get(t, router, "/widgets").Code; got != http.StatusOK {
+	if got := get(t, router, at(api, "/widgets")).Code; got != http.StatusOK {
 		t.Errorf("allowed caller got %d, want 200", got)
 	}
 
 	// An authorizer that cannot answer is not an authorizer that said no.
 	f.authErr = errors.New("policy store unreachable")
-	res := get(t, router, "/widgets")
+	res := get(t, router, at(api, "/widgets"))
 	if res.Code != http.StatusServiceUnavailable {
 		t.Errorf("unavailable authorizer got %d, want 503", res.Code)
 	}
@@ -236,26 +257,26 @@ func TestPermissionIsCheckedAgainstTheAuthorizer(t *testing.T) {
 // TestPublicServesAnonymously, and TestSignedIn does not.
 func TestPublicServesAnonymously(t *testing.T) {
 	api, router, _ := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "public-thing", Method: http.MethodGet, Path: "/public",
 	}, httpx.Public(), ok)
 
-	if got := get(t, router, "/public").Code; got != http.StatusOK {
+	if got := get(t, router, at(api, "/public")).Code; got != http.StatusOK {
 		t.Errorf("public operation got %d, want 200", got)
 	}
 }
 
 func TestSignedInRequiresAPrincipalOfThisTenant(t *testing.T) {
 	api, router, f := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "me", Method: http.MethodGet, Path: "/me",
 	}, httpx.SignedIn(), ok)
 
-	if got := get(t, router, "/me").Code; got != http.StatusForbidden {
+	if got := get(t, router, at(api, "/me")).Code; got != http.StatusForbidden {
 		t.Errorf("anonymous caller got %d, want 403", got)
 	}
 	f.signedIn()
-	if got := get(t, router, "/me").Code; got != http.StatusOK {
+	if got := get(t, router, at(api, "/me")).Code; got != http.StatusOK {
 		t.Errorf("signed-in caller got %d, want 200", got)
 	}
 }
@@ -281,7 +302,7 @@ func TestExpectedPrincipalChangeRefusesWritesBeforeAuthorization(t *testing.T) {
 	calls := 0
 	methods := []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
 	for _, method := range methods {
-		httpx.Register(api, huma.Operation{OperationID: "write-note-" + method, Method: method, Path: "/notes"},
+		httpx.Register(api.Surfaces(probe).App, huma.Operation{OperationID: "write-note-" + method, Method: method, Path: "/notes"},
 			httpx.Permission("note:write"), func(ctx context.Context, _ *struct{}) (*body, error) {
 				calls++
 				tx, _ := httpx.TxFrom(ctx)
@@ -289,14 +310,14 @@ func TestExpectedPrincipalChangeRefusesWritesBeforeAuthorization(t *testing.T) {
 				return &body{}, err
 			})
 	}
-	httpx.Register(api, huma.Operation{OperationID: "read-notes", Method: http.MethodGet, Path: "/notes"}, httpx.SignedIn(), ok)
-	if res := get(t, router, "/notes"); res.Code != http.StatusOK {
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{OperationID: "read-notes", Method: http.MethodGet, Path: "/notes"}, httpx.SignedIn(), ok)
+	if res := get(t, router, at(api, "/notes")); res.Code != http.StatusOK {
 		t.Fatalf("original user's initial read: %d %s", res.Code, res.Body)
 	}
 	f.signedIn()
 	for _, method := range methods {
 		for _, expected := range []string{original.UserID.String(), "not-a-principal-id"} {
-			res := expectedPrincipalRequest(router, method, "/notes", expected)
+			res := expectedPrincipalRequest(router, method, at(api, "/notes"), expected)
 			var problem struct{ Detail string }
 			err := json.Unmarshal(res.Body.Bytes(), &problem)
 			if res.Code != http.StatusForbidden || err != nil || !strings.HasPrefix(problem.Detail, "AUTH_PRINCIPAL_CHANGED:") {
@@ -305,7 +326,7 @@ func TestExpectedPrincipalChangeRefusesWritesBeforeAuthorization(t *testing.T) {
 		}
 	}
 	f.principal = nil
-	res := expectedPrincipalRequest(router, http.MethodPost, "/notes", original.UserID.String())
+	res := expectedPrincipalRequest(router, http.MethodPost, at(api, "/notes"), original.UserID.String())
 	if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "AUTH_ANONYMOUS:") {
 		t.Errorf("anonymous refusal lost precedence: %d %s", res.Code, res.Body)
 	}
@@ -313,7 +334,7 @@ func TestExpectedPrincipalChangeRefusesWritesBeforeAuthorization(t *testing.T) {
 		t.Fatalf("refused requests reached work: rows=%d handlers=%d authorizer=%d", count, calls, f.asked.Load())
 	}
 	f.principal = new(original)
-	res = expectedPrincipalRequest(router, http.MethodPost, "/notes", original.UserID.String())
+	res = expectedPrincipalRequest(router, http.MethodPost, at(api, "/notes"), original.UserID.String())
 	if res.Code != http.StatusOK || notes(t, f) != 1 || calls != 1 || f.asked.Load() != 1 {
 		t.Errorf("original-user retry must write once: status=%d handlers=%d authorizer=%d", res.Code, calls, f.asked.Load())
 	}
@@ -344,12 +365,12 @@ func TestExpectedPrincipalPreservesAuthorizationBoundaries(t *testing.T) {
 			}
 			f.allow = tc.allow
 			called := false
-			httpx.Register(api, huma.Operation{OperationID: "boundary", Method: tc.method, Path: "/boundary"}, tc.auth,
+			httpx.Register(api.Surfaces(probe).App, huma.Operation{OperationID: "boundary", Method: tc.method, Path: "/boundary"}, tc.auth,
 				func(context.Context, *struct{}) (*body, error) {
 					called = true
 					return &body{}, nil
 				})
-			res := expectedPrincipalRequest(router, tc.method, "/boundary", tc.expected)
+			res := expectedPrincipalRequest(router, tc.method, at(api, "/boundary"), tc.expected)
 			if res.Code != tc.status || f.asked.Load() != tc.asked || called != (tc.status == http.StatusOK) {
 				t.Errorf("status=%d authorizer=%d handler=%t: %s", res.Code, f.asked.Load(), called, res.Body)
 			}
@@ -364,26 +385,26 @@ func TestAnUnknownHostIsNotAnOutage(t *testing.T) {
 	api, router, f := setup(t)
 	f.signedIn()
 	f.allow = true
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets",
 	}, httpx.Permission("widget:read"), ok)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "public-thing", Method: http.MethodGet, Path: "/public",
 	}, httpx.Public(), ok)
 
-	res := request(t, router, http.MethodGet, "/widgets", "nobody.test")
+	res := request(t, router, http.MethodGet, at(api, "/widgets"), "nobody.test")
 	if res.Code != http.StatusNotFound {
 		t.Errorf("unknown host got %d, want 404", res.Code)
 	}
 	if ct := res.Header().Get("Content-Type"); !strings.Contains(ct, "problem+json") {
 		t.Errorf("Content-Type is %q, want a problem document", ct)
 	}
-	if got := request(t, router, http.MethodGet, "/public", "10.0.0.7:8080").Code; got != http.StatusOK {
+	if got := request(t, router, http.MethodGet, at(api, "/public"), "10.0.0.7:8080").Code; got != http.StatusOK {
 		t.Errorf("public operation at an address host got %d, want 200", got)
 	}
 
 	f.loadErr = errors.New("dial tcp: connection refused")
-	res = request(t, router, http.MethodGet, "/widgets", "elsewhere.test")
+	res = request(t, router, http.MethodGet, at(api, "/widgets"), "elsewhere.test")
 	if res.Code != http.StatusServiceUnavailable {
 		t.Errorf("a loader outage got %d, want 503", res.Code)
 	}
@@ -395,7 +416,7 @@ func TestAnUnknownHostIsNotAnOutage(t *testing.T) {
 	// nothing and does not know it: that is a broken loader, not a missing site.
 	f.loadErr = nil
 	f.resolveNil = true
-	if got := get(t, router, "/widgets").Code; got != http.StatusServiceUnavailable {
+	if got := get(t, router, at(api, "/widgets")).Code; got != http.StatusServiceUnavailable {
 		t.Errorf("a zero tenant served %d, want 503", got)
 	}
 }
@@ -404,18 +425,18 @@ func TestAnUnknownHostIsNotAnOutage(t *testing.T) {
 // only for hosts that resolved — a failure is asked again.
 func TestAResolvedHostIsRememberedForAWhile(t *testing.T) {
 	api, router, f := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "public-thing", Method: http.MethodGet, Path: "/public",
 	}, httpx.Public(), ok)
 
 	for range 3 {
-		get(t, router, "/public")
+		get(t, router, at(api, "/public"))
 	}
 	if n := f.loads.Load(); n != 1 {
 		t.Errorf("%d loads for three requests to one host, want 1", n)
 	}
 	for range 3 {
-		request(t, router, http.MethodGet, "/public", "nobody.test")
+		request(t, router, http.MethodGet, at(api, "/public"), "nobody.test")
 	}
 	if n := f.loads.Load(); n != 4 {
 		t.Errorf("%d loads after three unknown hosts, want 4: a failure must not be remembered", n)
@@ -450,21 +471,21 @@ func TestHandlerSeesTheTenantTransactionAndItRollsBackOnFailure(t *testing.T) {
 			return out, nil
 		}
 	}
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "fail", Method: http.MethodPost, Path: "/notes/fail",
 	}, httpx.Public(), write(true))
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "keep", Method: http.MethodPost, Path: "/notes/keep",
 	}, httpx.Public(), write(false))
 
-	if got := request(t, router, http.MethodPost, "/notes/fail", host).Code; got != http.StatusInternalServerError {
+	if got := request(t, router, http.MethodPost, at(api, "/notes/fail"), host).Code; got != http.StatusInternalServerError {
 		t.Fatalf("failing handler got %d, want 500", got)
 	}
 	if n := notes(t, f); n != 0 {
 		t.Errorf("%d notes survived a 500, want 0", n)
 	}
 
-	if got := request(t, router, http.MethodPost, "/notes/keep", host).Code; got != http.StatusOK {
+	if got := request(t, router, http.MethodPost, at(api, "/notes/keep"), host).Code; got != http.StatusOK {
 		t.Fatalf("succeeding handler got %d, want 200", got)
 	}
 	if n := notes(t, f); n != 1 {
@@ -481,7 +502,7 @@ func TestAResponseIsHeldUntilTheTransactionCommits(t *testing.T) {
 	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL,
 		CONSTRAINT notes_unique UNIQUE (tenant_id, body) DEFERRABLE INITIALLY DEFERRED)`)
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "twice", Method: http.MethodPost, Path: "/notes/twice",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*body, error) {
 		tx, _ := httpx.TxFrom(ctx)
@@ -494,7 +515,7 @@ func TestAResponseIsHeldUntilTheTransactionCommits(t *testing.T) {
 		return &body{}, nil
 	})
 
-	res := request(t, router, http.MethodPost, "/notes/twice", host)
+	res := request(t, router, http.MethodPost, at(api, "/notes/twice"), host)
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("a commit that failed returned %d, want 500", res.Code)
 	}
@@ -512,7 +533,7 @@ func TestAPanicIsOneFailedRequest(t *testing.T) {
 	api, router, f := setup(t)
 	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL)`)
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "boom", Method: http.MethodPost, Path: "/notes/boom",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*body, error) {
 		tx, _ := httpx.TxFrom(ctx)
@@ -523,7 +544,7 @@ func TestAPanicIsOneFailedRequest(t *testing.T) {
 		panic("the handler exploded")
 	})
 
-	res := request(t, router, http.MethodPost, "/notes/boom", host)
+	res := request(t, router, http.MethodPost, at(api, "/notes/boom"), host)
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("a panicking handler returned %d, want 500", res.Code)
 	}
@@ -540,10 +561,10 @@ func TestAPanicIsOneFailedRequest(t *testing.T) {
 // probe addressed to a tenant host must not restart the pod during an outage.
 func TestARequestThatNeverQueriesSurvivesADeadDatabase(t *testing.T) {
 	api, router, f := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "quiet", Method: http.MethodGet, Path: "/quiet",
 	}, httpx.Public(), ok)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "noisy", Method: http.MethodGet, Path: "/noisy",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*body, error) {
 		if _, present := httpx.TxFrom(ctx); !present {
@@ -552,15 +573,15 @@ func TestARequestThatNeverQueriesSurvivesADeadDatabase(t *testing.T) {
 		return &body{}, nil
 	})
 
-	get(t, router, "/quiet") // resolves the host while the database still answers
+	get(t, router, at(api, "/quiet")) // resolves the host while the database still answers
 	if err := f.app.Close(); err != nil {
 		t.Fatalf("close the pool: %v", err)
 	}
 
-	if got := get(t, router, "/quiet").Code; got != http.StatusOK {
+	if got := get(t, router, at(api, "/quiet")).Code; got != http.StatusOK {
 		t.Errorf("a request that queries nothing got %d with the database down, want 200", got)
 	}
-	if got := get(t, router, "/noisy").Code; got != http.StatusInternalServerError {
+	if got := get(t, router, at(api, "/noisy")).Code; got != http.StatusInternalServerError {
 		t.Errorf("a request that queries got %d with the database down, want 500", got)
 	}
 }
@@ -569,11 +590,11 @@ func TestARequestThatNeverQueriesSurvivesADeadDatabase(t *testing.T) {
 // problem body's instance, so a report of "I got a 500" is one grep away.
 func TestEveryRequestCarriesAnId(t *testing.T) {
 	api, router, _ := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "public-thing", Method: http.MethodGet, Path: "/public",
 	}, httpx.Public(), ok)
 
-	res := get(t, router, "/public")
+	res := get(t, router, at(api, "/public"))
 	if res.Header().Get(httpx.RequestIDHeader) == "" {
 		t.Error("no request id in the response")
 	}
@@ -588,7 +609,7 @@ func TestEveryRequestCarriesAnId(t *testing.T) {
 
 	// A public operation at an unknown host is served, so ask for one that is
 	// not: the problem body has to name the request.
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "me", Method: http.MethodGet, Path: "/me",
 	}, httpx.SignedIn(), ok)
 	req = httptest.NewRequest(http.MethodGet, "http://nobody.test/me", nil)
@@ -600,7 +621,7 @@ func TestEveryRequestCarriesAnId(t *testing.T) {
 	}
 
 	// An id a client invented out of newlines is not an id.
-	req = httptest.NewRequest(http.MethodGet, "http://"+host+"/public", nil)
+	req = httptest.NewRequest(http.MethodGet, "http://"+host+at(api, "/public"), nil)
 	req.Header.Set(httpx.RequestIDHeader, "bad\nid")
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -614,7 +635,7 @@ func TestEveryRequestCarriesAnId(t *testing.T) {
 // where they are mounted.
 func TestHumaOwnRoutesAreRecordedAndDeclared(t *testing.T) {
 	api, router, _ := setupWith(t, true)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets",
 	}, httpx.Permission("widget:read"), ok)
 	if err := api.ValidateDeclarations(); err != nil {
@@ -654,16 +675,16 @@ func TestHumaOwnRoutesAreRecordedAndDeclared(t *testing.T) {
 // modules' manifests — the name and the kind, because the two have to agree.
 func TestRequiredListsWhatTheRoutesAsk(t *testing.T) {
 	api, _, _ := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets",
 	}, httpx.Permission("widget:read"), ok)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "create-widget", Method: http.MethodPost, Path: "/widgets",
 	}, httpx.Permission("widget:read"), ok)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "operate-widget", Method: http.MethodPost, Path: "/widgets/all",
 	}, httpx.OperatorPermission("widget:operate"), ok)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "public-thing", Method: http.MethodGet, Path: "/public",
 	}, httpx.Public(), ok)
 
@@ -699,9 +720,9 @@ func TestPermissionRejectsAMalformedToken(t *testing.T) {
 // tenant transaction to open, so it is served by the router and never recorded.
 func TestStaticFilesAreNotOperations(t *testing.T) {
 	api, router, _ := setup(t)
-	api.Static("/assets", fstest.MapFS{"app.css": {Data: []byte("body{}")}})
+	api.Surfaces(probe).App.Static("/assets", fstest.MapFS{"app.css": {Data: []byte("body{}")}})
 
-	res := get(t, router, "/assets/app.css")
+	res := get(t, router, page(api, "/assets")+"/app.css")
 	if res.Code != http.StatusOK || res.Body.String() != "body{}" {
 		t.Errorf("static file = %d %q", res.Code, res.Body.String())
 	}
@@ -734,7 +755,7 @@ func TestAFailedCommitDoesNotKeepTheHandlersHeaders(t *testing.T) {
 		Location string `header:"Location"`
 		Body     struct{}
 	}
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "create-note", Method: http.MethodPost, Path: "/notes",
 		DefaultStatus: http.StatusCreated,
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*created, error) {
@@ -748,7 +769,7 @@ func TestAFailedCommitDoesNotKeepTheHandlersHeaders(t *testing.T) {
 		return &created{Location: "/notes/1"}, nil
 	})
 
-	res := request(t, router, http.MethodPost, "/notes", host)
+	res := request(t, router, http.MethodPost, at(api, "/notes"), host)
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("a commit that failed returned %d, want 500", res.Code)
 	}
@@ -769,12 +790,12 @@ func TestALargeResponseStopsBeingHeld(t *testing.T) {
 	type blob struct {
 		Body []byte
 	}
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "big", Method: http.MethodGet, Path: "/big",
 	}, httpx.Public(), func(context.Context, *struct{}) (*blob, error) {
 		return &blob{Body: bytes.Repeat([]byte("x"), 3<<20)}, nil
 	})
-	res := get(t, router, "/big")
+	res := get(t, router, at(api, "/big"))
 	if res.Code != http.StatusOK || res.Body.Len() != 3<<20 {
 		t.Errorf("a 3 MB response = %d, %d bytes", res.Code, res.Body.Len())
 	}
@@ -794,7 +815,7 @@ func TestAStreamedResponseCommits(t *testing.T) {
 		}
 		return tx.DB().Exec("INSERT INTO notes (tenant_id, body) VALUES (?, ?)", f.tenant.ID.String(), "streamed").Error
 	}
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "flushed", Method: http.MethodGet, Path: "/flushed",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*huma.StreamResponse, error) {
 		if err := write(ctx); err != nil {
@@ -809,7 +830,7 @@ func TestAStreamedResponseCommits(t *testing.T) {
 		}}, nil
 	})
 
-	res := get(t, router, "/flushed")
+	res := get(t, router, at(api, "/flushed"))
 	if res.Code != http.StatusOK || res.Body.String() != "chunk" {
 		t.Fatalf("streamed response = %d %q", res.Code, res.Body.String())
 	}
@@ -825,7 +846,7 @@ func TestAResponseNobodyDecidedIsNotCommitted(t *testing.T) {
 	api, router, f := setup(t)
 	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL)`)
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "undecided", Method: http.MethodGet, Path: "/undecided",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*huma.StreamResponse, error) {
 		tx, _ := httpx.TxFrom(ctx)
@@ -836,7 +857,7 @@ func TestAResponseNobodyDecidedIsNotCommitted(t *testing.T) {
 		return &huma.StreamResponse{Body: func(huma.Context) {}}, nil
 	})
 
-	res := get(t, router, "/undecided")
+	res := get(t, router, at(api, "/undecided"))
 	if res.Code != http.StatusInternalServerError {
 		t.Errorf("an undecided response = %d, want 500", res.Code)
 	}
@@ -849,12 +870,12 @@ func TestAResponseNobodyDecidedIsNotCommitted(t *testing.T) {
 // rather than within the cache's half minute.
 func TestInvalidateHostForgetsTheResolution(t *testing.T) {
 	api, router, f := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "ping", Method: http.MethodGet, Path: "/ping",
 	}, httpx.Public(), ok)
 
 	for range 3 {
-		if code := get(t, router, "/ping").Code; code != http.StatusOK {
+		if code := get(t, router, at(api, "/ping")).Code; code != http.StatusOK {
 			t.Fatalf("GET /ping = %d", code)
 		}
 	}
@@ -862,7 +883,7 @@ func TestInvalidateHostForgetsTheResolution(t *testing.T) {
 		t.Fatalf("the loader was asked %d times for three requests, want 1", n)
 	}
 	api.InvalidateHost(strings.ToUpper(host) + ":8080")
-	if code := get(t, router, "/ping").Code; code != http.StatusOK {
+	if code := get(t, router, at(api, "/ping")).Code; code != http.StatusOK {
 		t.Fatalf("GET /ping after invalidation = %d", code)
 	}
 	if n := f.loads.Load(); n != 2 {
@@ -886,7 +907,7 @@ func TestInvalidateHostForgetsTheResolution(t *testing.T) {
 // in middleware.go turns both halves red.
 func TestAnOperatorRouteIsRefusedBeforeTheAuthorizer(t *testing.T) {
 	api, router, f := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "operate-widget", Method: http.MethodGet, Path: "/widgets/all",
 	}, httpx.OperatorPermission("widget:operate"), ok)
 	// An authorizer that grants everything, so nothing here can be mistaken for
@@ -894,7 +915,7 @@ func TestAnOperatorRouteIsRefusedBeforeTheAuthorizer(t *testing.T) {
 	f.allow, f.authErr = true, nil
 	f.signedIn()
 
-	res := get(t, router, "/widgets/all")
+	res := get(t, router, at(api, "/widgets/all"))
 	if res.Code != http.StatusForbidden {
 		t.Errorf("a customer's tenant reached an operator route: %d %s", res.Code, res.Body)
 	}
@@ -909,7 +930,7 @@ func TestAnOperatorRouteIsRefusedBeforeTheAuthorizer(t *testing.T) {
 	// authorizer, same caller: the tenant is the whole difference.
 	f.tenant.Operator = true
 	api.InvalidateHost(host)
-	if res := get(t, router, "/widgets/all"); res.Code != http.StatusOK {
+	if res := get(t, router, at(api, "/widgets/all")); res.Code != http.StatusOK {
 		t.Errorf("the operator's own tenant got %d %s", res.Code, res.Body)
 	}
 	if got := f.asked.Load(); got != 1 {
@@ -928,7 +949,7 @@ func TestAClientHangingUpIsNotAnError(t *testing.T) {
 	f.exec(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL, body text NOT NULL)`)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "hang-up", Method: http.MethodGet, Path: "/hangup",
 	}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*body, error) {
 		tx, ok := httpx.TxFrom(ctx)
@@ -945,7 +966,7 @@ func TestAClientHangingUpIsNotAnError(t *testing.T) {
 		return &body{}, nil
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "http://"+host+"/hangup", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodGet, "http://"+host+at(api, "/hangup"), nil).WithContext(ctx)
 	router.ServeHTTP(httptest.NewRecorder(), req)
 
 	got := f.logs.String()
@@ -983,7 +1004,7 @@ func TestABodyHasACeilingAndTheStreamingRouteHasAHigherOne(t *testing.T) {
 		{"read", "/read", nil},
 		{"stream", "/stream", map[string]any{streams: streaming}},
 	} {
-		httpx.Register(api, huma.Operation{
+		httpx.Register(api.Surfaces(probe).App, huma.Operation{
 			OperationID: tt.id, Method: http.MethodPost, Path: tt.path,
 			Extensions: tt.ext,
 			RequestBody: &huma.RequestBody{Required: true,
@@ -1016,13 +1037,13 @@ func TestABodyHasACeilingAndTheStreamingRouteHasAHigherOne(t *testing.T) {
 		return w.Code
 	}
 	const over = httpx.MaxBodyBytes + 1
-	if code := send(t, "/read", over); code != http.StatusRequestEntityTooLarge {
+	if code := send(t, at(api, "/read"), over); code != http.StatusRequestEntityTooLarge {
 		t.Errorf("a body of %d on an ordinary route = %d, want it cut off", over, code)
 	}
-	if code := send(t, "/read", httpx.MaxBodyBytes); code != http.StatusOK {
+	if code := send(t, at(api, "/read"), httpx.MaxBodyBytes); code != http.StatusOK {
 		t.Errorf("a body of exactly the ceiling = %d, want 200", code)
 	}
-	if code := send(t, "/stream", over); code != http.StatusOK {
+	if code := send(t, at(api, "/stream"), over); code != http.StatusOK {
 		t.Errorf("a body of %d on the streaming route = %d, want it read", over, code)
 	}
 }
@@ -1037,7 +1058,7 @@ func TestABodyHasACeilingAndTheStreamingRouteHasAHigherOne(t *testing.T) {
 // and is not told to buy something they still could not use.
 func TestAPlanFeatureIsAskedAfterThePermission(t *testing.T) {
 	api, router, f := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-trail", Method: http.MethodGet, Path: "/trail",
 	}, httpx.Permission("trail:read").Needing("audit-trail"), ok)
 	f.signedIn()
@@ -1045,7 +1066,7 @@ func TestAPlanFeatureIsAskedAfterThePermission(t *testing.T) {
 	// No permission: 403, and the plan is never asked about.
 	f.allow, f.includes = false, true
 	f.wanted = ""
-	if res := get(t, router, "/trail"); res.Code != http.StatusForbidden {
+	if res := get(t, router, at(api, "/trail")); res.Code != http.StatusForbidden {
 		t.Errorf("a caller who holds nothing got %d %s, want 403", res.Code, res.Body)
 	}
 	if f.wanted != "" {
@@ -1054,7 +1075,7 @@ func TestAPlanFeatureIsAskedAfterThePermission(t *testing.T) {
 
 	// The permission, without the plan: 402, naming the feature.
 	f.allow, f.includes = true, false
-	if res := get(t, router, "/trail"); res.Code != http.StatusPaymentRequired ||
+	if res := get(t, router, at(api, "/trail")); res.Code != http.StatusPaymentRequired ||
 		!strings.Contains(res.Body.String(), "PLAN_EXCLUDES") {
 		t.Errorf("a plan that excludes the feature got %d %s, want 402", res.Code, res.Body)
 	}
@@ -1064,14 +1085,14 @@ func TestAPlanFeatureIsAskedAfterThePermission(t *testing.T) {
 
 	// Both: through.
 	f.includes = true
-	if res := get(t, router, "/trail"); res.Code != http.StatusOK {
+	if res := get(t, router, at(api, "/trail")); res.Code != http.StatusOK {
 		t.Errorf("an entitled caller got %d %s", res.Code, res.Body)
 	}
 
 	// A plan that cannot be read is an outage and not a denial: billing being
 	// unreachable must not read as "your plan does not include this".
 	f.planErr = errors.New("the subscription store is unreachable")
-	if res := get(t, router, "/trail"); res.Code != http.StatusServiceUnavailable {
+	if res := get(t, router, at(api, "/trail")); res.Code != http.StatusServiceUnavailable {
 		t.Errorf("an unreadable plan got %d %s, want 503", res.Code, res.Body)
 	}
 }
@@ -1084,10 +1105,14 @@ func TestAFeatureNothingCanAnswerDoesNotStart(t *testing.T) {
 	_ = admin
 	f := &fixture{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}, app: app, logs: &lines{}}
 	api, _ := httpx.New(httpx.Options{
-		PublicHost: host, Tenants: f, Conn: app, Authorize: f,
+		// The installation is reached at the same host as the tenant, so a probe mounted on
+		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
+		// where the gate itself is tested.
+		Installation: host,
+		PublicHost:   host, Tenants: f, Conn: app, Authorize: f,
 		Authenticate: f.authenticate, Log: slog.New(slog.DiscardHandler),
 	})
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-trail", Method: http.MethodGet, Path: "/trail",
 	}, httpx.Permission("trail:read").Needing("audit-trail"), ok)
 	err := api.ValidateDeclarations()
@@ -1103,19 +1128,19 @@ func TestAFeatureNothingCanAnswerDoesNotStart(t *testing.T) {
 // about the tenant — a public site that is part of a paid plan is exactly that.
 func TestAPublicRouteIsStillAskedAboutThePlan(t *testing.T) {
 	api, router, f := setup(t)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-site", Method: http.MethodGet, Path: "/site",
 	}, httpx.Public().Needing("public-site"), ok)
 
 	f.includes, f.wanted = false, ""
-	if res := get(t, router, "/site"); res.Code != http.StatusPaymentRequired {
+	if res := get(t, router, at(api, "/site")); res.Code != http.StatusPaymentRequired {
 		t.Errorf("a public route on a plan that excludes it got %d %s, want 402", res.Code, res.Body)
 	}
 	if f.wanted != "public-site" {
 		t.Errorf("the kernel asked about %q; a public declaration was not checked at all", f.wanted)
 	}
 	f.includes = true
-	if res := get(t, router, "/site"); res.Code != http.StatusOK {
+	if res := get(t, router, at(api, "/site")); res.Code != http.StatusOK {
 		t.Errorf("a public route on a plan that includes it got %d %s", res.Code, res.Body)
 	}
 }

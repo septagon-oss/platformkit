@@ -114,11 +114,11 @@ func startApp(args []string) error {
 		return err
 	}
 
-	a, err := app.New(ctx, cfg, c.modules, appOptions(c, app.All))
+	a, err := app.New(ctx, cfg, c.modules, appOptions(cfg, c, app.All))
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "  site   http://%s/\n  admin  http://%s/admin/login\n  api    http://%s/docs\n\n", cfg.Server.PublicHost, cfg.Server.PublicHost, cfg.Server.PublicHost)
+	fmt.Fprintf(os.Stderr, "  site   http://%s/\n  admin  http://%s/app/admin/login\n  api    http://%s/docs\n\n", cfg.Server.PublicHost, cfg.Server.PublicHost, cfg.Server.PublicHost)
 	return a.Run(ctx)
 }
 

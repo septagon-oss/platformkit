@@ -60,7 +60,7 @@ func compose(t *testing.T) (config.Config, Options) {
 	t.Helper()
 	migrateURL, appURL := dbtest.URLs(t)
 	cfg := config.Config{
-		Server:   config.Server{Addr: freeAddr(t), PublicHost: tenantHost, Docs: true},
+		Server:   config.Server{Addr: freeAddr(t), PublicHost: tenantHost, Docs: true, InstallationHost: installationHost},
 		Database: config.Database{URL: appURL, MigrateURL: migrateURL},
 		NATS:     config.NATS{URL: "nats://localhost:4222"},
 		Log:      config.Log{Level: "error"},
@@ -71,6 +71,17 @@ func compose(t *testing.T) (config.Config, Options) {
 		Authenticate: anonymous,
 		Log:          slog.New(slog.DiscardHandler),
 		Transports:   Transports{Memory: memory.New, JetStream: eventnats.Connect},
+		// The workspace catalog's body. The address is the kernel's and the
+		// document is the composition's — kit may not import ui — so a test
+		// composition supplies one the way the product supplies screens.Describe.
+		// TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot reads it back.
+		WorkspaceCatalog: func(_ context.Context, resources []httpx.Resource) (any, error) {
+			names := make([]string, 0, len(resources))
+			for _, r := range resources {
+				names = append(names, r.Module+"/"+r.Entity)
+			}
+			return map[string]any{"resources": names}, nil
+		},
 	}
 	return cfg, opts
 }
@@ -100,14 +111,14 @@ func hello() module.Module {
 		Name:        "hello",
 		Permissions: []module.Permission{{Key: "note:write"}},
 		Events:      []string{"hello.note_written"},
-		Nav:         []module.NavEntry{{Label: "Notes", Path: "/hello", Permission: "note:write"}},
+		Nav:         []module.NavEntry{{Label: "Notes", Screen: "hello/notes", Permission: "note:write"}},
 		// Each owner starts its own numbering at 1.
 		Migrations: fstest.MapFS{
 			"000001_notes.up.sql": {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
 		},
-		Routes: func(api *httpx.API) {
-			httpx.Register(api, huma.Operation{
-				OperationID: "hello", Method: http.MethodGet, Path: "/hello",
+		Routes: func(s httpx.Surfaces) {
+			httpx.Register(s.App, huma.Operation{
+				OperationID: "hello", Method: http.MethodGet, Path: "/",
 			}, httpx.Public(), func(ctx context.Context, _ *struct{}) (*helloOut, error) {
 				tx, ok := httpx.TxFrom(ctx)
 				if !ok {
@@ -121,7 +132,7 @@ func hello() module.Module {
 				out.Body.Tenant = tenant.Slug
 				return out, nil
 			})
-			httpx.Register(api, huma.Operation{
+			httpx.Register(s.App, huma.Operation{
 				OperationID: "whoami", Method: http.MethodGet, Path: "/me",
 			}, httpx.SignedIn(), func(context.Context, *struct{}) (*helloOut, error) {
 				return &helloOut{}, nil
@@ -160,20 +171,20 @@ func TestBootMigratesAndServes(t *testing.T) {
 	}
 
 	// The module's route, its table, and its tenant.
-	code, body := get(t, cfg.Server.Addr, tenantHost, "/hello")
+	code, body := get(t, cfg.Server.Addr, tenantHost, "/api/v1/hello")
 	if code != http.StatusOK {
-		t.Fatalf("/hello = %d %s, want 200", code, body)
+		t.Fatalf("the module's route = %d %s, want 200", code, body)
 	}
 	if !strings.Contains(body, `"tenant":"acme"`) {
-		t.Errorf("/hello = %s, want the resolved tenant", body)
+		t.Errorf("the module's route = %s, want the resolved tenant", body)
 	}
 
 	// A host nobody serves is a 404 for anything that is not public, and the
 	// anonymous caller this test configures reaches nothing that is not.
-	if code, _ := get(t, cfg.Server.Addr, "elsewhere.test", "/me"); code != http.StatusNotFound {
+	if code, _ := get(t, cfg.Server.Addr, "elsewhere.test", "/api/v1/hello/me"); code != http.StatusNotFound {
 		t.Errorf("/me at an unknown host = %d, want 404", code)
 	}
-	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/me"); code != http.StatusForbidden {
+	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/hello/me"); code != http.StatusForbidden {
 		t.Errorf("/me as an anonymous caller = %d, want 403", code)
 	}
 
@@ -190,8 +201,8 @@ func TestBootMigratesAndServes(t *testing.T) {
 // runs the same gate; see TestEveryRoleRunsTheBootGates.
 func TestBootRefusesARouteNoModuleCanReach(t *testing.T) {
 	cfg, opts := compose(t)
-	ghost := module.Module{Name: "ghost", Routes: func(api *httpx.API) {
-		httpx.Register(api, huma.Operation{
+	ghost := module.Module{Name: "ghost", Routes: func(s httpx.Surfaces) {
+		httpx.Register(s.App, huma.Operation{
 			OperationID: "haunt", Method: http.MethodGet, Path: "/haunt",
 		}, httpx.Permission("ghost:read"), func(context.Context, *struct{}) (*helloOut, error) {
 			return &helloOut{}, nil
@@ -234,8 +245,8 @@ func TestBootRefusesARouteAndAManifestThatDisagreeAboutTheOperator(t *testing.T)
 			m := module.Module{
 				Name:        "control",
 				Permissions: []module.Permission{{Key: "fleet:manage", Operator: tt.declared}},
-				Routes: func(api *httpx.API) {
-					httpx.Register(api, huma.Operation{
+				Routes: func(s httpx.Surfaces) {
+					httpx.Register(s.App, huma.Operation{
 						OperationID: "fleet", Method: http.MethodGet, Path: "/fleet",
 					}, tt.route("fleet:manage"), func(context.Context, *struct{}) (*helloOut, error) {
 						return &helloOut{}, nil
@@ -401,11 +412,11 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 			Name:        "shop",
 			Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
 			Events:      events,
-			Routes: func(api *httpx.API) {
+			Routes: func(s httpx.Surfaces) {
 				rest.Spec[*Widget]{
 					Module: "shop", Entity: "widget", Path: "/widgets",
 					Read: "widget:read", Write: "widget:write",
-				}.Mount(api)
+				}.Mount(s)
 			},
 		}
 	}
@@ -557,8 +568,8 @@ func TestRoleIsAClosedSet(t *testing.T) {
 // image and the same modules, two answers to "will this start?", and a rollout
 // that looked half healthy while half of it was refusing to boot.
 func TestEveryRoleRunsTheBootGates(t *testing.T) {
-	ghost := module.Module{Name: "ghost", Routes: func(api *httpx.API) {
-		httpx.Register(api, huma.Operation{
+	ghost := module.Module{Name: "ghost", Routes: func(s httpx.Surfaces) {
+		httpx.Register(s.App, huma.Operation{
 			OperationID: "haunt", Method: http.MethodGet, Path: "/haunt",
 		}, httpx.Permission("ghost:read"), func(context.Context, *struct{}) (*helloOut, error) {
 			return &helloOut{}, nil
@@ -606,5 +617,101 @@ func TestTheWorkerAnswersTheSameProbeShapeAsTheWeb(t *testing.T) {
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+}
+
+// installationHost is where this fixture's installation is reached, which is what
+// makes the control plane answer at all. See kit/httpx's
+// TestTheControlPlaneIsNotFoundAtATenantHost for the gate itself.
+const installationHost = "platformkit.test"
+
+// TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot is the one route the
+// composition itself owns: the address is the kernel's, and the document is the
+// composition's function. The address the catalog used to answer at is spent on
+// a redirect for one release, and the module that used to own it no longer does.
+func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
+	cfg, opts := compose(t)
+	widgets := module.Module{
+		Name:        "shop",
+		Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
+		Events:      []string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"},
+		Routes: func(r httpx.Surfaces) {
+			rest.Spec[*Widget]{
+				Module: "shop", Entity: "widget", Path: "/widgets",
+				Read: "widget:read", Write: "widget:write",
+			}.Mount(r)
+		},
+	}
+	a, err := New(t.Context(), cfg, []module.Module{hello(), widgets}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+
+	// The document is for a caller the installation recognises: the resources it
+	// may reach, not everybody's.
+	code, body := get(t, cfg.Server.Addr, tenantHost, "/api/v1/app/resources")
+	if code != http.StatusUnauthorized && code != http.StatusForbidden {
+		t.Errorf("the catalog as an anonymous caller = %d %s, want a refusal: it is the caller's own resources", code, body)
+	}
+	// This helper's client follows redirects, so the two answers being the same is
+	// the assertion: the old address reaches the new door rather than a second
+	// one, which is all one release of migration promises.
+	if old, oldBody := get(t, cfg.Server.Addr, tenantHost, "/api/v1/admin/resources"); old != code ||
+		strings.Contains(oldBody, "AUTH_ANONYMOUS") != strings.Contains(body, "AUTH_ANONYMOUS") {
+		t.Errorf("the address the catalog used to answer at answers %d %s where its address answers %d %s; the migration is a redirect and not a second mount",
+			old, oldBody, code, body)
+	}
+}
+
+// TestACompositionThatMountsNothingOnTheWorkspaceIsRefused is gate A2: a product
+// is a place a person stands, and a composition with no workspace routes is an
+// API with a front door painted on it. The worker role is exempt — it serves two
+// probes and no product — which is what TestWorkRunsTheComposedJobsWithoutAnAddress
+// exercises by being a worker at all.
+func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
+	cfg, opts := compose(t)
+	faceless := module.Module{
+		Name: "faceless",
+		Routes: func(s httpx.Surfaces) {
+			httpx.Register(s.Public, huma.Operation{
+				OperationID: "notice", Method: http.MethodGet, Path: "/notice",
+			}, httpx.Public(), func(context.Context, *struct{}) (*helloOut, error) {
+				return &helloOut{}, nil
+			})
+		},
+	}
+	a, err := New(t.Context(), cfg, []module.Module{faceless}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = a.Start(t.Context())
+	if err == nil || !strings.Contains(err.Error(), httpx.AppRoot) {
+		t.Fatalf("a composition with no workspace started anyway or refused for another reason: %v", err)
+	}
+	// And the same composition with one workspace route boots: the refusal names
+	// the missing thing, and putting it there is what fixes it.
+	faceless.Routes = func(s httpx.Surfaces) {
+		httpx.Register(s.App, huma.Operation{
+			OperationID: "notice", Method: http.MethodGet, Path: "/notice",
+		}, httpx.Public(), func(context.Context, *struct{}) (*helloOut, error) {
+			return &helloOut{}, nil
+		})
+	}
+	b, err := New(t.Context(), cfg, []module.Module{faceless}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- b.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/faceless/notice"); code != http.StatusOK {
+		t.Errorf("the workspace route = %d, want 200", code)
 	}
 }

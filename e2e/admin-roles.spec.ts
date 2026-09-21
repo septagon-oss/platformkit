@@ -19,16 +19,16 @@ const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
 });
 
 test('the Roles entry in the sidebar opens a screen that changes what a role grants', async ({ page }) => {
   await page.getByRole('link', { name: 'Roles' }).first().click();
-  await expect(page).toHaveURL(/\/admin\/auth\/roles$/);
+  await expect(page).toHaveURL(/\/app\/auth\/roles$/);
   await expect(page.getByRole('heading', { name: 'Roles', exact: true })).toBeVisible();
 
   // The two roles every tenant is seeded with, each with a form of its own.
@@ -43,7 +43,7 @@ test('the Roles entry in the sidebar opens a screen that changes what a role gra
   await page.locator('label[for="pk-role-member-task-read"]').click();
   await expect(read).toBeChecked();
   await member.getByRole('button', { name: 'Save member' }).click();
-  await expect(page).toHaveURL(/\/admin\/auth\/roles$/);
+  await expect(page).toHaveURL(/\/app\/auth\/roles$/);
 
   // The write landed, and the screen renders it back from the row rather than
   // from what the browser still had on screen.
@@ -54,7 +54,7 @@ test('the Roles entry in the sidebar opens a screen that changes what a role gra
 });
 
 test('a role name the module refuses comes back on the screen rather than on a fault page', async ({ page }) => {
-  await page.goto('/admin/auth/roles');
+  await page.goto('/app/auth/roles');
   const create = page.getByRole('form', { name: 'A new role' });
   // A leading digit is not a lower-case identifier. The browser's own pattern
   // check is removed first on purpose: what is being tested is the server's
@@ -72,7 +72,7 @@ test('a role name the module refuses comes back on the screen rather than on a f
 });
 
 test('the last role that can administer roles refuses to be emptied', async ({ page }) => {
-  await page.goto('/admin/auth/roles');
+  await page.goto('/app/auth/roles');
   // admin is the only seeded role with the wildcard, so it is the only one that
   // grants role:manage. Unticking that one box and pressing save is the whole
   // of the mistake: afterwards nobody in this tenant could open this screen

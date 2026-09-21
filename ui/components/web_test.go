@@ -333,15 +333,15 @@ func TestSidebarOwnsNestedActiveNavigationAndPortableBrand(t *testing.T) {
 	var rendered strings.Builder
 	err := Sidebar(SidebarProps{
 		ComponentProps: ComponentProps{ID: "workspace", Class: "client-sidebar"},
-		Current:        "/admin/customers/accounts",
+		Current:        "/app/customers/accounts",
 		BrandLabel:     "Acme Control",
 		BrandHref:      "/control",
 		Sections: []SidebarSection{{
 			ID: "operate", Label: "Operate", Glyph: "O", Tone: "brand",
 			Items: []SidebarItem{
-				{ID: "dashboard", Label: "Dashboard", Href: "/admin", Icon: "home"},
-				{ID: "customers", Label: "Customers", Href: "/admin/customers", Icon: "users", Badge: "24", Children: []SidebarItem{
-					{ID: "accounts", Label: "Accounts", Href: "/admin/customers/accounts"},
+				{ID: "dashboard", Label: "Dashboard", Href: "/app", Icon: "home"},
+				{ID: "customers", Label: "Customers", Href: "/app/customers", Icon: "users", Badge: "24", Children: []SidebarItem{
+					{ID: "accounts", Label: "Accounts", Href: "/app/customers/accounts"},
 				}},
 			},
 		}},
@@ -366,7 +366,22 @@ func TestSidebarOwnsNestedActiveNavigationAndPortableBrand(t *testing.T) {
 		}
 	}
 	if strings.Contains(html, `data-sidebar-item="dashboard" data-sidebar-depth="0" data-active="true"`) {
-		t.Fatalf("the /admin root must not prefix-match every admin route: %s", html)
+		t.Fatalf("a workspace root must not prefix-match every route beneath it: %s", html)
+	}
+
+	// The same root entry is current where it leads and nowhere else. Refusing the
+	// prefix match is only right if the exact match still lands: the workspace
+	// root begins the address of every page beneath it, and the dashboard is the
+	// page a person is on when they stand at the root.
+	var atRoot strings.Builder
+	if err := Sidebar(SidebarProps{
+		Current: "/app",
+		Items:   []SidebarItem{{ID: "dashboard", Label: "Dashboard", Href: "/app"}},
+	}).Render(&atRoot); err != nil {
+		t.Fatal(err)
+	}
+	if html := atRoot.String(); !strings.Contains(html, `data-sidebar-item="dashboard" data-sidebar-depth="0" data-active="true"`) {
+		t.Errorf("the dashboard is the current page at the workspace root: %s", html)
 	}
 }
 

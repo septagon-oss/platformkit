@@ -48,7 +48,15 @@ type Spec[T crud.Entity] struct {
 	// Entity is this resource's name, lower-case: "task". It is the middle of
 	// the event name and the noun in the operation ids.
 	Entity string
-	// Path is the collection's path: "/api/tasks". The item is Path + "/{id}".
+	// Path is the collection's path relative to the module: "/tasks". The item
+	// is Path + "/{id}".
+	//
+	// It is relative and not absolute because the address a route answers at is
+	// not the module's to know: the kernel composes it from this path, the
+	// module's name and the surface the permissions put it on — /api/v1/task/tasks
+	// for a workspace resource, /api/v1/ops/billing/plans for one the
+	// installation owns. Writing the prefix here was a module naming a surface
+	// it had not chosen.
 	Path string
 	// Read guards the list and the read; Write guards create, update and
 	// delete. Both are permissions some module has to define, or the app
@@ -134,12 +142,33 @@ func (s Spec[T]) Schema() crud.Schema {
 // for a row this tenant does not have, 422 for an entity that fails its own
 // Validate or a query naming a field that does not exist, 409 for a unique
 // constraint.
-func (s Spec[T]) Mount(api *httpx.API) {
+//
+// The reads and the writes may not live at the same address, and the two
+// operator flags say which: a route the installation owns belongs on the Ops
+// surface, and a route a customer's own administrator uses belongs on the
+// workspace. A price list is the worked case — readable by the tenant that pays
+// for it, written only by the operator — and it is why there are two routers
+// here rather than one. The generated screens are mounted on the workspace
+// whatever the answer is, because a screen a person stands in front of is
+// always workspace work: it declares the same permission the write route does.
+func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	s.check()
 	schema := s.Schema()
-	api.RegisterResource(s.resource()) // the same entity, for the generated screens
+	read, write := s.readRouter(surfaces), s.writeRouter(surfaces)
+	res := s.resource()
+	res.Screen = surfaces.App.PagePath(s.Path)
+	res.Schema.Path = read.Prefix() + s.Path
+	if write.Prefix() != read.Prefix() {
+		// The one resource whose writes do not answer where its reads do: the
+		// catalog and the kernel's own refusal name that door, because nothing a
+		// caller can derive from the read address says it is elsewhere, and a
+		// shell that derived it anyway would be sent to an address that answers
+		// the read and refuses the write.
+		res.WritePath = write.Prefix() + s.Path
+	}
+	surfaces.RegisterResource(res) // the same entity, for the generated screens
 
-	httpx.Register(api, s.op("list", http.MethodGet, s.Path, 0,
+	httpx.Register(read, s.op("list", http.MethodGet, s.Path, 0,
 		"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
 		s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
 			tx, err := transaction(ctx)
@@ -159,7 +188,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			return out, nil
 		})
 
-	httpx.Register(api, s.op("create", http.MethodPost, s.Path, http.StatusCreated,
+	httpx.Register(write, s.op("create", http.MethodPost, s.Path, http.StatusCreated,
 		"Create a "+s.Entity, "The tenant, the id and the timestamps are set by the server."),
 		s.writeAuth(), func(ctx context.Context, in *bodyInput[T]) (*Item[T], error) {
 			tx, err := transaction(ctx)
@@ -181,7 +210,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			return &Item[T]{Body: e}, nil
 		})
 
-	httpx.Register(api, s.op("read", http.MethodGet, s.item(), 0,
+	httpx.Register(read, s.op("read", http.MethodGet, s.item(), 0,
 		"Read a "+s.Entity, ""),
 		s.readAuth(), func(ctx context.Context, in *idInput) (*Item[T], error) {
 			tx, err := transaction(ctx)
@@ -195,7 +224,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			return &Item[T]{Body: e}, nil
 		})
 
-	httpx.Register(api, s.op("update", http.MethodPatch, s.item(), 0,
+	httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
 		"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
 		s.writeAuth(), func(ctx context.Context, in *patchInput) (*Item[T], error) {
 			tx, err := transaction(ctx)
@@ -209,7 +238,7 @@ func (s Spec[T]) Mount(api *httpx.API) {
 			return &Item[T]{Body: e}, nil
 		})
 
-	httpx.Register(api, s.op("delete", http.MethodDelete, s.item(), http.StatusNoContent,
+	httpx.Register(write, s.op("delete", http.MethodDelete, s.item(), http.StatusNoContent,
 		"Delete a "+s.Entity, ""),
 		s.writeAuth(), func(ctx context.Context, in *idInput) (*struct{}, error) {
 			tx, err := transaction(ctx)
@@ -328,7 +357,7 @@ type CommandOptions struct {
 // case. A command whose argument is missing is refused by run, with
 // ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
 // and "an assignee that is not a user" the same 422.
-func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, description string, events []string,
+func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
 	path := spec.item() + "/" + verb
@@ -338,6 +367,13 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 	auth := spec.writeAuth()
 	if opts.Auth.Declared() {
 		auth = opts.Auth
+	}
+	// A command the installation owns is a control-plane route, whatever the
+	// resource it acts on is otherwise: the guard is the fact, and the surface
+	// follows the guard rather than the other way round.
+	router := surfaces.App
+	if auth.Operator() {
+		router = surfaces.Ops
 	}
 	op := huma.Operation{
 		OperationID: spec.Module + "-" + spec.Entity + "-" + verb,
@@ -358,10 +394,15 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 	// so the form and the JSON route perform one implementation through one
 	// guard. See docs/adr/0007 and httpx.Command.Run.
 	fields := crud.FieldsOf(reflect.TypeFor[I]())
-	api.AddCommand(spec.Module, spec.Entity, httpx.Command{
+	// Endpoint is the command's own absolute address, which is the one path a
+	// shell can no longer derive for itself: once a command may live on the
+	// control-plane surface, {path}/{id}/{verb} stops being the rule. The
+	// catalog publishes it for exactly that reason — see screens.Command.Path.
+	surfaces.AddCommand(spec.Module, spec.Entity, httpx.Command{
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
-		Fields: fields,
+		Endpoint: router.Prefix() + path,
+		Fields:   fields,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -391,12 +432,12 @@ func Command[I any, T crud.Entity](api *httpx.API, spec Spec[T], verb, summary, 
 		return run(ctx, tx, id, in)
 	}
 	if opts.Collection {
-		Operation(api, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (T, error) {
+		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (T, error) {
 			return answer(ctx, tx, uuid.Nil, in.Body)
 		}, OperationOptions{})
 		return
 	}
-	Operation(api, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (T, error) {
+	Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (T, error) {
 		return answer(ctx, tx, in.ID, in.Body)
 	}, OperationOptions{})
 }
@@ -466,6 +507,26 @@ func (s Spec[T]) op(verb, method, path string, status int, summary, description 
 
 func (s Spec[T]) item() string { return strings.TrimSuffix(s.Path, "/") + "/{id}" }
 
+// readRouter and writeRouter are the derivation the surface table makes from
+// the two flags: an operator read or write is a control-plane route and lives
+// where only the installation's host answers, and everything else is workspace
+// work. The flags have already been checked against the manifest by kit/app's
+// validatePermissions, which is what makes reading them here a fact rather than
+// a second opinion about who may call this.
+func (s Spec[T]) readRouter(surfaces httpx.Surfaces) *httpx.Router {
+	if s.OperatorRead {
+		return surfaces.Ops
+	}
+	return surfaces.App
+}
+
+func (s Spec[T]) writeRouter(surfaces httpx.Surfaces) *httpx.Router {
+	if s.OperatorWrite {
+		return surfaces.Ops
+	}
+	return surfaces.App
+}
+
 func (s Spec[T]) readAuth() httpx.Auth {
 	return (httpx.Resource{Read: s.Read, OperatorRead: s.OperatorRead}).ReadAuth()
 }
@@ -483,6 +544,10 @@ func (s Spec[T]) check() {
 	switch {
 	case !strings.HasPrefix(s.Path, "/"):
 		bad = fmt.Sprintf("Path %q does not start with /", s.Path)
+	case s.Path == "/"+s.Module || strings.HasPrefix(s.Path, "/"+s.Module+"/") ||
+		strings.HasPrefix(s.Path, "/api/v1") || strings.HasPrefix(s.Path, "/app") ||
+		strings.HasPrefix(s.Path, "/ops") || strings.HasPrefix(s.Path, "/public"):
+		bad = fmt.Sprintf("Path %q must be relative to the module — %q", s.Path, "/"+strings.TrimPrefix(strings.TrimPrefix(s.Path, "/api/v1/"+s.Module), "/"))
 	case !events.ValidName(s.Event(Created)):
 		bad = fmt.Sprintf("Module %q and Entity %q do not make an event name", s.Module, s.Entity)
 	case !httpx.ValidPermission(s.Read):
@@ -507,7 +572,7 @@ func (s Spec[T]) check() {
 		bad = presentationFault(crud.Fields[T]())
 	}
 	if bad != "" {
-		panic("rest: Spec for " + s.Path + ": " + bad)
+		panic("rest: Spec for " + s.Module + "." + s.Entity + ": " + bad)
 	}
 }
 

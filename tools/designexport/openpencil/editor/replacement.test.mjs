@@ -1934,8 +1934,8 @@ func choiceForm(p components.FormProps, children ...g.Node) g.Node {
 func main() {
   var input struct { Proposal *export.PropsProposal; Dashed, Centered bool }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: crud.Fields[*Note]()}}
-  form := screens.FormExample("fixture/generated-form", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note", nil, nil, "", true)
+  resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/notes", Screen: "/app/notes/notes", Schema: crud.Schema{Fields: crud.Fields[*Note]()}}
+  form := screens.FormExample("fixture/generated-form", resource, screens.Options{Workspace: "/app"}, "/app/notes/notes", "New note", nil, nil, "", true)
   captures := append(examples.Gallery(), form)
   state := examples.ExampleOf(examples.ExampleInfo{ID: "stage", ComponentID: "pk-ui.component.select"},
     components.SelectProps{Name: "stage", Label: "Stage", Value: "draft", Required: true, Placeholder: "Choose a stage",

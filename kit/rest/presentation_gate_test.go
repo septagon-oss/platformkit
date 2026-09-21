@@ -50,8 +50,8 @@ func TestAPresentationNoScreenRendersIsRefusedAtMount(t *testing.T) {
 			t.Errorf("Mount refused for another reason: %v", recovered)
 		}
 	}()
-	rest.Spec[*Ghost]{Module: "ghost", Entity: "ghost", Path: "/api/ghosts",
-		Read: "ghost:read", Write: "ghost:write"}.Mount(&httpx.API{})
+	rest.Spec[*Ghost]{Module: "ghost", Entity: "ghost", Path: "/ghosts",
+		Read: "ghost:read", Write: "ghost:write"}.Mount(httpx.Surfaces{})
 }
 
 // TestTheReadVocabularyIsClosedAndHoldsItsOwnNames. `select` is a control a

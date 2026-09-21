@@ -37,6 +37,10 @@ func setupFault(t *testing.T, fault httpx.Fault) (*httpx.API, *chi.Mux) {
 		logs:   &lines{},
 	}
 	api, router := httpx.New(httpx.Options{
+		// The installation is reached at the same host as the tenant, so a probe mounted on
+		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
+		// where the gate itself is tested.
+		Installation: host,
 		PublicHost:   host,
 		Tenants:      f,
 		Conn:         app,
@@ -46,13 +50,13 @@ func setupFault(t *testing.T, fault httpx.Fault) (*httpx.API, *chi.Mux) {
 		Log:          slog.New(slog.DiscardHandler),
 		Fault:        fault,
 	})
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "write-widget", Method: http.MethodPost, Path: "/widgets",
 	}, httpx.Public(), ok)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets/quiet",
 	}, httpx.Public(), ok)
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "explode-widget", Method: http.MethodPost, Path: "/widgets/explode",
 	}, httpx.Public(), func(context.Context, *struct{}) (*struct{}, error) {
 		panic("a handler that fell over")
@@ -101,9 +105,9 @@ const browserAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*
 // cross-site write is refused by a guard that runs before any handler, so the person in
 // front of the browser saw the problem JSON — correct, and impossible to act on.
 func TestABrowserNavigatingToARefusalGetsADocument(t *testing.T) {
-	_, router := setupFault(t, documentFault)
+	api, router := setupFault(t, documentFault)
 
-	got := postFrom(t, router, "/widgets", browserAccept, "http://elsewhere.test", false)
+	got := postFrom(t, router, at(api, "/widgets"), browserAccept, "http://elsewhere.test", false)
 
 	if got.Code != http.StatusForbidden {
 		t.Errorf("a cross-site write got %d; the page must carry the verdict, not 200 with the word Forbidden in it", got.Code)
@@ -112,7 +116,7 @@ func TestABrowserNavigatingToARefusalGetsADocument(t *testing.T) {
 		t.Errorf("a browser navigation got Content-Type %q, want a document: %s", ct, got.Body.String())
 	}
 	body := got.Body.String()
-	for _, want := range []string{"refused:Forbidden", "csrf:", "urn:request:"} {
+	for _, want := range []string{"refused:Forbidden", httpx.CodeCSRFOrigin + ":", "urn:request:"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the refusal page omits %q, so the person reading it has nothing to act on or quote: %s", want, body)
 		}
@@ -124,7 +128,7 @@ func TestABrowserNavigatingToARefusalGetsADocument(t *testing.T) {
 // machines: an SDK, a health check, a monitor, and every test in this repository that
 // reads the JSON. A browser-shaped answer for them would be a quiet outage.
 func TestAClientThatAskedForValueStillGetsTheProblemDocument(t *testing.T) {
-	_, router := setupFault(t, documentFault)
+	api, router := setupFault(t, documentFault)
 
 	cases := map[string]string{
 		"an API client": "application/json",
@@ -136,7 +140,7 @@ func TestAClientThatAskedForValueStillGetsTheProblemDocument(t *testing.T) {
 		"a client that refused the document": "text/html;q=0, application/json;q=0.9",
 	}
 	for name, accept := range cases {
-		got := postFrom(t, router, "/widgets", accept, "http://elsewhere.test", false)
+		got := postFrom(t, router, at(api, "/widgets"), accept, "http://elsewhere.test", false)
 		if got.Code != http.StatusForbidden {
 			t.Errorf("%s: verdict changed to %d while changing shape", name, got.Code)
 		}
@@ -146,14 +150,23 @@ func TestAClientThatAskedForValueStillGetsTheProblemDocument(t *testing.T) {
 	}
 }
 
-// TestAnHTMXRequestGetsTheDocumentItWillSwap: htmx puts whatever arrives into the region
-// that asked, which is why the answer to a failed swap should be the markup.
-func TestAnHTMXRequestGetsTheDocumentItWillSwap(t *testing.T) {
-	_, router := setupFault(t, documentFault)
+// TestAnHTMXWriteGetsTheProblemDocumentItsControllerParses. An htmx request asks with
+// `Accept: text/html,*/*`, and it is still a controller rather than a window: this
+// composition's htmx config swaps nothing for a 4xx and reads the refusal's code out of
+// the problem body to choose the recovery notice and retain the form's input. Answering
+// it with a page throws the body away in the library, so the person is left with a form
+// that silently did nothing. The swapped fragment an htmx write gets on a success is a
+// different matter and unchanged — see kit/httpx/html.go and session-recovery.spec.ts.
+func TestAnHTMXWriteGetsTheProblemDocumentItsControllerParses(t *testing.T) {
+	api, router := setupFault(t, documentFault)
 
-	got := postFrom(t, router, "/widgets", "*/*", "http://elsewhere.test", true)
-	if !strings.HasPrefix(got.Header().Get("Content-Type"), "text/html") {
-		t.Errorf("an htmx request got %q: it will swap that into the page", got.Header().Get("Content-Type"))
+	got := postFrom(t, router, at(api, "/widgets"), "*/*", "http://elsewhere.test", true)
+	if !strings.HasPrefix(got.Header().Get("Content-Type"), problem.ContentType) {
+		t.Errorf("an htmx request got %q, want the document its controller parses the code out of: %s",
+			got.Header().Get("Content-Type"), got.Body.String())
+	}
+	if !strings.Contains(got.Body.String(), httpx.CodeCSRFOrigin) {
+		t.Errorf("the refusal an htmx controller reads names no code: %s", got.Body.String())
 	}
 }
 
@@ -161,9 +174,9 @@ func TestAnHTMXRequestGetsTheDocumentItWillSwap(t *testing.T) {
 // kernel refusal. The 500's detail is empty on purpose, so a browser still gets a page
 // and still gets no hint about what broke.
 func TestAPanickingHandlerAlsoAnswersABrowserWithADocumentAndNoInternals(t *testing.T) {
-	_, router := setupFault(t, documentFault)
+	api, router := setupFault(t, documentFault)
 
-	html := postFrom(t, router, "/widgets/explode", browserAccept, "", false)
+	html := postFrom(t, router, at(api, "/widgets/explode"), browserAccept, "", false)
 	if html.Code != http.StatusInternalServerError {
 		t.Errorf("a panicking handler got %d with a document, want 500", html.Code)
 	}
@@ -174,7 +187,7 @@ func TestAPanickingHandlerAlsoAnswersABrowserWithADocumentAndNoInternals(t *test
 		t.Errorf("the panic's own words reached the browser: %s", html.Body.String())
 	}
 
-	json := postFrom(t, router, "/widgets/explode", "application/json", "", false)
+	json := postFrom(t, router, at(api, "/widgets/explode"), "application/json", "", false)
 	if json.Code != http.StatusInternalServerError || !strings.HasPrefix(json.Header().Get("Content-Type"), problem.ContentType) {
 		t.Errorf("the API answer to the same panic changed: %d %q", json.Code, json.Header().Get("Content-Type"))
 	}
@@ -183,9 +196,9 @@ func TestAPanickingHandlerAlsoAnswersABrowserWithADocumentAndNoInternals(t *test
 // TestAnApplicationThatRegistersNothingBehavesExactlyAsBefore is why this could be merged
 // into a released kernel at all: the default is the old behaviour, byte for byte.
 func TestAnApplicationThatRegistersNothingBehavesExactlyAsBefore(t *testing.T) {
-	_, router := setupFault(t, nil)
+	api, router := setupFault(t, nil)
 
-	got := postFrom(t, router, "/widgets", browserAccept, "http://elsewhere.test", false)
+	got := postFrom(t, router, at(api, "/widgets"), browserAccept, "http://elsewhere.test", false)
 	if got.Code != http.StatusForbidden {
 		t.Fatalf("got %d, want 403", got.Code)
 	}
@@ -197,9 +210,9 @@ func TestAnApplicationThatRegistersNothingBehavesExactlyAsBefore(t *testing.T) {
 // TestARendererThatDeclinesFallsBackToTheProblemDocument: opting out for one request has
 // to be a real option, or a shell that cannot render some request produces an empty page.
 func TestARendererThatDeclinesFallsBackToTheProblemDocument(t *testing.T) {
-	_, router := setupFault(t, refusingFault)
+	api, router := setupFault(t, refusingFault)
 
-	got := postFrom(t, router, "/widgets", browserAccept, "http://elsewhere.test", false)
+	got := postFrom(t, router, at(api, "/widgets"), browserAccept, "http://elsewhere.test", false)
 	if ct := got.Header().Get("Content-Type"); !strings.HasPrefix(ct, problem.ContentType) {
 		t.Errorf("a renderer that declined left %q, want the fallback: %s", ct, got.Body.String())
 	}
@@ -256,9 +269,9 @@ func TestAMistypedAddressAnswersABrowserWithAPageAndAClientWithAValue(t *testing
 // route it pointed at is the other refusal a mux decides alone. The verb is named, because
 // "nothing is served here" would send a person to look for a page that is actually there.
 func TestAFormPointedAtTheWrongVerbIsRefusedInBothShapes(t *testing.T) {
-	_, router := setupFault(t, documentFault)
+	api, router := setupFault(t, documentFault)
 
-	page := ask(t, router, http.MethodPost, "/widgets/quiet", browserAccept)
+	page := ask(t, router, http.MethodPost, at(api, "/widgets/quiet"), browserAccept)
 	if page.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("a POST to a GET-only address = %d, want 405: %s", page.Code, page.Body.String())
 	}
@@ -267,7 +280,7 @@ func TestAFormPointedAtTheWrongVerbIsRefusedInBothShapes(t *testing.T) {
 		t.Errorf("the 405 is not a page that names the verb: %s", body)
 	}
 
-	value := ask(t, router, http.MethodPost, "/widgets/quiet", "")
+	value := ask(t, router, http.MethodPost, at(api, "/widgets/quiet"), "")
 	if value.Code != http.StatusMethodNotAllowed {
 		t.Errorf("the verdict changed for a client: %d", value.Code)
 	}

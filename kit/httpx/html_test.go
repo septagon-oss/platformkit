@@ -22,7 +22,7 @@ func TestAPageIsAnOperation(t *testing.T) {
 	f.signedIn()
 	f.allow = true
 
-	httpx.HTML(api, huma.Operation{
+	httpx.HTML(api.Surfaces(probe).App, huma.Operation{
 		OperationID: "read-note", Method: http.MethodGet, Path: "/notes/{id}", Summary: "One note",
 	}, httpx.Public(), func(ctx context.Context, in *struct {
 		ID string `path:"id"`
@@ -38,7 +38,7 @@ func TestAPageIsAnOperation(t *testing.T) {
 		t.Fatalf("the page does not declare its authorization: %v", err)
 	}
 
-	res := get(t, router, "/notes/7")
+	res := get(t, router, page(api, "/notes/7"))
 	if res.Code != http.StatusOK {
 		t.Fatalf("the page = %d %s", res.Code, res.Body)
 	}
@@ -60,10 +60,10 @@ func TestAPageIsAnOperation(t *testing.T) {
 	// A handler saying the answer is elsewhere: a browser is redirected, and
 	// htmx — which would swap the target page into a fragment — is told with
 	// the header it understands.
-	if res := get(t, router, "/notes/gone"); res.Code != http.StatusSeeOther || res.Header().Get("Location") != "/notes" {
+	if res := get(t, router, page(api, "/notes/gone")); res.Code != http.StatusSeeOther || res.Header().Get("Location") != "/notes" {
 		t.Errorf("SeeOther = %d to %q, want 303 to /notes", res.Code, res.Header().Get("Location"))
 	}
-	req := httptest.NewRequest(http.MethodGet, "http://"+host+"/notes/gone", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://"+host+page(api, "/notes/gone"), nil)
 	req.Header.Set("HX-Request", "true")
 	swap := httptest.NewRecorder()
 	router.ServeHTTP(swap, req)

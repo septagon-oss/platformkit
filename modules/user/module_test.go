@@ -63,7 +63,7 @@ func mount(t *testing.T) chi.Router {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	_, m := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: administering}})
-	m.Routes(api)
+	m.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -325,3 +325,9 @@ func TestAModuleWithNoRoleSystemIsRefusedAtComposition(t *testing.T) {
 	user.Module(user.Deps{})
 	t.Fatal("composing without an Administration was allowed")
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.
+func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("user") }

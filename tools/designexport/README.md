@@ -107,5 +107,19 @@ can race the final check; this is not filesystem compare-and-swap. Other platfor
 can prepare reviews but cannot apply. Slots still accept trusted Go nodes;
 insertion, replacement persistence, authentication and deployment remain separate.
 
+## Keep a design fixture compiling
+
+The fidelity checks under [openpencil](openpencil/README.md) embed a Go program in
+each test: [sourceFixture](openpencil/browser/fixtures.test.mjs) writes it out,
+builds it and observes what the executable prints. Those programs consume
+`kit/httpx`, `ui/screens` and `ui/resource` from no Go package, so the compiler that
+checks a kernel change never saw one — a renamed field broke CI's browser suite
+while every Go gate passed.
+[fixtures-compile.test.mjs](openpencil/fixtures-compile.test.mjs) builds every
+embedded program the way its fixture does, with no browser: `make check-fixtures`,
+or `npm test` in that directory, which is the step CI runs before its browser
+steps. A fixture that contradicts the API it composes now fails a ten-second check
+instead of a browser run.
+
 [OpenPencil tooling](openpencil/README.md) owns native generation, fonts and
 fidelity checks. Component conversion is partial; pages and flows are unfinished.

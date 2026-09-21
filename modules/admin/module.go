@@ -7,7 +7,7 @@
 // ui/screens'; this module composes them with its own chrome, frame and
 // navigation, adds the six pages no schema describes — the dashboard, the
 // health page, the sign-in page, the gallery, the tenant switcher and the roles
-// screen — and serves the same knowledge as JSON at /api/v1/admin/resources for
+// screen — and serves the same knowledge as JSON at the workspace catalog route for
 // a shell that is not a browser. A seventh hand-written page arrives only when
 // an interaction cannot be derived, which is what the roles screen is: a role is
 // keyed by its name rather than by an id, and a generated screen's item path is
@@ -43,6 +43,14 @@ type Deps struct {
 	// maintained here would be a second answer to "what is in this
 	// application", and the one that goes stale.
 	Modules []module.Module
+
+	// SignIn is the address the sign-in form posts to: the auth module's own
+	// session route. This module does not mint a session and does not know
+	// where the auth module ended up — only that it is reached over HTTP at
+	// whatever address the composition composed. Writing it here would be this
+	// shell naming another module's door, so the composition names it, and
+	// apps/platformkit's test asks the running server that it answers.
+	SignIn string
 
 	// Authorize is the same value the kernel enforces with. The sidebar shows a
 	// link only when the caller may follow it, and asking the authorizer is
@@ -99,8 +107,8 @@ func Module(deps Deps) module.Module {
 		Nav:           nil,
 		Jobs:          nil,
 		Subscriptions: nil,
-		Routes: func(api *httpx.API) {
-			internal.Mount(api, internal.Shell{
+		Routes: func(s httpx.Surfaces) {
+			internal.Mount(s, internal.Shell{
 				Nav:       navigation(deps.Modules),
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
@@ -112,7 +120,8 @@ func Module(deps Deps) module.Module {
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.
-				Token: api.SystemToken(),
+				Token:  s.SystemToken(),
+				SignIn: deps.SignIn,
 			})
 		},
 	}

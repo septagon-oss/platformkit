@@ -16,7 +16,7 @@ import (
 
 // path is the subscription, which is one resource and not a collection: a
 // tenant is the customer, so it has one.
-const path = "/api/v1/billing/subscription"
+const path = "/subscription"
 
 var (
 	faults      = []int{http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusServiceUnavailable}
@@ -31,15 +31,15 @@ var (
 // writing its own period and its own price. The two commands are here because
 // kit/rest's Command puts an id in the path and a singleton has none, which is
 // the only thing a singleton changes about a command.
-func RegisterRoutes(api *httpx.API, svc contracts.Service) {
-	command(api, "subscribe", "Subscribe this tenant to a plan",
+func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
+	command(surfaces.App, "subscribe", "Subscribe this tenant to a plan",
 		"Subscribing to the plan already in force changes nothing. A different plan takes effect at the next renewal; the period being served is not moved.",
 		contracts.EventSubscribed,
 		func(ctx context.Context, tx db.Tx[db.Tenant], in subscribeBody) (*contracts.Subscription, error) {
 			return svc.Subscribe(ctx, tx, in.PlanID)
 		})
 
-	command(api, "cancel", "Cancel this tenant's subscription",
+	command(surfaces.App, "cancel", "Cancel this tenant's subscription",
 		"At the end of the period being served, or now. Neither shortens the period: cancelling is not a refund.",
 		contracts.EventCancelled,
 		func(ctx context.Context, tx db.Tx[db.Tenant], in cancelBody) (*contracts.Subscription, error) {
@@ -50,10 +50,10 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 // command mounts one POST on the singleton, guarded by billing:manage and
 // declaring the event it publishes. It is kit/rest's Command with the id taken
 // out, which is the only thing a singleton changes about a command.
-func command[I any](api *httpx.API, verb, summary, description, event string,
+func command[I any](r *httpx.Router, verb, summary, description, event string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], in I) (*contracts.Subscription, error),
 ) {
-	httpx.Register(api, huma.Operation{
+	httpx.Register(r, huma.Operation{
 		OperationID: "billing-subscription-" + verb,
 		Method:      http.MethodPost,
 		Path:        path + "/" + verb,

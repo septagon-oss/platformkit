@@ -6,6 +6,20 @@ the modules and configuration its product needs. This page describes the
 implemented boundaries. Contribution policy lives in
 [CONTRIBUTING.md](CONTRIBUTING.md), and decisions live in [docs/adr](docs/adr/).
 
+## Three surfaces
+
+Every address belongs to one of three surfaces, and the surface — not the module —
+decides the middleware chain a request runs. `kit/httpx` classifies the path, and a
+module mounts on a router (`httpx.Surfaces{Public, App, Ops}`) rather than writing a
+prefix: `/api/v1/public/<module>/…` and `/<module>/…` for a tenant's anonymous
+face, `/api/v1/<module>/…` and `/app/<module>/…` for the workspace, and
+`/api/v1/ops/<module>/…` for the installation's control plane, which is served at
+`app.Options.Installation`'s host only and answers as an unmounted address everywhere
+else. The empty module is the composition's own namespace (`/api/v1/app/resources`,
+`/app`). The table, each chain and the one-release aliases live in
+[`kit/httpx/README.md`](kit/httpx/README.md); the decision and what it costs live in
+[ADR 0017](docs/adr/0017-three-surfaces-by-path.md).
+
 ## Entity and presentation contracts
 
 Follow the consumer as well as its schema; these paths share the existing Go owners.
@@ -14,7 +28,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 |---|---|
 | Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). A refusal the kernel makes before a handler exists — the cross-site guard, a panic — is the same problem value, shaped by whoever asked ([ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)): `httpx.Options.Fault`, and the application supplies `page.FaultHandler(shell)` so a browser gets a page and a client gets the JSON. |
-| Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/admin/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
+| Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/app/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
 | Component properties | [`Example.Describe`](ui/components/examples/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
 | Design consumers | [`export.Export`](ui/export/export.go) and [`ProjectProps`](ui/export/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
 
@@ -108,7 +122,7 @@ establish mailbox verification.
 
 Compositions requiring review supply `auth.Deps.ApprovalRegistration` with the
 user registrar and trusted initial roles, instead of `Registration`. The same
-`POST /api/v1/auth/register` path then requires a full name, password, matching
+`POST /api/v1/public/auth/register` path then requires a full name, password, matching
 confirmation and accepted terms. It writes the pending account directly and
 returns the same acknowledgment for an existing email. Every attempt hashes
 the supplied password before one insertion attempt; no account lookup decides
@@ -126,11 +140,11 @@ resend, legal guidance and sign-in. The shared [form controller](ui/assets/js/se
 supports `register-password`, `verify-email` and `resend-verification` forms.
 Opening a link does not consume it, and confirmation creates no session.
 
-`POST /api/v1/auth/verify-email` consumes an auth-owned digest and calls
+`POST /api/v1/public/auth/verify-email` consumes an auth-owned digest and calls
 `VerifyEmail` in one tenant transaction. It checks the current canonical email,
 password-bearing unverified state and expiry after waiting for concurrent work;
 activation preserves the chosen password and roles. Password setup, recovery and
-operator approval cannot satisfy this gate. `POST /api/v1/auth/resend-verification`
+operator approval cannot satisfy this gate. `POST /api/v1/public/auth/resend-verification`
 shares the IP request budget and reserves one request per tenant/mailbox per
 minute before lookup, with the same acknowledgment for unknown and cooled
 addresses. Recipient-counter failures refuse delivery. Rotation and consumption
@@ -529,7 +543,7 @@ frame asks the Authorizer about, `page.Serve` reads it off the request, and its
 already use. [ui/resource](ui/resource/) renders list, detail and form screens
 from an entity schema and rows the same way; [ui/screens](ui/screens/) adapts an
 `httpx.Resource` to it, mounts the screens its mounted routes answer and describes the
-resource catalog at `/api/v1/admin/resources`. Value words — how a boolean, an enum or an
+resource catalog at `/api/v1/app/resources`. Value words — how a boolean, an enum or an
 instant reads — are [kit/entity/display](kit/entity/display/display.go)'s, with
 `kit/rest` delegating. The admin module and downstream storefronts call these
 packages rather than maintaining separate document or stylesheet machinery.

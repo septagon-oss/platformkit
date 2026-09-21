@@ -80,9 +80,11 @@ themselves out on a laptop, a phone and an office network.
 
 - The counters outlive a deploy, and an attacker's window is the window.
 - One hourly `DELETE` empties the rows whose window closed a day ago. It runs in
-  `modules/auth`'s sweep, because the module that writes the table is the reason
-  it exists; the moment a second module adopts `kit/limit`, that purge belongs
-  beside the outbox's in `kit/app`.
+  `kit/app`'s job list, beside the outbox's. It began in `modules/auth`'s sweep,
+  because the module that wrote the table was the reason the table existed; the
+  kernel became the second writer when it put a limit on anonymous public writes,
+  which is the condition this decision wrote down, and the purge moved once
+  rather than being copied to a second owner.
 - A limit now costs a round trip. On a login that is noise next to one argon2id
   hash, which is the shape of every caller so far; a limit on a route that does
   no other work would want a different answer, and this ADR is where the

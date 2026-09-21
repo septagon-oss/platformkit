@@ -82,7 +82,7 @@ type Deps struct {
 var spec = rest.Spec[*contracts.Plan]{
 	Module:        "billing",
 	Entity:        "plan",
-	Path:          "/api/v1/billing/plans",
+	Path:          "/plans",
 	Read:          contracts.PermissionBillingRead,
 	Write:         contracts.PermissionBillingCatalog,
 	OperatorWrite: true,
@@ -119,34 +119,34 @@ func Module(deps Deps) (httpx.Entitler, module.Module) {
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{
-			{Label: "Billing", Path: "/admin/billing/plans", Permission: contracts.PermissionBillingRead},
+			{Label: "Billing", Screen: "billing/plans", Permission: contracts.PermissionBillingRead},
 		},
 		Jobs: []jobs.Job{internal.Renew(deps.Tenants, svc, deps.Payments, deps.RenewEvery)},
 		// Written out so the absence is a decision: what a plan entitles
 		// somebody to is the consuming module's business, and this module has no
 		// opinion about anybody else's events.
 		Subscriptions: nil,
-		Routes: func(api *httpx.API) {
+		Routes: func(s httpx.Surfaces) {
 			// The tenant's one subscription: a read, and no PUT — it is moved
 			// by the two commands beside it, and a PUT would be a customer
 			// writing its own period and its own stamped price.
 			rest.Singleton[*contracts.Subscription]{
 				Module: "billing", Entity: "subscription",
-				Path: "/api/v1/billing/subscription",
+				Path: "/subscription",
 				Read: contracts.PermissionBillingRead,
 				Load: func(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.Subscription, error) {
 					return svc.Current(ctx, tx)
 				},
-			}.Mount(api)
+			}.Mount(s)
 			// The one thing about a plan that generic CRUD cannot know: a plan
 			// somebody is still being billed for is not one the operator may
 			// remove. The hook takes the system capability because the question
 			// crosses every tenant — the catalogue is shared, and the operator's
 			// own transaction can see only the operator's subscriptions.
 			mounted := spec
-			mounted.AfterDelete = internal.RefuseWhileSubscribed(api.SystemToken())
-			mounted.Mount(api)
-			internal.RegisterRoutes(api, svc)
+			mounted.AfterDelete = internal.RefuseWhileSubscribed(s.Ops.SystemToken())
+			mounted.Mount(s)
+			internal.RegisterRoutes(s, svc)
 		},
 	}
 }

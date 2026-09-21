@@ -48,9 +48,9 @@ func mountDeleteCatalog(t *testing.T, soft bool) (http.Handler, *sql.DB) {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	rest.Spec[*Plan]{
-		Module: "billing", Entity: "plan", Path: "/api/v1/billing/plans",
+		Module: "billing", Entity: "plan", Path: "/plans",
 		Read: "billing:read", Write: "billing:catalog", SoftDelete: soft,
-	}.Mount(api)
+	}.Mount(api.Surfaces("billing"))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}

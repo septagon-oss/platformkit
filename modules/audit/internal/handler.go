@@ -15,7 +15,7 @@ import (
 )
 
 // path is the collection, as modules/tenant spells its own.
-const path = "/api/v1/audit/events"
+const path = "/events"
 
 // faults are the statuses these two answer with: no 409 and no 422, because
 // nothing here writes. unavailable is the answer when the request has no
@@ -32,14 +32,14 @@ var (
 // resource with three operations turned off — it is a different thing, and
 // saying so here is cheaper than a Spec with three holes in it. Both answer
 // through kit/rest's mapping, so a 404 means what it means everywhere.
-func RegisterRoutes(api *httpx.API, svc contracts.Service, feature string) {
+func RegisterRoutes(r *httpx.Router, svc contracts.Service, feature string) {
 	// Both routes read the same thing, so both are gated by the same feature.
 	// An empty one leaves the declaration exactly as it was.
 	read := httpx.Permission(contracts.PermissionAuditRead)
 	if feature != "" {
 		read = read.Needing(feature)
 	}
-	httpx.Register(api, huma.Operation{
+	httpx.Register(r, huma.Operation{
 		OperationID: "audit-event-list",
 		Method:      http.MethodGet,
 		Path:        path,
@@ -68,7 +68,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, feature string) {
 			return out, nil
 		})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(r, huma.Operation{
 		OperationID: "audit-event-read",
 		Method:      http.MethodGet,
 		Path:        path + "/{id}",

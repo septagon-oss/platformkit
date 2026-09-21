@@ -96,7 +96,15 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
         # The kernel runner selects a transport by name and builds none: neither
         # provider package is in its closure.
-        check("kit/app", kernel " " p "kit/health " p "migrations", web, "web")
+        #
+        # kit/limit is here because the limit on anonymous public writes is counted
+        # on the connection the request already holds, and handing that connection
+        # over is the runner role to do. The kernel names the shape it wants
+        # (httpx.WriteLimiter, one method wide) and the runner chooses where the
+        # count is stored, exactly as it chooses an event transport. The
+        # presentation packages do not inherit the dependency, which is why the
+        # interface is declared by the consumer instead of imported here.
+        check("kit/app", kernel " " p "kit/health " p "kit/limit " p "migrations", web, "web")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox, sql, "sql")

@@ -2,9 +2,9 @@
 
 `modules/file` is uploaded bytes and the rows that name them. There is no
 `rest.Spec`, because a file arrives as a stream: the routes under
-`/api/v1/file/files` and the public read at `/api/v1/file/public/{id}` are
+`/api/v1/file/files` and the public read at `/api/v1/public/file/files/{id}` are
 written in [internal/handler.go](internal/handler.go), guarded by `file:read`
-and `file:manage`, with the admin entry at `/admin/file/files`. Where a blob
+and `file:manage`, with the admin entry at `/app/file/files`. Where a blob
 write sits relative to the commit is the one interesting problem here;
 [module.go](module.go) explains both answers, a subscription removes the blob
 after its row, and a sweep reconciles what the two disagree about.

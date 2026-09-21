@@ -38,7 +38,7 @@ func TestTaskPolicyGuardsTheLockedLifecycleAndPreservesFailureOutcomes(t *testin
 			return tenancy.Principal{UserID: actor}, true, nil
 		}, Log: slog.New(slog.DiscardHandler),
 	})
-	task.Module(task.Deps{Policy: policy}).Routes(api)
+	task.Module(task.Deps{Policy: policy}).Routes(surfacesOf(api))
 	code, body := call(t, router, http.MethodPost, path, `{"title":"Scoped work"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create: %d %s", code, body)

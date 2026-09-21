@@ -60,7 +60,7 @@ const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)do
 // is the edge: it reads the request into a Request, renders the View through
 // the frame, turns a SeeOther into the redirect and a 4xx problem into Fault,
 // and lets a 5xx keep the kernel's problem document and log line.
-func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Handler[I]) {
+func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler Handler[I]) {
 	if s.Messages != nil {
 		_ = SelectLocale(s.Messages) // validate the provider at composition
 	}
@@ -71,7 +71,7 @@ func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Ha
 	if s.Chrome.SignIn != "" {
 		httpx.SignIn(&op, s.Chrome.SignIn)
 	}
-	httpx.HTML(api, op, auth, func(ctx context.Context, in *I) (*httpx.Page, error) {
+	httpx.HTML(r, op, auth, func(ctx context.Context, in *I) (*httpx.Page, error) {
 		r := read(ctx, s.Chrome)
 		if s.Messages != nil {
 			var preferred, accepted string
@@ -121,11 +121,27 @@ func Serve[I any](api *httpx.API, s Shell, rt Route, auth httpx.Auth, handler Ha
 		}
 		if s.Messages != nil {
 			out.ContentLanguage, out.Vary = v.Language, "Accept-Language"
-			// A preference resolver may depend on the signed-in account. Do not
-			// let a shared cache reuse one person's language for another.
-			out.CacheControl = "private, no-store"
+			// A preference resolver may depend on the signed-in account, so the
+			// safe answer is that this response belongs to one person. On the
+			// public surface there is no account to read — the chain parses no
+			// session there at all — so the language can only have come from the
+			// request's own Accept-Language, and what Vary says is the truth:
+			// the cache must key on the language, and the page is still
+			// cacheable. That is the one reason the public face can be cached at
+			// all once a shell is translated.
+			if httpx.SurfaceOf(ctx) != httpx.SurfacePublic {
+				out.CacheControl = "private, no-store"
+			}
 		}
 		applyPrivacy(out, v.Sensitive)
+		if v.Revalidate && !v.Sensitive && httpx.SurfaceOf(ctx) == httpx.SurfacePublic {
+			// "Ask first" rather than "do not store": the copy may still be kept and
+			// revalidated, and the one thing that cannot happen is a cache answering a
+			// page it has not looked at since the owner published over it. The kernel
+			// filled the one-minute default ahead of this; a page that knows its own
+			// body moves replaces it.
+			out.CacheControl = "no-cache"
+		}
 		return out, nil
 	})
 }

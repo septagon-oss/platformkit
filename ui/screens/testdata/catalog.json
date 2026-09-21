@@ -56,6 +56,7 @@
           "elem": "string"
         }
       ],
+      "screen": "/app/note/notes",
       "immutable": [
         "status"
       ],
@@ -136,6 +137,7 @@
           "elem": "string"
         }
       ],
+      "screen": "/app/note/notes",
       "writable": false
     },
     {
@@ -193,6 +195,7 @@
           "elem": "string"
         }
       ],
+      "screen": "/app/note/notes",
       "writable": true,
       "singleton": true
     }

@@ -14,11 +14,11 @@ const title = `Chiller supply temperature out of band ${Date.now()}`;
 const renamed = `${title} (resolved)`;
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
 });
 
 test('the admin shell renders and a generated CRUD screen works', async ({ page }) => {
@@ -26,13 +26,13 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   // per resource with the count its own list route would report.
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.getByRole('link', { name: 'Tasks' }).first().click();
-  await expect(page).toHaveURL(/\/admin\/task\/tasks$/);
+  await expect(page).toHaveURL(/\/app\/task\/tasks$/);
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
 
   // Create. The form is generated from the schema: a select exists because the
   // struct says enum, and the title is required because it says validate.
   await page.getByRole('link', { name: 'New task' }).click();
-  await expect(page).toHaveURL(/\/admin\/task\/tasks\/new$/);
+  await expect(page).toHaveURL(/\/app\/task\/tasks\/new$/);
   await page.getByLabel('Title').fill(title);
   await page.getByLabel('Priority').selectOption('high');
   await page.getByLabel('Description').fill('Inspect the supply hose');
@@ -40,12 +40,12 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   await page.getByRole('button', { name: 'Save' }).click();
 
   // The write redirects to the row it created.
-  await expect(page).toHaveURL(/\/admin\/task\/tasks\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/app\/task\/tasks\/[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { name: title })).toBeVisible();
   const row = page.url();
 
   // It is in the list.
-  await page.goto('/admin/task/tasks');
+  await page.goto('/app/task/tasks');
   await expect(page.getByRole('link', { name: title })).toBeVisible();
 
   // Edit.
@@ -68,12 +68,12 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   const dialog = page.locator('#pk-confirm');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Delete' }).click();
-  await expect(page).toHaveURL(/\/admin\/task\/tasks$/);
+  await expect(page).toHaveURL(/\/app\/task\/tasks$/);
   await expect(page.getByRole('link', { name: renamed })).toHaveCount(0);
 });
 
 test('an empty title is refused on the form rather than by a page of JSON', async ({ page }) => {
-  await page.goto('/admin/task/tasks/new');
+  await page.goto('/app/task/tasks/new');
   await page.getByRole('button', { name: 'Save' }).click();
   // The browser's own required check fires first, which is the point of
   // rendering it: the request is never made.
@@ -92,14 +92,14 @@ test('a refused generated edit retains command-owned values for the retry', asyn
   const taskPath = `/api/v1/task/tasks/${task.id}`;
   expect((await page.request.post(`${taskPath}/assign`, { data: { assigneeId } })).status()).toBe(200);
 
-  await page.goto(`/admin/task/tasks/${task.id}/edit`);
+  await page.goto(`/app/task/tasks/${task.id}/edit`);
   const assignee = page.locator('[name="assigneeId"]');
   await expect(assignee).toHaveJSProperty('readOnly', true);
   await expect(assignee).toHaveValue(assigneeId);
   // Whitespace passes the browser's required control but fails the entity's rule.
   await page.getByLabel('Title').fill('   ');
   const rejected = page.waitForResponse(response =>
-    new URL(response.url()).pathname === `/admin/task/tasks/${task.id}` && response.request().method() === 'POST');
+    new URL(response.url()).pathname === `/app/task/tasks/${task.id}` && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Save' }).click();
   expect((await rejected).status()).toBe(422);
   await expect(page.getByRole('alert').first()).toContainText('a task needs a title');
@@ -108,7 +108,7 @@ test('a refused generated edit retains command-owned values for the retry', asyn
 
   await page.getByLabel('Title').fill('Corrected title keeps its assignment');
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page).toHaveURL(new RegExp(`/admin/task/tasks/${task.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/app/task/tasks/${task.id}$`));
   const saved = await page.request.get(taskPath);
   expect(saved.status()).toBe(200);
   expect(await saved.json()).toMatchObject({ title: 'Corrected title keeps its assignment', assigneeId });
@@ -119,22 +119,22 @@ test('the typed gallery retains native controls at desktop and narrow widths', a
   page.on('pageerror', error => errors.push(error.message));
   for (const width of [1280, 320]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto('/admin/_gallery/preview?example=pk-ui.component.button/primary');
+    await page.goto('/app/admin/_gallery/preview?example=pk-ui.component.button/primary');
     const primary = page.getByRole('button', { name: 'Save', exact: true });
     await expect(primary).toBeVisible();
     await expect(primary).toHaveAttribute('type', 'button');
-    await page.goto('/admin/_gallery/preview?example=pk-ui.component.input/email');
+    await page.goto('/app/admin/_gallery/preview?example=pk-ui.component.input/email');
     const emailField = page.getByRole('textbox', { name: /Email/ });
     await expect(emailField).toBeVisible();
     await expect(emailField).toHaveAttribute('type', 'email');
   }
-  await page.goto('/admin/_gallery/preview?example=pk-ui.component.button/with-icon');
+  await page.goto('/app/admin/_gallery/preview?example=pk-ui.component.button/with-icon');
   await expect(page.locator('button svg')).toHaveAttribute('aria-hidden', 'true');
   expect(errors).toEqual([]);
 });
 
 test('a disabled gallery link refuses keyboard, pointer and HTMX activation', async ({ page }) => {
-  await page.goto('/admin/_gallery/preview?example=pk-ui.component.button/disabled-link');
+  await page.goto('/app/admin/_gallery/preview?example=pk-ui.component.button/disabled-link');
   expect(await page.evaluate(() => 'htmx' in window)).toBe(true);
   const disabled = page.getByRole('link', { name: 'Unavailable', exact: true });
   await expect(disabled).toHaveAttribute('role', 'link');
@@ -147,7 +147,10 @@ test('a disabled gallery link refuses keyboard, pointer and HTMX activation', as
 
   const adminRequests: string[] = [];
   page.on('request', request => {
-    if (new URL(request.url()).pathname === '/admin') {
+    // The specimen names /admin, which is now an address the alias answers, so a
+    // request that escaped the disabled link can be seen at either hop: the one
+    // the specimen made and the one the redirect made for it.
+    if (['/admin', '/app'].includes(new URL(request.url()).pathname)) {
       adminRequests.push(request.method());
     }
   });
@@ -166,7 +169,7 @@ test('a disabled gallery link refuses keyboard, pointer and HTMX activation', as
 
   // Complete an enabled navigation before inspecting requests. The structural
   // guards above, not an immediate URL check or a sleep, establish inactivity.
-  await page.goto('/admin/_gallery/preview?example=pk-ui.component.button/as-link');
+  await page.goto('/app/admin/_gallery/preview?example=pk-ui.component.button/as-link');
   const enabled = page.getByRole('link', { name: 'Open', exact: true });
   await expect(enabled).toHaveAttribute('href', '/somewhere');
   await enabled.evaluate(node => (node as HTMLElement).click());
@@ -202,7 +205,7 @@ test('a page stores no theme until somebody chooses one', async ({ page }) => {
   });
   const written = () => page.evaluate(() => (window as unknown as { __writes: string[] }).__writes);
 
-  await page.goto('/admin');
+  await page.goto('/app');
   expect(await page.evaluate(() => document.documentElement.hasAttribute('data-theme'))).toBe(false);
   expect(await written()).toEqual([]);
 

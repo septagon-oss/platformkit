@@ -37,7 +37,7 @@ func TestResourceMutationsUseTheLockedRow(t *testing.T) {
 			t.Run(transport+"/"+mutation, func(t *testing.T) {
 				var hookPriority int
 				s := rest.Spec[*guardedTask]{
-					Module: "tasks", Entity: "task", Path: "/api/tasks",
+					Module: "tasks", Entity: "task", Path: "/task",
 					Read: "task:read", Write: "task:write", SoftDelete: true,
 					AfterDelete: func(_ context.Context, _ db.Tx[db.Tenant], task *guardedTask) error {
 						hookPriority = task.Priority
@@ -45,12 +45,12 @@ func TestResourceMutationsUseTheLockedRow(t *testing.T) {
 					},
 				}
 				api, router, admin := mountAs(t, s, caller{})
-				code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"shared","status":"open","priority":1}`)
+				code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"shared","status":"open","priority":1}`)
 				if code != http.StatusCreated {
 					t.Fatalf("create = %d %s", code, body)
 				}
 				rowID := id(t, body)
-				method, path, payload := http.MethodPatch, "/api/tasks/"+rowID, `{"notes":"saved after waiting"}`
+				method, path, payload := http.MethodPatch, "/api/v1/tasks/task/"+rowID, `{"notes":"saved after waiting"}`
 				wantStatus, event, wantNotes := http.StatusOK, rest.Updated, "saved after waiting"
 				switch mutation {
 				case "invalid update":
@@ -60,7 +60,7 @@ func TestResourceMutationsUseTheLockedRow(t *testing.T) {
 				}
 				if transport == "screen" {
 					resource := api.Resources()[0]
-					httpx.Register(api, huma.Operation{OperationID: "screen-mutation-probe", Method: http.MethodPost,
+					httpx.Register(api.Surfaces("tasks").App, huma.Operation{OperationID: "screen-mutation-probe", Method: http.MethodPost,
 						Path: "/screen-probe/{id}", DefaultStatus: http.StatusOK}, httpx.Permission(s.Write),
 						func(ctx context.Context, input *struct {
 							ID   uuid.UUID `path:"id"`
@@ -72,7 +72,7 @@ func TestResourceMutationsUseTheLockedRow(t *testing.T) {
 							row, err := resource.Update(ctx, input.ID, input.Body)
 							return &struct{ Body map[string]any }{Body: row}, err
 						})
-					method, path = http.MethodPost, "/screen-probe/"+rowID
+					method, path = http.MethodPost, api.Surfaces("tasks").App.Path("/screen-probe/"+rowID)
 					if mutation == "delete" {
 						payload, wantStatus = "{}", http.StatusOK
 					}

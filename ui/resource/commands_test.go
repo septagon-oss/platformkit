@@ -14,12 +14,12 @@ import (
 var assignCommand = resource.Command{
 	Verb: "assign", Label: "Assign this note", Description: "Makes somebody responsible.",
 	Fields: []entity.Field{{Name: "who", Type: entity.TypeString}},
-	Base:   "/admin/note/notes",
+	Base:   "/app/note/notes",
 }
 
 var sweepCommand = resource.Command{
 	Verb: "sweep", Label: "Reindex everything", Description: "Rebuilds the search index.",
-	Collection: true, Base: "/admin/note/notes",
+	Collection: true, Base: "/app/note/notes",
 }
 
 // withCommands is the resource these cases render — the package's own Note, with the
@@ -62,8 +62,8 @@ func TestEveryCommandTheCallerMayUseHasExactlyOneControl(t *testing.T) {
 	row, list := rowPage(t, r), listPage(t, r)
 
 	for _, c := range []struct{ page, action, label string }{
-		{row, "/admin/note/notes/11111111-1111-1111-1111-111111111111/assign", "Assign this note"},
-		{list, "/admin/note/notes/sweep", "Reindex everything"},
+		{row, "/app/note/notes/11111111-1111-1111-1111-111111111111/assign", "Assign this note"},
+		{list, "/app/note/notes/sweep", "Reindex everything"},
 	} {
 		if n := strings.Count(c.page, `action="`+c.action+`"`); n != 1 {
 			t.Errorf("%q appears as a form %d times, want exactly one", c.action, n)

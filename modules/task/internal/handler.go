@@ -21,22 +21,22 @@ import (
 // argument — it refuses those fields at the PATCH — and rest.Command is the
 // part all three commands share, so what is written here is only what each
 // command is.
-func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.Task], svc contracts.Service) {
-	rest.Command(api, spec, "assign",
+func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.Task], svc contracts.Service) {
+	rest.Command(surfaces, spec, "assign",
 		"Assign a task", "Makes somebody responsible, and acknowledges an open task. Assigning the same person again changes nothing.",
 		[]string{contracts.EventAssigned},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in assignBody) (*contracts.Task, error) {
 			return svc.Assign(ctx, tx, id, in.AssigneeID)
 		}, rest.CommandOptions{})
 
-	rest.Command(api, spec, "resolve",
+	rest.Command(surfaces, spec, "resolve",
 		"Resolve a task", "Closes the loop. Repeating it with the same resolution changes nothing; a different one is refused.",
 		[]string{contracts.EventResolved},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in resolveBody) (*contracts.Task, error) {
 			return svc.Resolve(ctx, tx, id, in.Resolution)
 		}, rest.CommandOptions{})
 
-	rest.Command(api, spec, "check-sla",
+	rest.Command(surfaces, spec, "check-sla",
 		"Check a task's SLA", "Records a breach if the deadline has passed with the task unresolved. Records at most one.",
 		[]string{contracts.EventSLABreached},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Task, error) {

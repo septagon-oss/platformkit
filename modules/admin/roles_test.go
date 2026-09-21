@@ -85,7 +85,7 @@ func seeded() *roleStore {
 }
 
 // TestTheRolesScreenServesWhatTheAuthModulesNavEntryNames is the defect this
-// file exists for: modules/auth declares a nav entry at /admin/auth/roles and
+// file exists for: modules/auth declares a nav entry at /app/auth/roles and
 // nothing answered it, so every installation logged a warning at boot and every
 // operator saw a menu item that led nowhere.
 //
@@ -96,7 +96,7 @@ func TestTheRolesScreenServesWhatTheAuthModulesNavEntryNames(t *testing.T) {
 	store := seeded()
 	router := mountAs(t, caller{}, withRoles(store))
 
-	code, body, _ := call(t, router, http.MethodGet, "/admin/auth/roles", "")
+	code, body, _ := call(t, router, http.MethodGet, "/app/auth/roles", "")
 	if code != http.StatusOK {
 		t.Fatalf("the roles screen = %d %s", code, body)
 	}
@@ -118,7 +118,7 @@ func TestTheRolesScreenServesWhatTheAuthModulesNavEntryNames(t *testing.T) {
 	}
 	// The screen is guarded by role:manage and posts to itself, so a person who
 	// can open it can change what a role grants without reaching for curl.
-	if !strings.Contains(body, `action="/admin/auth/roles"`) {
+	if !strings.Contains(body, `action="/app/auth/roles"`) {
 		t.Error("the screen renders no form that writes")
 	}
 }
@@ -130,9 +130,9 @@ func TestTheRolesScreenWritesThroughTheModulesOwnRules(t *testing.T) {
 	store := seeded()
 	router := mountAs(t, caller{}, withRoles(store))
 
-	code, body, location := call(t, router, http.MethodPost, "/admin/auth/roles",
+	code, body, location := call(t, router, http.MethodPost, "/app/auth/roles",
 		"name=member&permissions=note%3Aread&permissions=plan%3Aread")
-	if code != http.StatusSeeOther || location != "/admin/auth/roles" {
+	if code != http.StatusSeeOther || location != "/app/auth/roles" {
 		t.Fatalf("saving a role = %d to %q: %s", code, location, body)
 	}
 	member := slices.IndexFunc(store.roles, func(r *authcontracts.Role) bool { return r.Name == "member" })
@@ -143,7 +143,7 @@ func TestTheRolesScreenWritesThroughTheModulesOwnRules(t *testing.T) {
 	// A role with nothing ticked grants nothing. An empty list is a value here:
 	// a form that dropped it would make "take everything away" impossible to
 	// express, and member is a role that deliberately grants nothing.
-	if code, body, _ = call(t, router, http.MethodPost, "/admin/auth/roles", "name=member"); code != http.StatusSeeOther {
+	if code, body, _ = call(t, router, http.MethodPost, "/app/auth/roles", "name=member"); code != http.StatusSeeOther {
 		t.Fatalf("emptying a role = %d %s", code, body)
 	}
 	if got := store.roles[member].Grants; len(got) != 0 {
@@ -152,7 +152,7 @@ func TestTheRolesScreenWritesThroughTheModulesOwnRules(t *testing.T) {
 
 	// A new name creates the role, because the route underneath is an upsert
 	// and a second door would be a second way to do one write.
-	if code, body, _ = call(t, router, http.MethodPost, "/admin/auth/roles",
+	if code, body, _ = call(t, router, http.MethodPost, "/app/auth/roles",
 		"name=editor&permissions=note%3Awrite"); code != http.StatusSeeOther {
 		t.Fatalf("creating a role = %d %s", code, body)
 	}
@@ -163,7 +163,7 @@ func TestTheRolesScreenWritesThroughTheModulesOwnRules(t *testing.T) {
 	// And a refusal comes back as the screen with the message on it, not as the
 	// shell's fault page: whoever mistyped a permission is two ticks from
 	// getting it right and must not lose the form to find out.
-	code, refused, _ := call(t, router, http.MethodPost, "/admin/auth/roles",
+	code, refused, _ := call(t, router, http.MethodPost, "/app/auth/roles",
 		"name=editor&permissions=note%3Aeat")
 	if code != http.StatusUnprocessableEntity {
 		t.Fatalf("an undeclared permission = %d, want 422: %s", code, refused)
@@ -176,7 +176,7 @@ func TestTheRolesScreenWritesThroughTheModulesOwnRules(t *testing.T) {
 	if strings.Contains(refused, "crud: invalid") {
 		t.Errorf("the refusal shows kit/crud's own prefix: %s", refused)
 	}
-	if !strings.Contains(refused, `action="/admin/auth/roles"`) {
+	if !strings.Contains(refused, `action="/app/auth/roles"`) {
 		t.Error("a refusal replaced the screen instead of annotating it")
 	}
 }
@@ -188,7 +188,7 @@ func TestTheRolesScreenWritesThroughTheModulesOwnRules(t *testing.T) {
 func TestTheRolesScreenOffersOnlyPermissionsThisTenantMayName(t *testing.T) {
 	router := mountAs(t, caller{}, withRoles(seeded()))
 
-	_, customer, _ := call(t, router, http.MethodGet, "/admin/auth/roles", "")
+	_, customer, _ := call(t, router, http.MethodGet, "/app/auth/roles", "")
 	if strings.Contains(customer, `value="plan:write"`) {
 		t.Error("a customer's tenant is offered an operator permission")
 	}
@@ -196,7 +196,7 @@ func TestTheRolesScreenOffersOnlyPermissionsThisTenantMayName(t *testing.T) {
 		t.Error("a customer's tenant lost the ordinary permissions too")
 	}
 
-	_, installation, _ := callAt(t, router, operatorHost, http.MethodGet, "/admin/auth/roles", "")
+	_, installation, _ := callAt(t, router, operatorHost, http.MethodGet, "/app/auth/roles", "")
 	if !strings.Contains(installation, `value="plan:write"`) {
 		t.Error("the operator's own tenant cannot name its own permission")
 	}
@@ -208,7 +208,7 @@ func TestTheRolesScreenOffersOnlyPermissionsThisTenantMayName(t *testing.T) {
 // person ticking member's boxes would be ticking admin's.
 func TestEveryControlOnTheRolesScreenHasOneIdentity(t *testing.T) {
 	router := mountAs(t, caller{}, withRoles(seeded()))
-	_, body, _ := call(t, router, http.MethodGet, "/admin/auth/roles", "")
+	_, body, _ := call(t, router, http.MethodGet, "/app/auth/roles", "")
 
 	seen := map[string]int{}
 	for _, match := range regexp.MustCompile(`id="([^"]+)"`).FindAllStringSubmatch(body, -1) {
@@ -270,7 +270,7 @@ func TestTheRolesScreenSaysWhatSavingWouldDrop(t *testing.T) {
 		Name: "legacy", Grants: authcontracts.Permissions{"note:read", "ghost:read"}})
 	router := mountAs(t, caller{}, withRoles(store))
 
-	_, body, _ := call(t, router, http.MethodGet, "/admin/auth/roles", "")
+	_, body, _ := call(t, router, http.MethodGet, "/app/auth/roles", "")
 	if strings.Contains(body, `value="ghost:read"`) {
 		t.Error("the screen offers a box for a permission no module declares")
 	}
@@ -295,7 +295,7 @@ func TestTheRolesScreenRefusesToBrickTheTenant(t *testing.T) {
 	store := seeded()
 	router := mountAs(t, caller{}, withRoles(store))
 
-	code, refused, location := call(t, router, http.MethodPost, "/admin/auth/roles", "name=admin")
+	code, refused, location := call(t, router, http.MethodPost, "/app/auth/roles", "name=admin")
 	if code != http.StatusUnprocessableEntity {
 		t.Fatalf("emptying the last administering role = %d to %q, want 422", code, location)
 	}
@@ -330,19 +330,19 @@ func TestTheRolesScreenPagesLikeEveryOtherList(t *testing.T) {
 	}
 	router := mountAs(t, caller{}, withRoles(store))
 
-	code, first, _ := call(t, router, http.MethodGet, "/admin/auth/roles", "")
+	code, first, _ := call(t, router, http.MethodGet, "/app/auth/roles", "")
 	if code != http.StatusOK {
 		t.Fatalf("the first page = %d %s", code, first)
 	}
-	if forms := strings.Count(first, `action="/admin/auth/roles"`); forms != rolesPerPage+1 {
+	if forms := strings.Count(first, `action="/app/auth/roles"`); forms != rolesPerPage+1 {
 		t.Errorf("the first page carries %d forms, want %d roles and the one that creates", forms, rolesPerPage)
 	}
-	if !strings.Contains(first, `href="/admin/auth/roles?page=2"`) {
+	if !strings.Contains(first, `href="/app/auth/roles?page=2"`) {
 		t.Error("the first page does not link the next one")
 	}
 	// The last page holds the remainder, and the roles are not repeated: a pager
 	// that showed the same window every time would be a list with a pager on it.
-	code, last, _ := call(t, router, http.MethodGet, "/admin/auth/roles?page=3", "")
+	code, last, _ := call(t, router, http.MethodGet, "/app/auth/roles?page=3", "")
 	if code != http.StatusOK {
 		t.Fatalf("the last page = %d %s", code, last)
 	}
@@ -354,7 +354,7 @@ func TestTheRolesScreenPagesLikeEveryOtherList(t *testing.T) {
 	}
 	// A page beyond the end is the last one rather than an empty screen or a
 	// fault: a bookmark outlives the rows it was made from.
-	if _, beyond, _ := call(t, router, http.MethodGet, "/admin/auth/roles?page=99", ""); !strings.Contains(beyond, "pk-role-role_099-") {
+	if _, beyond, _ := call(t, router, http.MethodGet, "/app/auth/roles?page=99", ""); !strings.Contains(beyond, "pk-role-role_099-") {
 		t.Error("a page past the end is not the last page")
 	}
 }
@@ -364,7 +364,7 @@ func TestTheRolesScreenPagesLikeEveryOtherList(t *testing.T) {
 func TestTheRolesScreenSurvivesAnUnreachableDatabase(t *testing.T) {
 	broken := &roleStore{roles: seeded().roles, fail: crud.ErrNotFound}
 	router := mountAs(t, caller{}, withRoles(broken))
-	code, body, _ := call(t, router, http.MethodGet, "/admin/auth/roles", "")
+	code, body, _ := call(t, router, http.MethodGet, "/app/auth/roles", "")
 	if code != http.StatusNotFound {
 		t.Fatalf("a failed read = %d, want the mapped status: %s", code, body)
 	}

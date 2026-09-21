@@ -83,10 +83,10 @@ func galleryExample(book export.Storybook, in *galleryInput) (examples.Example, 
 	return example, nil
 }
 
-func (p pages) mountGallery(api *httpx.API) {
-	p.mountStorybook(api)
+func (p pages) mountGallery(app *httpx.Router) {
+	p.mountStorybook(app)
 	auth := httpx.Permission("gallery:read")
-	page.Serve(api, p.shell, page.Route{ID: "admin-gallery", Method: http.MethodGet, Path: galleryPath, Summary: "The tenant's component gallery"},
+	page.Serve(app, p.shell, page.Route{ID: "admin-gallery", Method: http.MethodGet, Path: p.at.gallery.rel, Summary: "The tenant's component gallery"},
 		auth, func(ctx context.Context, _ page.Request, in *galleryInput) (page.View, error) {
 			book, err := p.storybook(ctx)
 			if err != nil {
@@ -96,16 +96,16 @@ func (p pages) mountGallery(api *httpx.API) {
 			if err != nil {
 				return page.View{}, err
 			}
-			body, err := export.StorybookPage(book, galleryPath, in.Group, example, in.Props, in.Theme, in.Width)
+			body, err := export.StorybookPage(book, p.at.gallery.at, in.Group, example, in.Props, in.Theme, in.Width)
 			return page.View{Title: book.Title, Head: []g.Node{
-				h.Link(h.Rel("stylesheet"), h.Href(assetPrefix+"/gallery.css?v="+ui.Gallery().Fingerprint)),
+				h.Link(h.Rel("stylesheet"), h.Href(p.at.assets.at+"/gallery.css?v="+ui.Gallery().Fingerprint)),
 				h.StyleEl(g.Raw(export.StorybookCSS())),
 			}, Body: []g.Node{body}}, err
 		})
 	for _, route := range []string{"preview", "export"} {
-		op := huma.Operation{OperationID: "admin-gallery-" + route, Method: http.MethodGet, Path: galleryPath + "/" + route, Tags: []string{"admin"}}
-		httpx.SignIn(&op, loginPath)
-		httpx.HTML(api, op, auth, func(ctx context.Context, in *galleryInput) (*httpx.Page, error) {
+		op := huma.Operation{OperationID: "admin-gallery-" + route, Method: http.MethodGet, Path: p.at.gallery.rel + "/" + route, Tags: []string{"admin"}}
+		httpx.SignIn(&op, p.at.login.at)
+		httpx.HTML(app, op, auth, func(ctx context.Context, in *galleryInput) (*httpx.Page, error) {
 			book, err := p.storybook(ctx)
 			if err != nil {
 				return nil, err
@@ -125,12 +125,12 @@ func (p pages) mountGallery(api *httpx.API) {
 			if err != nil {
 				return nil, err
 			}
-			return galleryPreview(book, example, in.Theme)
+			return galleryPreview(book, example, in.Theme, p.at.assets.at)
 		})
 	}
 }
 
-func galleryPreview(book export.Storybook, example examples.Example, mode string) (*httpx.Page, error) {
+func galleryPreview(book export.Storybook, example examples.Example, mode, assets string) (*httpx.Page, error) {
 	extra := append(slices.Clone(book.Extra), ui.Extra{Lists: components.GalleryClassLists()})
 	sheet := ui.Compose(book.Theme, extra...)
 	attrs := []g.Node{h.Lang("en")}
@@ -139,10 +139,10 @@ func galleryPreview(book export.Storybook, example examples.Example, mode string
 	}
 	attrs = append(attrs, h.Head(h.Meta(h.Charset("utf-8")), h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
 		h.TitleEl(g.Text(example.Name)), h.StyleEl(g.Raw(string(sheet.Body))),
-		h.Script(h.Src(assetPrefix+"/js/htmx.min.js"), g.Attr("defer")),
-		h.Script(h.Src(assetPrefix+"/js/components.js"), g.Attr("defer")),
-		h.Script(h.Src(assetPrefix+"/js/confirm.js"), g.Attr("defer")),
-		h.Script(h.Src(assetPrefix+"/js/gallery-preview.js"), g.Attr("defer"))),
+		h.Script(h.Src(assets+"/js/htmx.min.js"), g.Attr("defer")),
+		h.Script(h.Src(assets+"/js/components.js"), g.Attr("defer")),
+		h.Script(h.Src(assets+"/js/confirm.js"), g.Attr("defer")),
+		h.Script(h.Src(assets+"/js/gallery-preview.js"), g.Attr("defer"))),
 		h.Body(h.Div(h.Style("padding:1.5rem"), galleryPreviewContent(example))))
 	out, err := page.Render(h.HTML(attrs...), http.StatusOK)
 	if err != nil {

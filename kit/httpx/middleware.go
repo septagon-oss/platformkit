@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -116,7 +117,7 @@ func givenID(s string) string {
 // rolls back on its way out, and arrives with an empty buffer.
 func (a *API) respond(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b := &buffer{ResponseWriter: w, header: w.Header().Clone()}
+		b := &buffer{ResponseWriter: w, header: w.Header().Clone(), public: SurfaceOf(r.Context()) == SurfacePublic}
 		r = r.WithContext(context.WithValue(r.Context(), bufferKey{}, b))
 		defer func() {
 			if v := recover(); v != nil {
@@ -132,6 +133,26 @@ func (a *API) respond(next http.Handler) http.Handler {
 			b.send()
 		}()
 		next.ServeHTTP(b, r)
+
+		// The public surface sets no cookie. It is a promise the surface makes to
+		// a visitor — nothing about this request is remembered, which is what lets
+		// it be cached and indexed — and a handler that minted one broke it on a
+		// page a crawler will keep. The writer is where the promise is kept (see
+		// withholdCookies): the cookie never reaches the visitor, whatever size the
+		// body turned out to be. What is left here is the honest *answer*: where
+		// the response is still held, it becomes a 500 naming the fault with the
+		// body discarded, because a route that broke the surface's own promise has
+		// not produced a response worth caching. Where the bytes already went, the
+		// status is one the visitor has seen and the line names the route for
+		// whoever owns it.
+		if minted := b.withheld(); len(minted) > 0 {
+			a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: a public route set a cookie",
+				"code", CodePublicSetsACookie, "method", r.Method, "path", r.URL.Path, "cookies", len(minted))
+			if b.reset() {
+				a.fail(b, r, http.StatusInternalServerError,
+					CodePublicSetsACookie+": the public surface promises nobody is remembered, and this route broke the promise")
+			}
+		}
 	})
 }
 
@@ -160,9 +181,16 @@ type buffer struct {
 	// reset can put them back. A Location set by a handler whose transaction
 	// then failed to commit must not survive into the 500 that replaces it.
 	header http.Header
-	status int
-	body   bytes.Buffer
-	direct bool
+	// public is the surface that promises nobody standing at it is remembered.
+	// It is decided here because this is the writer the promise has to be kept
+	// at: the response is only held for as long as it fits, and a promise that
+	// holds while the body is small and is forgotten when it is not is the
+	// promise a cache in front of the surface would read.
+	public  bool
+	cookies []string
+	status  int
+	body    bytes.Buffer
+	direct  bool
 }
 
 // maxBuffer is the most a held response may hold. Two megabytes is far past any
@@ -170,6 +198,7 @@ type buffer struct {
 const maxBuffer = 2 << 20
 
 func (b *buffer) WriteHeader(status int) {
+	b.withholdCookies()
 	if b.direct {
 		b.ResponseWriter.WriteHeader(status)
 		return
@@ -180,6 +209,10 @@ func (b *buffer) WriteHeader(status int) {
 }
 
 func (b *buffer) Write(p []byte) (int, error) {
+	// First thing, because a route that sets a cookie and then writes a body has
+	// ordered them the way the surface's promise cannot survive: by the time the
+	// first byte goes, so do the headers beside it.
+	b.withholdCookies()
 	if !b.direct && b.body.Len()+len(p) > maxBuffer {
 		b.send()
 	}
@@ -190,6 +223,7 @@ func (b *buffer) Write(p []byte) (int, error) {
 }
 
 func (b *buffer) Flush() {
+	b.withholdCookies()
 	b.send()
 	if f, ok := b.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
@@ -207,11 +241,39 @@ func (b *buffer) send() {
 	if b.status == 0 {
 		b.status = http.StatusOK
 	}
+	// Before the status line, because this is the last moment the headers are
+	// still ours to write.
+	b.withholdCookies()
 	b.ResponseWriter.WriteHeader(b.status)
 	if b.body.Len() > 0 {
 		_, _ = b.ResponseWriter.Write(b.body.Bytes())
 	}
 }
+
+// withholdCookies is the public surface's promise kept at the writer rather than
+// observed after the fact: every Set-Cookie the response carries is taken off it
+// before anything reaches the wire, whether the handler minted it before the
+// headers went or after they had gone — which is the case a streaming route, an
+// export, a file, is written with, and the case the surface exists for.
+//
+// What it took is kept, so respond can name the route that broke the promise and
+// answer with the 500 it deserves where a response is still there to replace.
+// Withholding is not forgiveness: the bytes a streaming route already sent stay
+// sent, which is why the log line is written even when the status cannot be.
+func (b *buffer) withholdCookies() {
+	if !b.public {
+		return
+	}
+	set := b.Header().Values("Set-Cookie")
+	if len(set) == 0 {
+		return
+	}
+	b.cookies = append(b.cookies, set...)
+	b.Header().Del("Set-Cookie")
+}
+
+// withheld is every cookie the surface's writer took off this response.
+func (b *buffer) withheld() []string { return b.cookies }
 
 // reset discards the held response, headers included, so another can replace
 // it. It reports false once the response has begun, which is the case a caller
@@ -238,8 +300,11 @@ func bufferFrom(ctx context.Context) (*buffer, bool) {
 	return b, ok
 }
 
-// writeProblem answers with the one error shape, without huma: the recovery
-// runs outside any huma context, and a panic during routing has none at all.
+// writeProblem answers with the one error shape. It is the only encoder of it: the
+// recovery runs outside any huma context, a panic during routing has none at all, and a
+// refusal inside the chain reaches it through declared, because huma's writer stamps a
+// schema link into the body and answers a header this encoder does not, which would make
+// two shapes of the one problem. See fault.go.
 func writeProblem(w http.ResponseWriter, status int, id, detail string) {
 	p := problem.New(status, detail)
 	if id != "" {
@@ -277,7 +342,19 @@ func (a *API) rlog(ctx context.Context) *slog.Logger {
 // to recognise it twice without knowing anything else about sessions: to refuse
 // a cross-site write (csrf) and to decide that a request is worth
 // authenticating at all.
-const SessionCookie = "platformkit_session"
+//
+// It names the workspace, not the product: the cookie is only ever set on the
+// App surface, and a name that says "session" rather than "platformkit_session"
+// is one a person reading their own cookie list can make sense of. See
+// SessionCookieOf for what is still read.
+const SessionCookie = "session"
+
+// legacySessionCookies are the names this release still reads and never writes.
+// A browser with a jar full of the old name is a person who signed in before the
+// upgrade, and refusing them would be an outage nobody announced; sign-in and
+// sign-out both clear these, so a jar carries the new name alone from the first
+// visit after the upgrade. Removed with the aliases, in v1.3.0.
+var legacySessionCookies = []string{"platformkit_session"}
 
 // CookieName is the name a first-party cookie is set under, which depends on
 // whether it will carry Secure.
@@ -302,13 +379,32 @@ func CookieName(base string, secure bool) string {
 // name. It is exported because the auth module reads the one the kernel
 // recognised: two spellings of "which cookie is the session" is a session one
 // half of the program can see and the other cannot.
+//
+// The order is the answer: the current name first, so a jar that carries both —
+// which is what a jar upgraded without clearing looks like — spends the session
+// the current code minted rather than the older one. The legacy names are read
+// for one release and written never.
 func SessionCookieOf(r *http.Request) (*http.Cookie, bool) {
-	for _, secure := range []bool{true, false} {
-		if c, err := r.Cookie(CookieName(SessionCookie, secure)); err == nil && c.Value != "" {
+	for _, name := range append([]string{CookieName(SessionCookie, true), SessionCookie}, legacyNames()...) {
+		if c, err := r.Cookie(name); err == nil && c.Value != "" {
 			return c, true
 		}
 	}
 	return nil, false
+}
+
+// legacyNames is every legacy spelling, __Host- prefixed and plain, of the
+// cookie names this release still reads. It is exported through
+// LegacySessionCookies because the auth module has to *clear* what the kernel
+// still reads, and two lists of the same names drift.
+func LegacySessionCookies() []string { return legacyNames() }
+
+func legacyNames() []string {
+	var out []string
+	for _, base := range legacySessionCookies {
+		out = append(out, CookieName(base, true), base)
+	}
+	return out
 }
 
 // bodies is everything this application does about a request body before
@@ -363,7 +459,7 @@ func (a *API) bodies(ctx huma.Context, next func(huma.Context)) {
 		if err := p.Close(true); err != nil {
 			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the guard transaction did not commit",
 				"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
-			_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
+			a.refuse(ctx, http.StatusInternalServerError, "")
 			return
 		}
 	}
@@ -422,7 +518,7 @@ func (a *API) csrf(next http.Handler) http.Handler {
 		a.rlog(r.Context()).InfoContext(r.Context(), "httpx: cross-site write refused",
 			"method", r.Method, "path", r.URL.Path, "site", r.Header.Get("Sec-Fetch-Site"), "origin", r.Header.Get("Origin"))
 		a.fail(w, r, http.StatusForbidden,
-			"csrf: this request carries a session cookie and came from another site")
+			CodeCSRFOrigin+": this request carries a session cookie and came from another site")
 	})
 }
 
@@ -490,6 +586,16 @@ func RequestFrom(ctx context.Context) (*http.Request, bool) {
 // hook that returns an error is an outage and answers 500, because a session
 // store that cannot be read must not read as "you are not signed in".
 func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
+	// The public surface reads no session at all. A visitor's request that
+	// happens to carry a cookie is answered as the anonymous request it is —
+	// which is not an optimisation but the surface's promise, and the reason a
+	// public route can never be the one that opens a transaction to be told it
+	// is anonymous. The mount gate (R1) refuses any public route that would need
+	// a principal, so nothing here is left unsatisfiable by the skip.
+	if SurfaceOf(ctx.Context()) == SurfacePublic {
+		next(ctx)
+		return
+	}
 	r, ok := RequestFrom(ctx.Context())
 	if !ok || !credentialed(r) {
 		next(ctx)
@@ -506,7 +612,7 @@ func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
 	if err != nil {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: could not recognise the caller",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
-		_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
+		a.refuse(ctx, http.StatusInternalServerError, "")
 		return
 	}
 	if !ok {
@@ -685,11 +791,11 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 	if unknown {
-		_ = huma.WriteErr(a.api, ctx, http.StatusNotFound, "no site is served at "+host)
+		a.refuse(ctx, http.StatusNotFound, "no site is served at "+host)
 		return
 	}
 	ctx.SetHeader("Retry-After", "3")
-	_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "this host cannot be resolved right now")
+	a.refuse(ctx, http.StatusServiceUnavailable, "this host cannot be resolved right now")
 }
 
 // HostOnly is the loader's key: the Host header without its port and without
@@ -725,7 +831,7 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	rctx, p, err := db.Lazy(ctx.Context(), a.opts.Conn, a.lazy)
 	if err != nil {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: no transaction for this request", "error", err)
-		_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
+		a.refuse(ctx, http.StatusInternalServerError, "")
 		return
 	}
 	// Close is idempotent, so this covers the panic path and nothing else.
@@ -757,7 +863,7 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	switch {
 	case err == nil:
 		if undecided && buffered && b.reset() {
-			_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
+			a.refuse(ctx, http.StatusInternalServerError, "")
 		}
 	case hungUp(ctx.Context(), err):
 		// Nobody is waiting for this answer and nothing was written. See hungUp.
@@ -767,7 +873,7 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		// Nothing has been sent yet, so the response can still tell the truth.
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the request transaction did not commit",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
-		_ = huma.WriteErr(a.api, ctx, http.StatusInternalServerError, "")
+		a.refuse(ctx, http.StatusInternalServerError, "")
 	default:
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: request transaction failed after the response was written",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
@@ -826,7 +932,7 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		// Defense in depth. kit/app runs ValidateDeclarations before it
 		// listens, so reaching this branch means an operation was mounted after
 		// the gate ran.
-		a.deny(ctx, "AUTH_UNDECLARED", "this operation declares no authorization")
+		a.deny(ctx, CodeUndeclared, "this operation declares no authorization")
 		return
 	}
 	if auth.kind == kindPublic {
@@ -839,7 +945,7 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		if auth.feature != "" {
 			t, hasTenant := tenancy.FromContext(ctx.Context())
 			if !hasTenant {
-				_ = huma.WriteErr(a.api, ctx, http.StatusNotFound, "no site is served at this host")
+				a.refuse(ctx, http.StatusNotFound, "no site is served at this host")
 				return
 			}
 			if !a.entitled(ctx, t, auth) {
@@ -859,16 +965,16 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 			ctx.SetStatus(http.StatusSeeOther)
 			return
 		}
-		a.deny(ctx, "AUTH_ANONYMOUS", "this operation requires a signed-in caller")
+		a.deny(ctx, CodeAnonymous, "this operation requires a signed-in caller")
 		return
 	}
 	if expected := ctx.Header(ExpectedPrincipalHeader); unsafeMethod(ctx.Method()) && expected != "" && expected != p.UserID.String() {
-		a.deny(ctx, "AUTH_PRINCIPAL_CHANGED", "the signed-in account differs from the one that prepared this request")
+		a.deny(ctx, CodePrincipalChanged, "the signed-in account differs from the one that prepared this request")
 		return
 	}
 	t, hasTenant := tenancy.FromContext(ctx.Context())
 	if !hasTenant {
-		a.deny(ctx, "AUTH_NO_TENANT", "this operation is tenant work and the host resolved to none")
+		a.deny(ctx, CodeNoTenant, "this operation is tenant work and the host resolved to none")
 		return
 	}
 	// There is no principal-belongs-to-this-tenant check, because there is no
@@ -883,14 +989,27 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	}
 
 	grant, _ := auth.grant()
-	// Before the Authorizer, and that order is the point of the declaration.
-	// The control plane is served at every tenant's host, so an operator route
-	// is reachable by a customer's administrator; asking the roles table first
-	// would let the wildcard they legitimately hold in their own tenant answer
-	// a question about everybody's. A tenant that is not the operator's cannot
-	// exercise this permission however its roles are written.
+	// Before the Authorizer, and that order is the point of the declaration: a
+	// customer's administrator holds the wildcard in their own tenant, and asking
+	// the roles table first would answer a question about everybody's with the
+	// answer about theirs. A tenant that is not the operator's cannot exercise an
+	// operator permission however its roles are written.
+	//
+	// The surface decided *which address* serves the control plane — see the
+	// installation host gate, which answered a 404 before this middleware ran at
+	// all. What is left here is the second, independent guarantee: a row of data
+	// may point the installation's host at some tenant, and the answer to that is
+	// still no. On the control-plane surface it is the same 404 the host gate
+	// gave, so the address does not disclose that it knows the difference;
+	// anywhere else — a generated page of the workspace that reads across
+	// tenants, an operator write mounted beside a customer's — it is the ordinary
+	// refusal of a caller who may not, and no wildcard satisfies it.
 	if grant.Operator && !t.Operator {
-		a.deny(ctx, "AUTH_NOT_OPERATOR", grant.Permission+" is the operator's, and this is not the operator's tenant")
+		if SurfaceOf(ctx.Context()) == SurfaceOps {
+			a.notHere(ctx)
+			return
+		}
+		a.deny(ctx, CodeNotOperator, grant.Permission+" is the operator's, and this is not the operator's tenant")
 		return
 	}
 
@@ -901,11 +1020,11 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: authorization decision unavailable",
 			"permission", grant.Permission, "operator", grant.Operator, "tenant", t.Slug, "error", err)
 		ctx.SetHeader("Retry-After", "3")
-		_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "authorization is temporarily unavailable")
+		a.refuse(ctx, http.StatusServiceUnavailable, "authorization is temporarily unavailable")
 		return
 	}
 	if !allowed {
-		a.deny(ctx, "AUTH_DENIED", "this operation requires "+grant.Permission)
+		a.deny(ctx, CodeDenied, "this operation requires "+grant.Permission)
 		return
 	}
 	// The plan question last, so a caller who may not do this at all is told
@@ -937,7 +1056,7 @@ func (a *API) entitled(ctx huma.Context, t tenancy.Tenant, auth Auth) bool {
 		// the fault is the application's and not the caller's.
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: an operation declares a feature and nothing answers it",
 			"feature", auth.feature, "path", ctx.URL().Path)
-		_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
+		a.refuse(ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
 		return false
 	}
 	included, err := a.opts.Entitle.Includes(ctx.Context(), t, auth.feature)
@@ -945,24 +1064,182 @@ func (a *API) entitled(ctx huma.Context, t tenancy.Tenant, auth Auth) bool {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: entitlement decision unavailable",
 			"feature", auth.feature, "tenant", t.Slug, "error", err)
 		ctx.SetHeader("Retry-After", "3")
-		_ = huma.WriteErr(a.api, ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
+		a.refuse(ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
 		return false
 	}
 	if !included {
 		a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: plan excludes this operation",
 			"feature", auth.feature, "tenant", t.Slug, "path", ctx.URL().Path)
-		_ = huma.WriteErr(a.api, ctx, http.StatusPaymentRequired,
-			"PLAN_EXCLUDES: this tenant's plan does not include "+auth.feature)
+		a.refuse(ctx, http.StatusPaymentRequired, CodePlanExcludes+": this tenant's plan does not include "+auth.feature)
 		return false
 	}
 	return true
 }
 
+// The refusal codes, exported because the presentation layer translates them.
+//
+// A refusal has one value and two shapes (docs/adr/0015): the same verdict as a
+// problem document for a program and as a sentence for a person. The second
+// shape was English-only, because the sentence was a string literal in the
+// guard that made it. These constants are the carrier the code travels in,
+// ui/page/fault.go holds the one table from a code to a catalog key, and the
+// refusal page is then negotiated from the request's own Accept-Language — so a
+// shell that ships the sentence for a code answers a refusal in the language it
+// ships, and a shell that ships none is answered in the English below and
+// declared English, which is what it is. A guard that refuses in a shape a
+// person can be shown, and not only a machine, writes one of these and answers
+// through API.refuse; a code that travelled as a string literal could not be
+// looked up by anybody, which is how LIMIT_EXHAUSTED arrived untranslated twice
+// over — no constant, so no table row, and huma's writer, so no page.
+//
+// Two codes are named here and left out of that table on purpose, for one
+// reason: their sentence carries something the caller has to have rather than
+// something they have to understand. CodeWriteElsewhere names the address the
+// write belongs at and CodePlanExcludes the feature to ask for; a translated
+// sentence would drop it, because the mechanism replaces a sentence and does not
+// interpolate an argument. Both are shown as they are written.
+const (
+	CodeAnonymous         = "AUTH_ANONYMOUS"
+	CodeDenied            = "AUTH_DENIED"
+	CodeNotOperator       = "AUTH_NOT_OPERATOR"
+	CodeUndeclared        = "AUTH_UNDECLARED"
+	CodeNoTenant          = "AUTH_NO_TENANT"
+	CodePrincipalChanged  = "AUTH_PRINCIPAL_CHANGED"
+	CodeCSRFOrigin        = "CSRF_ORIGIN"
+	CodePublicSetsACookie = "PUBLIC_SETS_A_COOKIE"
+	// CodeLimitExhausted is the public surface's own refusal, and the one code
+	// here that a caller without a session, a tenant of their own or an account
+	// ever reads: the anonymous visitor whose form submissions ran out. They are
+	// refused in the shape they asked in, which is why the code is published
+	// rather than written into the call that answers.
+	CodeLimitExhausted = "LIMIT_EXHAUSTED"
+	// CodeWriteElsewhere is the address a write belongs at, named because the
+	// caller who asked here is one line away from the right address: they read
+	// the resource's own path out of the catalog and the resource's writes are
+	// served on another surface. It is a refusal and not a redirect — nothing is
+	// written either way, and a redirect would send a POST through an address the
+	// caller's own client may then GET.
+	CodeWriteElsewhere = "WRITE_ELSEWHERE"
+	// CodePlanExcludes names the feature to ask the tenant's plan for.
+	CodePlanExcludes = "PLAN_EXCLUDES"
+)
+
+// notHere answers the control plane's own answer: the 404 an address nobody
+// mounted gets, at the address the control plane is served at. The detail is
+// the same sentence, deliberately: a tenant host, or a host that resolves to a
+// tenant that is not the installation's, is told nothing beyond "nothing is
+// served here", which is the same thing it was told before the surface existed.
+func (a *API) notHere(ctx huma.Context) {
+	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: the control plane is not served at this address",
+		"method", ctx.Method(), "path", ctx.URL().Path)
+	// The same verdict, the same sentence and the same writer as the address nobody
+	// mounted — refuse is the fail of the chain, so the answer is dressed by the
+	// renderer the never-mounted address is dressed by and the verdict is still
+	// decided for the transaction. This is what makes the answer byte-identical
+	// to the one a never-mounted address gets, Fault page included, which is the
+	// whole point of the 404.
+	a.refuse(ctx, http.StatusNotFound, "nothing is served at this address")
+}
+
+// publicWrites bounds what an anonymous visitor may ask for.
+//
+// It is the Public surface's only rate limit, and it exists because that surface
+// is the one with no account to lock out: the auth module counts sign-ins, and
+// an anonymous form post has no identity to count against beyond the address it
+// came from. So the key names three things — the tenant the request's own host
+// resolved to, the route the caller asked for, and the address they asked from —
+// and two customers therefore never share a counter, one customer's office does
+// not exhaust another's, and a machine hammering the sign-up form does not spend
+// the same minute as the password reminders beside it.
+//
+// Three things about where it runs, all load-bearing:
+//
+//   - After the tenant middleware, and ahead of the request's transaction. The
+//     first half is what puts a tenant in the key: the host lookup runs on the
+//     resolution cache and a system token of its own, so the counter knows whose
+//     door is being knocked on without the request having opened a transaction.
+//     The second half is what keeps a refused write from being a transaction that
+//     rolled back an attempt nobody made, and why the count survives the refusal
+//     that follows it: it is written on a detached context, on kit/limit's budget.
+//   - Safe methods are never counted. A crawler that reads a thousand pages is
+//     not what a limit is for, and counting reads would make the limit a
+//     function of traffic rather than of abuse.
+//   - A limiter that cannot answer is an outage of the limiter's, not a denial
+//     of the caller's: the request proceeds and one line is logged. A public
+//     form that stops working because the counters table blinked is a form that
+//     stops working, and the honest failure mode of a limit is the traffic it
+//     lets through, not the traffic it invents refusals for.
+//
+// The refusal is answered through refuse, because the caller this limit exists
+// for has no account to be locked out of and no terminal to read a code in: they
+// are at a form in a browser, and the answer they are given is a page that says
+// as much and a Retry-After that says whether to wait.
+func (a *API) publicWrites(ctx huma.Context, next func(huma.Context)) {
+	if a.opts.WriteLimiter == nil || SurfaceOf(ctx.Context()) != SurfacePublic || !unsafeMethod(ctx.Method()) {
+		next(ctx)
+		return
+	}
+	r, ok := RequestFrom(ctx.Context())
+	if !ok {
+		next(ctx)
+		return
+	}
+	// The route is the mounted pattern and not the request's own path, which is
+	// the difference between a bounded set of counters and one per slug anybody
+	// types into a public address.
+	t, _ := tenancy.FromContext(ctx.Context())
+	key := publicWriteKey + " " + t.Slug + " " + ctx.Method() + " " + routeOf(ctx) + " " + clientAddress(r)
+	ok, retryAfter, err := a.opts.WriteLimiter.Allow(context.WithoutCancel(ctx.Context()), key, publicWriteLimit, publicWriteWindow)
+	if err != nil {
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the public write limit could not be read; proceeding",
+			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
+		next(ctx)
+		return
+	}
+	if ok {
+		next(ctx)
+		return
+	}
+	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: public write refused by the limit",
+		"method", ctx.Method(), "path", ctx.URL().Path, "tenant", t.Slug)
+	ctx.SetHeader("Retry-After", strconv.Itoa(max(1, int(retryAfter.Seconds()))))
+	a.refuse(ctx, http.StatusTooManyRequests, CodeLimitExhausted+": too many anonymous submissions from this address")
+}
+
+// routeOf is the mounted pattern the request matched, which is the route half of
+// the public write key. The request's own path is not it: a public address with
+// a slug in it would get one counter per slug anybody typed, and a counter that
+// anyone can inflate is a table anyone can fill.
+func routeOf(ctx huma.Context) string {
+	if op := ctx.Operation(); op != nil && op.Path != "" {
+		return op.Path
+	}
+	return ctx.URL().Path
+}
+
+// clientAddress is the peer address of the request, which is the only address
+// here that a caller cannot write: no X-Forwarded-For, for the reason the auth
+// module gives for the same rule. A deployment behind a proxy that rewrites
+// RemoteAddr gets the right one anyway.
+func clientAddress(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // deny logs the machine-readable reason and answers 403 with it. The code is
 // the first word of the detail so a log line and a response can be matched
 // without adding a field to the one error shape kit/problem defines.
+//
+// Through refuse, because this is the answer six of the codes below travel in,
+// and a person who navigated to a page they hold no grant for is the reader
+// ui/page's table of sentences exists for. Answering them with the document is
+// the defect apps/platformkit/app_fault_test.go names in its own opening line:
+// "a person who navigated and gets JSON".
 func (a *API) deny(ctx huma.Context, code, detail string) {
 	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: authorization denied",
 		"code", code, "method", ctx.Method(), "path", ctx.URL().Path)
-	_ = huma.WriteErr(a.api, ctx, http.StatusForbidden, code+": "+detail)
+	a.refuse(ctx, http.StatusForbidden, code+": "+detail)
 }

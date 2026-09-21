@@ -23,9 +23,14 @@ func (Person) TableName() string { return "people" }
 
 func listOut(t *testing.T, fields []entity.Field, row map[string]any) string {
 	t.Helper()
-	v := resource.List(resource.Resource{Schema: entity.Schema{
-		Module: "person", Entity: "person", Path: "/api/v1/person/people", Fields: fields,
-	}}, opts, []map[string]any{row}, 1, 1, "", false)
+	v := resource.List(resource.Resource{
+		// The screen address the kernel would have composed, and which every
+		// link into a row is built from.
+		Screen: "/app/person/people",
+		Schema: entity.Schema{
+			Module: "person", Entity: "person", Path: "/api/v1/person/people", Fields: fields,
+		},
+	}, opts, []map[string]any{row}, 1, 1, "", false)
 	return render(t, v.Body)
 }
 
@@ -82,7 +87,7 @@ func TestAPersonCellIsADiscAndTheNameSaidOnce(t *testing.T) {
 	}
 	// The way in survives the composition. A cell that grew a disc and lost its
 	// href took the mouse away from the person using the screen.
-	if !strings.Contains(out, `href="/admin/person/people/1"`) {
+	if !strings.Contains(out, `href="/app/person/people/1"`) {
 		t.Errorf("the person cell lost the link that was already there: %s", out)
 	}
 }

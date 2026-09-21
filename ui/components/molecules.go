@@ -1141,13 +1141,23 @@ func sidebarItemNode(
 	return h.Li(attrs...)
 }
 
+// namesARoot reports whether href is the whole of an address — one path segment
+// with nothing beneath it ("/app", "/ops", "/") — rather than a page under one
+// ("/app/task/tasks"). A root begins every address it holds, so prefix-matching
+// one marks the entry that leads home as the current page wherever a person
+// stands. Which address a root is stays the composition's: nothing here may name
+// it, so the shape decides.
+func namesARoot(href string) bool {
+	return !strings.Contains(strings.Trim(strings.TrimPrefix(href, "/"), "/"), "/")
+}
+
 func sidebarItemActive(item SidebarItem, current string) bool {
 	if current == "" {
 		if item.Active {
 			return true
 		}
 	} else if current == item.Href ||
-		(item.Href != "" && item.Href != "/admin" && strings.HasPrefix(current, item.Href)) {
+		(item.Href != "" && !namesARoot(item.Href) && strings.HasPrefix(current, item.Href)) {
 		return true
 	}
 	for _, child := range item.Children {

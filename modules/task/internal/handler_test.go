@@ -25,12 +25,18 @@ import (
 
 const host = "acme.test"
 
+// path is the address the routes below are called at: the workspace's JSON door
+// of this module, which the kernel composed from the surface, the module name
+// and the relative path. The test writes it out because a test naming the
+// address it calls is a test that would notice the address moving.
 const path = "/api/v1/task/tasks"
 
 // spec is what module.go mounts, as far as the command routes can tell: the
-// resource they hang off, and the permission they ask for.
+// resource they hang off, and the permission they ask for. Its Path is
+// relative — a Spec says where a resource sits in its own module, and the
+// surface and the module go on around it.
 var spec = rest.Spec[*contracts.Task]{
-	Module: "task", Entity: "task", Path: path,
+	Module: "task", Entity: "task", Path: "/tasks",
 	Read: contracts.PermissionTaskRead, Write: contracts.PermissionTaskUpdate,
 }
 
@@ -59,7 +65,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *db.Conn) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	internal.RegisterRoutes(api, spec, internal.NewService())
+	internal.RegisterRoutes(surfacesOf(api), spec, internal.NewService())
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}

@@ -47,7 +47,7 @@ func verificationBody(t *testing.T, token string) string {
 func verificationSignup(t *testing.T, conn *db.Conn, router chi.Router, email string) (*user.User, string) {
 	t.Helper()
 	before := len(mailbox.Sent())
-	res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, email, nil))
+	res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, email, nil))
 	if res.Code != http.StatusAccepted || len(res.Result().Cookies()) != 0 {
 		t.Fatalf("email signup status=%d cookies=%d", res.Code, len(res.Result().Cookies()))
 	}
@@ -90,12 +90,12 @@ func TestEmailSignupKeepsThePasswordAndRequiresExplicitVerification(t *testing.T
 		t.Fatalf("unverified password login=%d", res.Code)
 	}
 	for _, method := range []string{"GET", "HEAD"} {
-		res := call(t, router, method, "/api/v1/auth/verify-email?token="+token, "")
+		res := call(t, router, method, "/api/v1/public/auth/verify-email?token="+token, "")
 		if res.Code != http.StatusMethodNotAllowed && res.Code != http.StatusNotFound {
 			t.Fatalf("verification %s unexpectedly mounted: %d", method, res.Code)
 		}
 	}
-	res := call(t, router, "POST", "/api/v1/auth/verify-email", verificationBody(t, token))
+	res := call(t, router, "POST", "/api/v1/public/auth/verify-email", verificationBody(t, token))
 	if res.Code != http.StatusOK || len(res.Result().Cookies()) != 0 {
 		t.Fatalf("verification status=%d cookies=%d", res.Code, len(res.Result().Cookies()))
 	}
@@ -111,7 +111,7 @@ func TestEmailSignupKeepsThePasswordAndRequiresExplicitVerification(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if res := call(t, router, "POST", "/api/v1/auth/verify-email", verificationBody(t, token)); res.Code != http.StatusUnauthorized {
+	if res := call(t, router, "POST", "/api/v1/public/auth/verify-email", verificationBody(t, token)); res.Code != http.StatusUnauthorized {
 		t.Fatalf("verification replay=%d", res.Code)
 	}
 	if res := call(t, router, "POST", "/api/v1/auth/login", login); res.Code != http.StatusOK {
@@ -132,7 +132,7 @@ func TestEmailSignupValidatesConsentCredentialsAndComposition(t *testing.T) {
 	}
 	for i, item := range cases {
 		body := approvalBody(t, "new@example.com", func(fields map[string]any) { fields[item.field] = item.value })
-		res := call(t, router, "POST", "/api/v1/auth/register", body, from("203.0.113."+strconv.Itoa(i+10)))
+		res := call(t, router, "POST", "/api/v1/public/auth/register", body, from("203.0.113."+strconv.Itoa(i+10)))
 		if res.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("invalid %s status=%d", item.field, res.Code)
 		}
@@ -148,7 +148,7 @@ func TestEmailSignupValidatesConsentCredentialsAndComposition(t *testing.T) {
 		if path == "verify-email" {
 			body = verificationBody(t, "not-a-real-credential")
 		}
-		res := call(t, router, "POST", "/api/v1/auth/"+path, body, func(r *http.Request) { r.Header.Set("Origin", "https://elsewhere.example") })
+		res := call(t, router, "POST", "/api/v1/public/auth/"+path, body, func(r *http.Request) { r.Header.Set("Origin", "https://elsewhere.example") })
 		if res.Code != http.StatusForbidden {
 			t.Fatalf("cross-site %s=%d", path, res.Code)
 		}
@@ -166,7 +166,7 @@ func TestEmailSignupValidatesConsentCredentialsAndComposition(t *testing.T) {
 			if path == "register" {
 				body = approvalBody(t, "unavailable@example.com", nil)
 			}
-			if res := call(t, router, "POST", "/api/v1/auth/"+path, body); res.Code != http.StatusServiceUnavailable {
+			if res := call(t, router, "POST", "/api/v1/public/auth/"+path, body); res.Code != http.StatusServiceUnavailable {
 				t.Fatalf("%s without delivery=%d", path, res.Code)
 			}
 		}
@@ -213,15 +213,15 @@ func TestEmailVerificationCannotCrossTenantHosts(t *testing.T) {
 		Tenants: verificationSites{host: acme, "globex.localhost": globex}, Log: slog.New(slog.DiscardHandler),
 	})
 	api.Declare([]tenancy.Grant{{Permission: contracts.PermissionRoleManage}})
-	mod.Routes(api)
+	mod.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatal(err)
 	}
-	res := call(t, tenants, "POST", "/api/v1/auth/verify-email", verificationBody(t, token), func(r *http.Request) { r.Host = "globex.localhost" })
+	res := call(t, tenants, "POST", "/api/v1/public/auth/verify-email", verificationBody(t, token), func(r *http.Request) { r.Host = "globex.localhost" })
 	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("foreign host verification=%d", res.Code)
 	}
-	if res := call(t, tenants, "POST", "/api/v1/auth/verify-email", verificationBody(t, token)); res.Code != http.StatusOK {
+	if res := call(t, tenants, "POST", "/api/v1/public/auth/verify-email", verificationBody(t, token)); res.Code != http.StatusOK {
 		t.Fatalf("foreign attempt consumed the issuing tenant's credential: %d", res.Code)
 	}
 }
@@ -243,7 +243,7 @@ func TestPasswordTokenCannotConfirmEmailOrActivateUnverifiedAccounts(t *testing.
 	if token == "" {
 		t.Fatal("password reset mail had no credential")
 	}
-	if res := call(t, router, "POST", "/api/v1/auth/verify-email", verificationBody(t, token)); res.Code != http.StatusUnauthorized {
+	if res := call(t, router, "POST", "/api/v1/public/auth/verify-email", verificationBody(t, token)); res.Code != http.StatusUnauthorized {
 		t.Fatalf("password credential used for email verification=%d", res.Code)
 	}
 	// Simulate a previously issued credential surviving an account-state change.
@@ -274,7 +274,7 @@ func TestVerificationResendFailsClosedWhenItsRecipientStoreFails(t *testing.T) {
 	}
 	var response string
 	for _, email := range []string{"known@example.com", "absent@example.com"} {
-		res := call(t, router, "POST", "/api/v1/auth/resend-verification", `{"email":"`+email+`"}`)
+		res := call(t, router, "POST", "/api/v1/public/auth/resend-verification", `{"email":"`+email+`"}`)
 		var fault problem.Problem
 		if err := json.Unmarshal(res.Body.Bytes(), &fault); err != nil {
 			t.Fatal("recipient-store failure did not return problem details")
@@ -318,7 +318,7 @@ func TestEmailSignupDuplicatesPreserveEveryExistingState(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, strings.ToUpper(email), func(body map[string]any) {
+		res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, strings.ToUpper(email), func(body map[string]any) {
 			body["password"], body["confirmation"] = "replacement private passphrase", "replacement private passphrase"
 		}), from("203.0.113."+strconv.Itoa(i+10)))
 		if res.Code != http.StatusAccepted || len(res.Result().Cookies()) != 0 {
@@ -338,7 +338,7 @@ func TestEmailSignupDuplicatesPreserveEveryExistingState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, "new@example.com", nil), from("203.0.113.80"))
+	res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, "new@example.com", nil), from("203.0.113.80"))
 	if res.Code != http.StatusAccepted || res.Body.String() != acknowledged {
 		t.Fatal("new and existing signup acknowledgments differ")
 	}
@@ -350,7 +350,7 @@ func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T
 	u, first := verificationSignup(t, conn, router, "pending@example.com")
 	var acknowledgment string
 	for i, email := range []string{"pending@example.com", "absent@example.com", "PENDING@example.com", "ABSENT@example.com"} {
-		res := call(t, router, "POST", "/api/v1/auth/resend-verification", `{"email":"`+email+`"}`, from("203.0.113."+strconv.Itoa(i+10)))
+		res := call(t, router, "POST", "/api/v1/public/auth/resend-verification", `{"email":"`+email+`"}`, from("203.0.113."+strconv.Itoa(i+10)))
 		if res.Code != http.StatusAccepted || res.Header().Get("Retry-After") != "" || len(res.Result().Cookies()) != 0 {
 			t.Fatalf("neutral resend=%d", res.Code)
 		}
@@ -374,7 +374,7 @@ func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T
 	if _, err := admin.Exec("DELETE FROM platformkit_limits WHERE key LIKE '%auth/verification-mail/%'"); err != nil {
 		t.Fatal(err)
 	}
-	res := call(t, router, "POST", "/api/v1/auth/resend-verification", `{"email":"pending@example.com"}`, from("203.0.113.80"))
+	res := call(t, router, "POST", "/api/v1/public/auth/resend-verification", `{"email":"pending@example.com"}`, from("203.0.113.80"))
 	if res.Code != http.StatusAccepted {
 		t.Fatalf("later resend=%d", res.Code)
 	}
@@ -387,7 +387,7 @@ func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T
 	if second == "" || second == first {
 		t.Fatal("resend did not rotate the credential")
 	}
-	if res := call(t, router, "POST", "/api/v1/auth/verify-email", verificationBody(t, first)); res.Code != http.StatusUnauthorized {
+	if res := call(t, router, "POST", "/api/v1/public/auth/verify-email", verificationBody(t, first)); res.Code != http.StatusUnauthorized {
 		t.Fatalf("old verification after rotation=%d", res.Code)
 	}
 	// Password setup/reset and mailbox confirmation are separate purposes.
@@ -406,7 +406,7 @@ func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T
 	if len(mailbox.Sent()) != 2 {
 		t.Fatal("password recovery emailed an unverified account")
 	}
-	if res := call(t, router, "POST", "/api/v1/auth/verify-email", verificationBody(t, second)); res.Code != http.StatusOK {
+	if res := call(t, router, "POST", "/api/v1/public/auth/verify-email", verificationBody(t, second)); res.Code != http.StatusOK {
 		t.Fatalf("current verification after refused reset=%d", res.Code)
 	}
 }
@@ -431,7 +431,7 @@ func TestVerificationDeliveryFailureRetainsTheRegistrationWithoutPersistingSecre
 	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations, audit.Migrations)
 	mailer := &verificationFailingMailer{fail: true}
 	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup, func(d *auth.Deps) { d.Mailer = mailer })
-	if res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, "delivery@example.com", nil)); res.Code != http.StatusAccepted {
+	if res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, "delivery@example.com", nil)); res.Code != http.StatusAccepted {
 		t.Fatalf("signup=%d", res.Code)
 	}
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -488,3 +488,9 @@ func TestVerificationDeliveryFailureRetainsTheRegistrationWithoutPersistingSecre
 		t.Fatal(err)
 	}
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.
+func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("auth") }

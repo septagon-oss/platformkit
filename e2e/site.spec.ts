@@ -14,13 +14,13 @@ const slug = `welcome-${stamp}`;
 test('a fresh site says nothing is published, and the home page appears once one is', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Nothing published yet' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/admin/login');
+  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app/admin/login');
 
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
 
   const created = await page.request.post('/api/v1/content/contents', {
     data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `# Hello\n\nThis is **home** number ${stamp}.` },

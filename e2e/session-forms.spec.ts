@@ -6,13 +6,13 @@ const endpoint = (kind: string) => `/api/v1/auth/${['forgot', 'reset'].includes(
 
 // Synthetic documents isolate the shipped controller contract. Their API
 // responses below are injected; they do not establish delivered account email.
-async function form(page: Page, kind: string, query = '', next = '/admin/login') {
+async function form(page: Page, kind: string, query = '', next = '/app/admin/login') {
   await page.route('**/__auth-form?*', route => route.fulfill({
     contentType: 'text/html',
     headers: { 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' },
-    body: `<!doctype html><html lang="en" data-signin="/admin/login"><head>
-      <link rel="stylesheet" href="/admin/assets/app.css">
-      <script src="/admin/assets/js/session.js" defer></script></head><body><main>
+    body: `<!doctype html><html lang="en" data-signin="/app/admin/login"><head>
+      <link rel="stylesheet" href="/app/admin/assets/app.css">
+      <script src="/app/admin/assets/js/session.js" defer></script></head><body><main>
       <h1>Account form</h1><form data-auth-form="${kind}" action="${endpoint(kind)}" data-next="${next}">
       <div role="alert" data-auth-error hidden></div>
       <div role="status" data-auth-message hidden>Check your inbox for the account link.</div>
@@ -26,8 +26,8 @@ async function form(page: Page, kind: string, query = '', next = '/admin/login')
 }
 
 test('login retains the guarded query and reports a real credential refusal accessibly', async ({ page }) => {
-  await page.goto('/admin/task/tasks?limit=7&offset=0');
-  expect(new URL(page.url()).searchParams.get('next')).toBe('/admin/task/tasks?limit=7&offset=0');
+  await page.goto('/app/task/tasks?limit=7&offset=0');
+  expect(new URL(page.url()).searchParams.get('next')).toBe('/app/task/tasks?limit=7&offset=0');
   const error = page.locator('[data-login-error]');
   await expect(error).toBeHidden();
   await expect(page.locator('[data-session-error]')).toBeHidden();
@@ -39,15 +39,15 @@ test('login retains the guarded query and reports a real credential refusal acce
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin\/task\/tasks\?limit=7&offset=0$/);
+  await expect(page).toHaveURL(/\/app\/task\/tasks\?limit=7&offset=0$/);
 });
 
 for (const failure of ['http', 'network']) test(`logout ${failure} failure retains the page and allows an explicit retry`, async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByRole('textbox', { name: 'Email', exact: true }).fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
   let attempts = 0;
   await page.route('**/api/v1/auth/logout', async route => {
     attempts++;
@@ -58,12 +58,12 @@ for (const failure of ['http', 'network']) test(`logout ${failure} failure retai
   const error = page.locator('[data-session-error]');
   await expect(error).toContainText('Sign-out could not be confirmed');
   await expect(error).toBeFocused();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
   expect((await page.request.get('/api/v1/auth/me')).status()).toBe(200);
   expect(attempts).toBe(1);
   await page.unroute('**/api/v1/auth/logout');
   await page.locator('[data-sign-out]').click();
-  await expect(page).toHaveURL(/\/admin\/login$/);
+  await expect(page).toHaveURL(/\/app\/admin\/login$/);
   expect((await page.request.get('/api/v1/auth/me')).status()).toBe(403);
 });
 
@@ -119,7 +119,7 @@ test('reset keeps the token out of URL, DOM and storage, retains a refusal, then
   expect(bodies).toHaveLength(1);
   await page.getByLabel('Password').fill('another sufficiently long password');
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page).toHaveURL(/\/admin\/login$/);
+  await expect(page).toHaveURL(/\/app\/admin\/login$/);
   expect(bodies).toEqual([
     { token, new: 'a sufficiently long password' },
     { token, new: 'another sufficiently long password' },

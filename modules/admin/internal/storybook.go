@@ -17,11 +17,11 @@ import (
 
 // Storybook's entire build is private. Never mount it with API.Static: even
 // index.json and hashed chunks disclose the selected examples and properties.
-func (p pages) mountStorybook(api *httpx.API) {
+func (p pages) mountStorybook(app *httpx.Router) {
 	op := huma.Operation{OperationID: "admin-storybook-file", Method: http.MethodGet,
-		Path: galleryPath + "/storybook/*", Tags: []string{"admin"}, Hidden: true}
-	httpx.SignIn(&op, loginPath)
-	httpx.HTML(api, op, httpx.Permission("gallery:read"), func(ctx context.Context, in *struct {
+		Path: p.at.gallery.rel + "/storybook/*", Tags: []string{"admin"}, Hidden: true}
+	httpx.SignIn(&op, p.at.login.at)
+	httpx.HTML(app, op, httpx.Permission("gallery:read"), func(ctx context.Context, in *struct {
 		File string `path:"*" maxLength:"500"`
 	}) (*httpx.Page, error) {
 		book, err := p.storybook(ctx)

@@ -52,7 +52,7 @@ func mountWithCommands(t *testing.T) commands {
 		t.Fatal(err)
 	}
 
-	rest.Command(api, spec, "publish", "Publish a note", "Makes it visible to everybody.", nil,
+	rest.Command(api.Surfaces(spec.Module), spec, "publish", "Publish a note", "Makes it visible to everybody.", nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in publishBody) (*Task, error) {
 			// The refusal is the command's own, with ErrInvalid, which is how
 			// rest.Command documents it: "a command whose argument is missing is
@@ -72,7 +72,7 @@ func mountWithCommands(t *testing.T) commands {
 			return &out, crud.Update(ctx, tx, &out, "notes", "status")
 		}, rest.CommandOptions{})
 
-	rest.Command(api, spec, "archive", "Archive a task", "Takes it out of the list.", nil,
+	rest.Command(api.Surfaces(spec.Module), spec, "archive", "Archive a task", "Takes it out of the list.", nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*Task, error) {
 			*ran++
 			var out Task
@@ -102,12 +102,12 @@ func mountWithCommands(t *testing.T) commands {
 				t.Errorf("command %q arrived with no guard", c.Verb)
 			}
 		}
-		screens.Mount(api, shell, screens.Options{Root: "/admin"}, r)
+		screens.Mount(api.Surfaces(r.Module).App, shell, screens.Options{Workspace: "/app"}, r)
 	}
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatal(err)
 	}
-	return commands{router: router, ran: ran, item: "/admin/tasks/task/" + rowID.String()}
+	return commands{router: router, ran: ran, item: "/app/tasks/task/" + rowID.String()}
 }
 
 // TestACommandIsADoorOnTheScreenThatShowsTheRow. Three commands live in
@@ -202,7 +202,7 @@ func TestACommandRefusedIsAnsweredTheWayTheAPIRefusedIt(t *testing.T) {
 // doors give the same answer to it.
 func TestTheScreenAndTheAPIRefuseTheSameArgumentTheSameWay(t *testing.T) {
 	c := mountWithCommands(t)
-	_, apiRoute := call(t, c.router, http.MethodPost, "/api/tasks/"+strings.TrimPrefix(c.item, "/admin/tasks/task/")+"/publish",
+	_, apiRoute := call(t, c.router, http.MethodPost, "/api/v1/tasks/task/"+strings.TrimPrefix(c.item, "/app/tasks/task/")+"/publish",
 		`{"note":""}`)
 	_, screenRoute, _ := postForm(t, c.router, c.item+"/publish", url.Values{"note": {""}}.Encode())
 

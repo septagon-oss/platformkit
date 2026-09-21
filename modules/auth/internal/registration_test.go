@@ -22,7 +22,7 @@ import (
 
 func TestRegistrationIsOptIn(t *testing.T) {
 	router, _, _ := mount(t, auth.OIDC{})
-	res := call(t, router, http.MethodPost, "/api/v1/auth/register", `{"email":"student@example.com"}`)
+	res := call(t, router, http.MethodPost, "/api/v1/public/auth/register", `{"email":"student@example.com"}`)
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("disabled registration = %d", res.Code)
 	}
@@ -31,11 +31,11 @@ func TestRegistrationIsOptIn(t *testing.T) {
 func TestRegistrationCreatesOnlyAnInvitedMemberAfterTheRequest(t *testing.T) {
 	admin, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, true)
-	res := call(t, router, http.MethodPost, "/api/v1/auth/register", `{"email":"Student@EXAMPLE.com","displayName":"Student","roles":["admin"]}`)
+	res := call(t, router, http.MethodPost, "/api/v1/public/auth/register", `{"email":"Student@EXAMPLE.com","displayName":"Student","roles":["admin"]}`)
 	if res.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("caller-supplied roles = %d %s", res.Code, res.Body)
 	}
-	res = call(t, router, http.MethodPost, "/api/v1/auth/register", `{"email":"Student@EXAMPLE.com","displayName":"Student"}`)
+	res = call(t, router, http.MethodPost, "/api/v1/public/auth/register", `{"email":"Student@EXAMPLE.com","displayName":"Student"}`)
 	if res.Code != http.StatusAccepted {
 		t.Fatalf("registration = %d %s", res.Code, res.Body)
 	}
@@ -100,7 +100,7 @@ func TestRegistrationPreservesExistingAccountsAndIsTenantScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		res := call(t, router, http.MethodPost, "/api/v1/auth/register", `{"email":"student@example.com","displayName":"Changed"}`)
+		res := call(t, router, http.MethodPost, "/api/v1/public/auth/register", `{"email":"student@example.com","displayName":"Changed"}`)
 		if res.Code != http.StatusAccepted {
 			t.Fatalf("repeat registration = %d %s", res.Code, res.Body)
 		}
@@ -141,7 +141,7 @@ func TestRegistrationSharesThePublicMailRequestLimit(t *testing.T) {
 	_, conn := dbtest.Schema(t, usermodule.Migrations, notification.Migrations, auth.Migrations)
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, true)
 	for i := range contracts.ResetRequests + 1 {
-		res := call(t, router, http.MethodPost, "/api/v1/auth/register", `{"email":"student@example.com"}`, from("203.0.113.29"))
+		res := call(t, router, http.MethodPost, "/api/v1/public/auth/register", `{"email":"student@example.com"}`, from("203.0.113.29"))
 		want := http.StatusAccepted
 		if i == contracts.ResetRequests {
 			want = http.StatusTooManyRequests

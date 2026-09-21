@@ -70,12 +70,14 @@ func (y yes) Allowed(_ context.Context, _ tenancy.Tenant, g tenancy.Grant) (bool
 func TestNavigationHidesUnservedOperatorAndRefusedEntries(t *testing.T) {
 	t.Parallel()
 	entries := []module.NavEntry{
-		{Label: "Tasks", Path: "/admin/task/tasks", Permission: "task:read"},
-		{Label: "Ghost", Path: "/admin/ghost", Permission: "ghost:read"},
-		{Label: "Tenants", Path: "/admin/tenant/tenants", Permission: "tenant:manage"},
-		{Label: "Plans", Path: "/admin/billing/plans", Permission: "billing:read"},
+		{Label: "Tasks", Screen: "task/tasks", Permission: "task:read"},
+		{Label: "Ghost", Screen: "ghost/ghosts", Permission: "ghost:read"},
+		{Label: "Tenants", Screen: "tenant/tenants", Permission: "tenant:manage"},
+		{Label: "Plans", Screen: "billing/plans", Permission: "billing:read"},
 	}
-	served := []string{"/admin/task/tasks", "/admin/tenant/tenants", "/admin/billing/plans"}
+	// A manifest names a screen relative to the workspace; the href a person
+	// follows is the kernel's answer, and `served` is what the router recorded.
+	served := []string{"/app/task/tasks", "/app/tenant/tenants", "/app/billing/plans"}
 	required := []tenancy.Grant{{Permission: "tenant:manage", Operator: true}}
 	nav := page.NewNavigation(entries, served, required)
 

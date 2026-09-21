@@ -20,14 +20,14 @@ import (
 // TestACollectionCommandIsACommandWithoutTheRow.
 //
 // The route it exists for is redeeming a code: the caller knows the code and
-// not the row it belongs to, so POST /api/tasks/{id}/redeem would be asking
+// not the row it belongs to, so POST /api/v1/tasks/task/{id}/redeem would be asking
 // them for the answer. Everything else about it is Command — the Write
 // permission, the request's transaction, the fault mapping, and the events
 // declaration the boot gate reads back — which is why it is Command with one
 // option now and was a second exported function before.
 func TestACollectionCommandIsACommandWithoutTheRow(t *testing.T) {
 	api, router, admin := mounted(t)
-	rest.Command(api, spec, "claim",
+	rest.Command(api.Surfaces(spec.Module), spec, "claim",
 		"Claim the next task", "Takes the oldest open task and marks it done. There may be none.",
 		[]string{"tasks.task.claimed"},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in claimBody) (*Task, error) {
@@ -56,21 +56,21 @@ func TestACollectionCommandIsACommandWithoutTheRow(t *testing.T) {
 	}
 
 	// The path is the collection's, with no row in it.
-	if code, body := call(t, router, http.MethodPost, "/api/tasks/claim", `{"by":"ada"}`); code != http.StatusNotFound {
+	if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task/claim", `{"by":"ada"}`); code != http.StatusNotFound {
 		t.Fatalf("claiming from an empty collection = %d %s, want 404", code, body)
 	}
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"first"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"first"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s, want 201", code, body)
 	}
 
 	// The same fault mapping as every other route here: an invalid argument is
 	// 422 and not 500, and it is run that refuses it rather than the decoder.
-	if code, body := call(t, router, http.MethodPost, "/api/tasks/claim", `{"by":" "}`); code != http.StatusUnprocessableEntity {
+	if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task/claim", `{"by":" "}`); code != http.StatusUnprocessableEntity {
 		t.Errorf("an empty argument = %d %s, want 422", code, body)
 	}
 
-	code, body = call(t, router, http.MethodPost, "/api/tasks/claim", `{"by":"ada"}`)
+	code, body = call(t, router, http.MethodPost, "/api/v1/tasks/task/claim", `{"by":"ada"}`)
 	if code != http.StatusOK || !strings.Contains(body, "claimed by ada") {
 		t.Fatalf("claim = %d %s, want 200 and the row it claimed", code, body)
 	}
@@ -93,8 +93,8 @@ func TestACollectionCommandIsACommandWithoutTheRow(t *testing.T) {
 func TestACollectionCommandCarriesTheSpecsWritePermission(t *testing.T) {
 	operator := spec
 	operator.OperatorWrite = true
-	api, router, _ := mountAs(t, operator, refuses{})
-	rest.Command(api, operator, "claim", "Claim", "Claim the next task", nil,
+	api, router, _ := mountAs(t, operator, operatorRefuses{})
+	rest.Command(api.Surfaces(operator.Module), operator, "claim", "Claim", "Claim the next task", nil,
 		func(context.Context, db.Tx[db.Tenant], uuid.UUID, claimBody) (*Task, error) {
 			t.Error("the handler ran for a caller who holds nothing")
 			return nil, errors.New("unreachable")
@@ -102,7 +102,9 @@ func TestACollectionCommandCarriesTheSpecsWritePermission(t *testing.T) {
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the command does not declare itself: %v", err)
 	}
-	if code, body := call(t, router, http.MethodPost, "/api/tasks/claim", `{"by":"ada"}`); code != http.StatusForbidden {
+	// The write door of an operator-owned resource is on the control plane, so
+	// that is where the caller who holds nothing is refused.
+	if code, body := call(t, router, http.MethodPost, "/api/v1/ops/tasks/task/claim", `{"by":"ada"}`); code != http.StatusForbidden {
 		t.Errorf("claim by a caller who holds nothing = %d %s, want 403", code, body)
 	}
 	for _, g := range api.Required() {
@@ -122,7 +124,7 @@ func TestACommandMayDeclareItsOwnAuth(t *testing.T) {
 	// is the declaration itself.
 	api, router, _ := mountAs(t, spec, refuses{})
 	ran := false
-	rest.Command(api, spec, "touch", "Touch", "Anybody signed in may.", nil,
+	rest.Command(api.Surfaces(spec.Module), spec, "touch", "Touch", "Anybody signed in may.", nil,
 		func(_ context.Context, _ db.Tx[db.Tenant], _ uuid.UUID, _ claimBody) (*Task, error) {
 			ran = true
 			return &Task{Title: "touched"}, nil
@@ -130,7 +132,7 @@ func TestACommandMayDeclareItsOwnAuth(t *testing.T) {
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the command does not declare itself: %v", err)
 	}
-	if code, body := call(t, router, http.MethodPost, "/api/tasks/touch", `{"by":"ada"}`); code != http.StatusOK {
+	if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task/touch", `{"by":"ada"}`); code != http.StatusOK {
 		t.Fatalf("a signed-in command = %d %s, want 200", code, body)
 	}
 	if !ran {
@@ -138,12 +140,12 @@ func TestACommandMayDeclareItsOwnAuth(t *testing.T) {
 	}
 	// And the same command without the option is refused for the same caller,
 	// which is what says the option did it and not the fixture.
-	rest.Command(api, spec, "shove", "Shove", "Only a writer may.", nil,
+	rest.Command(api.Surfaces(spec.Module), spec, "shove", "Shove", "Only a writer may.", nil,
 		func(context.Context, db.Tx[db.Tenant], uuid.UUID, claimBody) (*Task, error) {
 			t.Error("the handler ran for a caller who holds nothing")
 			return nil, errors.New("unreachable")
 		}, rest.CommandOptions{Collection: true})
-	if code, body := call(t, router, http.MethodPost, "/api/tasks/shove", `{"by":"ada"}`); code != http.StatusForbidden {
+	if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task/shove", `{"by":"ada"}`); code != http.StatusForbidden {
 		t.Errorf("a command that names no Auth = %d %s, want the Spec's write permission and a 403", code, body)
 	}
 }
@@ -158,6 +160,17 @@ type refuses struct{ caller }
 
 func (refuses) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
 	return false, nil
+}
+
+// operatorRefuses is refuses at the installation's own host: the control plane is
+// served there, and to the operator's tenant, so a case that wants the
+// authorizer's answer rather than the host gate's 404 resolves to the tenant the
+// surface belongs to. Which tenant that is is the composition's business, not the
+// module's — see kit/httpx's TestTheControlPlaneIsNotFoundAtATenantHost.
+type operatorRefuses struct{ refuses }
+
+func (operatorRefuses) ByHost(context.Context, db.Tx[db.System], string) (tenancy.Tenant, error) {
+	return tenancy.Tenant{ID: uuid.New(), Slug: "installation", Name: "Installation", Operator: true}, nil
 }
 
 func contains(all []string, one string) bool {

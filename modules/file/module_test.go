@@ -24,9 +24,14 @@ import (
 )
 
 const (
-	host   = "acme.test"
-	files  = "/api/v1/file/files"
-	public = "/api/v1/file/public/"
+	host  = "acme.test"
+	files = "/api/v1/file/files"
+	// The public door is on the public surface: an anonymous visitor's door has no
+	// part of the tenant's workspace in its address. The address this door used to
+	// answer at redirects, for one release, which is asserted below.
+	public = "/api/v1/public/file/files/"
+	// The address the public door used to answer at, for one release.
+	wasPublic = "/api/v1/file/public/"
 )
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
@@ -59,7 +64,7 @@ func mounted(t *testing.T) chi.Router {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	_, m := file.Module(file.Deps{Storage: file.Local(t.TempDir()), MaxBytes: filetest.Limit})
-	m.Routes(api)
+	m.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -308,9 +313,13 @@ func TestAnUploadedPageIsNeverServedInline(t *testing.T) {
 	}
 	// And a public file is deliberately cacheable: no-store belongs on the
 	// responses that carry somebody's own data, and a public logo that could
-	// not be cached is a logo served from this process forever.
-	if got := header.Get("Cache-Control"); got != "" {
-		t.Errorf("a public download says %q about caching, want nothing", got)
+	// not be cached is a logo served from this process forever. The public surface
+	// gives this to a safe 2xx response that has no opinion of its own — the
+	// module could name a longer life for an immutable upload, and would be
+	// answered, but visibility is a thing that changes on an id, so it names
+	// nothing and takes the surface's sixty seconds.
+	if got := header.Get("Cache-Control"); got != "public, max-age=60" {
+		t.Errorf("a public download says %q about caching, want it cacheable", got)
 	}
 }
 
@@ -367,3 +376,9 @@ func TestAnOverlongContentTypeIsTheCallersMistake(t *testing.T) {
 		t.Errorf("a media type that is not one = %d %s, want 422", code, out)
 	}
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.
+func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("file") }

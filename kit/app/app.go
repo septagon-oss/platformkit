@@ -24,12 +24,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -79,6 +82,29 @@ type Options struct {
 	// Role defaults to All.
 	Role Role
 
+	// Installation names the host the installation itself is reached at — the
+	// one address that serves the control plane (the Ops surface) and the only
+	// place an operator's own console answers.
+	//
+	// It is a host and not a tenant: no TenantLoader is asked about it, because
+	// the address names the installation rather than a customer. Left empty, the
+	// control plane mounts and every request to it is answered as an address
+	// nothing serves, and boot says so: a control plane nobody can reach is a
+	// decision, and a silent one is a surprise during the incident it was for.
+	Installation Installation
+
+	// WorkspaceCatalog is the body of the catalog route the kernel mounts at
+	// /api/v1/app/resources: the resources this caller may reach, as a document.
+	//
+	// It is a function and not a route because the two owners are different: only
+	// the kernel can compose the address (no module composes /api/v1/app/…, and
+	// the address is a native shell's contract, not a capability's), and only ui
+	// can render the answer — and kit may not import ui (scripts/check_packages.sh
+	// is that line). The composition wires ui/screens' renderer here, one literal,
+	// and a composition with resources and no renderer is refused: a native shell
+	// would have nothing to read.
+	WorkspaceCatalog func(ctx context.Context, resources []httpx.Resource) (any, error)
+
 	// Transport carries events between the relay and the handlers. An explicit
 	// value overrides nats.transport and Transports. Otherwise All defaults to
 	// memory and a separate Worker to JetStream; nats.transport can opt All
@@ -126,6 +152,13 @@ func (t Transports) constructor(broker bool) (func(config.NATS) (events.Transpor
 	return func(config.NATS) (events.Transport, error) { return t.Memory(), nil }, nil
 }
 
+// Installation is the installation's own host: the address that serves the
+// control plane. One field, because one fact is what the surface needs — which
+// host answers /ops — and a value with more would be a field nothing reads.
+type Installation struct {
+	Host string
+}
+
 // App is a composed application that has not started yet.
 type App struct {
 	cfg  config.Config
@@ -138,8 +171,8 @@ type App struct {
 const shutdownGrace = 10 * time.Second
 
 // The built-in jobs, in every worker. The relay is a second because an event is
-// asynchronous, not slow; the purge is hourly because a week of history does
-// not need attention more often than that.
+// asynchronous, not slow; the two purges are hourly because a week of history and
+// a day of closed windows do not need attention more often than that.
 const (
 	relayEvery = time.Second
 	purgeCron  = "0 * * * *"
@@ -333,6 +366,13 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		// body is bounded at httpx.MaxBodyBytes, and a schema'd one is bounded
 		// by huma as well.
 		MaxUpload: a.cfg.Files.MaxBytes,
+		// The two facts of the surfaces the kernel cannot see for itself: which
+		// host the installation owns, and who counts what an anonymous visitor
+		// may write. Which workspace doors answer an anonymous caller is not
+		// here, because the routes say it and the kernel records it; boot prints
+		// the list below.
+		Installation: a.opts.Installation.Host,
+		WriteLimiter: limit.Postgres(func(context.Context) (*db.Conn, bool) { return conn, true }),
 	})
 
 	// The catalogue before the routes: a module that validates a permission
@@ -348,8 +388,11 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 
 	for _, m := range a.mods {
 		if m.Routes != nil {
-			m.Routes(api)
+			m.Routes(api.Surfaces(m.Name))
 		}
+	}
+	if err := a.composeGates(api); err != nil {
+		return nil, err
 	}
 	// One check, and the reason there is one is that /ready answers a question a
 	// probe can act on: is this instance's database reachable. Modules used to
@@ -371,20 +414,100 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	if err := validateEvents(api, a.mods); err != nil {
 		return nil, err
 	}
-	a.log.InfoContext(ctx, "app: operations declared", "count", len(api.Recorded()), "events", len(api.Events()))
+	counts := api.MountedBySurface()
+	a.log.InfoContext(ctx, "app: operations declared",
+		"count", len(api.Recorded()), "events", len(api.Events()),
+		"public", counts[httpx.SurfacePublic], "app", counts[httpx.SurfaceApp], "ops", counts[httpx.SurfaceOps])
+	if a.opts.Installation.Host == "" {
+		a.log.WarnContext(ctx, "app: no installation host; the control plane (/ops) is mounted and answers nothing",
+			"fix", "server.installation_host names the host the installation itself is reached at")
+	}
+	// The workspace admits nobody by default, which is only a true sentence
+	// about a composition once you can see the doors that admit everybody.
+	for _, door := range api.AnonymousDoors() {
+		a.log.InfoContext(ctx, "app: a workspace route answers an anonymous caller", "route", door)
+	}
 	return router, nil
 }
 
-// work is the worker role: the outbox relay, the outbox purge, every module's
-// jobs, and every module's subscriptions. probes is the handler it serves, or
-// nil when the web half of the same process is already serving them.
-func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
-	scheduled := []jobs.Job{
+// composeGates refuses the compositions that cannot be products, and mounts the
+// one route the composition itself owns. Every message here is a wiring mistake
+// somebody can fix in the file that wrote it, and every one is collected rather
+// than returned first — the house rule of module.Validate, applied to the
+// composition's own rules.
+func (a *App) composeGates(api *httpx.API) error {
+	var bad []string
+	add := func(format string, args ...any) { bad = append(bad, fmt.Sprintf(format, args...)) }
+
+	// A2. A product without a workspace is not a product: the surface is where
+	// a person stands, and a composition that mounts nothing there is an API
+	// with a front door painted on it.
+	//
+	// The worker role is exempt, and is not an exception written to make a test
+	// pass: it composes no HTTP surface at all — it serves two probes on a
+	// handler nobody routes — so "your product has no workspace" is not a fact
+	// about it. The role that listens, including All, is refused.
+	if a.opts.Role != Worker && !api.MountedOn(httpx.SurfaceApp) {
+		add("app: this composition mounts nothing on the workspace surface (%s); a product without a workspace is not a product — compose a module that registers routes on r.App (ui/screens.Mount for generated screens, modules/admin for the shell)", httpx.AppRoot)
+	}
+
+	// A5, and the route itself. The address is the kernel's; the body is the
+	// composition's, because kit may not import ui.
+	resources := api.Resources()
+	if a.opts.WorkspaceCatalog != nil {
+		mountWorkspaceCatalog(api, a.opts.WorkspaceCatalog)
+	} else if len(resources) > 0 && a.opts.Role != Worker {
+		// Same exemption: the document is read by a shell, and a worker process
+		// runs none. A web role that registered resources and wired no renderer
+		// is the wiring mistake this refuses.
+		add("app: %d resources are registered and the composition supplies no WorkspaceCatalog; a native shell has nothing to read — wire app.Options.WorkspaceCatalog (ui/screens.Describe renders the document)", len(resources))
+	}
+
+	if len(bad) == 0 {
+		return nil
+	}
+	sort.Strings(bad)
+	return errors.New("app: invalid composition:\n  " + strings.Join(bad, "\n  "))
+}
+
+// workspaceDocument is the catalog route's envelope: whatever the composition's
+// function returned, as the body.
+type workspaceDocument struct {
+	Body any
+}
+
+// mountWorkspaceMounts the catalog route. It is the composition's own route:
+// the address belongs to the kernel, which is why the mount is here, and the
+// document belongs to ui, which is why the body is a function.
+func mountWorkspaceCatalog(api *httpx.API, describe func(ctx context.Context, resources []httpx.Resource) (any, error)) {
+	kernel := api.Surfaces("")
+	httpx.Register(kernel.App, huma.Operation{
+		OperationID: "app-resources",
+		Method:      http.MethodGet,
+		Path:        "/resources",
+		Summary:     "The resources this caller may reach, with their schemas",
+		Description: "The same document the generated screens are built from, for a shell that is not a browser.",
+		Tags:        []string{"kernel"},
+	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*workspaceDocument, error) {
+		body, err := describe(ctx, api.Resources())
+		if err != nil {
+			return nil, err
+		}
+		return &workspaceDocument{Body: body}, nil
+	})
+}
+
+// kernelJobs is the periodic work the composition owns because no module does: the
+// outbox relay and the two tables the kernel writes that nothing but time makes
+// smaller. A module's own jobs are appended to this list by work; nothing here
+// reaches a module's table.
+func kernelJobs(transport events.Transport) []jobs.Job {
+	return []jobs.Job{
 		// Parallel, because SKIP LOCKED is already the concurrency control, and
 		// bounded, because a transport that blocks would otherwise hold the
-		// scheduler — and with it the purge and every module's job — for as
-		// long as it blocked. A pass that runs out of time leaves its rows
-		// unstamped and the next tick takes them.
+		// scheduler — and with it the purges and every module's job — for as long
+		// as it blocked. A pass that runs out of time leaves its rows unstamped and
+		// the next tick takes them.
 		{Name: "outbox-relay", Every: relayEvery, Parallel: true, Run: func(ctx context.Context, conn *db.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, relayTimeout)
 			defer cancel()
@@ -393,7 +516,24 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
 		}},
+		// The counters table is written by whoever holds a limiter, and this
+		// composition is one of them: httpx counts anonymous public writes on the
+		// limiter the runner hands it. kit/limit wrote the condition for this line in
+		// advance — "the moment a second module adopts this, the purge belongs beside
+		// the outbox's" — and the condition arrived with the public write limit. The
+		// last field of every key here is an address a caller chooses, so a table
+		// nobody empties grows at somebody else's rate; leaving the purge in
+		// `modules/auth`'s sweep would have made an installation that takes the limit
+		// and not the login page one that never forgets a row.
+		{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge},
 	}
+}
+
+// work is the worker role: the kernel's own jobs, every module's jobs, and every
+// module's subscriptions. probes is the handler it serves, or nil when the web half
+// of the same process is already serving them.
+func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
+	scheduled := kernelJobs(transport)
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)

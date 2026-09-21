@@ -61,7 +61,7 @@ func TestTheSiteNamesItselfFromSettingsThenTenantThenBrand(t *testing.T) {
 	if got := name(&sitecontracts.SiteSettings{}, page.Request{}); got != brand {
 		t.Errorf("brand = %q", got)
 	}
-	body := render(t, []g.Node{header(&sitecontracts.SiteSettings{Tagline: "Notes", Nav: sitecontracts.Nav{{Label: "About", Path: "/about"}}}, acme)})
+	body := render(t, []g.Node{Site{}.header(&sitecontracts.SiteSettings{Tagline: "Notes", Nav: sitecontracts.Nav{{Label: "About", Path: "/about"}}}, acme)})
 	for _, want := range []string{">Acme<", "Notes", `href="/about"`, `aria-label="Site navigation"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("header lacks %q:\n%s", want, body)
@@ -73,11 +73,15 @@ func TestTheSiteNamesItselfFromSettingsThenTenantThenBrand(t *testing.T) {
 // say what to do next and where.
 func TestTheEmptyStatesLeadToTheAdmin(t *testing.T) {
 	t.Parallel()
-	fresh, later := render(t, nothingYet()), render(t, notPublished("welcome"))
-	if !strings.Contains(fresh, "Nothing published yet") || !strings.Contains(fresh, `href="`+signInPath+`"`) {
+	// Where the admin is mounted is not this module's fact — modules/admin owns
+	// it — so the composition hands the address over and the empty state links
+	// what it was given. This is the whole of Site.SignIn.
+	const admin = "/app/admin/login"
+	fresh, later := render(t, Site{SignIn: admin}.nothingYet()), render(t, Site{SignIn: admin}.notPublished("welcome"))
+	if !strings.Contains(fresh, "Nothing published yet") || !strings.Contains(fresh, `href="`+admin+`"`) {
 		t.Errorf("fresh site:\n%s", fresh)
 	}
-	if !strings.Contains(later, "welcome") || !strings.Contains(later, `href="`+signInPath+`"`) {
+	if !strings.Contains(later, "welcome") || !strings.Contains(later, `href="`+admin+`"`) {
 		t.Errorf("unpublished home:\n%s", later)
 	}
 	for path, ok := range map[string]bool{"hello-world": true, "a1": true, "Not-A-Slug": false, "a--b": false, "-a": false, "": false, "favicon.ico": false} {

@@ -155,3 +155,27 @@ func TestTheRouteStampsTheCatalogVersion(t *testing.T) {
 		t.Errorf("the served document does not carry the catalog version: %s", body)
 	}
 }
+
+// TestTheCatalogNamesOnlyTheWriteDoorItCannotDerive is the entry's other half: a
+// resource whose writes answer where its reads do names no write address, because
+// the derivation is the truth, and a document that repeated it would be a second
+// place to keep it. A resource whose writes answer on another surface names that
+// address — to the caller who may write it, and to nobody else: this document is
+// what this caller may do, and the installation's own address is neither their
+// door nor their information.
+func TestTheCatalogNamesOnlyTheWriteDoorItCannotDerive(t *testing.T) {
+	ordinary, split := resource(), resource()
+	split.Entity, split.Path = "price", "/prices"
+	split.Schema.Path = "/api/v1/billing/prices"
+	split.WritePath = "/api/v1/ops/billing/prices"
+
+	if got := screens.Describe1(ordinary, true).WritePath; got != "" {
+		t.Errorf("a resource whose writes answer at its own path names %q; the entry's path is the derivation", got)
+	}
+	if got := screens.Describe1(split, true).WritePath; got != split.WritePath {
+		t.Errorf("a writable resource whose writes stand elsewhere names %q, want %s", got, split.WritePath)
+	}
+	if e := screens.Describe1(split, false); e.Writable || e.WritePath != "" {
+		t.Errorf("a caller who may not write is told writable=%v write_path=%q", e.Writable, e.WritePath)
+	}
+}

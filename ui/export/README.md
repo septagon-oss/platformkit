@@ -10,7 +10,7 @@ captured example's Props, schema, slots and observed HTML — and
 and return the projected snapshot; [ui/source](../source/source.go) persists
 an accepted one into Go. `Storybook` is one application's authorized
 composition, which [modules/admin](../../modules/admin/README.md) serves at
-`/admin/_gallery`.
+`/app/admin/_gallery`.
 
 Nothing here is needed to serve a page: `ui/page` depends on [ui](../ui.go),
 and the package gate refuses this package in its closure. Start with

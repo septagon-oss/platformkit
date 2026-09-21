@@ -4,8 +4,9 @@
 belongs to which one. The kernel resolves every request's host through its
 service before the request is about anything, and `kit/jobs` walks the tenants
 it lists, so `Module` returns the service to `main` beside the manifest.
-`tenant:manage` is an operator permission guarding `/api/v1/tenant/tenants`
-and the switcher at `/admin/tenant/tenants`; `tenant.Bootstrap` creates the
+`tenant:manage` is an operator permission guarding
+`/api/v1/ops/tenant/tenants` — the control plane, so it is served at the
+installation's host only — and the switcher at `/app/tenant/tenants`; `tenant.Bootstrap` creates the
 first tenant inside `platformkit bootstrap`'s transaction.
 
 Compose it first, with `tenant.Deps{OnCreate, Invite}`: `OnCreate` hooks —

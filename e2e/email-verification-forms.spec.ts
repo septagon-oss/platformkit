@@ -34,7 +34,7 @@ async function specimen(page: Page, kind: string, options: {
   await page.route('**/__email-forms**', route => route.fulfill({
     contentType: 'text/html', headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' },
     body: `<!doctype html><html lang="pt-PT" data-signin="${attribute(options.signin ?? '/__email-complete?lang=pt')}">
-      <head><title>Account controller specimen</title><script defer src="/admin/assets/js/session.js"></script></head>
+      <head><title>Account controller specimen</title><script defer src="/app/admin/assets/js/session.js"></script></head>
       <body><main><h1>Account controller specimen</h1>
         <form method="post" action="${attribute(options.action ?? endpoints[kind])}"
           data-auth-form="${kind}" data-next="${attribute(options.next ?? '/__email-complete?lang=pt')}" aria-label="Account">
@@ -186,7 +186,7 @@ test('verification GET is read-only, scrubs the bearer and waits for keyboard co
   const next = '/__email-complete?lang=pt&next=%2Fcollect%3Fformat%3Dpocket';
   let requests = 0, correctBody = false, scriptReferrer: string | undefined;
   page.on('request', request => {
-    if (new URL(request.url()).pathname === '/admin/assets/js/session.js') scriptReferrer = request.headers().referer;
+    if (new URL(request.url()).pathname === '/app/admin/assets/js/session.js') scriptReferrer = request.headers().referer;
   });
   await page.route('**/api/v1/auth/verify-email', async route => {
     requests++;

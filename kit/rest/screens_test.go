@@ -32,8 +32,14 @@ func TestMountRegistersTheEntityBesideItsRoutes(t *testing.T) {
 		t.Fatalf("Mount registered %d resources, want 1", len(resources))
 	}
 	r := resources[0]
-	if r.Module != "tasks" || r.Entity != "task" || r.Path != "/api/tasks" {
+	// What a resource records about itself is relative; the address is the
+	// surface's. A module that named its own namespace in the path is refused at
+	// Mount, and this is the record a generated screen links from.
+	if r.Module != "tasks" || r.Entity != "task" || r.Path != "/task" {
 		t.Errorf("resource names itself %q/%q at %q", r.Module, r.Entity, r.Path)
+	}
+	if r.Schema.Path != "/api/v1/tasks/task" || r.Screen != "/app/tasks/task" {
+		t.Errorf("the resource's two addresses are %q and %q", r.Schema.Path, r.Screen)
 	}
 	if r.Read != "task:read" || r.Write != "task:write" {
 		t.Errorf("resource is guarded by %q/%q, which is not what the Spec declared", r.Read, r.Write)
@@ -67,7 +73,7 @@ func TestTheResourceOperationsAreTheRoutesWithoutTheHTTP(t *testing.T) {
 	var failures []string
 	fail := func(format string, args ...any) { failures = append(failures, fmt.Sprintf(format, args...)) }
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces("tasks").App, huma.Operation{
 		OperationID: "probe", Method: http.MethodPost, Path: "/probe", Hidden: true,
 		DefaultStatus: http.StatusNoContent,
 	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{}, error) {
@@ -147,7 +153,7 @@ func TestTheResourceOperationsAreTheRoutesWithoutTheHTTP(t *testing.T) {
 		return nil, nil
 	})
 
-	if code, body := call(t, router, http.MethodPost, "/probe", ""); code != http.StatusNoContent {
+	if code, body := call(t, router, http.MethodPost, api.Surfaces("tasks").App.Path("/probe"), ""); code != http.StatusNoContent {
 		t.Fatalf("the probe request = %d %s", code, body)
 	}
 	for _, f := range failures {
@@ -178,7 +184,10 @@ func TestTheInProcessDoorsRefuseAFoldedNameByTheSameRule(t *testing.T) {
 
 	var failures []string
 	fail := func(format string, args ...any) { failures = append(failures, fmt.Sprintf(format, args...)) }
-	httpx.Register(api, huma.Operation{
+	// The probe is a route of the tasks module on the workspace surface: the
+	// address it answers at is composed from that, not written here.
+	probe := api.Surfaces(owned.Module).App
+	httpx.Register(probe, huma.Operation{
 		OperationID: "probe", Method: http.MethodPost, Path: "/probe", Hidden: true,
 		DefaultStatus: http.StatusNoContent,
 	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{}, error) {
@@ -220,7 +229,7 @@ func TestTheInProcessDoorsRefuseAFoldedNameByTheSameRule(t *testing.T) {
 		return nil, nil
 	})
 
-	if code, body := call(t, router, http.MethodPost, "/probe", ""); code != http.StatusNoContent {
+	if code, body := call(t, router, http.MethodPost, probe.Path("/probe"), ""); code != http.StatusNoContent {
 		fail("the probe request = %d %s", code, body)
 	}
 	for _, f := range failures {
@@ -267,7 +276,7 @@ func TestTheResourceClosuresCarryTheirOwnAuthorization(t *testing.T) {
 		}
 	}
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(api.Surfaces("tasks").App, huma.Operation{
 		OperationID: "probe", Method: http.MethodPost, Path: "/probe", Hidden: true,
 		DefaultStatus: http.StatusNoContent,
 	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{}, error) {
@@ -306,7 +315,7 @@ func TestTheResourceClosuresCarryTheirOwnAuthorization(t *testing.T) {
 		return nil, nil
 	})
 
-	if code, body := call(t, router, http.MethodPost, "/probe", ""); code != http.StatusNoContent {
+	if code, body := call(t, router, http.MethodPost, api.Surfaces("tasks").App.Path("/probe"), ""); code != http.StatusNoContent {
 		t.Fatalf("the probe request = %d %s", code, body)
 	}
 	for _, f := range failures {

@@ -15,9 +15,9 @@ import (
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
-func RegisterEmailRegistrationRoutes(api *httpx.API, svc *Service, policy contracts.EmailRegistration) {
-	httpx.Register(api, huma.Operation{
-		OperationID: "auth-register", Method: http.MethodPost, Path: Path + "/register",
+func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, policy contracts.EmailRegistration) {
+	httpx.Register(surfaces.Public, huma.Operation{
+		OperationID: "auth-register", Method: http.MethodPost, Path: "/register",
 		Summary:     "Register with a password and email confirmation",
 		Description: "Accepts a password, matching confirmation and terms consent. New accounts await mailbox verification; existing accounts remain unchanged. Check your email after the neutral acknowledgment.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
@@ -44,8 +44,8 @@ func RegisterEmailRegistrationRoutes(api *httpx.API, svc *Service, policy contra
 		return done(), nil
 	})
 
-	httpx.Register(api, huma.Operation{
-		OperationID: "auth-resend-verification", Method: http.MethodPost, Path: Path + "/resend-verification",
+	httpx.Register(surfaces.Public, huma.Operation{
+		OperationID: "auth-resend-verification", Method: http.MethodPost, Path: "/resend-verification",
 		Summary:     "Request another email verification link",
 		Description: "Queues a tenant-local request without revealing account existence, eligibility or recipient cooldown. A newly delivered link replaces the previous verification link.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
@@ -74,8 +74,8 @@ func RegisterEmailRegistrationRoutes(api *httpx.API, svc *Service, policy contra
 		return done(), nil
 	})
 
-	httpx.Register(api, huma.Operation{
-		OperationID: "auth-verify-email", Method: http.MethodPost, Path: Path + "/verify-email",
+	httpx.Register(surfaces.Public, huma.Operation{
+		OperationID: "auth-verify-email", Method: http.MethodPost, Path: "/verify-email",
 		Summary:     "Confirm the registered email address",
 		Description: "Consumes the current unexpired verification token and activates its exact unverified account in one transaction. It preserves the registered password and roles and issues no session.",
 		Tags:        []string{"auth"}, Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests},

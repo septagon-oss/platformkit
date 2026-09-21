@@ -32,7 +32,7 @@ type Chrome struct {
 	// Brand is the name shown when the tenant has none: the document title's
 	// suffix and the sidebar's label.
 	Brand string
-	// Assets is the prefix the shell serves ui.Assets under, e.g. "/admin/assets".
+	// Assets is the prefix the shell serves ui.Assets under, e.g. "/app/admin/assets".
 	Assets string
 	// Stylesheet is the sheet the shell composed, once, with ui.Compose.
 	Stylesheet ui.Sheet
@@ -100,8 +100,16 @@ type View struct {
 	// whose theme is the tenant's choice rather than the shell's. A pinned
 	// document carries no theme script: the choice is not the visitor's.
 	Theme string
-	Head  []g.Node
-	Body  []g.Node
+	// Revalidate says this body changes under its own address, so a cache may
+	// hold it but must ask before answering from it. A page the owner can republish
+	// is such a document: the default freshness of a public face is one minute, and
+	// an owner who publishes and reloads would otherwise be shown the page they just
+	// replaced — which reads as an installation that lost the write, not a browser
+	// that kept the answer. Only the public face is cacheable to begin with, so this
+	// says nothing about a workspace document, which is never stored at all.
+	Revalidate bool
+	Head       []g.Node
+	Body       []g.Node
 }
 
 // Document renders a whole HTML document: the head from the chrome and the

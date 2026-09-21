@@ -33,7 +33,7 @@ func TestModuleUsesComposedService(t *testing.T) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	manifest.Routes(api)
+	manifest.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatal(err)
 	}
@@ -157,3 +157,9 @@ type activeTenants []tenancy.Tenant
 func (t activeTenants) List(context.Context, db.Tx[db.System]) ([]tenancy.Tenant, error) {
 	return t, nil
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.
+func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("task") }

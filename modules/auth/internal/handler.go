@@ -18,9 +18,11 @@ import (
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
-// Path is where this module's routes live.
-const Path = "/api/v1/auth"
-
+// Every path this module mounts is relative to itself and to the surface it
+// chose. The workspace's JSON lands at /api/v1/auth/… as it always did, and the
+// anonymous legs — the ones a person with no account makes — land under
+// /api/v1/public/auth/…, which is where every public door answers. Neither
+// address is written here.
 // RegisterRoutes mounts signing in and out, the caller's own identity, the
 // three password routes and the two roles routes.
 //
@@ -29,11 +31,12 @@ const Path = "/api/v1/auth"
 // and the signed-in ones are about a person rather than a resource. The roles
 // routes are the exception and say so with role:manage — a role is what
 // everybody else in the tenant may do.
-func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
-	httpx.Register(api, huma.Operation{
+func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
+	app, public := surfaces.App, surfaces.Public
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-login",
 		Method:      http.MethodPost,
-		Path:        Path + "/login",
+		Path:        "/login",
 		Summary:     "Sign in with a password",
 		Description: "Opens a session and sets the platformkit_session cookie. A wrong password and an address nobody has answer identically, and cost the same.",
 		Tags:        []string{"auth"},
@@ -90,10 +93,10 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		}, nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-logout",
 		Method:      http.MethodPost,
-		Path:        Path + "/logout",
+		Path:        "/logout",
 		Summary:     "Sign out",
 		Description: "Deletes the session and clears the cookie. Signing out when already signed out is not an error.",
 		Tags:        []string{"auth"},
@@ -114,10 +117,10 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		return out, nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-me",
 		Method:      http.MethodGet,
-		Path:        Path + "/me",
+		Path:        "/me",
 		Summary:     "Who am I",
 		Description: "The caller's identity and the permissions their roles grant in this tenant.",
 		Tags:        []string{"auth"},
@@ -141,10 +144,10 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		return &identityOutput{Body: identity}, nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-password-change",
 		Method:      http.MethodPost,
-		Path:        Path + "/password",
+		Path:        "/password",
 		Summary:     "Change my password",
 		Description: "Requires the password in force. Every other session of this person ends; the one making the request does not, so changing a password does not sign you out of the page you changed it on.",
 		Tags:        []string{"auth"},
@@ -169,10 +172,10 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		return done(), nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(public, huma.Operation{
 		OperationID: "auth-password-forgot",
 		Method:      http.MethodPost,
-		Path:        Path + "/password/forgot",
+		Path:        "/password/forgot",
 		Summary:     "Send me a reset link",
 		Description: "An address nobody has and an address somebody has are the same answer and the same work: this route publishes one event and the worker decides whether anybody is there, so neither the body nor a stopwatch tells them apart. The mail that does not arrive is the message. The 429 is about the address asking, never the address asked about.",
 		Tags:        []string{"auth"},
@@ -202,10 +205,10 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		return done(), nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-password-reset",
 		Method:      http.MethodPost,
-		Path:        Path + "/password/reset",
+		Path:        "/password/reset",
 		Summary:     "Set a password with a link",
 		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds. A token that is unknown, spent or expired is one answer.",
 		Tags:        []string{"auth"},
@@ -239,10 +242,10 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		return out, nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-role-list",
 		Method:      http.MethodGet,
-		Path:        Path + "/roles",
+		Path:        "/roles",
 		Summary:     "List this tenant's roles",
 		Description: "What every role name grants here, which is what everybody holding one may do.",
 		Tags:        []string{"auth"},
@@ -261,10 +264,10 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		return out, nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-role-set",
 		Method:      http.MethodPut,
-		Path:        Path + "/roles/{name}",
+		Path:        "/roles/{name}",
 		Summary:     "Set what a role grants",
 		Description: "Creates the role if it is new. Every permission has to be one some module defines, and an operator permission is refused outside the operator's own tenant: both would otherwise be grants that look like authority and are not.",
 		Tags:        []string{"auth"},
@@ -279,7 +282,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service, cookies Cookies) {
 		// manifest before any route was registered. Asking each module would
 		// make this one know its neighbours; asking the kernel makes it know
 		// only that there is a list. See httpx.API.Declare.
-		role, err := svc.SetRole(ctx, tx, in.Name, in.Body.Permissions, api.Permissions())
+		role, err := svc.SetRole(ctx, tx, in.Name, in.Body.Permissions, surfaces.Permissions())
 		return &roleOutput{Body: role}, rest.Fault(err)
 	})
 }

@@ -13,7 +13,7 @@ const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport'], 
 const scripts = readFileSync(resolve(root, 'ui/ui.go'), 'utf8')
   .match(/var Controllers = \[\]string\{([\s\S]*?)\}/)![1]
   .match(/"[^"]+\.js"/g)!
-  .map(name => `<script defer src="/admin/assets/js/${JSON.parse(name)}"></script>`).join('');
+  .map(name => `<script defer src="/app/admin/assets/js/${JSON.parse(name)}"></script>`).join('');
 
 const pageFaults = new WeakMap<Page, string[]>();
 test.beforeEach(({ page }) => {
@@ -295,13 +295,13 @@ test('confirmation cancels and reopens without losing handlers or sending duplic
 });
 
 test('confirmation preview opens, cancels, accepts, and restores focus with a custom ID', async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
   await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await page.waitForURL('**/admin');
+  await page.waitForURL('**/app');
   const props = encodeURIComponent(JSON.stringify({ AcceptLabel: 'Proceed' }));
-  await page.goto(`/admin/_gallery/preview?example=pk-ui.component.confirmdialog/default&props=${props}`);
+  await page.goto(`/app/admin/_gallery/preview?example=pk-ui.component.confirmdialog/default&props=${props}`);
   const opener = page.getByRole('button', { name: 'Open confirmation' });
   const dialog = page.getByRole('dialog', { name: 'Delete this row?' });
   // ID is a trusted Go property, not a browser-editable prop. The controller
@@ -320,12 +320,12 @@ test('confirmation preview opens, cancels, accepts, and restores focus with a cu
 });
 
 test('gallery edits use typed properties, viewport controls, and an isolated live preview', async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
   await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin$/);
-  await page.goto('/admin/_gallery?example=pk-ui.component.button/primary');
+  await expect(page).toHaveURL(/\/app$/);
+  await page.goto('/app/admin/_gallery?example=pk-ui.component.button/primary');
   const preview = page.frameLocator('iframe');
   await expect(preview.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
   await page.getByLabel('label', { exact: true }).fill('Preview purchase');
@@ -350,7 +350,7 @@ test('gallery edits use typed properties, viewport controls, and an isolated liv
   expect(response!.headers()['content-security-policy']).toContain('sandbox allow-scripts;');
   expect(response!.headers()['cache-control']).toBe('no-store');
   expect(await page.evaluate(async () => {
-    try { await fetch('/api/v1/admin/resources'); return false; } catch { return true; }
+    try { await fetch('/api/v1/app/resources'); return false; } catch { return true; }
   })).toBe(true);
   expect(await page.evaluate(() => {
     try { localStorage.getItem('platformkit-theme'); return false; } catch { return true; }
@@ -358,12 +358,12 @@ test('gallery edits use typed properties, viewport controls, and an isolated liv
 });
 
 test('gallery controls retain invalid drafts and recover without losing the preview', async ({ page }) => {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
   await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin$/);
-  await page.goto('/admin/_gallery?example=pk-ui.component.select/default');
+  await expect(page).toHaveURL(/\/app$/);
+  await page.goto('/app/admin/_gallery?example=pk-ui.component.select/default');
   const preview = page.frameLocator('iframe');
   const options = page.getByLabel('options (JSON)', { exact: true });
   await options.fill('[');
@@ -375,14 +375,14 @@ test('gallery controls retain invalid drafts and recover without losing the prev
   await expect(preview.getByRole('combobox', { name: 'Kind', exact: true }).locator('option')).toHaveText(['Latest option']);
   await expect(options).not.toHaveAttribute('aria-invalid');
 
-  await page.goto('/admin/_gallery?example=pk-ui.component.button/primary');
+  await page.goto('/app/admin/_gallery?example=pk-ui.component.button/primary');
   await page.getByLabel('disabled', { exact: true }).selectOption('true');
   await expect(preview.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await page.getByLabel('disabled', { exact: true }).selectOption('false');
   await expect(preview.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 
   // A failed render preserves the last good component and the editable draft.
-  await page.route('**/admin/_gallery?**', route => route.fulfill({ status: 422, body: 'Invalid properties' }), { times: 1 });
+  await page.route('**/app/admin/_gallery?**', route => route.fulfill({ status: 422, body: 'Invalid properties' }), { times: 1 });
   await page.getByLabel('label', { exact: true }).fill('Retry purchase');
   await expect(page.getByRole('status')).toContainText('Preview could not be updated (422)');
   await expect(preview.getByRole('button', { name: 'Save', exact: true })).toBeVisible();

@@ -170,6 +170,81 @@ exported name, and a nil entity answers it `ErrInvalid` as every other door in
 `kit/crud` does. `db.Now` stamps the three timestamp columns, so an
 answer carries the instant the column holds. What stays open: a `Singleton`
 declares no command-owned field.
+**The address an operation is mounted on now says which surface it belongs to, and a
+module no longer writes one.** A module's `Routes` receives `httpx.Surfaces` — the
+public face, the workspace and the control plane — and the router composes the address
+from the surface and the module: a relative path that repeats either is refused at mount,
+so `/api/v1/tasks/tasks` cannot be written again. The workspace keeps its JSON addresses;
+what moved is where its documents are (`/admin/<module>/<entity>` is now
+`/app/<module>/<entity>`, the shell at `/app/admin/…`), and the anonymous doors of
+`auth`, `content`, `file` and `site`, which took `/api/v1/public/…`. Each surface has its
+own chain: the public one reads no session, sets no cookie (a handler that mints one gets
+`PUBLIC_SETS_A_COOKIE` withheld at the writer at every body size, and a 500 of that
+name wherever the response can still be replaced) and is cacheable for sixty seconds;
+its anonymous writes are counted by tenant, route and address, so one customer's
+office does not exhaust another's budget;
+A page whose body its owner can republish asks that cache to revalidate rather than answer
+from what it kept, so a publish is on the site the next time the page is loaded;
+the workspace is `no-store`, `noindex`, and admits an anonymous caller only at a route
+that declares `Public()` — and boot prints those doors rather than keeping a list of them;
+the control plane is served at `server.installation_host` and answers as an unmounted
+address at every other host — the same status, the same body and the same headers every
+other refusal of that host carries, because the host gate runs inside the middleware
+that writes them — including to a tenant that is not the installation's, which
+is the second half of the tenant-API incident recorded in
+[ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)'s neighbourhood and
+in [`modules/tenant`](modules/tenant/README.md). `modules/tenant`'s routes and
+`modules/billing`'s plan catalog therefore moved to `/api/v1/ops/…`.
+`GET /api/v1/admin/resources` is now `GET /api/v1/app/resources` and is mounted by
+`kit/app`, with the document supplied by the composition
+(`app.Options.WorkspaceCatalog` = `screens.Describe`); every catalog entry gained a
+`screen` key, a `write_path` key and a command a `path` key — each only where the
+derivation from the entry's own `path` is no longer true, so a document that could
+always be read the same way still is. The workspace is described as an empty surface
+in OpenAPI, stamped `x-platformkit-surface` per operation.
+
+What a caller sees: `/admin`, the admin module's own pages beneath it (`/admin/login`,
+`/admin/health`, `/admin/assets`, `/admin/_gallery`), `/api/v1/admin` and the four
+public doors answer with a 302 (307 for a write, never a cached 301) for one release,
+and are deleted in v1.3.0 — see [aliases.go](kit/httpx/aliases.go).
+`/api/v1/tenant/tenants` deliberately has no alias: a control plane does not announce
+itself by leaving the old door open at every customer's host. Refusals now name a code
+in the JSON `detail` — `AUTH_ANONYMOUS`, `AUTH_DENIED`, `AUTH_NOT_OPERATOR`,
+`AUTH_NO_TENANT`, `AUTH_PRINCIPAL_CHANGED`, `CSRF_ORIGIN`, `PUBLIC_SETS_A_COOKIE`,
+`LIMIT_EXHAUSTED` (the public surface's own write limit) and
+`WRITE_ELSEWHERE` (a write of a resource whose writes are served on another surface,
+answered at its read door, naming `write_path`) — where the sentence used to be a
+lowercase prefix.
+
+- The kernel answers every refusal it makes for itself in the shape the requester asked
+  for: the problem document to a client that wanted a value, the shell's own page — in the
+  request's language — to a client that came to be shown one. This includes an address
+  nothing is mounted at, an address mounted for other verbs, a CSRF failure and a panic
+  that escapes a handler. A guard's refusal — a missing session, a missing grant, a row of
+  another tenant, a route the plan excludes, the public surface's write limit — answers the
+  same way: it is the same decision, and it is the one a *navigating* person was being
+  shown JSON. An htmx write counts as a client that parses a value: its controller
+  (`ui/assets/js/htmx-config.js`) reads the refusal's code out of the problem body and
+  swaps nothing for a 4xx, so a page answered there would reach nobody.
+- Those codes are what a refusal *page* is translated by. `ui/page` holds the one table
+from a code to a catalog key (`fault.<CODE>`, and `fault.<status>` for the 404, the 405
+and the 500, which carry no code because the kernel wrote the sentence), the page is
+negotiated from the request's
+`Accept-Language` — a guard answers before a session, a tenant or a stored preference
+exists to ask one — and it carries `Content-Language` and `Vary: Accept-Language`. A
+translated page keeps the code in front of the sentence (`AUTH_DENIED: Não pode fazer
+isto.`), because the code is what a person reads back to support. The
+declaration follows the sentence on the page: a shell with no catalog, or none for that
+code, says the kernel's English and declares `en`. Two narrower promises came with it:
+the pointer to a split resource's write door now goes to a caller holding the
+credential that door reads, because the door would refuse anybody else the moment they
+reached it; and a tree mounted with `Static` answers a missing file, its own prefix and
+any directory beneath it through its surface's chain, in the shape the client asked for,
+instead of net/http's plain-text note and a listing of the shell's filenames. The hourly
+purge of the rate-limit counters moved from `modules/auth`'s sweep to `kit/app`, beside
+the outbox's, because the kernel's public write limit made the kernel the table's second
+writer. See
+[ADR 0017](docs/adr/0017-three-surfaces-by-path.md) for what this costs a module.
 
 ## [1.1.1] - 2026-09-18
 

@@ -8,6 +8,15 @@ server:
   # Host the app believes it is reached at. Absolute URLs and cookie scope are
   # derived from it, and tenant subdomains are resolved against it.
   public_host: "platformkit.localhost:8080"
+  # The host the installation itself is reached at: the only address that
+  # serves the control plane (/ops and /api/v1/ops/…). It is a host and not a
+  # tenant, and it is not public_host — one installation answers its customers
+  # at their hosts and its own operators at this one.
+  #
+  # Leave it empty and the control plane mounts but answers 404 everywhere,
+  # which the app logs once at boot. The development database has an operator
+  # tenant at this host, so the tenant switcher answers here.
+  installation_host: "platformkit.localhost:8080"
   # Serve /openapi.json, /openapi.yaml and /docs.
   #
   # They need no session and they list every route and every permission the

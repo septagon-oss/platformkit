@@ -25,6 +25,11 @@ const (
 	host  = "acme.test"
 	plans = "/api/v1/billing/plans"
 	sub   = "/api/v1/billing/subscription"
+	// writing is control-plane work: the price list is the installation's, so
+	// its write routes are mounted on the Ops surface and answer at the
+	// installation host only. Reading them is workspace work and stayed where
+	// it was. The two addresses are the same resource, two doors.
+	writes = "/api/v1/ops/billing/plans"
 )
 
 // acme is the operator's own tenant, and customer is somebody else's. The two
@@ -62,13 +67,17 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 	_, conn := dbtest.Schema(t, billing.Migrations)
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
+		// The installation is reached at host, which is also the operator's own
+		// tenant: that is what makes the control-plane routes below reachable
+		// at all, and what TestThePriceListIsTheOperators relies on.
+		Installation: host,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
 	_, mounted := billing.Module(billing.Deps{Payments: billing.Manual()})
-	mounted.Routes(api)
+	mounted.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -105,7 +114,7 @@ func TestWhetherAPlanSellsIsTheCallersToSay(t *testing.T) {
 		{`{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","active":true}`, true},
 		{`{"code":"legacy","name":"Legacy","priceCents":900,"currency":"EUR","active":false}`, false},
 	} {
-		code, body := call(t, router, http.MethodPost, plans, tt.body)
+		code, body := call(t, router, http.MethodPost, writes, tt.body)
 		if code != http.StatusCreated {
 			t.Fatalf("POST %s = %d %s, want 201", plans, code, body)
 		}
@@ -113,7 +122,7 @@ func TestWhetherAPlanSellsIsTheCallersToSay(t *testing.T) {
 			t.Errorf("POST %s answered %s; want active=%v", tt.body, body, tt.want)
 		}
 	}
-	code, body := call(t, router, http.MethodPost, plans, `{"code":"maybe","name":"Maybe","priceCents":100,"currency":"EUR"}`)
+	code, body := call(t, router, http.MethodPost, writes, `{"code":"maybe","name":"Maybe","priceCents":100,"currency":"EUR"}`)
 	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "active") {
 		t.Errorf("POST a plan that says nothing about selling = %d %s, want 422 naming the property", code, body)
 	}
@@ -124,18 +133,18 @@ func TestWhetherAPlanSellsIsTheCallersToSay(t *testing.T) {
 // subscriptions, which is a rule a foreign key cannot express.
 func TestAPlanSomebodyIsOnCannotBeDeleted(t *testing.T) {
 	_, router := mounted(t)
-	code, body := call(t, router, http.MethodPost, plans, `{"code":"pro","name":"Pro","priceCents":0,"currency":"EUR","active":true}`)
+	code, body := call(t, router, http.MethodPost, writes, `{"code":"pro","name":"Pro","priceCents":0,"currency":"EUR","active":true}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST %s = %d %s, want 201", plans, code, body)
 	}
 	id := field(t, body, "id")
 
 	// Nobody is on it yet.
-	if code, body = call(t, router, http.MethodDelete, plans+"/"+id, ""); code != http.StatusNoContent {
+	if code, body = call(t, router, http.MethodDelete, writes+"/"+id, ""); code != http.StatusNoContent {
 		t.Fatalf("DELETE an unused plan = %d %s, want 204", code, body)
 	}
 
-	code, body = call(t, router, http.MethodPost, plans, `{"code":"team","name":"Team","priceCents":0,"currency":"EUR","active":true}`)
+	code, body = call(t, router, http.MethodPost, writes, `{"code":"team","name":"Team","priceCents":0,"currency":"EUR","active":true}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST %s = %d %s, want 201", plans, code, body)
 	}
@@ -143,7 +152,7 @@ func TestAPlanSomebodyIsOnCannotBeDeleted(t *testing.T) {
 	if code, body = call(t, router, http.MethodPost, sub+"/subscribe", `{"planId":"`+id+`"}`); code != http.StatusOK {
 		t.Fatalf("subscribe = %d %s, want 200", code, body)
 	}
-	if code, body = call(t, router, http.MethodDelete, plans+"/"+id, ""); code != http.StatusConflict ||
+	if code, body = call(t, router, http.MethodDelete, writes+"/"+id, ""); code != http.StatusConflict ||
 		!strings.Contains(body, "deactivate it instead") {
 		t.Errorf("DELETE a plan somebody is on = %d %s, want 409 saying what to do instead", code, body)
 	}
@@ -152,7 +161,7 @@ func TestAPlanSomebodyIsOnCannotBeDeleted(t *testing.T) {
 	if code, body = call(t, router, http.MethodPost, sub+"/cancel", `{}`); code != http.StatusOK {
 		t.Fatalf("cancel = %d %s, want 200", code, body)
 	}
-	if code, body = call(t, router, http.MethodDelete, plans+"/"+id, ""); code != http.StatusNoContent {
+	if code, body = call(t, router, http.MethodDelete, writes+"/"+id, ""); code != http.StatusNoContent {
 		t.Errorf("DELETE a plan nobody is on any more = %d %s, want 204", code, body)
 	}
 }
@@ -164,7 +173,7 @@ func TestTheSubscriptionIsASingleton(t *testing.T) {
 	if code, body := call(t, router, http.MethodGet, sub, ""); code != http.StatusNotFound {
 		t.Errorf("GET %s before subscribing = %d %s, want 404", sub, code, body)
 	}
-	code, body := call(t, router, http.MethodPost, plans, `{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","active":true}`)
+	code, body := call(t, router, http.MethodPost, writes, `{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","active":true}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST %s = %d %s, want 201", plans, code, body)
 	}
@@ -230,21 +239,28 @@ func TestThePriceListIsTheOperators(t *testing.T) {
 	const body = `{"code":"pro","name":"Pro","priceCents":2900,"currency":"EUR","active":true}`
 
 	// The operator writes it.
-	code, out := call(t, router, http.MethodPost, plans, body)
+	code, out := call(t, router, http.MethodPost, writes, body)
 	if code != http.StatusCreated {
 		t.Fatalf("the operator creating a plan = %d %s, want 201", code, out)
 	}
 	id := field(t, out, "id")
 
-	// A customer cannot, at any of the three write doors.
+	// A customer cannot reach the write doors at all: the control plane is
+	// served at the installation host, and at a customer's host the address
+	// answers as one nothing is mounted at. That is a stronger refusal than the
+	// 403 this test used to see, and it comes from the surface rather than the
+	// authorizer — which is the point of the composition. The guarantee the 403
+	// was standing in for (no wildcard satisfies an operator grant, and a
+	// non-operator tenant cannot be granted one) is asserted where the rule
+	// lives: kit/tenancy, and kit/httpx's TestTheControlPlaneIsNotFoundAtATenantHost.
 	for _, w := range []struct{ method, at, body string }{
-		{http.MethodPost, plans, `{"code":"free","name":"Free","priceCents":0,"currency":"EUR","active":true}`},
-		{http.MethodPatch, plans + "/" + id, `{"priceCents":0}`},
-		{http.MethodDelete, plans + "/" + id, ""},
+		{http.MethodPost, writes, `{"code":"free","name":"Free","priceCents":0,"currency":"EUR","active":true}`},
+		{http.MethodPatch, writes + "/" + id, `{"priceCents":0}`},
+		{http.MethodDelete, writes + "/" + id, ""},
 	} {
 		code, out := callAt(t, router, customerHost, w.method, w.at, w.body)
-		if code != http.StatusForbidden {
-			t.Errorf("a customer's %s %s = %d %s, want 403", w.method, w.at, code, out)
+		if code != http.StatusNotFound {
+			t.Errorf("a customer's %s %s = %d %s, want 404 — the control plane is not served at a customer's host", w.method, w.at, code, out)
 		}
 	}
 
@@ -383,3 +399,9 @@ func TestWhichStatusesAreServed(t *testing.T) {
 		}
 	}
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.
+func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("billing") }

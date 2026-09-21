@@ -26,7 +26,7 @@ func TestPendingRegistrationCannotRecoverOrSignInBeforeApproval(t *testing.T) {
 	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, approvalSignup)
 	users := realUsers()
 	var pending *user.User
-	if res := call(t, router, "POST", "/api/v1/auth/register", approvalBody(t, "pending@example.com", nil)); res.Code != http.StatusAccepted {
+	if res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, "pending@example.com", nil)); res.Code != http.StatusAccepted {
 		t.Fatalf("public registration = %d", res.Code)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

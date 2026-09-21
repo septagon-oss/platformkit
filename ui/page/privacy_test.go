@@ -30,7 +30,7 @@ func (privacyTenant) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bo
 
 func TestSensitivePagesSendPrivacyHeadersBeforeTheirAssets(t *testing.T) {
 	_, conn := dbtest.Schema(t)
-	api, router := httpx.New(httpx.Options{
+	kernel, router := httpx.New(httpx.Options{
 		PublicHost: "localhost", Tenants: privacyTenant{}, Conn: conn, Authorize: privacyTenant{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			t.Fatal("an anonymous privacy page attempted to authenticate")
@@ -41,18 +41,27 @@ func TestSensitivePagesSendPrivacyHeadersBeforeTheirAssets(t *testing.T) {
 	shell := page.Shell{Chrome: chrome(), Back: "/", BackLabel: "Home",
 		Frame: func(_ context.Context, _ page.Request, body []g.Node) g.Node { return g.Group(body) },
 	}
+	// publicFace is what the kernel answers on the public surface for a page that
+	// said nothing about caching itself: cacheable, briefly. The workspace is the
+	// one that must never be stored, and a refusal is never stored on either.
+	const publicFace = "public, max-age=60"
+
 	for _, tt := range []struct {
-		name, policy, cache      string
-		sensitive, hx, localized bool
-		status                   int
+		name, policy, cache                  string
+		sensitive, hx, localized, revalidate bool
+		status                               int
 	}{
-		{"ordinary", "strict-origin-when-cross-origin", "", false, false, false, http.StatusOK},
-		{"sensitive", "no-referrer", "no-store", true, false, false, http.StatusOK},
-		{"refused", "no-referrer", "no-store", true, false, false, http.StatusUnprocessableEntity},
-		{"redirect", "no-referrer", "no-store", true, false, false, http.StatusSeeOther},
-		{"htmx-redirect", "no-referrer", "no-store", true, true, false, http.StatusNoContent},
-		{"localized-ordinary", "strict-origin-when-cross-origin", "private, no-store", false, false, true, http.StatusOK},
-		{"localized-sensitive", "no-referrer", "no-store", true, false, true, http.StatusOK},
+		{"ordinary", "strict-origin-when-cross-origin", publicFace, false, false, false, false, http.StatusOK},
+		{"sensitive", "no-referrer", "no-store", true, false, false, false, http.StatusOK},
+		{"refused", "no-referrer", "no-store", true, false, false, false, http.StatusUnprocessableEntity},
+		{"redirect", "no-referrer", "no-store", true, false, false, false, http.StatusSeeOther},
+		{"htmx-redirect", "no-referrer", "no-store", true, true, false, false, http.StatusNoContent},
+		{"localized-ordinary", "strict-origin-when-cross-origin", publicFace, false, false, true, false, http.StatusOK},
+		{"localized-sensitive", "no-referrer", "no-store", true, false, true, false, http.StatusOK},
+		// A page the owner republishes under the same address: kept, but never
+		// answered from without asking. Sensitive still wins over it below.
+		{"republished", "strict-origin-when-cross-origin", "no-cache", false, false, false, true, http.StatusOK},
+		{"republished-sensitive", "no-referrer", "no-store", true, false, false, true, http.StatusOK},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := "/" + tt.name
@@ -60,9 +69,9 @@ func TestSensitivePagesSendPrivacyHeadersBeforeTheirAssets(t *testing.T) {
 			if tt.localized {
 				pageShell.Messages = localeMessages(t, "Account")
 			}
-			page.Serve(api, pageShell, page.Route{ID: tt.name, Method: http.MethodGet, Path: path}, httpx.Public(),
+			page.Serve(public(kernel), pageShell, page.Route{ID: tt.name, Method: http.MethodGet, Path: path}, httpx.Public(),
 				func(context.Context, page.Request, *struct{}) (page.View, error) {
-					view := page.View{Title: "Account", Sensitive: tt.sensitive}
+					view := page.View{Title: "Account", Sensitive: tt.sensitive, Revalidate: tt.revalidate}
 					if tt.status == http.StatusUnprocessableEntity {
 						return view, problem.New(http.StatusUnprocessableEntity, "This link cannot be used.")
 					}

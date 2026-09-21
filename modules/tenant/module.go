@@ -61,7 +61,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		// against.
 
 		Nav: []module.NavEntry{
-			{Label: "Tenants", Path: "/admin/tenant/tenants", Permission: contracts.PermissionTenantManage},
+			{Label: "Tenants", Screen: "tenant/tenants", Permission: contracts.PermissionTenantManage},
 		},
 		// Written out so the absence is a decision. This module has no periodic
 		// work of its own: it is what the other modules' periodic work walks.
@@ -70,7 +70,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		// The one call in the application that takes cross-tenant access, at
 		// the one moment the kernel offers it, in the manifest a reviewer is
 		// already reading. See docs/adr/0006.
-		Routes: func(api *httpx.API) { internal.RegisterRoutes(api, svc, deps.Invite, api.SystemToken()) },
+		Routes: func(s httpx.Surfaces) { internal.RegisterRoutes(s.Ops, svc, deps.Invite, s.SystemToken()) },
 	}
 }
 

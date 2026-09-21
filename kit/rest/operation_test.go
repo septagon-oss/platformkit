@@ -31,7 +31,7 @@ func TestOperationPreservesProjectionsAndAccess(t *testing.T) {
 	}
 	calls := 0
 	for name, access := range map[string]httpx.Auth{"public": httpx.Public(), "mine": httpx.SignedIn(), "staff": httpx.Permission("task:read")} {
-		rest.Operation(api, huma.Operation{OperationID: "projection-" + name, Method: http.MethodGet, Path: "/projections/" + name + "/{slug}", DefaultStatus: http.StatusAccepted}, access,
+		rest.Operation(api.Surfaces("tasks").App, huma.Operation{OperationID: "projection-" + name, Method: http.MethodGet, Path: "/projections/" + name + "/{slug}", DefaultStatus: http.StatusAccepted}, access,
 			func(_ context.Context, tx db.Tx[db.Tenant], actor uuid.UUID, in *input) ([]projection, error) {
 				calls++
 				if db.TenantOf(tx).ID != acme.ID {
@@ -51,7 +51,7 @@ func TestOperationPreservesProjectionsAndAccess(t *testing.T) {
 		{"public", false, 202}, {"public", true, 202},
 		{"mine", false, 403}, {"mine", true, 202}, {"staff", true, 403},
 	} {
-		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/projections/"+tc.name+"/report?page=2", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/api/v1/tasks/projections/"+tc.name+"/report?page=2", nil)
 		if tc.auth {
 			req.AddCookie(&http.Cookie{Name: httpx.SessionCookie, Value: "present"})
 		}
@@ -77,7 +77,7 @@ func TestOperationPreservesProjectionsAndAccess(t *testing.T) {
 	}
 	// Public routes without a resolved tenant must not invoke a tenant service.
 	out := httptest.NewRecorder()
-	router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "http://unknown.test/projections/public/report?page=2", nil))
+	router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "http://unknown.test/api/v1/tasks/projections/public/report?page=2", nil))
 	if out.Code != 503 || calls != 3 {
 		t.Fatalf("missing tenant: %d; service calls=%d", out.Code, calls)
 	}
@@ -90,7 +90,7 @@ func TestOperationPreservesFaultsAndTransactionOutcome(t *testing.T) {
 			Title string `json:"title" minLength:"1"`
 		}
 	}
-	rest.Operation(api, huma.Operation{OperationID: "submit-review", Method: http.MethodPost, Path: "/reviews/submit", DefaultStatus: http.StatusCreated,
+	rest.Operation(api.Surfaces("tasks").App, huma.Operation{OperationID: "submit-review", Method: http.MethodPost, Path: "/reviews/submit", DefaultStatus: http.StatusCreated,
 		Extensions: map[string]any{httpx.EventsExtension: []string{"reviews.submitted"}, "x-review-contract": "v1"}}, httpx.SignedIn(),
 		func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *input) (string, error) {
 			row := &Task{Title: in.Body.Title}
@@ -114,7 +114,7 @@ func TestOperationPreservesFaultsAndTransactionOutcome(t *testing.T) {
 	}{
 		{`{"title":""}`, 422}, {`{"title":"stale"}`, 409}, {`{"title":"ready"}`, 201},
 	} {
-		if code, body := call(t, router, http.MethodPost, "/reviews/submit", tc.body); code != tc.want {
+		if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/reviews/submit", tc.body); code != tc.want {
 			t.Fatalf("submit %s: %d %s", tc.body, code, body)
 		}
 	}
@@ -130,7 +130,7 @@ func TestOperationPreservesFaultsAndTransactionOutcome(t *testing.T) {
 	}
 	ops := api.Recorded()
 	i := slices.IndexFunc(ops, func(op *huma.Operation) bool { return op.OperationID == "submit-review" })
-	if i < 0 || ops[i].Extensions["x-review-contract"] != "v1" || ops[i].Path != "/reviews/submit" {
+	if i < 0 || ops[i].Extensions["x-review-contract"] != "v1" || ops[i].Path != "/api/v1/tasks/reviews/submit" {
 		t.Fatalf("custom operation changed: %+v", ops)
 	}
 }

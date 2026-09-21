@@ -6,7 +6,7 @@ package examples
 // same examples; no second component list describes the design surface.
 //
 // It is production code and not a fixture: its callers must not drift. The
-// admin shell serves it at /admin/_gallery, which is how a
+// admin shell serves it at /app/admin/_gallery, which is how a
 // person sees what the design system looks like in the theme they are running.
 // The tests render it to prove that every class a renderer can emit is declared
 // in classlists.go and resolves to a rule — so a component that is not in this
@@ -137,7 +137,7 @@ func Gallery() []Example {
 		ExampleWithSlots(info("pk-ui.component.emptystate/default", "Status", "EmptyState"),
 			components.EmptyStateProps{Title: "No tenants yet", Description: "Create the first tenant to get started.", Bordered: true},
 			components.EmptyStateSlots{Actions: []g.Node{
-				ExampleOf(ExampleInfo{ID: "action", ComponentID: "pk-ui.component.link"}, components.LinkProps{Label: "New tenant", Href: "/admin/tenants/new"}, components.Link).Node,
+				ExampleOf(ExampleInfo{ID: "action", ComponentID: "pk-ui.component.link"}, components.LinkProps{Label: "New tenant", Href: "/app/tenant/tenants/new"}, components.Link).Node,
 			}}, components.EmptyStateWithSlots),
 		ExampleWithSlots(info("pk-ui.component.emptystate/compact", "Status", "EmptyState / compact"), components.EmptyStateProps{Title: "Empty", Compact: true}, components.EmptyStateSlots{}, components.EmptyStateWithSlots),
 
@@ -246,13 +246,13 @@ func Gallery() []Example {
 			}}, components.TabsWithSlots),
 		ExampleWithSlots(info("pk-ui.component.sidebar/default", "Navigation", "Sidebar"), components.SidebarProps{
 			NavigationLabel: "Sidebar example, sections",
-			Current:         "/admin/customers/accounts",
+			Current:         "/app/user/users/new",
 			Sections: []components.SidebarSection{{
 				ID: "operate", Label: "Operate", Glyph: "O", Tone: "brand",
 				Items: []components.SidebarItem{
 					{Label: "Dashboard", Href: "/admin", Icon: "gear"},
-					{Label: "Customers", Href: "/admin/customers", Icon: "user", Badge: "24", Children: []components.SidebarItem{
-						{Label: "Accounts", Href: "/admin/customers/accounts"},
+					{Label: "Users", Href: "/app/user/users", Icon: "user", Badge: "24", Children: []components.SidebarItem{
+						{Label: "New user", Href: "/app/user/users/new"},
 					}},
 				},
 			}},
@@ -274,7 +274,7 @@ func Gallery() []Example {
 			Collapsible:     true, Collapsed: true,
 			Items: []components.SidebarItem{
 				{Label: "Home", Href: "/admin", Icon: "gear"},
-				{Label: "Reports", Href: "/admin/reports", Icon: "file-text", Disabled: true},
+				{Label: "Plans", Href: "/app/billing/plans", Icon: "file-text", Disabled: true},
 			}}, components.SidebarSlots{}, components.SidebarWithSlots),
 
 		ExampleWithSlots(info("pk-ui.component.modal/default", "Overlay", "Modal"), components.ModalProps{ComponentProps: components.ComponentProps{ID: "confirm-modal"},

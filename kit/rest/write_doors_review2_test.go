@@ -74,13 +74,13 @@ func TestTheCreateDoorRefusesTheReservedNameUnderEveryMediaTypeItAdvertises(t *t
 		// names nothing reserved: if it stores, the refusal below has to be a
 		// refusal; if it does not, the case would pass with no door there.
 		clean := `{"title":"clean ` + ct + `"}`
-		code, out := callCT(t, router, http.MethodPost, "/api/tasks", clean, ct)
+		code, out := callCT(t, router, http.MethodPost, "/api/v1/tasks/task", clean, ct)
 		if code != http.StatusCreated {
 			t.Logf("Content-Type %q never reaches the decoder: %d %s", ct, code, out)
 			continue
 		}
 		body := `{"title":"forged ` + ct + `","STATUS":"done"}`
-		code, out = callCT(t, router, http.MethodPost, "/api/tasks", body, ct)
+		code, out = callCT(t, router, http.MethodPost, "/api/v1/tasks/task", body, ct)
 		if code == http.StatusCreated {
 			t.Errorf("POST with Content-Type %q stored a row: 201 %s", ct, out)
 		}
@@ -132,16 +132,16 @@ func TestWhatOneTenantCannotDoToAnotherTenantsRowThroughTheNewPath(t *testing.T)
 	})
 	s := spec
 	s.Immutable = []string{"status"}
-	s.Mount(api)
+	s.Mount(api.Surfaces(s.Module))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
 
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"acme's own"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"acme's own"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 
 	callOther := func(method, body string) (int, string) {
 		req := httptest.NewRequest(method, "http://other.test"+at, strings.NewReader(body))
@@ -181,11 +181,11 @@ func TestWhatOneTenantCannotDoToAnotherTenantsRowThroughTheNewPath(t *testing.T)
 // out, and the row the caller keeps is the row it had.
 func TestARefusedPatchWritesNoneOfTheBody(t *testing.T) {
 	router, admin := owned(t)
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"before","priority":3}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"before","priority":3}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 
 	if code, out := call(t, router, http.MethodPatch, at, `{"title":"after","STATUS":"done"}`); code != http.StatusUnprocessableEntity ||
 		!strings.Contains(out, "status belongs to a route of its own") {
@@ -212,11 +212,11 @@ func TestARefusedPatchWritesNoneOfTheBody(t *testing.T) {
 // nothing has to say nothing even when it is the second one in.
 func TestTwoWritesToOneRowNeitherLoseTheOthersColumnNorPublishTheOthersChange(t *testing.T) {
 	router, admin := owned(t)
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"contended"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"contended"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 
 	var wg sync.WaitGroup
 	codes := make([]int, 4)
@@ -272,7 +272,7 @@ func TestTheGuardSeesEveryBodyTheDecoderReads(t *testing.T) {
 		{"the reserved key as null", `{"title":"null","STATUS":null}`},
 		{"an escaped key", `{"title":"escaped","\u0053TATUS":"done"}`},
 	} {
-		code, out := call(t, router, http.MethodPost, "/api/tasks", sent.body)
+		code, out := call(t, router, http.MethodPost, "/api/v1/tasks/task", sent.body)
 		if code == http.StatusCreated {
 			t.Errorf("%s: POST stored a row: 201 %s", sent.what, out)
 		}
@@ -280,7 +280,7 @@ func TestTheGuardSeesEveryBodyTheDecoderReads(t *testing.T) {
 	// The reachability probe, independent of any refusal: a body naming only
 	// writable fields still writes, so the count below is a door and not an
 	// empty table.
-	if code, out := call(t, router, http.MethodPost, "/api/tasks", `{"title":"what a body may say"}`); code != http.StatusCreated {
+	if code, out := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"what a body may say"}`); code != http.StatusCreated {
 		t.Fatalf("the route refuses a body that names nothing reserved: %d %s", code, out)
 	}
 	var n int
@@ -300,11 +300,11 @@ func TestTheGuardSeesEveryBodyTheDecoderReads(t *testing.T) {
 // through SQL, both doors, and after a write that named a column.
 func TestWhatARowIsAnsweredWithIsWhatTheRowHolds(t *testing.T) {
 	_, router, admin := mounted(t)
-	code, body := call(t, router, http.MethodPost, "/api/tasks", `{"title":"stamped"}`)
+	code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task", `{"title":"stamped"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
-	at := "/api/tasks/" + id(t, body)
+	at := "/api/v1/tasks/task/" + id(t, body)
 	asked := func(t *testing.T, body string) (created, updated time.Time) {
 		t.Helper()
 		var out struct {

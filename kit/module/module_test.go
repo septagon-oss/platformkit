@@ -19,13 +19,13 @@ func TestValidateNamesEveryViolation(t *testing.T) {
 			Name:        "billing",
 			Permissions: []Permission{{Key: "invoice:read"}},
 			Events:      []string{"billing.invoice_issued"},
-			Nav:         []NavEntry{{Label: "Invoices", Path: "/invoices", Permission: "invoice:read"}},
+			Nav:         []NavEntry{{Label: "Invoices", Screen: "billing/invoices", Permission: "invoice:read"}},
 		},
 		{
 			Name:        "billing",
 			Permissions: []Permission{{Key: "invoice:read"}},
 			Events:      []string{"accounts.user_created"},
-			Nav:         []NavEntry{{Label: "Reports", Path: "/reports", Permission: "report:read"}},
+			Nav:         []NavEntry{{Label: "Reports", Screen: "billing/reports", Permission: "report:read"}},
 		},
 	}
 	err := Validate(mods)
@@ -55,7 +55,7 @@ func TestValidateAcceptsAWellFormedComposition(t *testing.T) {
 		},
 		{
 			Name: "billing",
-			Nav:  []NavEntry{{Label: "Users", Path: "/users", Permission: "user:read"}},
+			Nav:  []NavEntry{{Label: "Users", Screen: "accounts/users", Permission: "user:read"}},
 		},
 	}
 	if err := Validate(mods); err != nil {

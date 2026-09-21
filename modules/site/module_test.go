@@ -22,10 +22,11 @@ import (
 const (
 	host     = "acme.test"
 	settings = "/api/v1/site/settings"
-	// The public face moved with the port onto rest.Singleton: a singleton
-	// declares one path and its public door is under it. Nothing has been
-	// released, so this is a rename and not a break.
-	public = "/api/v1/site/settings/public"
+	// The public face is a public door, and a public door answers under the
+	// public prefix: /api/v1/public/<module>/<resource>. The old address, under
+	// the module's workspace prefix, redirects here for one release — see
+	// kit/httpx/aliases.go and TestTheAliasRedirectsAndNeverServes.
+	public = "/api/v1/public/site/settings"
 )
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
@@ -51,7 +52,7 @@ func mounted(t *testing.T) chi.Router {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	_, sites := site.Module(site.Deps{})
-	sites.Routes(api)
+	sites.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -209,3 +210,9 @@ func TestAHomeSlugIsBoundedByTheColumnThatHoldsIt(t *testing.T) {
 		t.Errorf("the refusal is %q, which does not say which field is too long", err)
 	}
 }
+
+// surfacesOf is the module's view of the kernel: the three routers, named the
+// way a composition names them at mount. The test keeps the *httpx.API
+// separately, because validating the composition is the composition's job and
+// holding a *Router would be holding one door of three.
+func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("site") }

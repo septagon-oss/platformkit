@@ -128,10 +128,17 @@ func (p postgres) Forget(ctx context.Context, key string) error {
 	})
 }
 
-// Purge deletes the rows whose window closed a day ago. It is the caller's
-// hourly job that runs it, because the table is written by whoever uses the
-// limiter and by nothing else; the moment a second module adopts this, the
-// purge belongs beside the outbox's in kit/app.
+// Purge deletes the rows whose window closed a day ago.
+//
+// It is a scheduled job and never a side effect of Allow: a counter is read on
+// the path of a request that is about to be refused, and a refusal that also
+// deleted somebody else's row would be a limiter paying for the traffic it is
+// refusing. The table is written by whoever holds a limiter and by nothing else,
+// so the job belongs to the composition that holds them all — kit/app schedules
+// it beside the outbox purge, which is where it moved when the kernel's own
+// public write limit became the second writer (docs/adr/0010). A module's sweep
+// is the wrong home for it: the rows of a composition that does not compose that
+// module would never go.
 func Purge(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, systemToken, func(_ context.Context, tx db.Tx[db.System]) error {
 		if err := tx.DB().Exec("DELETE FROM "+table+" WHERE window_start < now() - ?::interval", interval(keep)).Error; err != nil {

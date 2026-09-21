@@ -26,11 +26,11 @@ import (
 )
 
 const (
+	// assetPrefix is this module's own static tree, which the composition
+	// resolves against the public surface: /web/assets, at every host, outside
+	// every middleware chain.
 	assetPrefix = "/web/assets"
-	signInPath  = "/admin/login"
-	// filePath is where the file module serves a public file; the logo is one.
-	filePath = "/api/v1/file/public/"
-	brand    = "PlatformKit"
+	brand       = "PlatformKit"
 )
 
 // slug is the content module's own grammar for a slug, so a path that is not
@@ -46,23 +46,32 @@ type Site struct {
 	Settings sitecontracts.Service
 	Content  contentcontracts.Service
 	Theme    design.Pair
+	// SignIn and File are addresses this site links and does not own: the
+	// composition supplies both, for the reason Deps names them.
+	SignIn string
+	File   func(id string) string
 }
 
 // Mount composes the stylesheet once and serves the two routes through the
 // composition layer. There are no controllers: the site runs no script.
-func Mount(api *httpx.API, s Site) {
+func Mount(surfaces httpx.Surfaces, s Site) {
 	sheet := ui.Compose(s.Theme, ui.Extra{Lists: lists(), Sheets: []*css.Sheet{prose()}})
-	api.Static(assetPrefix, ui.Assets(sheet))
+	// The root claim. One module answers a tenant's host at "/", and Home says
+	// whether this one took it: a product with a storefront of its own is
+	// composed instead of this module, and a second claimant would be a boot
+	// failure rather than a coin toss decided by the order of a list.
+	home, _ := surfaces.Public.Home()
+	home.Static(assetPrefix, ui.Assets(sheet))
 	shell := page.Shell{
-		Chrome:    page.Chrome{Brand: brand, Assets: assetPrefix, Stylesheet: sheet},
+		Chrome:    page.Chrome{Brand: brand, Assets: home.PagePath(assetPrefix), Stylesheet: sheet},
 		Frame:     frame,
 		Tag:       "web",
 		Back:      "/",
 		BackLabel: "Back to the site",
 	}
-	page.Serve(api, shell, page.Route{ID: "web-home", Method: http.MethodGet, Path: "/",
+	page.Serve(home, shell, page.Route{ID: "web-home", Method: http.MethodGet, Path: "/",
 		Summary: "The site's home page", Errors: []int{http.StatusNotFound, http.StatusServiceUnavailable}}, httpx.Public(), s.home)
-	page.Serve(api, shell, page.Route{ID: "web-page", Method: http.MethodGet, Path: "/{slug}",
+	page.Serve(home, shell, page.Route{ID: "web-page", Method: http.MethodGet, Path: "/{slug}",
 		Summary: "One published page", Errors: []int{http.StatusNotFound, http.StatusServiceUnavailable}}, httpx.Public(), s.page)
 }
 
@@ -78,11 +87,11 @@ func (s Site) home(ctx context.Context, r page.Request, _ *page.Empty) (page.Vie
 		return page.View{}, err
 	}
 	if settings.HomeSlug == "" {
-		return s.view(settings, r, "Welcome", nothingYet()), nil
+		return s.view(settings, r, "Welcome", s.nothingYet()), nil
 	}
 	c, err := s.Content.Public(ctx, tx, settings.HomeSlug)
 	if errors.Is(err, crud.ErrNotFound) {
-		return s.view(settings, r, "Welcome", notPublished(settings.HomeSlug)), nil
+		return s.view(settings, r, "Welcome", s.notPublished(settings.HomeSlug)), nil
 	}
 	if err != nil {
 		return page.View{}, err
@@ -139,10 +148,13 @@ func (s Site) article(settings *sitecontracts.SiteSettings, r page.Request, c *c
 }
 
 // view is every page of the site: the bar, the column, the footer, and the
-// tenant's theme and colour pinned on the document.
+// tenant's theme and colour pinned on the document. Revalidate is set because an
+// owner publishes over the same address: the minute a public page may be kept is
+// otherwise the minute in which their own publish looks lost — e2e/site.spec.ts is
+// that journey, and it failed until this line.
 func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title string, main []g.Node) page.View {
-	v := page.View{Title: title, Body: []g.Node{
-		header(settings, r),
+	v := page.View{Title: title, Revalidate: true, Body: []g.Node{
+		s.header(settings, r),
 		h.Main(h.ID("content"), h.Class(clMain.Compile()),
 			components.Container(components.ContainerProps{MaxWidth: "3xl"}, main...)),
 		footer(settings, r),
@@ -172,10 +184,10 @@ func name(settings *sitecontracts.SiteSettings, r page.Request) string {
 	return brand
 }
 
-func header(settings *sitecontracts.SiteSettings, r page.Request) g.Node {
+func (s Site) header(settings *sitecontracts.SiteSettings, r page.Request) g.Node {
 	var mark []g.Node
 	if settings.LogoFileID != nil {
-		mark = append(mark, h.Img(h.Class(clLogo.Compile()), h.Src(filePath+settings.LogoFileID.String()), h.Alt("")))
+		mark = append(mark, h.Img(h.Class(clLogo.Compile()), h.Src(s.File(settings.LogoFileID.String())), h.Alt("")))
 	}
 	mark = append(mark, h.A(h.Href("/"), h.Class(clTitle.Compile()), g.Text(name(settings, r))))
 	if settings.Tagline != "" {
@@ -195,18 +207,18 @@ func footer(settings *sitecontracts.SiteSettings, r page.Request) g.Node {
 		components.Text(components.TextProps{Content: name(settings, r) + " · " + brand, Size: "xs", Color: "muted"}))
 }
 
-func nothingYet() []g.Node {
+func (s Site) nothingYet() []g.Node {
 	return []g.Node{
 		components.Heading(components.HeadingProps{Text: "Nothing published yet", Level: 1}),
 		components.Text(components.TextProps{Content: "This site has no home page. Sign in to the admin, publish a page, and name its slug as the site's home slug."}),
-		components.Link(components.LinkProps{Label: "Sign in to the admin", Href: signInPath}),
+		components.Link(components.LinkProps{Label: "Sign in to the admin", Href: s.SignIn}),
 	}
 }
 
-func notPublished(homeSlug string) []g.Node {
+func (s Site) notPublished(homeSlug string) []g.Node {
 	return []g.Node{
 		components.Heading(components.HeadingProps{Text: "The home page is not published", Level: 1}),
 		components.Text(components.TextProps{Content: "The site's home slug is " + homeSlug + ", and nothing published has that slug."}),
-		components.Link(components.LinkProps{Label: "Sign in to the admin", Href: signInPath}),
+		components.Link(components.LinkProps{Label: "Sign in to the admin", Href: s.SignIn}),
 	}
 }

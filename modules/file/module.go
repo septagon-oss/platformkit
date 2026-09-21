@@ -118,7 +118,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Permissions: permissions,
 		Events:      contracts.Events,
 		Nav: []module.NavEntry{
-			{Label: "Files", Path: "/admin/file/files", Permission: contracts.PermissionFileRead},
+			{Label: "Files", Screen: "file/files", Permission: contracts.PermissionFileRead},
 		},
 		// The one piece of periodic work, and it is the cost of writing the
 		// bytes before the row: a transaction that failed after the blob was
@@ -128,9 +128,9 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		// are removed after the transaction that removed the row commits, and
 		// an event is the only thing delivered exactly then.
 		Subscriptions: []events.Subscription{internal.RemoveBlob(deps.Storage)},
-		Routes: func(api *httpx.API) {
-			sweep.Use(api.SystemToken())
-			internal.RegisterRoutes(api, svc)
+		Routes: func(s httpx.Surfaces) {
+			sweep.Use(s.Ops.SystemToken())
+			internal.RegisterRoutes(s, svc)
 		},
 	}
 }

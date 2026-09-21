@@ -17,7 +17,7 @@ import (
 )
 
 // path is the collection, as modules/tenant and modules/audit spell their own.
-const path = "/api/v1/notification/notifications"
+const path = "/notifications"
 
 // anonymous is unreachable — both routes declare SignedIn, so the kernel has
 // already refused a caller without a principal — and it is here so that the
@@ -36,8 +36,8 @@ var (
 // list is a different list, so there is no permission to ask for either —
 // SignedIn is the whole of it, and the scoping is that the recipient is the
 // principal rather than a parameter.
-func RegisterRoutes(api *httpx.API, svc contracts.Service) {
-	httpx.Register(api, huma.Operation{
+func RegisterRoutes(r *httpx.Router, svc contracts.Service) {
+	httpx.Register(r, huma.Operation{
 		OperationID: "notification-notification-list",
 		Method:      http.MethodGet,
 		Path:        path,
@@ -60,7 +60,7 @@ func RegisterRoutes(api *httpx.API, svc contracts.Service) {
 		return out, nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(r, huma.Operation{
 		OperationID: "notification-notification-read",
 		Method:      http.MethodPost,
 		Path:        path + "/{id}/read",

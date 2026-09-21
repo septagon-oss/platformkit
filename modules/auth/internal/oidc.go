@@ -107,11 +107,12 @@ func (p *Provider) oauth(provider *oidc.Provider, host string) *oauth2.Config {
 // are registered only when a provider is configured: a route that would answer
 // "this application has no identity provider" is a route with nothing to say,
 // and the boot gate counts what is mounted rather than what might have been.
-func RegisterOIDCRoutes(api *httpx.API, svc contracts.Service, users contracts.Users, p *Provider) {
-	httpx.Register(api, huma.Operation{
+func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users contracts.Users, p *Provider) {
+	app := surfaces.App
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-oidc-start",
 		Method:      http.MethodGet,
-		Path:        Path + "/oidc/start",
+		Path:        "/oidc/start",
 		Summary:     "Begin single sign-on",
 		Description: "Redirects to the identity provider with PKCE and a state cookie.",
 		Tags:        []string{"auth"},
@@ -133,15 +134,15 @@ func RegisterOIDCRoutes(api *httpx.API, svc contracts.Service, users contracts.U
 		}, nil
 	})
 
-	httpx.Register(api, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-oidc-callback",
 		Method:      http.MethodGet,
-		// The configured path with this module's prefix taken off and put back,
-		// which is a no-op for a well-formed one and refuses to be a slice out
-		// of range for anything else. kit/config has already refused a path
-		// that is not under Path, naming the key; this is the second half of
-		// that agreement rather than a second opinion about it.
-		Path:        Path + "/" + strings.TrimPrefix(strings.TrimPrefix(p.cfg.RedirectPath, Path), "/"),
+		// The leg the identity provider sends the browser back to. Its address
+		// is composed here, from this module and the workspace surface; the
+		// configured redirect_path is the same address spelled absolutely,
+		// because what a provider is registered with is a URL and not a
+		// relative path, and kit/config refuses the two when they disagree.
+		Path:        "/oidc/callback",
 		Summary:     "Finish single sign-on",
 		Description: "Exchanges the code, verifies the id token, and opens a session for the user whose verified address it names. An address this tenant does not have is refused: nobody is created here.",
 		Tags:        []string{"auth"},

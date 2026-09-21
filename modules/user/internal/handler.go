@@ -25,7 +25,7 @@ import (
 // one would make "who was made an administrator, and when" a question with no
 // answer. spec.Immutable is the other half of that argument, and rest.Command
 // is the part all three share.
-func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contracts.Service) {
+func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], svc contracts.Service) {
 	// The invitation, which is a route of its own and not the create route with
 	// a flag.
 	//
@@ -36,7 +36,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 	// event the auth module listens for in order to mail them a link. It is a
 	// collection of its own rather than a command on a user, because there is
 	// no user yet to command.
-	httpx.Register(api, huma.Operation{
+	httpx.Register(surfaces.App, huma.Operation{
 		OperationID:   "user-invitation-create",
 		Method:        http.MethodPost,
 		Path:          invitations,
@@ -70,7 +70,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 			return &rest.Item[*contracts.User]{Body: u}, nil
 		})
 
-	rest.Command(api, spec, "approve-registration",
+	rest.Command(surfaces, spec, "approve-registration",
 		"Approve a pending registration",
 		"Activates a pending account without changing its password or roles. Active accounts are unchanged; invitations and deactivated accounts cannot be approved.",
 		[]string{contracts.EventRegistrationApproved},
@@ -79,7 +79,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 			return svc.ApproveRegistration(ctx, tx, id, principal.UserID)
 		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionRegistrationApprove)})
 
-	rest.Command(api, spec, "set-password",
+	rest.Command(surfaces, spec, "set-password",
 		"Set a user's password",
 		"Stores an argon2id hash and makes an invited user active. It is not idempotent: setting a password to what it already was is still a password change, and somebody who did it deliberately has to see it in their own audit trail.",
 		[]string{contracts.EventPasswordSet},
@@ -90,7 +90,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 			return svc.Get(ctx, tx, id)
 		}, rest.CommandOptions{})
 
-	rest.Command(api, spec, "roles",
+	rest.Command(surfaces, spec, "roles",
 		"Set a user's roles",
 		"Replaces the roles this person holds. The same set again, in any order, changes nothing and publishes nothing.",
 		[]string{contracts.EventRolesSet},
@@ -98,7 +98,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 			return svc.SetRoles(ctx, tx, id, in.Roles)
 		}, rest.CommandOptions{})
 
-	rest.Command(api, spec, "handle",
+	rest.Command(surfaces, spec, "handle",
 		"Claim or change a user's handle",
 		"The lower-case name this person answers to in this tenant, used in URLs and mentions. Renameable, because every key and audit entry names the uuid and nothing has to follow the name: the previous holder stays in user.handle_set. A handle somebody else holds is a conflict that names the rule and not the holder, and a handle cannot be released.",
 		[]string{contracts.EventHandleSet},
@@ -106,7 +106,7 @@ func RegisterRoutes(api *httpx.API, spec rest.Spec[*contracts.User], svc contrac
 			return svc.SetHandle(ctx, tx, id, in.Handle)
 		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionUserManage)})
 
-	rest.Command(api, spec, "deactivate",
+	rest.Command(surfaces, spec, "deactivate",
 		"Deactivate a user",
 		"Stops the person signing in. Their sessions stop working with them, because a session is only honoured for an active user, so there is no list of sessions to walk. Deactivating them again changes nothing.",
 		[]string{contracts.EventDeactivated},
@@ -133,7 +133,7 @@ type rolesBody struct {
 // invitations is where somebody is invited. It is beside the users collection
 // rather than under it because an invitation is not a sub-resource of the user
 // it creates.
-const invitations = "/api/v1/user/invitations"
+const invitations = "/invitations"
 
 // Invitation is what a caller sends to invite somebody. It is a named type and
 // not the anonymous struct it was, because huma names a schema after the Go

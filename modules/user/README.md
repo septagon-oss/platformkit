@@ -78,7 +78,7 @@ the application joins them — see `apps/platformkit/modules.go`.
 administrator with a password; the argon2id parameters are constants here.
 Consumers import [contracts/](contracts/) — users, registration, password
 rules, events, permissions and the [fake](contracts/usertest/) — never
-`internal/`. The admin entry is `/admin/user/users`.
+`internal/`. The admin entry is `/app/user/users`.
 
 ## The handle, and what it is not
 

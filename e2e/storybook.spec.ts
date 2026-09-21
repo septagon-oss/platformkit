@@ -1,25 +1,25 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function signIn(page: Page) {
-  await page.goto('/admin/login');
+  await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
   await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/app$/);
 }
 
 async function openStory(page: Page, title: string, name = 'Default') {
-  const response = await page.request.get('/admin/_gallery/storybook/index.json');
+  const response = await page.request.get('/app/admin/_gallery/storybook/index.json');
   expect(response.status()).toBe(200);
   const stories = Object.values((await response.json()).entries) as { id: string; title: string; name: string }[];
   const story = stories.find(story => story.title === title && story.name === name);
   expect(story).toBeTruthy();
-  await page.goto('/admin/_gallery/storybook/index.html?path=/story/' + story!.id);
+  await page.goto('/app/admin/_gallery/storybook/index.html?path=/story/' + story!.id);
   return page.frameLocator('#storybook-preview-iframe').frameLocator('iframe');
 }
 
 test('real Storybook serves its private index, updates Go controls, and runs confirmation', async ({ page, request }) => {
-  const base = '/admin/_gallery/storybook/';
+  const base = '/app/admin/_gallery/storybook/';
   const anonymous = await request.get(base + 'index.json');
   expect(anonymous.status()).toBe(403);
   await signIn(page);
@@ -84,7 +84,11 @@ test('Sidebar stories are visible on a laptop and explain responsive hiding', as
   const specimen = await openStory(page, 'Navigation/Sidebar');
   const sidebar = specimen.getByRole('complementary');
   await expect(sidebar).toBeVisible();
-  await expect(sidebar.getByRole('link', { name: 'Accounts', exact: true })).toHaveAttribute('aria-current', 'page');
+  // The current item of the sidebar story is the example's own
+  // {Label: "New user", Href: "/app/user/users/new"}, which the kernel serves as a
+  // generated screen; the claim under test is that the example's `current` is the
+  // item marked current, so the name follows the specimen and the attribute does not.
+  await expect(sidebar.getByRole('link', { name: 'New user', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.getByRole('button', { name: 'Viewport size' }).click();
   await page.getByText('Small mobile', { exact: true }).click();
   await expect(sidebar).toBeHidden();
@@ -106,7 +110,7 @@ test('Sidebar stories are visible on a laptop and explain responsive hiding', as
 test('Storybook preserves exact JSON integers, rejects malformed edits, and resets to source', async ({ page }) => {
   await page.goto('/health');
   const result = await page.evaluate(async () => {
-    const { render } = await import('/admin/assets/js/storybook.js');
+    const { render } = await import('/app/admin/assets/js/storybook.js');
     const context = {
       initialArgs: { count: '9007199254740993' }, globals: { theme: 'dark' }, name: 'Exact count',
       parameters: { platformkit: { example: 'product/count', rawFields: ['count'] } },

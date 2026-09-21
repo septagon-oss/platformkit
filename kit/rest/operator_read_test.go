@@ -65,6 +65,10 @@ func TestOperatorReadBoundary(t *testing.T) {
 				}
 				api, router := httpx.New(httpx.Options{
 					PublicHost: host, Tenants: f, Conn: app, Authorize: f,
+					// The operator's tenant is the installation's, and the
+					// installation is reached at host: both facts are what makes
+					// the private routes below reachable at all.
+					Installation: host,
 					Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 						return tenancy.Principal{UserID: principal}, true, nil
 					},
@@ -73,21 +77,21 @@ func TestOperatorReadBoundary(t *testing.T) {
 				if shape == "collection" {
 					s := spec
 					s.OperatorRead, s.OperatorWrite = tc.private, true
-					s.Mount(api)
+					s.Mount(api.Surfaces(s.Module))
 				} else {
 					s := singleton(true, false)
 					s.OperatorRead, s.OperatorWrite = tc.private, true
-					s.Mount(api)
+					s.Mount(api.Surfaces(s.Module))
 				}
 				r := api.Resources()[0]
 				if r.OperatorRead != tc.private || !r.OperatorWrite {
 					t.Fatal("resource lost the route's operator declarations")
 				}
-				opts := screens.Options{Root: "/admin"}
+				opts := screens.Options{Workspace: "/app"}
 				shell := page.Shell{Tag: "admin", Frame: func(_ context.Context, _ page.Request, body []g.Node) g.Node {
 					return g.Group(body)
 				}}
-				screens.Mount(api, shell, opts, r)
+				screens.Mount(api.Surfaces(r.Module).App, shell, opts, r)
 				for _, grant := range []tenancy.Grant{
 					{Permission: "task:read", Operator: tc.private},
 					{Permission: "task:write", Operator: true},
@@ -96,7 +100,7 @@ func TestOperatorReadBoundary(t *testing.T) {
 						t.Errorf("route declarations omit %+v", grant)
 					}
 				}
-				httpx.Register(api, huma.Operation{OperationID: "probe", Method: http.MethodGet, Path: "/probe"},
+				httpx.Register(api.Surfaces("tasks").App, huma.Operation{OperationID: "probe", Method: http.MethodGet, Path: "/probe"},
 					httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{ Body screens.Catalog }, error) {
 						if r.Readable(ctx) != tc.reads {
 							t.Errorf("Readable = %v, want %v", r.Readable(ctx), tc.reads)
@@ -130,14 +134,14 @@ func TestOperatorReadBoundary(t *testing.T) {
 				if err := api.ValidateDeclarations(); err != nil {
 					t.Fatal(err)
 				}
-				code, body := call(t, router, http.MethodGet, "/probe", "")
-				if code != http.StatusOK || strings.Contains(body, r.Path) != tc.reads {
+				code, body := call(t, router, http.MethodGet, "/api/v1/tasks/probe", "")
+				if code != http.StatusOK || strings.Contains(body, r.Schema.Path) != tc.reads {
 					t.Errorf("discovery = %d %s, want visible=%v", code, body, tc.reads)
 				}
-				paths := []string{r.Path, screens.Path(r, opts)}
+				paths := []string{r.Schema.Path, r.Screen}
 				gone := []string{}
 				if shape == "collection" {
-					paths = append(paths, r.Path+"/"+rowID.String(), screens.Path(r, opts)+"/"+rowID.String())
+					paths = append(paths, r.Schema.Path+"/"+rowID.String(), r.Screen+"/"+rowID.String())
 				} else {
 					// A singleton's API has no id in its path, and neither may its screens.
 					// This assertion used to demand 200 from the screen's id-shaped path, which
@@ -145,13 +149,23 @@ func TestOperatorReadBoundary(t *testing.T) {
 					// settings page it served listed one row, offered New, and linked an id of all
 					// zeros. Reproduced and required absent in
 					// TestTheScreensOfASingletonOfferOnlyWhatItsRoutesServe.
-					gone = []string{r.Path + "/" + rowID.String(), screens.Path(r, opts) + "/" + rowID.String()}
+					gone = []string{r.Schema.Path + "/" + rowID.String(), r.Screen + "/" + rowID.String()}
 				}
 				for _, path := range paths {
 					code, body := call(t, router, http.MethodGet, path, "")
+					// Two doors, and now two refusals. The JSON route of a
+					// resource the installation owns is mounted on the control
+					// plane, and at a tenant that is not the installation's the
+					// address answers the way an address nothing serves does —
+					// 404, and the authorizer is never asked. The generated
+					// screen is workspace work: it stays where a person stands
+					// and refuses the caller it always refused, with 403.
 					want := http.StatusForbidden
-					if tc.reads {
+					switch {
+					case tc.reads:
 						want = http.StatusOK
+					case tc.private && !tc.operator && strings.HasPrefix(path, r.Schema.Path):
+						want = http.StatusNotFound
 					}
 					if code != want || strings.Contains(body, title) != tc.reads {
 						t.Errorf("GET %s = %d %s, want %d with visible=%v", path, code, body, want, tc.reads)
@@ -171,11 +185,19 @@ func TestOperatorReadBoundary(t *testing.T) {
 				if shape == "singleton" {
 					method, success = http.MethodPut, http.StatusOK
 				}
+				// The same split at the write door: an operator write refused
+				// because the tenant is not the installation's is a 404 at the
+				// control-plane address, and a 403 only where the caller's own
+				// grants are the question.
 				want := http.StatusForbidden
+				if !tc.operator {
+					want = http.StatusNotFound
+				}
 				if tc.operator && tc.allow {
 					want = success
 				}
-				if code, body := call(t, router, method, r.Path, `{"title":"updated by operator"}`); code != want {
+				at := api.Surfaces(r.Module).Ops.Path(r.Path) // the write door of a resource the installation owns
+				if code, body := call(t, router, method, at, `{"title":"updated by operator"}`); code != want {
 					t.Errorf("operator write = %d %s, want %d", code, body, want)
 				}
 			})

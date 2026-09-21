@@ -126,7 +126,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 		// and modules/admin writes the page. The two routes below are what it
 		// is a face for. See modules/admin/internal/roles.go.
 		Nav: []module.NavEntry{
-			{Label: "Roles", Path: "/admin/auth/roles", Permission: contracts.PermissionRoleManage},
+			{Label: "Roles", Screen: "auth/roles", Permission: contracts.PermissionRoleManage},
 		},
 		Jobs: []jobs.Job{internal.Sweep(svc, deps.Tenants)},
 		// Two subscriptions, and they are the same fact from two directions:
@@ -158,23 +158,23 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 				return svc.Reissue(ctx, tx, asked.Email)
 			},
 		}},
-		Routes: func(api *httpx.API) {
+		Routes: func(s httpx.Surfaces) {
 			// The catalogue, taken at the one moment the kernel has it and this
 			// module is being wired. The hourly sweep reads it back to say which
 			// roles name a permission nothing defines any more.
-			svc.Declare(api.Permissions())
-			internal.RegisterRoutes(api, svc, cookies)
+			svc.Declare(s.Permissions())
+			internal.RegisterRoutes(s, svc, cookies)
 			if deps.Registration != nil {
-				internal.RegisterRegistrationRoutes(api, svc)
+				internal.RegisterRegistrationRoutes(s, svc)
 			}
 			if deps.ApprovalRegistration != nil {
-				internal.RegisterApprovalRegistrationRoutes(api, svc, *deps.ApprovalRegistration)
+				internal.RegisterApprovalRegistrationRoutes(s, svc, *deps.ApprovalRegistration)
 			}
 			if deps.EmailRegistration != nil {
-				internal.RegisterEmailRegistrationRoutes(api, svc, *deps.EmailRegistration)
+				internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
 			}
 			if deps.OIDC.Issuer != "" {
-				internal.RegisterOIDCRoutes(api, svc, deps.Users,
+				internal.RegisterOIDCRoutes(s, svc, deps.Users,
 					internal.NewProvider(deps.OIDC, cookies, secure))
 			}
 		},

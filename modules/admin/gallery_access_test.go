@@ -51,7 +51,7 @@ func TestStorybookBuildsAreAuthorizedAndBoundToTheirComposition(t *testing.T) {
 	router := mountAs(t, caller{}, func(d *admin.Deps) { d.Storybook = provider })
 	for _, at := range []struct{ host, own, other string }{{host, "acme", "operator"}, {operatorHost, "operator", "acme"}} {
 		for _, file := range []string{"index.html", "index.json", "iframe.html", "assets/" + at.own + ".js"} {
-			path := "/admin/_gallery/storybook/" + file
+			path := "/app/admin/_gallery/storybook/" + file
 			r := httptest.NewRequest(http.MethodGet, path, nil)
 			r.Host = at.host
 			r.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
@@ -69,20 +69,20 @@ func TestStorybookBuildsAreAuthorizedAndBoundToTheirComposition(t *testing.T) {
 			}
 		}
 		for _, file := range []string{"assets/" + at.other + ".js?tenant=" + at.other, "assets/missing.js", "%2e%2e/index.html", "assets/%2e%2e/index.html", "assets%5c..%5cindex.html"} {
-			status, _, _ := callAt(t, router, at.host, http.MethodGet, "/admin/_gallery/storybook/"+file, "")
+			status, _, _ := callAt(t, router, at.host, http.MethodGet, "/app/admin/_gallery/storybook/"+file, "")
 			if status != http.StatusNotFound {
 				t.Errorf("%s %s: %d, want 404", at.host, file, status)
 			}
 		}
 	}
 	acme.Files = operator.Files
-	status, _, _ := callAt(t, router, host, http.MethodGet, "/admin/_gallery/storybook/index.json", "")
+	status, _, _ := callAt(t, router, host, http.MethodGet, "/app/admin/_gallery/storybook/index.json", "")
 	if status != http.StatusServiceUnavailable {
 		t.Fatalf("another tenant's build with the same IDs: %d", status)
 	}
 	acme = book("acme")
 	acme.Theme.Light.AccentDefault = "#123456"
-	status, _, _ = callAt(t, router, host, http.MethodGet, "/admin/_gallery/storybook/index.html", "")
+	status, _, _ = callAt(t, router, host, http.MethodGet, "/app/admin/_gallery/storybook/index.html", "")
 	if status != http.StatusServiceUnavailable {
 		t.Fatalf("stale theme build: %d", status)
 	}
@@ -92,7 +92,7 @@ func TestStorybookBuildsAreAuthorizedAndBoundToTheirComposition(t *testing.T) {
 // gallery, customer tenants must not receive the installation's source examples.
 func TestDefaultGalleryRefusesCustomerTenantByDirectURL(t *testing.T) {
 	router := mount(t)
-	for _, path := range []string{"/admin/_gallery", "/admin/_gallery?group=Status", "/admin/_gallery/preview?example=pk-ui.component.button/primary", "/admin/_gallery/export"} {
+	for _, path := range []string{"/app/admin/_gallery", "/app/admin/_gallery?group=Status", "/app/admin/_gallery/preview?example=pk-ui.component.button/primary", "/app/admin/_gallery/export"} {
 		status, body, _ := callAt(t, router, host, http.MethodGet, path, "")
 		if status != http.StatusForbidden {
 			t.Errorf("customer gallery %s: status %d, want 403", path, status)
@@ -101,7 +101,7 @@ func TestDefaultGalleryRefusesCustomerTenantByDirectURL(t *testing.T) {
 			t.Errorf("customer gallery %s leaks source examples", path)
 		}
 	}
-	status, body, _ := callAt(t, router, operatorHost, http.MethodGet, "/admin/_gallery", "")
+	status, body, _ := callAt(t, router, operatorHost, http.MethodGet, "/app/admin/_gallery", "")
 	if status != http.StatusOK || !strings.Contains(body, "pk-ui.component.") {
 		t.Fatal("the operator tenant lost its installation gallery")
 	}
@@ -129,7 +129,7 @@ func TestStorybooksUseOnlyTheAuthorizedTenantComposition(t *testing.T) {
 		{host, "Acme only", "Operator only", "#123456", "#654321"},
 		{operatorHost, "Operator only", "Acme only", "#654321", "#123456"},
 	} {
-		for _, path := range []string{"/admin/_gallery", "/admin/_gallery/preview?example=" + url.QueryEscape(test.own), "/admin/_gallery/export"} {
+		for _, path := range []string{"/app/admin/_gallery", "/app/admin/_gallery/preview?example=" + url.QueryEscape(test.own), "/app/admin/_gallery/export"} {
 			r := httptest.NewRequest(http.MethodGet, path, nil)
 			r.Host = test.at
 			r.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
@@ -158,7 +158,7 @@ func TestStorybooksUseOnlyTheAuthorizedTenantComposition(t *testing.T) {
 				}
 			}
 		}
-		for _, route := range []string{"/admin/_gallery", "/admin/_gallery/preview"} {
+		for _, route := range []string{"/app/admin/_gallery", "/app/admin/_gallery/preview"} {
 			status, _, _ := callAt(t, router, test.at, http.MethodGet, route+"?example="+url.QueryEscape(test.other)+"&tenant="+url.QueryEscape(test.other), "")
 			if status != http.StatusNotFound {
 				t.Errorf("direct other-tenant ID at %s = %d", route, status)
@@ -177,7 +177,7 @@ func TestStorybookDenialAndEmptyCompositionNeverFallBack(t *testing.T) {
 				return export.Storybook{Title: "Empty product"}, nil
 			}
 		})
-		for _, path := range []string{"/admin/_gallery", "/admin/_gallery/export"} {
+		for _, path := range []string{"/app/admin/_gallery", "/app/admin/_gallery/export"} {
 			status, body, _ := callAt(t, router, operatorHost, http.MethodGet, path, "")
 			want := http.StatusOK
 			if denied {
@@ -197,7 +197,7 @@ func TestStorybookRequiresPermissionBeforeCallingProvider(t *testing.T) {
 			return export.Storybook{}, nil
 		}
 	})
-	for _, path := range []string{"/admin/_gallery", "/admin/_gallery/preview?example=private", "/admin/_gallery/export", "/admin/_gallery/storybook/index.json", "/admin/_gallery/storybook/assets/private.js"} {
+	for _, path := range []string{"/app/admin/_gallery", "/app/admin/_gallery/preview?example=private", "/app/admin/_gallery/export", "/app/admin/_gallery/storybook/index.json", "/app/admin/_gallery/storybook/assets/private.js"} {
 		status, _, _ := call(t, router, http.MethodGet, path, "")
 		if status != http.StatusForbidden {
 			t.Errorf("%s = %d, want 403", path, status)

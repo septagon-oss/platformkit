@@ -30,7 +30,7 @@ func renderNodeToString(t *testing.T, node g.Node) string {
 }
 
 // gallery is the package's own registry, rendered. See gallery.go: the tests
-// and /admin/_gallery read one list, so a component the shell can show is a
+// and /app/admin/_gallery read one list, so a component the shell can show is a
 // component whose classes the closure test below has seen.
 func gallery() []g.Node {
 	out := make([]g.Node, 0, len(examples.Gallery()))

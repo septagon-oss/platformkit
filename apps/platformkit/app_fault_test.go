@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
 // TestAWholeApplicationAnswersABrowserWithAPageAndAClientWithAValue. The two halves are
@@ -26,7 +27,7 @@ func TestAWholeApplicationAnswersABrowserWithAPageAndAClientWithAValue(t *testin
 	install(t, path)
 
 	c := compose(cfg)
-	options := appOptions(c, app.All)
+	options := appOptions(cfg, c, app.All)
 	options.Transport = memory.New()
 	options.Log = quiet()
 	start(t, cfg, c.modules, options)
@@ -44,11 +45,11 @@ func TestAWholeApplicationAnswersABrowserWithAPageAndAClientWithAValue(t *testin
 		t.Errorf("a browser navigation to a guard's refusal got %s, not a page: %s", contentType, trimHTML(body))
 	}
 	for _, want := range []string{
-		"<title>Forbidden",      // the verdict, where a browser tab and a history entry read it
-		"csrf:",                 // the reason, which here is actionable
-		"Back to the workspace", // one way out
-		"(request ",             // the reference, as a bare id a person can read aloud
-		`href="/admin/assets/`,  // and the shell's own stylesheet, so it looks like the application
+		"<title>Forbidden",         // the verdict, where a browser tab and a history entry read it
+		httpx.CodeCSRFOrigin + ":", // the named code, which is what a person reads back to support
+		"Back to the workspace",    // one way out
+		"(request ",                // the reference, as a bare id a person can read aloud
+		`href="/app/admin/assets/`, // and the shell's own stylesheet, so it looks like the application
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the refusal page this application serves omits %q: %s", want, trimHTML(body))
@@ -83,7 +84,7 @@ func TestAWholeApplicationAnswersABrowserWithAPageAndAClientWithAValue(t *testin
 	if !strings.HasPrefix(valueCT, "application/problem+json") {
 		t.Errorf("an API client got %s, want the problem document: %s", valueCT, valueBody)
 	}
-	if !strings.Contains(valueBody, `"detail":"csrf:`) {
+	if !strings.Contains(valueBody, `"detail":"`+httpx.CodeCSRFOrigin+`:`) {
 		t.Errorf("the problem body is no longer the one clients read: %s", valueBody)
 	}
 }
