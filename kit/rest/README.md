@@ -13,9 +13,13 @@ Beside the five routes, `Command` mounts a verb on a row or the collection
 with its own body and authorization, and `Operation` is a typed projection
 with a custom path sharing the transaction and error handling. Updates and
 deletes lock the live row first — an update before merging, validating and
-snapshotting, a delete before removing the row — and a body that names no
-column stops at that lock and at the tenant recheck the lock alone leaves
-open, so it neither writes, validates nor publishes.
+snapshotting, a delete before removing the row — and both then ask that row
+whose tenant it is, because a lock proves a row is there and not that it is the
+caller's: a policy that lets every tenant read one shared catalogue lets the
+read answer a row the request may not write, and a DELETE produces no new row
+for a `WITH CHECK` clause to inspect, so it has only its `USING` clause to lean
+on. A body that names no column stops at those two checks, so it neither
+writes, validates nor publishes.
 `Fault` maps kit/crud errors to problem documents; `FieldErrors`, `Values`,
 `UpdateValues` and `Writable` type a submitted form by the schema; `Display`,
 `Text`, `Humanize`, `FieldLabel` and `FieldHelp` delegate to

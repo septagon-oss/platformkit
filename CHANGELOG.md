@@ -146,8 +146,9 @@ bump has to work around. What could reach a consumer is dst's own floor: it move
 `go 1.26.0`, which this module clears and a pinning module on an older toolchain
 would not.
 
-**A command-owned field is refused where a body is read, and an empty `PATCH`
-says nothing.** `refuseImmutable` asked whether the decoded map held the
+**A command-owned field is refused where a body is read, an empty `PATCH` says
+nothing, and a write asks whose row it is.** `refuseImmutable` asked whether the
+decoded map held the
 declared key while `encoding/json` binds a field a key merely folds onto, so
 `{"Author": …}` wrote the author through every generated create route of every
 module declaring `Immutable`. The five doors that read a body — create and patch,
@@ -158,9 +159,14 @@ A `PATCH` that named no column moved `updated_at` and published
 `<module>.<entity>.updated` for a change nobody made; it now validates nothing,
 writes nothing, publishes nothing and returns the row as read. The tenant-scope
 recheck a body naming a column triggers still runs first, so an empty `PATCH`
-of a row outside the request's tenant is 404 like any other body. `db.Now`
-stamps the three timestamp columns, so an answer carries the instant the column
-holds. What stays open: a `Singleton` declares no command-owned field.
+of a row outside the request's tenant is 404 like any other body. The `DELETE`
+asked that question of nothing at all: row-level security filters a delete by its
+`USING` clause alone, since a delete produces no new row for a `WITH CHECK`
+clause to inspect, so on a table every tenant may read, one tenant deleted
+another's row — 204, event and all — or answered 500 out of the policy violation
+where the Spec soft-deletes. `db.Now` stamps the three timestamp columns, so an
+answer carries the instant the column holds. What stays open: a `Singleton`
+declares no command-owned field.
 
 ## [1.1.1] - 2026-09-18
 

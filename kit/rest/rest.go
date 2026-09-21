@@ -272,6 +272,14 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return e, err
 	}
+	// Whose row it is, asked here for the same reason the update asks it, and with
+	// more to lose: row-level security filters a DELETE by its USING clause alone
+	// — there is no new row for a WITH CHECK to inspect — so on a table every
+	// tenant may read, the statement below reaches a row the request's tenant may
+	// not write, and the event would be published over a row it removed.
+	if err := crud.RecheckTenant(tx, e); err != nil {
+		return e, err
+	}
 	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
 		return e, err
 	}
