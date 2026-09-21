@@ -35,7 +35,9 @@ import (
 // Fault renders a refusal as a document, for a request that came from something that
 // will show it to a person. It reports whether it answered: returning false falls back
 // to the Problem JSON, which is how a renderer opts out for a request it has no chrome
-// for rather than inventing one.
+// for rather than inventing one. The fallback is the one document a refusal always
+// gets — the same body, and the same single writer, as an application that registers no
+// renderer at all. Opting out is a refusal to write, not a licence for two writers.
 //
 // It receives the same *problem.Problem the JSON body would have carried, including the
 // instance URN with the request id. The status is the verdict's, never the renderer's
@@ -44,23 +46,33 @@ import (
 type Fault func(w http.ResponseWriter, r *http.Request, p *problem.Problem) bool
 
 // fail answers a refusal the kernel made for itself, in the shape the requester asked
-// for. Every kernel-side refusal goes through here or through refuse, which is this
-// function reached from inside the huma chain; a second writer of problem bodies in
-// this package is a second answer to the question this file exists to ask once.
-//
-// It reports whether the registered renderer answered, because refuse has a huma
-// context to answer with and has to know whether the document is still owed.
-func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail string) bool {
+// for. Every kernel-side refusal goes through here, and every refusal a guard inside
+// the huma chain makes goes through refuse, which is the same rule holding the chain's
+// writer instead of this one; a second writer of problem bodies in this package is a
+// second answer to the question this file exists to ask once.
+func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail string) {
 	id := requestIDFrom(r.Context())
+	if a.show(w, r, id, status, detail) {
+		return
+	}
+	writeProblem(w, status, id, detail)
+}
+
+// show asks the registered renderer for a page and reports whether it answered.
+// It writes nothing itself, which is the whole shape of it: a renderer that declines
+// leaves the refusal exactly as it was, and the caller — fail with a ResponseWriter,
+// refuse with a huma context — writes the one problem document the request is owed.
+// A caller that asked this and then wrote a document of its own answered the same
+// refusal twice into one body, which is bytes no JSON parser accepts.
+func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int, detail string) bool {
+	if a.opts.Fault == nil || !wantsDocument(r) {
+		return false
+	}
 	p := problem.New(status, detail)
 	if id != "" {
 		p.Instance = "urn:request:" + id
 	}
-	if a.opts.Fault != nil && wantsDocument(r) && a.opts.Fault(w, r, p) {
-		return true
-	}
-	writeProblem(w, status, id, detail)
-	return false
+	return a.opts.Fault(w, r, p)
 }
 
 // refuse is fail for the guards that run inside the huma chain: the authorization
@@ -83,13 +95,19 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 //     the anonymous-caller branch of authorize makes when it answers 303 instead.
 //
 // The document a client that asked for a value gets is unchanged, byte for byte, and so
-// is the one an application that registers no renderer has always written.
+// is the one an application that registers no renderer has always written. A renderer
+// that was asked and declined is owed that same one document: hence ask the renderer
+// here (show) rather than fail, which answers the fallback itself because a kernel-side
+// caller has no huma writer to fall back on, and then this line would be the second
+// writer of the same verdict.
 func (a *API) refuse(ctx huma.Context, status int, detail string) {
 	if a.opts.Fault != nil {
+		// The unwrap sits behind the same test show makes, because it is the only
+		// reason to reach past the huma context and it panics on a foreign one.
 		r, w := humachi.Unwrap(ctx)
 		if wantsDocument(r) {
 			ctx.SetStatus(status)
-			if a.fail(w, r, status, detail) {
+			if a.show(w, r, requestIDFrom(r.Context()), status, detail) {
 				return
 			}
 		}
