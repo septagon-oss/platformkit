@@ -36,10 +36,11 @@ func main() {
   example := examples.ExampleWithChildren(examples.ExampleInfo{ID: "fixture/textarea", ComponentID: "pk-ui.component.form"},
     components.FormProps{Label: "Album description", Action: "/albums"}, children, components.Form)
   if input.Generated {
-    resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes", Schema: crud.Schema{Fields: []crud.Field{
+    resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/notes", Screen: "/app/notes/notes",
+      Schema: crud.Schema{Fields: []crud.Field{
       {Name: "description", Type: crud.TypeText, Widget: "textarea", Doc: input.HelperText},
     }}}
-    example = screens.FormExample("fixture/textarea", resource, screens.Options{Root: "/admin"}, "/admin/notes", "Note description",
+    example = screens.FormExample("fixture/textarea", resource, screens.Options{Workspace: "/app"}, "/app/notes/notes", "Note description",
       map[string]any{"description": input.Value}, map[string]string{"description": input.ErrorMessage}, "", true)
   }
   snapshot, err := export.Export(design.Default(), []examples.Example{example})

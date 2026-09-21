@@ -75,12 +75,12 @@ func main() {
     IconMargin bool
   }
   if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil { panic(err) }
-  resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/api/v1/notes",
+  resource := httpx.Resource{Module: "notes", Entity: "note", Path: "/notes", Screen: "/app/notes/notes",
     Schema: crud.Schema{Fields: []crud.Field{{Name: "title", Type: crud.TypeString, Required: true}}}}
   captures := []examples.Example{
-    screens.FormExample("fixture/validation", resource, screens.Options{Root: "/admin"}, "/admin/notes", "New note",
+    screens.FormExample("fixture/validation", resource, screens.Options{Workspace: "/app"}, "/app/notes/notes", "New note",
       nil, map[string]string{"title": "A title is required."}, "A title is required.", true),
-    screens.FormExample("fixture/conflict", resource, screens.Options{Root: "/admin"}, "/admin/notes/1", "Edit note",
+    screens.FormExample("fixture/conflict", resource, screens.Options{Workspace: "/app"}, "/app/notes/notes/1", "Edit note",
       map[string]any{"title": "Field notes"}, nil, "A record already uses one of these values.", false),
   }
   var extras []ui.Extra
