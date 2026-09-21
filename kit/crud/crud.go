@@ -196,9 +196,10 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 // writes it: an entity carrying a tenant that is not the transaction's is not
 // this caller's row, and is answered ErrNotFound, the only thing the API may say
 // about it. A row carrying no tenant is the transaction's to stamp, which is what
-// Update then does with it. As everywhere entity.BaseOf is reached directly, e is
-// non-nil: Update's own guard says so first, and a row read under the lock is a
-// row.
+// Update then does with it. Nothing at all is answered ErrInvalid, the answer
+// Create and Update give for nothing to act on: the non-nil precondition cannot
+// be a sentence in the doc of an exported door, because the caller the export
+// exists for has no Update above it to pass the guard first.
 //
 // It is exported for a caller that read a row under the lock and then decided to
 // write nothing, which is where row-level security stops being the backstop. On a
@@ -208,6 +209,9 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 // refuse. A patch body that names no column is that write, and the answer it gets
 // has to be the answer the same row gives a body that names a column.
 func RecheckTenant(tx db.Tx[db.Tenant], e Entity) error {
+	if isNil(e) {
+		return fmt.Errorf("%w: there is nothing to recheck", ErrInvalid)
+	}
 	b := entity.BaseOf(e)
 	if b.ID == uuid.Nil {
 		return ErrNotFound

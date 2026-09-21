@@ -40,6 +40,18 @@ it, so a row the request's tenant may not write answers 404 whatever the body
 omits — on a table whose read policy shows one shared list to every tenant,
 row-level security lets the row be read, and it is the write that refuses.
 
+That compare is `crud.RecheckTenant`, and it lives in
+[kit/crud](../crud/crud.go) because the rule already lived there, inside
+`Update`. A second compare in `kit/rest` — that package reading the row's
+`TenantID` against the transaction's own — would be a second opinion about
+tenancy free to disagree with the first, so one function serves `Update` and
+both doors. That is an addition to `kit/crud`'s exported surface, and a
+deviation from this change's own brief, which asked for no new exported API: the
+smaller of two costs, since the other was a compare that could disagree. Asked
+about nothing at all it answers `ErrInvalid`, the answer `Create` and `Update`
+give for nothing to act on, and never a panic — a door whose precondition is a
+sentence is a door that crashes the request that asks it.
+
 Prerequisites: an entity embedding `crud.Base` with a `TableName`, its
 migration, and the permissions the manifest declares. Tests need the
 development database: `make up`, then `make test TEST_PACKAGES=./kit/rest`.

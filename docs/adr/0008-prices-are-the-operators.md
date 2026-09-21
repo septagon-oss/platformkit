@@ -90,3 +90,37 @@ wrote down is the one somebody copies.
   screen guarded by the bare permission would have let a customer's wildcard
   write a plan through the form after the API refused it.
 - A deployment with one tenant that *is* the operator sees no difference.
+
+## Amendment: what the shared read policy costs a delete
+
+Found in the kernel by T-0020's fifth review, and it belongs to this decision
+rather than to the module, because it is this policy that carries the cost.
+
+Row-level security decides a `DELETE` by its `USING` clause alone: a delete
+produces no new row, so `WITH CHECK` has nothing to inspect and never runs. On
+`billing_plans` that means `USING (true)` lets a transaction in any tenant
+address a row by id, and the clause holding the catalogue to the operator —
+`WITH CHECK (platformkit_tenant_match(tenant_id))` — is not reached. Before the
+kernel asked the question, a tenant that could read the row and not write it
+answered `DELETE /api/v1/billing/plans/{id}` with 204, the row left the table
+and the event published over its removal; over a Spec that soft-deletes the same
+request answered 500 out of the policy violation and kept the row. Both are this
+ADR's one exception reaching past the read side it was written for.
+
+**So a write door settles whose row it is inside the request's transaction,
+before it writes or removes anything.** `rest.Spec`'s update and delete doors
+take the row lock, then ask `crud.RecheckTenant` — the one compare
+`crud.Update` performs, exported so both doors and the module's own write ask
+the same copy of the rule — and a row outside the request's tenant answers 404,
+the answer the read gives a row it hides, with none of the row in the body and
+nothing published. A lock proves a row is there; it does not prove the caller
+may write it.
+
+Nothing here changes what `billing_plans` answers a customer today:
+`OperatorWrite` refuses those three routes at any tenant but the operator's,
+before the recheck is reached, and the Spec soft-deletes. The rule is not for
+this module. Any module that adopts the one-shared-list policy inherits the
+cost, `rest.Spec` generates its routes without being told, and `modules/billing`
+therefore writes no ownership check of its own — the exception stays in one
+migration and this file, and the protection it costs sits in the door every
+module is handed.

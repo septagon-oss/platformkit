@@ -164,7 +164,10 @@ asked that question of nothing at all: row-level security filters a delete by it
 `USING` clause alone, since a delete produces no new row for a `WITH CHECK`
 clause to inspect, so on a table every tenant may read, one tenant deleted
 another's row — 204, event and all — or answered 500 out of the policy violation
-where the Spec soft-deletes. `db.Now` stamps the three timestamp columns, so an
+where the Spec soft-deletes. Both doors now ask `crud.RecheckTenant`, the tenant
+compare `Update` already made, exported rather than copied: the change's one new
+exported name, and a nil entity answers it `ErrInvalid` as every other door in
+`kit/crud` does. `db.Now` stamps the three timestamp columns, so an
 answer carries the instant the column holds. What stays open: a `Singleton`
 declares no command-owned field.
 
