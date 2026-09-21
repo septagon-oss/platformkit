@@ -69,6 +69,28 @@ page for a navigation (see [ui/page](../../ui/page/README.md)). An htmx write is
 that parses a value — its controller reads the code and swaps nothing for a 4xx — so it is
 answered in JSON even though it asks with `Accept: text/html,*/*`.
 
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** `Surfaces` is a typed wrapper over the two `chi.NewMux`
+routers `New` already built, with the mount gate beside `ValidateDeclarations`;
+the anonymous write limit is `kit/limit`'s counter table — the one
+`modules/auth` already shares — whose purge moved beside the outbox's sweeper in
+`kit/app` rather than being given a second one; a refusal's value is
+`kit/problem`'s document and its page is `ui/page`'s `Messages`, `SelectLocale`
+and `Formatter.Text` over the headers `Serve` already wrote; the cases reuse
+`guardKernel`, `dbtest.Schema` and `documentFault` instead of new doubles.
+**Added:** three routers per host with a chain each, the mount gate that refuses
+a route contradicting its router, the installation-host gate
+(`Options.Installation`), the one-release alias table and the `Home` claim — none
+of these had an owner before, because one chain answered every address and which
+surface a route was on lived in prose. **Made reusable:** `Router.Prefix`,
+`Router.Path` and `Router.PagePath`, so a module composes an address instead of
+spelling one; `SurfaceExtension`, the `x-platformkit-surface` key every recorded
+operation carries; `LegacySessionCookies`, which the auth module needs to clear
+what the kernel still reads; and `review_roundN_*_test.go`, the shape a
+reviewer's own pinning file arrives in.
+
 ### One release of the old addresses
 
 [aliases.go](aliases.go) is the whole migration: `/admin` → `/app` and the
