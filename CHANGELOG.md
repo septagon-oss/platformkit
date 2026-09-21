@@ -213,7 +213,23 @@ in the JSON `detail` — `AUTH_ANONYMOUS`, `AUTH_DENIED`, `AUTH_NOT_OPERATOR`,
 `AUTH_NO_TENANT`, `AUTH_PRINCIPAL_CHANGED`, `CSRF_ORIGIN`, `PUBLIC_SETS_A_COOKIE` and
 `WRITE_ELSEWHERE` (a write of a resource whose writes are served on another surface,
 answered at its read door, naming `write_path`) — where the sentence used to be a
-lowercase prefix. See
+lowercase prefix.
+
+Those codes are what a refusal *page* is translated by. `ui/page` holds the one table
+from a code to a catalog key (`fault.<CODE>`, and `fault.<status>` for the 404 and the
+500, which carry no code), the page is negotiated from the request's
+`Accept-Language` — a guard answers before a session, a tenant or a stored preference
+exists to ask one — and it carries `Content-Language` and `Vary: Accept-Language`. The
+declaration follows the sentence on the page: a shell with no catalog, or none for that
+code, says the kernel's English and declares `en`. Two narrower promises came with it:
+the pointer to a split resource's write door now goes to a caller holding the
+credential that door reads, because the door would refuse anybody else the moment they
+reached it; and a tree mounted with `Static` answers a missing file, its own prefix and
+any directory beneath it through its surface's chain, in the shape the client asked for,
+instead of net/http's plain-text note and a listing of the shell's filenames. The hourly
+purge of the rate-limit counters moved from `modules/auth`'s sweep to `kit/app`, beside
+the outbox's, because the kernel's public write limit made the kernel the table's second
+writer. See
 [ADR 0017](docs/adr/0017-three-surfaces-by-path.md) for what this costs a module.
 
 ## [1.1.1] - 2026-09-18

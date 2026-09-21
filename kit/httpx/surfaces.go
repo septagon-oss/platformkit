@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -291,9 +292,12 @@ func (s Surfaces) SystemToken() tenancy.SystemToken { return s.App.SystemToken()
 // It is still inside the surface's chain: the tree is mounted on the router that
 // carries the request id, the surface classification and the headers, so what a
 // cache may hold of it is that surface's answer and nothing else — a workspace
-// tree is no-store and noindex, a public one is cacheable for its minute. And it
-// is recorded in the mount table like every other address, so the composition's
-// own audit of what it serves includes the tree it serves it from.
+// tree is no-store and noindex, a public one is cacheable for its minute. The
+// chain covers a miss as well as a hit: a file the tree does not hold is refused
+// by the surface and not by net/http, in the shape the client asked for (see
+// API.tree). And the tree is recorded in the mount table like every other
+// address, so the composition's own audit of what it serves includes the tree it
+// serves it from.
 //
 // Three refusals, all collected rather than panicked, because the composition
 // that trips one never listens and whoever wrote it should read all of it at
@@ -323,7 +327,50 @@ func (r *Router) Static(rel string, fsys fs.FS) {
 		// reaches the address is served it, with the surface's own headers.
 		auth: Public(), page: true,
 	})
-	r.api.root.Handle(at+"/*", http.StripPrefix(at, http.FileServerFS(fsys)))
+	r.api.root.Handle(at+"/*", http.StripPrefix(at, r.api.tree(fsys)))
+}
+
+// tree is a mounted file tree inside its surface's chain, including where it
+// answers nothing.
+//
+// http.FileServerFS answers a missing file for itself — net/http's plain-text
+// "404 page not found" — and that answer is outside the chain the tree was
+// mounted into: no problem document for a client that parses one, no failure page
+// for the browser that navigated to a stylesheet the deployment no longer ships,
+// and no request id to quote. The rule the wrapper applies is therefore the plain
+// one — the tree answers where it holds a file, and the surface answers everywhere
+// else. That covers the mount prefix and any directory beneath it, which the file
+// server would otherwise answer with a listing of the shell's own filenames to
+// whoever asked politely.
+//
+// What the tree does hold goes to the file server untouched — its content type,
+// its range support, its conditional response — because the only thing wrong with
+// the old answer was the miss.
+func (a *API) tree(fsys fs.FS) http.Handler {
+	files := http.FileServerFS(fsys)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Cleaned rather than raw: fs.Stat refuses a path carrying a .., and the
+		// refusal that describes a file nobody has is the one for a file that is
+		// simply not there.
+		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if !treeHolds(fsys, name) {
+			a.fail(w, r, http.StatusNotFound, "nothing is served at this address")
+			return
+		}
+		files.ServeHTTP(w, r)
+	})
+}
+
+// treeHolds reports whether this tree has a file at that name. A directory is not
+// an address anybody asked for, and the mount prefix is the same case with the name
+// empty; no mounted tree here carries an index for either, so refusing them loses
+// nothing and forecloses the listing.
+func treeHolds(fsys fs.FS, name string) bool {
+	if name == "" {
+		return false
+	}
+	info, err := fs.Stat(fsys, name)
+	return err == nil && !info.IsDir()
 }
 
 // staticFault is the two refusals the prefix rules do not already make: which

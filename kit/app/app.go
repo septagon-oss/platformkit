@@ -171,8 +171,8 @@ type App struct {
 const shutdownGrace = 10 * time.Second
 
 // The built-in jobs, in every worker. The relay is a second because an event is
-// asynchronous, not slow; the purge is hourly because a week of history does
-// not need attention more often than that.
+// asynchronous, not slow; the two purges are hourly because a week of history and
+// a day of closed windows do not need attention more often than that.
 const (
 	relayEvery = time.Second
 	purgeCron  = "0 * * * *"
@@ -497,16 +497,17 @@ func mountWorkspaceCatalog(api *httpx.API, describe func(ctx context.Context, re
 	})
 }
 
-// work is the worker role: the outbox relay, the outbox purge, every module's
-// jobs, and every module's subscriptions. probes is the handler it serves, or
-// nil when the web half of the same process is already serving them.
-func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
-	scheduled := []jobs.Job{
+// kernelJobs is the periodic work the composition owns because no module does: the
+// outbox relay and the two tables the kernel writes that nothing but time makes
+// smaller. A module's own jobs are appended to this list by work; nothing here
+// reaches a module's table.
+func kernelJobs(transport events.Transport) []jobs.Job {
+	return []jobs.Job{
 		// Parallel, because SKIP LOCKED is already the concurrency control, and
 		// bounded, because a transport that blocks would otherwise hold the
-		// scheduler — and with it the purge and every module's job — for as
-		// long as it blocked. A pass that runs out of time leaves its rows
-		// unstamped and the next tick takes them.
+		// scheduler — and with it the purges and every module's job — for as long
+		// as it blocked. A pass that runs out of time leaves its rows unstamped and
+		// the next tick takes them.
 		{Name: "outbox-relay", Every: relayEvery, Parallel: true, Run: func(ctx context.Context, conn *db.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, relayTimeout)
 			defer cancel()
@@ -515,7 +516,24 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
 		}},
+		// The counters table is written by whoever holds a limiter, and this
+		// composition is one of them: httpx counts anonymous public writes on the
+		// limiter the runner hands it. kit/limit wrote the condition for this line in
+		// advance — "the moment a second module adopts this, the purge belongs beside
+		// the outbox's" — and the condition arrived with the public write limit. The
+		// last field of every key here is an address a caller chooses, so a table
+		// nobody empties grows at somebody else's rate; leaving the purge in
+		// `modules/auth`'s sweep would have made an installation that takes the limit
+		// and not the login page one that never forgets a row.
+		{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge},
 	}
+}
+
+// work is the worker role: the kernel's own jobs, every module's jobs, and every
+// module's subscriptions. probes is the handler it serves, or nil when the web half
+// of the same process is already serving them.
+func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
+	scheduled := kernelJobs(transport)
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)

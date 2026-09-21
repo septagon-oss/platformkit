@@ -56,7 +56,16 @@ works for that case and for non-HTTP consumers. Language metadata cannot transla
 already rendered text. Negotiated pages emit `Content-Language`, `Vary:
 Accept-Language` and `Cache-Control: private, no-store` so an account preference
 cannot leak through a shared response cache. Existing unconfigured shells retain
-their behavior; untranslated recovery notices and faults keep their English tags.
+their behavior; untranslated recovery notices keep their English tags. A refusal
+page (`FaultHandler`, the page a kernel guard answers a browser with) reads the
+same contract: it negotiates from the request's `Accept-Language` — a guard
+answers before a tenant, a session or a stored preference exists, so the header
+the caller brought is all there is to negotiate from — and shows the sentence this
+shell ships under `fault.<CODE>`, where the codes are `kit/httpx`'s published
+`Code*` constants and the table lives in `fault.go`. A refusal with no code is
+keyed by its status (`fault.404`, `fault.500`). The kernel's English text is the
+fallback, and the page declares the language of the sentence it actually shows:
+a catalog with no entry for the code leaves an English page declaring `en`.
 
 The [reference application](../../apps/platformkit/modules.go) composes
 [`admin.Messages()`](../../modules/admin/messages.go) through `page.FromCatalog`
@@ -65,9 +74,10 @@ for its sign-in page. Run the application as described in the [root README](../.
 browser's language. This translates the initial sign-in form, and the generated
 screens read their fixed labels (New, Edit, Delete, the count, the pager and the
 empty state) under `screens.*` keys with English fallbacks; entity names,
-authentication API errors, client apps and notification templates still need
-their own authored messages and adoption. No translation management service
-or remote bundle is required by this local runtime seam.
+authentication API errors, client apps, the kernel's refusal sentences
+(`fault.*`) and notification templates still need their own authored messages and
+adoption. No translation management service or remote bundle is required by this
+local runtime seam.
 
 Run `go test -race ./ui/page -count=1` for negotiation, fallbacks, pluralization,
 escaping and concurrent catalog isolation. With the repository's existing test

@@ -380,11 +380,27 @@ func (a *API) Resources() []Resource {
 // that pays for it and written by the installation — asked with a verb that
 // changes something.
 //
-// It answers "" in every other case, and one case is refused on purpose: the
-// installation's own address is not named to a caller standing at a host the
-// control plane is not served at. An address nobody can reach is not a direction
-// worth giving, and a refusal that named one would say more about the control
-// plane than this host says about it anywhere else.
+// It answers "" in every other case, and two cases are refused on purpose. A
+// pointer is only a direction when the caller can walk it, and this one points at
+// a door on the control plane — which reads a session and asks for an operator
+// grant — so it is named to neither half of a caller who holds neither:
+//
+//   - a host the control plane is not served at, because an address nobody can
+//     reach from where they are standing is not a direction worth giving, and a
+//     refusal that named one would say more about the control plane than this
+//     host says about it anywhere else;
+//   - a caller the chain has nothing to recognise, because the door would refuse
+//     them the moment they arrived, and a refusal that hands out a detour to
+//     another refusal is not guidance but noise about somebody else's permissions.
+//
+// The caller half asks what the request *presents* and not who it is. This answer
+// is composed by chi's router, ahead of the tenant lookup, the transaction and
+// the session read, because the address asked for a verb it does not take and so
+// matched no operation to run those guards for — and an answer worth giving is
+// not worth a transaction. `credentialed` is as much as is knowable from here, and
+// it is the same question the App surface asks an anonymous visitor who brings
+// nothing: the pointer goes to the caller holding the credential that door reads,
+// which is the caller this refusal exists for.
 func (a *API) writeElsewhere(r *http.Request) (at, entity string) {
 	if !unsafeMethod(r.Method) {
 		return "", ""
@@ -398,7 +414,7 @@ func (a *API) writeElsewhere(r *http.Request) (at, entity string) {
 			continue
 		}
 		at = res.WritePath + tail
-		if classify(at) == SurfaceOps && !a.servesOps(r.Host) {
+		if classify(at) == SurfaceOps && (!a.servesOps(r.Host) || !credentialed(r)) {
 			continue
 		}
 		return at, res.Entity

@@ -1079,11 +1079,14 @@ func (a *API) entitled(ctx huma.Context, t tenancy.Tenant, auth Auth) bool {
 // A refusal has one value and two shapes (docs/adr/0015): the same verdict as a
 // problem document for a program and as a sentence for a person. The second
 // shape was English-only, because the sentence was a string literal in the
-// guard that made it. These constants are the carrier the code travels in and
-// ui/page holds the one table from a code to a translation key, so a deployment
-// that ships two languages answers a refusal in both. The English sentence
-// below stays as the fallback for a shell with no catalog, exactly as the pages
-// of this repository do today.
+// guard that made it. These constants are the carrier the code travels in,
+// ui/page/fault.go holds the one table from a code to a catalog key, and the
+// refusal page is then negotiated from the request's own Accept-Language — so a
+// shell that ships the sentence for a code answers a refusal in the language it
+// ships, and a shell that ships none is answered in the English below and
+// declared English, which is what it is. CodeWriteElsewhere is the one code
+// ui/page leaves untranslated on purpose: its sentence names an address, and an
+// address is data the caller has to have rather than copy to translate.
 const (
 	CodeAnonymous         = "AUTH_ANONYMOUS"
 	CodeDenied            = "AUTH_DENIED"
