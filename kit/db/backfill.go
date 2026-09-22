@@ -33,7 +33,7 @@ import (
 // ErrBackfillBudget is the bound on a drain a migration run performs for itself: past it
 // the process is open too long, and the rest belongs to the worker, which can drain a
 // table under readers. Committed batches and the cursor stand.
-var ErrBackfillBudget = errors.New("db: backfill stopped at the bound an installation gives itself; the committed batches stand and the rest is the worker's to drain, then migrate again")
+var ErrBackfillBudget = errors.New("refusal " + refusalBackfillBudget + ": the drain stopped at the bound an installation gives itself; the committed batches stand and the rest is the worker's to drain, then migrate again")
 
 // drain runs one pending data file to completion, or to the bound, or to the first
 // error, whichever comes first. Each window is its own transaction, so any of the
@@ -349,9 +349,13 @@ func primaryKey(ctx context.Context, conn *sql.Conn, table string) (tableKey, er
 		return key, fmt.Errorf("reading %s: %w", table, err)
 	}
 	if !exists {
-		return key, fmt.Errorf("table %s named by a data migration does not exist here; it belongs to a file of another owner that has not been selected, or to a release that has not applied yet", table)
+		return key, refusal(refusalTableMissing,
+			fmt.Sprintf("table %s named by a data migration does not exist here", table),
+			"it belongs to a file of another owner that has not been selected, or to a release that has not applied yet")
 	}
-	return key, fmt.Errorf("table %s has no single-column primary key, which is what a window that can resume by key needs; a table keyed by something else needs a drain its owner owns, in a job", table)
+	return key, refusal(refusalKeyNotPrimaryKey,
+		fmt.Sprintf("table %s has no single-column primary key, which is what a window that can resume by key needs", table),
+		"a table keyed by something else needs a drain its owner owns, in a job")
 }
 
 // beginDrain gives this file a progress row to advance, without moving one that is

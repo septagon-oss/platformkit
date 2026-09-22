@@ -484,8 +484,9 @@ func planOwner(ctx context.Context, conn *sql.Conn, files []migration, history m
 			return files[:i], nil
 		}
 		if m.phase == phaseContract && !history.applied[migrationID{owner, m.contractOf}] {
-			return nil, fmt.Errorf("%s/%s waits for %s of the same owner, which this installation has not applied yet: the contract half runs in the release after the expansion it removes",
-				owner, m.name, partnerFile(files, m.contractOf))
+			return nil, refusal(refusalMissingExpansion,
+				fmt.Sprintf("%s/%s waits for %s of the same owner, which this installation has not applied yet", owner, m.name, partnerFile(files, m.contractOf)),
+				"the contract half runs in the release after the expansion it removes")
 		}
 	}
 	return files, nil

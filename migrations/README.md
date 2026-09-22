@@ -275,6 +275,12 @@ it by. A body that said it bounds itself has no window, so it stays the worker's
 last. An owner with no history at all is the exception both times: nobody is reading,
 and its files apply in order.
 
+Those refusals are facts of the installation rather than of a file's text, so none of them
+is exceptable, and each prints its id in front of its own sentence —
+`refusal contract-without-expansion`, `refusal data-table-missing`,
+`refusal data-key-not-primary-key`, `refusal backfill-exceeds-install-budget` — which
+[the runner's own page](../kit/db/README.md) tables beside the two that report a drain
+(`db.ErrBackfillBudget` and `db.ErrContended`).
 
 ## The floor: guards apply to new versions
 

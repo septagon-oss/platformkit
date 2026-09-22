@@ -129,6 +129,24 @@ The guard cannot make that refusal instead of the executor: a guard refuses a wh
 before any of it runs, and the wrongness here is the window's own — the owner's earlier
 file has applied, and the version behind it is one statement too many.
 
+**Refusals below the rule table.** Four refusals are not judgements about a file's text but
+facts about this database — a table that is not here, a key the window cannot walk, an
+expansion the ledger has not seen, a drain past its bound — so no `allow=` reaches any of
+them, and they are named as the rules are, with the id in front of the sentence that
+explains it (`refusal <id>: …`) because a log line is what an operator greps from:
+
+| id | who refuses | what the run says |
+| --- | --- | --- |
+| `data-table-missing` | the drain, before a progress row exists | the `table=` a data file names is not in this database — a file of another owner that was not selected, or a release that has not applied yet |
+| `data-key-not-primary-key` | the drain, before a progress row exists | the table has no single-column primary key to window over; a table keyed otherwise needs a drain its owner owns, in a job |
+| `contract-without-expansion` | the plan, after the ledger is read and before any file of that owner runs | the contract half waits for an `expand=` version this installation has not applied, and nothing of the owner applied |
+| `backfill-exceeds-install-budget` | the inline drain, as `db.ErrBackfillBudget` | the bound a migration gives itself was reached; the committed batches and the cursor stand, and the worker's tick finishes the table |
+
+`kit/db/refusal_names_test.go` refuses one of each and reads the id back off the message, and
+reads this table besides: an id named here that nothing prints, or a printed id nothing
+names, fails that case rather than drifting. A contended file is a report and not a refusal
+— it is `db.ErrContended`, and the paragraph above states what it promises.
+
 **The rehearsal.** A release is rehearsed against a copy of a production-shaped
 database before it is published: `make rehearse`, `scripts/rehearse_migrations.sh`,
 with the interface, the four exit codes and the thing it cannot measure written down

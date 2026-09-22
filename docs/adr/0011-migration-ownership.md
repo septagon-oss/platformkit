@@ -158,7 +158,13 @@ reason=<one sentence>`, the reason being the whole content of an exception and
 marker, and a marker naming such a rule is refused as the bypass it is rather than
 switching the rule off: those four state what PostgreSQL refuses, what the autocommit
 mode costs, or what a data file cannot survive, and a comment cannot make any of that
-false. The rules read operations rather than spellings — a type change is the `TYPE`
+false. Four refusals are not judgements about a file's text at all but facts about this
+installation — a table that is not here, a key the window cannot walk, the expansion a
+contract half waits for, a drain past the bound a migration gives itself — and each prints
+its id in front of its own sentence (`refusal <id>: …`, named by `kit/db/refusals.go` and
+tabled in `kit/db/README.md`), because an operator reads an id out of a log line and
+follows it into the repository that refused them.
+The rules read operations rather than spellings — a type change is the `TYPE`
 clause inside an `ALTER TABLE`, which PostgreSQL lets be written with or without the
 `COLUMN` keyword, a `DROP` inside an `ALTER TABLE` takes that keyword away from the
 running release whether or not the file spelled it, and a `NOT NULL` column is read from
