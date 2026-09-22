@@ -27,7 +27,8 @@ import (
 // key the run committed — a key, not an offset, so editing the body of a file that never
 // applied cannot make it repeat or skip — and the row and the history row are never both
 // present: the drain commits the delete of one and the insert of the other in the
-// transaction that found the last window empty.
+// transaction that wrote its last window, so the moment the table is empty of work is
+// the moment the ledger says the version applied.
 
 // ErrBackfillBudget is the bound on a drain a migration run performs for itself: past it
 // the process is open too long, and the rest belongs to the worker, which can drain a
@@ -94,12 +95,13 @@ type drainReport struct {
 	cursor  string
 }
 
-// drainWindow is one batch: the window measured, the body run over it, and the
-// cursor moved to the last key of it — all in one transaction, which is the whole
-// claim the batch job exists for. An empty window is the end of the table, and the
-// history row and the progress row change hands inside that same transaction. It
-// reports whether the table is at its end and how many rows the batch wrote, which
-// is what the runner counts and logs.
+// drainWindow is one batch: the window measured, the body run over it, the cursor
+// moved to the last key of it, and the end of the table asked about — all in one
+// transaction, which is the whole claim the batch job exists for. It reports whether
+// the table is at its end and how many rows the batch wrote, which is what the runner
+// counts and logs. A window that came back short, or an empty one where a finished
+// cursor was resumed, is the end, and the history row and the progress row change hands
+// inside the transaction that wrote the work rather than in one after it.
 func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey, cursor *string) (done bool, rows int64, err error) {
 	started := time.Now()
 	tx, err := conn.BeginTx(ctx, nil)
@@ -136,6 +138,9 @@ func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey,
 		return false, 0, err
 	}
 	if measured == 0 {
+		// A cursor that had already reached the end — the run that resumes a drain whose
+		// last batch committed somewhere else — and the fresh drain over an empty table.
+		// Nothing to write, and the hand-over is this transaction's too.
 		if err := finishDrain(ctx, tx, m); err != nil {
 			return false, 0, err
 		}
@@ -147,12 +152,49 @@ func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey,
 	if err := advanceCursor(ctx, tx, m, *cursor, top); err != nil {
 		return false, 0, err
 	}
+	// The end is measured here, in the transaction that wrote the last window, and not
+	// in one after it. A run that wrote every row and stopped before its next
+	// transaction would say "work left" from the two tables while there was none, and
+	// nothing outside the loop can tell that state from a drain that truly stopped
+	// halfway: the next plan resumes it, and the release behind it waits for a cursor
+	// with no rows behind it. So "every row written" and "the version applied" are one
+	// commit, which is the only fact the two tables can agree on.
+	end, err := drainEnds(ctx, tx, m, key, top, measured)
+	if err != nil {
+		return false, 0, err
+	}
+	if end {
+		if err := finishDrain(ctx, tx, m); err != nil {
+			return false, 0, err
+		}
+		if err := tx.Commit(); err != nil {
+			return false, 0, err
+		}
+		*cursor = top
+		batchReported(ctx, m, measured, top, started)
+		return true, measured, nil
+	}
 	if err := tx.Commit(); err != nil {
 		return false, 0, err
 	}
 	*cursor = top
 	batchReported(ctx, m, measured, top, started)
 	return false, measured, nil
+}
+
+// drainEnds asks whether the table holds any key after this batch. A window that came
+// back short already answered it: the measurement is `ORDER BY key LIMIT batch` over
+// everything above the cursor, in this transaction's snapshot, and fewer rows than the
+// limit means nothing is left above that key. A full window has to look at the next
+// one, which is the measurement the next batch would have taken — and the one this run
+// would otherwise have taken in a transaction after the last batch committed, so the
+// drain counts its windows the same number of times and spends one fewer transaction.
+func drainEnds(ctx context.Context, tx *sql.Tx, m migration, key tableKey, top string, measured int64) (bool, error) {
+	if measured < int64(m.batch) {
+		return true, nil
+	}
+	left, _, err := window(ctx, tx, m, key, top)
+	return left == 0, err
 }
 
 // batchReported is the drain's own progress line, at debug: which table is being

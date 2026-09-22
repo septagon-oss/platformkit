@@ -109,7 +109,9 @@ header cannot claim a key the table does not have. Progress lives in a second ta
 `schema_migration_backfill`, holding the last key committed: every reader of
 `schema_migrations` assumes a row there means applied forever, and an unfinished
 drain is exactly the state that must not look like one. The row and the history row
-are never both present. The application role is revoked from both.
+are never both present, and the hand-over is the transaction that wrote the last window
+rather than one after it — the drain's end is the commit that finished the work, not a
+step after it that a crash can skip. The application role is revoked from both.
 
 An autocommit statement is also the one statement a migration run must not hold the
 composition's advisory lock across. Such a statement waits for the transactions already
@@ -232,7 +234,9 @@ owes and nothing else checked: the app role against both of its tables, `ErrCont
 under a budget a deployment named, the fifty-batch bound and the run that resumes it,
 two drains of one file committing the work once, and a finished drain staying finished.
 `kit/db/backfill_budget_test.go` puts the configured budget on the drain's own batches
-by holding a row the first window is about to write.
+by holding a row the first window is about to write, and `kit/db/drain_commit_test.go`
+that the transaction which wrote the last window wrote the history row too, so the two
+tables never hold "every row written" and "a drain to resume" at once.
 `kit/app/review_drain_composed_test.go` boots the composition as the worker and waits
 for the tick to drain what the migration left, then applies the file that waited behind
 it; deleting the line that schedules that job fails this case and nothing else.

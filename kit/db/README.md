@@ -78,7 +78,9 @@ once by whoever has the run.
 **Two tables, not one.** `schema_migrations` says what is applied forever;
 `schema_migration_backfill` says where an unfinished drain restarts, holding the
 last key it committed, and its row is deleted in the transaction that writes the
-history row. Both are revoked from the application role: a ledger an application can
+history row — which is the transaction that wrote the drain's last window, not one after
+it, so there is no moment at which every row is written and the ledger still reads as a
+drain to resume. Both are revoked from the application role: a ledger an application can
 edit is a release that never happened, and a progress row it can edit is a backfill
 that repeats rows.
 

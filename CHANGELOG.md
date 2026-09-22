@@ -15,7 +15,10 @@ carry a `-- pkit:` header — `phase=expand|contract|data`, with `batch=`, `tabl
 the runner then applies it in the mode it declared: transactionally, as one
 nontransactional statement that must be re-runnable, or as a backfill wrapped over a
 window of its table's primary key, one committed transaction per window, resumable
-from the last key it committed in `schema_migration_backfill`. Every file runs with a
+from the last key it committed in `schema_migration_backfill`. A drain ends in the
+transaction that wrote its last window, not in one after it: "every row written" and
+"the version applied" are one commit, and no run can stop between the two and leave a
+table that reads as unfinished work. Every file runs with a
 five-second `lock_timeout` (configurable, `database.lock_timeout`) and no statement
 bound by default — the same budget the worker's batches re-assert, because a backfill
 is the fifty transactions that wait behind the running application, not the one file —
