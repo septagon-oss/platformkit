@@ -229,6 +229,14 @@ func TestStaticRulesRefuseAndAllowMarks(t *testing.T) {
 			fixed: "-- pkit: allow=add-column-not-null reason=the table is empty in every installation before this release\nALTER TABLE probe ADD \"check\" text NOT NULL",
 		},
 		{
+			// The name carries the separator the statements are split on: `a,b` is a column
+			// that exists only written quoted, and a split inside it leaves neither half
+			// reading an action at all.
+			name: "a NOT NULL column whose name carries a comma",
+			file: "ALTER TABLE probe ADD \"a,b\" text NOT NULL",
+			rule: "add-column-not-null",
+		},
+		{
 			// The file that creates a table may index it: there is nothing
 			// reading the table yet, and this is every module's first file.
 			name: "an index in the file that created the table",

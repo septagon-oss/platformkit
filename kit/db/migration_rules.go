@@ -491,14 +491,24 @@ func splitClauses(statement string) []string { return splitTopLevel(statement, '
 
 // splitTopLevel cuts text on a separator outside quoted text and outside
 // parentheses, and drops the pieces that hold nothing.
+//
+// Both quote pairs count, because the separator can sit inside either of them. The `'…'`
+// half is the case this function was written for. The `"…"` half is a *name*: a column
+// called `a,b` or `a;b` exists only written quoted, and a cut at its punctuation leaves a
+// rule reading no action in either half — measured on the previous revision,
+// `ALTER TABLE probe ADD "a,b" text NOT NULL` and `ALTER TABLE probe DROP "a;b"` each
+// applied with nothing named, which is the same fault finding the name captures now carry
+// one level earlier. A quoted name is one name here exactly as the server reads it.
 func splitTopLevel(text string, sep rune) []string {
 	var out, buf []string
-	quoted, depth := false, 0
+	quoted, named, depth := false, false, 0
 	for _, r := range text {
 		switch {
-		case r == '\'':
+		case r == '\'' && !named:
 			quoted = !quoted
-		case quoted:
+		case r == '"' && !quoted:
+			named = !named
+		case quoted || named:
 		case r == '(':
 			depth++
 		case r == ')':

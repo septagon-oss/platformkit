@@ -246,7 +246,9 @@ is not a spelling an author chose over another but the only one that parses, so 
 that read the bare identifier alone would read no action for the columns that cannot be
 named any other way — and a quoted name is the name and never the keyword it happens to
 spell, which is why `DROP "constraint"` is read as a dropped column where
-`DROP CONSTRAINT c` is not. The words
+`DROP CONSTRAINT c` is not. The name is read whole even when it carries the punctuation
+the file is split on: `ADD "a,b" text NOT NULL` is one column, and a split inside the
+name left neither half reading an action. The words
 `ALTER TABLE` puts after `DROP` for something that is not a column — `CONSTRAINT`,
 `IDENTITY`, `EXPRESSION`, `NOT NULL`, `DEFAULT` — are left alone when they are written
 bare, and so is a bare `DROP TABLE` or `DROP INDEX`, which is a different statement
