@@ -93,14 +93,14 @@
       "dir_suffixes": [
         "test"
       ],
-      "max": 6800
+      "max": 6900
     },
     {
       "name": "go_test",
       "suffixes": [
         "_test.go"
       ],
-      "max": 47500
+      "max": 48700
     },
     {
       "name": "js",
