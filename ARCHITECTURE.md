@@ -286,7 +286,13 @@ remain applied. Disabling a module retains its data and migration history.
 checks, the clean baseline and upgrade behavior. Append a revision to repair a
 schema; do not edit the history table to make a failed migration appear applied.
 An older image is not a schema rollback. A rolling release requires evidence
-that both running versions can use the schema.
+that both running versions can use the schema, and the evidence a schema change
+carries is a rehearsal: `make rehearse` applies this tree's pending files to a
+copy of a production-shaped database — the previous release's own migration, plus
+seeded rows, or an operator's dump — and reports the duration the runner measured
+for each file against the budgets an operator names.
+`platformkit migrate` is the same migration without a server attached, for the
+file that came back contended and may be run again.
 
 ## Compose the interface
 

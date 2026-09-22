@@ -313,6 +313,23 @@ commit_budget 'Missing baseline document'
 rejects 'missing source baseline' 'loc-budget.json' bash "$scripts/check_budget_ratchet.sh" "$(git -C "$budgets" rev-parse HEAD)" "$budgets"
 echo 'budget ratchet: previous revisions, decreases, removed measurements and missing baselines passed'
 
+# The rehearsal is a release step, so the refusals it exists to make have to be
+# real and answerable without a database: a step that quietly ran nothing would be
+# worse than no step, because the release would read it as a pass. Each case below
+# is refused before the script connects to anything, which is what makes them
+# checkable here.
+rehearse=(bash "$scripts/rehearse_migrations.sh")
+rejects 'a rehearsal with no copy to rehearse on' 'say where the copy comes from' "${rehearse[@]}"
+rejects 'a rehearsal with two copies at once' 'are alternatives' "${rehearse[@]}" --dump x --base-ref HEAD
+rejects 'a rehearsal whose dump is not there' 'no dump readable at' "${rehearse[@]}" --dump "$temporary/nope.dump"
+rejects 'a budget that is not a number of seconds' 'not a number of seconds' "${rehearse[@]}" --base-ref HEAD --max-file-seconds soon
+rejects 'a budget that is not a number of milliseconds' 'not a number of milliseconds' "${rehearse[@]}" --base-ref HEAD --max-lock-ms 1.5
+rejects 'an argument the step does not have' 'unknown argument' "${rehearse[@]}" --rollback
+rejects 'no owner connection to create a database with' 'PLATFORMKIT_TEST_ADMIN_URL is unset' \
+	env -u PLATFORMKIT_TEST_ADMIN_URL bash "$scripts/rehearse_migrations.sh" --base-ref HEAD
+rejects 'a base revision that is not here' 'does not name a revision' "${rehearse[@]}" --base-ref no-such-revision
+echo 'rehearsal step: bad arguments and a missing owner connection are refused before a database is touched'
+
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
 sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"

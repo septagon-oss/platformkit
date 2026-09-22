@@ -214,3 +214,40 @@ is one past the highest file the rules refuse today. In this repository the floo
 are measured, not chosen: `platformkit` 21, `audit` 24, `auth` 14, `user` 26. A
 source that says nothing is guarded from version 1, which is what a module added
 after these rules exist should declare. Lowering a floor is a review, not an edit.
+
+## The retry, and the rehearsal
+
+A file that came back `contended` applied nothing and may be run again by whoever
+chooses to wait. The door for that is `platformkit migrate --config config.yaml`:
+every role's own migration over the same composition, sources, floors and budgets,
+without a server attached. `--drain` adds the rest of the convergence — the backfill
+the migration deliberately left to the worker, then the migration again for the files
+that waited behind it — which is what a deployment does across two ticks of its
+worker anyway.
+
+What no guard or budget can say is what a release will cost against the table the
+installation actually has. `make rehearse` is the step that answers it, and the step
+a release requires before a version is published:
+
+```sh
+REHEARSE_ARGS="--base-ref v1.1.0" make rehearse                  # the previous release's own schema
+./scripts/rehearse_migrations.sh --dump /backups/last-night.dump # somebody's real database
+```
+
+It builds this tree, makes a copy of a production-shaped database — the previous
+release's own binary migrating a fresh one, then ten thousand rows per seeded table
+(`scripts/testdata/rehearse/seed.sql`), or an operator's dump restored into it — and
+runs `platformkit migrate --drain` against the copy while sampling `pg_stat_activity`
+for lock waits. It reports one line per file with the duration the runner measured,
+then the totals, then a verdict, and exits 0 (applied inside both budgets), 1 (a
+migration failed, rule refusals included), 2 (it could not run) or 3 (a budget was
+overrun or a file came back contended). A contended file is a finding and never a
+pass: discovering it here is the point of doing this before the release rather than
+during it.
+
+What it does not measure, and no rehearsal can: the wait behind a table a running
+application is reading — there is no application here, and lock waits are sampled
+every 100 ms, so a shorter wait can be missed. `--max-file-seconds` and
+`--max-lock-ms` are the operator's budgets, not the kernel's; `--keep` leaves the two
+databases behind for comparison, and nothing outside those two names is ever
+dropped.

@@ -214,10 +214,16 @@ func MigrateWith(ctx context.Context, migrateURL string, budget MigrationBudget,
 			return fmt.Errorf("db: migrate: %w", err)
 		}
 		for _, migration := range plan {
+			started := time.Now()
 			if err := run.apply(ctx, migration); err != nil {
 				return fmt.Errorf("db: migrate: %s/%s: %w", migration.owner, migration.name, run.refused(err))
 			}
-			slog.DebugContext(ctx, "db: applied migration", "owner", migration.owner, "version", migration.version, "name", migration.name, "phase", migration.phase)
+			// Info, not Debug, and with the runner's own measurement on it. A release
+			// asks which files this run applied and how long each one took, and the
+			// rehearsal (scripts/rehearse_migrations.sh) reports the duration the runner
+			// measured rather than one a watcher estimated around the process.
+			slog.InfoContext(ctx, "db: applied migration", "owner", migration.owner, "version", migration.version,
+				"name", migration.name, "phase", migration.phase, "duration_ms", time.Since(started).Milliseconds())
 		}
 	}
 	return nil

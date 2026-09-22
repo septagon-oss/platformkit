@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 )
 
 // A phase=data file is the one migration that runs outside one transaction, and the
@@ -173,11 +174,16 @@ func Backfill(ctx context.Context, migrateURL string, sources ...MigrationSource
 			if m.phase != phaseData {
 				break // the release has schema pending; the deploy migrates, then this drains
 			}
+			started := time.Now()
 			if err := run.drain(ctx, m, 0); err != nil {
 				return fmt.Errorf("db: backfill: %s/%s: %w", m.owner, m.name, run.refused(err))
 			}
+			// The drain's own measurement, in the same shape as the per-file line above:
+			// the rehearsal reports what the runner timed, and a backfill is the one
+			// migration a release most wants the length of.
 			slog.InfoContext(ctx, "db: drained data migration",
-				"owner", m.owner, "version", m.version, "name", m.name, "table", m.table, "batch", m.batch)
+				"owner", m.owner, "version", m.version, "name", m.name, "table", m.table,
+				"batch", m.batch, "duration_ms", time.Since(started).Milliseconds())
 		}
 	}
 	return nil

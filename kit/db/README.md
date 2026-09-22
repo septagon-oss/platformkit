@@ -44,7 +44,16 @@ statement a duration bound would kill.
 applied was applied, the files already applied stay applied, and the operator may
 run it again. The runner does not retry inside itself, because it holds the
 composition's advisory lock while it waits, and a queue inside that lock stops every
-other replica's boot behind it.
+other replica's boot behind it. The retry is a command rather than a loop:
+`platformkit migrate` is `app.Migrate` — the same sources, floors and budgets every
+role's boot composes — for somebody who is not deploying, and `--drain` finishes a
+backfill the migration left behind instead of waiting for the worker's tick.
+
+**What each file cost.** Every applied file logs `db: applied migration` at info
+with the runner's own `duration_ms`, and every finished drain logs
+`db: drained data migration` the same way. The runner measured them from inside the
+transaction or the batch, which is the only place that knows where a file began; the
+rehearsal reports those numbers rather than an estimate taken around the process.
 
 **Two tables, not one.** `schema_migrations` says what is applied forever;
 `schema_migration_backfill` says where an unfinished drain restarts, holding the
@@ -62,3 +71,33 @@ installation just wrote. An owner that already has history is a table under read
 `jobs.BackfillMigrations` — composed into the worker by `kit/app` as
 `schema-backfill` — is what finishes it through `db.Backfill`. A boot that refused a
 drain would stop the only role that can finish it.
+
+**The rehearsal.** A release is rehearsed against a copy of a production-shaped
+database before it is published: `make rehearse`, `scripts/rehearse_migrations.sh`,
+with the interface, the four exit codes and the thing it cannot measure written down
+in [migrations/README.md](../../migrations/README.md).
+
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it rebuilt.
+**Reused:** the runner's own doors — `Migrate`, `pendingMigrations`, `applyMigration`,
+the composition advisory lock and the `REVOKE … CASCADE` sweep, with
+`schema_migration_backfill` created beside the ledger by the same statement list and
+taken through the same sweep; `kit/events/relay.go`'s batch shape (one transaction
+per batch, loop until a short one) for the drain, scheduled through `kit/jobs` with
+the advisory lock `Scheduler` already takes by name; `dbtest.URLs` and
+`fstest.MapFS` sources for every case, because the only double for a SQL service is
+the real service; `scripts/e2e.sh`'s shape for the rehearsal — `set -euo pipefail`, a
+database name of its own, a cleanup trap that refuses any other prefix;
+`apps/platformkit/postgres-init.sql` as the one source of the application role and
+its grants, and `bootstrap` as the base revision's own migration path.
+**Added:** the header grammar, the rule table, the three execution modes, the two
+budgets and `ErrContended`, the progress table with its compare-and-set cursor, and
+the rehearsal step — none of them had an owner, because the runner knew nothing about
+what a file was for and could not be asked what it cost. **Made reusable:**
+`app.Migrate` and `app.Drain`, so a retry is not a second definition of migrating;
+`db.MigrationBudget` and `MigrateWith`, which every existing caller gets without
+changing a line; the per-file `duration_ms` log lines the rehearsal parses;
+`scripts/testdata/rehearse/seed.sql`, the ten-thousand-row fixture any future
+rehearsal or size-shaped test composes; and the batch-with-a-cursor pattern, which
+`events.Purge` is the next candidate for.

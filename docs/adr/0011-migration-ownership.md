@@ -146,6 +146,24 @@ the bytes are immutable and the only remedy left would be to stop the installati
 [migrations/README.md](../../migrations/README.md) is the canonical table of keys and
 rules; this ADR stops short of duplicating it.
 
+Two things the runner cannot decide are given doors instead of opinions. The first is
+the wait: a contended migration is not a failed one, and the retry belongs to the
+operator because the runner holds the composition's advisory lock — so
+`platformkit migrate` exists, which is every role's boot migration over the same
+composition, sources, floors and budgets (`app.Migrate` is that composition once),
+without a server attached, and `--drain` for the backfill the migration left to the
+worker. The second is size: a `lock_timeout` bounds a wait and the rule table refuses
+a shape of statement, and neither says what this release will cost against the table
+this installation actually has. So a release is rehearsed rather than reviewed.
+`scripts/rehearse_migrations.sh` (`make rehearse`) builds the previous release's own
+binary from its revision, lets that release migrate a fresh database, seeds ten
+thousand rows per table into a copy of it, applies this tree's pending files against
+that copy while sampling `pg_stat_activity` for lock waits, and exits 0, 1, 2 or 3 so
+a pipeline can tell "applied inside budget" from "failed" from "could not run" from
+"over budget". A contended file in a rehearsal is a finding, never a pass. What it
+cannot measure is stated in the script: the wait behind a table a running application
+holds, and any lock wait shorter than the 100 ms sample.
+
 ## Evidence
 
 `kit/db/migrate_test.go` covers late module installation, upstream advancement,
@@ -172,3 +190,11 @@ states the budgets and the contended report against a real database, the eightee
 grammar refusals, one case per rule beside the `allow=` that excepts it, the contract
 half refusing and then applying, the batched drain proved from `xmin`, and the files
 behind an unfinished drain waiting for the worker.
+`apps/platformkit/migrate_test.go` shows `platformkit migrate` applying exactly the
+sources the composition selected — every owner and every one of its files — and the
+second run applying nothing further.
+`bash scripts/check_architecture_test.sh` holds the rehearsal's own refusals, which
+land before it touches a database; the step itself needs `psql`, an owner connection
+and a previous revision, and was run against a PostgreSQL 16 with the fixture's ten
+thousand rows per table: one file applied, its duration the runner's own, and the
+same step exiting 3 when `--max-file-seconds 0` put every file over budget.

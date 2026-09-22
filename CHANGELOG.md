@@ -27,6 +27,20 @@ down once in [migrations/README.md](migrations/README.md); the mode-scoped ban o
 nontransactional SQL is the amendment to
 [ADR 0011](docs/adr/0011-migration-ownership.md).
 
+**The two things the runner cannot decide now have doors.** `platformkit migrate`
+applies the pending schema and exits, over exactly the sources, floors and budgets
+every role's boot composes — the retry for a file that came back `db.ErrContended`,
+which is an operator's decision to wait rather than the runner queueing inside the
+advisory lock every other replica waits on; `--drain` finishes a backfill instead of
+waiting for the worker's tick. Every applied file and every finished drain logs the
+duration the runner itself measured, and `make rehearse`
+is [scripts/rehearse_migrations.sh](scripts/rehearse_migrations.sh): the step a
+release runs before it publishes, which lets the previous release's own binary migrate
+a fresh database, seeds ten thousand rows per table into a copy of it, applies this
+tree's pending files against that copy under a lock-wait watcher, and exits 0, 1, 2 or
+3 — applied, failed, could not run, over budget. A rehearsal that could not run exits
+non-zero rather than passing quietly.
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was
