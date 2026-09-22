@@ -497,6 +497,118 @@ case "$(watch_branch 20000 1 1)" in
 esac
 echo 'rehearsal step: a watcher that sampled nothing over a window it was alive for is LOCK WATCH BROKEN and exit 2, a met floor is silent, and a failed candidate keeps exit 1'
 
+# 3c. The four branches that turn a measurement into a finding. Everything the step puts
+# in front of a release pipeline is four messages and one of four exit codes, and the
+# document that owns those codes says a pipeline has to tell the failures apart. Each of
+# the four prints its line and adds one to `findings`; for TOO SLOW and LOCK WAIT that
+# increment is the only thing between the message and `rehearse: ok:` with exit 0, and
+# for all four the increment is the line the tail reads. Measured: replacing
+# `findings=$((findings + 1))` with `:` in any one of the four leaves `make check` green,
+# so four branches that had each run in a real rehearsal were asserted by nothing. The
+# same technique as 3b closes all four: the lines are taken out of the step, given the
+# inputs the branch is about, and asked what they print and which code the step's own
+# `exit` then carries. The legs are the four findings, the silence that proves each one
+# is conditional, and the two precedence rules the tail states out loud.
+step_branch() { # $1 = the branch's first line, $2 = its last, both with indentation stripped
+	awk -v first="$1" -v last="$2" '
+		{ line = $0; sub(/^[ \t]+/, "", line) }
+		!found && line == first { found = 1 }
+		found { print }
+		found && line == last { exit }
+	' "$rehearse_script"
+}
+step_tail() { # $1 = a line the step carries exactly once; everything from it to the end
+	awk -v first="$1" 'index($0, first) { found = 1 } found' "$rehearse_script"
+}
+slow_program=$(step_branch 'if [ "$ms" -gt $((max_file * 1000)) ]; then' 'fi')
+lock_program=$(step_branch 'if [ "$lock_ms" -gt "$max_lock" ]; then' 'fi')
+contend_program=$(step_branch 'if [ -n "$contended" ]; then' 'fi')
+drain_program=$(step_branch 'if [ -n "$unfinished" ]; then' 'fi')
+# The tail is the step's own decision: which code a candidate's failure keeps, which one
+# a finding takes over, and the `ok:` line a release reads when nothing was found.
+tail_program=$(step_tail 'applied=$(wc -l <"$work/files.tsv")')
+for branch in "$slow_program" "$lock_program" "$contend_program" "$drain_program" "$tail_program"; do
+	if [ -z "$branch" ]; then
+		echo 'FAIL: the rehearsal no longer carries one of the branches that turns a measurement into a finding, or the tail that turns the findings into an exit code; this case has to be rewritten to say what reports TOO SLOW, LOCK WAIT, CONTENDED and DRAIN UNFINISHED instead' >&2
+		exit 1
+	fi
+done
+# The fixture runs the step's own lines, in the order the step runs them, over one file's
+# numbers. `note` is the step's own writer, restated here only because it lives above the
+# lines this case takes: the two lines it prints are what the leg asserts on.
+{
+	printf '%s\n' 'note() { echo "rehearse: $*"; }'
+	printf '%s\n' "$slow_program" "$lock_program" "$contend_program" "$drain_program" "$tail_program"
+} >"$temporary/rehearse-report.sh"
+report_case() { # $1=ms $2=lock_ms $3=contended $4=unfinished $5=the code the candidate came back with
+	local out status
+	out=$(env ms="$1" lock_ms="$2" contended="$3" unfinished="$4" code="$5" findings=0 \
+		owner=user version=25 name=000025_backfill.up.sql \
+		max_file=30 max_lock=5000 SAMPLE_MS=100 samples=0 watched_ms=2000 \
+		applied=1 total="$1" longest=user/25 longest_ms="$1" \
+		bash "$temporary/rehearse-report.sh" 2>&1) && status=0 || status=$?
+	printf '%s|exit=%s\n' "$out" "$status"
+}
+# Each finding has to reach the exit code the step documents for it (3: a budget was
+# exceeded, or a migration came back contended) and not end in `ok:`.
+report_leg() { # $1 = what the leg is, $2 = the line it must print, then the five inputs
+	local description="$1" wanted="$2" out
+	shift 2
+	out=$(report_case "$@")
+	case "$out" in
+	*"$wanted"*'|exit=3'*) ;;
+	*)
+		printf 'FAIL: %s printed [%s]; the step names the finding and does not let it reach the exit code a release pipeline reads (3), so the run answers a budget overrun with `ok:` and exit 0\n' "$description" "$out" >&2
+		exit 1
+		;;
+	esac
+	case "$out" in
+	*'ok:'*)
+		printf 'FAIL: %s printed `ok:` beside its own finding: [%s]\n' "$description" "$out" >&2
+		exit 1
+		;;
+	esac
+}
+report_leg 'a file over its time budget' 'TOO SLOW user/25 40000ms > 30s' 40000 0 '' '' 0
+report_leg 'a sampled lock wait over its budget' 'LOCK WAIT 6000ms > 5000ms' 100 6000 '' '' 0
+report_leg 'a file that came back contended' 'CONTENDED platformkit/25 db: migration is contended' \
+	100 0 'platformkit/25 db: migration is contended' '' 0
+report_leg 'a drain the release did not finish' 'DRAIN UNFINISHED user/25' 100 0 '' 'user/25' 0
+# And the three ways the branches stay out of the way: a file inside its budget prints
+# nothing and answers 0 (a step that reported every release as too slow would be switched
+# off, which is the same loss), a candidate that failed with nothing found keeps the plain
+# failure (1), and a contended file takes 3 even from a candidate that already failed, which
+# is the one pair the whole step exists to tell apart from 1.
+silent_run=$(report_case 29000 0 '' '' 0)
+case "$silent_run" in
+*'TOO SLOW'* | *'LOCK WAIT'* | *'CONTENDED'* | *'DRAIN UNFINISHED'*)
+	printf 'FAIL: a file inside both budgets was reported anyway: [%s]\n' "$silent_run" >&2
+	exit 1
+	;;
+esac
+case "$silent_run" in
+*'rehearse: ok:'*'|exit=0'*) ;;
+*)
+	printf 'FAIL: a release with nothing wrong with it did not end in ok and exit 0: [%s]\n' "$silent_run" >&2
+	exit 1
+	;;
+esac
+case "$(report_case 100 0 '' '' 1)" in
+*"failed: 0 finding(s); exit 1"*"|exit=1"*) ;;
+*)
+	echo "FAIL: a candidate that failed with no finding did not keep the plain failure: [$(report_case 100 0 '' '' 1)]; the release pipeline cannot tell 'the migration failed' from a budget it exceeded" >&2
+	exit 1
+	;;
+esac
+case "$(report_case 100 0 'platformkit/25 db: migration is contended' '' 1)" in
+*"CONTENDED"*'failed: 1 finding(s); exit 3'*'|exit=3'*) ;;
+*)
+	echo "FAIL: a contended file that also failed did not become exit 3: [$(report_case 100 0 'platformkit/25 db: migration is contended' '' 1)]; telling a contended release from a broken one is the reason this step has four codes" >&2
+	exit 1
+	;;
+esac
+echo 'rehearsal step: each of the four report branches reaches the exit code its own message claims, the ones that do not apply stay silent, and a contended file outranks the plain failure'
+
 # 4. Whether \watch fills the file at all. Everything the step says about lock waits is
 # the product of this file's line count, so the sampling is measured and not read: this
 # runs the step's own psql line, taken out of the step, for two seconds, and asks the
@@ -525,6 +637,23 @@ else
 	fi
 	echo "rehearsal step: the watch floor is the window the watcher lived for, and its own psql line filled the sample file $watch_samples times in 2s"
 fi
+
+# 5. The line the report is headed with, which two rounds of review wrote cases for and
+# nothing ran. `scripts/review5_rehearsal_provenance_test.sh` runs the step's own
+# candidate line over a tree holding one uncommitted file, and
+# `scripts/review6_provenance_bigtree_test.sh` runs it over one holding five thousand:
+# the two answers part company there, because a `git status --porcelain | grep -q .` lets
+# `grep` close the pipe while `git` is still writing, and under `pipefail` the step takes
+# the 141 as "clean" and names a bare revision for a tree it built a binary out of. A
+# case nothing runs protects nothing, which is the same argument case 3b makes about the
+# branches above, so both are run here rather than left for whoever remembers.
+for provenance_case in review5_rehearsal_provenance_test.sh review6_provenance_bigtree_test.sh; do
+	if ! provenance_out=$(bash "$scripts/$provenance_case" 2>&1); then
+		printf 'FAIL: %s refuses the line the rehearsal report is headed with:\n%s\n' "$provenance_case" "$provenance_out" >&2
+		exit 1
+	fi
+done
+echo 'rehearsal step: the candidate line names the tree the binary was built from, at one uncommitted file and at five thousand'
 
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
