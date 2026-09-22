@@ -61,36 +61,72 @@ fi
 #
 # The step samples pg_stat_activity in a backgrounded psql, writes the samples to
 # $waits, and turns them into its reported number with `grep -c '^[1-9]'` times
-# SAMPLE_MS. This runs that same invocation shape — `-o FILE`, the query and
-# `\watch` as separate -c arguments, backgrounded, then killed — for three seconds
-# with a query that answers a nonzero count every time, and asks how many usable
-# samples arrived. Four is what three seconds at 100ms resolves to; a file that
-# holds one sample cannot measure a wait of any length, and `--max-lock-ms`
-# (default 5000) can never be exceeded.
+# SAMPLE_MS. Everything the step says about a lock wait is that product, so the
+# premise worth testing is whether the step's own invocation fills that file.
+#
+# The first version of this case ran `-o FILE` with the query and `\watch` as two
+# separate -c arguments and concluded from one sample in three seconds that the step
+# could measure nothing. That premise is false about this tree, and the case's
+# failure text repeated it: `psql -c <query> -c '\watch 0.1'` answers the query once
+# and then prints "\watch cannot be used with an empty query" (a query given to -c is
+# gone from the query buffer by the time the next -c runs, and \watch repeats the
+# buffer) — measured on host psql 18.6 and on psql 16.15 inside this project's own
+# postgres:16 container, one usable line either way — while the step's real
+# invocation, which reads the query and its \watch from one file with -f, put thirty
+# usable lines in three seconds. The defect that case was written to force is fixed,
+# and proved by a contended run end to end (`lock waits: 50 sample(s) of 100ms ≈
+# 5000ms`, `LOCK WAIT 5000ms > 1000ms`, exit 3).
+#
+# So this runs the step's own line: the builder that writes the watch file is read
+# out of the step and executed, which is where the \watch interval comes from — the
+# step's query is replaced by a count that is never zero, because the step's filters
+# on the candidate's application_name and nothing here carries it. The invocation,
+# the sample file and the interval are the step's; only the query is the case's.
+# scripts/check_architecture_test.sh holds the same two premises inside `make check`;
+# this file is the one that asks how many of the lines are *usable*.
 # ---------------------------------------------------------------------------
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:-}"
 if [ -z "$admin_url" ]; then
 	echo "SKIP case 2: PLATFORMKIT_TEST_ADMIN_URL is unset, and the watcher is a psql session" >&2
-	exit 2
-fi
-watcher="$(grep -m1 -F -e '-At -o "$waits"' "$script" || true)"
-if [ -z "$watcher" ]; then
-	fail "could not read the watcher's invocation out of $script"
+elif ! watcher="$(grep -m1 -F -- '-At -o "$waits" -f "$watch_sql"' "$script")" || [ -z "$watcher" ]; then
+	fail "could not read the watcher's invocation out of $script; the step no longer reads its query and its \watch from one file, which is the shape that makes the sample file hold more than one line"
 else
-	# The step's own invocation shape, with its query replaced by a count that is
-	# never zero: what is under test is whether \watch fills the sample file at
-	# all, not whether pg_stat_activity has rows.
-	psql "$admin_url" -At -o "$fixture/waits" \
-		-c 'SELECT count(*) FROM pg_stat_activity' -c '\watch 0.1' >/dev/null 2>&1 &
-	watch_pid=$!
-	sleep 3
-	kill "$watch_pid" 2>/dev/null || true
-	wait "$watch_pid" 2>/dev/null || true
-	samples=$(grep -c '^[1-9]' "$fixture/waits" 2>/dev/null || true)
-	if [ "${samples:-0}" -lt 4 ]; then
-		fail "three seconds of the step's own watcher invocation ($watcher …) put ${samples:-0} usable sample(s) in the file it counts; the reported lock waits are therefore always ~0ms and the LOCK WAIT finding can never fire. Reproduced end to end against a migration that really waited five seconds on a table lock (SQLSTATE 55P03): 'rehearse: lock waits: 0 sample(s) of 100ms ~ 0ms'"
+	sample_ms="$(sed -n 's/^SAMPLE_MS=\([0-9]\{1,\}\)$/\1/p' "$script")"
+		sample_s="$(printf '%d.%03d' "$((sample_ms / 1000))" "$((sample_ms % 1000))")"
+	builder="$(awk '/^watch_sql=/{f=1} f{print} /^\t"\$SAMPLE_S" >"\$watch_sql"$/{f=0}' "$script")"
+	if [ -z "$builder" ] || [ -z "$sample_ms" ]; then
+		fail "could not read the watch file's builder or SAMPLE_MS out of $script, so this case has no interval to sample at and no floor to hold the count to"
 	else
-		echo "ok: the watcher filled its sample file: $samples samples in three seconds"
+		# The step's own builder, with its own SAMPLE_S, writing to a file of this case.
+		{
+			printf 'work=%s\nAPPNAME=review_rehearsal_test\n' "$(printf '%q' "$fixture")"
+			printf 'SAMPLE_S=%s\n' "$sample_s"
+			printf '%s\n' "$builder"
+		} >"$fixture/build-watch.sh"
+		bash "$fixture/build-watch.sh"
+		interval="$(sed -n 's/^\\watch //p' "$fixture/watch.sql")"
+		if [ -z "$interval" ]; then
+			fail "the file the step's own builder writes holds no \\watch line, so it samples once and the lock-wait finding can never fire"
+		else
+			# Keep the \watch line the step wrote; the query is the case's.
+			{ echo 'SELECT count(*) FROM pg_stat_activity'; sed -n '/^\\watch/p' "$fixture/watch.sql"; } >"$fixture/case.sql"
+			{
+				printf 'run_url=%s\nwaits=%s\nwatch_sql=%s\n' \
+					"$(printf '%q' "$admin_url")" "$(printf '%q' "$fixture/waits")" "$(printf '%q' "$fixture/case.sql")"
+				printf '%s\n' "$watcher"
+				printf 'watcher=$!\nsleep 3\nkill "$watcher" 2>/dev/null || true\nwait "$watcher" 2>/dev/null || true\n'
+			} >"$fixture/run-watch.sh"
+			bash "$fixture/run-watch.sh"
+			samples=$(grep -c '^[1-9]' "$fixture/waits" 2>/dev/null || true)
+			# A quarter of the samples the window could hold: the step's floor is half,
+			# and this case pays for psql's own connect on top of what it watches.
+			floor=$((3000 / sample_ms / 4))
+			if [ "${samples:-0}" -lt "$floor" ]; then
+				fail "three seconds of the step's watcher invocation ($watcher) put ${samples:-0} usable sample(s) in the file it counts, and $floor is the fewest ${sample_ms}ms samples that window could hold; the reported lock waits are then always ~0ms and the LOCK WAIT finding can never fire"
+			else
+				echo "ok: the watcher read its query from the step's file: $samples usable samples in three seconds ($interval apart, floor $floor)"
+			fi
+		fi
 	fi
 fi
 
