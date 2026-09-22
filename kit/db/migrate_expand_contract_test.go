@@ -219,6 +219,16 @@ func TestStaticRulesRefuseAndAllowMarks(t *testing.T) {
 			file: "ALTER TABLE probe ADD COLUMN c integer NOT NULL DEFAULT 0",
 		},
 		{
+			// `"check"` is the keyword's own word used as a column's name. PostgreSQL reads
+			// a quoted name as an identifier and never as the keyword it also spells, so the
+			// exemption that lets `ADD CHECK (…)` through speaks for no such column, and the
+			// rewrite this rule is about is the same rewrite.
+			name:  "a NOT NULL column whose quoted name also spells a keyword",
+			file:  "ALTER TABLE probe ADD \"check\" text NOT NULL",
+			rule:  "add-column-not-null",
+			fixed: "-- pkit: allow=add-column-not-null reason=the table is empty in every installation before this release\nALTER TABLE probe ADD \"check\" text NOT NULL",
+		},
+		{
 			// The file that creates a table may index it: there is nothing
 			// reading the table yet, and this is every module's first file.
 			name: "an index in the file that created the table",

@@ -48,6 +48,21 @@ func TestTheDropColumnRuleReadsTheActionAndNotEveryDrop(t *testing.T) {
 		{"and the qualifiers PostgreSQL does not require", "ALTER TABLE IF EXISTS ONLY probe DROP IF EXISTS b CASCADE", true},
 		{"the action beside an ordinary one", "ALTER TABLE probe ADD COLUMN c text, DROP b", true},
 		{"a constraint", "ALTER TABLE probe DROP CONSTRAINT probe_b_not_empty", false},
+		{
+			// The two spellings of the same question in one pair. `"order"` is a name
+			// PostgreSQL takes only quoted, so a rule that reads the name has to read it
+			// quoted; `"constraint"` is the keyword's own word used as a column's name,
+			// which PostgreSQL reads as the name and never as the keyword — so the
+			// exemption above belongs to the bare word alone.
+			name:           "a name only the quotes PostgreSQL takes can write",
+			statement:      `ALTER TABLE probe DROP "order"`,
+			takesANameAway: true,
+		},
+		{
+			name:           "a quoted name that also spells the keyword",
+			statement:      `ALTER TABLE probe DROP "constraint"`,
+			takesANameAway: true,
+		},
 		{"a NOT NULL the release no longer wants", "ALTER TABLE probe ALTER COLUMN b DROP NOT NULL", false},
 		{"a DEFAULT", "ALTER TABLE probe ALTER COLUMN a DROP DEFAULT", false},
 		{"an identity", "ALTER TABLE probe ALTER COLUMN seq DROP IDENTITY IF EXISTS", false},

@@ -29,7 +29,7 @@ type rule struct {
 }
 
 // migrationText is one file as the rule table reads it: comments gone, statements
-// split, lower-cased, the tables this very file creates known by name, and the window
+// split, lower-cased, the tables this very file creates outright known by name, and the window
 // question already answered for the whole file rather than once per rule.
 type migrationText struct {
 	phase      string
@@ -40,31 +40,50 @@ type migrationText struct {
 	created    map[string]bool
 }
 
+// quotedName is the source for one identifier written the only way PostgreSQL takes
+// for a name that cannot be written bare — a reserved word, or a name created inside
+// double quotes — which is `"…"`, with `""` for one quote written twice. sqlName is a
+// name in either spelling.
+//
+// Every rule that finds its operation by reading the name an action carries has to
+// read both spellings. A capture that starts `[a-z_]` is the spelling of a bare
+// identifier, and `ALTER TABLE probe DROP "order"` is not a spelling an author chose
+// over another: it is the only one that parses. A rule that read only the bare form
+// would see no action at all for exactly the columns that cannot be named any other
+// way — and the harm is its own rule's, applied, with the version in the ledger and no
+// rule named. The same reason makes the exemption below read quoted names: the file
+// that creates `"probe"` and indexes `"probe"` creates what it indexes.
+const (
+	quotedName = `"(?:[^"]|"")*"`
+	sqlName    = `(?:[a-z_][\w.]*|` + quotedName + `)`
+)
+
 var (
 	// reAlterTable and reColumnTypeClause are the two halves of the statement the
 	// first rule is about. PostgreSQL makes the COLUMN keyword optional and spells
 	// the clause either `TYPE` or `SET DATA TYPE`; every spelling of it rewrites the
 	// whole table under ACCESS EXCLUSIVE, so the predicate reads the clause inside an
-	// ALTER TABLE statement rather than one spelling of the keyword.
+	// ALTER TABLE statement rather than one spelling of the keyword — of the keyword,
+	// of the column's name, and of the two ways that name may be written.
 	reAlterTable       = regexp.MustCompile(`^alter\s+table\b`)
-	reColumnTypeClause = regexp.MustCompile(`\balter\s+(column\s+)?[a-z_][\w.$]*\s+(set\s+data\s+)?type\b`)
+	reColumnTypeClause = regexp.MustCompile(`\balter\s+(column\s+)?(?:[a-z_][\w.$]*|` + quotedName + `)\s+(set\s+data\s+)?type\b`)
 	// reAddColumnAction is `ADD [COLUMN] <name>` in either spelling PostgreSQL
 	// takes. The name is captured because the word after ADD says what is being
 	// added: `ADD CONSTRAINT x CHECK (… IS NOT NULL)` adds a table constraint, not a
 	// NOT NULL column, and reads as neither.
-	reAddColumnAction = regexp.MustCompile(`\badd\s+(?:column\s+)?([a-z_][\w.]*)(?:\s|$)`)
+	reAddColumnAction = regexp.MustCompile(`\badd\s+(?:column\s+)?(` + sqlName + `)(?:\s|$)`)
 	reNotNull         = regexp.MustCompile(`\bnot\s+null\b`)
 	reDefault         = regexp.MustCompile(`\bdefault\b`)
 	reCreateIndex     = regexp.MustCompile(`^create\s+(unique\s+)?index\b`)
 	reDropIndex       = regexp.MustCompile(`^drop\s+index\b`)
 	reConcurrently    = regexp.MustCompile(`\bconcurrently\b`)
-	reIndexTarget     = regexp.MustCompile(`\bon\s+([a-z_][\w.]*)`)
-	reCreateTable     = regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?([a-z_][\w.]*)`)
+	reIndexTarget     = regexp.MustCompile(`\bon\s+(` + sqlName + `)`)
+	reCreateTable     = regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?(` + sqlName + `)`)
 	// reDropAction is `DROP [COLUMN] <name>` in either spelling PostgreSQL takes, the
 	// keyword being as optional here as it is in the two ALTER TABLE actions above. The
 	// name is captured because the word after DROP says what is being dropped, and only
 	// a column takes a name away from the running release.
-	reDropAction  = regexp.MustCompile(`\bdrop\s+(?:column\s+)?(?:if\s+exists\s+)?([a-z_][\w.]*)(?:\s|$)`)
+	reDropAction  = regexp.MustCompile(`\bdrop\s+(?:column\s+)?(?:if\s+exists\s+)?(` + sqlName + `)(?:\s|$)`)
 	reIfNotExists = regexp.MustCompile(`\bif\s+not\s+exists\b`)
 	reIfExists    = regexp.MustCompile(`\bif\s+exists\b`)
 	reDDL         = regexp.MustCompile(`^(alter|create|drop)\b`)
@@ -215,7 +234,15 @@ func newMigrationText(m migration) *migrationText {
 		created:    map[string]bool{},
 	}
 	for _, found := range reCreateTable.FindAllStringSubmatch(body, -1) {
-		f.created[found[2]] = true
+		// `IF NOT EXISTS` is the spelling that says the table may already be there, which
+		// is the one case in which "nothing is reading it yet" is not a fact this file
+		// states: on an installation that already has the table, the plain build beside it
+		// is the SHARE lock over a table with readers the rule is about. Such a file is
+		// therefore not known to have created the table, and the exemption is the
+		// unconditional create's alone.
+		if found[1] == "" {
+			f.created[found[2]] = true
+		}
 	}
 	return f
 }
@@ -280,14 +307,16 @@ var notAColumn = map[string]bool{"constraint": true, "primary": true, "foreign":
 // word. PostgreSQL makes the COLUMN keyword optional here as it does for a type change,
 // so `ALTER TABLE probe DROP b` is this rule's statement and not a spelling it may miss
 // — the file that ships it takes the column away in the release running now, whatever
-// the release was reviewed as.
+// the release was reviewed as. The name itself is read in either spelling PostgreSQL
+// takes, and a name that arrives quoted is a column whatever it spells: the keyword
+// exemption below is only ever the bare word's.
 func (f *migrationText) dropsAColumn() bool {
 	for _, statement := range f.statements {
 		if !reAlterTable.MatchString(strings.TrimSpace(statement)) {
 			continue
 		}
 		for _, found := range reDropAction.FindAllStringSubmatch(statement, -1) {
-			if !notADroppedColumn[found[1]] {
+			if name, quoted := sqlIdent(found[1]); quoted || !notADroppedColumn[name] {
 				return true
 			}
 		}
@@ -300,6 +329,18 @@ func (f *migrationText) dropsAColumn() bool {
 // rule the release already carries, and none of them takes a column's name away.
 var notADroppedColumn = map[string]bool{"constraint": true, "identity": true, "expression": true, "not": true, "null": true, "default": true}
 
+// sqlIdent is the name a rule read, with its quotes taken off, and whether they were
+// there. The difference is not decoration: PostgreSQL reads a quoted name as an
+// identifier and never as the keyword it also spells, so `ALTER TABLE probe DROP
+// "constraint"` drops a column called constraint, and the exemption that lets the
+// keyword alone through speaks for no such name. `""` is one quote written twice.
+func sqlIdent(found string) (name string, quoted bool) {
+	if len(found) > 1 && strings.HasPrefix(found, `"`) && strings.HasSuffix(found, `"`) {
+		return strings.ReplaceAll(found[1:len(found)-1], `""`, `"`), true
+	}
+	return found, false
+}
+
 // addsANotNullDefinition reads one comma-separated action of an ALTER TABLE: every
 // column it adds, and each column's own definition — the text from its name to the
 // end of the action, which is where its DEFAULT or NOT NULL would be.
@@ -307,7 +348,7 @@ func addsANotNullDefinition(clause string) bool {
 	for _, found := range reAddColumnAction.FindAllStringSubmatchIndex(clause, -1) {
 		// found[2:3] is the captured name, found[1] the end of the whole match: the
 		// definition is everything the action says about that column.
-		if notAColumn[clause[found[2]:found[3]]] {
+		if name, quoted := sqlIdent(clause[found[2]:found[3]]); !quoted && notAColumn[name] {
 			continue
 		}
 		if definition := clause[found[1]:]; reNotNull.MatchString(definition) && !reDefault.MatchString(definition) {
@@ -328,7 +369,10 @@ func (f *migrationText) anyStatement(re *regexp.Regexp) bool {
 
 // indexesANewTable is the shape of the ordinary case: the file that creates a
 // table may index it, because nothing is reading it yet, and that is every
-// module's first file. Anything else is a build on a table with readers.
+// module's first file. Anything else is a build on a table with readers — including
+// the file whose own create was conditional, because `CREATE TABLE IF NOT EXISTS` is
+// the spelling that says the table may already be there, and on such an installation
+// this file's plain build is the one the rule is about.
 func (f *migrationText) indexesANewTable() bool {
 	for _, statement := range f.statements {
 		statement = strings.TrimSpace(statement)
@@ -390,10 +434,22 @@ func blockCommentEnd(text string) int {
 // dollarTag is the opening delimiter of a dollar-quoted value at the front of text —
 // `$`, a tag, `$`, the tag optional for `$$` — or "" where none opens. The tag takes
 // the characters a name takes and may not start with a digit, which is what keeps the
-// drain's own `$1` and `LIMIT 100` from reading as the start of a value. The text
-// arrives case-folded, so a tag whose two halves differ in case closes here where
-// PostgreSQL would call the value unterminated: that file runs nowhere, and the fold
-// is the same one every other word in it is read with.
+// drain's own `$1` and `LIMIT 100` from reading as the start of a value.
+//
+// "The characters a name takes" is PostgreSQL's own domain, and it is a byte rule, not
+// an ASCII one: a tag may carry any letter of the database's encoding, so in a UTF-8
+// database `$atualização$` opens one value exactly as `$tag$` does. Answering "not a
+// tag" for a byte above ASCII would be the unsafe direction of a guess — the value's
+// contents then stay in the text the window question is asked of, and a body whose only
+// `from batch` is data it is writing reads as a bounded one and is wrapped, running its
+// whole-table statement once per window over every row. A byte ≥ 0x80 is therefore a tag
+// character here (and a `$` still closes the tag, which is why `$a$b$c$` is the tag
+// `$a$` here and to the server).
+//
+// The text arrives case-folded, so a tag whose two halves differ in case closes here
+// where PostgreSQL would call the value unterminated: that file runs nowhere — measured,
+// `unterminated dollar-quoted string` — and the fold is the same one every other word in
+// it is read with.
 func dollarTag(text string) string {
 	if text == "" || text[0] != '$' {
 		return ""
@@ -401,7 +457,7 @@ func dollarTag(text string) string {
 	for i := 1; i < len(text); i++ {
 		if c := text[i]; c == '$' {
 			return text[:i+1]
-		} else if !(c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' && i > 1) {
+		} else if !(c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' && i > 1 || c >= 0x80) {
 			return ""
 		}
 	}
