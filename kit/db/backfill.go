@@ -451,12 +451,14 @@ func windowArgs(from string) []any {
 }
 
 // windowed says whether this body goes through a window at all. It is the same
-// question data-body-unbounded asks, of the same text: a file that never reads the
-// window relation is refused by the rule unless it excepts itself, and a file that
-// does gets the window around it. A body wrapped without reading the window would be
-// run once per window over every row of the table, which is the thing the rule exists
-// to make impossible.
-func (m migration) windowed() bool { return reBatchWindow.MatchString(m.plain) }
+// question data-body-unbounded asks, and it is asked once — newMigrationText takes the
+// answer from here, so the rule table and the drain cannot ever disagree about one file.
+// The question is put to the body's shape rather than its text, because the question is
+// about the statement: a body that names the window only inside a value it is writing
+// does not read it, and a body wrapped without reading the window would be run once per
+// window over every row of the table, which is the thing the rule exists to make
+// impossible.
+func (m migration) windowed() bool { return reBatchWindow.MatchString(m.shape) }
 
 // crossTenants is the one place a migration reaches every tenant's rows, and it
 // says so in the way scripts/check_gucs.sh reads: a drain that walked one tenant at

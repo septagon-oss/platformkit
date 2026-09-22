@@ -50,9 +50,12 @@ var migrationTable = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 // the file below the header as its author wrote it — what the drain sends to the
 // server — and plain is that same body with the comments gone and the case folded,
 // which is the one text both the rule table and the drain ask their questions of.
-// A second reading of a second text is how a file gets judged for one thing and
-// executed as another, and a value inside the header (batch=500) must never be the
-// thing that satisfies a rule about the SQL.
+// shape is plain with the contents of every string literal put away as well, which
+// is the text the one structural question — does this body read the batch window —
+// is asked of, because a body that names the window only inside a value it is
+// writing does not read it. A second reading of a second text is how a file gets
+// judged for one thing and executed as another, and a value inside the header
+// (batch=500) must never be the thing that satisfies a rule about the SQL.
 type migrationHeader struct {
 	phase       string
 	contractOf  int64
@@ -61,6 +64,7 @@ type migrationHeader struct {
 	table       string
 	body        string
 	plain       string
+	shape       string
 	allowedRule []string
 }
 
@@ -96,6 +100,7 @@ func parseHeader(text string) (migrationHeader, error) {
 			continue
 		}
 		var lineAllows, lineReason string
+		reasons := 0
 		for _, pair := range headerPairs(rest) {
 			key := pair[0]
 			if key == "" {
@@ -108,6 +113,10 @@ func parseHeader(text string) (migrationHeader, error) {
 				continue
 			}
 			if key == "reason" {
+				reasons++
+				if reasons > 1 {
+					return h, fmt.Errorf("two reason= sentences on one line: the line states one sentence about one exception, and a reader that kept only the last would leave the first claiming a review it never got")
+				}
 				lineReason = pair[1]
 				continue
 			}
@@ -155,7 +164,8 @@ func parseHeader(text string) (migrationHeader, error) {
 		return h, fmt.Errorf("unknown header key %s; the keys are %s — a key the runner does not read claims a review the runner never did",
 			strings.Join(unknown, ","), strings.Join(headerKeys, ", "))
 	}
-	h.plain = stripSQLComments(strings.ToLower(h.body))
+	lower := strings.ToLower(h.body)
+	h.plain, h.shape = scanSQL(lower, false), scanSQL(lower, true)
 	return h, nil
 }
 
@@ -242,17 +252,32 @@ func (h *migrationHeader) declare() error {
 // keyValue is one header pair, or one pair-shaped thing that was not one.
 type keyValue [2]string
 
-// headerPairs splits one header line's content into pairs. A reason= value runs to
-// the end of its line, because it is a sentence; every other value is one token.
+// headerPairs splits one header line's content into pairs. Every pair the line
+// carries is read, and `reason=` is the only value that may contain spaces: its
+// sentence ends at the end of the line or at the next pair the grammar has,
+// whichever comes first.
+//
+// The sentence gives up its tail rather than swallow a declaration. The keys are a
+// closed list, so `phase=contract` inside a reason is readable two ways and the
+// reading that eats it is the one that hurts: the file stops being the contract half
+// its own face says it is, the exception written beside the swallowed key becomes a
+// used exception because eating the phase is what makes the rule fire, and the
+// marker then reads as the review that phase asked for. Read as a pair instead, the
+// declaration stands and the rule table refuses the file for what it now says about
+// itself. A sentence that quotes a pair verbatim is therefore read as a pair; write
+// the pairs first and the sentence last.
 func headerPairs(rest string) []keyValue {
 	var pairs []keyValue
 	for rest != "" {
-		if value, ok := strings.CutPrefix(rest, "reason="); ok {
-			return append(pairs, keyValue{"reason", value})
-		}
 		token, remainder, found := strings.Cut(rest, " ")
 		if !found {
 			remainder = ""
+		}
+		if key, value, ok := strings.Cut(token, "="); ok && key == "reason" {
+			sentence, tail := sentenceEnd(remainder)
+			pairs = append(pairs, keyValue{"reason", strings.TrimSpace(value + " " + sentence)})
+			rest = strings.TrimLeft(tail, " ")
+			continue
 		}
 		if token != "" {
 			if key, value, ok := strings.Cut(token, "="); ok {
@@ -266,6 +291,27 @@ func headerPairs(rest string) []keyValue {
 		rest = strings.TrimLeft(remainder, " ")
 	}
 	return pairs
+}
+
+// sentenceEnd is where a reason= stops being prose: the first word on the rest of
+// the line that opens a pair the grammar has, which is a declaration and not a
+// sentence's vocabulary. Everything before it is the sentence, and everything from
+// it on is parsed like any other part of the line — so a pair written after a
+// sentence is read, and prose the sentence did not finish is refused as the
+// pair-shaped thing it is.
+func sentenceEnd(rest string) (sentence, tail string) {
+	for start := 0; start < len(rest); {
+		width := strings.IndexByte(rest[start:], ' ')
+		if width < 0 {
+			width = len(rest) - start
+		}
+		word := rest[start : start+width]
+		if key, _, ok := strings.Cut(word, "="); ok && slices.Contains(headerKeys, key) {
+			return rest[:start], rest[start:]
+		}
+		start += width + 1
+	}
+	return rest, ""
 }
 
 func repeatedKey(keys []string) string {

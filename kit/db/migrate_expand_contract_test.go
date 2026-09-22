@@ -158,6 +158,12 @@ func TestMigrationHeaderGrammar(t *testing.T) {
 		{"empty reason", "-- pkit: allow=drop-column reason=   ", "reason"},
 		{"reason without an allow", "-- pkit: reason=because", "allow"},
 		{"allow names something that is not a rule", "-- pkit: allow=phase reason=because", "drop-column"},
+		// A `reason=` sentence ends at the next pair the grammar has, so the
+		// declaration written after it is read rather than swallowed: this file
+		// refuses as a contract half with no expansion named, and never as the
+		// expand file an unread `phase` would have made it.
+		{"a key after the reason is read", "-- pkit: allow=drop-column reason=the release after phase=contract", "expand="},
+		{"two reasons on one line", "-- pkit: allow=drop-column reason=one sentence reason=another", "reason="},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			migrateURL, _ := dbtest.URLs(t)
@@ -251,6 +257,18 @@ func TestStaticRulesRefuseAndAllowMarks(t *testing.T) {
 			file:  "-- pkit: phase=data\n-- pkit: batch=500\n-- pkit: table=probe\nUPDATE probe SET b = 'x'",
 			rule:  "data-body-unbounded",
 			fixed: "-- pkit: phase=data\n-- pkit: batch=500\n-- pkit: table=probe\n-- pkit: allow=data-body-unbounded reason=every row takes the same value\nUPDATE probe SET b = 'x'",
+		},
+		{
+			// The two directions of one reading, in one file each. A body whose only
+			// window reference is a value it is writing does not read the window, so the
+			// window would not bound it and the rule is right about it; and an apostrophe
+			// in the commentary above the body is commentary, not the start of a literal
+			// that hides the statements after it from every reader. The refusal is what the
+			// first file earns; the second one drains.
+			name:  "a data body that names the window only inside a value it writes",
+			file:  "-- pkit: phase=data\n-- pkit: batch=4\n-- pkit: table=probe\nUPDATE probe SET b = 'where id in (select id from batch)'",
+			rule:  "data-body-unbounded",
+			fixed: "-- pkit: phase=data\n-- pkit: batch=4\n-- pkit: table=probe\nUPDATE probe SET b = 'x' -- it's the same value for every row\n  WHERE id IN (SELECT id FROM batch)",
 		},
 		{
 			// No exception leg: the reviewer's answer is to split the file, and a

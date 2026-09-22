@@ -29,11 +29,13 @@ type rule struct {
 }
 
 // migrationText is one file as the rule table reads it: comments gone, statements
-// split, lower-cased, and the tables this very file creates known by name.
+// split, lower-cased, the tables this very file creates known by name, and the window
+// question already answered for the whole file rather than once per rule.
 type migrationText struct {
 	phase      string
 	autocommit bool
 	body       string
+	windowed   bool
 	statements []string
 	created    map[string]bool
 }
@@ -63,9 +65,11 @@ var (
 	reIfExists        = regexp.MustCompile(`\bif\s+exists\b`)
 	reDDL             = regexp.MustCompile(`^(alter|create|drop)\b`)
 	// reBatchWindow matches the drain's window relation where the SQL reads it, not
-	// the word anywhere. A body that only says "batch" in a comment or a string
-	// literal does not go through the window, and a body that names it in another
-	// case does: the case is folded before either reader sees it.
+	// the word anywhere. A body that only says "batch" in a comment or in a value it
+	// is writing does not go through the window, and a body that names it in another
+	// case does: the case is folded before the reader sees it, and the literal's
+	// contents are put away by the one reading the question is asked of
+	// (migration.windowed).
 	reBatchWindow = regexp.MustCompile(`\b(from|join|into|using)\s+batch\b`)
 )
 
@@ -111,7 +115,7 @@ var rules = []rule{
 		instead:   "put the body's rows through the window (WHERE … IN (SELECT … FROM batch)), or say why the body bounds itself",
 		exception: "allow=data-body-unbounded reason=<one sentence>",
 		fire: func(f *migrationText) bool {
-			return f.phase == phaseData && !f.readsTheWindow()
+			return f.phase == phaseData && !f.windowed
 		}},
 	{name: "data-with-ddl",
 		does:    "changes the schema in the one file that runs outside a transaction and in pieces, where no DDL is atomic and none rolls back",
@@ -194,13 +198,15 @@ func ruleError(r rule) error {
 // body parseHeader produced, split into statements. It does not make a text of its
 // own, because the drain asks the same body the same question (does this file go
 // through the window) and a body judged by one reader and executed by another is a
-// file whose execution was not the file that was reviewed.
+// file whose execution was not the file that was reviewed. That one question is
+// answered once, in migration.windowed, and both readers take the answer.
 func newMigrationText(m migration) *migrationText {
 	body := m.plain
 	f := &migrationText{
 		phase:      m.phase,
 		autocommit: m.autocommit,
 		body:       body,
+		windowed:   m.windowed(),
 		statements: splitStatements(body),
 		created:    map[string]bool{},
 	}
@@ -279,12 +285,6 @@ func addsANotNullDefinition(clause string) bool {
 	}
 	return false
 }
-
-// readsTheWindow is the one question the rule table and the drain ask the same body:
-// does this SQL read the window relation the kernel wraps around it. The rule fires
-// when a data file does not, and the drain only wraps a body that does — a body
-// wrapped without reading the window is run once per window over the whole table.
-func (f *migrationText) readsTheWindow() bool { return reBatchWindow.MatchString(f.body) }
 
 func (f *migrationText) anyStatement(re *regexp.Regexp) bool {
 	for _, statement := range f.statements {
@@ -371,6 +371,61 @@ func splitTopLevel(text string, sep rune) []string {
 	return out
 }
 
-var reLineComment = regexp.MustCompile(`--[^\n]*`)
-
-func stripSQLComments(text string) string { return reLineComment.ReplaceAllString(text, " ") }
+// scanSQL is the one reading the runner takes of a file's SQL: every comment is
+// put away, and with blankLiterals set the contents of every string literal and
+// quoted identifier go with them, which leaves the shape of the statements rather
+// than the words inside them.
+//
+// Knowing where a comment starts means knowing where a literal does. One regexp over
+// `--[^\n]*` took the rest of any line carrying two dashes out of the only text the
+// rule table and the drain asked their questions of, so a body that reads the window
+// after an apostrophe — `SET note = 'pending -- see the note' WHERE id IN (SELECT id
+// FROM batch)` — was read as a body that never reads it, refused as unbounded, and
+// then run unwrapped once its author obeyed the refusal's own remedy. The order of the
+// two cases below is the other half of the same fact: a comment is consumed where it
+// starts, quotes and all, so an apostrophe in commentary cannot open a literal and
+// hide every statement after it — the mistake on the other side, and the one no
+// exception marker would ever be blamed for.
+//
+// What it does not know: dollar-quoted bodies, block comments, and the backslash escapes
+// an E'…' string takes. The first two leave a body's text in rather than take it out,
+// which is the false positive a rule's exception exists for; the last ends a literal
+// where its author did not mean it to end.
+func scanSQL(text string, blankLiterals bool) string {
+	var out strings.Builder
+	out.Grow(len(text))
+	for i := 0; i < len(text); {
+		switch {
+		case strings.HasPrefix(text[i:], "--"):
+			out.WriteByte(' ')
+			if end := strings.IndexByte(text[i:], '\n'); end >= 0 {
+				i += end // the newline stays: it separated those two lines for the server as well
+				continue
+			}
+			i = len(text)
+		case text[i] == '\'' || text[i] == '"':
+			quote, start := text[i], i
+			for i++; i < len(text); i++ {
+				if text[i] != quote {
+					continue
+				}
+				if i+1 < len(text) && text[i+1] == quote {
+					i++ // '' or "" is one quote written twice, not the end of the literal
+					continue
+				}
+				i++
+				break
+			}
+			if blankLiterals {
+				out.WriteString(text[start : start+1])
+				out.WriteByte(quote)
+			} else {
+				out.WriteString(text[start:i])
+			}
+		default:
+			out.WriteByte(text[i])
+			i++
+		}
+	}
+	return out.String()
+}
