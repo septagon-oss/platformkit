@@ -30,9 +30,11 @@ const minReason = 3
 
 // installBackfillBatches bounds the drain Migrate performs itself: the drain of an
 // owner with no history at all (no reader, and no rows but the ones this installation
-// just wrote) and the resume of one a previous run left unfinished. Past it the process
-// is open too long for a deploy step, and the worker — which drains unbounded because
-// nothing waits on its boot — finishes the job, answering with ErrBackfillBudget.
+// just wrote), the resume of one a previous run left unfinished, and the owner's last
+// pending data file, which has nothing behind it waiting on the work. Past it the
+// process is open too long for a deploy step, and the worker — which drains unbounded
+// because nothing waits on its boot — finishes the job, answering with
+// ErrBackfillBudget.
 const installBackfillBatches = 50
 
 // headerLine is one line of a migration file's header. The marker is the whole

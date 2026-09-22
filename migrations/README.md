@@ -225,11 +225,13 @@ COLUMN b integer DEFAULT 0` is refused for `a` whatever `b` says.
 Two rules about a release rather than a file: a `phase=contract` file refuses while
 its `expand=` version is not already in the installation's history, and nothing of
 an owner applies past a `phase=data` file that has not finished draining — the
-worker drains that, and the next migration continues. A drain already in flight is
-resumed rather than left: `Migrate` takes it up under the bound a migration gives
-itself, and past that bound the boot continues and the tick finishes it. An owner with
-no history at all is the exception both times: nobody is reading, and its files apply
-in order.
+worker drains that, and the next migration continues. Two drains are the run's own: one
+already in flight, which `Migrate` takes up under the bound a migration gives itself
+(past that bound the boot continues and the tick finishes it), and the owner's last
+pending data file, which has nothing behind it waiting on the work and a window to bound
+it by. A body that said it bounds itself has no window, so it stays the worker's even
+last. An owner with no history at all is the exception both times: nobody is reading,
+and its files apply in order.
 
 ## The floor: guards apply to new versions
 

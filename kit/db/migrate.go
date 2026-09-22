@@ -446,16 +446,23 @@ func groupedByOwner(pending []migration) [][]migration {
 // applied — a run that applied the expansion and then refused the contract would have
 // done half the thing the guard exists to stop.
 //
-// A phase=data file whose owner already has history is a drain over a table with
-// readers, and the worker drains that: this run stops at the file, applies nothing
-// further for the owner, and reports what it left. Not a failure — failing here would
-// stop the only role that can finish the work — and decided before the contract half
-// is consulted, so a contract file behind a drain waits rather than refusing. A drain
-// already started is the exception the runner resumes, because a progress row is a
-// version that is neither applied nor un-started, which is no state a later run may
-// choose to leave. An owner with no history at all is the opposite case: nobody is
-// reading, and the rows are the ones this installation is writing, so its data files
-// drain here and now, bounded.
+// The second is about a phase=data file whose owner already has history: a drain over
+// a table with readers, and what decides who runs it is what waits behind it. Files
+// behind the drain cannot apply until it finishes, so this run stops at the file,
+// applies nothing further for the owner, and reports what it left: the release cannot
+// complete in this run either way, and the worker — which drains under readers because
+// nothing waits on its boot — owns the work. Not a failure: failing here would stop the
+// only role that can finish it. It is decided before the contract half is consulted, so
+// a contract file behind a drain waits rather than refusing. Two drains are this run's.
+// One already started is resumed, because a progress row is a version that is neither
+// applied nor un-started, which is no state a later run may choose to leave. A data
+// file with nothing of its owner pending behind it is drained here, because there is
+// nothing left to keep in order and this run can bound the work: a table longer than
+// the bound ends the run with ErrBackfillBudget and the tick takes the rest. A body
+// that declared itself bounded has no window, so nothing bounds it and it stays the
+// worker's even when it is last. An owner with no history at all is the opposite case:
+// nobody is reading, and the rows are the ones this installation is writing, so its
+// data files drain here and now, bounded.
 func planOwner(ctx context.Context, conn *sql.Conn, files []migration, history migrationHistory) ([]migration, error) {
 	owner := files[0].owner
 	if history.latest[owner] == 0 {
@@ -467,8 +474,10 @@ func planOwner(ctx context.Context, conn *sql.Conn, files []migration, history m
 			if progress.err != nil {
 				return nil, progress.err
 			}
-			if progress.started {
-				continue // this run finishes the drain it found; see the rule above
+			// The drain this run owns: one it found in flight, and the owner's last
+			// pending file, which has nothing behind it and a window to bound.
+			if progress.started || (i == len(files)-1 && m.windowed()) {
+				continue
 			}
 			slog.WarnContext(ctx, "db: left migrations pending behind a backfill the worker drains",
 				"owner", owner, "version", m.version, "remaining", len(files)-i)

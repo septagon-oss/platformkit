@@ -89,11 +89,18 @@ one transaction. The same reading of the same text (comments gone, case folded)
 decides both halves, so the body the rule table judged is the body the executor runs.
 An installation with no history for that owner drains it during migration, bounded at
 fifty batches, because nothing is reading and the rows are the ones the installation
-just wrote. An owner that already has history is a table under readers:
-`Migrate` stops there, applies nothing further for that owner and returns nil, and
-`jobs.BackfillMigrations` — composed into the worker by `kit/app` as
-`schema-backfill` — is what finishes it through `db.Backfill`. A boot that refused a
-drain would stop the only role that can finish it. Neither answer to a drain in flight
+just wrote. An owner that already has history is a table under readers, and what decides
+which of the two runs the drain is what waits behind the file. With files pending behind
+it, `Migrate` stops there, applies nothing further for that owner and returns nil — this
+run cannot reach those files either way, and may not spend itself emptying a hot table to
+get almost there — and `jobs.BackfillMigrations` — composed into the worker by `kit/app`
+as `schema-backfill` — is what finishes it through `db.Backfill`. With nothing behind it,
+filling that column is the release's last step and one the run can finish, so it drains
+the file itself under the same fifty-batch bound: a table longer than the bound ends that
+run with `ErrBackfillBudget` and the tick takes the rest. A body that said it bounds
+itself has no window to count, so that bound holds nothing to it and it stays the
+worker's even when it is last. A boot that refused a drain would stop the only role that
+can finish it. Neither answer to a drain in flight
 is a failed boot: a run that resumes one and reaches its own fifty-batch bound returns
 `ErrBackfillBudget` with the committed batches and the cursor standing, and `kit/app`
 logs that as the work its tick still has rather than refusing the start — the same
@@ -101,6 +108,9 @@ failure one bound down. `platformkit migrate` and `Bootstrap` asked for a run th
 finishes, so those doors keep the error.
 A refusal of a data file leaves nothing resumable: the progress row means "this drain
 started, resume it", so a shape the window cannot run is refused before that row exists.
+The guard cannot make that refusal instead of the executor: a guard refuses a whole owner
+before any of it runs, and the wrongness here is the window's own — the owner's earlier
+file has applied, and the version behind it is one statement too many.
 
 **The rehearsal.** A release is rehearsed against a copy of a production-shaped
 database before it is published: `make rehearse`, `scripts/rehearse_migrations.sh`,

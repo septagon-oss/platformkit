@@ -132,9 +132,15 @@ The order of a release is now a rule rather than a review comment. A `contract` 
 refuses while the `expand=` version it names is not already in that installation's
 history — one release of separation is the whole of what the ledger can state; how
 long ago is a release calendar, which belongs to the product. Nothing of an owner
-applies past a data file that has not finished draining; the installation with no
-history drains its own, bounded, and the worker drains a table with readers, because
-a boot that refused one would stop the only role that can finish it. A boot that
+applies past a data file that has not finished draining, and what decides who runs such
+a drain is what waits behind it. The installation with no history drains its own,
+bounded. So does the run that finds a data file with nothing of its owner pending behind
+it: nothing is kept waiting for the work, and the window gives the run a bound to stop
+at. A data file with files behind it is the worker's — this run cannot reach those files
+either way, and a boot may not spend itself emptying a table under readers for a release
+it cannot complete — and a boot that refused either would stop the only role that can
+finish it. So is a body that declared itself bounded, even last: it has no window, so the
+bound a migration gives itself, which counts windows, holds nothing to it. A boot that
 meets a drain already in flight resumes it under the same bound and, when the bound is
 reached, says so and carries on booting: the committed batches stand, the cursor names
 where the next batch starts, and `schema-backfill` finishes the table. `kit/app` treats
@@ -239,8 +245,13 @@ floor. `kit/app/review3_drain_in_flight_boots_test.go` reaches a half-drained ta
 through the doors only — an installation that stopped at its own bound, then the worker
 an installation boots — and asks that the worker be alive and the table empty.
 `kit/db/review3_data_file_shape_test.go` refuses a two-statement data file with nothing
-resumable left behind, and `kit/db/review3_rule_reads_the_statement_test.go` that a
+resumable left behind and the corrected file drained by the run that carried it, and
+`kit/db/review3_rule_reads_the_statement_test.go` that a
 `DEFAULT` in one statement does not excuse a `NOT NULL` column in another.
+`kit/db/data_file_shape_test.go` is the other two branches of that one rule: the data
+file with a schema file behind it, which `Migrate` leaves and `db.Backfill` empties so
+the file behind it can apply, and a self-bounded body — no window, so no bound for a
+migration to hold it to — which waits for the worker even as the owner's last file.
 `apps/platformkit/migrate_test.go` shows `platformkit migrate` applying exactly the
 sources the composition selected — every owner and every one of its files — and the
 second run applying nothing further.

@@ -22,12 +22,19 @@ is the fifty transactions that wait behind the running application, not the one 
 and one stopped by the lock budget returns `db.ErrContended`:
 nothing new was applied, and it may be run again. A `contract` file refuses while the
 `expand=` version it names has not already applied, and nothing of an owner applies
-past a drain that has not finished — the worker's `schema-backfill` job finishes
-that, so a boot never waits behind a table it cannot empty. A boot that meets a drain
+past a drain that has not finished. Which drains a release finishes, and which its
+worker's `schema-backfill` job does, is decided by what waits behind the file: a data
+file with files behind it is the worker's, because this run cannot reach those files
+either way, while the owner's last pending data file is drained by the run itself under
+the bound it gives itself — so a boot never waits behind a table it cannot empty, and a
+release whose last step is to fill a column does not leave that step to a tick. A body
+that says it bounds itself has no window to count, so it stays the worker's even last.
+A boot that meets a drain
 already in flight resumes it under that same bound and boots whatever the bound leaves:
 `db.ErrBackfillBudget` out of a migration is the worker's to finish, not a failed
 deploy, while `platformkit migrate` and `Bootstrap` — doors asked to finish — still
-report it. A refused data file leaves no progress row behind, because that row is what
+report it. A refused data file leaves no progress row behind, and the corrected file
+then converges through the same door, because that row is what
 a resume reads and a file refused for its shape never ran. The rules
 the runner refuses before connecting, the keys, and the floors each source declares are
 written down once in [migrations/README.md](migrations/README.md); the mode-scoped ban on
