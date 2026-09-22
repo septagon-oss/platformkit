@@ -106,6 +106,46 @@ func TestWriteOnlyRatchetsDown(t *testing.T) {
 	}
 }
 
+// TestBaselineReservesTheAcceptanceRound prices what an acceptance round costs
+// the bucket it lands in. T-0031's own round measured it: the branch re-baselined
+// to the next hundred of a count ending in 79, which left 21 lines, and the
+// review file that round brought measured 139 — the gate that is supposed to read
+// a delivery refused to commit the file reading it. The reservation is measured
+// from this repository rather than negotiated per branch: the largest
+// acceptance-round test file it holds is 499 lines, so a branch that expects to
+// be reviewed passes --allow 500 for the bucket a review file is counted in, and
+// leaves every other bucket at its own count.
+func TestBaselineReservesTheAcceptanceRound(t *testing.T) {
+	counts := map[string]int{"go_test": 47479, "go_prod": 45707}
+	budget := Budget{Buckets: []Bucket{
+		{Name: "go_test", Suffixes: []string{"_test.go"}, Max: 47500},
+		{Name: "go_prod", Suffixes: []string{".go"}, Max: 45800},
+	}}
+
+	budget.Baseline(reserved(counts, 0), 100)
+	if got := budget.Buckets[0].Max; got != 47500 {
+		t.Fatalf("go_test priced at its own count: want 47500, got %d", got)
+	}
+	if head := budget.Buckets[0].Max - counts["go_test"]; head >= 500 {
+		t.Fatalf("a count alone left %d lines of headroom, which is more than an acceptance round needs", head)
+	}
+
+	budget.Baseline(reserved(counts, 500), 100)
+	if got := budget.Buckets[0].Max; got != 48000 {
+		t.Fatalf("go_test with one acceptance round reserved: want 48000, got %d", got)
+	}
+	if head := budget.Buckets[0].Max - counts["go_test"]; head < 500 {
+		t.Errorf("go_test leaves %d lines of headroom, short of the 500 an acceptance round is measured at", head)
+	}
+
+	// The allowance reaches only the bucket it is passed for, which is how
+	// --bucket go_test --allow 500 leaves a production bucket on its own number.
+	budget.Baseline(reserved(map[string]int{"go_prod": counts["go_prod"]}, 0), 100)
+	if got := budget.Buckets[1].Max; got != 45800 {
+		t.Fatalf("go_prod priced on its own count: want 45800, got %d", got)
+	}
+}
+
 func TestHasReportsKnownBuckets(t *testing.T) {
 	budget := Budget{Buckets: []Bucket{{Name: "go_prod", Suffixes: []string{".go"}}}}
 	if !budget.Has("go_prod") {

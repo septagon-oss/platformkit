@@ -271,6 +271,46 @@ schema against the ledger's owners instead of `current_schema()`, which was the
 only schema until this. `migrations/README.md` states the consequences a
 deployment can hit.
 
+**A refusal now has an owner that imports nothing.** `kit/fault` declares
+`ErrNotFound`, `ErrInvalid` and `ErrConflict`, and `kit/crud` re-exports those same
+values rather than declaring its own, so the adapter that classifies a driver error
+and the value package that refuses a write before a transaction exists hold one
+object and `rest.Fault` answers 404, 422 and 409 once for either name. The package
+exists because the alternative was a link: a module's `contracts/`, `events/` or
+`domain/` package needing one of the three had to import `kit/crud` — gorm, a
+driver, a `db.Tx` in every signature — for an error value. It links the standard library and
+nothing else, which its own test asserts against `go list -deps`, the package gate
+holds to an empty allowance, and that gate's fixture refuses as out of bounds if it
+ever reaches `kit/db` — the edge back into `kit/crud` is an import cycle the
+compiler refuses before any gate sees it. The messages do not move and they are not
+inert: all three are still what a log line carries, `crud: invalid` and `crud:
+conflict` are what a bare refusal reaches a client with as its problem detail, and
+`crud: no such row` is not — a 404 is answered with the sentence `kit/rest` holds
+for a row this tenant cannot see — while the literal `crud: invalid: ` is what
+`kit/rest` trims off a detail to derive the field message a client reads, and
+`modules/admin` asserts a person is never shown that prefix: the prefix names the
+package that used to own these values, and renaming one is a wire change with
+consumers on the other side of it. Eleven of this repository's `contracts/`
+packages wrap one of the three under the adapter's name: three of a module's own
+contract source — `modules/content/contracts` and `modules/file/contracts`, which
+wrap `crud.ErrInvalid` for a body the Markdown renderer refuses and for bytes
+that are not the type they were uploaded as, and `modules/user/contracts`, whose
+own `ErrRegistrationExists` is a wrap of `crud.ErrConflict` — and the eight
+shipped test-support packages one directory deeper, which refuse the way the
+service each stands in for refuses. No file of `modules/auth/contracts` imports
+that adapter now: this change moved it to `fault.ErrInvalid` and retired its
+direct link. `kit/fault/README.md` names all eleven and what each still costs it. No
+closure moves for any of them — each names `db.Tx` and imports `kit/crud` or
+`kit/db` for `crud.Base` and a transaction-aware service of its own. The
+reachability runs from the module to the kit package:
+`modules/auth/contracts` reaches `kit/crud` through `modules/user/contracts`,
+which imports it for `crud.Base` and not for a sentinel, and reaches `kit/db`
+through four of its own files' service signatures; no kit package reaches a
+module, which the compiler and `./scripts/check_imports.sh` both refuse. So
+nothing here is a gate that now passes. What moves is adoption: the
+alias has a value package wrapping the owner rather than only a name, and a
+downstream consumer's value package does the same when its pin moves.
+
 ## [1.1.1] - 2026-09-18
 
 A tooling patch. No exported API moved and no shipped behaviour moved: the diff from
