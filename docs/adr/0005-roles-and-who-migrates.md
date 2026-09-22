@@ -43,7 +43,13 @@ backfill instead of waiting for the tick.
 ## Consequences
 
 - Deploying is `kubectl set image` on two deployments of the same image.
-- A worker cannot serve a stale schema: it applied the schema itself.
+- A worker waits for no migration job: every role migrates in its own boot, and the
+  schema it serves is the schema it applied — up to the one thing a boot does not do, the
+  drain of a `phase=data` file. While that runs on the worker's tick, the versions queued
+  behind the data file are still the previous release's, for one tick's length, and the
+  tick above is the deployment's own — which is why it is a job and not a background
+  habit. A boot that drained a table under readers itself, or refused to start until
+  somebody else had, is the alternative, and it is worse.
 - A migration that is slow makes every replica's boot slow, which is visible in
   the rollout rather than hidden in a job that finished an hour ago.
 - This rebuild starts on a fresh database, with no old-ledger conversion.

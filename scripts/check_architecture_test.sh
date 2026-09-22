@@ -442,13 +442,15 @@ if [ "$(floor_from_fixture 60000)" -le "$floor_long" ]; then
 fi
 
 # 4. Whether \watch fills the file at all. Everything the step says about lock waits is
-# the product of this file's line count, and the reviewer's own case for it — case 2 of
-# scripts/review_rehearsal_test.sh — runs a `psql -c <query> -c '\watch 0.1'` invocation
-# the step does not use and no change to this repository can make sample: psql answers
-# that one once and then "\watch cannot be used with an empty query", whatever it is
+# the product of this file's line count, so the sampling is measured and not read: this
+# runs the step's own psql line, taken out of the step, for two seconds, and asks the
+# sample file how many times it filled. Case 2 of scripts/review_rehearsal_test.sh asks
+# the same question over that same line for three seconds. It used to run a
+# `psql -c <query> -c '\watch 0.1'` invocation, which psql answers once and then refuses
+# to repeat, and no case written that way could have sampled anything whatever it was
 # pointed at (measured on psql 18.6 and on the 16.15 inside the project's own image).
-# This runs the step's own line, read out of the step, for two seconds, and asks the
-# question the reviewer's case asks.
+# Both cases need psql and a database, so where either is missing this prints SKIPPED,
+# and what `make check` proves without a server is the floor's arithmetic above.
 if ! command -v psql >/dev/null || [ -z "${PLATFORMKIT_TEST_ADMIN_URL-}" ]; then
 	echo 'rehearsal step: the live watcher needs psql and PLATFORMKIT_TEST_ADMIN_URL; SKIPPED, so the sampling is unproven on this machine'
 else

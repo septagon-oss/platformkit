@@ -152,8 +152,12 @@ own transaction.)
 A body that never reads that relation cannot be bounded by it, so it is refused by
 `data-body-unbounded` unless it says why it bounds itself. The decision whether to
 wrap a body is made from the same reading of the same text as that refusal — comments
-gone, case folded — so the file the guard judged is the file that runs: an excepted
-body runs once, and a body that names `BATCH` in another case still gets its window.
+gone, case folded, and the contents of every string literal put away for this one
+question, which is about the statement and not about the data it carries — so the file
+the guard judged is the file that runs: an excepted body runs once, a body that names
+`BATCH` in another case still gets its window, and one that names the window only
+inside a value it is writing does not. Two dashes inside a literal is data, not the
+comment that would otherwise hide the rest of its line from the guard.
 
 A file that keeps a statement the rules refuse says so, in the sentence a reviewer
 will read with the marker:
@@ -163,12 +167,16 @@ will read with the marker:
 CREATE INDEX billing_plans_currency ON billing_plans (currency)
 ```
 
-Each line is `-- pkit: key=value [key=value …]`. `reason=` runs to the end of its
-line; every other value is one word. A key may not repeat. After the first line
-that is not a header line, a `-- pkit:` marker may not appear again — a marker the
-runner would not read claims a review the runner never did. The checksum covers
-the whole file including the header, so an applied file can never be marked:
-marking it would mean changing bytes some installation already ran.
+Each line is `-- pkit: key=value [key=value …]`. `reason=` is the one value that may
+carry spaces: its sentence ends at the end of its line, or at the next `key=` the
+grammar knows, whichever comes first — a declaration written after a sentence is read
+as a declaration, because the reading that eats it leaves the file running as a
+different kind of file with an exception on it that the eaten declaration made valid.
+Every other value is one word, and a key may not repeat. After the first line that is
+not a header line, a `-- pkit:` marker may not appear again — a marker the runner would
+not read claims a review the runner never did. The checksum covers the whole file
+including the header, so an applied file can never be marked: marking it would mean
+changing bytes some installation already ran.
 
 | key | values | who reads it |
 | --- | --- | --- |
@@ -176,7 +184,7 @@ marking it would mean changing bytes some installation already ran.
 | `expand` | a version of the same owner | required by `phase=contract`; the expansion this file waits for |
 | `batch` | rows, 1…100000 | required by `phase=data`; one transaction per window |
 | `table` | one bare lower-case identifier | required by `phase=data`; what the window walks |
-| `autocommit` | `true` | the file's one statement runs with no transaction around it |
+| `autocommit` | `true` | the file's one statement runs with no transaction around it. The mode is one statement per file: PostgreSQL wraps a multi-statement simple query in one transaction, so a second statement is answered by `25001` and not by a rule — and a file that did not run leaves no object and no history row, so the corrected file is the same file run again |
 | `allow` | a rule name below | excepts that rule for this file; needs `reason=` on the same line |
 | `reason` | a sentence, at least three characters | nobody but the reviewer — that is its function |
 
@@ -191,7 +199,9 @@ to a line that is already there.
 Each refusal names its rule, says what the file does, and says what to do instead.
 The engine reads text with comments stripped, not a parse tree — the runner is not
 a SQL parser — so a statement inside a dollar-quoted body can be flagged, and the
-answer is the marker.
+answer is the marker. A comment is found where a comment actually starts: two dashes
+inside `'…'` or `"…"` are data, and the apostrophe inside a comment is commentary, so
+neither can move the boundary of what the guard sees.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |

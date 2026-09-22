@@ -87,8 +87,13 @@ that repeats rows.
 **The drain, and who runs it.** A `phase=data` file's body is wrapped over a window
 of its table's primary key and run once per window, one committed transaction per
 window — unless the file said its body bounds itself, in which case it runs once, in
-one transaction. The same reading of the same text (comments gone, case folded)
-decides both halves, so the body the rule table judged is the body the executor runs.
+one transaction. `migration.windowed` answers that one question, once, and the rule
+table and the executor both take the answer from it — of one reading of the body
+(`scanSQL`: comments gone, case folded, and the contents of every string literal put
+away, because two dashes inside a value are data and not the comment that would
+otherwise hide the rest of the line from the guard) — so the body the rule table
+judged is the body the executor runs, and a body that names the window only inside a
+value it writes is neither wrapped nor excused by accident.
 An installation with no history for that owner drains it during migration, bounded at
 fifty batches, because nothing is reading and the rows are the ones the installation
 just wrote. An owner that already has history is a table under readers, and what decides
