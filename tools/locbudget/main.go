@@ -7,6 +7,8 @@
 //	go run ./tools/locbudget --write                  # lower maxima to current counts
 //	go run ./tools/locbudget --write --bucket go_prod # lower one bucket only
 //	go run ./tools/locbudget --write --round 100      # re-baseline: count, rounded up
+//	go run ./tools/locbudget --write --round 100 --allow 500
+//	      # re-baseline with one acceptance round reserved first
 //	go run ./tools/locbudget                          # print counts
 package main
 
@@ -186,6 +188,34 @@ func (bu *Budget) Baseline(counts map[string]int, round int) {
 	}
 }
 
+// reserved adds the acceptance round to every count, which is how --allow reaches
+// Baseline without changing what a ceiling means: the rule for a ceiling is still
+// "the count, rounded up to the next multiple of --round", and --allow says which
+// count — the one the acceptance round arrives on rather than the one the feature
+// leaves behind.
+//
+// The tool states that cost rather than letting each branch negotiate one. An
+// acceptance round is this program's review, which lands its own test file on the
+// branch after the feature's lines are already counted: T-0031 re-baselined
+// `go_test` to the next hundred of a count ending in 79, which left 21 lines, and
+// the round then brought a file of 139, so `--check` refused the review for the
+// crime of reading the delivery. The reservation is measured from what this
+// repository already holds — the largest single acceptance-round test file here is
+// 499 lines, kit/httpx/review_surfaces_test.go — so a branch that expects to be
+// reviewed passes --allow 500 for the bucket a review file is counted in, which is
+// go_test, and leaves every other bucket unreserved, because a review round adds
+// no production Go and no shipped module.
+func reserved(counts map[string]int, allow int) map[string]int {
+	if allow <= 0 {
+		return counts
+	}
+	out := make(map[string]int, len(counts))
+	for name, c := range counts {
+		out[name] = c + allow
+	}
+	return out
+}
+
 // sourceFiles lists what the repository counts as its source: everything git
 // tracks, plus everything it would track if committed now. A budget that
 // ignored new files would only fail after the commit that broke it, which is
@@ -221,6 +251,7 @@ func run() int {
 		write  = flag.Bool("write", false, "lower maxima to current counts")
 		bucket = flag.String("bucket", "", "with --write: only this bucket")
 		round  = flag.Int("round", 0, "with --write: re-baseline every max to the count rounded up to this multiple")
+		allow  = flag.Int("allow", 0, "with --write --round: reserve this many lines of an acceptance round before rounding up (500 for go_test, 0 elsewhere)")
 	)
 	flag.Parse()
 
@@ -241,6 +272,13 @@ func run() int {
 	}
 	if *bucket != "" && !budget.Has(*bucket) {
 		fmt.Fprintf(os.Stderr, "unknown bucket %q\n", *bucket)
+		return 2
+	}
+	if *allow != 0 && (*round <= 0 || !*write) {
+		// Only --write --round reads an allowance: a plain --write ratchets down,
+		// and --check reports the committed ceilings as they stand. Refuse rather
+		// than let a flag be typed in and silently do nothing.
+		fmt.Fprintln(os.Stderr, "--allow needs --write --round: nothing else reads it")
 		return 2
 	}
 	files, err := sourceFiles(*root)
@@ -271,9 +309,9 @@ func run() int {
 	if *write {
 		switch {
 		case *round > 0 && *bucket != "":
-			budget.Baseline(map[string]int{*bucket: counts[*bucket]}, *round)
+			budget.Baseline(reserved(map[string]int{*bucket: counts[*bucket]}, *allow), *round)
 		case *round > 0:
-			budget.Baseline(counts, *round)
+			budget.Baseline(reserved(counts, *allow), *round)
 		case *bucket != "":
 			budget.Ratchet(map[string]int{*bucket: counts[*bucket]})
 		default:

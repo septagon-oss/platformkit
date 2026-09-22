@@ -6,7 +6,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
+	// The refusals come from kit/fault rather than kit/crud: this package names no
+	// transaction, and kit/crud re-exports the same values, so a caller that already
+	// wrote crud.ErrInvalid still matches what is returned here.
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -23,11 +26,11 @@ const MaxRoleName = 64
 func ValidRoleName(name string) (string, error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if !roleName.MatchString(name) {
-		return "", fmt.Errorf("%w: role %q is not a lower-case identifier", crud.ErrInvalid, name)
+		return "", fmt.Errorf("%w: role %q is not a lower-case identifier", fault.ErrInvalid, name)
 	}
 	if len(name) > MaxRoleName {
 		return "", fmt.Errorf("%w: a role name is at most %d characters, and %q is %d",
-			crud.ErrInvalid, MaxRoleName, name, len(name))
+			fault.ErrInvalid, MaxRoleName, name, len(name))
 	}
 	return name, nil
 }
@@ -139,7 +142,7 @@ func CheckedAdministration(name string, was, want Permissions, others func() ([]
 		}
 	}
 	return fmt.Errorf("%w: %q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again",
-		crud.ErrInvalid, name, PermissionRoleManage)
+		fault.ErrInvalid, name, PermissionRoleManage)
 }
 
 // CheckedPermissions normalises a permission list and refuses the two ways one can be
@@ -165,10 +168,10 @@ func CheckedPermissions(permissions []string, declared []tenancy.Grant, tenant t
 		switch {
 		case i < 0:
 			return nil, fmt.Errorf("%w: no module defines the permission %q, so a role naming it would grant nothing",
-				crud.ErrInvalid, p)
+				fault.ErrInvalid, p)
 		case declared[i].Operator && !tenant.Operator:
 			return nil, fmt.Errorf("%w: %q belongs to the operator of this installation, and %s is not it",
-				crud.ErrInvalid, p, tenant.Slug)
+				fault.ErrInvalid, p, tenant.Slug)
 		}
 		out = append(out, p)
 	}

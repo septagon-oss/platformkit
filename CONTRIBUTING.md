@@ -138,7 +138,11 @@ unrelated responsibilities. If the remaining cost is justified, obtain a
 separate owner budget commit before the implementation. State the affected
 bucket, expected cost, benefit and verification.
 `go run ./tools/locbudget --write` lowers ceilings; rebaselining with
-`--round 100` can raise them and requires that review.
+`--round 100` can raise them and requires that review. A branch that expects an
+acceptance round prices that too, because the round arrives with a test file of
+its own after the feature's lines are counted: re-baseline the bucket it writes
+(`go_test`) with `--round 100 --allow 500`, 500 being the measured cost — the
+largest acceptance-round test file this repository holds is 499 lines.
 
 ## Hand off the result
 

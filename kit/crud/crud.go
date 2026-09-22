@@ -1,6 +1,7 @@
 // Package crud is the five operations every tenant-owned resource needs.
 // Entity definitions and schemas are owned by kit/entity, with aliases here
-// for existing callers.
+// for existing callers. The three refusal sentinels are owned by kit/fault, and
+// aliased here for the same reason.
 //
 // A module writes a struct with an embedded Base and gets read, list, create,
 // update and delete, each refusing what row-level security would refuse anyway.
@@ -42,19 +43,30 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/fault"
 )
 
-// The three failures a caller distinguishes. Everything else is an outage and
-// reads as a 500. Spec.Mount turns these into 404, 422 and 409.
+// The three failures a caller distinguishes. What the mapping does not
+// recognise is an outage and reads as a 500; the authorization refusals
+// kit/tenancy declares are the ones answered a 403 or a 503. Spec.Mount turns
+// these into 404, 422 and 409.
+//
+// These are kit/fault's values, named again here, and not copies of them. A
+// refusal has to be one object: kit/rest maps the three to a status once, and
+// the value package that refuses a write before a transaction exists and this
+// adapter, which classifies one after the database refused it, have to hold the
+// same opinion for that one mapping to answer for both. So a package that takes
+// no transaction wraps kit/fault, and a caller that already wrote crud.Err…
+// keeps matching it with errors.Is.
 var (
 	// ErrNotFound is no such row in this tenant. Another tenant's row is not
 	// found either, which is the only thing the API may say about it.
-	ErrNotFound = errors.New("crud: no such row")
+	ErrNotFound = fault.ErrNotFound
 	// ErrInvalid is the entity's own Validate, or a query naming a field that
 	// does not exist.
-	ErrInvalid = errors.New("crud: invalid")
+	ErrInvalid = fault.ErrInvalid
 	// ErrConflict is a write that contradicts existing data or business state.
-	ErrConflict = errors.New("crud: conflict")
+	ErrConflict = fault.ErrConflict
 )
 
 // UniqueConflict identifies a duplicate value without confusing it with a

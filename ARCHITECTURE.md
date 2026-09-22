@@ -62,6 +62,14 @@ field metadata without CRUD, [forms](ui/forms/README.md) for captured controls
 without REST, [locale](kit/locale/README.md) for worker or page translations, and
 [Task domain](modules/task/domain/README.md) for the deterministic resolution rule.
 Their package guides contain executable entry points and dependency limits.
+The three refusal sentinels are a fifth part: [fault](kit/fault/README.md) holds
+the refusals a caller can act on and links nothing beyond the standard library,
+so a value package, an `events/` or a `domain/` can name one without importing
+the storage adapter. Its guide names the entry points and the limit; the limit is
+asserted rather than described — `kit/fault/fault_test.go` checks the closure
+against `go list -deps`, the [package gate](scripts/check_packages.sh) holds the
+empty allowance, and `kit/crud` re-exports those same values rather than
+declaring copies of them.
 SQL transactions, authorization and business writes remain explicit composition
 responsibilities; an exported form or rule does not supply a complete service.
 The existing CRUD/page/Auth aliases and screens adapter delegate to these owners.
