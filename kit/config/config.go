@@ -95,6 +95,11 @@ type Database struct {
 	MaxOpenConns    *int           `yaml:"max_open_conns"`
 	MaxIdleConns    *int           `yaml:"max_idle_conns"`
 	ConnMaxLifetime *time.Duration `yaml:"conn_max_lifetime"`
+	// LockTimeout is how long a migration may wait for a lock before the runner stops
+	// it and says it is contended; StatementTimeout bounds one statement. Omitted values
+	// retain the defaults kit/db owns and explains in db.MigrationBudget.
+	LockTimeout      *time.Duration `yaml:"lock_timeout"`
+	StatementTimeout *time.Duration `yaml:"statement_timeout"`
 }
 
 // NATS configures the event transport and its broker connection. Empty Transport

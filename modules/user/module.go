@@ -124,6 +124,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Name:        "user",
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
+		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
 		Events: []string{
 			contracts.EventCreated, contracts.EventUpdated, contracts.EventDeleted,

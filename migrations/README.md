@@ -119,3 +119,98 @@ nothing cannot pass, and `openSchema`/`tenantTable`, the fixture pair a module's
 first two revisions look like, are unexported helpers of
 `package migrations_test`, which no importer can reach: reusable as the shape a
 later test file copies, not as an API.
+
+# Writing a migration
+
+Every `.up.sql` file under a `migrations/` directory — the kernel's here, and a
+module's under `modules/<name>/migrations/` — is forward-only, immutable once
+applied, and owned by one capability. [ADR 0011](../docs/adr/0011-migration-ownership.md)
+owns that contract; this file is the part an author reads: what a file may say
+about itself, and what the runner refuses.
+
+A file runs in one transaction with its history row. Three kinds of file are not
+like that, and a file has to say which it is, because a reader cannot tell from
+the SQL.
+
+## The header
+
+A run of comment lines at the very top of the file, before any SQL:
+
+```sql
+-- pkit: phase=data
+-- pkit: batch=5000
+-- pkit: table=billing_plans
+UPDATE billing_plans SET currency = 'EUR'
+  WHERE currency IS NULL AND id IN (SELECT id FROM batch)
+```
+
+(The table is whatever the file drains; the header's job is to say which, in a form
+the runner can read before it connects. The body sees one window of that table's
+primary key as the relation `batch`, and the runner runs it once per window, in its
+own transaction.)
+
+A file that keeps a statement the rules refuse says so, in the sentence a reviewer
+will read with the marker:
+
+```sql
+-- pkit: allow=index-not-concurrent reason=billing_plans holds one row per tenant
+CREATE INDEX billing_plans_currency ON billing_plans (currency)
+```
+
+Each line is `-- pkit: key=value [key=value …]`. `reason=` runs to the end of its
+line; every other value is one word. A key may not repeat. After the first line
+that is not a header line, a `-- pkit:` marker may not appear again — a marker the
+runner would not read claims a review the runner never did. The checksum covers
+the whole file including the header, so an applied file can never be marked:
+marking it would mean changing bytes some installation already ran.
+
+| key | values | who reads it |
+| --- | --- | --- |
+| `phase` | `expand` (the default), `contract`, `data` | the runner, for the order a release may apply in and how the file runs |
+| `expand` | a version of the same owner | required by `phase=contract`; the expansion this file waits for |
+| `batch` | rows, 1…100000 | required by `phase=data`; one transaction per window |
+| `table` | one bare lower-case identifier | required by `phase=data`; what the window walks |
+| `autocommit` | `true` | the file's one statement runs with no transaction around it |
+| `allow` | a rule name below | excepts that rule for this file; needs `reason=` on the same line |
+| `reason` | a sentence | nobody but the reviewer — that is its function |
+
+A grammar mistake refuses before the runner connects, and no `allow=` excuses one:
+an exception that can except a broken marker is a marker nobody can rely on.
+
+## What the runner refuses, and what to write instead
+
+Each refusal names its rule, says what the file does, and says what to do instead.
+The engine reads text with comments stripped, not a parse tree — the runner is not
+a SQL parser — so a statement inside a dollar-quoted body can be flagged, and the
+answer is the marker.
+
+| rule | fires on | why | exception |
+| --- | --- | --- | --- |
+| `alter-column-type` | `ALTER COLUMN … TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
+| `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` | rewrites the table and refuses every write while it does | allowed |
+| `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
+| `drop-column` | `DROP COLUMN` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
+| `index-concurrent-without-autocommit` | `CONCURRENTLY` without `autocommit=true` | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
+| `autocommit-without-concurrently` | `autocommit=true` with nothing nontransactional in the file | the marker gives up all-or-nothing; nothing may do that without a reason | none: delete the marker |
+| `autocommit-not-rerunnable` | an autocommit statement without `IF NOT EXISTS` / `IF EXISTS` | the statement can succeed while the version stays unapplied, so the next run must be able to repeat it | none |
+| `data-body-unbounded` | a `phase=data` body that never mentions `batch` | the window cannot bound it, so one statement walks the whole table | allowed, with the sentence saying how it bounds itself |
+| `data-with-ddl` | DDL in a `phase=data` file | that file runs outside a transaction, in pieces; DDL there has no rollback | none: split the file |
+| `data-writes-outbox` | `platformkit_outbox` named in a `phase=data` body | one event per row per attempt buries the relay and replays on a resume | allowed |
+| `unused-allow` | an `allow=` for a rule the file does not break | an exception nobody needed is a claim about a risk that is not there, and it outlives the sentence that justified it | none: delete the marker |
+
+Two rules about a release rather than a file: a `phase=contract` file refuses while
+its `expand=` version is not already in the installation's history, and nothing of
+an owner applies past a `phase=data` file that has not finished draining — the
+worker drains that, and the next migration continues. An owner with no history at
+all is the exception both times: nobody is reading, and its files apply in order.
+
+## The floor: guards apply to new versions
+
+A rule cannot be refused on a file that is already applied somewhere: the bytes are
+immutable and the only remedy left would be to stop the installation. So a source
+states the first version it is guarded from — `RulesFrom` on its
+`db.MigrationSource`, which a module also carries on its manifest — and the number
+is one past the highest file the rules refuse today. In this repository the floors
+are measured, not chosen: `platformkit` 21, `audit` 24, `auth` 14, `user` 26. A
+source that says nothing is guarded from version 1, which is what a module added
+after these rules exist should declare. Lowering a floor is a review, not an edit.

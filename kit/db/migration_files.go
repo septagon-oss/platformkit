@@ -18,6 +18,7 @@ type migrationID struct {
 
 type migration struct {
 	migrationID
+	migrationHeader
 	name     string
 	sql      string
 	checksum string
@@ -77,9 +78,22 @@ func readMigrations(sources []MigrationSource) ([]migration, []adoption, error) 
 			if strings.TrimSpace(string(body)) == "" {
 				return nil, nil, fmt.Errorf("db: migrate: %s/%s is empty", source.Owner, name)
 			}
+			header, err := parseHeader(string(body))
+			if err != nil {
+				return nil, nil, fmt.Errorf("db: migrate: %s/%s: %w", source.Owner, name, err)
+			}
 			m := migration{
-				migrationID: migrationID{owner: source.Owner, version: version},
-				name:        name, sql: string(body), checksum: fmt.Sprintf("%x", sha256.Sum256(body)),
+				migrationID:     migrationID{owner: source.Owner, version: version},
+				migrationHeader: header,
+				name:            name, sql: string(body), checksum: fmt.Sprintf("%x", sha256.Sum256(body)),
+			}
+			// The guard applies from the version the owner says is guarded, which is
+			// 0 — every file — for a source with nothing applied yet. A file below
+			// the floor cannot carry a marker: that would change applied bytes.
+			if version >= source.RulesFrom {
+				if err := checkRules(m); err != nil {
+					return nil, nil, fmt.Errorf("db: migrate: %s/%s: %w", source.Owner, name, err)
+				}
 			}
 			versions[version] = m
 			owned = append(owned, m)

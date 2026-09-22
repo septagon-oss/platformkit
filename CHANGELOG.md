@@ -7,6 +7,26 @@ it. Each was written because the state was reachable, not because a race was
 reported, and each says below what it leaves open rather than leaving that to a
 reader who depends on it.
 
+**A migration now says what kind of migration it is, and the runner holds it to
+that shape.** A rewrite and a ten-million-row backfill were the same file: one
+transaction, no bound, and the expand/contract rule a review comment. A file may
+carry a `-- pkit:` header — `phase=expand|contract|data`, with `batch=`, `table=`,
+`autocommit=`, and `allow=<rule> reason=…` for the exceptions a reviewer reads — and
+the runner then applies it in the mode it declared: transactionally, as one
+nontransactional statement that must be re-runnable, or as a backfill wrapped over a
+window of its table's primary key, one committed transaction per window, resumable
+from the last key it committed in `schema_migration_backfill`. Every file runs with a
+five-second `lock_timeout` (configurable, `database.lock_timeout`) and no statement
+bound by default, and one stopped by the lock budget returns `db.ErrContended`:
+nothing new was applied, and it may be run again. A `contract` file refuses while the
+`expand=` version it names has not already applied, and nothing of an owner applies
+past a drain that has not finished — the worker's `schema-backfill` job finishes
+that, so a boot never waits behind a table it cannot empty. The rules the runner
+refuses before connecting, the keys, and the floors each source declares are written
+down once in [migrations/README.md](migrations/README.md); the mode-scoped ban on
+nontransactional SQL is the amendment to
+[ADR 0011](docs/adr/0011-migration-ownership.md).
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was

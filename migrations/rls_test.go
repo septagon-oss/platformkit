@@ -19,6 +19,7 @@ package migrations_test
 import (
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,9 +48,12 @@ var everything = []db.MigrationSource{migrations.Source, user.Migrations, notifi
 // and is greppable from outside the repository.
 const exemption = "platformkit:tenant-scoping-exempt"
 
-// The runner owns migration history and revokes application access to it.
-// It contains schema metadata, not tenant data. kit/db tests its privileges.
-const ledger = "schema_migrations"
+// The runner owns migration history and the cursor of a drain that has not
+// finished, and revokes application access to both. They hold schema metadata —
+// an owner and a version, a primary key — and no tenant's row, so neither carries
+// a tenant policy; the door on them is the REVOKE, which kit/db tests, rather than
+// a policy that would have to name a tenant the row does not have.
+var runnerTables = []string{"schema_migrations", "schema_migration_backfill"}
 
 // TestEveryTableIsScopedOrExemptOnPurpose.
 func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
@@ -93,7 +97,7 @@ func tenantScope(t *testing.T, admin *sql.DB) (tables, problems []string) {
 		if err := rows.Scan(&schema, &name, &enabled, &forced, &comment, &policies); err != nil {
 			t.Fatalf("read a table: %v", err)
 		}
-		if name == ledger {
+		if slices.Contains(runnerTables, name) {
 			continue
 		}
 		table := schema + "." + name

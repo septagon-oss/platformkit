@@ -1265,6 +1265,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 // the ledger a release before this change actually left behind: same versions,
 // same names, same checksums.
 func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource {
+	var top int64
 	t.Helper()
 	all := fstest.MapFS{}
 	for _, source := range sources {
@@ -1280,10 +1281,19 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 			if _, clash := all[entry.Name()]; clash {
 				t.Fatalf("two owners ship %s; the old layout had one of each", entry.Name())
 			}
+			digits, _, _ := strings.Cut(entry.Name(), "_")
+			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > top {
+				top = version
+			}
 			all[entry.Name()] = &fstest.MapFile{Data: body}
 		}
 	}
-	return db.MigrationSource{Owner: "platformkit", Files: all}
+	// Every file this fixture holds predates the runner's guard rules, and it says
+	// so one past the highest version it collected rather than naming a number:
+	// the flattening puts each owner's SQL at its own version under one owner, so
+	// no single owner's floor is the right floor for the mixture, and the true
+	// statement is that the rules arrived after all of it.
+	return db.MigrationSource{Owner: "platformkit", Files: all, RulesFrom: top + 1}
 }
 
 // TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace is the

@@ -21,4 +21,8 @@ var Migrations = db.MigrationSource{
 	Owner:  "audit",
 	Files:  db.Sub(schema, "migrations"),
 	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{10, 15, 23}}},
+	// Two applied files index audit_events in a file that does not create it
+	// (000015, 000023), which is the shape the guard refuses. They are history
+	// and cannot be rewritten, so the guard starts past them.
+	RulesFrom: 24,
 }

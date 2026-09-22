@@ -285,9 +285,10 @@ func (a *App) Run(ctx context.Context) error {
 
 // migrate applies the ledger as the owner role. Every role does, worker
 // included: the advisory lock makes the race safe, which removes the ordering
-// problem instead of sequencing it. See docs/adr/0005.
+// problem instead of sequencing it. The budgets are the deployment's, if it named
+// any. See docs/adr/0005.
 func (a *App) migrate(ctx context.Context) error {
-	return db.Migrate(ctx, a.cfg.Database.MigrateURL, MigrationSources(a.mods)...)
+	return db.MigrateWith(ctx, a.cfg.Database.MigrateURL, migrationBudget(a.cfg.Database), MigrationSources(a.mods)...)
 }
 
 // openConn opens the application connection, as the role row-level security
@@ -529,11 +530,21 @@ func kernelJobs(transport events.Transport) []jobs.Job {
 	}
 }
 
+// drainMigrations is the worker's schedule for the data migrations this
+// composition owns. It is built here rather than inside kernelJobs because it
+// needs two facts the transport does not carry: the owner-role URL migrations run
+// under, and the sources the composition actually selected. Without it the drain
+// that Migrate deliberately leaves behind would be left behind forever, and
+// "resumable" would mean "somebody runs a command nobody has read about".
+func (a *App) drainMigrations() jobs.Job {
+	return jobs.BackfillMigrations(jobs.BackfillEvery, a.cfg.Database.MigrateURL, MigrationSources(a.mods)...)
+}
+
 // work is the worker role: the kernel's own jobs, every module's jobs, and every
 // module's subscriptions. probes is the handler it serves, or nil when the web half
 // of the same process is already serving them.
 func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
-	scheduled := kernelJobs(transport)
+	scheduled := append(kernelJobs(transport), a.drainMigrations())
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)

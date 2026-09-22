@@ -21,4 +21,8 @@ var Migrations = db.MigrationSource{
 	Owner:  "auth",
 	Files:  db.Sub(schema, "migrations"),
 	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{8, 13, 14, 24}}},
+	// 000013 drops a column, adds a NOT NULL column with no default and indexes
+	// sessions — every one of them a rewrite or a lock, all of them applied years
+	// ago under bytes that cannot change. The guard takes version 14 onwards.
+	RulesFrom: 14,
 }

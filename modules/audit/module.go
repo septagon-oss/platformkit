@@ -78,6 +78,7 @@ func Module(deps Deps) module.Module {
 		Name:        "audit",
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
+		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
 		// None, and the absence is the decision: see the package comment.
 		Events: nil,

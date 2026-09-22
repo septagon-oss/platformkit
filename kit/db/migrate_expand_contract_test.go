@@ -445,7 +445,7 @@ func TestDataMigrationResumesWhereTheLastRunStopped(t *testing.T) {
 -- pkit: batch=10
 -- pkit: table=probe
 UPDATE probe SET done = true, passes = passes + 1
-	WHERE id IN (SELECT id FROM batch) AND 1 / ((SELECT count(*) FROM probe WHERE done) - 10) < 0`)},
+	WHERE id IN (SELECT id FROM batch) AND 1.0 / ((SELECT count(*) FROM probe WHERE done) - 10) < 0`)},
 	}
 	err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "fill", Files: files})
 	if err == nil {

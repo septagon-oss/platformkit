@@ -27,6 +27,12 @@ process migrating and the rest waiting and finding nothing to do. That removes
 the ordering problem instead of sequencing it: there is no migration job to run
 first and nothing to wait for.
 
+One thing is the worker's alone. A `phase=data` migration over a table that already has
+readers is drained by `jobs.BackfillMigrations`, which the worker runs on a tick, because
+holding a boot open for the length of a ten-million-row scan is not what the boot above
+is for; `Migrate` stops in front of it and returns success. See
+[ADR 0011](0011-migration-ownership.md).
+
 ## Consequences
 
 - Deploying is `kubectl set image` on two deployments of the same image.

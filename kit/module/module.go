@@ -88,6 +88,14 @@ type Module struct {
 	// module that never shared an owner declares nothing. See db.Adoption.
 	Adopts []db.Adoption
 
+	// RulesFrom is the first version of Migrations the runner's rule table guards,
+	// and it travels to the kernel beside the files it describes. Zero guards every
+	// file, which is right for a module added after the rules existed; a module
+	// whose already-applied files would be refused names the version past the last
+	// of them, because a rule cannot be refused on bytes that are immutable. The
+	// number is the module's fact and the module states it. See db.MigrationSource.
+	RulesFrom int64
+
 	// Routes registers this module's operations, each with its authorization,
 	// on the surface the kernel built for it. The module chooses a router —
 	// r.Public, r.App, r.Ops — and writes a path relative to it; the prefix, the

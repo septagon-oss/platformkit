@@ -119,6 +119,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 		Name:        "auth",
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
+		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
 		Events:      contracts.Events,
 		// The one entry, and the shell serves it: a role is keyed by its name

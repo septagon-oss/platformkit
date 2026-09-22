@@ -273,7 +273,12 @@ applied file, so changing one still refuses.
 
 The runner validates the selected source files, obtains a database advisory
 lock, checks applied histories, and executes each pending file with its history
-row in one transaction.
+row in one transaction — which is the mode a file declares in its header, and two
+modes say otherwise: an `autocommit` file's one statement runs outside the
+transaction, and a `phase=data` file's body runs once per window of its table's
+primary key, each window committed on its own and drained by the worker rather
+than by a boot. [migrations/README.md](migrations/README.md) carries that grammar
+and the rules the runner refuses by.
 Applied files are immutable. A failed file rolls back; completed earlier files
 remain applied. Disabling a module retains its data and migration history.
 

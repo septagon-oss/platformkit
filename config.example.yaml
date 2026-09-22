@@ -54,6 +54,15 @@ database:
   # max_idle_conns: 4
   # conn_max_lifetime: 30m
 
+  # How long one migration may wait. Omitted keeps the documented defaults: a
+  # five second wait for a lock (a migration that cannot take the lock in that
+  # time stops and says it is contended, and may be run again), and no bound on a
+  # statement at all — a legitimate index build on a large table is the statement
+  # a duration bound would kill. Set statement_timeout only where a bound on the
+  # longest statement is worth refusing a real build for.
+  # lock_timeout: 5s
+  # statement_timeout: 0
+
 nats:
   # Empty preserves role defaults: all uses memory; worker uses JetStream.
   # Set jetstream to share events between replicas of role all. Explicit memory

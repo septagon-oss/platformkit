@@ -36,7 +36,10 @@ and one applied history make failure recovery explicit in the same implementatio
 
 Files are `<positive-version>_<name>.up.sql`, ordered numerically within an owner.
 They contain transactional PostgreSQL SQL. They must not manage transactions or
-run nontransactional operations such as `CREATE INDEX CONCURRENTLY`. Review SQL
+run nontransactional operations such as `CREATE INDEX CONCURRENTLY` — a ban that is
+now *mode-scoped*: a file that declares `-- pkit: autocommit=true` is the file
+shape whose one nontransactional statement is the whole file, and the rule table
+below refuses such a statement anywhere else. Review SQL
 for that contract; the runner is not a SQL parser or a sandbox for untrusted SQL.
 Cross-capability schema dependencies follow the application's composition order.
 
@@ -83,6 +86,66 @@ was always its own owner is unaffected. A composition that omits a module still
 leaves that module's tables and history in place, which is now true of the
 reference modules as well.
 
+## Amendment: a file says what kind of migration it is
+
+A migration that rewrites a table, and a migration that backfills ten million rows,
+were the same kind of file: one transaction, no bound on either, and no way for the
+runner to tell the dangerous one from the ordinary one. The rule the industry calls
+expand/contract was a habit nobody could enforce.
+
+A file may now carry a header — a run of `-- pkit: key=value` comment lines at the
+very top, before any SQL — declaring `phase=expand|contract|data`, and the keys that
+phase needs. The checksum still covers the whole file including its header, so an
+applied file can never be marked: marking it would mean changing bytes some
+installation already applied, which the paragraph above already refuses.
+
+Three execution modes follow from the header, and nothing is inferred from SQL: an
+expand or contract file runs transactionally as always; an `autocommit` file runs its
+one statement with no transaction and its history row commits alone, which is why its
+statement must be re-runnable; a `phase=data` file's body never runs as written — it
+is wrapped over one window of its table's primary key at a time, one committed
+transaction per window, and the key and its type are read from the catalog so the
+header cannot claim a key the table does not have. Progress lives in a second table,
+`schema_migration_backfill`, holding the last key committed: every reader of
+`schema_migrations` assumes a row there means applied forever, and an unfinished
+drain is exactly the state that must not look like one. The row and the history row
+are never both present. The application role is revoked from both.
+
+An autocommit statement is also the one statement a migration run must not hold the
+composition's advisory lock across. Such a statement waits for the transactions already
+in the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds the
+wait — while that lock is what every other replica's boot queues behind. Holding both
+was measured, and it deadlocks the queue:
+
+```
+Process 30201 waits for ShareLock on virtual transaction 10/17350; blocked by process 30222.
+Process 30222 waits for ExclusiveLock on advisory lock [16384,0,7240101,1]; blocked by process 30206.
+```
+
+so the run puts the lock down for that one statement and takes it back for the history
+row, which is inserted `ON CONFLICT DO NOTHING`: two replicas may then both reach a
+statement the rule table already requires to be re-runnable, and the one that loses the
+race learns the file applied rather than failing its boot for a benign race. A statement
+that failed writes no row either way.
+
+The order of a release is now a rule rather than a review comment. A `contract` file
+refuses while the `expand=` version it names is not already in that installation's
+history — one release of separation is the whole of what the ledger can state; how
+long ago is a release calendar, which belongs to the product. Nothing of an owner
+applies past a data file that has not finished draining; the installation with no
+history drains its own, bounded, and the worker drains a table with readers, because
+a boot that refused one would stop the only role that can finish it.
+
+Alongside it, the static rules the runner refuses before connecting — the rewrites,
+the plain index build, the dropped column outside a contract file — each named, each
+with a remedy, and the correctable ones exceptable by `-- pkit: allow=<rule>
+reason=<one sentence>`, the reason being the whole content of an exception and
+`unused-allow` refusing one that was not needed. Guards apply from a version the
+source states, because a rule cannot be refused on a file already applied somewhere:
+the bytes are immutable and the only remedy left would be to stop the installation.
+[migrations/README.md](../../migrations/README.md) is the canonical table of keys and
+rules; this ADR stops short of duplicating it.
+
 ## Evidence
 
 `kit/db/migrate_test.go` covers late module installation, upstream advancement,
@@ -103,3 +166,9 @@ the owner that now ships it, and that the upgraded installation serves.
 `migrations/rls_test.go` walks the kernel's schema and every reference module's
 together, so the row-level-security claim still covers every table this
 repository creates.
+
+For the header, the rules and the drain: `kit/db/migrate_expand_contract_test.go`
+states the budgets and the contended report against a real database, the eighteen
+grammar refusals, one case per rule beside the `allow=` that excepts it, the contract
+half refusing and then applying, the batched drain proved from `xmin`, and the files
+behind an unfinished drain waiting for the worker.
