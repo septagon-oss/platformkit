@@ -266,7 +266,11 @@ that the transaction which wrote the last window wrote the history row too, so t
 tables never hold "every row written" and "a drain to resume" at once.
 `kit/app/review_drain_composed_test.go` boots the composition as the worker and waits
 for the tick to drain what the migration left, then applies the file that waited behind
-it; deleting the line that schedules that job fails this case and nothing else.
+it; deleting the line that schedules that job fails this case and
+`kit/app/review3_drain_in_flight_boots_test.go`, which reaches a half-drained table
+through a boot rather than through a tick, and nothing else — measured over the whole
+suite on a copy with `scheduled := kernelJobs(transport)`, which reports those two cases
+in `kit/app` and passes every other package.
 `migrations/review_floors_test.go` proves each declared floor is the number the files
 force, in both directions.
 `kit/db/review3_guard_floor_test.go` is the floor's third direction: the same rewrite
