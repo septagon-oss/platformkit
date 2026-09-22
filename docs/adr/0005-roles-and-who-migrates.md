@@ -33,6 +33,13 @@ holding a boot open for the length of a ten-million-row scan is not what the boo
 is for; `Migrate` stops in front of it and returns success. See
 [ADR 0011](0011-migration-ownership.md).
 
+And one door is the operator's. `platformkit migrate` composes the same sources, the
+same floors and the same budgets as the boot above (`app.Migrate` is that composition
+once) and then exits, for the case the boot cannot serve: a migration that came back
+*contended* — it declined to wait for a lock past its budget — may be run again by
+whoever decided to wait, and deciding that is not a deployment. `--drain` finishes a
+backfill instead of waiting for the tick.
+
 ## Consequences
 
 - Deploying is `kubectl set image` on two deployments of the same image.
@@ -60,4 +67,5 @@ is for; `Migrate` stops in front of it and returns success. See
 ```sh
 go test ./kit/app -run 'TestWorkerRelaysAndAnswersItsProbes'
 go test ./kit/db  -run 'TestMigrateIsIdempotent'
+go test ./apps/platformkit -run 'TestMigrateCommandAppliesTheComposedSources'
 ```

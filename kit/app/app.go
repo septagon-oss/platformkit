@@ -286,9 +286,11 @@ func (a *App) Run(ctx context.Context) error {
 // migrate applies the ledger as the owner role. Every role does, worker
 // included: the advisory lock makes the race safe, which removes the ordering
 // problem instead of sequencing it. The budgets are the deployment's, if it named
-// any. See docs/adr/0005.
+// any, and the composition is app.Migrate — the same one `platformkit migrate`
+// runs, so a retry is not a second definition of what migrating means.
+// See docs/adr/0005.
 func (a *App) migrate(ctx context.Context) error {
-	return db.MigrateWith(ctx, a.cfg.Database.MigrateURL, migrationBudget(a.cfg.Database), MigrationSources(a.mods)...)
+	return Migrate(ctx, a.cfg, a.mods)
 }
 
 // openConn opens the application connection, as the role row-level security
