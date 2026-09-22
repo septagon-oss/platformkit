@@ -208,7 +208,14 @@ literal: two dashes inside `'…'` or `"…"` are data, the apostrophe inside a 
 `/* … */` is commentary, a `$tag$ … $tag$` body is one value and not a run of quotes —
 whatever letters its tag carries, because a tag is a name and a name takes the
 database's own letters, not ASCII alone — and an `E'…'` closes where its backslashes let
-it. None of them can move the boundary of what the guard sees.
+it. None of them can move the boundary of what the guard sees, and that is one decision
+rather than two: the reading that puts a construct away and the split that cuts the file
+into statements ask the same scanner where the construct ends. Counting the quotes inside
+a dollar body did move it — one lone `"` in a function body left the splitter certain the
+rest of the file was a name, no later semicolon cut, and the two rules anchored at the
+front of a statement read no action in the `ALTER TABLE` after the body and offered no
+marker to except. A body's own semicolons still cut: that reading is deliberate, and it is
+the false positive a marker exists for.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
@@ -246,7 +253,10 @@ is not a spelling an author chose over another but the only one that parses, so 
 that read the bare identifier alone would read no action for the columns that cannot be
 named any other way — and a quoted name is the name and never the keyword it happens to
 spell, which is why `DROP "constraint"` is read as a dropped column where
-`DROP CONSTRAINT c` is not. The name is read whole even when it carries the punctuation
+`DROP CONSTRAINT c` is not. The bare spelling takes the database's own letters too,
+because PostgreSQL's `ident_start` is `[A-Za-z_\200-\377]` and it folds only ASCII: a name
+carrying a c-cedilla and an a-tilde is legal written bare in the UTF-8 database every
+installation runs under, and a capture that stopped at ASCII read no action for it either. The name is read whole even when it carries the punctuation
 the file is split on: `ADD "a,b" text NOT NULL` is one column, and a split inside the
 name left neither half reading an action. The words
 `ALTER TABLE` puts after `DROP` for something that is not a column — `CONSTRAINT`,
@@ -264,6 +274,7 @@ pending data file, which has nothing behind it waiting on the work and a window 
 it by. A body that said it bounds itself has no window, so it stays the worker's even
 last. An owner with no history at all is the exception both times: nobody is reading,
 and its files apply in order.
+
 
 ## The floor: guards apply to new versions
 

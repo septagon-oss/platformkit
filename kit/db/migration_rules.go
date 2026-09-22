@@ -53,9 +53,28 @@ type migrationText struct {
 // way — and the harm is its own rule's, applied, with the version in the ledger and no
 // rule named. The same reason makes the exemption below read quoted names: the file
 // that creates `"probe"` and indexes `"probe"` creates what it indexes.
+//
+// The bare spelling has to take the database's own letters as well. PostgreSQL's
+// `ident_start` is `[A-Za-z_\200-\377]`, and it folds only ASCII when it down-cases an
+// unquoted identifier, so a name carrying a c-cedilla and an a-tilde is legal written
+// bare in the UTF-8 database every installation of this kernel runs under:
+// `ALTER TABLE probe DROP atualizacao` (that name, spelled with those two letters) is a
+// name the server takes and a name the reader stopped at — the same mis-capture as the
+// quoted one, failing the same way: no rule fires, so no marker is ever offered, and the
+// rewrite the rule is about reaches the server with the version in the ledger. A byte ≥
+// 0x80 is therefore a name character here for dollarTag's own reason: the safe side of
+// this guess is the side that reads too little.
 const (
 	quotedName = `"(?:[^"]|"")*"`
-	sqlName    = `(?:[a-z_][\w.]*|` + quotedName + `)`
+	// nameStart and nameBody are `ident_start` and `ident_cont` for a name arriving in
+	// the case-folded text: the ASCII upper case is what the fold removed, the high bytes
+	// are what the database's encoding adds, and the `.` is the one of a qualified name.
+	// columnName is the same with the `$` PostgreSQL takes inside a column name, which
+	// only the type-change rule reads.
+	nameStart  = `[a-z_\x{0080}-\x{10FFFF}]`
+	nameBody   = `[\w.\x{0080}-\x{10FFFF}]`
+	sqlName    = `(?:` + nameStart + nameBody + `*|` + quotedName + `)`
+	columnName = `(?:` + nameStart + `[\w.$\x{0080}-\x{10FFFF}]*|` + quotedName + `)`
 )
 
 var (
@@ -66,7 +85,7 @@ var (
 	// ALTER TABLE statement rather than one spelling of the keyword — of the keyword,
 	// of the column's name, and of the two ways that name may be written.
 	reAlterTable       = regexp.MustCompile(`^alter\s+table\b`)
-	reColumnTypeClause = regexp.MustCompile(`\balter\s+(column\s+)?(?:[a-z_][\w.$]*|` + quotedName + `)\s+(set\s+data\s+)?type\b`)
+	reColumnTypeClause = regexp.MustCompile(`\balter\s+(column\s+)?(?:` + columnName + `)\s+(set\s+data\s+)?type\b`)
 	// reAddColumnAction is `ADD [COLUMN] <name>` in either spelling PostgreSQL
 	// takes. The name is captured because the word after ADD says what is being
 	// added: `ADD CONSTRAINT x CHECK (… IS NOT NULL)` adds a table constraint, not a
@@ -455,24 +474,46 @@ func dollarTag(text string) string {
 		return ""
 	}
 	for i := 1; i < len(text); i++ {
-		if c := text[i]; c == '$' {
+		switch c := text[i]; {
+		case c == '$':
 			return text[:i+1]
-		} else if !(c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' && i > 1 || c >= 0x80) {
+		case !isIdentByte(c) || i == 1 && !isIdentStart(c):
 			return ""
 		}
 	}
 	return ""
 }
 
+// dollarValueEnd is the index one dollar-quoted value opening at i of text ends at —
+// past its closing tag, or at the end of the text where no closing tag ever comes. The
+// second answer is what the server is left with too, and it refuses the file for it
+// (`unterminated dollar-quoted string`) rather than read the rest of the file as data.
+func dollarValueEnd(text string, i int) int {
+	tag := dollarTag(text[i:])
+	if closed := strings.Index(text[i+len(tag):], tag); closed >= 0 {
+		return i + 2*len(tag) + closed
+	}
+	return len(text)
+}
+
+// isIdentStart and isIdentByte are PostgreSQL's `ident_start` and `ident_cont`: an
+// underscore, an ASCII letter, any byte ≥ 0x80 (a name takes the database's own letters,
+// which is the argument sqlName and dollarTag each make for themselves), and — past the
+// first byte of the name — a digit.
+func isIdentStart(c byte) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
+}
+
+func isIdentByte(c byte) bool { return isIdentStart(c) || c >= '0' && c <= '9' }
+
 // isEscapeString is the E'…' prefix, which PostgreSQL reads as one token only where a
 // name could not continue: the space in `time '3 days'` is what keeps a type name
-// ending in e from swallowing the value after it, and the same space decides this.
+// ending in e from swallowing the value after it, and the same space decides this —
+// tested against the same byte the two name readers test, because the e at the end of an
+// accented name is inside a name and not the prefix of a value.
 func isEscapeString(text string, i int) bool {
-	if i > 0 {
-		switch c := text[i-1]; {
-		case c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z':
-			return false
-		}
+	if i > 0 && isIdentByte(text[i-1]) {
+		return false
 	}
 	return (text[i] == 'e' || text[i] == 'E') && strings.HasPrefix(text[i+1:], "'")
 }
@@ -480,14 +521,17 @@ func isEscapeString(text string, i int) bool {
 // splitStatements breaks the body on semicolons outside quoted text. It is the
 // same cut the measured rule floors were taken with, and it is not a parser: a
 // body written inside a dollar-quoted function is split where its semicolons are,
-// which is the false positive the exception marker exists for.
-func splitStatements(body string) []string { return splitTopLevel(body, ';') }
+// which is the false positive the exception marker exists for. Nothing else about such a
+// body is read at all: see splitTopLevel.
+func splitStatements(body string) []string { return splitTopLevel(body, ';', true) }
 
 // splitClauses breaks one statement on the commas between its ALTER TABLE actions,
 // which is where one column definition ends and the next begins. Parentheses are
 // counted because a DEFAULT is allowed to be a call: `DEFAULT coalesce(x, 0)` is one
-// value and not two clauses.
-func splitClauses(statement string) []string { return splitTopLevel(statement, ',') }
+// value and not two clauses, and for the same reason a dollar-quoted body is not cut here
+// at all: the comma this splitter is for separates two SQL actions, and a comma inside one
+// value separates nothing.
+func splitClauses(statement string) []string { return splitTopLevel(statement, ',', false) }
 
 // splitTopLevel cuts text on a separator outside quoted text and outside
 // parentheses, and drops the pieces that hold nothing.
@@ -499,28 +543,71 @@ func splitClauses(statement string) []string { return splitTopLevel(statement, '
 // `ALTER TABLE probe ADD "a,b" text NOT NULL` and `ALTER TABLE probe DROP "a;b"` each
 // applied with nothing named, which is the same fault finding the name captures now carry
 // one level earlier. A quoted name is one name here exactly as the server reads it.
-func splitTopLevel(text string, sep rune) []string {
-	var out, buf []string
-	quoted, named, depth := false, false, 0
-	for _, r := range text {
-		switch {
-		case r == '\'' && !named:
-			quoted = !quoted
-		case r == '"' && !quoted:
-			named = !named
-		case quoted || named:
-		case r == '(':
-			depth++
-		case r == ')':
-			depth = max(depth-1, 0)
-		case r == sep && depth == 0:
-			out = append(out, strings.Join(buf, ""))
-			buf = nil
+//
+// Where a construct ends is the decision scanSQL makes, and both readers take it from
+// sqlToken, because a separator inside any construct is data: an `E'…'` ending at the
+// escape before its own closing quote, and an apostrophe inside a value, each cut a file in
+// half exactly as a counted quote does.
+//
+// bodyCuts says whether the separator inside a `$tag$ … $tag$` value cuts, which is the one
+// way the two callers differ and the one thing this function is not uniform about, because
+// the two questions are different: the statement splitter has always read a function body
+// from the inside, and that is the documented approximation whose false positive a marker
+// excepts, while the clause splitter asks where one column definition ends. What neither
+// may do is count the value's quotes and parentheses. Reading them was not conservatism: one
+// lone `"` in a function body left the splitter certain the rest of the file was a name, no
+// later semicolon cut, and the two rules anchored at the front of a statement read no action
+// in the `ALTER TABLE` after the body — a false negative, with no rule to name and therefore
+// no marker to except. An unbalanced `(` moved the same boundary the other way. A body's
+// bytes are copied whole, and only its separators are read.
+//
+// Measured against every `.up.sql` in this repository, the normalised text, the shape and
+// the statement split are byte-identical to the previous revision's; only a file that put a
+// lone quote or an unbalanced parenthesis inside a dollar body reads differently, and no file
+// anyone has shipped does.
+func splitTopLevel(text string, sep byte, bodyCuts bool) []string {
+	var out []string
+	var buf []byte
+	depth := 0
+	for i := 0; i < len(text); {
+		if tag := dollarTag(text[i:]); tag != "" {
+			end := dollarValueEnd(text, i)
+			for bodyCuts && i < end {
+				if text[i] == sep {
+					out = append(out, string(buf))
+					buf = buf[:0]
+				} else {
+					buf = append(buf, text[i])
+				}
+				i++
+			}
+			buf = append(buf, text[i:end]...)
+			i = end
 			continue
 		}
-		buf = append(buf, string(r))
+		if width := sqlToken(text, i); width > 0 {
+			buf = append(buf, text[i:i+width]...)
+			i += width
+			continue
+		}
+		switch c := text[i]; {
+		case c == '(':
+			depth++
+			buf = append(buf, c)
+		case c == ')':
+			depth = max(depth-1, 0)
+			buf = append(buf, c)
+		case c == sep && depth == 0:
+			out = append(out, string(buf))
+			buf = buf[:0]
+			i++
+			continue
+		default:
+			buf = append(buf, c)
+		}
+		i++
 	}
-	if last := strings.Join(buf, ""); strings.TrimSpace(last) != "" {
+	if last := string(buf); strings.TrimSpace(last) != "" {
 		out = append(out, last)
 	}
 	return out
@@ -558,82 +645,103 @@ func splitTopLevel(text string, sep rune) []string {
 // dollar-quoted body still split statements, because that reading is splitTopLevel's
 // and a body the runner cannot wrap is refused by the rule that says so rather than
 // quietly run in pieces. The two readings differ in what they put away, never in where
-// they think the text is.
+// they think the text is — and that is a property rather than an intention, because both
+// readers ask sqlToken where the construct in front of them ends.
 func scanSQL(text string, blankLiterals bool) string {
 	var out strings.Builder
 	out.Grow(len(text))
 	for i := 0; i < len(text); {
-		switch {
-		case strings.HasPrefix(text[i:], "--"):
-			out.WriteByte(' ')
-			if end := strings.IndexByte(text[i:], '\n'); end >= 0 {
-				i += end // the newline stays: it separated those two lines for the server as well
+		if width := sqlToken(text, i); width > 0 {
+			token := text[i : i+width]
+			i += width
+			// Commentary is put away in both readings — that is what "the guard reads the
+			// file with its comments gone" means, and the statement the rules anchor on
+			// (`^alter table`, `^create index`) starts where the comment above it ends —
+			// while the contents of a value are put away only for the shape, which is the
+			// one question asked of text with the words taken out of it.
+			if blankLiterals || strings.HasPrefix(token, "--") || strings.HasPrefix(token, "/*") {
+				out.WriteString(blankSQLToken(token))
 				continue
 			}
-			i = len(text)
-		case strings.HasPrefix(text[i:], "/*"):
-			// Consumed as commentary in both readings, and nested, which is what PostgreSQL
-			// does with it: the apostrophe in `/* it's a backfill */` is not the opening of a
-			// literal, and the newline it spans is not a line boundary.
-			out.WriteByte(' ')
-			i += blockCommentEnd(text[i:])
-		case dollarTag(text[i:]) != "":
-			tag := dollarTag(text[i:])
-			end := len(text)
-			if closed := strings.Index(text[i+len(tag):], tag); closed >= 0 {
-				end = i + 2*len(tag) + closed
-			}
-			// One value, written with whatever quotes and semicolons it likes: joined to the
-			// other literals, which means put away for the shape and kept whole for the text.
-			if blankLiterals {
-				out.WriteString(tag)
-				out.WriteString(tag)
-			} else {
-				out.WriteString(text[i:end])
-			}
-			i = end
-		case isEscapeString(text, i):
-			start := i
-			for i += 2; i < len(text); i++ {
-				if text[i] == '\\' {
-					i++ // the escape takes the next character, closing quote included
-				} else if text[i] == '\'' {
-					if i+1 < len(text) && text[i+1] == '\'' {
-						i++ // '' is one quote written twice, as in any other literal
-						continue
-					}
-					i++
-					break
-				}
-			}
-			if blankLiterals {
-				out.WriteString("e''")
-			} else {
-				out.WriteString(text[start:i])
-			}
-		case text[i] == '\'' || text[i] == '"':
-			quote, start := text[i], i
-			for i++; i < len(text); i++ {
-				if text[i] != quote {
-					continue
-				}
-				if i+1 < len(text) && text[i+1] == quote {
-					i++ // '' or "" is one quote written twice, not the end of the literal
-					continue
-				}
-				i++
-				break
-			}
-			if blankLiterals {
-				out.WriteString(text[start : start+1])
-				out.WriteByte(quote)
-			} else {
-				out.WriteString(text[start:i])
-			}
-		default:
-			out.WriteByte(text[i])
-			i++
+			out.WriteString(token)
+			continue
 		}
+		out.WriteByte(text[i])
+		i++
 	}
 	return out.String()
+}
+
+// sqlToken is how many bytes the comment, dollar-quoted value, escape string, string
+// literal or quoted name opening at index i of text takes up, and 0 where none of them
+// opens. It is the one place the runner decides where such a construct ends, and it is
+// shared because two readers have to agree about it: scanSQL reads a construct to put it
+// away (or to keep it whole), and splitTopLevel reads it to know which of its bytes may
+// cut a statement — a separator inside any of them is data. A width rather than an end
+// index, so the caller keeps walking in the units the text arrives in, and 0 for the
+// ordinary bytes, which no caller wants to copy twice over.
+func sqlToken(text string, i int) int {
+	switch {
+	case strings.HasPrefix(text[i:], "--"):
+		// The newline stays outside the token: it separated those two lines for the server
+		// as well, so the reader that puts the commentary away keeps the line break.
+		if end := strings.IndexByte(text[i:], '\n'); end >= 0 {
+			return end
+		}
+		return len(text) - i
+	case strings.HasPrefix(text[i:], "/*"):
+		// Consumed as commentary in both readings, and nested, which is what PostgreSQL does
+		// with it: the apostrophe in `/* it's a backfill */` is not the opening of a literal,
+		// and the newline it spans is not a line boundary.
+		return blockCommentEnd(text[i:])
+	case dollarTag(text[i:]) != "":
+		// One value, written with whatever quotes and semicolons it likes: joined to the
+		// other literals, which means put away for the shape and kept whole for the text.
+		return dollarValueEnd(text, i) - i
+	case isEscapeString(text, i):
+		for j := i + 2; j < len(text); j++ {
+			if text[j] == '\\' {
+				j++ // the escape takes the next character, closing quote included
+			} else if text[j] == '\'' {
+				if j+1 < len(text) && text[j+1] == '\'' {
+					j++ // '' is one quote written twice, as in any other literal
+					continue
+				}
+				return j + 1 - i
+			}
+		}
+		return len(text) - i
+	case text[i] == '\'' || text[i] == '"':
+		quote := text[i]
+		for j := i + 1; j < len(text); j++ {
+			if text[j] != quote {
+				continue
+			}
+			if j+1 < len(text) && text[j+1] == quote {
+				j++ // '' or "" is one quote written twice, not the end of the literal
+				continue
+			}
+			return j + 1 - i
+		}
+		return len(text) - i
+	}
+	return 0
+}
+
+// blankSQLToken is what one sqlToken leaves in the shape: commentary is put away, and so
+// is the content of every value, which is data and not the words of a statement. The
+// delimiter stays, because an empty quoted value, an empty escape string and a tag
+// written twice are what a value looks like from the outside, and the tag is the only
+// part of a dollar-quoted body that is SQL rather than data.
+func blankSQLToken(token string) string {
+	switch {
+	case strings.HasPrefix(token, "--") || strings.HasPrefix(token, "/*"):
+		return " "
+	case token[0] == '$':
+		return dollarTag(token) + dollarTag(token)
+	case isEscapeString(token, 0):
+		return "e''"
+	default:
+		return token[:1] + token[:1]
+	}
 }

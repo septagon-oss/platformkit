@@ -167,7 +167,11 @@ nothing — and each of those three reads the *name* the action carries in eithe
 PostgreSQL takes it: a column named after a reserved word, or created inside double
 quotes, can only ever be named quoted, so a capture that stops at the bare identifier
 reads no action at all for exactly those columns, and the harm the rule is about ships
-with no rule named. A quoted name is the name and never the keyword it happens to spell,
+with no rule named. The bare spelling takes the database's own letters as well —
+`ident_start` is `[A-Za-z_\200-\377]` and PostgreSQL folds only ASCII, so a name carrying
+an accented letter is legal written bare, and a reader that stopped at ASCII mis-reads it
+the same way and in the same direction. A quoted name is the name and never the keyword it
+happens to spell,
 so `DROP "constraint"` takes a column away where `DROP CONSTRAINT c` does not —
 and the guard and the executor read one normalised text of the body,
 so the file that was judged is the file that runs. That one text is read where the
@@ -176,7 +180,11 @@ commentary, a `$tag$ … $tag$` body is one value whatever letters its tag carri
 is a name, and a name takes the database's own letters) and an `E'…'` closes past its escapes,
 because a reading that lost its place answered the window question wrongly in both
 directions — a bounded body refused as unbounded, and an unbounded one wrapped and run
-once per window over every row.
+once per window over every row. The same reader of where a construct ends cuts the
+statements the rules are read one at a time, so no construct moves that boundary either:
+a body's quotes and parentheses are data to the split, where counting them let one lone
+`"` in a function body leave every later statement inside what the splitter took for a
+name, and no rule anchored at the front of a statement fired for the file.
 Guards apply from a version the source states, because a rule cannot be refused on a
 file already applied somewhere:
 the bytes are immutable and the only remedy left would be to stop the installation.
