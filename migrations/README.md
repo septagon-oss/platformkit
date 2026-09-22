@@ -196,7 +196,7 @@ answer is the marker.
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
 | `alter-column-type` | `ALTER [COLUMN] … TYPE` or `… SET DATA TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
-| `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` | rewrites the table and refuses every write while it does | allowed |
+| `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` on that column | rewrites the table and refuses every write while it does | allowed |
 | `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
 | `drop-column` | `DROP COLUMN` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
 | `index-concurrent-without-autocommit` | `CONCURRENTLY` without `autocommit=true` | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
@@ -215,13 +215,21 @@ survive.
 
 The rule about a type change reads the clause inside an `ALTER TABLE`, not the word
 `COLUMN`, because PostgreSQL makes that keyword optional and both spellings are the
-same rewrite.
+same rewrite. The rule about a `NOT NULL` column reads one column definition at a time
+for the same reason: the `DEFAULT` that makes the statement ordinary has to be that
+column's own, so a `SET DEFAULT` in a statement beside it excuses nothing — and so does
+the `IS NOT NULL` a partial index carries in its `WHERE` clause, which is a predicate
+over rows and not a constraint this file adds. `ADD COLUMN a integer NOT NULL, ADD
+COLUMN b integer DEFAULT 0` is refused for `a` whatever `b` says.
 
 Two rules about a release rather than a file: a `phase=contract` file refuses while
 its `expand=` version is not already in the installation's history, and nothing of
 an owner applies past a `phase=data` file that has not finished draining — the
-worker drains that, and the next migration continues. An owner with no history at
-all is the exception both times: nobody is reading, and its files apply in order.
+worker drains that, and the next migration continues. A drain already in flight is
+resumed rather than left: `Migrate` takes it up under the bound a migration gives
+itself, and past that bound the boot continues and the tick finishes it. An owner with
+no history at all is the exception both times: nobody is reading, and its files apply
+in order.
 
 ## The floor: guards apply to new versions
 
@@ -233,6 +241,16 @@ is one past the highest file the rules refuse today. In this repository the floo
 are measured, not chosen: `platformkit` 21, `audit` 24, `auth` 14, `user` 26. A
 source that says nothing is guarded from version 1, which is what a module added
 after these rules exist should declare. Lowering a floor is a review, not an edit.
+
+A floor is bounded by the history it can claim. The versions a source can point at end
+at its own highest file — `pendingMigrations` refuses an applied version a release no
+longer lists — so a number past that head plus one excuses nothing that exists: it is
+the guard switched off for versions nobody has written yet, the opposite of what the
+field is for. Such a floor earns no exemption, and every file of that source is judged
+at the point where the ledger says which of them are pending (a file below an *honest*
+floor is applied bytes, and those the rule table must not judge).
+`kit/db/review3_guard_floor_test.go` holds both directions of that, and a contract half
+behind the same unusable floor still waits for its expand.
 
 ## The retry, and the rehearsal
 

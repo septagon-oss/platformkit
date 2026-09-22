@@ -37,6 +37,12 @@ type MigrationSource struct {
 	// to stop the installation. The floor is the owner's to state, because what
 	// it installed is the owner's fact, and kit/app carries it through a module's
 	// manifest unchanged.
+	//
+	// It is bounded by what it can claim: a number past this source's own highest
+	// version plus one describes history no release of this source could have
+	// applied, so it excuses no file and every file of the source is guarded
+	// (docs/adr/0011). A floor is how a source says "these bytes ran"; it is not a
+	// way to leave the guard off.
 	RulesFrom int64
 }
 
@@ -208,6 +214,9 @@ func MigrateWith(ctx context.Context, migrateURL string, budget MigrationBudget,
 	pending, history, err := pendingMigrations(ctx, conn, migrations)
 	if err != nil {
 		return err
+	}
+	if err := checkPendingGuards(pending); err != nil {
+		return fmt.Errorf("db: migrate: %w", err)
 	}
 	for _, group := range groupedByOwner(pending) {
 		plan, err := planOwner(ctx, conn, group, history)

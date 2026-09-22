@@ -38,6 +38,14 @@ var ErrBackfillBudget = errors.New("db: backfill stopped at the bound an install
 // error, whichever comes first. Each window is its own transaction, so any of the
 // three leaves behind exactly the rows that committed.
 func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport, error) {
+	// Refused before anything of this file is written: a progress row means "this
+	// drain started, resume it", and a body that can never run is not a drain that
+	// started. Every other refusal of a file's shape is the rule table's and happens
+	// before the runner connects; this one is the executor's, because it is the
+	// window that makes a data file one statement, and the window is written here.
+	if m.windowed() && len(splitStatements(m.plain)) > 1 {
+		return drainReport{}, fmt.Errorf("a data file is one statement: the window wraps the body, and a second statement would be run over a window of its own with no cursor between them; split the file")
+	}
 	conn := r.conn
 	var report drainReport
 	key, err := primaryKey(ctx, conn, m.table)
@@ -46,9 +54,6 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 	}
 	if err := beginDrain(ctx, conn, m); err != nil {
 		return report, err
-	}
-	if m.windowed() && len(splitStatements(m.plain)) > 1 {
-		return report, fmt.Errorf("a data file is one statement: the window wraps the body, and a second statement would be run over a window of its own with no cursor between them; split the file")
 	}
 	progress := drainCursor(ctx, conn, m.migrationID)
 	if progress.err != nil {
@@ -223,6 +228,12 @@ func BackfillWith(ctx context.Context, migrateURL string, budget MigrationBudget
 	pending, _, err := pendingMigrations(ctx, conn, migrations)
 	if err != nil {
 		return err
+	}
+	// The same guard the migration runs: a drain is a second door to the same file,
+	// and a floor that excuses nothing excuses less on the door that never reads the
+	// rule table than on the one that does.
+	if err := checkPendingGuards(pending); err != nil {
+		return fmt.Errorf("db: backfill: %w", err)
 	}
 	run := &runner{conn: conn, budget: budget}
 	for _, group := range groupedByOwner(pending) {

@@ -93,7 +93,14 @@ just wrote. An owner that already has history is a table under readers:
 `Migrate` stops there, applies nothing further for that owner and returns nil, and
 `jobs.BackfillMigrations` — composed into the worker by `kit/app` as
 `schema-backfill` — is what finishes it through `db.Backfill`. A boot that refused a
-drain would stop the only role that can finish it.
+drain would stop the only role that can finish it. Neither answer to a drain in flight
+is a failed boot: a run that resumes one and reaches its own fifty-batch bound returns
+`ErrBackfillBudget` with the committed batches and the cursor standing, and `kit/app`
+logs that as the work its tick still has rather than refusing the start — the same
+failure one bound down. `platformkit migrate` and `Bootstrap` asked for a run that
+finishes, so those doors keep the error.
+A refusal of a data file leaves nothing resumable: the progress row means "this drain
+started, resume it", so a shape the window cannot run is refused before that row exists.
 
 **The rehearsal.** A release is rehearsed against a copy of a production-shaped
 database before it is published: `make rehearse`, `scripts/rehearse_migrations.sh`,
@@ -103,7 +110,7 @@ in [migrations/README.md](../../migrations/README.md).
 ### Built on what came before
 
 Decision 0022 asks a delivery to name what it composed rather than what it rebuilt.
-**Reused:** the runner's own doors — `Migrate`, `pendingMigrations`, `applyMigration`,
+**Reused:** the runner's own doors — `Migrate`, `pendingMigrations`, `(*runner).apply`,
 the composition advisory lock and the `REVOKE … CASCADE` sweep, with
 `schema_migration_backfill` created beside the ledger by the same statement list and
 taken through the same sweep; `kit/events/relay.go`'s batch shape (one transaction

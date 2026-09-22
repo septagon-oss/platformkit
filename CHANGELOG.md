@@ -23,14 +23,22 @@ and one stopped by the lock budget returns `db.ErrContended`:
 nothing new was applied, and it may be run again. A `contract` file refuses while the
 `expand=` version it names has not already applied, and nothing of an owner applies
 past a drain that has not finished — the worker's `schema-backfill` job finishes
-that, so a boot never waits behind a table it cannot empty. The rules the runner
-refuses before connecting, the keys, and the floors each source declares are written
-down once in [migrations/README.md](migrations/README.md); the mode-scoped ban on
+that, so a boot never waits behind a table it cannot empty. A boot that meets a drain
+already in flight resumes it under that same bound and boots whatever the bound leaves:
+`db.ErrBackfillBudget` out of a migration is the worker's to finish, not a failed
+deploy, while `platformkit migrate` and `Bootstrap` — doors asked to finish — still
+report it. A refused data file leaves no progress row behind, because that row is what
+a resume reads and a file refused for its shape never ran. The rules
+the runner refuses before connecting, the keys, and the floors each source declares are
+written down once in [migrations/README.md](migrations/README.md); the mode-scoped ban on
 nontransactional SQL is the amendment to
 [ADR 0011](docs/adr/0011-migration-ownership.md). A rule that documents no exception
 cannot be excepted: an `allow=` naming one is refused as the bypass it is. The guards
 read operations rather than spellings (`ALTER TABLE t ALTER col TYPE` rewrites the
-table whether or not the optional `COLUMN` keyword is there), and the guard and the
+table whether or not the optional `COLUMN` keyword is there, and the `DEFAULT` that
+makes an added column ordinary is read from that column's own definition and not from
+the file), a rule floor is bounded by the source's own highest version rather than by
+whatever number a manifest carries, and the guard and the
 executor read one normalised text of a data file's body, so an excepted body runs once
 and a body that names its window in another case still gets the window.
 

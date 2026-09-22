@@ -46,18 +46,22 @@ var (
 	// ALTER TABLE statement rather than one spelling of the keyword.
 	reAlterTable       = regexp.MustCompile(`^alter\s+table\b`)
 	reColumnTypeClause = regexp.MustCompile(`\balter\s+(column\s+)?[a-z_][\w.$]*\s+(set\s+data\s+)?type\b`)
-	reAddColumn        = regexp.MustCompile(`\badd\s+column\b`)
-	reNotNull          = regexp.MustCompile(`\bnot\s+null\b`)
-	reDefault          = regexp.MustCompile(`\bdefault\b`)
-	reCreateIndex      = regexp.MustCompile(`^create\s+(unique\s+)?index\b`)
-	reDropIndex        = regexp.MustCompile(`^drop\s+index\b`)
-	reConcurrently     = regexp.MustCompile(`\bconcurrently\b`)
-	reIndexTarget      = regexp.MustCompile(`\bon\s+([a-z_][\w.]*)`)
-	reCreateTable      = regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?([a-z_][\w.]*)`)
-	reDropColumn       = regexp.MustCompile(`\bdrop\s+column\b`)
-	reIfNotExists      = regexp.MustCompile(`\bif\s+not\s+exists\b`)
-	reIfExists         = regexp.MustCompile(`\bif\s+exists\b`)
-	reDDL              = regexp.MustCompile(`^(alter|create|drop)\b`)
+	// reAddColumnAction is `ADD [COLUMN] <name>` in either spelling PostgreSQL
+	// takes. The name is captured because the word after ADD says what is being
+	// added: `ADD CONSTRAINT x CHECK (… IS NOT NULL)` adds a table constraint, not a
+	// NOT NULL column, and reads as neither.
+	reAddColumnAction = regexp.MustCompile(`\badd\s+(?:column\s+)?([a-z_][\w.]*)(?:\s|$)`)
+	reNotNull         = regexp.MustCompile(`\bnot\s+null\b`)
+	reDefault         = regexp.MustCompile(`\bdefault\b`)
+	reCreateIndex     = regexp.MustCompile(`^create\s+(unique\s+)?index\b`)
+	reDropIndex       = regexp.MustCompile(`^drop\s+index\b`)
+	reConcurrently    = regexp.MustCompile(`\bconcurrently\b`)
+	reIndexTarget     = regexp.MustCompile(`\bon\s+([a-z_][\w.]*)`)
+	reCreateTable     = regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?([a-z_][\w.]*)`)
+	reDropColumn      = regexp.MustCompile(`\bdrop\s+column\b`)
+	reIfNotExists     = regexp.MustCompile(`\bif\s+not\s+exists\b`)
+	reIfExists        = regexp.MustCompile(`\bif\s+exists\b`)
+	reDDL             = regexp.MustCompile(`^(alter|create|drop)\b`)
 	// reBatchWindow matches the drain's window relation where the SQL reads it, not
 	// the word anywhere. A body that only says "batch" in a comment or a string
 	// literal does not go through the window, and a body that names it in another
@@ -79,7 +83,7 @@ var rules = []rule{
 		does:      "adds a NOT NULL column with no DEFAULT, which rewrites the table and refuses every write while it does",
 		instead:   "add the column nullable with a DEFAULT, or backfill it and add the constraint after VALIDATE",
 		exception: "allow=add-column-not-null reason=<one sentence>",
-		fire:      func(f *migrationText) bool { return f.any(reAddColumn) && f.any(reNotNull) && !f.any(reDefault) }},
+		fire:      func(f *migrationText) bool { return f.addsANotNullColumn() }},
 	{name: "index-not-concurrent",
 		does:      "builds an index without CONCURRENTLY on a table this file does not create, which takes a SHARE lock that stops every writer for the length of the build",
 		instead:   "build it in its own file with CONCURRENTLY and IF NOT EXISTS (that file carries autocommit=true), or ship the index in the file that creates the table",
@@ -233,6 +237,49 @@ func (f *migrationText) rewritesAColumnType() bool {
 	return false
 }
 
+// addsANotNullColumn is the second rule's subject, read one column definition at a
+// time for the same reason the type-change rule reads one statement at a time: the
+// DEFAULT that excuses a NOT NULL column has to be that column's own. Reading the
+// three words over the whole body lets any statement answer for any other — a
+// DEFAULT on the column beside it, or none anywhere — and the rewrite then reaches
+// PostgreSQL, where a 23502 stops it in the middle of a file whose earlier
+// statements already applied. The `IS NOT NULL` a partial index carries in its WHERE
+// clause is a predicate over rows, not a constraint this file adds, and is read the
+// same way out.
+func (f *migrationText) addsANotNullColumn() bool {
+	for _, statement := range f.statements {
+		for _, clause := range splitClauses(statement) {
+			if addsANotNullDefinition(clause) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// notAColumn are the words that name an ADD of something other than a column. A
+// CHECK or a UNIQUE constraint may say IS NOT NULL about rows that already exist
+// without adding a column at all, and adding a column with no DEFAULT and no NOT
+// NULL is the ordinary statement this rule exists to leave alone.
+var notAColumn = map[string]bool{"constraint": true, "primary": true, "foreign": true, "unique": true, "check": true, "exclude": true}
+
+// addsANotNullDefinition reads one comma-separated action of an ALTER TABLE: every
+// column it adds, and each column's own definition — the text from its name to the
+// end of the action, which is where its DEFAULT or NOT NULL would be.
+func addsANotNullDefinition(clause string) bool {
+	for _, found := range reAddColumnAction.FindAllStringSubmatchIndex(clause, -1) {
+		// found[2:3] is the captured name, found[1] the end of the whole match: the
+		// definition is everything the action says about that column.
+		if notAColumn[clause[found[2]:found[3]]] {
+			continue
+		}
+		if definition := clause[found[1]:]; reNotNull.MatchString(definition) && !reDefault.MatchString(definition) {
+			return true
+		}
+	}
+	return false
+}
+
 // readsTheWindow is the one question the rule table and the drain ask the same body:
 // does this SQL read the window relation the kernel wraps around it. The rule fires
 // when a data file does not, and the drain only wraps a body that does — a body
@@ -289,14 +336,29 @@ func (f *migrationText) statementRefusesASecondRun() bool {
 // same cut the measured rule floors were taken with, and it is not a parser: a
 // body written inside a dollar-quoted function is split where its semicolons are,
 // which is the false positive the exception marker exists for.
-func splitStatements(body string) []string {
+func splitStatements(body string) []string { return splitTopLevel(body, ';') }
+
+// splitClauses breaks one statement on the commas between its ALTER TABLE actions,
+// which is where one column definition ends and the next begins. Parentheses are
+// counted because a DEFAULT is allowed to be a call: `DEFAULT coalesce(x, 0)` is one
+// value and not two clauses.
+func splitClauses(statement string) []string { return splitTopLevel(statement, ',') }
+
+// splitTopLevel cuts text on a separator outside quoted text and outside
+// parentheses, and drops the pieces that hold nothing.
+func splitTopLevel(text string, sep rune) []string {
 	var out, buf []string
-	quoted := false
-	for _, r := range body {
+	quoted, depth := false, 0
+	for _, r := range text {
 		switch {
 		case r == '\'':
 			quoted = !quoted
-		case r == ';' && !quoted:
+		case quoted:
+		case r == '(':
+			depth++
+		case r == ')':
+			depth = max(depth-1, 0)
+		case r == sep && depth == 0:
 			out = append(out, strings.Join(buf, ""))
 			buf = nil
 			continue

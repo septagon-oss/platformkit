@@ -134,7 +134,13 @@ history — one release of separation is the whole of what the ledger can state;
 long ago is a release calendar, which belongs to the product. Nothing of an owner
 applies past a data file that has not finished draining; the installation with no
 history drains its own, bounded, and the worker drains a table with readers, because
-a boot that refused one would stop the only role that can finish it.
+a boot that refused one would stop the only role that can finish it. A boot that
+meets a drain already in flight resumes it under the same bound and, when the bound is
+reached, says so and carries on booting: the committed batches stand, the cursor names
+where the next batch starts, and `schema-backfill` finishes the table. `kit/app` treats
+`db.ErrBackfillBudget` out of a migration as that report rather than a failed start;
+`platformkit migrate` and `Bootstrap`, doors that asked for a run which finishes, keep
+returning it.
 
 Alongside it, the static rules the runner refuses before connecting — the rewrites,
 the plain index build, the dropped column outside a contract file — each named, each
@@ -146,11 +152,18 @@ switching the rule off: those four state what PostgreSQL refuses, what the autoc
 mode costs, or what a data file cannot survive, and a comment cannot make any of that
 false. The rules read operations rather than spellings — a type change is the `TYPE`
 clause inside an `ALTER TABLE`, which PostgreSQL lets be written with or without the
-`COLUMN` keyword — and the guard and the executor read one normalised text of the body,
+`COLUMN` keyword, and a `NOT NULL` column is read from that column's own definition, so
+a `DEFAULT` belonging to a statement beside it excuses nothing — and the guard and the
+executor read one normalised text of the body,
 so the file that was judged is the file that runs.
 Guards apply from a version the source states, because a rule cannot be refused on a
 file already applied somewhere:
 the bytes are immutable and the only remedy left would be to stop the installation.
+The floor is bounded by what it can claim: the history a source can point at ends at
+its own highest file, so a number past that head plus one excuses no file and every
+file of that source is judged instead — at the pending-file pass in
+`kit/db/migration_files.go`, where the ledger says which of them are still pending. A
+floor is how a source says "these bytes ran"; it is not a way to leave the guard off.
 [migrations/README.md](../../migrations/README.md) is the canonical table of keys and
 rules; this ADR stops short of duplicating it.
 
@@ -219,6 +232,15 @@ for the tick to drain what the migration left, then applies the file that waited
 it; deleting the line that schedules that job fails this case and nothing else.
 `migrations/review_floors_test.go` proves each declared floor is the number the files
 force, in both directions.
+`kit/db/review3_guard_floor_test.go` is the floor's third direction: the same rewrite
+refused with no floor declared and refused with a floor of 50 over a source whose own
+head is 2, with nothing applied either way, and the release rule surviving that same
+floor. `kit/app/review3_drain_in_flight_boots_test.go` reaches a half-drained table
+through the doors only — an installation that stopped at its own bound, then the worker
+an installation boots — and asks that the worker be alive and the table empty.
+`kit/db/review3_data_file_shape_test.go` refuses a two-statement data file with nothing
+resumable left behind, and `kit/db/review3_rule_reads_the_statement_test.go` that a
+`DEFAULT` in one statement does not excuse a `NOT NULL` column in another.
 `apps/platformkit/migrate_test.go` shows `platformkit migrate` applying exactly the
 sources the composition selected — every owner and every one of its files — and the
 second run applying nothing further.
