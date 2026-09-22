@@ -1,8 +1,12 @@
-// Package migrations_test holds one test, and it is about every migration in
-// the repository rather than about any file: every table the kernel's schema
-// and the reference modules' schemas create is either protected by the tenant
-// policy migrations/000001 describes or declared exempt in the comment the
-// convention uses.
+// Package migrations_test holds the tests that are about every migration in
+// the repository rather than about any one file: every table the kernel's
+// schema and the reference modules' schemas create is either protected by the
+// tenant policy migrations/000001 describes or declared exempt in the comment
+// the convention uses, and a schema a module owns is a schema both halves of
+// that claim have to reach. module_schema_test.go adds the claims about the
+// kernel function that hands a module its schema to the application role, and
+// about the walk below, which is exported so the catalog's own test stops
+// copying it.
 //
 // It is here and not in kit/db because the claim is about the SQL. kit/db's
 // tests prove that the mechanism works — that a forgotten WHERE returns nothing
@@ -13,6 +17,8 @@
 package migrations_test
 
 import (
+	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -51,37 +57,56 @@ func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
 	if err := db.Migrate(t.Context(), adminURL, everything...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	rows, err := dbtest.Open(t, adminURL).QueryContext(t.Context(), `
-		SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
-			coalesce(obj_description(c.oid, 'pg_class'), ''),
-			coalesce((SELECT string_agg(pg_get_expr(p.polqual, p.polrelid), ' ')
-				FROM pg_policy p WHERE p.polrelid = c.oid), '')
-		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = current_schema() AND c.relkind = 'r'
-		ORDER BY c.relname`)
+	tables, problems := tenantScope(t, dbtest.Open(t, adminURL))
+	for _, problem := range problems {
+		t.Error(problem)
+	}
+	// A query that found nothing would pass every case above, which is the one
+	// way this test could be worthless.
+	if len(tables) < 10 {
+		t.Errorf("the schema has %d tables, which is fewer than the kernel and the modules create", len(tables))
+	}
+}
+
+// tenantScope asks the one question the tenant-scope claim asks of every table
+// the walk sees, and separates "this table is a problem" from "this table was
+// never looked at". The two have to be separable: a walk that quietly listed
+// nothing would report no problems at all, which is how the claim survives the
+// arrival of a schema it cannot see. It returns the tables schema-qualified,
+// because under one schema per owner a bare table name is not an address.
+//
+// It runs on the connection the DDL ran on, and that is not incidental:
+// schema_migrations resolves through the caller's search_path, and a policy's
+// expression deparses qualified or bare depending on whether the schema its
+// function lives in is on that path.
+func tenantScope(t *testing.T, admin *sql.DB) (tables, problems []string) {
+	t.Helper()
+	rows, err := admin.QueryContext(t.Context(), dbtest.TenantTablesSQL)
 	if err != nil {
 		t.Fatalf("walk the schema: %v", err)
 	}
 	defer rows.Close()
 
-	seen := 0
 	for rows.Next() {
-		var name, comment, policies string
+		var schema, name, comment, policies string
 		var enabled, forced bool
-		if err := rows.Scan(&name, &enabled, &forced, &comment, &policies); err != nil {
+		if err := rows.Scan(&schema, &name, &enabled, &forced, &comment, &policies); err != nil {
 			t.Fatalf("read a table: %v", err)
 		}
 		if name == ledger {
 			continue
 		}
-		seen++
+		table := schema + "." + name
+		tables = append(tables, table)
 		switch {
 		case !enabled:
-			t.Errorf("%s has no row-level security; every tenant would see every tenant's rows", name)
+			problems = append(problems, fmt.Sprintf(
+				"%s has no row-level security; every tenant would see every tenant's rows", table))
 		case !forced:
 			// ENABLE exempts the table's owner from its own policy, and the
 			// application role owns any table it creates itself.
-			t.Errorf("%s is ENABLE without FORCE, so its owner escapes its own policy", name)
+			problems = append(problems, fmt.Sprintf(
+				"%s is ENABLE without FORCE, so its owner escapes its own policy", table))
 		case strings.Contains(policies, "platformkit_tenant_match(tenant_id)"):
 			// The ordinary shape: scoped by the column, by the one predicate.
 		case strings.Contains(comment, exemption):
@@ -89,19 +114,17 @@ func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
 			// carry it answer the question before there is a transaction to ask
 			// it in; their policies still narrow a tenant transaction to one row.
 			if policies == "" {
-				t.Errorf("%s is declared exempt and has no policy at all; exempt from the column, not from the door", name)
+				problems = append(problems, fmt.Sprintf(
+					"%s is declared exempt and has no policy at all; exempt from the column, not from the door", table))
 			}
 		default:
-			t.Errorf("%s is neither scoped by platformkit_tenant_match(tenant_id) nor declared %q in its COMMENT; "+
-				"its policy is %q", name, exemption, policies)
+			problems = append(problems, fmt.Sprintf(
+				"%s is neither scoped by platformkit_tenant_match(tenant_id) nor declared %q in its COMMENT; "+
+					"its policy is %q", table, exemption, policies))
 		}
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("walk the schema: %v", err)
 	}
-	// A query that found nothing would pass every case above, which is the one
-	// way this test could be worthless.
-	if seen < 10 {
-		t.Errorf("the schema has %d tables, which is fewer than the kernel and the modules create", seen)
-	}
+	return tables, problems
 }

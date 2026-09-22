@@ -246,6 +246,31 @@ the outbox's, because the kernel's public write limit made the kernel the table'
 writer. See
 [ADR 0017](docs/adr/0017-three-surfaces-by-path.md) for what this costs a module.
 
+**A module's schema opens to the application role without either of them naming it.**
+`apps/platformkit/postgres-init.sql` is where the read role is given `USAGE` on
+`public` and its default table and sequence privileges, so a module migration
+that created a schema of its own produced a namespace only its owner could open
+and every later query answered 42501. The module cannot grant its way out — a
+module's SQL may not name a deployment's role — and the migration runner already
+refuses to, decoding grantees out of an object's own ACL when it revokes
+application access to the ledger. `platformkit_module_schema(owner)`, in the new
+`migrations/000026_module_schema.up.sql`, is the one line a module's first schema
+revision runs instead: it creates the schema named by that owner and hands each
+role the migration role already grants defaults to *in the namespace that schema
+opens beside* the privileges that deployment pinned for it there — grantee and
+privilege list both read out of `pg_default_acl` rather than written down, one
+namespace's rows and no union of several, so a role pinned to `SELECT` stays a
+reader inside a module's schema and a role pinned only in some other namespace is
+handed nothing by this function — a database-wide pin still reaches a module's
+tables, because PostgreSQL applies it there and not because this mirror copied
+it. No table moves here — the reference modules
+keep theirs in `public` — and the check that every table is scoped to a tenant
+stops holding a second copy of its own query:
+`dbtest.TenantTablesSQL` is exported, gained the schema column, and matches a
+schema against the ledger's owners instead of `current_schema()`, which was the
+only schema until this. `migrations/README.md` states the consequences a
+deployment can hit.
+
 ## [1.1.1] - 2026-09-18
 
 A tooling patch. No exported API moved and no shipped behaviour moved: the diff from

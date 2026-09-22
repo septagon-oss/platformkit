@@ -243,6 +243,19 @@ that module — `modules/<name>/migrations`, embedded and exported as
 test composes the schema it needs by naming those sources:
 `dbtest.Schema(t, user.Migrations, auth.Migrations)`.
 
+The schema a module's objects live in is named exactly that module's owner, and
+the kernel's `platformkit_module_schema` (`migrations/000026_module_schema.up.sql`)
+is the one line that opens it to the roles the deployment hands its own default
+privileges to in that namespace, without any module SQL naming a role. No table
+moves here: all nine reference modules that
+own SQL still create their tables unqualified, so they land in whatever schema
+the runner's `search_path` names — `public` in the reference deployment, the
+test's own schema under `dbtest` — and so do the kernel's. A module takes its own
+schema in its own later revision, and none has yet. The check that every table is
+scoped to a tenant runs over `dbtest.TenantTablesSQL`, which follows the ledger's
+owners rather than one schema, so a table is inside the walk, and reported as
+`schema.table`, as soon as it has a schema of its own.
+
 The files kept the version numbers they carried when the foundation applied
 them, and each module declares `Adopts` for them, so an installation migrated
 before this split is re-owned by checksum inside the migration transaction and

@@ -17,4 +17,5 @@ var (
 	_ func(*testing.T, string) string                             = dbtest.RoleOf
 	_ func(testing.TB) (string, string)                           = dbtest.URLsFor
 	_ func(testing.TB, string) *sql.DB                            = dbtest.OpenFor
+	_ func(testing.TB, *sql.DB) string                            = dbtest.DeploymentSchema
 )
