@@ -271,10 +271,12 @@ What it does not measure, and no rehearsal can: the wait behind a table a runnin
 application is reading — there is no application here, and lock waits are sampled
 every 100 ms, so a shorter wait can be missed. That is the only gap the step leaves
 open on purpose, and it does not report across it: a run whose watcher fell short of
-the sample count its own interval resolves to prints `LOCK WATCH BROKEN` and exits 2,
-because "0 sample(s) ≈ 0ms" of a run that lasted a minute is a measurement that never
-happened. `--max-file-seconds` and
-`--max-lock-ms` are the operator's budgets, not the kernel's; `--keep` leaves the two
-databases behind for comparison, nothing outside those two names is ever
-dropped, and a copy whose drop was refused is named on the output as `LEFT BEHIND`
-rather than kept quiet.
+half the samples the window it was alive for resolves to prints `LOCK WATCH BROKEN`
+and exits 2, because "0 sample(s) ≈ 0ms" of a run that lasted a minute is a
+measurement that never happened — and a floor built from seconds rounded up indicts a
+run that was 55 ms long, which is the same fault wearing a red coat. Every report says
+how long it watched, so a 0 reads as "nothing waited" or "there was no time to see".
+`--max-file-seconds` and `--max-lock-ms` are the operator's budgets, not the kernel's;
+`--keep` leaves the two databases behind for comparison, nothing outside those two
+names is ever dropped, and a copy whose drop was refused is named on the output as
+`LEFT BEHIND` rather than kept quiet.

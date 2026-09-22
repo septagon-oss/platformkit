@@ -169,13 +169,14 @@ thousand rows per table into a copy of it, applies this tree's pending files aga
 that copy while sampling `pg_stat_activity` for lock waits, and exits 0, 1, 2 or 3 so
 a pipeline can tell "applied inside budget" from "failed" from "could not run" from
 "over budget". A contended file in a rehearsal is a finding, never a pass — and
-neither is a rehearsal that did not measure: a watcher that fell short of the sample
-count its own interval resolves to is `LOCK WATCH BROKEN` and exit 2, because a
-reported 0 ms of a run that lasted a minute is a number the step never took. A failed
-candidate's own message is printed the moment it stops, ahead of any query the step
-makes of a copy the candidate may never have migrated. What it
-cannot measure is stated in the script: the wait behind a table a running application
-holds, and any lock wait shorter than the 100 ms sample.
+neither is a rehearsal that did not measure: a watcher that fell short of half the
+samples the window it was alive for resolves to is `LOCK WATCH BROKEN` and exit 2,
+because a reported 0 ms of a run that lasted a minute is a number the step never took,
+and a floor built on seconds rounded up reports a failure over a run that was 55 ms
+long. Each report names the window it watched. A failed candidate's own message is
+printed the moment it stops, ahead of any query the step makes of a copy the candidate
+may never have migrated. What it cannot measure is stated in the script: the wait behind
+a table a running application holds, and any lock wait shorter than the 100 ms sample.
 
 ## Evidence
 
@@ -222,10 +223,16 @@ force, in both directions.
 sources the composition selected — every owner and every one of its files — and the
 second run applying nothing further.
 `bash scripts/check_architecture_test.sh` holds the rehearsal's own refusals, which
-land before it touches a database, and reads two of its programs out of the script to
+land before it touches a database, and reads four of its programs out of the script to
 run them here: the grep that decides a file came back contended, over the log line the
-runner really writes, and the watcher's file builder, whose interval has to be the one
-the step multiplies. The step itself needs `psql`, an owner connection
+runner really writes; the watcher's file builder, whose interval has to be the one the
+step multiplies; its watch floor, which is 0 for a window shorter than the watcher's
+startup and over 20 for a 20s one; and the watcher's own `psql` line, which filled the
+file the step counts 20 times in 2s. The step itself needs `psql`, an owner connection
 and a previous revision, and was run against a PostgreSQL 16 with the fixture's ten
-thousand rows per table: one file applied, its duration the runner's own, and the
-same step exiting 3 when `--max-file-seconds 0` put every file over budget.
+thousand rows per table: two files applied at the durations the runner measured (exit
+0), `LOCK WAIT 5000ms > 1000ms` and `CONTENDED` beside a session holding the table, and
+`TOO SLOW user/25 8ms > 0s` under a budget of nothing (`--max-file-seconds 0`), both
+exit 3; and the rule's own message from a candidate that refused before connecting
+(exit 1), which is also the run that leaves the copy's absent progress table as a note
+rather than the step's last word.

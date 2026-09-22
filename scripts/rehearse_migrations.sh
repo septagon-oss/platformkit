@@ -48,9 +48,16 @@
 # What it does not measure: the wait behind a table a running application is
 # reading — there is no application here, and lock waits are *sampled* every
 # 100 ms, so a wait shorter than the interval can be missed. That is the only gap
-# left open: a run whose watcher fell short of the samples its own interval
-# resolves to is reported as LOCK WATCH BROKEN and exits 2, because "0 sample(s)
-# ~ 0ms" of a run that lasted a minute is a measurement that never happened.
+# left open: a watcher whose sample file fell short of half the samples the window
+# it was actually alive for resolves to is reported as LOCK WATCH BROKEN and exits
+# 2, because "0 sample(s) ~ 0ms" of a run that lasted a minute is a measurement
+# that never happened. The window is the watcher's own lifetime in milliseconds,
+# less the second it is given to connect: measured reason — the floor used to be
+# built from the candidate's wall clock rounded up to whole seconds, and a clean run
+# that applied two files in 55 ms but straddled a second boundary was then asked for
+# five samples its watcher was never alive to take, which made the step report exit
+# 2 over a release that had passed. A step that invents a failure it did not measure
+# is the same fault as one that reports a 0 it did not measure.
 # Both numbers are reported as what they are.
 set -Eeuo pipefail
 
@@ -65,6 +72,37 @@ cd "$root"
 # measurement it did not take.
 SAMPLE_MS=100
 SAMPLE_S=$(printf '%d.%03d' "$((SAMPLE_MS / 1000))" "$((SAMPLE_MS % 1000))")
+# How long a watcher may take to connect and answer its first sample before its
+# silence means anything. A local connect and one query measure 16ms here, but a
+# rehearsal runs on a machine that may be busy with the build it just did, so this
+# is a second and not 16ms: it costs the floor its opinion about sub-second runs,
+# and keeps the one it has about a run of several seconds whose sample file holds
+# one line.
+WATCH_STARTUP_GRACE_MS=1000
+
+# now_ms is a millisecond clock. Whole seconds are what the watcher's floor used to
+# be built from, and rounding a 55ms run up to "1s" asks for samples nobody took.
+# A `date` without %N (non-GNU) prints the directive literally, which the check
+# below turns into seconds-with-milliseconds rather than a nonsense window.
+now_ms() {
+	local n
+	n=$(date +%s%3N 2>/dev/null) || n=""
+	[[ "$n" =~ ^[0-9]+$ ]] || n="$(date +%s)000"
+	printf '%s' "$n"
+}
+
+# watch_floor is the fewest sample lines a watcher that ran could have left in the
+# file over a window that long: half of the intervals after its startup, because a
+# machine under load loses samples, and a step that guesses a failure from a lost
+# sample is as wrong as one that reports a wait it never saw.
+watch_floor() {
+	local watched_ms="$1"
+	if [ "$watched_ms" -le "$WATCH_STARTUP_GRACE_MS" ]; then
+		echo 0
+	else
+		echo $(( (watched_ms - WATCH_STARTUP_GRACE_MS) / SAMPLE_MS / 2 ))
+	fi
+}
 APPNAME=platformkit-rehearse
 prefix="platformkit_rehearse_"
 
@@ -336,19 +374,19 @@ watch_sql="$work/watch.sql"
 printf '%s\n\\watch %s\n' \
 	"SELECT count(*) FROM pg_stat_activity WHERE application_name = '$APPNAME' AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'" \
 	"$SAMPLE_S" >"$watch_sql"
+watch_started=$(now_ms)
 psql "$run_url" -At -o "$waits" -f "$watch_sql" >/dev/null 2>&1 &
 watcher=$!
 
 write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url"
-run_started=$(date +%s)
 set +e
 "$work/platformkit" migrate --drain --config "$work/run.yaml" >"$work/run.log" 2>&1
 code=$?
 set -e
-run_seconds=$(( $(date +%s) - run_started ))
 kill "$watcher" 2>/dev/null || true
 wait "$watcher" 2>/dev/null || true
 watcher=""
+watched_ms=$(( $(now_ms) - watch_started ))
 
 # The candidate's own words, first, and before anything this step asks the database.
 # Measured reason: under `set -Eeuo pipefail` a command substitution that fails ends
@@ -393,16 +431,17 @@ samples=$(grep -c '^[1-9]' "$waits" 2>/dev/null || true)
 lines=$(grep -c '' <"$waits" 2>/dev/null || true)
 lock_ms=$((samples * SAMPLE_MS))
 
-# Whether this step measured anything at all. Every interval of the run puts a line in
-# the sample file, whether or not the count on it was non-zero, so a watcher that died
-# at once — or a \watch that never repeated its query — leaves one line for a run of any
-# length. Half the samples the interval resolves to across this run is the floor: under
-# it, "0 sample(s) ~ 0ms" would be a number the step never took, and the honest answer
-# to a release is that the rehearsal could not run (exit 2) rather than a pass built on
-# a measurement that did not happen.
-expected=$((run_seconds * 1000 / (SAMPLE_MS * 2)))
+# Whether this step measured anything at all. Every interval of the window the watcher
+# was alive for puts a line in the sample file, whether or not the count on it was
+# non-zero, so a watcher that died at once — or a \watch that never repeated its query —
+# leaves one line for a run of any length. Half the samples that window resolves to,
+# after the watcher's own startup, is the floor: under it, "0 sample(s) ~ 0ms" would be
+# a number the step never took, and the honest answer to a release is that the rehearsal
+# could not run (exit 2) rather than a pass built on a measurement that did not happen.
+# The window is the watcher's, not the candidate's wall clock: see now_ms.
+expected=$(watch_floor "$watched_ms")
 if [ "$lines" -lt "$expected" ]; then
-	echo "LOCK WATCH BROKEN ${lines} sample line(s) for a ${run_seconds}s run; ${expected} is the fewest ${SAMPLE_MS}ms samples it could hold"
+	echo "LOCK WATCH BROKEN ${lines} sample line(s) in ${watched_ms}ms of watching; ${expected} is the fewest ${SAMPLE_MS}ms samples that window could hold"
 	findings=$((findings + 1))
 	[ "$code" -ne 0 ] || code=2
 fi
@@ -440,7 +479,7 @@ fi
 
 applied=$(wc -l <"$work/files.tsv")
 note "$applied file(s) applied in ${total}ms; longest $longest at ${longest_ms}ms"
-note "lock waits: $samples sample(s) of ${SAMPLE_MS}ms ≈ ${lock_ms}ms (sampled, so a wait shorter than ${SAMPLE_MS}ms can be missed)"
+note "lock waits: $samples sample(s) of ${SAMPLE_MS}ms ≈ ${lock_ms}ms (${watched_ms}ms watched, sampled, so a wait shorter than ${SAMPLE_MS}ms can be missed)"
 if [ "$code" -ne 0 ]; then
 	# The candidate's message and the note that says what it stopped were printed
 	# above, as soon as the run ended. What is left to decide here is which of the

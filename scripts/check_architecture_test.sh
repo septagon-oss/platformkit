@@ -394,11 +394,79 @@ if ! awk -v interval="$interval" -v ms="$sample_ms" 'BEGIN { exit !(interval * 1
 	echo "FAIL: the watcher samples every ${interval}s and the step reports each sample as ${sample_ms}ms; one interval written twice has to agree with itself" >&2
 	exit 1
 fi
-if ! grep -qF -- '-At -o "$waits" -f "$watch_sql"' "$rehearse_script"; then
+watch_line=$(grep -m1 -F -- '-At -o "$waits" -f "$watch_sql"' "$rehearse_script")
+if [ -z "$watch_line" ]; then
 	echo 'FAIL: the watcher no longer reads its query and \watch from the file the step builds; a query given to -c is gone from the buffer before \watch repeats it, and the sample file then holds one line for a run of any length' >&2
 	exit 1
 fi
 echo 'rehearsal step: the contended grep matches the runner'\''s line, and the lock-wait watcher holds a query and a \watch psql reads from one file'
+
+# 3. The floor is a window, not a wall clock. The step declares a run unmeasured when
+# its sample file holds fewer lines than the window the watcher was alive for resolves
+# to, and both halves of that sentence failed once: the floor was built from the
+# candidate's seconds rounded up, so a clean run of 55ms that straddled a second
+# boundary was asked for five samples its watcher was never alive to take and the step
+# reported a passed release as exit 2; and a floor that never fires is the reported 0
+# the same finding was about. The step's own function answers both, so run it.
+watch_program=$(awk '/^watch_floor\(\)/{f=1} f{print} /^}$/{f=0}' "$rehearse_script")
+if [ -z "$watch_program" ]; then
+	echo 'FAIL: the rehearsal no longer derives its watch floor from a function; this case has to be rewritten to say what it does instead' >&2
+	exit 1
+fi
+{
+	sed -n '/^SAMPLE_MS=/p; /^WATCH_STARTUP_GRACE_MS=/p' "$rehearse_script"
+	printf '%s\n' "$watch_program"
+} >"$temporary/watch-floor.sh"
+floor_from_fixture() {
+	bash -c 'source "$1"; watch_floor "$2"' _ "$temporary/watch-floor.sh" "$1"
+}
+# A short run — two files, 55 to 75 milliseconds, which is what a clean rehearsal of
+# this repository's pending files measures — has no floor: nothing was measured wrongly
+# about it, and a step that guesses a failure from a run too quick to sample turns a
+# passing release red.
+floor_short=$(floor_from_fixture 350)
+if [ "$floor_short" != 0 ]; then
+	printf 'FAIL: the watch floor for a 350ms window is %s, not 0; a clean sub-second rehearsal would be reported as LOCK WATCH BROKEN and exit 2\n' "$floor_short" >&2
+	exit 1
+fi
+# A long run has one, well above the single line a watcher that never repeated its
+# query leaves behind, and it grows with the window rather than rounding to seconds.
+floor_long=$(floor_from_fixture 20000)
+if [ "$floor_long" -lt 20 ]; then
+	printf 'FAIL: the watch floor for a 20s window is %s; a watcher that sampled once leaves one line, and a floor under 20 is a floor a dead watcher passes\n' "$floor_long" >&2
+	exit 1
+fi
+if [ "$(floor_from_fixture 60000)" -le "$floor_long" ]; then
+	echo 'FAIL: the watch floor does not grow with the window it is given, so it is a constant dressed as a measurement' >&2
+	exit 1
+fi
+
+# 4. Whether \watch fills the file at all. Everything the step says about lock waits is
+# the product of this file's line count, and the reviewer's own case for it — case 2 of
+# scripts/review_rehearsal_test.sh — runs a `psql -c <query> -c '\watch 0.1'` invocation
+# the step does not use and no change to this repository can make sample: psql answers
+# that one once and then "\watch cannot be used with an empty query", whatever it is
+# pointed at (measured on psql 18.6 and on the 16.15 inside the project's own image).
+# This runs the step's own line, read out of the step, for two seconds, and asks the
+# question the reviewer's case asks.
+if ! command -v psql >/dev/null || [ -z "${PLATFORMKIT_TEST_ADMIN_URL-}" ]; then
+	echo 'rehearsal step: the live watcher needs psql and PLATFORMKIT_TEST_ADMIN_URL; SKIPPED, so the sampling is unproven on this machine'
+else
+	printf 'run_url=%s\nwaits=%s\nwatch_sql=%s\n' \
+		"$(printf '%q' "$PLATFORMKIT_TEST_ADMIN_URL")" \
+		"$(printf '%q' "$temporary/waits")" "$(printf '%q' "$temporary/watch.sql")" \
+		>"$temporary/watch-live.sh"
+	printf '%s\n' "$watch_line" >>"$temporary/watch-live.sh"
+	printf 'watcher=$!\nsleep 2\nkill "$watcher" 2>/dev/null || true\nwait "$watcher" 2>/dev/null || true\ngrep -c "" <"$waits" 2>/dev/null || true\n' \
+		>>"$temporary/watch-live.sh"
+	: >"$temporary/waits"
+	watch_samples=$(bash "$temporary/watch-live.sh")
+	if [ "${watch_samples:-0}" -lt 4 ]; then
+		printf "FAIL: two seconds of the step's own watcher (%s) put %s line(s) in the file it counts; four is what two seconds at %sms resolves to, and a file that holds one line measures no wait of any length\n" "$watch_line" "${watch_samples:-0}" "$sample_ms" >&2
+		exit 1
+	fi
+	echo "rehearsal step: the watch floor is the window the watcher lived for, and its own psql line filled the sample file $watch_samples times in 2s"
+fi
 
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
