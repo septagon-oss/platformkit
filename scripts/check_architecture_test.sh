@@ -441,6 +441,62 @@ if [ "$(floor_from_fixture 60000)" -le "$floor_long" ]; then
 	exit 1
 fi
 
+# 3b. The branch the floor exists for. Six rounds of rehearsals measured a passing
+# release and never once ran the lines that report a watcher that sampled nothing, and
+# a branch that has never run is a promise the documents make three times over. So the
+# branch is run, not read: the four lines are taken out of the step (a case that
+# restated them would pass whatever the step did), given the window and the sample count
+# the branch is about, and asked what they print and which of the four exit codes the
+# release pipeline ends up reading. The three legs are the three outcomes: a live
+# watcher that sampled nothing takes the exit code that says the step could not run;
+# a watcher that met its floor changes nothing; and a candidate that already failed
+# keeps its own code, because "a migration failed" outranks "and nothing was measured".
+broken_program=$(awk '/^expected=\$\(watch_floor/{f=1} f{print} f&&/^fi$/{exit}' "$rehearse_script")
+if [ -z "$broken_program" ]; then
+	echo 'FAIL: the rehearsal no longer compares the sample file against the watch floor; nothing reports a watcher that sampled nothing, so "lock waits: 0 sample(s)" of a run that lasted a minute reads as a pass' >&2
+	exit 1
+fi
+{
+	sed -n '/^SAMPLE_MS=/p; /^WATCH_STARTUP_GRACE_MS=/p' "$rehearse_script"
+	printf '%s\n' "$watch_program"
+	printf '%s\n' "$broken_program"
+} >"$temporary/watch-broken.sh"
+cat >>"$temporary/watch-broken.sh" <<'SH'
+printf 'code=%s findings=%s\n' "$code" "$findings"
+SH
+# watched_ms, lines, findings and code arrive from the environment: the branch reads
+# them and writes them, which is all the step's own context it needs.
+watch_branch() {
+	env watched_ms="$1" lines="$2" findings=0 code="$3" bash "$temporary/watch-broken.sh"
+}
+broken_run=$(watch_branch 20000 1 0)
+case "$broken_run" in
+*"LOCK WATCH BROKEN"*) ;;
+*)
+	echo "FAIL: a watcher alive for 20s that left 1 line in the sample file printed [$broken_run]; the step reports a measurement it did not take as a pass" >&2
+	exit 1
+	;;
+esac
+case "$broken_run" in
+*"code=2 findings=1"*) ;;
+*)
+	echo "FAIL: the LOCK WATCH BROKEN finding did not reach the exit code: [$broken_run]; a release pipeline reads 0 as a pass and 2 as a step that could not run" >&2
+	exit 1
+	;;
+esac
+if [ "$(watch_branch 20000 100 0)" != "code=0 findings=0" ]; then
+	echo "FAIL: a watcher that met its floor was reported anyway [$(watch_branch 20000 100 0)]; that is a step that invents the failure it was built to notice" >&2
+	exit 1
+fi
+case "$(watch_branch 20000 1 1)" in
+*"LOCK WATCH BROKEN"*"code=1 findings=1"*) ;;
+*)
+	echo 'FAIL: a candidate that had already failed lost its own exit code to the watch finding: the failed migration is the finding the release has to act on' >&2
+	exit 1
+	;;
+esac
+echo 'rehearsal step: a watcher that sampled nothing over a window it was alive for is LOCK WATCH BROKEN and exit 2, a met floor is silent, and a failed candidate keeps exit 1'
+
 # 4. Whether \watch fills the file at all. Everything the step says about lock waits is
 # the product of this file's line count, so the sampling is measured and not read: this
 # runs the step's own psql line, taken out of the step, for two seconds, and asks the
