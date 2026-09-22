@@ -45,12 +45,16 @@ nontransactional SQL is the amendment to
 [ADR 0011](docs/adr/0011-migration-ownership.md). A rule that documents no exception
 cannot be excepted: an `allow=` naming one is refused as the bypass it is. The guards
 read operations rather than spellings (`ALTER TABLE t ALTER col TYPE` rewrites the
-table whether or not the optional `COLUMN` keyword is there, and the `DEFAULT` that
+table whether or not the optional `COLUMN` keyword is there, `ALTER TABLE t DROP col`
+takes a name away from the running release whether or not the file spelled the keyword,
+and the `DEFAULT` that
 makes an added column ordinary is read from that column's own definition and not from
 the file), a rule floor is bounded by the source's own highest version rather than by
 whatever number a manifest carries, and the guard and the
-executor read one normalised text of a data file's body, so an excepted body runs once
-and a body that names its window in another case still gets the window.
+executor read one normalised text of a data file's body, read where PostgreSQL reads it
+(a `--` inside a value is data, the apostrophe inside a `/* … */` is commentary, a
+`$tag$ … $tag$` body is one value and an `E'…'` closes past its escapes), so an excepted
+body runs once and a body that names its window in another case still gets the window.
 
 **The two things the runner cannot decide now have doors.** `platformkit migrate`
 applies the pending schema and exits, over exactly the sources, floors and budgets

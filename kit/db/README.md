@@ -91,7 +91,10 @@ one transaction. `migration.windowed` answers that one question, once, and the r
 table and the executor both take the answer from it — of one reading of the body
 (`scanSQL`: comments gone, case folded, and the contents of every string literal put
 away, because two dashes inside a value are data and not the comment that would
-otherwise hide the rest of the line from the guard) — so the body the rule table
+otherwise hide the rest of the line from the guard; and the boundary of a comment and
+of a literal is taken wherever PostgreSQL takes it, across a `/* … */` that nests and
+spans lines, a `$tag$ … $tag$` value that carries apostrophes as data, and an `E'…'`
+that ends past its own escapes) — so the body the rule table
 judged is the body the executor runs, and a body that names the window only inside a
 value it writes is neither wrapped nor excused by accident.
 An installation with no history for that owner drains it during migration, bounded at

@@ -60,10 +60,14 @@ var (
 	reConcurrently    = regexp.MustCompile(`\bconcurrently\b`)
 	reIndexTarget     = regexp.MustCompile(`\bon\s+([a-z_][\w.]*)`)
 	reCreateTable     = regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?([a-z_][\w.]*)`)
-	reDropColumn      = regexp.MustCompile(`\bdrop\s+column\b`)
-	reIfNotExists     = regexp.MustCompile(`\bif\s+not\s+exists\b`)
-	reIfExists        = regexp.MustCompile(`\bif\s+exists\b`)
-	reDDL             = regexp.MustCompile(`^(alter|create|drop)\b`)
+	// reDropAction is `DROP [COLUMN] <name>` in either spelling PostgreSQL takes, the
+	// keyword being as optional here as it is in the two ALTER TABLE actions above. The
+	// name is captured because the word after DROP says what is being dropped, and only
+	// a column takes a name away from the running release.
+	reDropAction  = regexp.MustCompile(`\bdrop\s+(?:column\s+)?(?:if\s+exists\s+)?([a-z_][\w.]*)(?:\s|$)`)
+	reIfNotExists = regexp.MustCompile(`\bif\s+not\s+exists\b`)
+	reIfExists    = regexp.MustCompile(`\bif\s+exists\b`)
+	reDDL         = regexp.MustCompile(`^(alter|create|drop)\b`)
 	// reBatchWindow matches the drain's window relation where the SQL reads it, not
 	// the word anywhere. A body that only says "batch" in a comment or in a value it
 	// is writing does not go through the window, and a body that names it in another
@@ -97,7 +101,7 @@ var rules = []rule{
 		does:      "drops a column, which takes a name away from the release that is running right now",
 		instead:   "mark this file `-- pkit: phase=contract expand=<version>` and ship it in the release after the expansion that replaced it",
 		exception: "allow=drop-column reason=<one sentence>, for a column no installation ever had rows in",
-		fire:      func(f *migrationText) bool { return f.phase != phaseContract && f.any(reDropColumn) }},
+		fire:      func(f *migrationText) bool { return f.phase != phaseContract && f.dropsAColumn() }},
 	{name: "index-concurrent-without-autocommit",
 		does:    "runs CONCURRENTLY inside the transaction every migration file is applied in, which PostgreSQL refuses there (its error 25001)",
 		instead: "add `-- pkit: autocommit=true`, which is the file shape that runs outside the transaction",
@@ -269,6 +273,33 @@ func (f *migrationText) addsANotNullColumn() bool {
 // NULL is the ordinary statement this rule exists to leave alone.
 var notAColumn = map[string]bool{"constraint": true, "primary": true, "foreign": true, "unique": true, "check": true, "exclude": true}
 
+// dropsAColumn is the fourth rule's subject, read one statement at a time for the same
+// reason its two neighbours read one clause or one statement: the ALTER TABLE and the
+// name it takes away have to be in the one statement, and a bare `DROP TABLE` or
+// `DROP INDEX` is a different statement about a different object, whatever follows the
+// word. PostgreSQL makes the COLUMN keyword optional here as it does for a type change,
+// so `ALTER TABLE probe DROP b` is this rule's statement and not a spelling it may miss
+// — the file that ships it takes the column away in the release running now, whatever
+// the release was reviewed as.
+func (f *migrationText) dropsAColumn() bool {
+	for _, statement := range f.statements {
+		if !reAlterTable.MatchString(strings.TrimSpace(statement)) {
+			continue
+		}
+		for _, found := range reDropAction.FindAllStringSubmatch(statement, -1) {
+			if !notADroppedColumn[found[1]] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// notADroppedColumn are the words ALTER TABLE puts after DROP for something that is not
+// a column. Dropping a constraint's NOT NULL or DEFAULT is the ordinary shrink of a
+// rule the release already carries, and none of them takes a column's name away.
+var notADroppedColumn = map[string]bool{"constraint": true, "identity": true, "expression": true, "not": true, "null": true, "default": true}
+
 // addsANotNullDefinition reads one comma-separated action of an ALTER TABLE: every
 // column it adds, and each column's own definition — the text from its name to the
 // end of the action, which is where its DEFAULT or NOT NULL would be.
@@ -332,6 +363,64 @@ func (f *migrationText) statementRefusesASecondRun() bool {
 	return false
 }
 
+// blockCommentEnd is how many bytes a block comment starting at the front of text
+// takes up, nesting included (`/* … /* … */ … */` is one comment to PostgreSQL, which
+// is what makes `--` too narrow a rule for where commentary ends). An unterminated one
+// runs to the end of the file, which is what the server reads there as well: it then
+// refuses the file as a syntax error, and the guard has nothing to judge.
+func blockCommentEnd(text string) int {
+	for depth, i := 0, 0; i < len(text); {
+		switch {
+		case strings.HasPrefix(text[i:], "/*"):
+			depth++
+			i += 2
+		case strings.HasPrefix(text[i:], "*/"):
+			if depth == 1 {
+				return i + 2
+			}
+			depth--
+			i += 2
+		default:
+			i++
+		}
+	}
+	return len(text)
+}
+
+// dollarTag is the opening delimiter of a dollar-quoted value at the front of text —
+// `$`, a tag, `$`, the tag optional for `$$` — or "" where none opens. The tag takes
+// the characters a name takes and may not start with a digit, which is what keeps the
+// drain's own `$1` and `LIMIT 100` from reading as the start of a value. The text
+// arrives case-folded, so a tag whose two halves differ in case closes here where
+// PostgreSQL would call the value unterminated: that file runs nowhere, and the fold
+// is the same one every other word in it is read with.
+func dollarTag(text string) string {
+	if text == "" || text[0] != '$' {
+		return ""
+	}
+	for i := 1; i < len(text); i++ {
+		if c := text[i]; c == '$' {
+			return text[:i+1]
+		} else if !(c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' && i > 1) {
+			return ""
+		}
+	}
+	return ""
+}
+
+// isEscapeString is the E'…' prefix, which PostgreSQL reads as one token only where a
+// name could not continue: the space in `time '3 days'` is what keeps a type name
+// ending in e from swallowing the value after it, and the same space decides this.
+func isEscapeString(text string, i int) bool {
+	if i > 0 {
+		switch c := text[i-1]; {
+		case c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z':
+			return false
+		}
+	}
+	return (text[i] == 'e' || text[i] == 'E') && strings.HasPrefix(text[i+1:], "'")
+}
+
 // splitStatements breaks the body on semicolons outside quoted text. It is the
 // same cut the measured rule floors were taken with, and it is not a parser: a
 // body written inside a dollar-quoted function is split where its semicolons are,
@@ -387,10 +476,23 @@ func splitTopLevel(text string, sep rune) []string {
 // hide every statement after it — the mistake on the other side, and the one no
 // exception marker would ever be blamed for.
 //
-// What it does not know: dollar-quoted bodies, block comments, and the backslash escapes
-// an E'…' string takes. The first two leave a body's text in rather than take it out,
-// which is the false positive a rule's exception exists for; the last ends a literal
-// where its author did not mean it to end.
+// The same fact has three more spellings, and they fail in both directions at once, so
+// all three are read here rather than worked around by asking the question of two
+// texts: a `/* … */` runs across lines and nests, so the apostrophe in
+// `/* it's a backfill */` is commentary and the statements after it are statements;
+// `$tag$ … $tag$` is one value carrying apostrophes, semicolons and — as data — the
+// words of the window, so it joins the other literals, put away for the shape and kept
+// whole for the text; and `E'…'` takes a backslash, so it ends where its author ended
+// it, which an ordinary `'…'` does not (a `\'` in one closes the literal and puts what
+// follows outside it). A reading that missed any of them took a bounded body for an
+// unbounded one, or the reverse, and the remedy the refusal offered moved the harm from
+// one to the other.
+//
+// What is left unread is what a rule's exception exists for: the semicolons inside a
+// dollar-quoted body still split statements, because that reading is splitTopLevel's
+// and a body the runner cannot wrap is refused by the rule that says so rather than
+// quietly run in pieces. The two readings differ in what they put away, never in where
+// they think the text is.
 func scanSQL(text string, blankLiterals bool) string {
 	var out strings.Builder
 	out.Grow(len(text))
@@ -403,6 +505,46 @@ func scanSQL(text string, blankLiterals bool) string {
 				continue
 			}
 			i = len(text)
+		case strings.HasPrefix(text[i:], "/*"):
+			// Consumed as commentary in both readings, and nested, which is what PostgreSQL
+			// does with it: the apostrophe in `/* it's a backfill */` is not the opening of a
+			// literal, and the newline it spans is not a line boundary.
+			out.WriteByte(' ')
+			i += blockCommentEnd(text[i:])
+		case dollarTag(text[i:]) != "":
+			tag := dollarTag(text[i:])
+			end := len(text)
+			if closed := strings.Index(text[i+len(tag):], tag); closed >= 0 {
+				end = i + 2*len(tag) + closed
+			}
+			// One value, written with whatever quotes and semicolons it likes: joined to the
+			// other literals, which means put away for the shape and kept whole for the text.
+			if blankLiterals {
+				out.WriteString(tag)
+				out.WriteString(tag)
+			} else {
+				out.WriteString(text[i:end])
+			}
+			i = end
+		case isEscapeString(text, i):
+			start := i
+			for i += 2; i < len(text); i++ {
+				if text[i] == '\\' {
+					i++ // the escape takes the next character, closing quote included
+				} else if text[i] == '\'' {
+					if i+1 < len(text) && text[i+1] == '\'' {
+						i++ // '' is one quote written twice, as in any other literal
+						continue
+					}
+					i++
+					break
+				}
+			}
+			if blankLiterals {
+				out.WriteString("e''")
+			} else {
+				out.WriteString(text[start:i])
+			}
 		case text[i] == '\'' || text[i] == '"':
 			quote, start := text[i], i
 			for i++; i < len(text); i++ {

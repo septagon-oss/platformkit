@@ -157,7 +157,10 @@ question, which is about the statement and not about the data it carries — so 
 the guard judged is the file that runs: an excepted body runs once, a body that names
 `BATCH` in another case still gets its window, and one that names the window only
 inside a value it is writing does not. Two dashes inside a literal is data, not the
-comment that would otherwise hide the rest of its line from the guard.
+comment that would otherwise hide the rest of its line from the guard, and the three
+spellings that fact repeats through are read the same way: `/* … */` nests and spans
+lines, `$tag$ … $tag$` is one value however many apostrophes and semicolons it carries,
+and `E'…'` ends at its last unescaped quote rather than at the escape before it.
 
 A file that keeps a statement the rules refuse says so, in the sentence a reviewer
 will read with the marker:
@@ -200,16 +203,18 @@ to a line that is already there.
 Each refusal names its rule, says what the file does, and says what to do instead.
 The engine reads text with comments stripped, not a parse tree — the runner is not
 a SQL parser — so a statement inside a dollar-quoted body can be flagged, and the
-answer is the marker. A comment is found where a comment actually starts: two dashes
-inside `'…'` or `"…"` are data, and the apostrophe inside a comment is commentary, so
-neither can move the boundary of what the guard sees.
+answer is the marker. A comment is found where a comment actually starts, and so is a
+literal: two dashes inside `'…'` or `"…"` are data, the apostrophe inside a `--` or a
+`/* … */` is commentary, a `$tag$ … $tag$` body is one value and not a run of quotes,
+and an `E'…'` closes where its backslashes let it. None of them can move the boundary
+of what the guard sees.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
 | `alter-column-type` | `ALTER [COLUMN] … TYPE` or `… SET DATA TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
 | `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` on that column | rewrites the table and refuses every write while it does | allowed |
 | `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
-| `drop-column` | `DROP COLUMN` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
+| `drop-column` | `DROP [COLUMN] …` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
 | `index-concurrent-without-autocommit` | `CONCURRENTLY` without `autocommit=true` | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
 | `autocommit-without-concurrently` | `autocommit=true` with nothing nontransactional in the file | the marker gives up all-or-nothing; nothing may do that without a reason | none: delete the marker |
 | `autocommit-not-rerunnable` | an autocommit `CREATE INDEX CONCURRENTLY` without `IF NOT EXISTS`, or a `DROP INDEX CONCURRENTLY` without `IF EXISTS` | the statement can succeed while the version stays unapplied, so the next run must be able to repeat it | none |
@@ -231,7 +236,13 @@ for the same reason: the `DEFAULT` that makes the statement ordinary has to be t
 column's own, so a `SET DEFAULT` in a statement beside it excuses nothing — and so does
 the `IS NOT NULL` a partial index carries in its `WHERE` clause, which is a predicate
 over rows and not a constraint this file adds. `ADD COLUMN a integer NOT NULL, ADD
-COLUMN b integer DEFAULT 0` is refused for `a` whatever `b` says.
+COLUMN b integer DEFAULT 0` is refused for `a` whatever `b` says. The rule about a
+dropped column reads the optional keyword the same way, because PostgreSQL makes it
+optional there too: `ALTER TABLE probe DROP b` takes the same name away from the
+release running now, and it is refused whatever the word after `COLUMN` was. The words
+`ALTER TABLE` puts after `DROP` for something that is not a column — `CONSTRAINT`,
+`IDENTITY`, `EXPRESSION`, `NOT NULL`, `DEFAULT` — are left alone, and so is a bare
+`DROP TABLE` or `DROP INDEX`, which is a different statement about a different object.
 
 Two rules about a release rather than a file: a `phase=contract` file refuses while
 its `expand=` version is not already in the installation's history, and nothing of

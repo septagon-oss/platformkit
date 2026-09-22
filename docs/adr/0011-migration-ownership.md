@@ -160,10 +160,16 @@ switching the rule off: those four state what PostgreSQL refuses, what the autoc
 mode costs, or what a data file cannot survive, and a comment cannot make any of that
 false. The rules read operations rather than spellings — a type change is the `TYPE`
 clause inside an `ALTER TABLE`, which PostgreSQL lets be written with or without the
-`COLUMN` keyword, and a `NOT NULL` column is read from that column's own definition, so
-a `DEFAULT` belonging to a statement beside it excuses nothing — and the guard and the
-executor read one normalised text of the body,
-so the file that was judged is the file that runs.
+`COLUMN` keyword, a `DROP` inside an `ALTER TABLE` takes that keyword away from the
+running release whether or not the file spelled it, and a `NOT NULL` column is read from
+that column's own definition, so a `DEFAULT` belonging to a statement beside it excuses
+nothing — and the guard and the executor read one normalised text of the body,
+so the file that was judged is the file that runs. That one text is read where the
+server reads it: a `--` inside a value is data, the apostrophe inside a `/* … */` is
+commentary, a `$tag$ … $tag$` body is one value and an `E'…'` closes past its escapes,
+because a reading that lost its place answered the window question wrongly in both
+directions — a bounded body refused as unbounded, and an unbounded one wrapped and run
+once per window over every row.
 Guards apply from a version the source states, because a rule cannot be refused on a
 file already applied somewhere:
 the bytes are immutable and the only remedy left would be to stop the installation.
