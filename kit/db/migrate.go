@@ -112,13 +112,14 @@ func (b MigrationBudget) statement() string {
 		pgDuration(lock, "5s"), pgDuration(statement, "0"))
 }
 
-// validate refuses a budget that could not be a wait.
+// validate refuses a budget that could not be a wait. The caller names the door it
+// was refused at, because both Migrate and Backfill take one.
 func (b MigrationBudget) validate() error {
 	if b.LockTimeout != nil && *b.LockTimeout < 0 {
-		return fmt.Errorf("db: migrate: lock budget %s is a wait in the past", *b.LockTimeout)
+		return fmt.Errorf("lock budget %s is a wait in the past", *b.LockTimeout)
 	}
 	if b.StatementTimeout != nil && *b.StatementTimeout < 0 {
-		return fmt.Errorf("db: migrate: statement budget %s is a wait in the past", *b.StatementTimeout)
+		return fmt.Errorf("statement budget %s is a wait in the past", *b.StatementTimeout)
 	}
 	return nil
 }
@@ -164,7 +165,7 @@ func Migrate(ctx context.Context, migrateURL string, sources ...MigrationSource)
 // that does not name a budget still gets the lock budget.
 func MigrateWith(ctx context.Context, migrateURL string, budget MigrationBudget, sources ...MigrationSource) error {
 	if err := budget.validate(); err != nil {
-		return err
+		return fmt.Errorf("db: migrate: %w", err)
 	}
 	migrations, adoptions, err := readMigrations(sources)
 	if err != nil {
@@ -215,15 +216,23 @@ func MigrateWith(ctx context.Context, migrateURL string, budget MigrationBudget,
 		}
 		for _, migration := range plan {
 			started := time.Now()
-			if err := run.apply(ctx, migration); err != nil {
+			report, err := run.apply(ctx, migration)
+			if err != nil {
 				return fmt.Errorf("db: migrate: %s/%s: %w", migration.owner, migration.name, run.refused(err))
 			}
 			// Info, not Debug, and with the runner's own measurement on it. A release
 			// asks which files this run applied and how long each one took, and the
 			// rehearsal (scripts/rehearse_migrations.sh) reports the duration the runner
-			// measured rather than one a watcher estimated around the process.
-			slog.InfoContext(ctx, "db: applied migration", "owner", migration.owner, "version", migration.version,
-				"name", migration.name, "phase", migration.phase, "duration_ms", time.Since(started).Milliseconds())
+			// measured rather than one a watcher estimated around the process. A data
+			// file carries its batch count beside that, because three transactions and
+			// fifty at the same duration are two different costs; a schema file has one
+			// transaction and no such number to report.
+			fields := []any{"owner", migration.owner, "version", migration.version,
+				"name", migration.name, "phase", migration.phase}
+			if migration.phase == phaseData {
+				fields = append(fields, "batches", report.batches)
+			}
+			slog.InfoContext(ctx, "db: applied migration", append(fields, "duration_ms", time.Since(started).Milliseconds())...)
 		}
 	}
 	return nil
@@ -285,11 +294,14 @@ func createOwnTables(ctx context.Context, conn *sql.Conn) error {
 	return nil
 }
 
-// revokeOwnTables takes away what the application must not hold. It is the half
-// that belongs behind the composition's advisory lock and nowhere else: REVOKE
-// takes ACCESS EXCLUSIVE on the table, and taking it while a request is reading
-// the ledger, or a drain is committing a batch into it, stops them for the length
-// of a statement that only ever grants what it just revoked.
+// revokeOwnTables takes away what the application must not hold. It runs behind the
+// composition's advisory lock so that one run sweeps once, and because the sweep and
+// the CREATE beside it are the same statement about who owns the two tables — not
+// because the REVOKE has to wait for anything: measured, it takes SHARE UPDATE
+// EXCLUSIVE, which conflicts with another REVOKE or ALTER and not with the reads and
+// writes of a running request or a committing batch (a plain ALTER TABLE on the same
+// table behind the same reader waits; this statement completes in twenty
+// milliseconds).
 func revokeOwnTables(ctx context.Context, conn *sql.Conn) error {
 	for _, statement := range []string{
 		fmt.Sprintf(revokeFromApplicationRole, "'schema_migrations'", "schema_migrations"),
@@ -450,8 +462,7 @@ func planOwner(ctx context.Context, conn *sql.Conn, files []migration, history m
 				continue // this run finishes the drain it found; see the rule above
 			}
 			slog.WarnContext(ctx, "db: left migrations pending behind a backfill the worker drains",
-				"owner", owner, "version", m.version, "remaining", len(files)-i,
-				"drain_started", false, "cursor", "")
+				"owner", owner, "version", m.version, "remaining", len(files)-i)
 			return files[:i], nil
 		}
 		if m.phase == phaseContract && !history.applied[migrationID{owner, m.contractOf}] {
@@ -487,9 +498,16 @@ type runner struct {
 	locked bool // whether this session holds compositionLockKey right now
 }
 
-// holdCompositionLock takes the composition's advisory lock for this session. A wait
-// that ran out is contention rather than a failure: it is the same patience the files
-// are given, spent on the lock every other replica wants.
+// holdCompositionLock takes the composition's advisory lock for this session.
+//
+// The wait for it is patient and unbounded on purpose, and it is not the patience the
+// files are given: the budgets go on the session after the lock is held, so
+// pg_advisory_lock itself waits with none of them. That is the right shape — the run
+// that gets the lock second has the first one's applied files to read and finds
+// nothing pending, so a replica that waits an hour and applies nothing beats one that
+// refuses at five seconds and is read as a failed deploy. What bounds this wait is the
+// caller's context, and when that runs out the operator gets a context deadline, not
+// ErrContended: nothing was refused, the run simply did not finish.
 func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if r.locked {
 		return nil
@@ -514,9 +532,9 @@ func (r *runner) releaseCompositionLock(ctx context.Context) error {
 	return nil
 }
 
-func (r *runner) apply(ctx context.Context, migration migration) error {
+func (r *runner) apply(ctx context.Context, migration migration) (drainReport, error) {
 	if err := r.budgets(ctx); err != nil {
-		return err
+		return drainReport{}, err
 	}
 	switch {
 	case migration.phase == phaseData:
@@ -532,29 +550,29 @@ func (r *runner) apply(ctx context.Context, migration migration) error {
 		// demands be re-runnable, and recordRerunnableHistory turns a lost race into a
 		// file that applied rather than a boot that failed.
 		if err := r.releaseCompositionLock(ctx); err != nil {
-			return err
+			return drainReport{}, err
 		}
 		_, execErr := r.conn.ExecContext(ctx, migration.sql)
 		if lockErr := r.holdCompositionLock(ctx); lockErr != nil {
-			return errors.Join(execErr, lockErr)
+			return drainReport{}, errors.Join(execErr, lockErr)
 		}
 		if execErr != nil {
-			return execErr
+			return drainReport{}, execErr
 		}
-		return recordRerunnableHistory(ctx, r.conn, migration)
+		return drainReport{}, recordRerunnableHistory(ctx, r.conn, migration)
 	}
 	tx, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return drainReport{}, err
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, migration.sql); err != nil {
-		return err
+		return drainReport{}, err
 	}
 	if err := recordIn(ctx, tx, migration); err != nil {
-		return err
+		return drainReport{}, err
 	}
-	return tx.Commit()
+	return drainReport{}, tx.Commit()
 }
 
 const insertHistory = "INSERT INTO schema_migrations (owner, version, name, checksum) VALUES ($1, $2, $3, $4)"

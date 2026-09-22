@@ -534,12 +534,14 @@ func kernelJobs(transport events.Transport) []jobs.Job {
 
 // drainMigrations is the worker's schedule for the data migrations this
 // composition owns. It is built here rather than inside kernelJobs because it
-// needs two facts the transport does not carry: the owner-role URL migrations run
-// under, and the sources the composition actually selected. Without it the drain
-// that Migrate deliberately leaves behind would be left behind forever, and
-// "resumable" would mean "somebody runs a command nobody has read about".
+// needs three facts the transport does not carry: the owner-role URL migrations run
+// under, the budgets the configuration named, and the sources the composition
+// actually selected. Without it the drain that Migrate deliberately leaves behind
+// would be left behind forever, and "resumable" would mean "somebody runs a command
+// nobody has read about".
 func (a *App) drainMigrations() jobs.Job {
-	return jobs.BackfillMigrations(jobs.BackfillEvery, a.cfg.Database.MigrateURL, MigrationSources(a.mods)...)
+	return jobs.BackfillMigrations(jobs.BackfillEvery, a.cfg.Database.MigrateURL,
+		migrationBudget(a.cfg.Database), MigrationSources(a.mods)...)
 }
 
 // work is the worker role: the kernel's own jobs, every module's jobs, and every

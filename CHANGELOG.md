@@ -17,7 +17,9 @@ nontransactional statement that must be re-runnable, or as a backfill wrapped ov
 window of its table's primary key, one committed transaction per window, resumable
 from the last key it committed in `schema_migration_backfill`. Every file runs with a
 five-second `lock_timeout` (configurable, `database.lock_timeout`) and no statement
-bound by default, and one stopped by the lock budget returns `db.ErrContended`:
+bound by default — the same budget the worker's batches re-assert, because a backfill
+is the fifty transactions that wait behind the running application, not the one file —
+and one stopped by the lock budget returns `db.ErrContended`:
 nothing new was applied, and it may be run again. A `contract` file refuses while the
 `expand=` version it names has not already applied, and nothing of an owner applies
 past a drain that has not finished — the worker's `schema-backfill` job finishes
@@ -25,7 +27,12 @@ that, so a boot never waits behind a table it cannot empty. The rules the runner
 refuses before connecting, the keys, and the floors each source declares are written
 down once in [migrations/README.md](migrations/README.md); the mode-scoped ban on
 nontransactional SQL is the amendment to
-[ADR 0011](docs/adr/0011-migration-ownership.md).
+[ADR 0011](docs/adr/0011-migration-ownership.md). A rule that documents no exception
+cannot be excepted: an `allow=` naming one is refused as the bypass it is. The guards
+read operations rather than spellings (`ALTER TABLE t ALTER col TYPE` rewrites the
+table whether or not the optional `COLUMN` keyword is there), and the guard and the
+executor read one normalised text of a data file's body, so an excepted body runs once
+and a body that names its window in another case still gets the window.
 
 **The two things the runner cannot decide now have doors.** `platformkit migrate`
 applies the pending schema and exits, over exactly the sources, floors and budgets

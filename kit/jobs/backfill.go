@@ -27,13 +27,15 @@ const BackfillEvery = 5 * time.Second
 //
 // The connection the scheduler hands a job is the application's, and this job does not
 // use it: the runner's two tables are revoked from the application role, so the drain
-// opens its own pinned owner connection from migrateURL, as Migrate does.
-func BackfillMigrations(every time.Duration, migrateURL string, sources ...db.MigrationSource) Job {
+// opens its own pinned owner connection from migrateURL, as Migrate does. The budget
+// is the one the deployment configured, because the drain is the half of a release that
+// waits longest behind the running application's rows.
+func BackfillMigrations(every time.Duration, migrateURL string, budget db.MigrationBudget, sources ...db.MigrationSource) Job {
 	return Job{
 		Name:  "schema-backfill",
 		Every: every,
 		Run: func(ctx context.Context, _ *db.Conn) error {
-			return db.Backfill(ctx, migrateURL, sources...)
+			return db.BackfillWith(ctx, migrateURL, budget, sources...)
 		},
 	}
 }

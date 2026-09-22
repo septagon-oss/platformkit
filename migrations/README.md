@@ -149,6 +149,12 @@ the runner can read before it connects. The body sees one window of that table's
 primary key as the relation `batch`, and the runner runs it once per window, in its
 own transaction.)
 
+A body that never reads that relation cannot be bounded by it, so it is refused by
+`data-body-unbounded` unless it says why it bounds itself. The decision whether to
+wrap a body is made from the same reading of the same text as that refusal — comments
+gone, case folded — so the file the guard judged is the file that runs: an excepted
+body runs once, and a body that names `BATCH` in another case still gets its window.
+
 A file that keeps a statement the rules refuse says so, in the sentence a reviewer
 will read with the marker:
 
@@ -172,10 +178,13 @@ marking it would mean changing bytes some installation already ran.
 | `table` | one bare lower-case identifier | required by `phase=data`; what the window walks |
 | `autocommit` | `true` | the file's one statement runs with no transaction around it |
 | `allow` | a rule name below | excepts that rule for this file; needs `reason=` on the same line |
-| `reason` | a sentence | nobody but the reviewer — that is its function |
+| `reason` | a sentence, at least three characters | nobody but the reviewer — that is its function |
 
 A grammar mistake refuses before the runner connects, and no `allow=` excuses one:
 an exception that can except a broken marker is a marker nobody can rely on.
+`batch` is refused for the value the file wrote — `batch=0` is refused as `batch=0`,
+not as a missing key — because a refusal that names the wrong key sends the operator
+to a line that is already there.
 
 ## What the runner refuses, and what to write instead
 
@@ -186,17 +195,27 @@ answer is the marker.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
-| `alter-column-type` | `ALTER COLUMN … TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
+| `alter-column-type` | `ALTER [COLUMN] … TYPE` or `… SET DATA TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
 | `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` | rewrites the table and refuses every write while it does | allowed |
 | `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
 | `drop-column` | `DROP COLUMN` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
 | `index-concurrent-without-autocommit` | `CONCURRENTLY` without `autocommit=true` | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
 | `autocommit-without-concurrently` | `autocommit=true` with nothing nontransactional in the file | the marker gives up all-or-nothing; nothing may do that without a reason | none: delete the marker |
-| `autocommit-not-rerunnable` | an autocommit statement without `IF NOT EXISTS` / `IF EXISTS` | the statement can succeed while the version stays unapplied, so the next run must be able to repeat it | none |
-| `data-body-unbounded` | a `phase=data` body that never mentions `batch` | the window cannot bound it, so one statement walks the whole table | allowed, with the sentence saying how it bounds itself |
+| `autocommit-not-rerunnable` | an autocommit `CREATE INDEX CONCURRENTLY` without `IF NOT EXISTS`, or a `DROP INDEX CONCURRENTLY` without `IF EXISTS` | the statement can succeed while the version stays unapplied, so the next run must be able to repeat it | none |
+| `data-body-unbounded` | a `phase=data` body that never reads the `batch` window | the window cannot bound it, so one statement walks the whole table | allowed, with the sentence saying how it bounds itself |
 | `data-with-ddl` | DDL in a `phase=data` file | that file runs outside a transaction, in pieces; DDL there has no rollback | none: split the file |
 | `data-writes-outbox` | `platformkit_outbox` named in a `phase=data` body | one event per row per attempt buries the relay and replays on a resume | allowed |
 | `unused-allow` | an `allow=` for a rule the file does not break | an exception nobody needed is a claim about a risk that is not there, and it outlives the sentence that justified it | none: delete the marker |
+
+The rules whose exception column says `none` have no marker, and an `allow=` naming
+one is refused as what it is — a bypass with a rule name on it — rather than silently
+switching the rule off. Each of them states something a marker cannot make false: what
+PostgreSQL refuses, what the autocommit mode costs, or what a data file cannot
+survive.
+
+The rule about a type change reads the clause inside an `ALTER TABLE`, not the word
+`COLUMN`, because PostgreSQL makes that keyword optional and both spellings are the
+same rewrite.
 
 Two rules about a release rather than a file: a `phase=contract` file refuses while
 its `expand=` version is not already in the installation's history, and nothing of

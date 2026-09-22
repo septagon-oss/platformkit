@@ -25,11 +25,13 @@ func Migrate(ctx context.Context, cfg config.Config, mods []module.Module) error
 
 // Drain finishes the data migrations a release left half-drained, which is the
 // worker's job on a tick (jobs.BackfillMigrations) and this door for a rehearsal or
-// an operator who is not going to wait for the tick. It calls the same
-// db.Backfill the worker calls, over the same sources the composition selected,
-// which is what makes a measurement of it worth anything.
+// an operator who is not going to wait for the tick. It calls the same db.BackfillWith
+// the worker calls, over the same sources the composition selected and with the same
+// budgets the configuration named, which is what makes a measurement of it worth
+// anything: the step that reports what a drain cost is not free to run it on different
+// patience from the one that will run it in production.
 func Drain(ctx context.Context, cfg config.Config, mods []module.Module) error {
-	return db.Backfill(ctx, cfg.Database.MigrateURL, MigrationSources(mods)...)
+	return db.BackfillWith(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), MigrationSources(mods)...)
 }
 
 // MigrationSources keeps the foundation first and modules in composition order.

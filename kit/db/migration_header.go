@@ -22,6 +22,12 @@ const (
 // table is wide enough to hold locks the running application is waiting on.
 const maxBatch = 100000
 
+// minReason is how much of a sentence an `allow=` has to carry. The value is never
+// parsed, so this checks nothing about what it says; it checks that the author wrote
+// the exception down rather than the shortest thing that satisfies the key, which is
+// the whole use of the key.
+const minReason = 3
+
 // installBackfillBatches bounds the drain Migrate performs itself: the drain of an
 // owner with no history at all (no reader, and no rows but the ones this installation
 // just wrote) and the resume of one a previous run left unfinished. Past it the process
@@ -39,9 +45,12 @@ var headerLine = regexp.MustCompile(`^-- pkit:(.*)$`)
 var migrationTable = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
 // migrationHeader is what the runner reads off a file's own declaration. body is
-// the file below the header: what a data migration wraps and what the rule table
-// reads, so that a value inside the header (batch=500) can never be the thing
-// that satisfies a rule about the SQL.
+// the file below the header as its author wrote it — what the drain sends to the
+// server — and plain is that same body with the comments gone and the case folded,
+// which is the one text both the rule table and the drain ask their questions of.
+// A second reading of a second text is how a file gets judged for one thing and
+// executed as another, and a value inside the header (batch=500) must never be the
+// thing that satisfies a rule about the SQL.
 type migrationHeader struct {
 	phase       string
 	contractOf  int64
@@ -49,6 +58,7 @@ type migrationHeader struct {
 	batch       int
 	table       string
 	body        string
+	plain       string
 	allowedRule []string
 }
 
@@ -108,8 +118,8 @@ func parseHeader(text string) (migrationHeader, error) {
 			}
 			keys = append(keys, key)
 		}
-		if lineAllows != "" && strings.TrimSpace(lineReason) == "" {
-			return h, fmt.Errorf("allow=%s carries no reason=: the sentence is the whole content of an exception, and without it the marker is a bypass with a name on it (allow=%s reason=<one sentence>)",
+		if lineAllows != "" && !saysSomething(lineReason) {
+			return h, fmt.Errorf("allow=%s carries no reason a reviewer could read: the sentence is the whole content of an exception, and a shorter reason than three characters is the empty reason with a letter in front of it (allow=%s reason=<one sentence>)",
 				lineAllows, lineAllows)
 		}
 		if lineAllows == "" && lineReason != "" {
@@ -143,6 +153,7 @@ func parseHeader(text string) (migrationHeader, error) {
 		return h, fmt.Errorf("unknown header key %s; the keys are %s — a key the runner does not read claims a review the runner never did",
 			strings.Join(unknown, ","), strings.Join(headerKeys, ", "))
 	}
+	h.plain = stripSQLComments(strings.ToLower(h.body))
 	return h, nil
 }
 
@@ -167,6 +178,17 @@ func (h *migrationHeader) set(key, value string) error {
 		if err != nil {
 			return fmt.Errorf("batch=%s is not a number of rows", strconv.Quote(value))
 		}
+		// The domain is refused at the key's own parse step, not in declare: the value
+		// a file wrote has to be the value the refusal names, and zero is what an
+		// absent key leaves behind. A range check that ran after the parse reads
+		// batch=0 as a file that wrote no batch at all, and sends the operator to add
+		// a line that is already there.
+		if n < 1 {
+			return fmt.Errorf("batch=%d is outside 1…%d: a window of no rows is a drain that never advances", n, maxBatch)
+		}
+		if n > maxBatch {
+			return fmt.Errorf("batch=%d is outside 1…%d; a window that wide is one transaction holding locks the running application is waiting on", n, maxBatch)
+		}
 		h.batch = n
 	case "table":
 		h.table = value
@@ -179,14 +201,16 @@ func (h *migrationHeader) set(key, value string) error {
 	return nil
 }
 
+// saysSomething is the domain of a reason=: the value is never parsed and never
+// matched — nobody but the reviewer reads it — so all the parser can check is that
+// a sentence was written rather than a character.
+func saysSomething(reason string) bool { return len([]rune(strings.TrimSpace(reason))) >= minReason }
+
 // declare refuses the combinations no single key's domain covers.
 func (h *migrationHeader) declare() error {
 	if h.batch != 0 {
 		if h.phase != phaseData {
 			return fmt.Errorf("batch=%d is only read on a phase=data file: a schema file runs in one transaction, and a window over it would bound nothing", h.batch)
-		}
-		if h.batch < 1 || h.batch > maxBatch {
-			return fmt.Errorf("batch=%d is outside 1…%d; a window that wide is one transaction holding locks the running application is waiting on", h.batch, maxBatch)
 		}
 	} else if h.phase == phaseData {
 		return fmt.Errorf("a phase=data file carries no batch=: the batch is the bound, and a body with no window is one statement over the whole table")

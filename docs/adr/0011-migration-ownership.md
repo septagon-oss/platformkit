@@ -140,8 +140,16 @@ Alongside it, the static rules the runner refuses before connecting — the rewr
 the plain index build, the dropped column outside a contract file — each named, each
 with a remedy, and the correctable ones exceptable by `-- pkit: allow=<rule>
 reason=<one sentence>`, the reason being the whole content of an exception and
-`unused-allow` refusing one that was not needed. Guards apply from a version the
-source states, because a rule cannot be refused on a file already applied somewhere:
+`unused-allow` refusing one that was not needed. A rule whose exception is none has no
+marker, and a marker naming such a rule is refused as the bypass it is rather than
+switching the rule off: those four state what PostgreSQL refuses, what the autocommit
+mode costs, or what a data file cannot survive, and a comment cannot make any of that
+false. The rules read operations rather than spellings — a type change is the `TYPE`
+clause inside an `ALTER TABLE`, which PostgreSQL lets be written with or without the
+`COLUMN` keyword — and the guard and the executor read one normalised text of the body,
+so the file that was judged is the file that runs.
+Guards apply from a version the source states, because a rule cannot be refused on a
+file already applied somewhere:
 the bytes are immutable and the only remedy left would be to stop the installation.
 [migrations/README.md](../../migrations/README.md) is the canonical table of keys and
 rules; this ADR stops short of duplicating it.

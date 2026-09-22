@@ -39,19 +39,30 @@ type migrationText struct {
 }
 
 var (
-	reAlterColumnType = regexp.MustCompile(`alter\s+table\b.*alter\s+column\b.*\b(type|set\s+data\s+type)\b`)
-	reAddColumn       = regexp.MustCompile(`\badd\s+column\b`)
-	reNotNull         = regexp.MustCompile(`\bnot\s+null\b`)
-	reDefault         = regexp.MustCompile(`\bdefault\b`)
-	reCreateIndex     = regexp.MustCompile(`^create\s+(unique\s+)?index\b`)
-	reConcurrently    = regexp.MustCompile(`\bconcurrently\b`)
-	reIndexTarget     = regexp.MustCompile(`\bon\s+([a-z_][\w.]*)`)
-	reCreateTable     = regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?([a-z_][\w.]*)`)
-	reDropColumn      = regexp.MustCompile(`\bdrop\s+column\b`)
-	reIfNotExists     = regexp.MustCompile(`\bif\s+not\s+exists\b`)
-	reIfExists        = regexp.MustCompile(`\bif\s+exists\b`)
-	reBatchWindow     = regexp.MustCompile(`\bbatch\b`)
-	reDDL             = regexp.MustCompile(`^(alter|create|drop)\b`)
+	// reAlterTable and reColumnTypeClause are the two halves of the statement the
+	// first rule is about. PostgreSQL makes the COLUMN keyword optional and spells
+	// the clause either `TYPE` or `SET DATA TYPE`; every spelling of it rewrites the
+	// whole table under ACCESS EXCLUSIVE, so the predicate reads the clause inside an
+	// ALTER TABLE statement rather than one spelling of the keyword.
+	reAlterTable       = regexp.MustCompile(`^alter\s+table\b`)
+	reColumnTypeClause = regexp.MustCompile(`\balter\s+(column\s+)?[a-z_][\w.$]*\s+(set\s+data\s+)?type\b`)
+	reAddColumn        = regexp.MustCompile(`\badd\s+column\b`)
+	reNotNull          = regexp.MustCompile(`\bnot\s+null\b`)
+	reDefault          = regexp.MustCompile(`\bdefault\b`)
+	reCreateIndex      = regexp.MustCompile(`^create\s+(unique\s+)?index\b`)
+	reDropIndex        = regexp.MustCompile(`^drop\s+index\b`)
+	reConcurrently     = regexp.MustCompile(`\bconcurrently\b`)
+	reIndexTarget      = regexp.MustCompile(`\bon\s+([a-z_][\w.]*)`)
+	reCreateTable      = regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?([a-z_][\w.]*)`)
+	reDropColumn       = regexp.MustCompile(`\bdrop\s+column\b`)
+	reIfNotExists      = regexp.MustCompile(`\bif\s+not\s+exists\b`)
+	reIfExists         = regexp.MustCompile(`\bif\s+exists\b`)
+	reDDL              = regexp.MustCompile(`^(alter|create|drop)\b`)
+	// reBatchWindow matches the drain's window relation where the SQL reads it, not
+	// the word anywhere. A body that only says "batch" in a comment or a string
+	// literal does not go through the window, and a body that names it in another
+	// case does: the case is folded before either reader sees it.
+	reBatchWindow = regexp.MustCompile(`\b(from|join|into|using)\s+batch\b`)
 )
 
 // rules is the table, in the order a reviewer reads it: the rewrites and locks
@@ -63,7 +74,7 @@ var rules = []rule{
 		does:      "changes a column's type, which rewrites the whole table under an ACCESS EXCLUSIVE lock while the application keeps trying to read it",
 		instead:   "add the new column, backfill it in batches, write both for a release, then drop the old one in a contract file",
 		exception: "allow=alter-column-type reason=<one sentence>",
-		fire:      func(f *migrationText) bool { return f.any(reAlterColumnType) }},
+		fire:      func(f *migrationText) bool { return f.rewritesAColumnType() }},
 	{name: "add-column-not-null",
 		does:      "adds a NOT NULL column with no DEFAULT, which rewrites the table and refuses every write while it does",
 		instead:   "add the column nullable with a DEFAULT, or backfill it and add the constraint after VALIDATE",
@@ -80,7 +91,7 @@ var rules = []rule{
 		exception: "allow=drop-column reason=<one sentence>, for a column no installation ever had rows in",
 		fire:      func(f *migrationText) bool { return f.phase != phaseContract && f.any(reDropColumn) }},
 	{name: "index-concurrent-without-autocommit",
-		does:    "runs CONCURRENTLY inside the transaction every migration file is applied in, which PostgreSQL refuses (SQLSTATE 25001)",
+		does:    "runs CONCURRENTLY inside the transaction every migration file is applied in, which PostgreSQL refuses there (its error 25001)",
 		instead: "add `-- pkit: autocommit=true`, which is the file shape that runs outside the transaction",
 		fire:    func(f *migrationText) bool { return !f.autocommit && f.any(reConcurrently) }},
 	{name: "autocommit-without-concurrently",
@@ -90,13 +101,13 @@ var rules = []rule{
 	{name: "autocommit-not-rerunnable",
 		does:    "is a file that can commit its statement and still be re-run, because its statement refuses a second run",
 		instead: "write CREATE INDEX CONCURRENTLY IF NOT EXISTS, or DROP INDEX CONCURRENTLY IF EXISTS",
-		fire:    func(f *migrationText) bool { return f.autocommit && f.indexWithoutIFNotExists() }},
+		fire:    func(f *migrationText) bool { return f.autocommit && f.statementRefusesASecondRun() }},
 	{name: "data-body-unbounded",
-		does:      "is a data file whose body never mentions batch, so the window cannot bound it and one statement walks the whole table",
+		does:      "is a data file whose body never reads the batch window, so the window cannot bound it and one statement walks the whole table",
 		instead:   "put the body's rows through the window (WHERE … IN (SELECT … FROM batch)), or say why the body bounds itself",
 		exception: "allow=data-body-unbounded reason=<one sentence>",
 		fire: func(f *migrationText) bool {
-			return f.phase == phaseData && !reBatchWindow.MatchString(f.body)
+			return f.phase == phaseData && !f.readsTheWindow()
 		}},
 	{name: "data-with-ddl",
 		does:    "changes the schema in the one file that runs outside a transaction and in pieces, where no DDL is atomic and none rolls back",
@@ -134,13 +145,27 @@ func isRule(name string) bool { return slices.Contains(ruleNames(), name) }
 // an allow that excepted nothing. It reads the file's own text, so it runs before
 // the runner connects: an invalid later file must not let an earlier one change
 // the schema.
+//
+// A marker only excepts a rule that documents one. Four rules state no exception —
+// one of them says what PostgreSQL refuses, one what a mode costs, one what a data
+// file cannot survive — and a marker naming such a rule is a bypass whose name hides
+// it: unused-allow cannot see it, because the rule did fire, and the file then
+// answers in PostgreSQL's vocabulary rather than this table's.
 func checkRules(m migration) error {
 	f := newMigrationText(m)
 	fired := f.fires()
 	for _, r := range rules {
-		if slices.Contains(fired, r.name) && !slices.Contains(m.allowedRule, r.name) {
-			return ruleError(r)
+		if !slices.Contains(fired, r.name) {
+			continue
 		}
+		if slices.Contains(m.allowedRule, r.name) {
+			if r.exception == "" {
+				return fmt.Errorf("rule %s: this file %s; %s — allow=%s excepts nothing here: this rule has no exception, so the marker is a bypass with a rule name on it",
+					r.name, r.does, r.instead, r.name)
+			}
+			continue
+		}
+		return ruleError(r)
 	}
 	for _, allowed := range m.allowedRule {
 		if !slices.Contains(fired, allowed) {
@@ -159,10 +184,13 @@ func ruleError(r rule) error {
 	return msg
 }
 
-// newMigrationText strips the comments and splits the body the way every rule
-// reads it.
+// newMigrationText takes the file as the rule table reads it: the one normalised
+// body parseHeader produced, split into statements. It does not make a text of its
+// own, because the drain asks the same body the same question (does this file go
+// through the window) and a body judged by one reader and executed by another is a
+// file whose execution was not the file that was reviewed.
 func newMigrationText(m migration) *migrationText {
-	body := stripSQLComments(strings.ToLower(m.body))
+	body := m.plain
 	f := &migrationText{
 		phase:      m.phase,
 		autocommit: m.autocommit,
@@ -187,6 +215,27 @@ func (f *migrationText) fires() []string {
 }
 
 func (f *migrationText) any(re *regexp.Regexp) bool { return re.MatchString(f.body) }
+
+// rewritesAColumnType is the first rule's subject: a statement that changes a
+// column's type. Both halves have to be in the one statement — an ALTER TABLE, and
+// the clause that rewrites it — because a rule about a table rewrite must not fire
+// over two statements that happen to sit near each other, and must not miss the
+// spelling that leaves the keyword out.
+func (f *migrationText) rewritesAColumnType() bool {
+	for _, statement := range f.statements {
+		statement = strings.TrimSpace(statement)
+		if reAlterTable.MatchString(statement) && reColumnTypeClause.MatchString(statement) {
+			return true
+		}
+	}
+	return false
+}
+
+// readsTheWindow is the one question the rule table and the drain ask the same body:
+// does this SQL read the window relation the kernel wraps around it. The rule fires
+// when a data file does not, and the drain only wraps a body that does — a body
+// wrapped without reading the window is run once per window over the whole table.
+func (f *migrationText) readsTheWindow() bool { return reBatchWindow.MatchString(f.body) }
 
 func (f *migrationText) anyStatement(re *regexp.Regexp) bool {
 	for _, statement := range f.statements {
@@ -214,16 +263,20 @@ func (f *migrationText) indexesANewTable() bool {
 	return false
 }
 
-// indexWithoutIFNotExists is the one statement an autocommit file exists to run,
-// and the form that survives its own success: the statement can commit while the
-// version stays unapplied, and the next run has to be able to repeat it.
-func (f *migrationText) indexWithoutIFNotExists() bool {
+// statementRefusesASecondRun is the statement an autocommit file exists to run, in
+// the form that does not survive its own success: the statement can commit while the
+// version stays unapplied, and the next run has to be able to repeat it. Both of the
+// statements the mode is for are checked, because both are in the rule's own remedy
+// and only one of them is a CREATE.
+func (f *migrationText) statementRefusesASecondRun() bool {
 	for _, statement := range f.statements {
 		statement = strings.TrimSpace(statement)
-		if !reCreateIndex.MatchString(statement) || !reConcurrently.MatchString(statement) {
+		if !reConcurrently.MatchString(statement) {
 			continue
 		}
-		if !reIfNotExists.MatchString(statement) && !reIfExists.MatchString(statement) {
+		switch {
+		case reCreateIndex.MatchString(statement) && !reIfNotExists.MatchString(statement),
+			reDropIndex.MatchString(statement) && !reIfExists.MatchString(statement):
 			return true
 		}
 	}

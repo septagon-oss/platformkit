@@ -37,86 +37,127 @@ var ErrBackfillBudget = errors.New("db: backfill stopped at the bound an install
 // drain runs one pending data file to completion, or to the bound, or to the first
 // error, whichever comes first. Each window is its own transaction, so any of the
 // three leaves behind exactly the rows that committed.
-func (r *runner) drain(ctx context.Context, m migration, bound int) error {
+func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport, error) {
 	conn := r.conn
+	var report drainReport
 	key, err := primaryKey(ctx, conn, m.table)
 	if err != nil {
-		return err
+		return report, err
 	}
 	if err := beginDrain(ctx, conn, m); err != nil {
-		return err
+		return report, err
 	}
-	if m.windowed() && len(splitStatements(strings.ToLower(m.body))) > 1 {
-		return fmt.Errorf("a data file is one statement: the window wraps the body, and a second statement would be run over a window of its own with no cursor between them; split the file")
+	if m.windowed() && len(splitStatements(m.plain)) > 1 {
+		return report, fmt.Errorf("a data file is one statement: the window wraps the body, and a second statement would be run over a window of its own with no cursor between them; split the file")
 	}
 	progress := drainCursor(ctx, conn, m.migrationID)
 	if progress.err != nil {
-		return progress.err
+		return report, progress.err
 	}
 	cursor := progress.cursor
-	for batches := 0; ; batches++ {
-		if bound > 0 && batches >= bound {
-			return fmt.Errorf("%w (owner %s version %d, %d batches of %d, cursor %s)",
-				ErrBackfillBudget, m.owner, m.version, batches, m.batch, cursor)
+	report.cursor = cursor
+	for {
+		if bound > 0 && report.batches >= bound {
+			return report, fmt.Errorf("%w (owner %s version %d, %d batches of %d, cursor %s)",
+				ErrBackfillBudget, m.owner, m.version, report.batches, m.batch, cursor)
 		}
 		// Re-asserted per batch: db.Backfill drains on a tick with no file around it,
 		// and a batch with no budget waits forever for a row a request is holding.
 		if err := r.budgets(ctx); err != nil {
-			return err
+			return report, err
 		}
-		done, err := drainWindow(ctx, conn, m, key, &cursor)
+		done, rows, err := drainWindow(ctx, conn, m, key, &cursor)
 		if err != nil {
-			return err
+			return report, err
 		}
+		if rows > 0 {
+			report.batches++
+		}
+		report.cursor = cursor
 		if done {
-			return nil
+			return report, nil
 		}
 	}
+}
+
+// drainReport is what a drain says about itself when it is over: the batches that
+// committed work, and the key the last one left. The runner logs both, because
+// three batches and fifty at the same duration are two different releases, and
+// nothing outside the loop can tell them apart.
+type drainReport struct {
+	batches int
+	cursor  string
 }
 
 // drainWindow is one batch: the window measured, the body run over it, and the
 // cursor moved to the last key of it — all in one transaction, which is the whole
 // claim the batch job exists for. An empty window is the end of the table, and the
-// history row and the progress row change hands inside that same transaction.
-func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey, cursor *string) (bool, error) {
+// history row and the progress row change hands inside that same transaction. It
+// reports whether the table is at its end and how many rows the batch wrote, which
+// is what the runner counts and logs.
+func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey, cursor *string) (done bool, rows int64, err error) {
+	started := time.Now()
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	defer tx.Rollback()
 	if err := crossTenants(ctx, tx); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if !m.windowed() {
-		// The file excepted data-body-unbounded, which is its owner saying the
-		// body bounds itself. It runs once, in this transaction, and the drain is
-		// over: there is no window to resume, and nothing to pretend otherwise.
-		if _, err := tx.ExecContext(ctx, m.body); err != nil {
-			return false, err
+		// The file excepted data-body-unbounded, which is its owner saying the body
+		// bounds itself. The one reading that decided this is the reading the rule
+		// table made — the body with its comments gone and its case folded — so the
+		// file that was judged is the file that runs. It runs once, in this
+		// transaction, and the drain is over: there is no window to resume, and
+		// nothing to pretend otherwise.
+		result, err := tx.ExecContext(ctx, m.body)
+		if err != nil {
+			return false, 0, err
 		}
+		rows, _ = result.RowsAffected()
 		if err := finishDrain(ctx, tx, m); err != nil {
-			return false, err
+			return false, 0, err
 		}
-		return true, tx.Commit()
+		if err := tx.Commit(); err != nil {
+			return false, 0, err
+		}
+		batchReported(ctx, m, rows, *cursor, started)
+		return true, rows, nil
 	}
-	rows, top, err := window(ctx, tx, m, key, *cursor)
+	measured, top, err := window(ctx, tx, m, key, *cursor)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
-	if rows == 0 {
+	if measured == 0 {
 		if err := finishDrain(ctx, tx, m); err != nil {
-			return false, err
+			return false, 0, err
 		}
-		return true, tx.Commit()
+		return true, 0, tx.Commit()
 	}
 	if _, err := tx.ExecContext(ctx, m.windowedBody(key, *cursor), windowArgs(*cursor)...); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if err := advanceCursor(ctx, tx, m, *cursor, top); err != nil {
-		return false, err
+		return false, 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, 0, err
 	}
 	*cursor = top
-	return false, tx.Commit()
+	batchReported(ctx, m, measured, top, started)
+	return false, measured, nil
+}
+
+// batchReported is the drain's own progress line, at debug: which table is being
+// drained, how far the batch that just committed got, and how long it took. A drain
+// that stops halfway through a table otherwise reports its position only as a row in
+// schema_migration_backfill, which is where the next run looks and not where an
+// operator watching one does.
+func batchReported(ctx context.Context, m migration, rows int64, cursor string, started time.Time) {
+	slog.DebugContext(ctx, "db: backfill batch", "owner", m.owner, "version", m.version, "name", m.name,
+		"table", m.table, "rows", rows, "cursor", cursor, "duration_ms", time.Since(started).Milliseconds())
 }
 
 // finishDrain is the moment a data migration becomes an applied one: the history
@@ -131,10 +172,11 @@ func finishDrain(ctx context.Context, tx *sql.Tx, m migration) error {
 }
 
 // Backfill finishes the data migrations an installation has left unfinished, as
-// far as it can without touching schema. It is the worker's door, composed as
-// jobs.BackfillMigrations: Migrate stops in front of a drain over a table with
-// readers, because the process that drains one is this one, and a boot that
-// refused would stop the only role that can finish the work.
+// far as it can without touching schema, on the documented budgets. It is the
+// worker's door, composed as jobs.BackfillMigrations: Migrate stops in front of a
+// drain over a table with readers, because the process that drains one is this one,
+// and a boot that refused would stop the only role that can finish the work. It is
+// BackfillWith with no budget named, the same pair as Migrate and MigrateWith.
 //
 // It takes the files in order and stops an owner's walk at the first unapplied
 // schema file: a backfill runs against the schema the release installed, so the
@@ -147,6 +189,20 @@ func finishDrain(ctx context.Context, tx *sql.Tx, m migration) error {
 // protects a drain from a second runner is the compare-and-set on the cursor
 // rather than a lock held across the work.
 func Backfill(ctx context.Context, migrateURL string, sources ...MigrationSource) error {
+	return BackfillWith(ctx, migrateURL, MigrationBudget{}, sources...)
+}
+
+// BackfillWith is Backfill with the budgets a deployment named in its configuration,
+// re-asserted on the runner's session before every batch exactly as MigrateWith does
+// before every file. The drain is the longer half of a release — fifty transactions of
+// waiting for rows the running application is holding, where a file is one — so the
+// patience an operator shortened because a boot must not sit on a busy table is the
+// one that matters most here, and a drain that always ran on the default would run the
+// work on a patience its own deployment had refused.
+func BackfillWith(ctx context.Context, migrateURL string, budget MigrationBudget, sources ...MigrationSource) error {
+	if err := budget.validate(); err != nil {
+		return fmt.Errorf("db: backfill: %w", err)
+	}
 	migrations, _, err := readMigrations(sources)
 	if err != nil {
 		return err
@@ -168,22 +224,25 @@ func Backfill(ctx context.Context, migrateURL string, sources ...MigrationSource
 	if err != nil {
 		return err
 	}
-	run := &runner{conn: conn, budget: DefaultMigrationBudget()}
+	run := &runner{conn: conn, budget: budget}
 	for _, group := range groupedByOwner(pending) {
 		for _, m := range group {
 			if m.phase != phaseData {
 				break // the release has schema pending; the deploy migrates, then this drains
 			}
 			started := time.Now()
-			if err := run.drain(ctx, m, 0); err != nil {
+			report, err := run.drain(ctx, m, 0)
+			if err != nil {
 				return fmt.Errorf("db: backfill: %s/%s: %w", m.owner, m.name, run.refused(err))
 			}
 			// The drain's own measurement, in the same shape as the per-file line above:
 			// the rehearsal reports what the runner timed, and a backfill is the one
-			// migration a release most wants the length of.
+			// migration a release most wants the length of. The batch count travels with
+			// it, because a file that took three transactions and one that took fifty
+			// have the same duration and a different cost per row.
 			slog.InfoContext(ctx, "db: drained data migration",
 				"owner", m.owner, "version", m.version, "name", m.name, "table", m.table,
-				"batch", m.batch, "duration_ms", time.Since(started).Milliseconds())
+				"batch", m.batch, "batches", report.batches, "duration_ms", time.Since(started).Milliseconds())
 		}
 	}
 	return nil
@@ -338,12 +397,13 @@ func windowArgs(from string) []any {
 	return []any{from}
 }
 
-// windowed says whether this body goes through a window at all. A file that
-// excepted data-body-unbounded does not: its owner said the body bounds itself, and
-// the honest reading of that is one statement, run once, in one transaction.
-func (m migration) windowed() bool {
-	return reBatchWindow.MatchString(m.body)
-}
+// windowed says whether this body goes through a window at all. It is the same
+// question data-body-unbounded asks, of the same text: a file that never reads the
+// window relation is refused by the rule unless it excepts itself, and a file that
+// does gets the window around it. A body wrapped without reading the window would be
+// run once per window over every row of the table, which is the thing the rule exists
+// to make impossible.
+func (m migration) windowed() bool { return reBatchWindow.MatchString(m.plain) }
 
 // crossTenants is the one place a migration reaches every tenant's rows, and it
 // says so in the way scripts/check_gucs.sh reads: a drain that walked one tenant at
