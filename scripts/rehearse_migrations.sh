@@ -304,7 +304,19 @@ restore() { # $1 = database, $2 = dump file (custom format or plain SQL)
 	fi
 }
 
-note "candidate: $(git rev-parse --short HEAD)$(git diff --quiet || echo ' with a dirty tree')"
+# Measured reason for `git status --porcelain` rather than `git diff --quiet`: `git diff`
+# compares tracked content, and `go build` on the next line compiles what is not tracked
+# either. A migration file its author has just written and not yet committed — the exact
+# file this step exists to price — was then applied to the copy by the binary the step
+# built, and reported under the name of a revision that does not contain it. The report
+# is the artefact a release reads, so it names the tree the run was built from, and
+# `scripts/review5_rehearsal_provenance_test.sh` runs this line over a repository holding
+# one committed file and one uncommitted one. The test is on the captured text rather
+# than `| grep -q .`: this script runs under `pipefail`, and a `git status` whose output
+# fills the pipe before `grep -q` has its answer dies of SIGPIPE (141), which `&&` reads
+# as "clean" — measured over a tree of 5000 untracked files, which is a working tree mid
+# refactor and reported itself as clean.
+note "candidate: $(git rev-parse --short HEAD)$(test -n "$(git status --porcelain)" && echo ' with a dirty tree')"
 go build -o "$work/platformkit" ./apps/platformkit || die 2 "this tree does not build, so there is nothing to rehearse"
 
 if [ -n "$base" ]; then

@@ -299,7 +299,10 @@ It builds this tree, makes a copy of a production-shaped database — the previo
 release's own binary migrating a fresh one, then ten thousand rows per seeded table
 (`scripts/testdata/rehearse/seed.sql`), or an operator's dump restored into it — and
 runs `platformkit migrate --drain` against the copy while sampling `pg_stat_activity`
-for lock waits. It reports one line per file with the duration the runner measured,
+for lock waits. Its first line names the tree the run's binary was built from, saying
+so when that tree carries files the revision does not — `go build` compiles an
+uncommitted migration, which is the file this step exists to price, and `git diff` does
+not see it. It reports one line per file with the duration the runner measured,
 then the totals, then a verdict, and exits 0 (applied inside both budgets), 1 (a
 migration failed, rule refusals included — the candidate's own message is printed as
 soon as it stops, before any query of the step's own can fail over a copy the

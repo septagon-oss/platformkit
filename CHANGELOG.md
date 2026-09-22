@@ -72,7 +72,9 @@ budget or contended. It prints a failed migration's own message the moment it st
 before any query of its own can fail over a copy the candidate never migrated, and it
 refuses to report a measurement it did not take: a watcher that fell short of half the
 samples its own watched window resolves to is `LOCK WATCH BROKEN` and exit 2, and every
-report names the window it watched. A copy that could not be dropped is named as
+report names the window it watched and the tree its binary was built from — uncommitted
+files included, because `go build` compiles them and `git diff` does not see them. A
+copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
 
