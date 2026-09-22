@@ -146,11 +146,13 @@ func isRule(name string) bool { return slices.Contains(ruleNames(), name) }
 // the runner connects: an invalid later file must not let an earlier one change
 // the schema.
 //
-// A marker only excepts a rule that documents one. Four rules state no exception —
-// one of them says what PostgreSQL refuses, one what a mode costs, one what a data
-// file cannot survive — and a marker naming such a rule is a bypass whose name hides
-// it: unused-allow cannot see it, because the rule did fire, and the file then
-// answers in PostgreSQL's vocabulary rather than this table's.
+// A marker only excepts a rule that documents one. Four rules state no exception:
+// what PostgreSQL refuses inside the transaction every other file runs in, what
+// taking that transaction away costs, what a statement that cannot be re-run means
+// in that mode, and what a data file cannot survive. A marker naming one of them is
+// a bypass whose name hides it — unused-allow cannot see it, because the rule did
+// fire — and the file would then answer in PostgreSQL's vocabulary rather than this
+// table's.
 func checkRules(m migration) error {
 	f := newMigrationText(m)
 	fired := f.fires()
