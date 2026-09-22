@@ -44,7 +44,13 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 	// started. Every other refusal of a file's shape is the rule table's and happens
 	// before the runner connects; this one is the executor's, because it is the
 	// window that makes a data file one statement, and the window is written here.
-	if m.windowed() && len(splitStatements(m.plain)) > 1 {
+	//
+	// The count is taken of the split PostgreSQL makes, not of the one the rule table
+	// reads a dollar body inside: a semicolon inside a value the body is writing leaves
+	// the body one statement, and the window wraps it whole. This refusal has no marker,
+	// so the reading behind it has to be right — a file it refuses has no remedy, and
+	// "split the file" cannot split a file that is already one statement.
+	if m.windowed() && len(splitServerStatements(m.plain)) > 1 {
 		return drainReport{}, fmt.Errorf("a data file is one statement: the window wraps the body, and a second statement would be run over a window of its own with no cursor between them; split the file")
 	}
 	conn := r.conn

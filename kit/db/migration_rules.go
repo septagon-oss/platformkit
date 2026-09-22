@@ -37,7 +37,14 @@ type migrationText struct {
 	body       string
 	windowed   bool
 	statements []string
-	created    map[string]bool
+	// serverStatements is the same body cut where PostgreSQL cuts it. Three questions are
+	// asked of that cut rather than of `statements`, and they are the three this table
+	// refuses with no `allow=` to answer: whether a data body is one statement (the
+	// executor's), whether a statement begins with a DDL verb, and whether the file's own
+	// statement can be re-run. See splitStatements and splitServerStatements for why one
+	// file carries both cuts.
+	serverStatements []string
+	created          map[string]bool
 }
 
 // quotedName is the source for one identifier written the only way PostgreSQL takes
@@ -250,7 +257,10 @@ func newMigrationText(m migration) *migrationText {
 		body:       body,
 		windowed:   m.windowed(),
 		statements: splitStatements(body),
-		created:    map[string]bool{},
+		// The drain asks "is this one statement?" of the same cut this file asks its two
+		// unexceptable questions of, so the three are given the same cut to begin with.
+		serverStatements: splitServerStatements(body),
+		created:          map[string]bool{},
 	}
 	for _, found := range reCreateTable.FindAllStringSubmatch(body, -1) {
 		// `IF NOT EXISTS` is the spelling that says the table may already be there, which
@@ -259,8 +269,14 @@ func newMigrationText(m migration) *migrationText {
 		// is the SHARE lock over a table with readers the rule is about. Such a file is
 		// therefore not known to have created the table, and the exemption is the
 		// unconditional create's alone.
+		//
+		// The name is recorded with its quotes off, because it is the table that is exempted
+		// and not the spelling: PostgreSQL reads `CREATE TABLE "probe"` as the one table
+		// `CREATE INDEX … ON probe` names, and an exemption looked up by the punctuation the
+		// two lines happened to use refuses the file that follows the rule's own remedy.
 		if found[1] == "" {
-			f.created[found[2]] = true
+			name, _ := sqlIdent(found[2])
+			f.created[name] = true
 		}
 	}
 	return f
@@ -377,8 +393,22 @@ func addsANotNullDefinition(clause string) bool {
 	return false
 }
 
+// anyStatement asks whether any statement of the file matches, over the cut PostgreSQL
+// makes. It is the reading `data-with-ddl` has to be asked of, because that rule states no
+// exception: read from the inside, a `phase=data` body whose value carried `…; create table
+// ghost …` was refused for changing the schema — the sentence described a DDL statement the
+// file does not contain, and the `allow=` that would answer it is refused as a bypass.
+//
+// What a windowed body gains costs nothing: the kernel wraps it, so the only statement it can
+// hold is the one the wrapper goes round. What it costs is an unwindowed one — a body excepted
+// by `allow=data-body-unbounded`, the only data body that runs as written — whose
+// `$tag$ … $tag$` value can hold a `DO`-shaped statement list the server would run: DDL after
+// a semicolon inside such a value is no longer named here. It was named there by accident, the
+// same read that took a JSON value for a schema change, and the `DO $$ … $$` whose DDL is the
+// value's first words was never named at all. A data file that wants DDL and a body of its own
+// has two files, which is what the refusal already tells its author to write.
 func (f *migrationText) anyStatement(re *regexp.Regexp) bool {
-	for _, statement := range f.statements {
+	for _, statement := range f.serverStatements {
 		if re.MatchString(strings.TrimSpace(statement)) {
 			return true
 		}
@@ -398,8 +428,13 @@ func (f *migrationText) indexesANewTable() bool {
 		if !reCreateIndex.MatchString(statement) || reConcurrently.MatchString(statement) {
 			continue
 		}
+		// The target is looked up by the name it spells, not the spelling: the create and
+		// the build may quote the table differently, and PostgreSQL reads both as one table.
 		target := reIndexTarget.FindStringSubmatch(statement)
-		if target == nil || !f.created[target[1]] {
+		if target == nil {
+			return true
+		}
+		if name, _ := sqlIdent(target[1]); !f.created[name] {
 			return true
 		}
 	}
@@ -411,8 +446,16 @@ func (f *migrationText) indexesANewTable() bool {
 // version stays unapplied, and the next run has to be able to repeat it. Both of the
 // statements the mode is for are checked, because both are in the rule's own remedy
 // and only one of them is a CREATE.
+//
+// It reads the cut PostgreSQL makes for the same reason the two other refusals with no
+// `allow=` do: a file that writes a function body mentioning `CREATE INDEX CONCURRENTLY` does
+// not run that statement at all — measured, the server answers `CREATE INDEX CONCURRENTLY
+// cannot be executed from a function`, and `DROP INDEX CONCURRENTLY` the same way — so a
+// statement list inside one of this file's values can only ever be refused for a statement the
+// file cannot run, and this rule states no exception to answer it with. A file whose *own*
+// statement is the nontransactional one is refused exactly as it was.
 func (f *migrationText) statementRefusesASecondRun() bool {
-	for _, statement := range f.statements {
+	for _, statement := range f.serverStatements {
 		statement = strings.TrimSpace(statement)
 		if !reConcurrently.MatchString(statement) {
 			continue
@@ -523,7 +566,32 @@ func isEscapeString(text string, i int) bool {
 // body written inside a dollar-quoted function is split where its semicolons are,
 // which is the false positive the exception marker exists for. Nothing else about such a
 // body is read at all: see splitTopLevel.
+//
+// What that sentence licenses, and what it never did, is worth stating exactly: it
+// licenses a *rule* to read a construct it may be wrong about, because the file can answer
+// the rule with `allow=` and a sentence. It does not license a refusal the file cannot
+// answer that way — see splitServerStatements for the three questions that have no marker,
+// which are three this split used to answer.
 func splitStatements(body string) []string { return splitTopLevel(body, ';', true) }
+
+// splitServerStatements breaks the body where PostgreSQL breaks it. A semicolon inside a
+// `$tag$ … $tag$` value is data that value is writing, and the value is one argument to the
+// statement that carries it, so nothing after it is a statement of its own; outside the
+// value, every semicolon cuts, so a statement following a function body is still read whole
+// (the mistake this split must not repeat is counting the value's own quotes, which is what
+// `sqlToken` decides once for both readers).
+//
+// Three questions are asked of this reading, and they are the three no `allow=` reaches an
+// answer to: how many statements a body holds, which is the executor's question and decides
+// whether the window can wrap it at all (kit/db/backfill.go, drain); whether a statement
+// *begins* with a DDL verb, which is `data-with-ddl`'s; and whether the file's own statement
+// can be re-run, which is `autocommit-not-rerunnable`'s. A refusal with no marker is not a
+// judgement the author may contest, so it may not rest on a reading that is wrong about where
+// a value ends: the file it refuses is unshippable rather than correctable, and the remedy the
+// sentence names cannot be carried out. Everything else — the rewrites, the locks, the dropped
+// column — keeps the reading above, where over-reading a construct costs an author a marker and
+// its sentence rather than a release.
+func splitServerStatements(body string) []string { return splitTopLevel(body, ';', false) }
 
 // splitClauses breaks one statement on the commas between its ALTER TABLE actions,
 // which is where one column definition ends and the next begins. Parentheses are

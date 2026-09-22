@@ -214,20 +214,29 @@ into statements ask the same scanner where the construct ends. Counting the quot
 a dollar body did move it — one lone `"` in a function body left the splitter certain the
 rest of the file was a name, no later semicolon cut, and the two rules anchored at the
 front of a statement read no action in the `ALTER TABLE` after the body and offered no
-marker to except. A body's own semicolons still cut: that reading is deliberate, and it is
-the false positive a marker exists for.
+marker to except. A body's own semicolons still cut the reading the *rules* ask: that
+over-reading is deliberate, and it is the false positive a marker exists for — a rule is a
+judgement a file may answer, and the answer is `allow=` with a sentence. Three refusals have
+no answer to give, and those three are asked of the cut PostgreSQL makes, where a value holds
+its own semicolons: whether a `phase=data` body is one statement, which the executor decides
+before it wraps the body in the window, and the two rules with no exception that read a
+statement's first word (`data-with-ddl` and `autocommit-not-rerunnable`; the paragraph below
+the table says what that costs). A refusal no marker reaches is not a judgement the author may
+contest, so it may not rest on a reading that is wrong about where a value ends — the file it
+refuses is not correctable, and "split the file" cannot split a file that already holds one
+statement.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
 | `alter-column-type` | `ALTER [COLUMN] … TYPE` or `… SET DATA TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
 | `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` on that column | rewrites the table and refuses every write while it does | allowed |
-| `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create outright (`CREATE TABLE IF NOT EXISTS` says the table may already be there) | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
+| `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create outright, whichever spelling of the name the two lines wrote (`CREATE TABLE IF NOT EXISTS` says the table may already be there) | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
 | `drop-column` | `DROP [COLUMN] …` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
 | `index-concurrent-without-autocommit` | `CONCURRENTLY` without `autocommit=true` | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
 | `autocommit-without-concurrently` | `autocommit=true` with nothing nontransactional in the file | the marker gives up all-or-nothing; nothing may do that without a reason | none: delete the marker |
-| `autocommit-not-rerunnable` | an autocommit `CREATE INDEX CONCURRENTLY` without `IF NOT EXISTS`, or a `DROP INDEX CONCURRENTLY` without `IF EXISTS` | the statement can succeed while the version stays unapplied, so the next run must be able to repeat it | none |
+| `autocommit-not-rerunnable` | an autocommit file whose own statement is a `CREATE INDEX CONCURRENTLY` without `IF NOT EXISTS`, or a `DROP INDEX CONCURRENTLY` without `IF EXISTS` | the statement can succeed while the version stays unapplied, so the next run must be able to repeat it | none |
 | `data-body-unbounded` | a `phase=data` body that never reads the `batch` window | the window cannot bound it, so one statement walks the whole table | allowed, with the sentence saying how it bounds itself |
-| `data-with-ddl` | DDL in a `phase=data` file | that file runs outside a transaction, in pieces; DDL there has no rollback | none: split the file |
+| `data-with-ddl` | a statement of a `phase=data` file that begins with a DDL verb; the words of a DDL statement inside a value the backfill writes are the data it is writing, not a statement | that file runs outside a transaction, in pieces; DDL there has no rollback | none: split the file |
 | `data-writes-outbox` | `platformkit_outbox` named in a `phase=data` body | one event per row per attempt buries the relay and replays on a resume | allowed |
 | `unused-allow` | an `allow=` for a rule the file does not break | an exception nobody needed is a claim about a risk that is not there, and it outlives the sentence that justified it | none: delete the marker |
 
@@ -235,7 +244,16 @@ The rules whose exception column says `none` have no marker, and an `allow=` nam
 one is refused as what it is — a bypass with a rule name on it — rather than silently
 switching the rule off. Each of them states something a marker cannot make false: what
 PostgreSQL refuses, what the autocommit mode costs, or what a data file cannot
-survive.
+survive. Three of them — the executor's `a data file is one statement`, `data-with-ddl`
+and `autocommit-not-rerunnable` — are also decided from the cut PostgreSQL makes rather
+than the one the rules read a dollar body inside, for the same reason in the other
+direction: a refusal an author cannot answer with a marker may not rest on a reading that
+mistakes a value's punctuation for the file's statement structure. What that gives up is
+small and stated: a statement list written inside a value is no longer refused by the rule
+that reads a statement's first word, which is right for the function body it is (the
+server answers `CREATE INDEX CONCURRENTLY cannot be executed from a function`) and a data
+body excepted as unbounded that wanted real DDL has two files anyway, which is what the
+refusal tells its author.
 
 The rule about a type change reads the clause inside an `ALTER TABLE`, not the word
 `COLUMN`, because PostgreSQL makes that keyword optional and both spellings are the
@@ -262,7 +280,17 @@ name left neither half reading an action. The words
 `ALTER TABLE` puts after `DROP` for something that is not a column — `CONSTRAINT`,
 `IDENTITY`, `EXPRESSION`, `NOT NULL`, `DEFAULT` — are left alone when they are written
 bare, and so is a bare `DROP TABLE` or `DROP INDEX`, which is a different statement
-about a different object.
+about a different object. The exemption the `index-not-concurrent` rule grants is looked
+up the same way, by the table rather than the punctuation its two lines happened to use:
+`CREATE TABLE "probe"` creates the one table `CREATE INDEX … ON probe` names, and a file
+that ships its index in the file that creates the table — the remedy the refusal itself
+names — is excused by it whatever order the two spellings arrived in. What it cannot see is
+the case a quoted name was written in, because the text this rule reads arrives case-folded:
+`CREATE TABLE "Probe"` beside `CREATE INDEX … ON probe` names one table to the guard and two
+to the server, which folds only ASCII, and the guard then excuses a build it should refuse.
+That residual is the fold every rule in this table reads with, stated here rather than left
+for a reader to find: the file that spells one table two ways is a bug whatever the guard
+answers, and the exemption can only ever withhold a refusal, never impose one.
 
 Two rules about a release rather than a file: a `phase=contract` file refuses while
 its `expand=` version is not already in the installation's history, and nothing of

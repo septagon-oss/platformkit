@@ -127,7 +127,13 @@ A refusal of a data file leaves nothing resumable: the progress row means "this 
 started, resume it", so a shape the window cannot run is refused before that row exists.
 The guard cannot make that refusal instead of the executor: a guard refuses a whole owner
 before any of it runs, and the wrongness here is the window's own — the owner's earlier
-file has applied, and the version behind it is one statement too many.
+file has applied, and the version behind it is one statement too many. How many statements
+that is comes from the cut PostgreSQL makes, not from the reading the rule table reads a
+dollar body inside: a `;` inside a value the body is writing leaves the body one statement,
+and the window wraps it whole. A rule that over-reads a construct can be answered with
+`allow=` and a sentence; this refusal, `data-with-ddl` and `autocommit-not-rerunnable` — the
+three that read a statement split and state no exception — can be answered with nothing, and
+a refusal an author cannot answer may not rest on an approximation.
 
 **Refusals below the rule table.** Four refusals are not judgements about a file's text but
 facts about this database — a table that is not here, a key the window cannot walk, an
