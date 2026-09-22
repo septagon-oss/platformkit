@@ -99,6 +99,46 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 	return admin, app
 }
 
+// DeploymentSchema is the namespace an unqualified statement in this session
+// lands in, read back through an open owner connection: under the URLs this
+// package returns that is the schema it created for t, which is what public is
+// to an installation — the namespace the kernel's SQL lands in, and the one
+// whose default privileges the deployment pinned.
+//
+// It is exported because the name is this package's own fact and every caller
+// that opens a module's schema needs the namespace it is opening beside: a test
+// that derives a module-owner name from it, or that compares a module schema's
+// privileges against the deployment's answer, otherwise re-derives it by hand.
+// Such a caller cuts a schema name out of this answer, and then role names out
+// of that, so the answer is one namespace rather than a list of them.
+//
+// current_schema() is what makes that true. It is the namespace the server
+// resolved the session's path to, where current_setting('search_path') is the
+// raw setting the URL asked for — and a setting is a list: the default is
+// "$user", public, so an installation whose pins live in public resolves to
+// public whatever its path names first. A caller handed the setting would write
+// a comma into the middle of an identifier. Nothing else is checked, because the
+// server's answer is a schema name by construction and this package makes the
+// schema its URLs name; the failure a caller can actually reach is the one no
+// prefix check could see, and it is stated below rather than left to whatever
+// the driver says about a NULL.
+//
+// The name comes from the server rather than from the connection URL for the
+// same reason the runner reads a file's checksum rather than trusting its name:
+// the answer has to be what the database resolved, not what this package meant.
+func DeploymentSchema(t testing.TB, admin *sql.DB) string {
+	t.Helper()
+	var schema sql.NullString
+	if err := admin.QueryRowContext(t.Context(), "SELECT current_schema()").Scan(&schema); err != nil {
+		t.Fatalf("dbtest: read the schema this connection lands in: %v", err)
+	}
+	if !schema.Valid {
+		t.Fatal("dbtest: this session resolves to no schema at all, which is what a search_path naming " +
+			"no schema this role may use answers; every URL this package returns names the schema it made")
+	}
+	return schema.String
+}
+
 // Open is a database/sql pool on rawURL, closed when the test ends.
 func Open(t *testing.T, rawURL string) *sql.DB {
 	t.Helper()
