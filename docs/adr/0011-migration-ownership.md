@@ -163,10 +163,17 @@ clause inside an `ALTER TABLE`, which PostgreSQL lets be written with or without
 `COLUMN` keyword, a `DROP` inside an `ALTER TABLE` takes that keyword away from the
 running release whether or not the file spelled it, and a `NOT NULL` column is read from
 that column's own definition, so a `DEFAULT` belonging to a statement beside it excuses
-nothing — and the guard and the executor read one normalised text of the body,
+nothing — and each of those three reads the *name* the action carries in either spelling
+PostgreSQL takes it: a column named after a reserved word, or created inside double
+quotes, can only ever be named quoted, so a capture that stops at the bare identifier
+reads no action at all for exactly those columns, and the harm the rule is about ships
+with no rule named. A quoted name is the name and never the keyword it happens to spell,
+so `DROP "constraint"` takes a column away where `DROP CONSTRAINT c` does not —
+and the guard and the executor read one normalised text of the body,
 so the file that was judged is the file that runs. That one text is read where the
 server reads it: a `--` inside a value is data, the apostrophe inside a `/* … */` is
-commentary, a `$tag$ … $tag$` body is one value and an `E'…'` closes past its escapes,
+commentary, a `$tag$ … $tag$` body is one value whatever letters its tag carries (a tag
+is a name, and a name takes the database's own letters) and an `E'…'` closes past its escapes,
 because a reading that lost its place answered the window question wrongly in both
 directions — a bounded body refused as unbounded, and an unbounded one wrapped and run
 once per window over every row.

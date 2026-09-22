@@ -87,14 +87,21 @@ that repeats rows.
 **The drain, and who runs it.** A `phase=data` file's body is wrapped over a window
 of its table's primary key and run once per window, one committed transaction per
 window — unless the file said its body bounds itself, in which case it runs once, in
-one transaction. `migration.windowed` answers that one question, once, and the rule
+one transaction. The key may be of any single-column primary key type: the cursor
+travels as the key cast to text and comes back as a comparison against that type's own
+name, read from the catalogue, so the drain asks PostgreSQL for the ordering instead of
+keeping a list of the types it is willing to name. What it refuses is a table it cannot
+window over at all — one keyed by two columns, or a `table=` no selected owner creates —
+naming the key it could not find or the table that is not there, and writing neither a
+history row nor a progress row. `migration.windowed` answers that one question, once, and the rule
 table and the executor both take the answer from it — of one reading of the body
 (`scanSQL`: comments gone, case folded, and the contents of every string literal put
 away, because two dashes inside a value are data and not the comment that would
 otherwise hide the rest of the line from the guard; and the boundary of a comment and
 of a literal is taken wherever PostgreSQL takes it, across a `/* … */` that nests and
-spans lines, a `$tag$ … $tag$` value that carries apostrophes as data, and an `E'…'`
-that ends past its own escapes) — so the body the rule table
+spans lines, a `$tag$ … $tag$` value that carries apostrophes as data whatever letters
+its tag carries (a tag is a name, and in a UTF-8 database a name takes the database's
+own letters, not ASCII alone), and an `E'…'` that ends past its own escapes) — so the body the rule table
 judged is the body the executor runs, and a body that names the window only inside a
 value it writes is neither wrapped nor excused by accident.
 An installation with no history for that owner drains it during migration, bounded at

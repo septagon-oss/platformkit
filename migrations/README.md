@@ -205,15 +205,16 @@ The engine reads text with comments stripped, not a parse tree — the runner is
 a SQL parser — so a statement inside a dollar-quoted body can be flagged, and the
 answer is the marker. A comment is found where a comment actually starts, and so is a
 literal: two dashes inside `'…'` or `"…"` are data, the apostrophe inside a `--` or a
-`/* … */` is commentary, a `$tag$ … $tag$` body is one value and not a run of quotes,
-and an `E'…'` closes where its backslashes let it. None of them can move the boundary
-of what the guard sees.
+`/* … */` is commentary, a `$tag$ … $tag$` body is one value and not a run of quotes —
+whatever letters its tag carries, because a tag is a name and a name takes the
+database's own letters, not ASCII alone — and an `E'…'` closes where its backslashes let
+it. None of them can move the boundary of what the guard sees.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
 | `alter-column-type` | `ALTER [COLUMN] … TYPE` or `… SET DATA TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
 | `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` on that column | rewrites the table and refuses every write while it does | allowed |
-| `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
+| `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create outright (`CREATE TABLE IF NOT EXISTS` says the table may already be there) | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
 | `drop-column` | `DROP [COLUMN] …` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
 | `index-concurrent-without-autocommit` | `CONCURRENTLY` without `autocommit=true` | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
 | `autocommit-without-concurrently` | `autocommit=true` with nothing nontransactional in the file | the marker gives up all-or-nothing; nothing may do that without a reason | none: delete the marker |
@@ -239,10 +240,17 @@ over rows and not a constraint this file adds. `ADD COLUMN a integer NOT NULL, A
 COLUMN b integer DEFAULT 0` is refused for `a` whatever `b` says. The rule about a
 dropped column reads the optional keyword the same way, because PostgreSQL makes it
 optional there too: `ALTER TABLE probe DROP b` takes the same name away from the
-release running now, and it is refused whatever the word after `COLUMN` was. The words
+release running now, and it is refused whatever the word after `COLUMN` was. The name
+itself is read in either spelling PostgreSQL takes it: `ALTER TABLE probe DROP "order"`
+is not a spelling an author chose over another but the only one that parses, so a rule
+that read the bare identifier alone would read no action for the columns that cannot be
+named any other way — and a quoted name is the name and never the keyword it happens to
+spell, which is why `DROP "constraint"` is read as a dropped column where
+`DROP CONSTRAINT c` is not. The words
 `ALTER TABLE` puts after `DROP` for something that is not a column — `CONSTRAINT`,
-`IDENTITY`, `EXPRESSION`, `NOT NULL`, `DEFAULT` — are left alone, and so is a bare
-`DROP TABLE` or `DROP INDEX`, which is a different statement about a different object.
+`IDENTITY`, `EXPRESSION`, `NOT NULL`, `DEFAULT` — are left alone when they are written
+bare, and so is a bare `DROP TABLE` or `DROP INDEX`, which is a different statement
+about a different object.
 
 Two rules about a release rather than a file: a `phase=contract` file refuses while
 its `expand=` version is not already in the installation's history, and nothing of
