@@ -148,10 +148,13 @@ explains it (`refusal <id>: …`) because a log line is what an operator greps f
 | `contract-without-expansion` | the plan, after the ledger is read and before any file of that owner runs | the contract half waits for an `expand=` version this installation has not applied, and nothing of the owner applied |
 | `backfill-exceeds-install-budget` | the inline drain, as `db.ErrBackfillBudget` | the bound a migration gives itself was reached; the committed batches and the cursor stand, and the worker's tick finishes the table |
 
-`kit/db/refusal_names_test.go` refuses one of each and reads the id back off the message, and
-reads this table besides: an id named here that nothing prints, or a printed id nothing
-names, fails that case rather than drifting. A contended file is a report and not a refusal
-— it is `db.ErrContended`, and the paragraph above states what it promises.
+`kit/db/refusal_names_test.go` walks each of the four through the run that refuses it and
+reads the id back off the message, and `kit/db/review8_refusal_ids_are_the_table_test.go`
+reads this table and the ids `refusals.go` declares and refuses the two lists to differ.
+Between them the two halves of that promise hold: an id named here that nothing prints, or a
+printed id nothing names, fails one case or the other rather than drifting. A contended file
+is a report and not a refusal — it is `db.ErrContended`, and the paragraph above states what
+it promises.
 
 **The rehearsal.** A release is rehearsed against a copy of a production-shaped
 database before it is published: `make rehearse`, `scripts/rehearse_migrations.sh`,
