@@ -330,6 +330,76 @@ rejects 'no owner connection to create a database with' 'PLATFORMKIT_TEST_ADMIN_
 rejects 'a base revision that is not here' 'does not name a revision' "${rehearse[@]}" --base-ref no-such-revision
 echo 'rehearsal step: bad arguments and a missing owner connection are refused before a database is touched'
 
+# Two of the numbers this step reports are only worth what they say if the program
+# behind them runs, and both were silently broken once. Neither needs a database to
+# check, because the program is text in the step and the input is a log line the runner
+# really wrote and a file the step really writes.
+rehearse_script="$scripts/rehearse_migrations.sh"
+
+# 1. The contention grep. A POSIX bracket reads `[^\n]` as "not a backslash and not the
+# letter n", so the pattern this step first carried could not span the n inside "the
+# migration is contended": the CONTENDED branch never ran, the finding count stayed 0
+# and a contended release exited 1 ("a migration failed") from the one step whose job
+# is telling those two apart. The program is read out of the step rather than restated,
+# so the case cannot pass by agreeing with itself.
+contention=$(sed -n "s/^contended=\\\$(grep -o '\\(.*\\)'.*/\\1/p" "$rehearse_script")
+if [ -z "$contention" ]; then
+	echo 'FAIL: the rehearsal no longer greps the candidate log for a contended file at all; this case has to be rewritten to say what it does instead' >&2
+	exit 1
+fi
+cat >"$temporary/rehearse-run.log" <<'LOG'
+{"time":"2026-09-22T13:13:44+01:00","level":"INFO","msg":"db: applied migration","owner":"platformkit","version":21,"name":"000021_limits.up.sql","phase":"expand","duration_ms":3}
+platformkit: db: migrate: platformkit/000099_review_probe.up.sql: db: migration is contended: it could not take a lock within its budget; nothing this run had not already applied was applied, and it may be run again (lock_timeout 5s, statement_timeout 0): ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)
+LOG
+if ! grep -q "$contention" "$temporary/rehearse-run.log"; then
+	printf 'FAIL: the contention program %s matches nothing in the line the runner writes for a contended file: CONTENDED never prints, the finding count stays 0, and a contended release exits 1 rather than 3\n' "$contention" >&2
+	exit 1
+fi
+
+# 2. The lock-wait watcher. `\watch` repeats the query *buffer*, and a query handed to
+# `-c` is gone from the buffer by the time the next `-c` runs — psql 18 answers the
+# query once and then "\watch cannot be used with an empty query" — so the sample file
+# holds one line however long the run took, `lock_ms` could never pass `--max-lock-ms`,
+# and the step reported "0 sample(s) ~ 0ms" of a migration that had really waited five
+# seconds on a table lock. The step writes the query and its `\watch` into one file
+# psql reads with -f; these lines run the step's own lines that build that file.
+watch_program=$(awk '/^watch_sql=/{f=1} f{print} /^\t"\$SAMPLE_S" >"\$watch_sql"$/{f=0}' "$rehearse_script")
+if [ -z "$watch_program" ]; then
+	echo 'FAIL: the rehearsal no longer writes a query and a \watch into one file; this case has to be rewritten to say what it does instead' >&2
+	exit 1
+fi
+# The fixture runs the step's own lines — its SAMPLE_MS, its own derivation of the
+# interval from it, and the printf that builds the file — under the step's own variable
+# names. Nothing here restates the step: change how the step builds the file and this
+# runs the new way, and passes or fails the way the step then does.
+{
+	printf 'work=%s\nAPPNAME=%s\n' "$(printf '%q' "$temporary")" "$(printf '%q' platformkit-rehearse)"
+	sed -n '/^SAMPLE_MS=/p; /^SAMPLE_S=/p' "$rehearse_script"
+	printf '%s\n' "$watch_program"
+} >"$temporary/build-watch.sh"
+bash "$temporary/build-watch.sh"
+if ! grep -q 'pg_stat_activity' "$temporary/watch.sql"; then
+	printf 'FAIL: the file the step has psql watch holds no query:\n%s\n' "$watch_program" >&2
+	exit 1
+fi
+interval=$(sed -n 's/^\\watch //p' "$temporary/watch.sql")
+if [ -z "$interval" ]; then
+	echo 'FAIL: the file the step has psql watch holds no \watch line, so it samples once and the lock-wait finding can never fire' >&2
+	exit 1
+fi
+# The interval has to be SAMPLE_MS expressed in seconds: `samples × SAMPLE_MS` is the
+# length of the waits counted only if the interval waited on is the one multiplied by.
+sample_ms=$(sed -n 's/^SAMPLE_MS=\([0-9]*\)$/\1/p' "$rehearse_script")
+if ! awk -v interval="$interval" -v ms="$sample_ms" 'BEGIN { exit !(interval * 1000 > ms - 1 && interval * 1000 < ms + 1) }'; then
+	echo "FAIL: the watcher samples every ${interval}s and the step reports each sample as ${sample_ms}ms; one interval written twice has to agree with itself" >&2
+	exit 1
+fi
+if ! grep -qF -- '-At -o "$waits" -f "$watch_sql"' "$rehearse_script"; then
+	echo 'FAIL: the watcher no longer reads its query and \watch from the file the step builds; a query given to -c is gone from the buffer before \watch repeats it, and the sample file then holds one line for a run of any length' >&2
+	exit 1
+fi
+echo 'rehearsal step: the contended grep matches the runner'\''s line, and the lock-wait watcher holds a query and a \watch psql reads from one file'
+
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
 sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"

@@ -259,14 +259,22 @@ release's own binary migrating a fresh one, then ten thousand rows per seeded ta
 runs `platformkit migrate --drain` against the copy while sampling `pg_stat_activity`
 for lock waits. It reports one line per file with the duration the runner measured,
 then the totals, then a verdict, and exits 0 (applied inside both budgets), 1 (a
-migration failed, rule refusals included), 2 (it could not run) or 3 (a budget was
-overrun or a file came back contended). A contended file is a finding and never a
-pass: discovering it here is the point of doing this before the release rather than
-during it.
+migration failed, rule refusals included — the candidate's own message is printed as
+soon as it stops, before any query of the step's own can fail over a copy the
+candidate never migrated), 2 (it could not run, including a watcher that never
+sampled: a number the step did not take is not a pass) or 3 (a budget was overrun or
+a file came back contended). A contended file is a finding and never a pass:
+discovering it here is the point of doing this before the release rather than during
+it.
 
 What it does not measure, and no rehearsal can: the wait behind a table a running
 application is reading — there is no application here, and lock waits are sampled
-every 100 ms, so a shorter wait can be missed. `--max-file-seconds` and
+every 100 ms, so a shorter wait can be missed. That is the only gap the step leaves
+open on purpose, and it does not report across it: a run whose watcher fell short of
+the sample count its own interval resolves to prints `LOCK WATCH BROKEN` and exits 2,
+because "0 sample(s) ≈ 0ms" of a run that lasted a minute is a measurement that never
+happened. `--max-file-seconds` and
 `--max-lock-ms` are the operator's budgets, not the kernel's; `--keep` leaves the two
-databases behind for comparison, and nothing outside those two names is ever
-dropped.
+databases behind for comparison, nothing outside those two names is ever
+dropped, and a copy whose drop was refused is named on the output as `LEFT BEHIND`
+rather than kept quiet.

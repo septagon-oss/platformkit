@@ -168,7 +168,12 @@ binary from its revision, lets that release migrate a fresh database, seeds ten
 thousand rows per table into a copy of it, applies this tree's pending files against
 that copy while sampling `pg_stat_activity` for lock waits, and exits 0, 1, 2 or 3 so
 a pipeline can tell "applied inside budget" from "failed" from "could not run" from
-"over budget". A contended file in a rehearsal is a finding, never a pass. What it
+"over budget". A contended file in a rehearsal is a finding, never a pass — and
+neither is a rehearsal that did not measure: a watcher that fell short of the sample
+count its own interval resolves to is `LOCK WATCH BROKEN` and exit 2, because a
+reported 0 ms of a run that lasted a minute is a number the step never took. A failed
+candidate's own message is printed the moment it stops, ahead of any query the step
+makes of a copy the candidate may never have migrated. What it
 cannot measure is stated in the script: the wait behind a table a running application
 holds, and any lock wait shorter than the 100 ms sample.
 
@@ -198,11 +203,29 @@ states the budgets and the contended report against a real database, the eightee
 grammar refusals, one case per rule beside the `allow=` that excepts it, the contract
 half refusing and then applying, the batched drain proved from `xmin`, and the files
 behind an unfinished drain waiting for the worker.
+`kit/db/review_rules_test.go` is the same table read from the other side: a rule with no
+exception refuses the marker that names it, the type-change rule catches the spelling
+without the `COLUMN` keyword, an autocommit `DROP INDEX CONCURRENTLY` has to survive its
+own success, an excepted data body runs once however it names the window, and `batch=0`
+is refused for the value it is. `kit/db/review_guarantees_test.go` holds what the runner
+owes and nothing else checked: the app role against both of its tables, `ErrContended`
+under a budget a deployment named, the fifty-batch bound and the run that resumes it,
+two drains of one file committing the work once, and a finished drain staying finished.
+`kit/db/backfill_budget_test.go` puts the configured budget on the drain's own batches
+by holding a row the first window is about to write.
+`kit/app/review_drain_composed_test.go` boots the composition as the worker and waits
+for the tick to drain what the migration left, then applies the file that waited behind
+it; deleting the line that schedules that job fails this case and nothing else.
+`migrations/review_floors_test.go` proves each declared floor is the number the files
+force, in both directions.
 `apps/platformkit/migrate_test.go` shows `platformkit migrate` applying exactly the
 sources the composition selected — every owner and every one of its files — and the
 second run applying nothing further.
 `bash scripts/check_architecture_test.sh` holds the rehearsal's own refusals, which
-land before it touches a database; the step itself needs `psql`, an owner connection
+land before it touches a database, and reads two of its programs out of the script to
+run them here: the grep that decides a file came back contended, over the log line the
+runner really writes, and the watcher's file builder, whose interval has to be the one
+the step multiplies. The step itself needs `psql`, an owner connection
 and a previous revision, and was run against a PostgreSQL 16 with the fixture's ten
 thousand rows per table: one file applied, its duration the runner's own, and the
 same step exiting 3 when `--max-file-seconds 0` put every file over budget.

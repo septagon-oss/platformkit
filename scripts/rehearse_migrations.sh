@@ -28,8 +28,11 @@
 # three failures apart:
 #
 #	0  everything pending applied, inside both budgets
-#	1  a migration failed (a rule refusal lands here, with the rule's own message)
-#	2  the rehearsal could not run: no tools, no base, bad arguments
+#	1  a migration failed (a rule refusal lands here, with the rule's own message,
+#	   which this step prints as soon as the candidate stops — before any query of
+#	   its own can fail over a copy the candidate never migrated)
+#	2  the rehearsal could not run: no tools, no base, bad arguments, or its own
+#	   lock-wait watcher never sampled (a number it did not take is not a pass)
 #	3  a budget was exceeded, or a migration came back contended
 #
 # A contended migration is a finding and never a pass: discovering it is the whole
@@ -37,21 +40,31 @@
 #
 # It creates exactly two databases, `platformkit_rehearse_base_*` and
 # `platformkit_rehearse_run_*`, drops both on the way out unless `--keep` says
-# otherwise, and refuses to drop any name without one of those two prefixes. It
-# never touches the schemas `make down` owns.
+# otherwise, refuses to drop any name without one of those two prefixes, and says
+# `LEFT BEHIND <name>` out loud when a drop is refused — a copy of a production-shaped
+# database that stays is the size of the installation and nobody's business until it
+# is named. It never touches the schemas `make down` owns.
 #
 # What it does not measure: the wait behind a table a running application is
 # reading — there is no application here, and lock waits are *sampled* every
-# 100 ms, so a wait shorter than the interval can be missed. Both numbers are
-# reported as what they are.
+# 100 ms, so a wait shorter than the interval can be missed. That is the only gap
+# left open: a run whose watcher fell short of the samples its own interval
+# resolves to is reported as LOCK WATCH BROKEN and exits 2, because "0 sample(s)
+# ~ 0ms" of a run that lasted a minute is a measurement that never happened.
+# Both numbers are reported as what they are.
 set -Eeuo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
 # The resolution the lock watcher samples at, and the name it samples on: only
-# this run's migrate session carries it, which is why it is in the DSN.
+# this run's migrate session carries it, which is why it is in the DSN. psql's \watch
+# takes seconds and allows a fraction, so the interval it is given is derived from
+# SAMPLE_MS rather than written beside it: two numbers for one interval drift, and a
+# step that samples at one rate and reports the product of another reports a
+# measurement it did not take.
 SAMPLE_MS=100
+SAMPLE_S=$(printf '%d.%03d' "$((SAMPLE_MS / 1000))" "$((SAMPLE_MS % 1000))")
 APPNAME=platformkit-rehearse
 prefix="platformkit_rehearse_"
 
@@ -136,6 +149,18 @@ drop_database() {
 	*) echo "rehearse: refusing to drop $1: it is not this step's" >&2 ;;
 	esac
 }
+# A copy that will not drop stays behind, and says which one it is. Measured reason
+# this is not quiet: a run whose own session was still attached to its copy had its
+# DROP refused and said nothing at all, and a step that makes databases in a
+# production-shaped cluster cannot afford to lose one without a word — the leftover
+# is the size of the installation, and it is nobody's until somebody notices it.
+leave_or_drop() {
+	local error
+	if error=$(drop_database "$1" 2>&1); then
+		return 0
+	fi
+	echo "rehearse: LEFT BEHIND $1: the copy could not be dropped ($(printf '%s' "$error" | head -1))"
+}
 # The configuration the two binaries are handed. `bootstrap` opens the application
 # connection as well as the owner one — it writes a tenant — so the app URL has to be
 # the unprivileged role row-level security binds, which is why kit/db refuses to open
@@ -179,8 +204,8 @@ finish() {
 	if [ "$keep" = 1 ]; then
 		note "kept ${base:+$base and }$run"
 	else
-		[ -n "$base" ] && drop_database "$base" >/dev/null 2>&1 || true
-		drop_database "$run" >/dev/null 2>&1 || true
+		[ -n "$base" ] && leave_or_drop "$base" || true
+		leave_or_drop "$run" || true
 	fi
 	rm -rf "$work"
 	exit "$code"
@@ -292,21 +317,50 @@ if [ -n "$seed" ]; then
 fi
 
 # The watcher: one session, one query, sampled every SAMPLE_MS milliseconds, and
-# only this run's session carries the application name it filters on.
+# only this run's session carries the application name it filters on — which is also
+# why the query excludes its own pid: the watcher's session carries that name as
+# well, and a sample of itself waiting for something is not this run's lock wait.
+#
+# The query and the \watch that repeats it are written into one file which one psql
+# reads. Measured reason, on the client this step runs on (psql 18.6): a
+# `psql -c <query> -c '\watch 0.1'` answers the query once and then answers
+# "\watch cannot be used with an empty query" — a query handed to -c is gone from the
+# query buffer by the time the next -c runs, and \watch repeats the buffer. The
+# sample file then holds one line however long the run took, every number derived
+# from it is ~0ms, and the lock-wait finding can never fire. Read from a file the
+# buffer does hold the query: the same `\watch 0.1` put sixteen samples into three
+# seconds. The floor below is what turns that from a story into something the step
+# checks on every run.
 run_url="$(with_application_name "$(with_database "$admin_url" "$run")")"
-psql "$run_url" -At -o "$waits" \
-	-c "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$APPNAME' AND wait_event_type = 'Lock'" \
-	-c '\watch 0.1' >/dev/null 2>&1 &
+watch_sql="$work/watch.sql"
+printf '%s\n\\watch %s\n' \
+	"SELECT count(*) FROM pg_stat_activity WHERE application_name = '$APPNAME' AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'" \
+	"$SAMPLE_S" >"$watch_sql"
+psql "$run_url" -At -o "$waits" -f "$watch_sql" >/dev/null 2>&1 &
 watcher=$!
 
 write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url"
+run_started=$(date +%s)
 set +e
 "$work/platformkit" migrate --drain --config "$work/run.yaml" >"$work/run.log" 2>&1
 code=$?
 set -e
+run_seconds=$(( $(date +%s) - run_started ))
 kill "$watcher" 2>/dev/null || true
 wait "$watcher" 2>/dev/null || true
 watcher=""
+
+# The candidate's own words, first, and before anything this step asks the database.
+# Measured reason: under `set -Eeuo pipefail` a command substitution that fails ends
+# the script where it stands, and a candidate that refused before it connecting left a
+# copy migrated by the *previous* release's runner — which has no
+# schema_migration_backfill to inspect — so this step's own unfinished-drain query was
+# the last thing it printed and the rule's message, the one sentence the operator has
+# to act on, was never printed at all.
+if [ "$code" -ne 0 ]; then
+	tail -20 "$work/run.log" >&2
+	note "the migration failed; nothing past it applied"
+fi
 
 # Durations come from the runner's own lines, not from an estimate around the
 # process: the runner timed the file, and nothing outside the transaction knows
@@ -336,13 +390,34 @@ while IFS=$'\t' read -r owner version name phase ms; do
 done <"$work/files.tsv"
 
 samples=$(grep -c '^[1-9]' "$waits" 2>/dev/null || true)
+lines=$(grep -c '' <"$waits" 2>/dev/null || true)
 lock_ms=$((samples * SAMPLE_MS))
+
+# Whether this step measured anything at all. Every interval of the run puts a line in
+# the sample file, whether or not the count on it was non-zero, so a watcher that died
+# at once — or a \watch that never repeated its query — leaves one line for a run of any
+# length. Half the samples the interval resolves to across this run is the floor: under
+# it, "0 sample(s) ~ 0ms" would be a number the step never took, and the honest answer
+# to a release is that the rehearsal could not run (exit 2) rather than a pass built on
+# a measurement that did not happen.
+expected=$((run_seconds * 1000 / (SAMPLE_MS * 2)))
+if [ "$lines" -lt "$expected" ]; then
+	echo "LOCK WATCH BROKEN ${lines} sample line(s) for a ${run_seconds}s run; ${expected} is the fewest ${SAMPLE_MS}ms samples it could hold"
+	findings=$((findings + 1))
+	[ "$code" -ne 0 ] || code=2
+fi
 if [ "$lock_ms" -gt "$max_lock" ]; then
 	echo "LOCK WAIT ${lock_ms}ms > ${max_lock}ms"
 	findings=$((findings + 1))
 fi
 
-contended=$(grep -o 'db: migrate: [^\n]*contended[^\n]*' "$work/run.log" | tail -1 || true)
+# The bracket expression this line used to carry, `[^\n]*`, is not "not a newline" in a
+# POSIX bracket: it is "not a backslash and not the letter n", so the pattern could not
+# span the n inside the very words it was written to find and the branch under it never
+# ran — a contended release was reported as an ordinary failure (exit 1) by the one step
+# whose point is telling those two apart. The greedy form matches, and
+# scripts/check_architecture_test.sh runs it over the log line the runner really wrote.
+contended=$(grep -o 'db: migrate: .*contended.*' "$work/run.log" | tail -1 || true)
 if [ -n "$contended" ]; then
 	echo "CONTENDED $contended"
 	findings=$((findings + 1))
@@ -350,8 +425,14 @@ if [ -n "$contended" ]; then
 fi
 
 # The invariant the two runner tables hold: a completed drain leaves no progress
-# row. Anything here is a backfill the release did not finish.
-unfinished=$(psql_as "$run" -c "SELECT coalesce(string_agg(owner || '/' || version, ', ' ORDER BY owner, version), '') FROM schema_migration_backfill")
+# row. Anything here is a backfill the release did not finish. The query has no answer
+# when the candidate refused before it connected — the copy was migrated by the previous
+# release's runner, which may not have this table at all — and that is not the step's
+# last word: the candidate's message, printed above, is.
+if ! unfinished=$(psql_as "$run" -c "SELECT coalesce(string_agg(owner || '/' || version, ', ' ORDER BY owner, version), '') FROM schema_migration_backfill" 2>"$work/unfinished.err"); then
+	note "no unfinished-drain check: $(head -1 "$work/unfinished.err")"
+	unfinished=""
+fi
 if [ -n "$unfinished" ]; then
 	echo "DRAIN UNFINISHED $unfinished"
 	findings=$((findings + 1))
@@ -361,8 +442,11 @@ applied=$(wc -l <"$work/files.tsv")
 note "$applied file(s) applied in ${total}ms; longest $longest at ${longest_ms}ms"
 note "lock waits: $samples sample(s) of ${SAMPLE_MS}ms ≈ ${lock_ms}ms (sampled, so a wait shorter than ${SAMPLE_MS}ms can be missed)"
 if [ "$code" -ne 0 ]; then
-	tail -20 "$work/run.log" >&2
-	note "the migration failed; nothing past it applied"
+	# The candidate's message and the note that says what it stopped were printed
+	# above, as soon as the run ended. What is left to decide here is which of the
+	# four exit codes the release pipeline reads: a failure with no finding at all is
+	# the plain failure (1), and the findings already named their own code (2 for a
+	# step that could not measure, 3 for a budget overrun or a contended file).
 	[ "$findings" -gt 0 ] || code=1
 fi
 if [ "$findings" -gt 0 ] && [ "$code" -eq 0 ]; then code=3; fi
