@@ -169,14 +169,15 @@ CREATE INDEX billing_plans_currency ON billing_plans (currency)
 
 Each line is `-- pkit: key=value [key=value …]`. `reason=` is the one value that may
 carry spaces: its sentence ends at the end of its line, or at the next `key=` the
-grammar knows, whichever comes first — a declaration written after a sentence is read
-as a declaration, because the reading that eats it leaves the file running as a
-different kind of file with an exception on it that the eaten declaration made valid.
-Every other value is one word, and a key may not repeat. After the first line that is
-not a header line, a `-- pkit:` marker may not appear again — a marker the runner would
-not read claims a review the runner never did. The checksum covers the whole file
-including the header, so an applied file can never be marked: marking it would mean
-changing bytes some installation already ran.
+grammar knows, whichever comes first — a declaration written after a sentence, or glued
+straight after `reason=` with its space missing, is read as a declaration, and the empty
+sentence that leaves is refused by name. The reading that eats a declaration instead
+leaves the file running as a different kind of file, with an exception on it that the
+eaten declaration made valid. Every other value is one word, and a key may not repeat.
+After the first line that is not a header line, a `-- pkit:` marker may not appear
+again — a marker the runner would not read claims a review the runner never did. The
+checksum covers the whole file including the header, so an applied file can never be
+marked: marking it would mean changing bytes some installation already ran.
 
 | key | values | who reads it |
 | --- | --- | --- |

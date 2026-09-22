@@ -130,6 +130,10 @@ func parseHeader(text string) (migrationHeader, error) {
 			keys = append(keys, key)
 		}
 		if lineAllows != "" && !saysSomething(lineReason) {
+			if eaten := reasonOpensOnAkey(rest); eaten != "" {
+				return h, fmt.Errorf("reason= carries no sentence: %s is a declaration written where this line's sentence belongs, and a reader that called it prose would leave the file a different kind of file from what its own header says. The pairs come first and the sentence last (allow=%s key=value … reason=<one sentence>)",
+					strconv.Quote(eaten), lineAllows)
+			}
 			return h, fmt.Errorf("allow=%s carries no reason a reviewer could read: the sentence is the whole content of an exception, and a shorter reason than three characters is the empty reason with a letter in front of it (allow=%s reason=<one sentence>)",
 				lineAllows, lineAllows)
 		}
@@ -218,6 +222,24 @@ func (h *migrationHeader) set(key, value string) error {
 // a sentence was written rather than a character.
 func saysSomething(reason string) bool { return len([]rune(strings.TrimSpace(reason))) >= minReason }
 
+// reasonOpensOnAkey quotes the pair a line's reason= value opens with, which is the
+// shape where the sentence is not too short but absent: the text glued after `reason=`
+// is a declaration whose space went missing, `headerPairs` reads it as the declaration
+// it is, and nothing is left to be the sentence. An operator told "your reason is
+// empty" about a line that plainly carries text is sent to a line that is already
+// there, so the refusal names what it read instead.
+func reasonOpensOnAkey(rest string) string {
+	_, after, ok := strings.Cut(rest, "reason=")
+	if !ok {
+		return ""
+	}
+	word, _, _ := strings.Cut(after, " ")
+	if key, _, ok := strings.Cut(word, "="); !ok || !slices.Contains(headerKeys, key) {
+		return ""
+	}
+	return word
+}
+
 // declare refuses the combinations no single key's domain covers.
 func (h *migrationHeader) declare() error {
 	if h.batch != 0 {
@@ -274,8 +296,12 @@ func headerPairs(rest string) []keyValue {
 			remainder = ""
 		}
 		if key, value, ok := strings.Cut(token, "="); ok && key == "reason" {
-			sentence, tail := sentenceEnd(remainder)
-			pairs = append(pairs, keyValue{"reason", strings.TrimSpace(value + " " + sentence)})
+			// The scan starts inside the token, not after it: `reason=phase=data` carries
+			// a declaration whose space went missing, and a word shaped like a pair is a
+			// pair wherever it sits. What is left of the value is the sentence, and an
+			// empty one is refused as the empty reason it is.
+			sentence, tail := sentenceEnd(strings.Join([]string{value, strings.TrimLeft(remainder, " ")}, " "))
+			pairs = append(pairs, keyValue{"reason", strings.TrimSpace(sentence)})
 			rest = strings.TrimLeft(tail, " ")
 			continue
 		}
@@ -293,11 +319,11 @@ func headerPairs(rest string) []keyValue {
 	return pairs
 }
 
-// sentenceEnd is where a reason= stops being prose: the first word on the rest of
-// the line that opens a pair the grammar has, which is a declaration and not a
-// sentence's vocabulary. Everything before it is the sentence, and everything from
-// it on is parsed like any other part of the line — so a pair written after a
-// sentence is read, and prose the sentence did not finish is refused as the
+// sentenceEnd is where a reason= stops being prose: the first word of its value and
+// the rest of its line that opens a pair the grammar has, which is a declaration and
+// not a sentence's vocabulary. Everything before that word is the sentence, and
+// everything from it on is parsed like any other part of the line — so a pair written
+// after a sentence is read, and prose the sentence did not finish is refused as the
 // pair-shaped thing it is.
 func sentenceEnd(rest string) (sentence, tail string) {
 	for start := 0; start < len(rest); {

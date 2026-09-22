@@ -163,6 +163,7 @@ func TestMigrationHeaderGrammar(t *testing.T) {
 		// refuses as a contract half with no expansion named, and never as the
 		// expand file an unread `phase` would have made it.
 		{"a key after the reason is read", "-- pkit: allow=drop-column reason=the release after phase=contract", "expand="},
+		{"a key glued to the reason is read", "-- pkit: allow=drop-column reason=phase=data", "phase=data"},
 		{"two reasons on one line", "-- pkit: allow=drop-column reason=one sentence reason=another", "reason="},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
