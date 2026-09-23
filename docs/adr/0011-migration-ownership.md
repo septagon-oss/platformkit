@@ -156,7 +156,9 @@ reached, says so and carries on booting: the committed batches stand, the cursor
 where the next batch starts, and `schema-backfill` finishes the table. `kit/app` treats
 `db.ErrBackfillBudget` out of a migration as that report rather than a failed start;
 `platformkit migrate` and `Bootstrap`, doors that asked for a run which finishes, keep
-returning it.
+returning it. The worker's own drain is bounded too — ten thousand windows, which is more table
+than one tick should empty — because the answer to "this run has reached its bound" has to be a
+report the next tick can continue from rather than a process that never returns.
 
 Alongside it, the static rules the runner refuses before connecting — the rewrites,
 the plain index build, the dropped column outside a contract file — each named, each
@@ -166,13 +168,23 @@ reason=<one sentence>`, the reason being the whole content of an exception and
 marker, and a marker naming such a rule is refused as the bypass it is rather than
 switching the rule off: those four state what PostgreSQL refuses, what the autocommit
 mode costs, or what a data file cannot survive, and a comment cannot make any of that
-false. Which text each of the five refusals with no `allow=` is asked of — those four rules and
-the executor's count of a data file's statements — follows from that, because a refusal nobody can
+false. Which text each of the seven refusals with no `allow=` is asked of — those four rules and
+the executor's three — follows from that, because a refusal nobody can
 contest is not a place to approximate: the three that read a statement are asked of the cut
 PostgreSQL makes, where a value holds its own semicolons, and the two that ask after the word
 `CONCURRENTLY` of the file's own SQL with the contents of every value put away, since the two
 rules contradict each other by construction and a word read anywhere in the text let a file
-choose which one it answered by what it stored.
+choose which one it answered by what it stored. The executor's other two are the window's own
+shape and are read as shape: which relations the merged CTE list binds (a body that binds the
+window's own name `batch` is a statement PostgreSQL refuses, and it refuses it after the progress
+row), and which column the body writes that the cursor is ordered by (a body that moves its own
+key leaves the table never empty of work, and a drain that never ends is the worker's tick
+re-committing rows an earlier window committed). Neither reading turns on how the name was
+written — the CTE name in either spelling PostgreSQL takes, the assignment target in either shape
+it takes — and each names what it leaves alone: an inner list shadows rather than collides, a key
+merely read is not written, and an upsert's `DO UPDATE SET` names its target in the statement
+above it, which is why the bound one tick gives its drain, and not only that bound, is what stops
+a drain the reading cannot see.
 Four refusals are not judgements about a file's text at all but facts about this
 installation — a table that is not here, a key the window cannot walk, the expansion a
 contract half waits for, a drain past the bound a migration gives itself — and each prints

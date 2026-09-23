@@ -40,13 +40,20 @@ A boot that meets a drain
 already in flight resumes it under that same bound and boots whatever the bound leaves:
 `db.ErrBackfillBudget` out of a migration is the worker's to finish, not a failed
 deploy, while `platformkit migrate` and `Bootstrap` — doors asked to finish — still
-report it. A refused data file leaves no progress row behind, and the corrected file
+report it. The worker's own drain is bounded now too, at ten thousand windows: a tick that
+could not stop was a tick that never ended, holding the job's advisory lock while it repeated
+work. A refused data file leaves no progress row behind, and the corrected file
 then converges through the same door, because that row is what
-a resume reads and a file refused for its shape never ran — and the two shapes that
+a resume reads and a file refused for its shape never ran — and the three shapes that
 are the window's to refuse are named there rather than answered with a server error: a
-body of two statements, and a body that binds the window's own name `batch` to a
-relation of its own. A body that merely opens with a CTE list of its own is neither, and
-is drained: the window joins the body's list, since PostgreSQL takes one `WITH` per
+body of two statements; a body whose own CTE list binds the window's name `batch`; and a body
+that writes the column the cursor is ordered by, which leaves the table never empty of work. The
+last two are read as constructs, not as one way of writing them — the CTE name in either spelling
+PostgreSQL takes it, with a list inside a sub-expression left to the scope that shadows the window
+there, and the assignment target in either shape it takes it, a key merely read by the body left
+alone — and what those readings cannot see (an upsert's `DO UPDATE SET`, a body that only appends
+rows above the cursor) is ended by the tick's bound rather than by nothing. A body that merely opens with a CTE list of its own is none of them,
+and is drained: the window joins the body's list, since PostgreSQL takes one `WITH` per
 statement. The rules
 the runner refuses before connecting, the keys, and the floors each source declares are
 written down once in [migrations/README.md](migrations/README.md); the mode-scoped ban on

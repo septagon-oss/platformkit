@@ -130,21 +130,33 @@ the file itself under the same fifty-batch bound: a table longer than the bound 
 run with `ErrBackfillBudget` and the tick takes the rest. A body that said it bounds
 itself has no window to count, so that bound holds nothing to it and it stays the
 worker's even when it is last. A boot that refused a drain would stop the only role that
-can finish it. Neither answer to a drain in flight
-is a failed boot: a run that resumes one and reaches its own fifty-batch bound returns
+can finish it, and a tick that never ended would stop everything behind it: the worker's own
+drain is bounded too, at ten thousand windows, because a run that holds the `schema-backfill`
+advisory lock while it repeats work is worse than one that stops, reports
+`ErrBackfillBudget` with its batches and cursor standing, and is continued by the next tick.
+Neither answer to a drain in flight
+is a failed boot: a run that resumes one and reaches its own bound returns
 `ErrBackfillBudget` with the committed batches and the cursor standing, and `kit/app`
 logs that as the work its tick still has rather than refusing the start — the same
 failure one bound down. `platformkit migrate` and `Bootstrap` asked for a run that
 finishes, so those doors keep the error.
 A refusal of a data file leaves nothing resumable: the progress row means "this drain
 started, resume it", so a shape the window cannot run is refused before that row exists, and
-two shapes are that window's own: a body of two statements, and a body that binds the
-window's own name `batch` to a relation of its own (PostgreSQL answers two CTEs of one name
-by refusing the statement, so such a file would be re-refused by every later run). A body
-that merely *opens* with a CTE list of its own is not one of them: the window joins that
+three shapes are that window's own: a body of two statements; a body whose own CTE list binds the
+window's name `batch` (PostgreSQL answers two members of one CTE list by refusing the statement,
+so such a file would be re-refused by every later run); and a body that writes the column the
+cursor is ordered by, which puts the rows it touched back above the position the drain just
+committed and so never empties the table. The first is counted; the other two are read as
+constructs and not as spellings — the members of the list the wrapper joins, with each name taken
+in either spelling the server accepts and a list inside a sub-expression left to the scope that
+shadows it, and the assignment targets of the statements naming the drained table, in both shapes
+PostgreSQL writes a column with. A body that merely *opens* with a CTE list of its own is none of
+them: the window joins that
 list, `RECURSIVE` included, because PostgreSQL takes one `WITH` per statement and pasting a
 second in front of the body answered a file the kernel had assembled with the server's own
-syntax error, after the progress row.
+syntax error, after the progress row. A key merely *mentioned* — in the predicate, as the source
+of another column's value, or in the words of a value the body writes — is none of them either,
+and neither is another table's key of the same name.
 The guard cannot make that refusal instead of the executor: a guard refuses a whole owner
 before any of it runs, and the wrongness here is the window's own — the owner's earlier
 file has applied, and the version behind it is one statement too many. How many statements
@@ -173,7 +185,7 @@ explains it (`refusal <id>: …`) because a log line is what an operator greps f
 | `data-table-missing` | the drain, before a progress row exists | the `table=` a data file names is not in this database — a file of another owner that was not selected, or a release that has not applied yet |
 | `data-key-not-primary-key` | the drain, before a progress row exists | the table has no single-column primary key to window over; a table keyed otherwise needs a drain its owner owns, in a job |
 | `contract-without-expansion` | the plan, after the ledger is read and before any file of that owner runs | the contract half waits for an `expand=` version this installation has not applied — or one no release of this owner can have applied, because the version is not a file before the half that names it, which is bounded the way a source's `RulesFrom` floor is and for the same reason — and nothing of the owner applied |
-| `backfill-exceeds-install-budget` | the inline drain, as `db.ErrBackfillBudget` | the bound a migration gives itself was reached; the committed batches and the cursor stand, and the worker's tick finishes the table |
+| `backfill-exceeds-install-budget` | the inline drain, and one tick of the worker's, as `db.ErrBackfillBudget` | the bound that run gives itself was reached — fifty windows for a drain a migration performs, ten thousand for one a tick performs, and the sentence carries the count it stopped at; the committed batches and the cursor stand, and the next run finishes the table |
 
 `kit/db/refusal_names_test.go` walks each of the four through the run that refuses it and
 reads the id back off the message, counting the ids it is counting off every non-test file of

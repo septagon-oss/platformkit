@@ -252,12 +252,13 @@ rest of the file was a name, no later semicolon cut, and the two rules anchored 
 front of a statement read no action in the `ALTER TABLE` after the body and offered no
 marker to except.
 
-Five refusals have no `allow=` to answer them — the executor's `a data file is one
-statement`, and the four rules whose exception column says `none` — and a refusal an author
+Seven refusals have no `allow=` to answer them — the executor's three (`a data file is one
+statement`, `the window is the relation named batch`, and the window's key being written by the
+body it wraps), and the four rules whose exception column says `none` — and a refusal an author
 cannot contest may not rest on a reading that is wrong about what the file *does*, because the
 file it refuses is not correctable: `unused-allow` refuses a marker for it, and the remedy its
 sentence names has to be a file shape the grammar will accept. The paragraph below the table
-names which reading each of the five is asked of, and what that gives up.
+names which reading each of the seven is asked of, and what that gives up.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
@@ -278,7 +279,7 @@ one is refused as what it is — a bypass with a rule name on it — rather than
 switching the rule off. Each of them states something a marker cannot make false: what
 PostgreSQL refuses, what the autocommit mode costs, or what a data file cannot
 survive. Because none of them can be answered, none of them is asked of a text that is wrong
-about what the file runs, and the five divide by the question each one asks. Three — the
+about what the file runs, and the seven divide by the question each one asks. Three — the
 executor's `a data file is one statement`, `data-with-ddl` and `autocommit-not-rerunnable` —
 are decided from the cut PostgreSQL makes rather than the one that reads a dollar body from the
 inside: a value holds its own semicolons, so a statement list written inside one is no longer
@@ -286,6 +287,23 @@ refused by the rule that reads a statement's first word. That is right for the f
 usually is (the server answers `CREATE INDEX CONCURRENTLY cannot be executed from a function`,
 measured at the pinned version and at the one after it), and a data body excepted as unbounded
 that wanted real DDL has two files anyway, which is what the refusal tells its author.
+
+The executor's other two are the window's own shape, and they are asked of the body's constructs
+rather than of any one way of writing them. A body whose CTE list binds the name `batch` cannot
+be merged with the window's own member of that name — PostgreSQL refuses two members of one name
+and refuses them after the progress row — so the reader walks the list the wrapper joins and
+reads each member's name in either spelling the server takes (`"batch"` is the name, `batch (id)`
+is the name with its column list, and a list inside a sub-expression is a different scope, which
+shadows the window and runs). A body that writes the column the cursor runs over puts its own rows
+back above that cursor, so the table never empties and every window behind the first re-commits
+rows an earlier one wrote; that reader needs the key, which is why it is the executor's and not
+this table's, and it reads the assignment targets of the statements that name the drained table —
+both shapes PostgreSQL takes for one, and neither a key mentioned in a predicate nor the words of
+an assignment inside a value the body stores. What they give up is stated where they are: an
+upsert's `DO UPDATE SET` and a `MERGE` arm name no target for that reader, and a body that only
+*appends* rows above the cursor is no write to a key at all — the bound one tick of the worker
+gives its drain is what ends those, and it reports `ErrBackfillBudget` rather than applying a
+version over work that is still there.
 
 The other two ask after one word, `CONCURRENTLY`, and ask it of the file's own SQL with the
 contents of every value put away. They contradict each other by construction — one refuses the
