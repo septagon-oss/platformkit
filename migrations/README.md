@@ -340,6 +340,15 @@ rule, which is the honest answer and a small one — PostgreSQL refuses that sta
 routine body anyway, and the file that ships it learns so from the server, in the one
 vocabulary this table cannot replace.
 
+The eighth asks its question of the file's markers rather than of any statement it runs, and it
+is the one of the eight that fires when another rule did *not*: `unused-allow` reads the file's
+`allow=` list beside the set of rules that did fire. That is why no over- or under-reading of a
+statement can make it wrong in an author's favour — the file it refuses claims a risk its own
+statements do not have, and the answer its sentence names is the deletion of the marker. What
+that gives up is the exception nobody needed, which is the only thing the rule was ever for: a
+marker outliving the sentence that justified it is a claim about a risk the next reader has to
+re-check by hand.
+
 The rule about a type change reads the clause inside an `ALTER TABLE`, not the word
 `COLUMN`, because PostgreSQL makes that keyword optional and both spellings are the
 same rewrite. The rule about a `NOT NULL` column reads one column definition at a time

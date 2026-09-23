@@ -190,7 +190,10 @@ merely read is not written, a key set merely shrunk is the cursor's own work don
 upsert's `DO UPDATE SET` or a `MERGE` arm names its target in the statement above it, which is
 where a re-key written that way is refused. What the bound one tick gives its drain stops is the
 body that reaches its table without naming it at all — a view over it, a function the server runs,
-a trigger the table carries.
+a trigger the table carries. The eighth is asked of none of those texts: `unused-allow` reads the
+file's `allow=` markers beside the set of rules that did fire, so the one refusal an author cannot
+contest at all is the only one whose question is not about the SQL — it refuses the exception the
+file does not need, and its answer is the deletion of a marker rather than a reading.
 Four refusals are not judgements about a file's text at all but facts about this
 installation — a table that is not here, a key the window cannot walk, the expansion a
 contract half waits for, a drain past the bound a migration gives itself — and each prints
