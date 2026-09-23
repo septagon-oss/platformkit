@@ -2,7 +2,8 @@ package db_test
 
 // window_shape_readings_test.go pins the two readings the window makes of a body by its
 // *constructs* rather than by one spelling of them, and the bound that ends a tick whose drain
-// neither reading stopped.
+// neither reading stopped — which, since the fourteenth round, is a drain that reaches the drained
+// table through a view rather than one that names it and appends.
 //
 // The thirteenth review's first finding was that `batch` as a *binding* was refused by asking
 // the shape for the four characters `batch as (` — so a quoted lower-case name (the same
@@ -15,12 +16,12 @@ package db_test
 // under test here is a reading of the grammar position: the members of the CTE list the wrapper
 // joins, and the assignment targets of the UPDATE that names the drained table.
 //
-// Every group therefore has both halves. What binds the window's name or writes its key is
-// refused whichever way it was written; what only *looks* like one of those shapes still drains,
-// which is what keeps a guard that reads a construct from becoming a guard that matches more
-// text. The last case asks what ends a drain neither reading stopped, because the answer has to
-// be a number: the alternative is a tick that repeats work forever and never applies the
-// version, holding the advisory lock that job's name elects on.
+// Every group therefore has both halves. What binds the window's name, writes its key or adds
+// rows to the table it drains is refused whichever way it was written; what only *looks* like one
+// of those shapes still drains, which is what keeps a guard that reads a construct from becoming a
+// guard that matches more text. The last case asks what ends a drain neither reading stopped,
+// because the answer has to be a number: the alternative is a tick that repeats work forever and
+// never applies the version, holding the advisory lock that job's name elects on.
 
 import (
 	"context"
@@ -223,8 +224,10 @@ func TestADataBodyThatWritesTheWindowKeyIsRefusedBeforeTheProgressRow(t *testing
 // side. A key mentioned in the predicate, as the source of another column's value, in the words
 // of a value, or as another table's key of the same name is a key the cursor holds still, and
 // those files drain. What must refuse is the same column written by the UPDATE over the drained
-// table, in each of the shapes PostgreSQL takes for writing a column: the second item of the
-// list, a multi-column assignment, an aliased target, and a name written quoted.
+// table, in each of the shapes PostgreSQL takes for writing a column — the second item of the
+// list, a multi-column assignment, an aliased target with or without its `AS`, the target written
+// as ONLY or with its star, and a name written quoted — and the rows an INSERT or a MERGE adds to
+// that same table, which move the key set without assigning to one key at all.
 func TestOnlyTheWindowKeyIsRefusedAmongWhatABodyWrites(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
@@ -266,9 +269,43 @@ func TestOnlyTheWindowKeyIsRefusedAmongWhatABodyWrites(t *testing.T) {
 			writes: true,
 		},
 		{
+			// The same alias without the word PostgreSQL does not require: one word away
+			// from the leg above, and the re-key the fourteenth round met.
+			name:   "the alias written without its AS",
+			body:   `UPDATE probe p SET id = id + 1 WHERE p.id IN (SELECT id FROM batch)`,
+			writes: true,
+		},
+		{
+			name:   "the target written as ONLY, with the parenthesis it may carry",
+			body:   `UPDATE ONLY (probe) SET id = id + 1 WHERE id IN (SELECT id FROM batch)`,
+			writes: true,
+		},
+		{
+			name:   "the target written with the star PostgreSQL allows after its name",
+			body:   `UPDATE probe * SET id = id + 1 WHERE id IN (SELECT id FROM batch)`,
+			writes: true,
+		},
+		{
 			name:   "the key written quoted, the only spelling a reserved word needs",
 			body:   `UPDATE probe SET "id" = id + 1 WHERE id IN (SELECT id FROM batch)`,
 			writes: true,
+		},
+		{
+			// Not an UPDATE at all: the upsert's arm names no target, and the statement
+			// carrying it names the drained table.
+			name:   "the key moved by an upsert's own arm",
+			body:   `INSERT INTO probe (id, note) SELECT id, 'x' FROM batch ON CONFLICT (id) DO UPDATE SET id = probe.id + 1000`,
+			writes: true,
+		},
+		{
+			name:   "the key moved by a merge arm",
+			body:   `MERGE INTO probe p USING batch ON p.id = batch.id WHEN MATCHED THEN UPDATE SET id = p.id + 1000`,
+			writes: true,
+		},
+		{
+			// The same append, aimed at a table whose key is nobody's cursor here.
+			name: "another table's rows added by this body",
+			body: `INSERT INTO other (id, other_id) SELECT id + 100, id FROM batch`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -331,19 +368,51 @@ INSERT INTO other (id, other_id) SELECT g, g FROM generate_series(1, 12) g`)},
 	}
 }
 
+// TestADataBodyThatEmptiesTheTableItDrainsStillDrains is the reading's other edge. What the cursor
+// cannot survive is a key set that grows above it; a body that takes rows away moves that set the
+// one safe way, and a purge written as a data file is a purge and not a re-key. Nothing here
+// refuses it, so this drains to its end and applies its version.
+func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
+	migrateURL, _ := dbtest.URLs(t)
+	files := windowShapesFiles(`DELETE FROM probe WHERE id IN (SELECT id FROM batch)`)
+	if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "purge", Files: files}); err != nil {
+		t.Fatalf("the window refused a body that only takes rows away: %v", err)
+	}
+	admin := dbtest.Open(t, migrateURL)
+	if n := countRows(t, admin, "SELECT count(*) FROM probe"); n != 0 {
+		t.Errorf("%d rows survive a purge of the table the drain windows over", n)
+	}
+	if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 0 {
+		t.Errorf("%d progress rows left by a drain that finished", n)
+	}
+	if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'purge' AND version = 2"); n != 1 {
+		t.Errorf("%d history rows for the drained purge, want 1", n)
+	}
+}
+
 // TestTheWorkersDrainEndsAtTheBoundATickGivesItself asks what stops a drain that runs forever for
-// a reason the key reading cannot see: an append above the cursor is no assignment to a key, and
-// the cursor is right that nothing above it has been written yet. The answer has to be a number,
-// because the alternative is a tick that repeats work and never applies the version.
+// a reason the key reading cannot see. It used to be an append to the drained table, which the
+// fourteenth round showed is the same harm as writing the key and is now refused; what is left is
+// the append the body never names — rows put into the table through a view over it, which the
+// server routes wherever the view says. The cursor is right that nothing above it was written yet,
+// and the answer has to be a number, because the alternative is a tick that repeats work and never
+// applies the version.
 //
 // The bound is reached, so the case costs a tick's worth of windows; its own context is the
 // deadline that turns a regression to no bound at all into a failure rather than a hang.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
-	files := windowShapesFiles(`INSERT INTO probe (id, note)
-SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`)
+	// The probe, and a plain view over it. The append below runs through the view, which is the
+	// spelling of "this table gains rows" that names something other than the drained table.
+	seed := &fstest.MapFile{Data: []byte(windowShapesProbe + `;
+CREATE VIEW probe_all AS SELECT id, note FROM probe`)}
+	files := fstest.MapFS{
+		"000001_probe.up.sql": seed,
+		"000002_fill.up.sql": windowShapesData(`INSERT INTO probe_all (id, note)
+SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
+	}
 	if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "ticks", Files: fstest.MapFS{
-		"000001_probe.up.sql": {Data: []byte(windowShapesProbe)},
+		"000001_probe.up.sql": seed,
 	}}); err != nil {
 		t.Fatal(err)
 	}

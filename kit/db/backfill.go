@@ -38,11 +38,15 @@ import (
 // yet" is a NULL cursor, because for a `text` key the empty string is a row).
 //
 // The cursor being a key buys resumability at the price of one assumption, and that one is
-// refused rather than trusted: the key set does not move. A body that writes the column the
-// window runs over puts its own rows back above the cursor the drain just advanced, so the
+// refused rather than trusted: the key set does not move. Two bodies move it. One writes the
+// column the window runs over, which puts the rows the drain already committed back above the
+// cursor. The other puts *new* rows into the table it drains — an append, an upsert, a re-key
+// written as a delete and an insert of the same statement — which stands keys above the cursor
+// that no window ever ordered, and the next window drains rows the last one created. Either way the
 // table is never empty of work and every window behind the first re-commits rows an earlier one
-// wrote. The drain reads the key out of the catalog and refuses such a body by name, before it
-// writes anything (movesTheWindowKey).
+// wrote. The drain reads the key out of the catalog and refuses both by name, before it writes
+// anything (movesTheWindowKey). Deleting rows moves the key set the other way, which is why the
+// drain's reading asks which table a statement *writes to*, not which rows it touches.
 
 // ErrBackfillBudget is the bound on a drain one run performs: the fifty windows a migration
 // gives itself, or the bound one tick of the worker gives itself (workerBackfillBatches). Past
@@ -89,14 +93,18 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 	// The third body the window cannot bound, and the one that could only be read here: the
 	// cursor is a key, so everything the drain concludes from it — that a short window is the
 	// end, that a resumed cursor has no row behind it, that a row is written once — holds of a
-	// key that stays where it was. A body that writes the column the window runs over puts its
-	// own rows back above the cursor, so the table is never empty of work, and the run rewrites
-	// rows an earlier window committed until the bound stops it. Which column that is is a fact
-	// of the catalog and not of the text, which is why this refusal is the drain's and not the
-	// rule table's; it is asked before beginDrain for the same reason the two above are.
-	if m.windowed() && movesTheWindowKey(m.body, m.table, key.column) {
-		return drainReport{}, fmt.Errorf("the window runs over %s's key %s: this body writes that column, so the rows it touches land above the cursor and every window behind this one rewrites them; a backfill writes the columns a key holds, not the key it holds — re-keying a table is a schema file or a job of its own, one that keeps its own position",
-			m.table, key.column)
+	// key set that stays where it was. A body that writes the column the window runs over puts
+	// its own rows back above the cursor, and a body that adds rows to the drained table puts
+	// keys above it that no window ordered yet; both leave the table never empty of work, and
+	// the run rewrites rows an earlier window committed until the bound stops it. Which column
+	// the cursor runs over is a fact of the catalog and not of the text, which is why this
+	// refusal is the drain's and not the rule table's; it is asked before beginDrain for the
+	// same reason the two above are.
+	if m.windowed() {
+		if move := movesTheWindowKey(m.body, m.table, key.column); move.found() {
+			return drainReport{}, fmt.Errorf("the window runs over %s's key %s: %s; %s",
+				m.table, key.column, move.wrote(), move.instead())
+		}
 	}
 	if err := beginDrain(ctx, conn, m); err != nil {
 		return report, err
@@ -704,26 +712,43 @@ func bindsWindowRelation(body string) bool {
 	}
 }
 
-// movesTheWindowKey says whether the body writes the column the window runs over. The cursor
-// is a key, and the drain reasons from it — a short window is the end because nothing is left
-// above that key, a resumed cursor has rows behind it and not in front of it, and a row that
-// committed is never taken again. Every one of those is a statement about a key that stays
-// where it was, and `UPDATE probe SET id = id + 1000 WHERE id IN (SELECT id FROM batch)`,
-// which is what re-keying a table looks like when somebody backfills it, answers all three
-// the wrong way: the rows the body touched are above the cursor it just moved past, so the
-// table never empties, and each window commits rows an earlier window already wrote.
+// movesTheWindowKey says what a body does to the key set the window runs over. The cursor is a
+// key, and the drain reasons from it — a short window is the end because nothing is left above
+// that key, a resumed cursor has rows behind it and not in front of it, and a row that committed
+// is never taken again. Every one of those is a statement about a key set that stays where it
+// was, and two shapes of body answer them the wrong way:
 //
-// So the refusal reads the assignment list of the UPDATEs that name the drained table. A
-// target is a name in the position an assignment starts in, both shapes of it (`SET id = …`
-// and the multi-column `SET (id, note) = (…)`), and a word inside a value is not a target —
-// the body that stores the text `set id =` in a column writes a sentence, not a key, which is
-// the same line every other reading in this package draws. What it gives up is stated rather
-// than assumed: an upsert's `DO UPDATE SET` and a `MERGE` arm name no target table for this
-// reader — the statement carrying them names it — and an alias written without `AS` moves the
-// word the reader expects. Those bodies are missed, and the bound a drain gives itself
-// (workerBackfillBatches) is what ends one that this reading did not stop; a body that renames
-// a key in either of those shapes, or one that only ever *reads* the key, is not refused.
-func movesTheWindowKey(body, table, column string) bool {
+//	UPDATE probe SET id = id + 1000 WHERE id IN (SELECT id FROM batch)
+//	INSERT INTO probe (id) SELECT id + 1000 FROM batch
+//
+// The first moves rows the drain already committed back above the cursor; the second puts new
+// keys above it for the next window to drain. Both leave the table never empty of work, and each
+// window behind the first writes rows an earlier window already wrote. Taking rows *away* moves
+// the key set the only safe way, so the reading asks which table a statement writes to and which
+// column an UPDATE assigns, and never how many rows arrive.
+//
+// So it walks the body's statements and asks each one its target: the assignment list of the
+// UPDATEs whose target it can name (both shapes of an assignment, `SET id = …` and the
+// multi-column `SET (id, note) = (…)`, and every spelling of the target PostgreSQL takes —
+// `ONLY` and the parenthesis it may carry, the schema qualification, the `*`, and the alias with
+// or without its `AS`), and the target of every INSERT and MERGE, which is the statement that
+// puts rows into a table. A word inside a value is not a
+// statement's structure — the body that stores the text `set id =` in a column writes a sentence,
+// not a key — the same line every other reading in this package draws.
+//
+// What it answers, and what it gives up, are stated rather than assumed. An upsert's
+// `DO UPDATE SET` and a `MERGE` arm name no target for the list reader, but the statement carrying
+// them does, so a re-key written as an upsert or a merge over the drained table is refused at that
+// target and one written over another table moves nobody's cursor. What stays missed is a body
+// that reaches the drained table without naming it — through a view over it, or through a function
+// the server runs or a trigger the table carries — and the bound a drain gives itself
+// (workerBackfillBatches) is what ends one this reading did not stop. Which key an expression
+// yields is a value rather than a structure, so a body that appends rows below the cursor is
+// refused with the ones that append above it. That is the one place this reading is wider than its
+// harm, and it is answerable rather than unanswerable: the same `data-body-unbounded` marker that
+// takes the window off the body excepts it. A body that only *reads* the key, in a predicate or as
+// another column's value, is not refused: the cursor holds it still.
+func movesTheWindowKey(body, table, column string) windowKeyMove {
 	for at := 0; at < len(body); {
 		word, after, found := sqlWord(body, at)
 		if !found {
@@ -731,53 +756,125 @@ func movesTheWindowKey(body, table, column string) bool {
 			continue
 		}
 		at = after
-		if word != "update" {
-			continue
-		}
-		set, ok := setList(body, after, table)
-		if ok && setWritesColumn(body, set, column) {
-			return true
+		switch word {
+		case "update":
+			if set, ok := setList(body, after, table); ok && setWritesColumn(body, set, column) {
+				return keyWritten
+			}
+		case "insert", "merge":
+			if statementAddsRowsTo(body, after, table) {
+				return rowsAdded
+			}
 		}
 	}
-	return false
+	return keyHolds
 }
 
-// setList is the offset just past the `set` that opens an UPDATE's assignment list, given the
-// text after the word `update` and the table the window drains: `ONLY`, a schema qualification
-// and an `AS` alias are all walkable spellings of the same target, and a statement whose target
-// the reader cannot name — an upsert's `DO UPDATE`, a MERGE arm — is not an UPDATE of this
-// table as far as this refusal is concerned, because refusing those would take away the marker
-// the author has no remedy for.
-func setList(text string, at int, table string) (int, bool) {
+// windowKeyMove is that answer, with the two sentences the refusal prints: what the body did to
+// the key set, and what its author does instead. One refusal, because the harm is one harm — the
+// set the cursor reasons over has moved — and two remedies, because the file shape that caused it
+// is not one shape.
+type windowKeyMove uint8
+
+const (
+	keyHolds windowKeyMove = iota
+	keyWritten
+	rowsAdded
+)
+
+func (m windowKeyMove) found() bool { return m != keyHolds }
+
+// wrote names the act the drain cannot bound.
+func (m windowKeyMove) wrote() string {
+	switch m {
+	case keyWritten:
+		return "this body writes that column, so the rows it touches land above the cursor and every window behind this one rewrites them"
+	case rowsAdded:
+		return "this body puts new rows into that table, so keys no window ordered yet stand above the cursor and every window behind this one drains rows the last one created"
+	}
+	return ""
+}
+
+// instead names the file the author can ship instead.
+func (m windowKeyMove) instead() string {
+	switch m {
+	case keyWritten:
+		return "a backfill writes the columns a key holds, not the key it holds — re-keying a table is a schema file or a job of its own, one that keeps its own position"
+	case rowsAdded:
+		return "a backfill writes the rows a window holds, not new ones — a file that adds rows to the table it drains has no window that can bound it, so except data-body-unbounded and bound the statement itself, or make the append a job of its own"
+	}
+	return ""
+}
+
+// statementAddsRowsTo says whether the statement whose `insert` or `merge` ended at `at` puts rows
+// into the drained table. The reader walks the `INTO` the verb may carry rather than asking which
+// verb requires it: `MERGE INTO` does, and PostgreSQL refuses an `INSERT` written without it
+// (measured at the pinned version), so one walk covers both spellings and depends on neither. The
+// schema qualification is walked and dropped the way an UPDATE's is — this question is about
+// which table, not whose schema — and a name the reader cannot read names nothing, which is an
+// answer of no rather than a guess.
+func statementAddsRowsTo(text string, at int, table string) bool {
+	if word, after, ok := sqlWord(text, at); ok && word == "into" {
+		at = after
+	}
+	name, _, found := targetName(text, at)
+	return found && name == table
+}
+
+// targetName is the name a statement aims at, walked through the spellings that name one table
+// without changing which: `ONLY`, the parenthesis `ONLY` may take, a schema qualification
+// (whose last name is the table's) and the `*` PostgreSQL allows after a table's name.
+func targetName(text string, at int) (string, int, bool) {
 	name, next, found := sqlNameAt(text, at)
 	if !found {
-		return 0, false
+		return "", at, false
 	}
 	if name == "only" {
 		if open := sqlSpace(text, next); open < len(text) && text[open] == '(' {
 			next = open + 1
 		}
 		if name, next, found = sqlNameAt(text, next); !found {
-			return 0, false
+			return "", next, false
 		}
 	}
 	for dot := sqlSpace(text, next); dot < len(text) && text[dot] == '.'; dot = sqlSpace(text, next) {
 		if name, next, found = sqlNameAt(text, dot+1); !found {
-			return 0, false
+			return "", next, false
 		}
 	}
-	if name != table {
+	if star := sqlSpace(text, next); star < len(text) && text[star] == '*' {
+		next = star + 1
+	}
+	return name, next, true
+}
+
+// setList is the offset just past the `set` that opens an UPDATE's assignment list, given the
+// text after the word `update` and the table the window drains. The target is walked with the
+// same reader an INSERT's is, and the alias the target carries is walked with or without the word
+// `AS`, because PostgreSQL takes both: `UPDATE probe p SET …` names this table as plainly as
+// `UPDATE probe AS p SET …` does, and a reader that asked for the word missed the re-key written
+// without it. What PostgreSQL does *not* take, measured at the pinned version rather than
+// assumed, is a column alias list after that alias — `UPDATE probe AS p (id, note) SET …` is a
+// syntax error there — so no reading of one belongs here. A statement whose target the reader
+// cannot name — an upsert's `DO UPDATE`, a `MERGE` arm — is not an UPDATE of this table as far as
+// *this* reading is concerned; both are answered at the statement that carries them
+// (statementAddsRowsTo), which names the table they write.
+func setList(text string, at int, table string) (int, bool) {
+	name, next, found := targetName(text, at)
+	if !found || name != table {
 		return 0, false
 	}
 	if close := sqlSpace(text, next); close < len(text) && text[close] == ')' {
 		next = close + 1
 	}
 	if word, after, ok := sqlWord(text, next); ok && word == "as" {
-		_, alias, ok := sqlNameAt(text, after)
-		if !ok {
-			return 0, false
+		if _, alias, ok := sqlNameAt(text, after); ok {
+			next = alias
 		}
-		next = alias
+	} else if ok && word != "set" {
+		if _, alias, ok := sqlNameAt(text, next); ok {
+			next = alias
+		}
 	}
 	word, past, ok := sqlWord(text, next)
 	if !ok || word != "set" {
