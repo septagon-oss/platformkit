@@ -1,4 +1,12 @@
-# Kernel schema
+# Migrations
+
+The kernel's own schema lives here, and a file under any `migrations/` directory
+— the kernel's or a module's — is written by the same rules. The first part below
+describes this directory and the two names it carries to the outside; the second
+is the part an author reads: what a file may say about itself, and what the
+runner refuses.
+
+## The kernel schema
 
 `migrations/` is the kernel's own schema, owned as `platformkit`: the tenancy
 helpers and the tenants and hosts they resolve, the outbox with its claims and
@@ -120,7 +128,7 @@ first two revisions look like, are unexported helpers of
 `package migrations_test`, which no importer can reach: reusable as the shape a
 later test file copies, not as an API.
 
-# Writing a migration
+## Writing a migration
 
 Every `.up.sql` file under a `migrations/` directory — the kernel's here, and a
 module's under `modules/<name>/migrations/` — is forward-only, immutable once
@@ -132,7 +140,7 @@ A file runs in one transaction with its history row. Three kinds of file are not
 like that, and a file has to say which it is, because a reader cannot tell from
 the SQL.
 
-## The header
+### The header
 
 A run of comment lines at the very top of the file, before any SQL:
 
@@ -205,7 +213,7 @@ an exception that can except a broken marker is a marker nobody can rely on.
 not as a missing key — because a refusal that names the wrong key sends the operator
 to a line that is already there.
 
-## What the runner refuses, and what to write instead
+### What the runner refuses, and what to write instead
 
 Each refusal names its rule, says what the file does, and says what to do instead.
 The engine reads text with comments stripped, not a parse tree — the runner is not
@@ -419,7 +427,7 @@ is exceptable, and each prints its id in front of its own sentence —
 [the runner's own page](../kit/db/README.md) tables beside the two that report a drain
 (`db.ErrBackfillBudget` and `db.ErrContended`).
 
-## The floor: guards apply to new versions
+### The floor: guards apply to new versions
 
 A rule cannot be refused on a file that is already applied somewhere: the bytes are
 immutable and the only remedy left would be to stop the installation. So a source
@@ -440,7 +448,7 @@ floor is applied bytes, and those the rule table must not judge).
 `kit/db/review3_guard_floor_test.go` holds both directions of that, and a contract half
 behind the same unusable floor still waits for its expand.
 
-## The retry, and the rehearsal
+### The retry, and the rehearsal
 
 A file that came back `contended` applied nothing and may be run again by whoever
 chooses to wait. The door for that is `platformkit migrate --config config.yaml`:
