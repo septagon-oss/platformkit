@@ -424,10 +424,15 @@ func (p drainPos) value() any {
 }
 
 // text is the position as an operator reads it: the key the next run restarts after, or the
-// words for what a blank cursor used to leave a reader to guess.
+// words for what a blank cursor used to leave a reader to guess. An empty key is rendered
+// rather than left blank — a log line that shows nothing beside `cursor` carries the same
+// ambiguity the ledger column just gave up.
 func (p drainPos) text() string {
 	if !p.set {
 		return "no window committed"
+	}
+	if p.key == "" {
+		return `""`
 	}
 	return p.key
 }
