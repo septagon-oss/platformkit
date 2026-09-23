@@ -29,6 +29,12 @@ import (
 // present: the drain commits the delete of one and the insert of the other in the
 // transaction that wrote its last window, so the moment the table is empty of work is
 // the moment the ledger says the version applied.
+//
+// Two things the window has to survive are stated with the code rather than assumed:
+// a key the server can order but not `max` (the top of a window is taken the same way the
+// window is, so `uuid` and `bytea` — the types every entity table here is keyed by — are
+// windows and not server errors), and a key that is also the sentinel ("nothing committed
+// yet" is a NULL cursor, because for a `text` key the empty string is a row).
 
 // ErrBackfillBudget is the bound on a drain a migration run performs for itself: past it
 // the process is open too long, and the rest belongs to the worker, which can drain a
@@ -66,12 +72,11 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 	if progress.err != nil {
 		return report, progress.err
 	}
-	cursor := progress.cursor
-	report.cursor = cursor
+	cursor := progress.at
 	for {
 		if bound > 0 && report.batches >= bound {
 			return report, fmt.Errorf("%w (owner %s version %d, %d batches of %d, cursor %s)",
-				ErrBackfillBudget, m.owner, m.version, report.batches, m.batch, cursor)
+				ErrBackfillBudget, m.owner, m.version, report.batches, m.batch, cursor.text())
 		}
 		// Re-asserted per batch: db.Backfill drains on a tick with no file around it,
 		// and a batch with no budget waits forever for a row a request is holding.
@@ -85,7 +90,6 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 		if rows > 0 {
 			report.batches++
 		}
-		report.cursor = cursor
 		if done {
 			return report, nil
 		}
@@ -93,12 +97,13 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 }
 
 // drainReport is what a drain says about itself when it is over: the batches that
-// committed work, and the key the last one left. The runner logs both, because
-// three batches and fifty at the same duration are two different releases, and
-// nothing outside the loop can tell them apart.
+// committed work. The runner logs them, because three batches and fifty at the same
+// duration are two different releases, and nothing outside the loop can tell them
+// apart. Where the drain got to is not in this record: every batch logs its own cursor
+// as it commits (batchReported), and the one run that stops before the end names the
+// cursor in the error it returns, which are the two moments anyone reads it.
 type drainReport struct {
 	batches int
-	cursor  string
 }
 
 // drainWindow is one batch: the window measured, the body run over it, the cursor
@@ -108,7 +113,7 @@ type drainReport struct {
 // counts and logs. A window that came back short, or an empty one where a finished
 // cursor was resumed, is the end, and the history row and the progress row change hands
 // inside the transaction that wrote the work rather than in one after it.
-func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey, cursor *string) (done bool, rows int64, err error) {
+func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey, cursor *drainPos) (done bool, rows int64, err error) {
 	started := time.Now()
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -152,7 +157,7 @@ func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey,
 		}
 		return true, 0, tx.Commit()
 	}
-	if _, err := tx.ExecContext(ctx, m.windowedBody(key, *cursor), windowArgs(*cursor)...); err != nil {
+	if _, err := tx.ExecContext(ctx, m.windowedBody(key, *cursor), cursor.args()...); err != nil {
 		return false, 0, err
 	}
 	if err := advanceCursor(ctx, tx, m, *cursor, top); err != nil {
@@ -195,7 +200,7 @@ func drainWindow(ctx context.Context, conn *sql.Conn, m migration, key tableKey,
 // one, which is the measurement the next batch would have taken — and the one this run
 // would otherwise have taken in a transaction after the last batch committed, so the
 // drain counts its windows the same number of times and spends one fewer transaction.
-func drainEnds(ctx context.Context, tx *sql.Tx, m migration, key tableKey, top string, measured int64) (bool, error) {
+func drainEnds(ctx context.Context, tx *sql.Tx, m migration, key tableKey, top drainPos, measured int64) (bool, error) {
 	if measured < int64(m.batch) {
 		return true, nil
 	}
@@ -208,9 +213,9 @@ func drainEnds(ctx context.Context, tx *sql.Tx, m migration, key tableKey, top s
 // that stops halfway through a table otherwise reports its position only as a row in
 // schema_migration_backfill, which is where the next run looks and not where an
 // operator watching one does.
-func batchReported(ctx context.Context, m migration, rows int64, cursor string, started time.Time) {
+func batchReported(ctx context.Context, m migration, rows int64, cursor drainPos, started time.Time) {
 	slog.DebugContext(ctx, "db: backfill batch", "owner", m.owner, "version", m.version, "name", m.name,
-		"table", m.table, "rows", rows, "cursor", cursor, "duration_ms", time.Since(started).Milliseconds())
+		"table", m.table, "rows", rows, "cursor", cursor.text(), "duration_ms", time.Since(started).Milliseconds())
 }
 
 // finishDrain is the moment a data migration becomes an applied one: the history
@@ -373,20 +378,84 @@ func beginDrain(ctx context.Context, conn *sql.Conn, m migration) error {
 	return err
 }
 
-// drainProgress is the cursor as the ledger of an unfinished drain holds it: no
-// row at all before the first window, empty after it, and then the last key the
-// run committed.
+// drainPos is a drain's place in its table's own key order: the last key a window
+// committed, or the fact that no window has committed yet.
+//
+// Those are two facts, and one string cannot hold both of them. The cursor column renders a
+// key as text, and for a `text` or `varchar` primary key — which is how `tenant_hosts.host`
+// and `platformkit_limits.key` are keyed — the empty string is a legal key and the smallest
+// one in every collation. A column that is NOT NULL and defaults to the empty string said
+// "nothing committed" and "the row keyed by the empty string committed" with one value, so a
+// drain whose first window topped out at that key wrote the cursor back to the string the run
+// started with, the window above it (`host > $1::text`, bound to that same empty string) took
+// the rows behind it and stopped at the same top, and the release never
+// converged: `Migrate` to its batch bound rewriting one row as fast as it could commit, then
+// `jobs.BackfillMigrations` rewriting the same row on every tick forever, with the rows that
+// were the point of the backfill never reached. The ledger holds "nothing committed" as a
+// NULL now; the window has always held it as no lower bound at all.
+type drainPos struct {
+	key string
+	set bool
+}
+
+// atKey is the position after a window that came back with a top: the key itself, whatever
+// it is, and the flag that says a key is what it is.
+func atKey(key string) drainPos { return drainPos{key: key, set: true} }
+
+// value is the cursor column's value for this position — the key, or NULL, which is the one
+// spelling of "from the start" that is not also somebody's primary key — or the parameter
+// the window compares against, which is the same value or nothing at all.
+func (p drainPos) value() any {
+	if !p.set {
+		return nil
+	}
+	return p.key
+}
+
+// text is the position as an operator reads it: the key the next run restarts after, or the
+// words for what a blank cursor used to leave a reader to guess.
+func (p drainPos) text() string {
+	if !p.set {
+		return "no window committed"
+	}
+	return p.key
+}
+
+// bound is the window's lower edge: every key above the last one committed, and the whole
+// table when nothing is committed. There is no value of every possible key type below every
+// other one, so the run says "from the start" rather than inventing a minimum and losing the
+// first row with it.
+func (p drainPos) bound(key tableKey) string {
+	if !p.set {
+		return "TRUE"
+	}
+	return fmt.Sprintf("%s > $1::%s", quoteIdentifier(key.column), key.pgType)
+}
+
+// args is the parameter bound names, if it names one: the cursor is a parameter and never
+// text in the statement.
+func (p drainPos) args() []any {
+	if !p.set {
+		return nil
+	}
+	return []any{p.key}
+}
+
+// drainProgress is the cursor as the ledger of an unfinished drain holds it: no row at all
+// before the first window, then a row holding either "no window committed yet" or the last
+// key the run committed.
 type drainProgress struct {
-	cursor  string
+	at      drainPos
 	started bool
 	err     error
 }
 
 func drainCursor(ctx context.Context, conn *sql.Conn, id migrationID) drainProgress {
 	var p drainProgress
+	var cursor sql.NullString
 	err := conn.QueryRowContext(ctx,
 		"SELECT cursor FROM schema_migration_backfill WHERE owner = $1 AND version = $2",
-		id.owner, id.version).Scan(&p.cursor)
+		id.owner, id.version).Scan(&cursor)
 	switch {
 	case err == sql.ErrNoRows:
 		return drainProgress{}
@@ -394,6 +463,9 @@ func drainCursor(ctx context.Context, conn *sql.Conn, id migrationID) drainProgr
 		p.err = fmt.Errorf("reading the backfill cursor for %s/%d: %w", id.owner, id.version, err)
 	default:
 		p.started = true
+		if cursor.Valid {
+			p.at = atKey(cursor.String)
+		}
 	}
 	return p
 }
@@ -403,10 +475,16 @@ func drainCursor(ctx context.Context, conn *sql.Conn, id migrationID) drainProgr
 // the honest one, because it is checked against the row rather than against a
 // connection. Zero rows means somebody else is ahead: this batch rolls back and
 // stops, and nothing double-writes.
-func advanceCursor(ctx context.Context, tx *sql.Tx, m migration, from, to string) error {
+//
+// `IS NOT DISTINCT FROM` and not `=` because the place this run started from is often "no
+// window committed", which the ledger holds as a NULL: `cursor = $4` over a NULL is NULL, no
+// row matches it, and the first batch of every fresh drain would report a second runner that
+// does not exist.
+func advanceCursor(ctx context.Context, tx *sql.Tx, m migration, from, to drainPos) error {
 	result, err := tx.ExecContext(ctx, `
 		UPDATE schema_migration_backfill SET cursor = $3, updated_at = clock_timestamp()
-		WHERE owner = $1 AND version = $2 AND cursor = $4`, m.owner, m.version, to, from)
+		WHERE owner = $1 AND version = $2 AND cursor IS NOT DISTINCT FROM $4::text`,
+		m.owner, m.version, to.value(), from.value())
 	if err != nil {
 		return err
 	}
@@ -416,48 +494,46 @@ func advanceCursor(ctx context.Context, tx *sql.Tx, m migration, from, to string
 	return fmt.Errorf("another runner took the backfill of %s/%d ahead of this one; this batch is rolled back and the drain continues from where it committed", m.owner, m.version)
 }
 
-// window counts the next batch and returns the highest key in it, rendered by its
-// own type so that it is the same string the next run reads back. An empty window
-// is the ordinary end of the table, not a failure.
-func window(ctx context.Context, tx *sql.Tx, m migration, key tableKey, from string) (int64, string, error) {
-	query := fmt.Sprintf(
-		`SELECT count(*), coalesce(max(w)::text, '') FROM (SELECT %s AS w FROM %s WHERE %s ORDER BY w LIMIT %d) windowed`,
-		quoteIdentifier(key.column), quoteIdentifier(m.table), windowBound(key, from), m.batch)
+// window counts the next batch and returns its top key, rendered by the key's own type so
+// that it is the same string the next run reads back. An empty window is the ordinary end of
+// the table, not a failure.
+//
+// The top is taken the way the window itself is taken, `ORDER BY w DESC LIMIT 1`, and not
+// with `max(w)`, because PostgreSQL has no `max` aggregate for `uuid` or for `bytea` — the
+// types `tenants.id`, `users.id`, `platformkit_outbox.id` and every module's entity table are
+// keyed by, and the type `modules/auth` keys its token hashes by. Those types are orderable,
+// which is the only thing a window needs of a key, and an aggregate that does not exist for
+// them answered the first window of every such table with `function max(uuid) does not
+// exist`, after the drain had written its progress row. The ordering is asked of the server
+// either way, so what the drain can window over stays the whole set of types with an
+// ordering operator rather than the list of types with an aggregate; and the rendering
+// (`w::text`) is what that type's own input function takes back: measured on the pinned
+// server, the top of a `uuid` window comes out in its dashed form and the top of a `bytea`
+// window as `\x`-hex, and both re-enter as `$1::uuid` and `$1::bytea` and name the same key.
+func window(ctx context.Context, tx *sql.Tx, m migration, key tableKey, from drainPos) (int64, drainPos, error) {
+	query := fmt.Sprintf(`WITH windowed AS (SELECT %s AS w FROM %s WHERE %s ORDER BY w LIMIT %d)
+		SELECT (SELECT count(*) FROM windowed),
+		       coalesce((SELECT w::text FROM (SELECT w FROM windowed ORDER BY w DESC LIMIT 1) top), '')`,
+		quoteIdentifier(key.column), quoteIdentifier(m.table), from.bound(key), m.batch)
 	var rows int64
 	var top string
-	err := tx.QueryRowContext(ctx, query, windowArgs(from)...).Scan(&rows, &top)
-	if err != nil {
-		return 0, "", fmt.Errorf("measuring the next batch of %s: %w", m.table, err)
+	if err := tx.QueryRowContext(ctx, query, from.args()...).Scan(&rows, &top); err != nil {
+		return 0, drainPos{}, fmt.Errorf("measuring the next batch of %s: %w", m.table, err)
 	}
-	return rows, top, nil
+	if rows == 0 {
+		return 0, drainPos{}, nil
+	}
+	return rows, atKey(top), nil
 }
 
-// windowedBody is the owner's body with the kernel's window around it: the same
-// bound the measurement just took, so what runs is what was counted. The cursor is
-// a parameter, never text in the statement, and the body's trailing semicolon goes
-// away because the window makes the two one statement.
-func (m migration) windowedBody(key tableKey, from string) string {
+// windowedBody is the owner's body with the kernel's window around it: the same bound the
+// measurement just took, so what runs is what was counted. The cursor is a parameter, never
+// text in the statement, and the body's trailing semicolon goes away because the window
+// makes the two one statement.
+func (m migration) windowedBody(key tableKey, from drainPos) string {
 	return fmt.Sprintf("WITH batch AS (SELECT %s FROM %s WHERE %s ORDER BY %s LIMIT %d)\n%s",
-		quoteIdentifier(key.column), quoteIdentifier(m.table), windowBound(key, from),
+		quoteIdentifier(key.column), quoteIdentifier(m.table), from.bound(key),
 		quoteIdentifier(key.column), m.batch, strings.TrimRight(m.body, " \n\t;"))
-}
-
-// windowBound is the half-open window (cursor, …] the drain walks. The first
-// window has no lower bound at all: there is no value of every possible key type
-// that is below every other one, so the run says "from the start" instead of
-// inventing a minimum and losing the first row with it.
-func windowBound(key tableKey, from string) string {
-	if from == "" {
-		return "TRUE"
-	}
-	return fmt.Sprintf("%s > $1::%s", quoteIdentifier(key.column), key.pgType)
-}
-
-func windowArgs(from string) []any {
-	if from == "" {
-		return nil
-	}
-	return []any{from}
 }
 
 // windowed says whether this body goes through a window at all. It is the same

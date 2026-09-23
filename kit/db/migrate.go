@@ -270,12 +270,16 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 // beside the ledger and not inside it because every reader of the ledger assumes a row
 // there means applied forever, and an unfinished drain must not look like one. The row
 // is deleted in the transaction that writes the history row, so the two tables
-// together hold one fact.
+// together hold one fact. The cursor is nullable because it holds a key rendered as text,
+// and "no window has committed yet" is not a key: for a text-keyed table the empty string
+// is a legal key and the smallest one there is, so a NOT NULL column defaulting to the empty
+// string would say both things with one value, and a drain over such a table would never move
+// past the row it started on (see drainPos).
 const createProgress = `
 CREATE TABLE IF NOT EXISTS schema_migration_backfill (
 	owner text NOT NULL,
 	version bigint NOT NULL CHECK (version > 0),
-	cursor text NOT NULL DEFAULT '',
+	cursor text,
 	updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
 	PRIMARY KEY (owner, version)
 )`
