@@ -165,6 +165,22 @@ func TestMigrationHeaderGrammar(t *testing.T) {
 		{"a key after the reason is read", "-- pkit: allow=drop-column reason=the release after phase=contract", "expand="},
 		{"a key glued to the reason is read", "-- pkit: allow=drop-column reason=phase=data", "phase=data"},
 		{"two reasons on one line", "-- pkit: allow=drop-column reason=one sentence reason=another", "reason="},
+		// A marker one space away from the documented grammar is the same declaration,
+		// read. Every file below is a contract half with no expansion named — refused
+		// for what it declares — and none of them is the plain expand file an unread
+		// marker would have made it. `phase=contract` is chosen as the witness because
+		// the reading decides it: the rule table reads the SQL whatever the header
+		// claimed, and only the header can make this file wait for its expansion.
+		{"an indented marker is read", "   -- pkit: phase=contract", "expand="},
+		{"two spaces after the dashes", "--  pkit: phase=contract", "expand="},
+		{"no space after the dashes", "--pkit: phase=contract", "expand="},
+		{"a tab after the dashes", "--\tpkit: phase=contract", "expand="},
+		{"a space before the colon", "-- pkit : phase=contract", "expand="},
+		{"no space after the colon", "-- pkit:phase=contract", "expand="},
+		// The same widening below the header, where the grammar's own reason for
+		// refusing applies: a marker the runner would not read claims a review the
+		// runner never did.
+		{"a loosely spaced marker below the SQL", "CREATE TABLE late_marker (x integer);\n  --pkit: phase=contract", "header"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			migrateURL, _ := dbtest.URLs(t)

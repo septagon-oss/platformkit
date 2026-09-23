@@ -37,9 +37,21 @@ const minReason = 3
 // ErrBackfillBudget.
 const installBackfillBatches = 50
 
-// headerLine is one line of a migration file's header. The marker is the whole
-// line, so that a comment which only looks like one is not read as one.
-var headerLine = regexp.MustCompile(`^-- pkit:(.*)$`)
+// headerLine is one line of a migration file's header. The marker is the whole line, so
+// that a comment which only looks like one is not read as one — and the spaces inside the
+// marker are read as the same marker, because a declaration the reader skips is not a
+// missing declaration: it is a different file. `--  pkit:`, `--pkit:`, `--\tpkit:`, an
+// indented `-- pkit:` and `-- pkit :` all say what the documented spelling says, and read
+// as nothing they say the file is a schema file. For `phase=data` those are not one
+// migration: unwrapped, the body is the whole-table statement the header exists to bound,
+// and the run that applies it records the version, which makes the bytes immutable and the
+// marker impossible to add afterwards. This grammar refuses a marker below the header
+// because "a marker the runner would not read claims a review the runner never did"; the
+// same sentence condemns a marker one space from a stricter one, and this line is where it
+// is enforced. What stays strict is the line's content: the `key=value` pairs, their keys
+// and their domains are refused exactly as before, so a looser marker reads a declaration
+// and not a wish.
+var headerLine = regexp.MustCompile(`^[ \t]*--+[ \t]*pkit[ \t]*:(.*)$`)
 
 // migrationTable is a table name a header may name: one bare identifier, resolved in
 // the migration's own search_path like every other name in the file. A qualified value
@@ -94,8 +106,8 @@ func parseHeader(text string) (migrationHeader, error) {
 			h.body = strings.Join(lines[i:], "\n")
 			break
 		}
-		rest, ok := strings.CutPrefix(parts[1], " ")
-		if !ok || rest == "" {
+		rest := strings.TrimLeft(parts[1], " \t")
+		if rest == "" {
 			malformed = append(malformed, strconv.Quote(line))
 			continue
 		}
