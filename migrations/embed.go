@@ -17,4 +17,11 @@ import (
 var files embed.FS
 
 // Source is the kernel's append-only migration history, owned as "platformkit".
-var Source = db.MigrationSource{Owner: "platformkit", Files: files}
+//
+// RulesFrom is 21 because two files below it index a table another file created
+// (000012 on tenants, 000020 on tenant_hosts) and were applied under those bytes
+// long before the rule table existed: they cannot be marked, because marking them
+// would mean changing bytes some installation already applied. Version 21 creates
+// and indexes its own table, so the guard is whole from there on. A new kernel
+// file is guarded, and moving this number down is a review, not an edit.
+var Source = db.MigrationSource{Owner: "platformkit", Files: files, RulesFrom: 21}

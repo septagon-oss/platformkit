@@ -21,4 +21,7 @@ var Migrations = db.MigrationSource{
 	Owner:  "user",
 	Files:  db.Sub(schema, "migrations"),
 	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7, 25}}},
+	// 000025 indexes users twice in a file that does not create it. Applied, so
+	// unmarkable; the guard takes version 26 onwards.
+	RulesFrom: 26,
 }

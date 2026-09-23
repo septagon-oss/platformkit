@@ -18,7 +18,9 @@ package migrations_test
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,19 +49,52 @@ var everything = []db.MigrationSource{migrations.Source, user.Migrations, notifi
 // and is greppable from outside the repository.
 const exemption = "platformkit:tenant-scoping-exempt"
 
-// The runner owns migration history and revokes application access to it.
-// It contains schema metadata, not tenant data. kit/db tests its privileges.
-const ledger = "schema_migrations"
+// The runner owns migration history and the cursor of a drain that has not
+// finished, and revokes application access to both. They hold schema metadata —
+// an owner and a version, a primary key — and no tenant's row, so neither carries
+// a tenant policy: a policy would have to name a tenant the row does not have.
+// The one door on them is the REVOKE, and it is checked rather than asserted —
+// below, in this walk, from the catalog, and by running the statements from an
+// application connection in kit/db/review_guarantees_test.go. A table added to
+// this list without that door is a table somebody else can write.
+var runnerTables = []string{"schema_migrations", "schema_migration_backfill"}
 
 // TestEveryTableIsScopedOrExemptOnPurpose.
 func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
-	adminURL, _ := dbtest.URLs(t)
+	adminURL, appURL := dbtest.URLs(t)
 	if err := db.Migrate(t.Context(), adminURL, everything...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	tables, problems := tenantScope(t, dbtest.Open(t, adminURL))
+	admin := dbtest.Open(t, adminURL)
+	tables, problems := tenantScope(t, admin)
 	for _, problem := range problems {
 		t.Error(problem)
+	}
+	// Skipping the policy question is not skipping the table. The runner's two
+	// tables are exempt from the tenant column because they hold no tenant's row,
+	// and the claim that replaces the policy is that the application role holds
+	// nothing on them. It is asked here, of the list that skips them, so the list
+	// cannot grow into a table an application can forge a release in — and of
+	// every name on it, because a name that stopped naming a table has to fail
+	// rather than stop being asked.
+	app := dbtest.RoleOf(t, appURL)
+	for _, name := range runnerTables {
+		var granted bool
+		err := admin.QueryRowContext(t.Context(), `
+			SELECT has_table_privilege($1, c.oid, 'SELECT,INSERT,UPDATE,DELETE')
+			FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = current_schema() AND c.relkind = 'r' AND c.relname = $2`,
+			app, name).Scan(&granted)
+		if errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("%s is on the runner's own list and names no table of this schema; the list and the runner have come apart", name)
+			continue
+		}
+		if err != nil {
+			t.Fatalf("read the door on %s: %v", name, err)
+		}
+		if granted {
+			t.Errorf("%s is on the runner's own list and the application role still holds a privilege on it; the REVOKE is the only door these tables have", name)
+		}
 	}
 	// A query that found nothing would pass every case above, which is the one
 	// way this test could be worthless.
@@ -79,6 +114,10 @@ func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
 // schema_migrations resolves through the caller's search_path, and a policy's
 // expression deparses qualified or bare depending on whether the schema its
 // function lives in is on that path.
+//
+// The one walk is dbtest.TenantTablesSQL, which is exported because a module's
+// own schema test asks the same question; the door the runner's two tables rely
+// on is a different question and is asked by the test above, not here.
 func tenantScope(t *testing.T, admin *sql.DB) (tables, problems []string) {
 	t.Helper()
 	rows, err := admin.QueryContext(t.Context(), dbtest.TenantTablesSQL)
@@ -93,7 +132,10 @@ func tenantScope(t *testing.T, admin *sql.DB) (tables, problems []string) {
 		if err := rows.Scan(&schema, &name, &enabled, &forced, &comment, &policies); err != nil {
 			t.Fatalf("read a table: %v", err)
 		}
-		if name == ledger {
+		if slices.Contains(runnerTables, name) {
+			// Exempt from the tenant column, because these two hold no tenant's
+			// row. The claim that replaces the policy — that the application role
+			// holds nothing on them — is the caller's, asked of this same list.
 			continue
 		}
 		table := schema + "." + name

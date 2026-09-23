@@ -36,7 +36,10 @@ and one applied history make failure recovery explicit in the same implementatio
 
 Files are `<positive-version>_<name>.up.sql`, ordered numerically within an owner.
 They contain transactional PostgreSQL SQL. They must not manage transactions or
-run nontransactional operations such as `CREATE INDEX CONCURRENTLY`. Review SQL
+run nontransactional operations such as `CREATE INDEX CONCURRENTLY` — a ban that is
+now *mode-scoped*: a file that declares `-- pkit: autocommit=true` is the file
+shape whose one nontransactional statement is the whole file, and the rule table
+below refuses such a statement anywhere else. Review SQL
 for that contract; the runner is not a SQL parser or a sandbox for untrusted SQL.
 Cross-capability schema dependencies follow the application's composition order.
 
@@ -83,6 +86,189 @@ was always its own owner is unaffected. A composition that omits a module still
 leaves that module's tables and history in place, which is now true of the
 reference modules as well.
 
+## Amendment: a file says what kind of migration it is
+
+A migration that rewrites a table, and a migration that backfills ten million rows,
+were the same kind of file: one transaction, no bound on either, and no way for the
+runner to tell the dangerous one from the ordinary one. The rule the industry calls
+expand/contract was a habit nobody could enforce.
+
+A file may now carry a header — a run of `-- pkit: key=value` comment lines at the
+very top, before any SQL — declaring `phase=expand|contract|data`, and the keys that
+phase needs. The checksum still covers the whole file including its header, so an
+applied file can never be marked: marking it would mean changing bytes some
+installation already applied, which the paragraph above already refuses.
+
+Three execution modes follow from the header, and nothing is inferred from SQL: an
+expand or contract file runs transactionally as always; an `autocommit` file runs its
+one statement with no transaction and its history row commits alone, which is why its
+statement must be re-runnable; a `phase=data` file's body never runs as written — it
+is wrapped over one window of its table's primary key at a time, one committed
+transaction per window, and the key and its type are read from the catalog so the
+header cannot claim a key the table does not have. Progress lives in a second table,
+`schema_migration_backfill`, holding the last key committed: every reader of
+`schema_migrations` assumes a row there means applied forever, and an unfinished
+drain is exactly the state that must not look like one. The row and the history row
+are never both present, and the hand-over is the transaction that wrote the last window
+rather than one after it — the drain's end is the commit that finished the work, not a
+step after it that a crash can skip. The application role is revoked from both.
+
+An autocommit statement is also the one statement a migration run must not hold the
+composition's advisory lock across. Such a statement waits for the transactions already
+in the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds the
+wait — while that lock is what every other replica's boot queues behind. Holding both
+was measured, and it deadlocks the queue:
+
+```
+Process 30201 waits for ShareLock on virtual transaction 10/17350; blocked by process 30222.
+Process 30222 waits for ExclusiveLock on advisory lock [16384,0,7240101,1]; blocked by process 30206.
+```
+
+so the run puts the lock down for that one statement and takes it back for the history
+row, which is inserted `ON CONFLICT DO NOTHING`: two replicas may then both reach a
+statement the rule table already requires to be re-runnable, and the one that loses the
+race learns the file applied rather than failing its boot for a benign race. A statement
+that failed writes no row either way.
+
+The order of a release is now a rule rather than a review comment. A `contract` file
+refuses while the `expand=` version it names is not already in that installation's
+history — one release of separation is the whole of what the ledger can state; how
+long ago is a release calendar, which belongs to the product — and the number is bounded
+by what the release can check rather than trusted, as a source's rule floor is: it has to
+name a file of the same owner that comes before the half that waits for it, because the
+owner's files apply in order. An unbounded `expand=` is the case the ledger cannot see —
+a half whose expansion no release of that owner ever had applies on a fresh installation,
+is written to the ledger as waited for, and leaves the installation holding a schema no
+other installation of the same release has — so the bound is asked before any file runs,
+and the fresh installation that has no history to refuse with answers it exactly as an
+installed one does. Nothing of an owner
+applies past a data file that has not finished draining, and what decides who runs such
+a drain is what waits behind it. The installation with no history drains its own,
+bounded. So does the run that finds a data file with nothing of its owner pending behind
+it: nothing is kept waiting for the work, and the window gives the run a bound to stop
+at. A data file with files behind it is the worker's — this run cannot reach those files
+either way, and a boot may not spend itself emptying a table under readers for a release
+it cannot complete — and a boot that refused either would stop the only role that can
+finish it. So is a body that declared itself bounded, even last: it has no window, so the
+bound a migration gives itself, which counts windows, holds nothing to it. A boot that
+meets a drain already in flight resumes it under the same bound and, when the bound is
+reached, says so and carries on booting: the committed batches stand, the cursor names
+where the next batch starts, and `schema-backfill` finishes the table. `kit/app` treats
+`db.ErrBackfillBudget` out of a migration as that report rather than a failed start;
+`platformkit migrate` and `Bootstrap`, doors that asked for a run which finishes, keep
+returning it. The worker's own drain is bounded too — ten thousand windows, which is more table
+than one tick should empty — because the answer to "this run has reached its bound" has to be a
+report the next tick can continue from rather than a process that never returns.
+
+Alongside it, the static rules the runner refuses before connecting — the rewrites,
+the plain index build, the dropped column outside a contract file — each named, each
+with a remedy, and the correctable ones exceptable by `-- pkit: allow=<rule>
+reason=<one sentence>`, the reason being the whole content of an exception and
+`unused-allow` refusing one that was not needed. A rule whose exception is none has no
+marker, and a marker naming such a rule is refused as the bypass it is rather than
+switching the rule off: those five state what PostgreSQL refuses, what the autocommit
+mode costs, or what a data file cannot survive, and a comment cannot make any of that
+false. Which text each of the eight refusals with no `allow=` is asked of — those five rules and
+the executor's three — follows from that, because a refusal nobody can
+contest is not a place to approximate: the three that read a statement are asked of the cut
+PostgreSQL makes, where a value holds its own semicolons, and the two that ask after the word
+`CONCURRENTLY` of the file's own SQL with the contents of every value put away, since the two
+rules contradict each other by construction and a word read anywhere in the text let a file
+choose which one it answered by what it stored. The executor's other two are the window's own
+shape and are read as shape: which relations the merged CTE list binds (a body that binds the
+window's own name `batch` is a statement PostgreSQL refuses, and it refuses it after the progress
+row), and what the body does to the key set the cursor runs over (a body that writes the column
+the cursor is ordered by, or one that puts new rows into the table it drains, leaves the table
+never empty of work, and a drain that never ends is the worker's tick
+re-committing rows an earlier window committed). Neither reading turns on how the name was
+written — the CTE name in either spelling PostgreSQL takes, the assignment target in either shape
+it takes and the target in every spelling it is written with (`ONLY` and the parenthesis it may
+carry, the schema qualification, the star, the alias with or without its `AS`, which the server
+takes either way) — and each names what it leaves alone: an inner list shadows rather than
+collides, a key
+merely read is not written, a key set merely shrunk is the cursor's own work done for it, and an
+upsert's `DO UPDATE SET` or a `MERGE` arm names its target in the statement above it, which is
+where a re-key written that way is refused. What the bound one tick gives its drain stops is the
+body that reaches its table without naming it at all — a view over it, a function the server runs,
+a trigger the table carries. The eighth is asked of none of those texts: `unused-allow` reads the
+file's `allow=` markers beside the set of rules that did fire, so the one refusal an author cannot
+contest at all is the only one whose question is not about the SQL — it refuses the exception the
+file does not need, and its answer is the deletion of a marker rather than a reading.
+Four refusals are not judgements about a file's text at all but facts about this
+installation — a table that is not here, a key the window cannot walk, the expansion a
+contract half waits for, a drain past the bound a migration gives itself — and each prints
+its id in front of its own sentence (`refusal <id>: …`, named by `kit/db/refusals.go` and
+tabled in `kit/db/README.md`), because an operator reads an id out of a log line and
+follows it into the repository that refused them.
+The rules read operations rather than spellings — a type change is the `TYPE`
+clause inside an `ALTER TABLE`, which PostgreSQL lets be written with or without the
+`COLUMN` keyword, a `DROP` inside an `ALTER TABLE` takes that keyword away from the
+running release whether or not the file spelled it, and a `NOT NULL` column is read from
+that column's own definition, so a `DEFAULT` belonging to a statement beside it excuses
+nothing — and they read those operations wherever the file writes them, including inside a
+`DO $$ … $$` block: cutting a dollar-quoted body at its own semicolons leaves every piece
+behind the dollar sign, which no rule anchored at a statement's front reaches, and a rule that
+never fires cannot be excepted, so the wrapped statement ships with nothing named and the
+author's own record of the risk is refused as an unused exception. What reaching inside a body
+over-reads is a statement the body holds behind a test the running installation decides, which
+is the false positive the marker exists for; what it does not reach is a value inside the body,
+because the anchor has to be reached on both sides of the boundary. Each of those three reads
+the *name* the action carries in either spelling PostgreSQL takes it: a column named after a reserved word, or created inside double
+quotes, can only ever be named quoted, so a capture that stops at the bare identifier
+reads no action at all for exactly those columns, and the harm the rule is about ships
+with no rule named. The bare spelling takes the database's own letters as well —
+`ident_start` is `[A-Za-z_\200-\377]` and PostgreSQL folds only ASCII, so a name carrying
+an accented letter is legal written bare, and a reader that stopped at ASCII mis-reads it
+the same way and in the same direction. A quoted name is the name and never the keyword it
+happens to spell,
+so `DROP "constraint"` takes a column away where `DROP CONSTRAINT c` does not —
+and the guard and the executor read one normalised text of the body,
+so the file that was judged is the file that runs. That one text is read where the
+server reads it: a `--` inside a value is data, the apostrophe inside a `/* … */` is
+commentary, a `$tag$ … $tag$` body is one value whatever letters its tag carries (a tag
+is a name, and a name takes the database's own letters) and an `E'…'` closes past its escapes,
+because a reading that lost its place answered the window question wrongly in both
+directions — a bounded body refused as unbounded, and an unbounded one wrapped and run
+once per window over every row. The same reader of where a construct ends cuts the
+statements the rules are read one at a time, so no construct moves that boundary either:
+a body's quotes and parentheses are data to the split, where counting them let one lone
+`"` in a function body leave every later statement inside what the splitter took for a
+name, and no rule anchored at the front of a statement fired for the file.
+Guards apply from a version the source states, because a rule cannot be refused on a
+file already applied somewhere:
+the bytes are immutable and the only remedy left would be to stop the installation.
+The floor is bounded by what it can claim: the history a source can point at ends at
+its own highest file, so a number past that head plus one excuses no file and every
+file of that source is judged instead — at the pending-file pass in
+`kit/db/migration_files.go`, where the ledger says which of them are still pending. A
+floor is how a source says "these bytes ran"; it is not a way to leave the guard off.
+[migrations/README.md](../../migrations/README.md) is the canonical table of keys and
+rules; this ADR stops short of duplicating it.
+
+Two things the runner cannot decide are given doors instead of opinions. The first is
+the wait: a contended migration is not a failed one, and the retry belongs to the
+operator because the runner holds the composition's advisory lock — so
+`platformkit migrate` exists, which is every role's boot migration over the same
+composition, sources, floors and budgets (`app.Migrate` is that composition once),
+without a server attached, and `--drain` for the backfill the migration left to the
+worker. The second is size: a `lock_timeout` bounds a wait and the rule table refuses
+a shape of statement, and neither says what this release will cost against the table
+this installation actually has. So a release is rehearsed rather than reviewed.
+`scripts/rehearse_migrations.sh` (`make rehearse`) builds the previous release's own
+binary from its revision, lets that release migrate a fresh database, seeds ten
+thousand rows per table into a copy of it, applies this tree's pending files against
+that copy while sampling `pg_stat_activity` for lock waits, and exits 0, 1, 2 or 3 so
+a pipeline can tell "applied inside budget" from "failed" from "could not run" from
+"over budget". A contended file in a rehearsal is a finding, never a pass — and
+neither is a rehearsal that did not measure: a watcher that fell short of half the
+samples the window it was alive for resolves to is `LOCK WATCH BROKEN` and exit 2,
+because a reported 0 ms of a run that lasted a minute is a number the step never took,
+and a floor built on seconds rounded up reports a failure over a run that was 55 ms
+long. Each report names the window it watched. A failed candidate's own message is
+printed the moment it stops, ahead of any query the step makes of a copy the candidate
+may never have migrated. What it cannot measure is stated in the script: the wait behind
+a table a running application holds, and any lock wait shorter than the 100 ms sample.
+
 ## Evidence
 
 `kit/db/migrate_test.go` covers late module installation, upstream advancement,
@@ -103,3 +289,61 @@ the owner that now ships it, and that the upgraded installation serves.
 `migrations/rls_test.go` walks the kernel's schema and every reference module's
 together, so the row-level-security claim still covers every table this
 repository creates.
+
+For the header, the rules and the drain: `kit/db/migrate_expand_contract_test.go`
+states the budgets and the contended report against a real database, the eighteen
+grammar refusals, one case per rule beside the `allow=` that excepts it, the contract
+half refusing and then applying, the batched drain proved from `xmin`, and the files
+behind an unfinished drain waiting for the worker.
+`kit/db/review_rules_test.go` is the same table read from the other side: a rule with no
+exception refuses the marker that names it, the type-change rule catches the spelling
+without the `COLUMN` keyword, an autocommit `DROP INDEX CONCURRENTLY` has to survive its
+own success, an excepted data body runs once however it names the window, and `batch=0`
+is refused for the value it is. `kit/db/review_guarantees_test.go` holds what the runner
+owes and nothing else checked: the app role against both of its tables, `ErrContended`
+under a budget a deployment named, the fifty-batch bound and the run that resumes it,
+two drains of one file committing the work once, and a finished drain staying finished.
+`kit/db/backfill_budget_test.go` puts the configured budget on the drain's own batches
+by holding a row the first window is about to write, and `kit/db/drain_commit_test.go`
+that the transaction which wrote the last window wrote the history row too, so the two
+tables never hold "every row written" and "a drain to resume" at once.
+`kit/app/review_drain_composed_test.go` boots the composition as the worker and waits
+for the tick to drain what the migration left, then applies the file that waited behind
+it; deleting the line that schedules that job fails this case and
+`kit/app/review3_drain_in_flight_boots_test.go`, which reaches a half-drained table
+through a boot rather than through a tick, and nothing else — measured over the whole
+suite on a copy with `scheduled := kernelJobs(transport)`, which reports those two cases
+in `kit/app` and passes every other package.
+`migrations/review_floors_test.go` proves each declared floor is the number the files
+force, in both directions.
+`kit/db/review3_guard_floor_test.go` is the floor's third direction: the same rewrite
+refused with no floor declared and refused with a floor of 50 over a source whose own
+head is 2, with nothing applied either way, and the release rule surviving that same
+floor. `kit/app/review3_drain_in_flight_boots_test.go` reaches a half-drained table
+through the doors only — an installation that stopped at its own bound, then the worker
+an installation boots — and asks that the worker be alive and the table empty.
+`kit/db/review3_data_file_shape_test.go` refuses a two-statement data file with nothing
+resumable left behind and the corrected file drained by the run that carried it, and
+`kit/db/review3_rule_reads_the_statement_test.go` that a
+`DEFAULT` in one statement does not excuse a `NOT NULL` column in another.
+`kit/db/data_file_shape_test.go` is the other two branches of that one rule: the data
+file with a schema file behind it, which `Migrate` leaves and `db.Backfill` empties so
+the file behind it can apply, and a self-bounded body — no window, so no bound for a
+migration to hold it to — which waits for the worker even as the owner's last file.
+`apps/platformkit/migrate_test.go` shows `platformkit migrate` applying exactly the
+sources the composition selected — every owner and every one of its files — and the
+second run applying nothing further.
+`bash scripts/check_architecture_test.sh` holds the rehearsal's own refusals, which
+land before it touches a database, and reads four of its programs out of the script to
+run them here: the grep that decides a file came back contended, over the log line the
+runner really writes; the watcher's file builder, whose interval has to be the one the
+step multiplies; its watch floor, which is 0 for a window shorter than the watcher's
+startup and over 20 for a 20s one; and the watcher's own `psql` line, which filled the
+file the step counts 20 times in 2s. The step itself needs `psql`, an owner connection
+and a previous revision, and was run against a PostgreSQL 16 with the fixture's ten
+thousand rows per table: two files applied at the durations the runner measured (exit
+0), `LOCK WAIT 5000ms > 1000ms` and `CONTENDED` beside a session holding the table, and
+`TOO SLOW user/25 8ms > 0s` under a budget of nothing (`--max-file-seconds 0`), both
+exit 3; and the rule's own message from a candidate that refused before connecting
+(exit 1), which is also the run that leaves the copy's absent progress table as a note
+rather than the step's last word.

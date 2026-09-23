@@ -313,6 +313,348 @@ commit_budget 'Missing baseline document'
 rejects 'missing source baseline' 'loc-budget.json' bash "$scripts/check_budget_ratchet.sh" "$(git -C "$budgets" rev-parse HEAD)" "$budgets"
 echo 'budget ratchet: previous revisions, decreases, removed measurements and missing baselines passed'
 
+# The rehearsal is a release step, so the refusals it exists to make have to be
+# real and answerable without a database: a step that quietly ran nothing would be
+# worse than no step, because the release would read it as a pass. Each case below
+# is refused before the script connects to anything, which is what makes them
+# checkable here.
+rehearse=(bash "$scripts/rehearse_migrations.sh")
+rejects 'a rehearsal with no copy to rehearse on' 'say where the copy comes from' "${rehearse[@]}"
+rejects 'a rehearsal with two copies at once' 'are alternatives' "${rehearse[@]}" --dump x --base-ref HEAD
+rejects 'a rehearsal whose dump is not there' 'no dump readable at' "${rehearse[@]}" --dump "$temporary/nope.dump"
+rejects 'a budget that is not a number of seconds' 'not a number of seconds' "${rehearse[@]}" --base-ref HEAD --max-file-seconds soon
+rejects 'a budget that is not a number of milliseconds' 'not a number of milliseconds' "${rehearse[@]}" --base-ref HEAD --max-lock-ms 1.5
+rejects 'an argument the step does not have' 'unknown argument' "${rehearse[@]}" --rollback
+rejects 'no owner connection to create a database with' 'PLATFORMKIT_TEST_ADMIN_URL is unset' \
+	env -u PLATFORMKIT_TEST_ADMIN_URL bash "$scripts/rehearse_migrations.sh" --base-ref HEAD
+rejects 'a base revision that is not here' 'does not name a revision' "${rehearse[@]}" --base-ref no-such-revision
+echo 'rehearsal step: bad arguments and a missing owner connection are refused before a database is touched'
+
+# Two of the numbers this step reports are only worth what they say if the program
+# behind them runs, and both were silently broken once. Neither needs a database to
+# check, because the program is text in the step and the input is a log line the runner
+# really wrote and a file the step really writes.
+rehearse_script="$scripts/rehearse_migrations.sh"
+
+# 1. The contention grep. A POSIX bracket reads `[^\n]` as "not a backslash and not the
+# letter n", so the pattern this step first carried could not span the n inside "the
+# migration is contended": the CONTENDED branch never ran, the finding count stayed 0
+# and a contended release exited 1 ("a migration failed") from the one step whose job
+# is telling those two apart. The program is read out of the step rather than restated,
+# so the case cannot pass by agreeing with itself.
+contention=$(sed -n "s/^contended=\\\$(grep -o '\\(.*\\)'.*/\\1/p" "$rehearse_script")
+if [ -z "$contention" ]; then
+	echo 'FAIL: the rehearsal no longer greps the candidate log for a contended file at all; this case has to be rewritten to say what it does instead' >&2
+	exit 1
+fi
+cat >"$temporary/rehearse-run.log" <<'LOG'
+{"time":"2026-09-22T13:13:44+01:00","level":"INFO","msg":"db: applied migration","owner":"platformkit","version":21,"name":"000021_limits.up.sql","phase":"expand","duration_ms":3}
+platformkit: db: migrate: platformkit/000099_review_probe.up.sql: db: migration is contended: it could not take a lock within its budget; nothing this run had not already applied was applied, and it may be run again (lock_timeout 5s, statement_timeout 0): ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)
+LOG
+if ! grep -q "$contention" "$temporary/rehearse-run.log"; then
+	printf 'FAIL: the contention program %s matches nothing in the line the runner writes for a contended file: CONTENDED never prints, the finding count stays 0, and a contended release exits 1 rather than 3\n' "$contention" >&2
+	exit 1
+fi
+
+# 2. The lock-wait watcher. `\watch` repeats the query *buffer*, and a query handed to
+# `-c` is gone from the buffer by the time the next `-c` runs — psql 18 answers the
+# query once and then "\watch cannot be used with an empty query" — so the sample file
+# holds one line however long the run took, `lock_ms` could never pass `--max-lock-ms`,
+# and the step reported "0 sample(s) ~ 0ms" of a migration that had really waited five
+# seconds on a table lock. The step writes the query and its `\watch` into one file
+# psql reads with -f; these lines run the step's own lines that build that file.
+watch_program=$(awk '/^watch_sql=/{f=1} f{print} /^\t"\$SAMPLE_S" >"\$watch_sql"$/{f=0}' "$rehearse_script")
+if [ -z "$watch_program" ]; then
+	echo 'FAIL: the rehearsal no longer writes a query and a \watch into one file; this case has to be rewritten to say what it does instead' >&2
+	exit 1
+fi
+# The fixture runs the step's own lines — its SAMPLE_MS, its own derivation of the
+# interval from it, and the printf that builds the file — under the step's own variable
+# names. Nothing here restates the step: change how the step builds the file and this
+# runs the new way, and passes or fails the way the step then does.
+{
+	printf 'work=%s\nAPPNAME=%s\n' "$(printf '%q' "$temporary")" "$(printf '%q' platformkit-rehearse)"
+	sed -n '/^SAMPLE_MS=/p; /^SAMPLE_S=/p' "$rehearse_script"
+	printf '%s\n' "$watch_program"
+} >"$temporary/build-watch.sh"
+bash "$temporary/build-watch.sh"
+if ! grep -q 'pg_stat_activity' "$temporary/watch.sql"; then
+	printf 'FAIL: the file the step has psql watch holds no query:\n%s\n' "$watch_program" >&2
+	exit 1
+fi
+interval=$(sed -n 's/^\\watch //p' "$temporary/watch.sql")
+if [ -z "$interval" ]; then
+	echo 'FAIL: the file the step has psql watch holds no \watch line, so it samples once and the lock-wait finding can never fire' >&2
+	exit 1
+fi
+# The interval has to be SAMPLE_MS expressed in seconds: `samples × SAMPLE_MS` is the
+# length of the waits counted only if the interval waited on is the one multiplied by.
+sample_ms=$(sed -n 's/^SAMPLE_MS=\([0-9]*\)$/\1/p' "$rehearse_script")
+if ! awk -v interval="$interval" -v ms="$sample_ms" 'BEGIN { exit !(interval * 1000 > ms - 1 && interval * 1000 < ms + 1) }'; then
+	echo "FAIL: the watcher samples every ${interval}s and the step reports each sample as ${sample_ms}ms; one interval written twice has to agree with itself" >&2
+	exit 1
+fi
+watch_line=$(grep -m1 -F -- '-At -o "$waits" -f "$watch_sql"' "$rehearse_script")
+if [ -z "$watch_line" ]; then
+	echo 'FAIL: the watcher no longer reads its query and \watch from the file the step builds; a query given to -c is gone from the buffer before \watch repeats it, and the sample file then holds one line for a run of any length' >&2
+	exit 1
+fi
+echo 'rehearsal step: the contended grep matches the runner'\''s line, and the lock-wait watcher holds a query and a \watch psql reads from one file'
+
+# 3. The floor is a window, not a wall clock. The step declares a run unmeasured when
+# its sample file holds fewer lines than the window the watcher was alive for resolves
+# to, and both halves of that sentence failed once: the floor was built from the
+# candidate's seconds rounded up, so a clean run of 55ms that straddled a second
+# boundary was asked for five samples its watcher was never alive to take and the step
+# reported a passed release as exit 2; and a floor that never fires is the reported 0
+# the same finding was about. The step's own function answers both, so run it.
+watch_program=$(awk '/^watch_floor\(\)/{f=1} f{print} /^}$/{f=0}' "$rehearse_script")
+if [ -z "$watch_program" ]; then
+	echo 'FAIL: the rehearsal no longer derives its watch floor from a function; this case has to be rewritten to say what it does instead' >&2
+	exit 1
+fi
+{
+	sed -n '/^SAMPLE_MS=/p; /^WATCH_STARTUP_GRACE_MS=/p' "$rehearse_script"
+	printf '%s\n' "$watch_program"
+} >"$temporary/watch-floor.sh"
+floor_from_fixture() {
+	bash -c 'source "$1"; watch_floor "$2"' _ "$temporary/watch-floor.sh" "$1"
+}
+# A short run — two files, 55 to 75 milliseconds, which is what a clean rehearsal of
+# this repository's pending files measures — has no floor: nothing was measured wrongly
+# about it, and a step that guesses a failure from a run too quick to sample turns a
+# passing release red.
+floor_short=$(floor_from_fixture 350)
+if [ "$floor_short" != 0 ]; then
+	printf 'FAIL: the watch floor for a 350ms window is %s, not 0; a clean sub-second rehearsal would be reported as LOCK WATCH BROKEN and exit 2\n' "$floor_short" >&2
+	exit 1
+fi
+# A long run has one, well above the single line a watcher that never repeated its
+# query leaves behind, and it grows with the window rather than rounding to seconds.
+floor_long=$(floor_from_fixture 20000)
+if [ "$floor_long" -lt 20 ]; then
+	printf 'FAIL: the watch floor for a 20s window is %s; a watcher that sampled once leaves one line, and a floor under 20 is a floor a dead watcher passes\n' "$floor_long" >&2
+	exit 1
+fi
+if [ "$(floor_from_fixture 60000)" -le "$floor_long" ]; then
+	echo 'FAIL: the watch floor does not grow with the window it is given, so it is a constant dressed as a measurement' >&2
+	exit 1
+fi
+
+# 3b. The branch the floor exists for. Six rounds of rehearsals measured a passing
+# release and never once ran the lines that report a watcher that sampled nothing, and
+# a branch that has never run is a promise the documents make three times over. So the
+# branch is run, not read: the four lines are taken out of the step (a case that
+# restated them would pass whatever the step did), given the window and the sample count
+# the branch is about, and asked what they print and which of the four exit codes the
+# release pipeline ends up reading. The three legs are the three outcomes: a live
+# watcher that sampled nothing takes the exit code that says the step could not run;
+# a watcher that met its floor changes nothing; and a candidate that already failed
+# keeps its own code, because "a migration failed" outranks "and nothing was measured".
+broken_program=$(awk '/^expected=\$\(watch_floor/{f=1} f{print} f&&/^fi$/{exit}' "$rehearse_script")
+if [ -z "$broken_program" ]; then
+	echo 'FAIL: the rehearsal no longer compares the sample file against the watch floor; nothing reports a watcher that sampled nothing, so "lock waits: 0 sample(s)" of a run that lasted a minute reads as a pass' >&2
+	exit 1
+fi
+{
+	sed -n '/^SAMPLE_MS=/p; /^WATCH_STARTUP_GRACE_MS=/p' "$rehearse_script"
+	printf '%s\n' "$watch_program"
+	printf '%s\n' "$broken_program"
+} >"$temporary/watch-broken.sh"
+cat >>"$temporary/watch-broken.sh" <<'SH'
+printf 'code=%s findings=%s\n' "$code" "$findings"
+SH
+# watched_ms, lines, findings and code arrive from the environment: the branch reads
+# them and writes them, which is all the step's own context it needs.
+watch_branch() {
+	env watched_ms="$1" lines="$2" findings=0 code="$3" bash "$temporary/watch-broken.sh"
+}
+broken_run=$(watch_branch 20000 1 0)
+case "$broken_run" in
+*"LOCK WATCH BROKEN"*) ;;
+*)
+	echo "FAIL: a watcher alive for 20s that left 1 line in the sample file printed [$broken_run]; the step reports a measurement it did not take as a pass" >&2
+	exit 1
+	;;
+esac
+case "$broken_run" in
+*"code=2 findings=1"*) ;;
+*)
+	echo "FAIL: the LOCK WATCH BROKEN finding did not reach the exit code: [$broken_run]; a release pipeline reads 0 as a pass and 2 as a step that could not run" >&2
+	exit 1
+	;;
+esac
+if [ "$(watch_branch 20000 100 0)" != "code=0 findings=0" ]; then
+	echo "FAIL: a watcher that met its floor was reported anyway [$(watch_branch 20000 100 0)]; that is a step that invents the failure it was built to notice" >&2
+	exit 1
+fi
+case "$(watch_branch 20000 1 1)" in
+*"LOCK WATCH BROKEN"*"code=1 findings=1"*) ;;
+*)
+	echo 'FAIL: a candidate that had already failed lost its own exit code to the watch finding: the failed migration is the finding the release has to act on' >&2
+	exit 1
+	;;
+esac
+echo 'rehearsal step: a watcher that sampled nothing over a window it was alive for is LOCK WATCH BROKEN and exit 2, a met floor is silent, and a failed candidate keeps exit 1'
+
+# 3c. The four branches that turn a measurement into a finding. Everything the step puts
+# in front of a release pipeline is four messages and one of four exit codes, and the
+# document that owns those codes says a pipeline has to tell the failures apart. Each of
+# the four prints its line and adds one to `findings`; for TOO SLOW and LOCK WAIT that
+# increment is the only thing between the message and `rehearse: ok:` with exit 0, and
+# for all four the increment is the line the tail reads. Measured: replacing
+# `findings=$((findings + 1))` with `:` in any one of the four leaves `make check` green,
+# so four branches that had each run in a real rehearsal were asserted by nothing. The
+# same technique as 3b closes all four: the lines are taken out of the step, given the
+# inputs the branch is about, and asked what they print and which code the step's own
+# `exit` then carries. The legs are the four findings, the silence that proves each one
+# is conditional, and the two precedence rules the tail states out loud.
+step_branch() { # $1 = the branch's first line, $2 = its last, both with indentation stripped
+	awk -v first="$1" -v last="$2" '
+		{ line = $0; sub(/^[ \t]+/, "", line) }
+		!found && line == first { found = 1 }
+		found { print }
+		found && line == last { exit }
+	' "$rehearse_script"
+}
+step_tail() { # $1 = a line the step carries exactly once; everything from it to the end
+	awk -v first="$1" 'index($0, first) { found = 1 } found' "$rehearse_script"
+}
+slow_program=$(step_branch 'if [ "$ms" -gt $((max_file * 1000)) ]; then' 'fi')
+lock_program=$(step_branch 'if [ "$lock_ms" -gt "$max_lock" ]; then' 'fi')
+contend_program=$(step_branch 'if [ -n "$contended" ]; then' 'fi')
+drain_program=$(step_branch 'if [ -n "$unfinished" ]; then' 'fi')
+# The tail is the step's own decision: which code a candidate's failure keeps, which one
+# a finding takes over, and the `ok:` line a release reads when nothing was found.
+tail_program=$(step_tail 'applied=$(wc -l <"$work/files.tsv")')
+for branch in "$slow_program" "$lock_program" "$contend_program" "$drain_program" "$tail_program"; do
+	if [ -z "$branch" ]; then
+		echo 'FAIL: the rehearsal no longer carries one of the branches that turns a measurement into a finding, or the tail that turns the findings into an exit code; this case has to be rewritten to say what reports TOO SLOW, LOCK WAIT, CONTENDED and DRAIN UNFINISHED instead' >&2
+		exit 1
+	fi
+done
+# The fixture runs the step's own lines, in the order the step runs them, over one file's
+# numbers. `note` is the step's own writer, restated here only because it lives above the
+# lines this case takes: the two lines it prints are what the leg asserts on.
+{
+	printf '%s\n' 'note() { echo "rehearse: $*"; }'
+	printf '%s\n' "$slow_program" "$lock_program" "$contend_program" "$drain_program" "$tail_program"
+} >"$temporary/rehearse-report.sh"
+report_case() { # $1=ms $2=lock_ms $3=contended $4=unfinished $5=the code the candidate came back with
+	local out status
+	out=$(env ms="$1" lock_ms="$2" contended="$3" unfinished="$4" code="$5" findings=0 \
+		owner=user version=25 name=000025_backfill.up.sql \
+		max_file=30 max_lock=5000 SAMPLE_MS=100 samples=0 watched_ms=2000 \
+		applied=1 total="$1" longest=user/25 longest_ms="$1" \
+		bash "$temporary/rehearse-report.sh" 2>&1) && status=0 || status=$?
+	printf '%s|exit=%s\n' "$out" "$status"
+}
+# Each finding has to reach the exit code the step documents for it (3: a budget was
+# exceeded, or a migration came back contended) and not end in `ok:`.
+report_leg() { # $1 = what the leg is, $2 = the line it must print, then the five inputs
+	local description="$1" wanted="$2" out
+	shift 2
+	out=$(report_case "$@")
+	case "$out" in
+	*"$wanted"*'|exit=3'*) ;;
+	*)
+		printf 'FAIL: %s printed [%s]; the step names the finding and does not let it reach the exit code a release pipeline reads (3), so the run answers a budget overrun with `ok:` and exit 0\n' "$description" "$out" >&2
+		exit 1
+		;;
+	esac
+	case "$out" in
+	*'ok:'*)
+		printf 'FAIL: %s printed `ok:` beside its own finding: [%s]\n' "$description" "$out" >&2
+		exit 1
+		;;
+	esac
+}
+report_leg 'a file over its time budget' 'TOO SLOW user/25 40000ms > 30s' 40000 0 '' '' 0
+report_leg 'a sampled lock wait over its budget' 'LOCK WAIT 6000ms > 5000ms' 100 6000 '' '' 0
+report_leg 'a file that came back contended' 'CONTENDED platformkit/25 db: migration is contended' \
+	100 0 'platformkit/25 db: migration is contended' '' 0
+report_leg 'a drain the release did not finish' 'DRAIN UNFINISHED user/25' 100 0 '' 'user/25' 0
+# And the three ways the branches stay out of the way: a file inside its budget prints
+# nothing and answers 0 (a step that reported every release as too slow would be switched
+# off, which is the same loss), a candidate that failed with nothing found keeps the plain
+# failure (1), and a contended file takes 3 even from a candidate that already failed, which
+# is the one pair the whole step exists to tell apart from 1.
+silent_run=$(report_case 29000 0 '' '' 0)
+case "$silent_run" in
+*'TOO SLOW'* | *'LOCK WAIT'* | *'CONTENDED'* | *'DRAIN UNFINISHED'*)
+	printf 'FAIL: a file inside both budgets was reported anyway: [%s]\n' "$silent_run" >&2
+	exit 1
+	;;
+esac
+case "$silent_run" in
+*'rehearse: ok:'*'|exit=0'*) ;;
+*)
+	printf 'FAIL: a release with nothing wrong with it did not end in ok and exit 0: [%s]\n' "$silent_run" >&2
+	exit 1
+	;;
+esac
+case "$(report_case 100 0 '' '' 1)" in
+*"failed: 0 finding(s); exit 1"*"|exit=1"*) ;;
+*)
+	echo "FAIL: a candidate that failed with no finding did not keep the plain failure: [$(report_case 100 0 '' '' 1)]; the release pipeline cannot tell 'the migration failed' from a budget it exceeded" >&2
+	exit 1
+	;;
+esac
+case "$(report_case 100 0 'platformkit/25 db: migration is contended' '' 1)" in
+*"CONTENDED"*'failed: 1 finding(s); exit 3'*'|exit=3'*) ;;
+*)
+	echo "FAIL: a contended file that also failed did not become exit 3: [$(report_case 100 0 'platformkit/25 db: migration is contended' '' 1)]; telling a contended release from a broken one is the reason this step has four codes" >&2
+	exit 1
+	;;
+esac
+echo 'rehearsal step: each of the four report branches reaches the exit code its own message claims, the ones that do not apply stay silent, and a contended file outranks the plain failure'
+
+# 4. Whether \watch fills the file at all. Everything the step says about lock waits is
+# the product of this file's line count, so the sampling is measured and not read: this
+# runs the step's own psql line, taken out of the step, for two seconds, and asks the
+# sample file how many times it filled. Case 2 of scripts/review_rehearsal_test.sh asks
+# the same question over that same line for three seconds. It used to run a
+# `psql -c <query> -c '\watch 0.1'` invocation, which psql answers once and then refuses
+# to repeat, and no case written that way could have sampled anything whatever it was
+# pointed at (measured on psql 18.6 and on the 16.15 inside the project's own image).
+# Both cases need psql and a database, so where either is missing this prints SKIPPED,
+# and what `make check` proves without a server is the floor's arithmetic above.
+if ! command -v psql >/dev/null || [ -z "${PLATFORMKIT_TEST_ADMIN_URL-}" ]; then
+	echo 'rehearsal step: the live watcher needs psql and PLATFORMKIT_TEST_ADMIN_URL; SKIPPED, so the sampling is unproven on this machine'
+else
+	printf 'run_url=%s\nwaits=%s\nwatch_sql=%s\n' \
+		"$(printf '%q' "$PLATFORMKIT_TEST_ADMIN_URL")" \
+		"$(printf '%q' "$temporary/waits")" "$(printf '%q' "$temporary/watch.sql")" \
+		>"$temporary/watch-live.sh"
+	printf '%s\n' "$watch_line" >>"$temporary/watch-live.sh"
+	printf 'watcher=$!\nsleep 2\nkill "$watcher" 2>/dev/null || true\nwait "$watcher" 2>/dev/null || true\ngrep -c "" <"$waits" 2>/dev/null || true\n' \
+		>>"$temporary/watch-live.sh"
+	: >"$temporary/waits"
+	watch_samples=$(bash "$temporary/watch-live.sh")
+	if [ "${watch_samples:-0}" -lt 4 ]; then
+		printf "FAIL: two seconds of the step's own watcher (%s) put %s line(s) in the file it counts; four is what two seconds at %sms resolves to, and a file that holds one line measures no wait of any length\n" "$watch_line" "${watch_samples:-0}" "$sample_ms" >&2
+		exit 1
+	fi
+	echo "rehearsal step: the watch floor is the window the watcher lived for, and its own psql line filled the sample file $watch_samples times in 2s"
+fi
+
+# 5. The line the report is headed with, which two rounds of review wrote cases for and
+# nothing ran. `scripts/review5_rehearsal_provenance_test.sh` runs the step's own
+# candidate line over a tree holding one uncommitted file, and
+# `scripts/review6_provenance_bigtree_test.sh` runs it over one holding five thousand:
+# the two answers part company there, because a `git status --porcelain | grep -q .` lets
+# `grep` close the pipe while `git` is still writing, and under `pipefail` the step takes
+# the 141 as "clean" and names a bare revision for a tree it built a binary out of. A
+# case nothing runs protects nothing, which is the same argument case 3b makes about the
+# branches above, so both are run here rather than left for whoever remembers.
+for provenance_case in review5_rehearsal_provenance_test.sh review6_provenance_bigtree_test.sh; do
+	if ! provenance_out=$(bash "$scripts/$provenance_case" 2>&1); then
+		printf 'FAIL: %s refuses the line the rehearsal report is headed with:\n%s\n' "$provenance_case" "$provenance_out" >&2
+		exit 1
+	fi
+done
+echo 'rehearsal step: the candidate line names the tree the binary was built from, at one uncommitted file and at five thousand'
+
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
 sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"

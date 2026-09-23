@@ -6,7 +6,7 @@
 # Select the same compiler and tools even when PATH contains a newer Go release.
 # Child scripts and their Go subprocesses inherit this exact module version.
 export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
-.PHONY: help build test vet run e2e load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -59,6 +59,15 @@ config.yaml:
 
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
+
+# A release step, not a pull-request gate: it needs psql, pg_dump and pg_restore, a
+# database it may create and drop, and the previous release's revision to copy from.
+# What it answers is the question no other goal here can — what this release's
+# migrations cost against a table the size the installation actually has — and it is
+# the step ADR 0011 requires before a version is published. REHEARSE_ARGS="--base-ref
+# <ref>" (or --dump <file>); scripts/rehearse_migrations.sh names the four exit codes.
+rehearse: ## Apply this tree's pending migrations to a copy of a production-shaped database
+	./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
 
 load-test: ## Compare bounded tenant work and database pool capacity
 	go test ./kit/jobs -run '^$$' -bench '^BenchmarkPerTenantCapacity$$' -benchtime=2s -count=3 -timeout=3m

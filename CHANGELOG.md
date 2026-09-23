@@ -7,6 +7,93 @@ it. Each was written because the state was reachable, not because a race was
 reported, and each says below what it leaves open rather than leaving that to a
 reader who depends on it.
 
+**A migration now says what kind of migration it is, and the runner holds it to
+that shape.** A rewrite and a ten-million-row backfill were the same file: one
+transaction, no bound, and the expand/contract rule a review comment. A file may
+carry a `-- pkit:` header — `phase=expand|contract|data`, with `batch=`, `table=`,
+`autocommit=`, and `allow=<rule> reason=…` for the exceptions a reviewer reads
+(the marker is read whatever spaces are written inside it, because an unread
+declaration is a file applied as a kind it is not) — and the runner then applies it
+in the mode it declared: transactionally, as one
+nontransactional statement that must be re-runnable, or as a backfill wrapped over a
+window of its table's primary key, one committed transaction per window, resumable
+from the last key it committed in `schema_migration_backfill` — and from the whole
+table when no key is committed yet, which the ledger says as a NULL, because a `text`
+key can hold the empty string and the smallest key there is. A drain ends in the
+transaction that wrote its last window, not in one after it: "every row written" and
+"the version applied" are one commit, and no run can stop between the two and leave a
+table that reads as unfinished work. Every file runs with a
+five-second `lock_timeout` (configurable, `database.lock_timeout`) and no statement
+bound by default — the same budget the worker's batches re-assert, because a backfill
+is the fifty transactions that wait behind the running application, not the one file —
+and one stopped by the lock budget returns `db.ErrContended`:
+nothing new was applied, and it may be run again. A `contract` file refuses while the
+`expand=` version it names has not already applied, and nothing of an owner applies
+past a drain that has not finished. Which drains a release finishes, and which its
+worker's `schema-backfill` job does, is decided by what waits behind the file: a data
+file with files behind it is the worker's, because this run cannot reach those files
+either way, while the owner's last pending data file is drained by the run itself under
+the bound it gives itself — so a boot never waits behind a table it cannot empty, and a
+release whose last step is to fill a column does not leave that step to a tick. A body
+that says it bounds itself has no window to count, so it stays the worker's even last.
+A boot that meets a drain
+already in flight resumes it under that same bound and boots whatever the bound leaves:
+`db.ErrBackfillBudget` out of a migration is the worker's to finish, not a failed
+deploy, while `platformkit migrate` and `Bootstrap` — doors asked to finish — still
+report it. The worker's own drain is bounded now too, at ten thousand windows: a tick that
+could not stop was a tick that never ended, holding the job's advisory lock while it repeated
+work. A refused data file leaves no progress row behind, and the corrected file
+then converges through the same door, because that row is what
+a resume reads and a file refused for its shape never ran — and the three shapes that
+are the window's to refuse are named there rather than answered with a server error: a
+body of two statements; a body whose own CTE list binds the window's name `batch`; and a body
+that writes the column the cursor is ordered by, which leaves the table never empty of work. The
+last two are read as constructs, not as one way of writing them — the CTE name in either spelling
+PostgreSQL takes it, with a list inside a sub-expression left to the scope that shadows the window
+there, and the assignment target in either shape it takes it, a key merely read by the body left
+alone — and what those readings cannot see (an upsert's `DO UPDATE SET`, a body that only appends
+rows above the cursor) is ended by the tick's bound rather than by nothing. A body that merely opens with a CTE list of its own is none of them,
+and is drained: the window joins the body's list, since PostgreSQL takes one `WITH` per
+statement. The rules
+the runner refuses before connecting, the keys, and the floors each source declares are
+written down once in [migrations/README.md](migrations/README.md); the mode-scoped ban on
+nontransactional SQL is the amendment to
+[ADR 0011](docs/adr/0011-migration-ownership.md). A rule that documents no exception
+cannot be excepted: an `allow=` naming one is refused as the bypass it is. The guards
+read operations rather than spellings (`ALTER TABLE t ALTER col TYPE` rewrites the
+table whether or not the optional `COLUMN` keyword is there, `ALTER TABLE t DROP col`
+takes a name away from the running release whether or not the file spelled the keyword,
+and the `DEFAULT` that
+makes an added column ordinary is read from that column's own definition and not from
+the file), a rule floor is bounded by the source's own highest version rather than by
+whatever number a manifest carries, and the guard and the
+executor read one normalised text of a data file's body, read where PostgreSQL reads it
+(a `--` inside a value is data, the apostrophe inside a `/* … */` is commentary, a
+`$tag$ … $tag$` body is one value and an `E'…'` closes past its escapes), so an excepted
+body runs once and a body that names its window in another case still gets the window.
+
+**The two things the runner cannot decide now have doors.** `platformkit migrate`
+applies the pending schema and exits, over exactly the sources, floors and budgets
+every role's boot composes — the retry for a file that came back `db.ErrContended`,
+which is an operator's decision to wait rather than the runner queueing inside the
+advisory lock every other replica waits on; `--drain` finishes a backfill instead of
+waiting for the worker's tick. Every applied file and every finished drain logs the
+duration the runner itself measured, and `make rehearse`
+is [scripts/rehearse_migrations.sh](scripts/rehearse_migrations.sh): the step a
+release runs before it publishes, which lets the previous release's own binary migrate
+a fresh database, seeds ten thousand rows per table into a copy of it, applies this
+tree's pending files against that copy while sampling `pg_stat_activity` for lock
+waits every 100 ms, and exits 0, 1, 2 or 3 — applied, failed, could not run, over
+budget or contended. It prints a failed migration's own message the moment it stops,
+before any query of its own can fail over a copy the candidate never migrated, and it
+refuses to report a measurement it did not take: a watcher that fell short of half the
+samples its own watched window resolves to is `LOCK WATCH BROKEN` and exit 2, and every
+report names the window it watched and the tree its binary was built from — uncommitted
+files included, because `go build` compiles them and `git diff` does not see them. A
+copy that could not be dropped is named as
+`LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
+quietly.
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was

@@ -285,9 +285,26 @@ func (a *App) Run(ctx context.Context) error {
 
 // migrate applies the ledger as the owner role. Every role does, worker
 // included: the advisory lock makes the race safe, which removes the ordering
-// problem instead of sequencing it. See docs/adr/0005.
+// problem instead of sequencing it. The budgets are the deployment's, if it named
+// any, and the composition is app.Migrate — the same one `platformkit migrate`
+// runs, so a retry is not a second definition of what migrating means.
+// See docs/adr/0005.
 func (a *App) migrate(ctx context.Context) error {
-	return db.Migrate(ctx, a.cfg.Database.MigrateURL, MigrationSources(a.mods)...)
+	err := Migrate(ctx, a.cfg, a.mods)
+	if !errors.Is(err, db.ErrBackfillBudget) {
+		return err
+	}
+	// One answer from that run is not a failed boot. A data file whose drain hit the
+	// bound a migration gives itself says "the committed batches stand and the rest
+	// is the worker's to drain", and the process reading that sentence is the one
+	// that owns jobs.BackfillMigrations: refusing the boot here would stop the only
+	// tick that can finish the work, which is the failure kit/db documents as
+	// impossible. The batches that committed are committed and the cursor names where
+	// the next batch starts, so this role starts, says what it left, and its tick
+	// drains the rest. The same error out of `platformkit migrate` or Bootstrap is
+	// still the caller's to read: those doors asked for a run that finishes.
+	a.log.WarnContext(ctx, "app: left a data migration for the schema-backfill tick", "err", err)
+	return nil
 }
 
 // openConn opens the application connection, as the role row-level security
@@ -529,11 +546,23 @@ func kernelJobs(transport events.Transport) []jobs.Job {
 	}
 }
 
+// drainMigrations is the worker's schedule for the data migrations this
+// composition owns. It is built here rather than inside kernelJobs because it
+// needs three facts the transport does not carry: the owner-role URL migrations run
+// under, the budgets the configuration named, and the sources the composition
+// actually selected. Without it the drain that Migrate deliberately leaves behind
+// would be left behind forever, and "resumable" would mean "somebody runs a command
+// nobody has read about".
+func (a *App) drainMigrations() jobs.Job {
+	return jobs.BackfillMigrations(jobs.BackfillEvery, a.cfg.Database.MigrateURL,
+		migrationBudget(a.cfg.Database), MigrationSources(a.mods)...)
+}
+
 // work is the worker role: the kernel's own jobs, every module's jobs, and every
 // module's subscriptions. probes is the handler it serves, or nil when the web half
 // of the same process is already serving them.
 func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
-	scheduled := kernelJobs(transport)
+	scheduled := append(kernelJobs(transport), a.drainMigrations())
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)

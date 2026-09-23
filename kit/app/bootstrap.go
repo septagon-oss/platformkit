@@ -40,7 +40,7 @@ func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn 
 	if err := pool.Validate(); err != nil {
 		return fmt.Errorf("app: %w", err)
 	}
-	if err := db.Migrate(ctx, cfg.Database.MigrateURL, MigrationSources(mods)...); err != nil {
+	if err := db.MigrateWith(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), MigrationSources(mods)...); err != nil {
 		return err
 	}
 	conn, err := db.OpenWithPool(ctx, cfg.Database.URL, pool)
@@ -58,6 +58,20 @@ func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn 
 		return fmt.Errorf("app: bootstrap: %w", err)
 	}
 	return nil
+}
+
+// migrationBudget resolves the two optional migration budgets at the same
+// application boundary the pool limits use. kit/db owns the defaults and the
+// meaning of a nil field, exactly as it owns the pool's.
+func migrationBudget(cfg config.Database) db.MigrationBudget {
+	budget := db.DefaultMigrationBudget()
+	if cfg.LockTimeout != nil {
+		budget.LockTimeout = cfg.LockTimeout
+	}
+	if cfg.StatementTimeout != nil {
+		budget.StatementTimeout = cfg.StatementTimeout
+	}
+	return budget
 }
 
 // databasePool resolves optional configuration at the application boundary.

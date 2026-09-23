@@ -101,8 +101,11 @@ func authCleanupFixture(t *testing.T, maxOpen int) (*sql.DB, *db.Conn, context.C
 	t.Helper()
 	adminURL, appURL := dbtest.URLs(t)
 	// The module's own SQL, read from disk: this white-box test cannot import
-	// the package that embeds it (modules/auth imports this one).
-	sessions := db.MigrationSource{Owner: "auth", Files: os.DirFS("../migrations")}
+	// the package that embeds it (modules/auth imports this one). The rule floor
+	// travels with it here too, and 000013 is the file that needs it — the same
+	// number modules/auth/migrations.go states for the same owner's history, and
+	// a run that disagreed would be a red test rather than a quiet difference.
+	sessions := db.MigrationSource{Owner: "auth", Files: os.DirFS("../migrations"), RulesFrom: 14}
 	if err := db.Migrate(t.Context(), adminURL, migrations.Source, user.Migrations, sessions); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

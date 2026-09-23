@@ -27,10 +27,29 @@ process migrating and the rest waiting and finding nothing to do. That removes
 the ordering problem instead of sequencing it: there is no migration job to run
 first and nothing to wait for.
 
+One thing is the worker's alone. A `phase=data` migration over a table that already has
+readers is drained by `jobs.BackfillMigrations`, which the worker runs on a tick, because
+holding a boot open for the length of a ten-million-row scan is not what the boot above
+is for; `Migrate` stops in front of it and returns success. See
+[ADR 0011](0011-migration-ownership.md).
+
+And one door is the operator's. `platformkit migrate` composes the same sources, the
+same floors and the same budgets as the boot above (`app.Migrate` is that composition
+once) and then exits, for the case the boot cannot serve: a migration that came back
+*contended* — it declined to wait for a lock past its budget — may be run again by
+whoever decided to wait, and deciding that is not a deployment. `--drain` finishes a
+backfill instead of waiting for the tick.
+
 ## Consequences
 
 - Deploying is `kubectl set image` on two deployments of the same image.
-- A worker cannot serve a stale schema: it applied the schema itself.
+- A worker waits for no migration job: every role migrates in its own boot, and the
+  schema it serves is the schema it applied — up to the one thing a boot does not do, the
+  drain of a `phase=data` file. While that runs on the worker's tick, the versions queued
+  behind the data file are still the previous release's, for one tick's length, and the
+  tick above is the deployment's own — which is why it is a job and not a background
+  habit. A boot that drained a table under readers itself, or refused to start until
+  somebody else had, is the alternative, and it is worse.
 - A migration that is slow makes every replica's boot slow, which is visible in
   the rollout rather than hidden in a job that finished an hour ago.
 - This rebuild starts on a fresh database, with no old-ledger conversion.
@@ -54,4 +73,5 @@ first and nothing to wait for.
 ```sh
 go test ./kit/app -run 'TestWorkerRelaysAndAnswersItsProbes'
 go test ./kit/db  -run 'TestMigrateIsIdempotent'
+go test ./apps/platformkit -run 'TestMigrateCommandAppliesTheComposedSources'
 ```

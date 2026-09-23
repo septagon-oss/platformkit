@@ -1,4 +1,12 @@
-# Kernel schema
+# Migrations
+
+The kernel's own schema lives here, and a file under any `migrations/` directory
+— the kernel's or a module's — is written by the same rules. The first part below
+describes this directory and the two names it carries to the outside; the second
+is the part an author reads: what a file may say about itself, and what the
+runner refuses.
+
+## The kernel schema
 
 `migrations/` is the kernel's own schema, owned as `platformkit`: the tenancy
 helpers and the tenants and hosts they resolve, the outbox with its claims and
@@ -119,3 +127,376 @@ nothing cannot pass, and `openSchema`/`tenantTable`, the fixture pair a module's
 first two revisions look like, are unexported helpers of
 `package migrations_test`, which no importer can reach: reusable as the shape a
 later test file copies, not as an API.
+
+## Writing a migration
+
+Every `.up.sql` file under a `migrations/` directory — the kernel's here, and a
+module's under `modules/<name>/migrations/` — is forward-only, immutable once
+applied, and owned by one capability. [ADR 0011](../docs/adr/0011-migration-ownership.md)
+owns that contract; this file is the part an author reads: what a file may say
+about itself, and what the runner refuses.
+
+A file runs in one transaction with its history row. Three kinds of file are not
+like that, and a file has to say which it is, because a reader cannot tell from
+the SQL.
+
+### The header
+
+A run of comment lines at the very top of the file, before any SQL:
+
+```sql
+-- pkit: phase=data
+-- pkit: batch=5000
+-- pkit: table=billing_plans
+UPDATE billing_plans SET currency = 'EUR'
+  WHERE currency IS NULL AND id IN (SELECT id FROM batch)
+```
+
+(The table is whatever the file drains; the header's job is to say which, in a form
+the runner can read before it connects. The body sees one window of that table's
+primary key as the relation `batch`, and the runner runs it once per window, in its
+own transaction.)
+
+A body that never reads that relation cannot be bounded by it, so it is refused by
+`data-body-unbounded` unless it says why it bounds itself. The decision whether to
+wrap a body is made from the same reading of the same text as that refusal — comments
+gone, case folded, and the contents of every string literal put away for this one
+question, which is about the statement and not about the data it carries — so the file
+the guard judged is the file that runs: an excepted body runs once, a body that names
+`BATCH` in another case still gets its window, and one that names the window only
+inside a value it is writing does not. Two dashes inside a literal is data, not the
+comment that would otherwise hide the rest of its line from the guard, and the three
+spellings that fact repeats through are read the same way: `/* … */` nests and spans
+lines, `$tag$ … $tag$` is one value however many apostrophes and semicolons it carries,
+and `E'…'` ends at its last unescaped quote rather than at the escape before it.
+
+A file that keeps a statement the rules refuse says so, in the sentence a reviewer
+will read with the marker:
+
+```sql
+-- pkit: allow=index-not-concurrent reason=billing_plans holds one row per tenant
+CREATE INDEX billing_plans_currency ON billing_plans (currency)
+```
+
+Each line is `-- pkit: key=value [key=value …]`. The marker is read whatever spaces
+were written inside it — `--  pkit:`, `--pkit:`, a tab, an indent, `-- pkit :` — because
+a declaration the reader skipped is not a file that declared nothing: it is a file
+applied as a kind it is not. Unread, a `phase=data` file is a schema file, its
+whole-table statement runs inside the migration's one transaction, and the version then
+makes the bytes immutable and the marker impossible to add. That is the harm, and it is
+why the marker is read loosely where the *line* stays strict: the pairs, their keys and
+their domains are refused exactly as before. `reason=` is the one value that may
+carry spaces: its sentence ends at the end of its line, or at the next `key=` the
+grammar knows, whichever comes first — a declaration written after a sentence, or glued
+straight after `reason=` with its space missing, is read as a declaration, and the empty
+sentence that leaves is refused by name. The reading that eats a declaration instead
+leaves the file running as a different kind of file, with an exception on it that the
+eaten declaration made valid. Every other value is one word, and a key may not repeat.
+After the first line that is not a header line, a `-- pkit:` marker may not appear
+again — a marker the runner would not read claims a review the runner never did. The
+checksum covers the whole file including the header, so an applied file can never be
+marked: marking it would mean changing bytes some installation already ran.
+
+| key | values | who reads it |
+| --- | --- | --- |
+| `phase` | `expand` (the default), `contract`, `data` | the runner, for the order a release may apply in and how the file runs |
+| `expand` | a version of the same owner | required by `phase=contract`; the expansion this file waits for |
+| `batch` | rows, 1…100000 | required by `phase=data`; one transaction per window |
+| `table` | one bare lower-case identifier | required by `phase=data`; what the window walks |
+| `autocommit` | `true` | the file's one statement runs with no transaction around it. The mode is one statement per file: PostgreSQL wraps a multi-statement simple query in one transaction, so a second statement is answered by `25001` and not by a rule — and a file that did not run leaves no object and no history row, so the corrected file is the same file run again |
+| `allow` | a rule name below | excepts that rule for this file; needs `reason=` on the same line |
+| `reason` | a sentence, at least three characters | nobody but the reviewer — that is its function |
+
+A grammar mistake refuses before the runner connects, and no `allow=` excuses one:
+an exception that can except a broken marker is a marker nobody can rely on.
+`batch` is refused for the value the file wrote — `batch=0` is refused as `batch=0`,
+not as a missing key — because a refusal that names the wrong key sends the operator
+to a line that is already there.
+
+### What the runner refuses, and what to write instead
+
+Each refusal names its rule, says what the file does, and says what to do instead.
+The engine reads text with comments stripped, not a parse tree — the runner is not
+a SQL parser — so a statement inside a dollar-quoted body can be flagged, and the
+answer is the marker. It can be flagged because the rules read it: the four that look at a
+statement at all read the statements a `DO $$ … $$` or a function body holds beside the
+file's own, with the PL/pgSQL words that open a statement inside a block — `BEGIN`, a
+branch's test and its `THEN`, `ELSE`, a loop header, a label — taken off the front. Cutting
+the body at its own semicolons was not enough, and the difference is the whole finding: the
+piece that comes out of such a cut still begins `do $$ begin alter table`, no rule is
+anchored behind a dollar sign, and the rule that never fired cannot be excepted — so the
+dropped column, the type rewrite and the plain index build wrapped in the conditional block
+every idempotent file writes reached PostgreSQL with nothing named, and the author who tried
+to write down the risk was refused for writing it (`unused-allow`: a marker for a rule that
+never fired). What the reading now over-reads is one thing: a statement a body holds behind
+a test the running installation decides fires whatever that branch takes, and the answer is
+the marker and the sentence. What it does not read is a value *inside* a body — a `RAISE
+NOTICE 'alter table probe drop column b'` keeps `raise` at its front, exactly as the same
+words inside a plain file's literal do — because the anchor has to be reached on both sides
+of the boundary.
+
+Every row of the table below is answered from the files, before the runner opens a
+connection, and that ordering is what makes a refusal a refusal rather than a half-applied
+release: a run the guard refuses writes nothing, the runner's own two tables included, so
+the installation it refused is the installation that never saw the file. What an operator
+reads afterwards is the message and the catalogue — `pg_class` answers what a refused run
+left, and `schema_migrations` is not there to be read until some run applied something.
+Two cases hold the boundary from opposite sides:
+`migrations/review_floors_test.go` points `db.Migrate` at a database that is not there and
+asks which rule answered, and `kit/db/review_guarantees_test.go` counts the relations a
+refused composition left behind — the runner's own two among them — and requires that
+count to be zero.
+
+A comment is found where a comment actually starts, and so is a
+literal: two dashes inside `'…'` or `"…"` are data, the apostrophe inside a `--` or a
+`/* … */` is commentary, a `$tag$ … $tag$` body is one value and not a run of quotes —
+whatever letters its tag carries, because a tag is a name and a name takes the
+database's own letters, not ASCII alone — and an `E'…'` closes where its backslashes let
+it. None of them can move the boundary of what the guard sees, and that is one decision
+rather than two: the reading that puts a construct away and the split that cuts the file
+into statements ask the same scanner where the construct ends. Counting the quotes inside
+a dollar body did move it — one lone `"` in a function body left the splitter certain the
+rest of the file was a name, no later semicolon cut, and the two rules anchored at the
+front of a statement read no action in the `ALTER TABLE` after the body and offered no
+marker to except.
+
+Eight refusals have no `allow=` to answer them — the executor's three (`a data file is one
+statement`, `the window is the relation named batch`, and the key set the window runs over being
+moved by the body it wraps), and the five rules whose exception column says `none` — and a refusal
+an author cannot contest may not rest on a reading that is wrong about what the file *does*,
+because the file it refuses is not correctable: `unused-allow` refuses a marker for it, and the
+remedy its sentence names has to be a file shape the grammar will accept. The paragraph below the
+table names which reading each of the eight is asked of, and what that gives up.
+
+| rule | fires on | why | exception |
+| --- | --- | --- | --- |
+| `alter-column-type` | `ALTER [COLUMN] … TYPE` or `… SET DATA TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
+| `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` on that column | rewrites the table and refuses every write while it does | allowed |
+| `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create outright, whichever spelling of the name the two lines wrote (`CREATE TABLE IF NOT EXISTS` says the table may already be there). The create it looks for is a statement the file runs: the words of a create inside a value the file is writing say nothing about who is reading the table the build goes over | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
+| `drop-column` | `DROP [COLUMN] …` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
+| `index-concurrent-without-autocommit` | `CONCURRENTLY` in a file's own SQL without `autocommit=true` — in its own SQL, because the word inside a value the file is writing is data and runs no statement | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
+| `autocommit-without-concurrently` | `autocommit=true` with no `CONCURRENTLY` statement in the file or in a body it stores | the marker gives up all-or-nothing; nothing may do that without a reason | none: delete the marker |
+| `autocommit-not-rerunnable` | an autocommit file whose own statement is a `CREATE INDEX CONCURRENTLY` without `IF NOT EXISTS`, or a `DROP INDEX CONCURRENTLY` without `IF EXISTS` | the statement can succeed while the version stays unapplied, so the next run must be able to repeat it | none |
+| `data-body-unbounded` | a `phase=data` body that never reads the `batch` window | the window cannot bound it, so one statement walks the whole table | allowed, with the sentence saying how it bounds itself |
+| `data-with-ddl` | a statement of a `phase=data` file that begins with a DDL verb; the words of a DDL statement inside a value the backfill writes are the data it is writing, not a statement | that file runs outside a transaction, in pieces; DDL there has no rollback | none: split the file |
+| `data-writes-outbox` | `platformkit_outbox` named in a `phase=data` body | one event per row per attempt buries the relay and replays on a resume | allowed |
+| `unused-allow` | an `allow=` for a rule the file does not break | an exception nobody needed is a claim about a risk that is not there, and it outlives the sentence that justified it | none: delete the marker |
+
+The rules whose exception column says `none` have no marker, and an `allow=` naming
+one is refused as what it is — a bypass with a rule name on it — rather than silently
+switching the rule off. Each of them states something a marker cannot make false: what
+PostgreSQL refuses, what the autocommit mode costs, or what a data file cannot
+survive. Because none of them can be answered, none of them is asked of a text that is wrong
+about what the file runs, and the eight divide by the question each one asks. Three — the
+executor's `a data file is one statement`, `data-with-ddl` and `autocommit-not-rerunnable` —
+are decided from the cut PostgreSQL makes rather than the one that reads a dollar body from the
+inside: a value holds its own semicolons, so a statement list written inside one is no longer
+refused by the rule that reads a statement's first word. That is right for the function body it
+usually is (the server answers `CREATE INDEX CONCURRENTLY cannot be executed from a function`,
+measured at the pinned version and at the one after it), and a data body excepted as unbounded
+that wanted real DDL has two files anyway, which is what the refusal tells its author.
+
+The executor's other two are the window's own shape, and they are asked of the body's constructs
+rather than of any one way of writing them. A body whose CTE list binds the name `batch` cannot
+be merged with the window's own member of that name — PostgreSQL refuses two members of one name
+and refuses them after the progress row — so the reader walks the list the wrapper joins and
+reads each member's name in either spelling the server takes (`"batch"` is the name, `batch (id)`
+is the name with its column list, and a list inside a sub-expression is a different scope, which
+shadows the window and runs). The cursor's harm is a body that moves the key set it runs over, and
+two shapes of body do that: one writes the column the cursor is ordered by, which puts its own rows
+back above the position the drain just committed, and one puts *new* rows into the drained table,
+which stands keys above that position that no window ever ordered. Either leaves the table never
+empty of work and every window behind the first re-committing rows an earlier one wrote, so one
+refusal names the harm and the shape it found. That reader needs the key, which is why it is the
+executor's and not this table's, and it asks each statement of the body which table it writes: the
+assignment targets of the UPDATEs whose target it can name — both shapes PostgreSQL takes for one
+assignment, over every spelling of a target (`ONLY` and the parenthesis it may carry, the schema
+qualification, the `*`, and the alias whether or not its `AS` was written) — and the target of
+every INSERT and MERGE, which is the statement that puts rows into a table. An upsert's
+`DO UPDATE SET` and a `MERGE` arm name no target for the list reader, but the statement carrying
+them does, so a re-key written that way over the drained table is refused at *that* target and one
+written over another table moves nobody's cursor. Which key an expression yields is a value and not
+a structure, so a body that appends rows *below* the cursor is refused with the ones that append
+above it; that is the one place this refusal is wider than its harm, and the window's own marker
+answers it — `allow=data-body-unbounded` takes the window off the body, and the file then bounds
+itself. What the reading leaves to the bound is a body that reaches the drained table
+without naming it — through a view over it, or a function the server runs or a trigger the table
+carries — and a body that only *reads* the key, in a predicate or as another column's value, or in
+the words of a value it stores, is no write to it at all. A body that takes rows *away* moves the
+key set the one safe way and drains. The bound one tick of the worker gives its drain ends what the
+reading could not see, and reports `ErrBackfillBudget` rather than applying a version over work
+that is still there.
+
+The other two ask after one word, `CONCURRENTLY`, and ask it of the file's own SQL with the
+contents of every value put away. They contradict each other by construction — one refuses the
+word without `autocommit=true`, the other refuses the marker without the word — so a word read
+anywhere in the file let the file choose which of the two it answered by what it stored: a
+`phase=data` body whose value spelled `CREATE INDEX CONCURRENTLY` was refused by the first,
+its marker refused as a bypass, `autocommit=true` refused on a data file by the grammar, and
+nothing left but to change the data; and an autocommit file whose only such words sat inside a
+value it stored was excused by the second, which took the file out of the transaction that
+gives every other file all-or-nothing for no statement that needed the mode. Outside a value
+that word is the keyword and nothing else, so the refusal asks nothing more than that: no
+statement shape has to be recognised, and no prose in a column, a comment or a `RAISE NOTICE`
+can answer it. What the marker's defence reads is wider than what the refusal reads, and
+on purpose: `autocommit-without-concurrently` also reads the SQL a stored body would run, so a
+build written inside a function this file creates is a statement that needs the mode when that
+function is called and the marker stands; `index-concurrent-without-autocommit` does not read
+it, because the file runs its own statements and a body it stores runs none until something
+calls it. A `CONCURRENTLY` written inside a `DO $$ … $$` block is therefore named by neither
+rule, which is the honest answer and a small one — PostgreSQL refuses that statement in a
+routine body anyway, and the file that ships it learns so from the server, in the one
+vocabulary this table cannot replace.
+
+The eighth asks its question of the file's markers rather than of any statement it runs, and it
+is the one of the eight that fires when another rule did *not*: `unused-allow` reads the file's
+`allow=` list beside the set of rules that did fire. That is why no over- or under-reading of a
+statement can make it wrong in an author's favour — the file it refuses claims a risk its own
+statements do not have, and the answer its sentence names is the deletion of the marker. What
+that gives up is the exception nobody needed, which is the only thing the rule was ever for: a
+marker outliving the sentence that justified it is a claim about a risk the next reader has to
+re-check by hand.
+
+The rule about a type change reads the clause inside an `ALTER TABLE`, not the word
+`COLUMN`, because PostgreSQL makes that keyword optional and both spellings are the
+same rewrite. The rule about a `NOT NULL` column reads one column definition at a time
+for the same reason: the `DEFAULT` that makes the statement ordinary has to be that
+column's own, so a `SET DEFAULT` in a statement beside it excuses nothing — and so does
+the `IS NOT NULL` a partial index carries in its `WHERE` clause, which is a predicate
+over rows and not a constraint this file adds. `ADD COLUMN a integer NOT NULL, ADD
+COLUMN b integer DEFAULT 0` is refused for `a` whatever `b` says. The rule about a
+dropped column reads the optional keyword the same way, because PostgreSQL makes it
+optional there too: `ALTER TABLE probe DROP b` takes the same name away from the
+release running now, and it is refused whatever the word after `COLUMN` was. The name
+itself is read in either spelling PostgreSQL takes it: `ALTER TABLE probe DROP "order"`
+is not a spelling an author chose over another but the only one that parses, so a rule
+that read the bare identifier alone would read no action for the columns that cannot be
+named any other way — and a quoted name is the name and never the keyword it happens to
+spell, which is why `DROP "constraint"` is read as a dropped column where
+`DROP CONSTRAINT c` is not. The bare spelling takes the database's own letters too,
+because PostgreSQL's `ident_start` is `[A-Za-z_\200-\377]` and it folds only ASCII: a name
+carrying a c-cedilla and an a-tilde is legal written bare in the UTF-8 database every
+installation runs under, and a capture that stopped at ASCII read no action for it either. The name is read whole even when it carries the punctuation
+the file is split on: `ADD "a,b" text NOT NULL` is one column, and a split inside the
+name left neither half reading an action. The words
+`ALTER TABLE` puts after `DROP` for something that is not a column — `CONSTRAINT`,
+`IDENTITY`, `EXPRESSION`, `NOT NULL`, `DEFAULT` — are left alone when they are written
+bare, and so is a bare `DROP TABLE` or `DROP INDEX`, which is a different statement
+about a different object. The exemption the `index-not-concurrent` rule grants is looked
+up the same way, by the table rather than the punctuation its two lines happened to use:
+`CREATE TABLE "probe"` creates the one table `CREATE INDEX … ON probe` names, and a file
+that ships its index in the file that creates the table — the remedy the refusal itself
+names — is excused by it whatever order the two spellings arrived in. What it cannot see is
+the case a quoted name was written in, because the text this rule reads arrives case-folded:
+`CREATE TABLE "Probe"` beside `CREATE INDEX … ON probe` names one table to the guard and two
+to the server, which folds only ASCII, and the guard then excuses a build it should refuse.
+That residual is the fold every rule in this table reads with, stated here rather than left
+for a reader to find: the file that spells one table two ways is a bug whatever the guard
+answers, and the exemption can only ever withhold a refusal, never impose one.
+
+Two rules about a release rather than a file: a `phase=contract` file refuses while
+its `expand=` version is not already in the installation's history, and nothing of
+an owner applies past a `phase=data` file that has not finished draining — the
+worker drains that, and the next migration continues. Two drains are the run's own: one
+already in flight, which `Migrate` takes up under the bound a migration gives itself
+(past that bound the boot continues and the tick finishes it), and the owner's last
+pending data file, which has nothing behind it waiting on the work and a window to bound
+it by. A body that said it bounds itself has no window, so it stays the worker's even
+last. An owner with no history at all is the exception both times: nobody is reading,
+and its files apply in order.
+
+The version a contract half names is bounded by what the release can check, and that bound is
+not one of the two questions the ledger answers. It is the same shape of bound a source's
+`RulesFrom` floor carries — a self-declared number, judged against the files the source
+can point at rather than trusted — and it holds whatever the installation looks like,
+because a fresh database is where an unbounded one does the most damage: the files apply in
+order, so `expand=` has to name a version *before* the half that waits for it and one this
+release actually lists. A half beside the expansion its own release runs after it
+(`000002` contract `expand=3`, `000003` the expansion) therefore refuses, and so does one
+waiting on a version the owner's numbering skips. Both are the state the rule exists to
+refuse, arrived at by a route the ledger cannot see: no order of applying makes the wait true,
+the half applies, the row is written, and the installation is left holding a schema no other
+installation of the same release has. The ordinary pair — the expansion a file before the half,
+both in one fresh release — applies, as it must: every module's own test and every bootstrap
+migrates from nothing.
+
+Those refusals are facts of the installation rather than of a file's text, so none of them
+is exceptable, and each prints its id in front of its own sentence —
+`refusal contract-without-expansion`, `refusal data-table-missing`,
+`refusal data-key-not-primary-key`, `refusal backfill-exceeds-install-budget` — which
+[the runner's own page](../kit/db/README.md) tables beside the two that report a drain
+(`db.ErrBackfillBudget` and `db.ErrContended`).
+
+### The floor: guards apply to new versions
+
+A rule cannot be refused on a file that is already applied somewhere: the bytes are
+immutable and the only remedy left would be to stop the installation. So a source
+states the first version it is guarded from — `RulesFrom` on its
+`db.MigrationSource`, which a module also carries on its manifest — and the number
+is one past the highest file the rules refuse today. In this repository the floors
+are measured, not chosen: `platformkit` 21, `audit` 24, `auth` 14, `user` 26. A
+source that says nothing is guarded from version 1, which is what a module added
+after these rules exist should declare. Lowering a floor is a review, not an edit.
+
+A floor is bounded by the history it can claim. The versions a source can point at end
+at its own highest file — `pendingMigrations` refuses an applied version a release no
+longer lists — so a number past that head plus one excuses nothing that exists: it is
+the guard switched off for versions nobody has written yet, the opposite of what the
+field is for. Such a floor earns no exemption, and every file of that source is judged
+at the point where the ledger says which of them are pending (a file below an *honest*
+floor is applied bytes, and those the rule table must not judge).
+`kit/db/review3_guard_floor_test.go` holds both directions of that, and a contract half
+behind the same unusable floor still waits for its expand.
+
+### The retry, and the rehearsal
+
+A file that came back `contended` applied nothing and may be run again by whoever
+chooses to wait. The door for that is `platformkit migrate --config config.yaml`:
+every role's own migration over the same composition, sources, floors and budgets,
+without a server attached. `--drain` adds the rest of the convergence — the backfill
+the migration deliberately left to the worker, then the migration again for the files
+that waited behind it — which is what a deployment does across two ticks of its
+worker anyway.
+
+What no guard or budget can say is what a release will cost against the table the
+installation actually has. `make rehearse` is the step that answers it, and the step
+a release requires before a version is published:
+
+```sh
+REHEARSE_ARGS="--base-ref v1.1.0" make rehearse                  # the previous release's own schema
+./scripts/rehearse_migrations.sh --dump /backups/last-night.dump # somebody's real database
+```
+
+It builds this tree, makes a copy of a production-shaped database — the previous
+release's own binary migrating a fresh one, then ten thousand rows per seeded table
+(`scripts/testdata/rehearse/seed.sql`), or an operator's dump restored into it — and
+runs `platformkit migrate --drain` against the copy while sampling `pg_stat_activity`
+for lock waits. Its first line names the tree the run's binary was built from, saying
+so when that tree carries files the revision does not — `go build` compiles an
+uncommitted migration, which is the file this step exists to price, and `git diff` does
+not see it. It names the ledger the copy starts from before the candidate connects,
+which is the only thing that tells a release that changes no schema apart from a copy
+that already holds this tree's bytes — `0 file(s) applied` reads the same either way —
+and it reports one line per file with the duration the runner measured,
+then the totals, then a verdict, and exits 0 (applied inside both budgets), 1 (a
+migration failed, rule refusals included — the candidate's own message is printed as
+soon as it stops, before any query of the step's own can fail over a copy the
+candidate never migrated), 2 (it could not run, including a watcher that never
+sampled: a number the step did not take is not a pass) or 3 (a budget was overrun or
+a file came back contended). A contended file is a finding and never a pass:
+discovering it here is the point of doing this before the release rather than during
+it.
+
+What it does not measure, and no rehearsal can: the wait behind a table a running
+application is reading — there is no application here, and lock waits are sampled
+every 100 ms, so a shorter wait can be missed. That is the only gap the step leaves
+open on purpose, and it does not report across it: a run whose watcher fell short of
+half the samples the window it was alive for resolves to prints `LOCK WATCH BROKEN`
+and exits 2, because "0 sample(s) ≈ 0ms" of a run that lasted a minute is a
+measurement that never happened — and a floor built from seconds rounded up indicts a
+run that was 55 ms long, which is the same fault wearing a red coat. Every report says
+how long it watched, so a 0 reads as "nothing waited" or "there was no time to see".
+`--max-file-seconds` and `--max-lock-ms` are the operator's budgets, not the kernel's;
+`--keep` leaves the two databases behind for comparison, nothing outside those two
+names is ever dropped, and a copy whose drop was refused is named on the output as
+`LEFT BEHIND` rather than kept quiet.
