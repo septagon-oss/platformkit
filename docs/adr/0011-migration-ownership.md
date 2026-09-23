@@ -133,7 +133,15 @@ that failed writes no row either way.
 The order of a release is now a rule rather than a review comment. A `contract` file
 refuses while the `expand=` version it names is not already in that installation's
 history — one release of separation is the whole of what the ledger can state; how
-long ago is a release calendar, which belongs to the product. Nothing of an owner
+long ago is a release calendar, which belongs to the product — and the number is bounded
+by what the release can check rather than trusted, as a source's rule floor is: it has to
+name a file of the same owner that comes before the half that waits for it, because the
+owner's files apply in order. An unbounded `expand=` is the case the ledger cannot see —
+a half whose expansion no release of that owner ever had applies on a fresh installation,
+is written to the ledger as waited for, and leaves the installation holding a schema no
+other installation of the same release has — so the bound is asked before any file runs,
+and the fresh installation that has no history to refuse with answers it exactly as an
+installed one does. Nothing of an owner
 applies past a data file that has not finished draining, and what decides who runs such
 a drain is what waits behind it. The installation with no history drains its own,
 bounded. So does the run that finds a data file with nothing of its owner pending behind
@@ -158,7 +166,14 @@ reason=<one sentence>`, the reason being the whole content of an exception and
 marker, and a marker naming such a rule is refused as the bypass it is rather than
 switching the rule off: those four state what PostgreSQL refuses, what the autocommit
 mode costs, or what a data file cannot survive, and a comment cannot make any of that
-false. Four refusals are not judgements about a file's text at all but facts about this
+false. Which text each of the five refusals with no `allow=` is asked of — those four rules and
+the executor's count of a data file's statements — follows from that, because a refusal nobody can
+contest is not a place to approximate: the three that read a statement are asked of the cut
+PostgreSQL makes, where a value holds its own semicolons, and the two that ask after the word
+`CONCURRENTLY` of the file's own SQL with the contents of every value put away, since the two
+rules contradict each other by construction and a word read anywhere in the text let a file
+choose which one it answered by what it stored.
+Four refusals are not judgements about a file's text at all but facts about this
 installation — a table that is not here, a key the window cannot walk, the expansion a
 contract half waits for, a drain past the bound a migration gives itself — and each prints
 its id in front of its own sentence (`refusal <id>: …`, named by `kit/db/refusals.go` and
@@ -169,8 +184,15 @@ clause inside an `ALTER TABLE`, which PostgreSQL lets be written with or without
 `COLUMN` keyword, a `DROP` inside an `ALTER TABLE` takes that keyword away from the
 running release whether or not the file spelled it, and a `NOT NULL` column is read from
 that column's own definition, so a `DEFAULT` belonging to a statement beside it excuses
-nothing — and each of those three reads the *name* the action carries in either spelling
-PostgreSQL takes it: a column named after a reserved word, or created inside double
+nothing — and they read those operations wherever the file writes them, including inside a
+`DO $$ … $$` block: cutting a dollar-quoted body at its own semicolons leaves every piece
+behind the dollar sign, which no rule anchored at a statement's front reaches, and a rule that
+never fires cannot be excepted, so the wrapped statement ships with nothing named and the
+author's own record of the risk is refused as an unused exception. What reaching inside a body
+over-reads is a statement the body holds behind a test the running installation decides, which
+is the false positive the marker exists for; what it does not reach is a value inside the body,
+because the anchor has to be reached on both sides of the boundary. Each of those three reads
+the *name* the action carries in either spelling PostgreSQL takes it: a column named after a reserved word, or created inside double
 quotes, can only ever be named quoted, so a capture that stops at the bare identifier
 reads no action at all for exactly those columns, and the harm the rule is about ships
 with no rule named. The bare spelling takes the database's own letters as well —

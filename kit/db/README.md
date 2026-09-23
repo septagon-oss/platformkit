@@ -133,7 +133,14 @@ dollar body inside: a `;` inside a value the body is writing leaves the body one
 and the window wraps it whole. A rule that over-reads a construct can be answered with
 `allow=` and a sentence; this refusal, `data-with-ddl` and `autocommit-not-rerunnable` — the
 three that read a statement split and state no exception — can be answered with nothing, and
-a refusal an author cannot answer may not rest on an approximation.
+a refusal an author cannot answer may not rest on an approximation. The same argument reaches
+the two rules that ask after the word `CONCURRENTLY` and state no exception either: they ask it
+of the file's own SQL with the contents of every value put away, because the word inside a
+value the file is writing says nothing about what the file runs, and a reading wrong about that
+left a `phase=data` file refused by one of them with every answer refused in turn — the marker
+as a bypass, `autocommit=true` as a key a data file may not carry — and excused the other for
+the same word. [migrations/README.md](../../migrations/README.md) holds the table, which rule
+reads which text, and what each reading gives up.
 
 **Refusals below the rule table.** Four refusals are not judgements about a file's text but
 facts about this database — a table that is not here, a key the window cannot walk, an
@@ -145,12 +152,19 @@ explains it (`refusal <id>: …`) because a log line is what an operator greps f
 | --- | --- | --- |
 | `data-table-missing` | the drain, before a progress row exists | the `table=` a data file names is not in this database — a file of another owner that was not selected, or a release that has not applied yet |
 | `data-key-not-primary-key` | the drain, before a progress row exists | the table has no single-column primary key to window over; a table keyed otherwise needs a drain its owner owns, in a job |
-| `contract-without-expansion` | the plan, after the ledger is read and before any file of that owner runs | the contract half waits for an `expand=` version this installation has not applied, and nothing of the owner applied |
+| `contract-without-expansion` | the plan, after the ledger is read and before any file of that owner runs | the contract half waits for an `expand=` version this installation has not applied — or one no release of this owner can have applied, because the version is not a file before the half that names it, which is bounded the way a source's `RulesFrom` floor is and for the same reason — and nothing of the owner applied |
 | `backfill-exceeds-install-budget` | the inline drain, as `db.ErrBackfillBudget` | the bound a migration gives itself was reached; the committed batches and the cursor stand, and the worker's tick finishes the table |
 
 `kit/db/refusal_names_test.go` walks each of the four through the run that refuses it and
-reads the id back off the message, and `kit/db/review8_refusal_ids_are_the_table_test.go`
-reads this table and the ids `refusals.go` declares and refuses the two lists to differ.
+reads the id back off the message, counting the ids it is counting off every non-test file of
+the package rather than off `refusals.go` by name — an id *is* the constant
+`refusal<Name> = "…"`, wherever the runner keeps it, and a gate that opened one file by name
+could only ever hold the ids that stayed there, which is the tenth review's fourth finding.
+`kit/db/review8_refusal_ids_are_the_table_test.go` reads this table against the ids
+`refusals.go` declares and refuses the two lists to differ, and
+`kit/db/review11_a_refusal_id_is_declared_wherever_the_runner_keeps_it_test.go` refuses an id
+whose home is not that file: the file the two lists are read from stays one file however the
+code is arranged, which is what makes the promise below hold and not merely happen.
 Between them the two halves of that promise hold: an id named here that nothing prints, or a
 printed id nothing names, fails one case or the other rather than drifting. A contended file
 is a report and not a refusal — it is `db.ErrContended`, and the paragraph above states what

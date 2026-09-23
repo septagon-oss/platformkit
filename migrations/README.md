@@ -203,7 +203,24 @@ to a line that is already there.
 Each refusal names its rule, says what the file does, and says what to do instead.
 The engine reads text with comments stripped, not a parse tree — the runner is not
 a SQL parser — so a statement inside a dollar-quoted body can be flagged, and the
-answer is the marker. A comment is found where a comment actually starts, and so is a
+answer is the marker. It can be flagged because the rules read it: the four that look at a
+statement at all read the statements a `DO $$ … $$` or a function body holds beside the
+file's own, with the PL/pgSQL words that open a statement inside a block — `BEGIN`, a
+branch's test and its `THEN`, `ELSE`, a loop header, a label — taken off the front. Cutting
+the body at its own semicolons was not enough, and the difference is the whole finding: the
+piece that comes out of such a cut still begins `do $$ begin alter table`, no rule is
+anchored behind a dollar sign, and the rule that never fired cannot be excepted — so the
+dropped column, the type rewrite and the plain index build wrapped in the conditional block
+every idempotent file writes reached PostgreSQL with nothing named, and the author who tried
+to write down the risk was refused for writing it (`unused-allow`: a marker for a rule that
+never fired). What the reading now over-reads is one thing: a statement a body holds behind
+a test the running installation decides fires whatever that branch takes, and the answer is
+the marker and the sentence. What it does not read is a value *inside* a body — a `RAISE
+NOTICE 'alter table probe drop column b'` keeps `raise` at its front, exactly as the same
+words inside a plain file's literal do — because the anchor has to be reached on both sides
+of the boundary.
+
+A comment is found where a comment actually starts, and so is a
 literal: two dashes inside `'…'` or `"…"` are data, the apostrophe inside a `--` or a
 `/* … */` is commentary, a `$tag$ … $tag$` body is one value and not a run of quotes —
 whatever letters its tag carries, because a tag is a name and a name takes the
@@ -214,26 +231,23 @@ into statements ask the same scanner where the construct ends. Counting the quot
 a dollar body did move it — one lone `"` in a function body left the splitter certain the
 rest of the file was a name, no later semicolon cut, and the two rules anchored at the
 front of a statement read no action in the `ALTER TABLE` after the body and offered no
-marker to except. A body's own semicolons still cut the reading the *rules* ask: that
-over-reading is deliberate, and it is the false positive a marker exists for — a rule is a
-judgement a file may answer, and the answer is `allow=` with a sentence. Three refusals have
-no answer to give, and those three are asked of the cut PostgreSQL makes, where a value holds
-its own semicolons: whether a `phase=data` body is one statement, which the executor decides
-before it wraps the body in the window, and the two rules with no exception that read a
-statement's first word (`data-with-ddl` and `autocommit-not-rerunnable`; the paragraph below
-the table says what that costs). A refusal no marker reaches is not a judgement the author may
-contest, so it may not rest on a reading that is wrong about where a value ends — the file it
-refuses is not correctable, and "split the file" cannot split a file that already holds one
-statement.
+marker to except.
+
+Five refusals have no `allow=` to answer them — the executor's `a data file is one
+statement`, and the four rules whose exception column says `none` — and a refusal an author
+cannot contest may not rest on a reading that is wrong about what the file *does*, because the
+file it refuses is not correctable: `unused-allow` refuses a marker for it, and the remedy its
+sentence names has to be a file shape the grammar will accept. The paragraph below the table
+names which reading each of the five is asked of, and what that gives up.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
 | `alter-column-type` | `ALTER [COLUMN] … TYPE` or `… SET DATA TYPE` | a full rewrite under `ACCESS EXCLUSIVE`; the running application stops for the length of the table | allowed |
 | `add-column-not-null` | `ADD COLUMN … NOT NULL` with no `DEFAULT` on that column | rewrites the table and refuses every write while it does | allowed |
-| `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create outright, whichever spelling of the name the two lines wrote (`CREATE TABLE IF NOT EXISTS` says the table may already be there) | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
+| `index-not-concurrent` | `CREATE INDEX` without `CONCURRENTLY` on a table this file does not create outright, whichever spelling of the name the two lines wrote (`CREATE TABLE IF NOT EXISTS` says the table may already be there). The create it looks for is a statement the file runs: the words of a create inside a value the file is writing say nothing about who is reading the table the build goes over | the plain build takes a `SHARE` lock that stops every writer for the length of the build | allowed |
 | `drop-column` | `DROP [COLUMN] …` in a file that is not `phase=contract` | it takes a name away from the release running right now | allowed for a column no installation had rows in |
-| `index-concurrent-without-autocommit` | `CONCURRENTLY` without `autocommit=true` | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
-| `autocommit-without-concurrently` | `autocommit=true` with nothing nontransactional in the file | the marker gives up all-or-nothing; nothing may do that without a reason | none: delete the marker |
+| `index-concurrent-without-autocommit` | `CONCURRENTLY` in a file's own SQL without `autocommit=true` — in its own SQL, because the word inside a value the file is writing is data and runs no statement | PostgreSQL refuses the statement inside the runner's transaction (`25001`) | none: add `autocommit=true` |
+| `autocommit-without-concurrently` | `autocommit=true` with no `CONCURRENTLY` statement in the file or in a body it stores | the marker gives up all-or-nothing; nothing may do that without a reason | none: delete the marker |
 | `autocommit-not-rerunnable` | an autocommit file whose own statement is a `CREATE INDEX CONCURRENTLY` without `IF NOT EXISTS`, or a `DROP INDEX CONCURRENTLY` without `IF EXISTS` | the statement can succeed while the version stays unapplied, so the next run must be able to repeat it | none |
 | `data-body-unbounded` | a `phase=data` body that never reads the `batch` window | the window cannot bound it, so one statement walks the whole table | allowed, with the sentence saying how it bounds itself |
 | `data-with-ddl` | a statement of a `phase=data` file that begins with a DDL verb; the words of a DDL statement inside a value the backfill writes are the data it is writing, not a statement | that file runs outside a transaction, in pieces; DDL there has no rollback | none: split the file |
@@ -244,16 +258,36 @@ The rules whose exception column says `none` have no marker, and an `allow=` nam
 one is refused as what it is — a bypass with a rule name on it — rather than silently
 switching the rule off. Each of them states something a marker cannot make false: what
 PostgreSQL refuses, what the autocommit mode costs, or what a data file cannot
-survive. Three of them — the executor's `a data file is one statement`, `data-with-ddl`
-and `autocommit-not-rerunnable` — are also decided from the cut PostgreSQL makes rather
-than the one the rules read a dollar body inside, for the same reason in the other
-direction: a refusal an author cannot answer with a marker may not rest on a reading that
-mistakes a value's punctuation for the file's statement structure. What that gives up is
-small and stated: a statement list written inside a value is no longer refused by the rule
-that reads a statement's first word, which is right for the function body it is (the
-server answers `CREATE INDEX CONCURRENTLY cannot be executed from a function`) and a data
-body excepted as unbounded that wanted real DDL has two files anyway, which is what the
-refusal tells its author.
+survive. Because none of them can be answered, none of them is asked of a text that is wrong
+about what the file runs, and the five divide by the question each one asks. Three — the
+executor's `a data file is one statement`, `data-with-ddl` and `autocommit-not-rerunnable` —
+are decided from the cut PostgreSQL makes rather than the one that reads a dollar body from the
+inside: a value holds its own semicolons, so a statement list written inside one is no longer
+refused by the rule that reads a statement's first word. That is right for the function body it
+usually is (the server answers `CREATE INDEX CONCURRENTLY cannot be executed from a function`,
+measured at the pinned version and at the one after it), and a data body excepted as unbounded
+that wanted real DDL has two files anyway, which is what the refusal tells its author.
+
+The other two ask after one word, `CONCURRENTLY`, and ask it of the file's own SQL with the
+contents of every value put away. They contradict each other by construction — one refuses the
+word without `autocommit=true`, the other refuses the marker without the word — so a word read
+anywhere in the file let the file choose which of the two it answered by what it stored: a
+`phase=data` body whose value spelled `CREATE INDEX CONCURRENTLY` was refused by the first,
+its marker refused as a bypass, `autocommit=true` refused on a data file by the grammar, and
+nothing left but to change the data; and an autocommit file whose only such words sat inside a
+value it stored was excused by the second, which took the file out of the transaction that
+gives every other file all-or-nothing for no statement that needed the mode. Outside a value
+that word is the keyword and nothing else, so the refusal asks nothing more than that: no
+statement shape has to be recognised, and no prose in a column, a comment or a `RAISE NOTICE`
+can answer it. What the marker's defence reads is wider than what the refusal reads, and
+on purpose: `autocommit-without-concurrently` also reads the SQL a stored body would run, so a
+build written inside a function this file creates is a statement that needs the mode when that
+function is called and the marker stands; `index-concurrent-without-autocommit` does not read
+it, because the file runs its own statements and a body it stores runs none until something
+calls it. A `CONCURRENTLY` written inside a `DO $$ … $$` block is therefore named by neither
+rule, which is the honest answer and a small one — PostgreSQL refuses that statement in a
+routine body anyway, and the file that ships it learns so from the server, in the one
+vocabulary this table cannot replace.
 
 The rule about a type change reads the clause inside an `ALTER TABLE`, not the word
 `COLUMN`, because PostgreSQL makes that keyword optional and both spellings are the
@@ -302,6 +336,21 @@ pending data file, which has nothing behind it waiting on the work and a window 
 it by. A body that said it bounds itself has no window, so it stays the worker's even
 last. An owner with no history at all is the exception both times: nobody is reading,
 and its files apply in order.
+
+The version a contract half names is bounded by what the release can check, and that bound is
+not one of the two questions the ledger answers. It is the same shape of bound a source's
+`RulesFrom` floor carries — a self-declared number, judged against the files the source
+can point at rather than trusted — and it holds whatever the installation looks like,
+because a fresh database is where an unbounded one does the most damage: the files apply in
+order, so `expand=` has to name a version *before* the half that waits for it and one this
+release actually lists. A half beside the expansion its own release runs after it
+(`000002` contract `expand=3`, `000003` the expansion) therefore refuses, and so does one
+waiting on a version the owner's numbering skips. Both are the state the rule exists to
+refuse, arrived at by a route the ledger cannot see: no order of applying makes the wait true,
+the half applies, the row is written, and the installation is left holding a schema no other
+installation of the same release has. The ordinary pair — the expansion a file before the half,
+both in one fresh release — applies, as it must: every module's own test and every bootstrap
+migrates from nothing.
 
 Those refusals are facts of the installation rather than of a file's text, so none of them
 is exceptable, and each prints its id in front of its own sentence —
