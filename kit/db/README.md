@@ -82,7 +82,12 @@ history row — which is the transaction that wrote the drain's last window, not
 it, so there is no moment at which every row is written and the ledger still reads as a
 drain to resume. Both are revoked from the application role: a ledger an application can
 edit is a release that never happened, and a progress row it can edit is a backfill
-that repeats rows.
+that repeats rows. Neither table is there for a run that applied nothing: the rule table
+answers from the files, before the runner opens a connection, so a run it refuses opened
+no connection and left no ledger to query — the log line names the rule and the catalogue
+says what is in the database, which is nothing of that owner. The boundary is the same one
+a refused command keeps: a refused write writes nothing, the runner's own two tables
+included.
 
 **The drain, and who runs it.** A `phase=data` file's body is wrapped over a window
 of its table's primary key and run once per window, one committed transaction per

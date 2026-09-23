@@ -220,6 +220,18 @@ NOTICE 'alter table probe drop column b'` keeps `raise` at its front, exactly as
 words inside a plain file's literal do — because the anchor has to be reached on both sides
 of the boundary.
 
+Every row of the table below is answered from the files, before the runner opens a
+connection, and that ordering is what makes a refusal a refusal rather than a half-applied
+release: a run the guard refuses writes nothing, the runner's own two tables included, so
+the installation it refused is the installation that never saw the file. What an operator
+reads afterwards is the message and the catalogue — `pg_class` answers what a refused run
+left, and `schema_migrations` is not there to be read until some run applied something.
+Two cases hold the boundary from opposite sides:
+`migrations/review_floors_test.go` points `db.Migrate` at a database that is not there and
+asks which rule answered, and `kit/db/review_guarantees_test.go` counts the relations a
+refused composition left behind — the runner's own two among them — and requires that
+count to be zero.
+
 A comment is found where a comment actually starts, and so is a
 literal: two dashes inside `'…'` or `"…"` are data, the apostrophe inside a `--` or a
 `/* … */` is commentary, a `$tag$ … $tag$` body is one value and not a run of quotes —

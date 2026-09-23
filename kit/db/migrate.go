@@ -161,8 +161,13 @@ var ErrContended = errors.New("db: migration is contended: it could not take a l
 //
 // A file the rule table refuses, a contract half whose expansion has not applied, and
 // a grammar mistake in a header are all reported before anything of that owner is
-// applied. Files behind a backfill the worker owns wait for it, and the run returns
-// nil, because that process is the only one that can finish the work.
+// applied. The first and the third are answered from the files, before a connection is
+// opened, so a run they refuse leaves the runner's own two tables uncreated as surely
+// as it leaves no history row: kit/db/review_guarantees_test.go counts the relations
+// such a run left and requires none, and migrations/review_floors_test.go asks the same
+// question by pointing at a database that is not there. Files behind a backfill the
+// worker owns wait for it, and the run returns nil, because that process is the only one
+// that can finish the work.
 func Migrate(ctx context.Context, migrateURL string, sources ...MigrationSource) error {
 	return MigrateWith(ctx, migrateURL, MigrationBudget{}, sources...)
 }
