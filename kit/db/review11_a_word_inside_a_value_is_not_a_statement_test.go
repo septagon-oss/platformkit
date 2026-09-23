@@ -86,7 +86,8 @@ func TestADataValueThatSpellsConcurrentlyIsStillOneWindowedStatement(t *testing.
 				t.Errorf("%d history rows for the data file, want 1", n)
 			}
 			// Nothing the value spells is built, and nothing is left resumable.
-			if n := countRows(t, admin, "SELECT count(*) FROM pg_indexes WHERE indexname = 'probe_note_idx'"); n != 0 {
+			if n := countRows(t, admin, "SELECT count(*) FROM pg_indexes WHERE indexname = 'probe_note_idx'"+
+				" AND schemaname = current_schema()"); n != 0 {
 				t.Errorf("%d indexes named probe_note_idx: the guard ran the file's value", n)
 			}
 			if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 0 {
@@ -137,7 +138,8 @@ $body$ LANGUAGE plpgsql`,
 			// about the mode and not about the file's shape: the same two files, with the value
 			// absent, answer the same way.
 			admin := dbtest.Open(t, migrateURL)
-			if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"); n != 0 {
+			if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"+
+				" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 				t.Errorf("%d relations named probe: a file the rule table refuses applies nothing of its owner", n)
 			}
 		})

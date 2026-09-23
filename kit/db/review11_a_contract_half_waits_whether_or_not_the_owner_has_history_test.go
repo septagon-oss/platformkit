@@ -71,7 +71,8 @@ func TestAContractHalfRefusesWhileTheVersionItWaitsForHasNotApplied(t *testing.T
 			if err == nil {
 				// Not a message to read: the state the guard exists to make impossible. The
 				// ledger says the contract ran, and the version it waited for has not.
-				if n := countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'amount_minor'"); n == 0 {
+				if n := countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'orders'"+
+					" AND table_schema = current_schema() AND column_name = 'amount_minor'"); n == 0 {
 					t.Errorf("the contract half applied while its expand half has not: the ledger carries %s/%s and the column it waits for is not in this database, which is the state the rule exists to refuse", "release", "000002")
 				}
 				t.Fatalf("a contract half whose expansion has not been applied for at least one release was applied: %v", err)
@@ -81,7 +82,8 @@ func TestAContractHalfRefusesWhileTheVersionItWaitsForHasNotApplied(t *testing.T
 			}
 			// The rule reads the plan before any of the owner runs, so nothing of it is here.
 			for _, table := range []string{"orders", "line_items"} {
-				if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = '"+table+"'"); n != 0 {
+				if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = '"+table+"'"+
+					" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 					t.Errorf("%d relations named %s: a refused release applies nothing of its owner", n, table)
 				}
 			}
@@ -134,7 +136,8 @@ func TestAContractHalfIsRefusedOnAnInstalledOwnerAndAppliedOnTheReleaseAfter(t *
 			t.Fatalf("the contract half, one release after the expansion it removes: %v", err)
 		}
 		admin := dbtest.Open(t, migrateURL)
-		if n := countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'total'"); n != 0 {
+		if n := countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'orders'"+
+			" AND table_schema = current_schema() AND column_name = 'total'"); n != 0 {
 			t.Errorf("%d columns named total: the contract half did not run", n)
 		}
 	})

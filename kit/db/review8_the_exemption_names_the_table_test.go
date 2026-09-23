@@ -43,7 +43,8 @@ CREATE INDEX other_t_idx ON other (t)`)},
 	admin := dbtest.Open(t, migrateURL)
 	// The rule reads the file's text, so it refuses before the runner connects and nothing
 	// of the owner applied: the create the exemption was reached for is not here either.
-	if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"); n != 0 {
+	if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"+
+		" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 		t.Errorf("%d relations named probe: a refused file let the statement before it apply", n)
 	}
 }

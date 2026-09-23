@@ -34,7 +34,8 @@ func TestANotNullColumnIsRefusedForItsOwnStatement(t *testing.T) {
 	if err == nil {
 		admin := dbtest.Open(t, migrateURL)
 		t.Fatalf("a file that adds a NOT NULL column with no default was accepted because another statement in the same file says DEFAULT somewhere: %d rows now carry the column that rewrites the table under ACCESS EXCLUSIVE",
-			countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'probe' AND column_name = 'c'"))
+			countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'probe'"+
+				" AND table_schema = current_schema() AND column_name = 'c'"))
 	}
 	if !strings.Contains(err.Error(), "add-column-not-null") {
 		t.Errorf("the refusal %q names a rule other than add-column-not-null, which is the one the file breaks", err)

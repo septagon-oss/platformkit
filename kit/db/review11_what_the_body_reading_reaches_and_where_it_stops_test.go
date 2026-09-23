@@ -106,7 +106,8 @@ $body$ LANGUAGE plpgsql`,
 				if err != nil {
 					t.Fatalf("the run refused a file the reading has nothing to say about: %v", err)
 				}
-				if n := countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'probe' AND column_name = 'b'"); n != 1 {
+				if n := countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'probe'"+
+					" AND table_schema = current_schema() AND column_name = 'b'"); n != 1 {
 					t.Errorf("%d columns named b: a file that named no statement the rule is about changed the table", n)
 				}
 				if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'reaches'"); n != 3 {
@@ -119,7 +120,8 @@ $body$ LANGUAGE plpgsql`,
 			}
 			// A rule reads the file's text, so it refuses the whole owner before the
 			// runner connects: the file above the body is not here either.
-			if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"); n != 0 {
+			if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"+
+				" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 				t.Errorf("%d relations named probe: a file the rule table refuses applies nothing of its owner", n)
 			}
 		})
@@ -142,7 +144,8 @@ REINDEX (CONCURRENTLY) TABLE probe`)},
 	if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "reindex", Files: files}); err != nil {
 		t.Fatalf("the autocommit file that holds the statement the mode is for was refused: %v", err)
 	}
-	if n := countRows(t, dbtest.Open(t, migrateURL), "SELECT count(*) FROM pg_indexes WHERE indexname = 'probe_t_idx'"); n != 1 {
+	if n := countRows(t, dbtest.Open(t, migrateURL), "SELECT count(*) FROM pg_indexes WHERE indexname = 'probe_t_idx'"+
+		" AND schemaname = current_schema()"); n != 1 {
 		t.Errorf("%d indexes named probe_t_idx after the file that reindexed them", n)
 	}
 }
@@ -174,7 +177,8 @@ CREATE INDEX probe_note_idx ON probe (note)`)},
 	// the file's two statements is here.
 	admin := dbtest.Open(t, migrateURL)
 	for _, relation := range []string{"probe", "probe_note_idx"} {
-		if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = '"+relation+"'"); n != 0 {
+		if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = '"+relation+"'"+
+			" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 			t.Errorf("%d relations named %s: a file the rule table refuses applies nothing of its owner", n, relation)
 		}
 	}

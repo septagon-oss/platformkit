@@ -97,10 +97,12 @@ END $$`,
 				// quibble: the name is gone, the rewrite ran, or the lock was taken over a table
 				// with writers — and no rule was named anywhere in the run.
 				note := ""
-				if n := countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'probe' AND column_name = 'b'"); n == 0 {
+				if n := countRows(t, admin, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'probe'"+
+					" AND table_schema = current_schema() AND column_name = 'b'"); n == 0 {
 					note += "; column b is gone from the table"
 				}
-				if n := countRows(t, admin, "SELECT count(*) FROM pg_indexes WHERE indexname = 'probe_a_idx'"); n == 1 {
+				if n := countRows(t, admin, "SELECT count(*) FROM pg_indexes WHERE indexname = 'probe_a_idx'"+
+					" AND schemaname = current_schema()"); n == 1 {
 					note += "; the plain build probe_a_idx was taken over a table with writers"
 				}
 				if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'wrapped'"); n != 2 {
@@ -112,7 +114,8 @@ END $$`,
 				t.Fatalf("the run refused for something other than %s: %v", tc.refused, err)
 			}
 			// A rule reads the file's text, so it refuses the owner before the runner connects.
-			if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"); n != 0 {
+			if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"+
+				" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 				t.Errorf("%d relations named probe: a file the rule table refuses applies nothing of its owner", n)
 			}
 		})

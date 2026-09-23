@@ -104,7 +104,8 @@ func TestADataFilesDDLIsWhatTheServerRunsAndNotWhatAValueCarries(t *testing.T) {
 				// the owner's earlier file goes with the refused one: nothing of this source
 				// reached the database. That is the property a marker could not buy, and the
 				// ledger does not exist to be read afterwards.
-				if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"); n != 0 {
+				if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe'"+
+					" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 					t.Errorf("%d relations named probe: a refused file let the file before it apply", n)
 				}
 
@@ -123,7 +124,8 @@ func TestADataFilesDDLIsWhatTheServerRunsAndNotWhatAValueCarries(t *testing.T) {
 			}
 			// The one fact all four share: words inside a value, or a statement the run
 			// refused, have not put a table in this database.
-			if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'ghost'"); n != 0 {
+			if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'ghost'"+
+				" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 				t.Errorf("%d relations named ghost: a phase=data file does not get to create one, whatever its values say", n)
 			}
 		})

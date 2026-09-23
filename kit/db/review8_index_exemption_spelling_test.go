@@ -78,7 +78,8 @@ func TestTheIndexExemptionReadsTheTableTheFileCreatesWhicheverSpellingItWrote(t 
 			} else if err != nil {
 				t.Fatalf("the file was refused by something else: %v", err)
 			}
-			if n := countRows(t, admin, "SELECT count(*) FROM pg_indexes WHERE tablename = 'probe' AND indexname = 'probe_t_idx'"); n != 1 {
+			if n := countRows(t, admin, "SELECT count(*) FROM pg_indexes WHERE tablename = 'probe'"+
+				" AND indexname = 'probe_t_idx' AND schemaname = current_schema()"); n != 1 {
 				t.Errorf("%d of the file's own indexes exist: the release that creates a table may build its index", n)
 			}
 			if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'spell'"); n != 1 {

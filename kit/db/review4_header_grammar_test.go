@@ -130,7 +130,8 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS probe_id_idx ON probe (id)`)},
 	admin := dbtest.Open(t, migrateURL)
 	if err == nil {
 		// The alternative honest answer: both statements ran outside a transaction.
-		if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname IN ('probe_a_idx','probe_id_idx')"); n != 2 {
+		if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname IN ('probe_a_idx','probe_id_idx')"+
+			" AND relnamespace = current_schema()::regnamespace"); n != 2 {
 			t.Errorf("the autocommit file reported success and %d of its 2 indexes exist", n)
 		}
 		return
@@ -141,7 +142,8 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS probe_id_idx ON probe (id)`)},
 	if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'acmt' AND version = 2"); n != 0 {
 		t.Errorf("a file that did not run wrote %d history rows", n)
 	}
-	if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname IN ('probe_a_idx','probe_id_idx')"); n != 0 {
+	if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname IN ('probe_a_idx','probe_id_idx')"+
+		" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 		t.Errorf("a file that did not run left %d index(es) behind", n)
 	}
 	// And the file is still pending afterwards: the same run, corrected to one
@@ -155,7 +157,8 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS probe_a_idx ON probe (a)`)
 	if err := db.Migrate(t.Context(), migrateURL, source); err != nil {
 		t.Fatalf("the corrected file: %v", err)
 	}
-	if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe_a_idx'"); n != 1 {
+	if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe_a_idx'"+
+		" AND relnamespace = current_schema()::regnamespace"); n != 1 {
 		t.Errorf("the corrected autocommit file left %d indexes behind", n)
 	}
 }

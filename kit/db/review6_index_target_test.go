@@ -62,7 +62,8 @@ INSERT INTO probe (id, a) SELECT g, 'a' || g FROM generate_series(1,25) g`
 			files["000002_index.up.sql"] = &fstest.MapFile{Data: []byte(tc.file)}
 			err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "indextarget", Files: files})
 			admin := dbtest.Open(t, migrateURL)
-			built := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = '"+tc.table+"'") == 1
+			built := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = '"+tc.table+"'"+
+				" AND relnamespace = current_schema()::regnamespace") == 1
 			if !tc.exempt {
 				if err == nil {
 					t.Errorf("the file was accepted: its plain `CREATE INDEX` is a SHARE lock over a table this installation already had, and the guard excused it because the same file said `CREATE TABLE IF NOT EXISTS`")

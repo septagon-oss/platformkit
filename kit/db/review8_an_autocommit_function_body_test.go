@@ -84,7 +84,8 @@ func TestAnAutocommitFileMayWriteAFunctionThatMentionsConcurrently(t *testing.T)
 			}
 			// The body's own statement stayed the body's: creating the function is the
 			// release, and the build it describes happens when something calls it.
-			if n := countRows(t, admin, "SELECT count(*) FROM pg_indexes WHERE indexname = 'probe_t_idx'"); n != 0 {
+			if n := countRows(t, admin, "SELECT count(*) FROM pg_indexes WHERE indexname = 'probe_t_idx'"+
+				" AND schemaname = current_schema()"); n != 0 {
 				t.Errorf("%d indexes named probe_t_idx: the guard read the file's value as the statement it will run", n)
 			}
 			if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'fnbody'"); n != 2 {

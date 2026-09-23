@@ -76,7 +76,8 @@ func TestAContractHalfWaitsForAVersionThisReleaseCanPointAt(t *testing.T) {
 			// ledger row that would have said it had.
 			admin := dbtest.Open(t, migrateURL)
 			for _, table := range []string{"orders"} {
-				if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = '"+table+"'"); n != 0 {
+				if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = '"+table+"'"+
+					" AND relnamespace = current_schema()::regnamespace"); n != 0 {
 					t.Errorf("%d relations named %s: a release the plan refused applies nothing of its owner", n, table)
 				}
 			}
