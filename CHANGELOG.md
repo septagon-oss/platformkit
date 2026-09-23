@@ -11,11 +11,15 @@ reader who depends on it.
 that shape.** A rewrite and a ten-million-row backfill were the same file: one
 transaction, no bound, and the expand/contract rule a review comment. A file may
 carry a `-- pkit:` header — `phase=expand|contract|data`, with `batch=`, `table=`,
-`autocommit=`, and `allow=<rule> reason=…` for the exceptions a reviewer reads — and
-the runner then applies it in the mode it declared: transactionally, as one
+`autocommit=`, and `allow=<rule> reason=…` for the exceptions a reviewer reads
+(the marker is read whatever spaces are written inside it, because an unread
+declaration is a file applied as a kind it is not) — and the runner then applies it
+in the mode it declared: transactionally, as one
 nontransactional statement that must be re-runnable, or as a backfill wrapped over a
 window of its table's primary key, one committed transaction per window, resumable
-from the last key it committed in `schema_migration_backfill`. A drain ends in the
+from the last key it committed in `schema_migration_backfill` — and from the whole
+table when no key is committed yet, which the ledger says as a NULL, because a `text`
+key can hold the empty string and the smallest key there is. A drain ends in the
 transaction that wrote its last window, not in one after it: "every row written" and
 "the version applied" are one commit, and no run can stop between the two and leave a
 table that reads as unfinished work. Every file runs with a
@@ -38,7 +42,12 @@ already in flight resumes it under that same bound and boots whatever the bound 
 deploy, while `platformkit migrate` and `Bootstrap` — doors asked to finish — still
 report it. A refused data file leaves no progress row behind, and the corrected file
 then converges through the same door, because that row is what
-a resume reads and a file refused for its shape never ran. The rules
+a resume reads and a file refused for its shape never ran — and the two shapes that
+are the window's to refuse are named there rather than answered with a server error: a
+body of two statements, and a body that binds the window's own name `batch` to a
+relation of its own. A body that merely opens with a CTE list of its own is neither, and
+is drained: the window joins the body's list, since PostgreSQL takes one `WITH` per
+statement. The rules
 the runner refuses before connecting, the keys, and the floors each source declares are
 written down once in [migrations/README.md](migrations/README.md); the mode-scoped ban on
 nontransactional SQL is the amendment to

@@ -170,7 +170,14 @@ will read with the marker:
 CREATE INDEX billing_plans_currency ON billing_plans (currency)
 ```
 
-Each line is `-- pkit: key=value [key=value …]`. `reason=` is the one value that may
+Each line is `-- pkit: key=value [key=value …]`. The marker is read whatever spaces
+were written inside it — `--  pkit:`, `--pkit:`, a tab, an indent, `-- pkit :` — because
+a declaration the reader skipped is not a file that declared nothing: it is a file
+applied as a kind it is not. Unread, a `phase=data` file is a schema file, its
+whole-table statement runs inside the migration's one transaction, and the version then
+makes the bytes immutable and the marker impossible to add. That is the harm, and it is
+why the marker is read loosely where the *line* stays strict: the pairs, their keys and
+their domains are refused exactly as before. `reason=` is the one value that may
 carry spaces: its sentence ends at the end of its line, or at the next `key=` the
 grammar knows, whichever comes first — a declaration written after a sentence, or glued
 straight after `reason=` with its space missing, is read as a declaration, and the empty

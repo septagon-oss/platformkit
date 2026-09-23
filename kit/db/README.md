@@ -92,11 +92,19 @@ included.
 **The drain, and who runs it.** A `phase=data` file's body is wrapped over a window
 of its table's primary key and run once per window, one committed transaction per
 window — unless the file said its body bounds itself, in which case it runs once, in
-one transaction. The key may be of any single-column primary key type: the cursor
-travels as the key cast to text and comes back as a comparison against that type's own
-name, read from the catalogue, so the drain asks PostgreSQL for the ordering instead of
-keeping a list of the types it is willing to name. What it refuses is a table it cannot
-window over at all — one keyed by two columns, or a `table=` no selected owner creates —
+one transaction. The key may be of any single-column primary key type: the window and
+the top of it are both asked of PostgreSQL's ordering — `ORDER BY key LIMIT n`, then
+`ORDER BY key DESC LIMIT 1` — rather than of an aggregate, and the key travels as its own
+text rendering and comes back as a comparison against that type's own name, read from the
+catalogue. So the drain keeps no list of the types it is willing to name, in either
+direction: `max` does not exist for `uuid` or `bytea`, which is what every entity table in
+this repository is keyed by and what `modules/auth` keys its token hashes by, and an
+ordering operator is all a window ever needed. What the ledger holds as a NULL cursor is
+"no window has committed yet", not an empty string, because for a table keyed by `text` the
+empty string is a key — the smallest one in every collation — and a cursor that could not
+tell the two apart took the same window again forever over the row keyed by it. What it
+refuses is a table it cannot window over at all — one keyed by two columns, or a
+`table=` no selected owner creates —
 naming the key it could not find or the table that is not there, and writing neither a
 history row nor a progress row. `migration.windowed` answers that one question, once, and the rule
 table and the executor both take the answer from it — of one reading of the body
@@ -129,7 +137,14 @@ logs that as the work its tick still has rather than refusing the start — the 
 failure one bound down. `platformkit migrate` and `Bootstrap` asked for a run that
 finishes, so those doors keep the error.
 A refusal of a data file leaves nothing resumable: the progress row means "this drain
-started, resume it", so a shape the window cannot run is refused before that row exists.
+started, resume it", so a shape the window cannot run is refused before that row exists, and
+two shapes are that window's own: a body of two statements, and a body that binds the
+window's own name `batch` to a relation of its own (PostgreSQL answers two CTEs of one name
+by refusing the statement, so such a file would be re-refused by every later run). A body
+that merely *opens* with a CTE list of its own is not one of them: the window joins that
+list, `RECURSIVE` included, because PostgreSQL takes one `WITH` per statement and pasting a
+second in front of the body answered a file the kernel had assembled with the server's own
+syntax error, after the progress row.
 The guard cannot make that refusal instead of the executor: a guard refuses a whole owner
 before any of it runs, and the wrongness here is the window's own — the owner's earlier
 file has applied, and the version behind it is one statement too many. How many statements
