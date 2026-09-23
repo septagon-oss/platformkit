@@ -161,15 +161,37 @@ func TestTheIndexExemptionIsNotBoughtByAValueThatSpellsACreate(t *testing.T) {
 		"000002_docs_and_index.up.sql": {Data: []byte(`INSERT INTO probe (id, note) VALUES (100, 'the layout used to read CREATE TABLE probe (id bigint)');
 CREATE INDEX probe_note_idx ON probe (note)`)},
 	}
+	// The ledger this case counts has to be created by a run nothing refuses. The guard
+	// answers from the files inside `readMigrations`, before the pool opens, so the run
+	// this case asks for leaves no `schema_migrations` to query at all — the leg that read
+	// it until the twelfth review ruled it superseded (decision 0008's amendment of
+	// 2026-09-23, case 3) could only be satisfied by the defect it reports, which is a
+	// proof that cannot pass. Its sibling legs at :115 and :140 ask `pg_class` for the
+	// same reason, and `kit/db/review_guarantees_test.go` requires that a refused
+	// composition leave the runner's own two tables uncreated.
+	//
+	// So the claim is made where it can be made: one owner applies, which is what puts the
+	// ledger in this schema, and the refused owner is then counted against a table that
+	// exists whatever this file's rule answers — plus the catalogue, which answers either
+	// way. A refused owner writes no history row beside an owner that did apply, and its
+	// `CREATE TABLE` never reaches the server.
+	if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "before", Files: fstest.MapFS{
+		"000001_rows.up.sql": {Data: []byte("CREATE TABLE before_rows (id bigint PRIMARY KEY)")},
+	}}); err != nil {
+		t.Fatalf("the owner this case migrates to have a ledger did not apply: %v", err)
+	}
 	err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "docs", Files: files})
 	if err == nil || !strings.Contains(err.Error(), "index-not-concurrent") {
 		t.Fatalf("a plain build on a table the release is reading was excused by the words of a create inside a value: %v", err)
 	}
-	// A refusal of a file's text refuses the owner before anything runs, so the fix that
-	// reads a create only where a create is a statement leaves this database empty of the
-	// release. Today the build applies: the file the rule is about reached the server.
 	admin := dbtest.Open(t, migrateURL)
+	if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'before'"); n != 1 {
+		t.Fatalf("%d history rows for the owner that applied; the ledger this case counts is not there", n)
+	}
 	if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'docs'"); n != 0 {
 		t.Errorf("%d rows of the refused release applied; a rule that reads the file's text refuses the owner before the runner connects", n)
+	}
+	if n := countRows(t, admin, "SELECT count(*) FROM pg_class WHERE relname = 'probe' AND relnamespace = current_schema()::regnamespace"); n != 0 {
+		t.Errorf("%d relations named probe: the refused release reached the server, so the words of a create inside a value bought the exemption a create the file runs would buy", n)
 	}
 }
