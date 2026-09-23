@@ -252,13 +252,13 @@ rest of the file was a name, no later semicolon cut, and the two rules anchored 
 front of a statement read no action in the `ALTER TABLE` after the body and offered no
 marker to except.
 
-Seven refusals have no `allow=` to answer them — the executor's three (`a data file is one
-statement`, `the window is the relation named batch`, and the window's key being written by the
-body it wraps), and the four rules whose exception column says `none` — and a refusal an author
-cannot contest may not rest on a reading that is wrong about what the file *does*, because the
-file it refuses is not correctable: `unused-allow` refuses a marker for it, and the remedy its
-sentence names has to be a file shape the grammar will accept. The paragraph below the table
-names which reading each of the seven is asked of, and what that gives up.
+Eight refusals have no `allow=` to answer them — the executor's three (`a data file is one
+statement`, `the window is the relation named batch`, and the key set the window runs over being
+moved by the body it wraps), and the five rules whose exception column says `none` — and a refusal
+an author cannot contest may not rest on a reading that is wrong about what the file *does*,
+because the file it refuses is not correctable: `unused-allow` refuses a marker for it, and the
+remedy its sentence names has to be a file shape the grammar will accept. The paragraph below the
+table names which reading each of the eight is asked of, and what that gives up.
 
 | rule | fires on | why | exception |
 | --- | --- | --- | --- |
@@ -279,7 +279,7 @@ one is refused as what it is — a bypass with a rule name on it — rather than
 switching the rule off. Each of them states something a marker cannot make false: what
 PostgreSQL refuses, what the autocommit mode costs, or what a data file cannot
 survive. Because none of them can be answered, none of them is asked of a text that is wrong
-about what the file runs, and the seven divide by the question each one asks. Three — the
+about what the file runs, and the eight divide by the question each one asks. Three — the
 executor's `a data file is one statement`, `data-with-ddl` and `autocommit-not-rerunnable` —
 are decided from the cut PostgreSQL makes rather than the one that reads a dollar body from the
 inside: a value holds its own semicolons, so a statement list written inside one is no longer
@@ -294,16 +294,30 @@ be merged with the window's own member of that name — PostgreSQL refuses two m
 and refuses them after the progress row — so the reader walks the list the wrapper joins and
 reads each member's name in either spelling the server takes (`"batch"` is the name, `batch (id)`
 is the name with its column list, and a list inside a sub-expression is a different scope, which
-shadows the window and runs). A body that writes the column the cursor runs over puts its own rows
-back above that cursor, so the table never empties and every window behind the first re-commits
-rows an earlier one wrote; that reader needs the key, which is why it is the executor's and not
-this table's, and it reads the assignment targets of the statements that name the drained table —
-both shapes PostgreSQL takes for one, and neither a key mentioned in a predicate nor the words of
-an assignment inside a value the body stores. What they give up is stated where they are: an
-upsert's `DO UPDATE SET` and a `MERGE` arm name no target for that reader, and a body that only
-*appends* rows above the cursor is no write to a key at all — the bound one tick of the worker
-gives its drain is what ends those, and it reports `ErrBackfillBudget` rather than applying a
-version over work that is still there.
+shadows the window and runs). The cursor's harm is a body that moves the key set it runs over, and
+two shapes of body do that: one writes the column the cursor is ordered by, which puts its own rows
+back above the position the drain just committed, and one puts *new* rows into the drained table,
+which stands keys above that position that no window ever ordered. Either leaves the table never
+empty of work and every window behind the first re-committing rows an earlier one wrote, so one
+refusal names the harm and the shape it found. That reader needs the key, which is why it is the
+executor's and not this table's, and it asks each statement of the body which table it writes: the
+assignment targets of the UPDATEs whose target it can name — both shapes PostgreSQL takes for one
+assignment, over every spelling of a target (`ONLY` and the parenthesis it may carry, the schema
+qualification, the `*`, and the alias whether or not its `AS` was written) — and the target of
+every INSERT and MERGE, which is the statement that puts rows into a table. An upsert's
+`DO UPDATE SET` and a `MERGE` arm name no target for the list reader, but the statement carrying
+them does, so a re-key written that way over the drained table is refused at *that* target and one
+written over another table moves nobody's cursor. Which key an expression yields is a value and not
+a structure, so a body that appends rows *below* the cursor is refused with the ones that append
+above it; that is the one place this refusal is wider than its harm, and the window's own marker
+answers it — `allow=data-body-unbounded` takes the window off the body, and the file then bounds
+itself. What the reading leaves to the bound is a body that reaches the drained table
+without naming it — through a view over it, or a function the server runs or a trigger the table
+carries — and a body that only *reads* the key, in a predicate or as another column's value, or in
+the words of a value it stores, is no write to it at all. A body that takes rows *away* moves the
+key set the one safe way and drains. The bound one tick of the worker gives its drain ends what the
+reading could not see, and reports `ErrBackfillBudget` rather than applying a version over work
+that is still there.
 
 The other two ask after one word, `CONCURRENTLY`, and ask it of the file's own SQL with the
 contents of every value put away. They contradict each other by construction — one refuses the
@@ -443,7 +457,10 @@ runs `platformkit migrate --drain` against the copy while sampling `pg_stat_acti
 for lock waits. Its first line names the tree the run's binary was built from, saying
 so when that tree carries files the revision does not — `go build` compiles an
 uncommitted migration, which is the file this step exists to price, and `git diff` does
-not see it. It reports one line per file with the duration the runner measured,
+not see it. It names the ledger the copy starts from before the candidate connects,
+which is the only thing that tells a release that changes no schema apart from a copy
+that already holds this tree's bytes — `0 file(s) applied` reads the same either way —
+and it reports one line per file with the duration the runner measured,
 then the totals, then a verdict, and exits 0 (applied inside both budgets), 1 (a
 migration failed, rule refusals included — the candidate's own message is printed as
 soon as it stops, before any query of the step's own can fail over a copy the

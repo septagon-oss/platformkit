@@ -166,9 +166,9 @@ with a remedy, and the correctable ones exceptable by `-- pkit: allow=<rule>
 reason=<one sentence>`, the reason being the whole content of an exception and
 `unused-allow` refusing one that was not needed. A rule whose exception is none has no
 marker, and a marker naming such a rule is refused as the bypass it is rather than
-switching the rule off: those four state what PostgreSQL refuses, what the autocommit
+switching the rule off: those five state what PostgreSQL refuses, what the autocommit
 mode costs, or what a data file cannot survive, and a comment cannot make any of that
-false. Which text each of the seven refusals with no `allow=` is asked of — those four rules and
+false. Which text each of the eight refusals with no `allow=` is asked of — those five rules and
 the executor's three — follows from that, because a refusal nobody can
 contest is not a place to approximate: the three that read a statement are asked of the cut
 PostgreSQL makes, where a value holds its own semicolons, and the two that ask after the word
@@ -177,14 +177,20 @@ rules contradict each other by construction and a word read anywhere in the text
 choose which one it answered by what it stored. The executor's other two are the window's own
 shape and are read as shape: which relations the merged CTE list binds (a body that binds the
 window's own name `batch` is a statement PostgreSQL refuses, and it refuses it after the progress
-row), and which column the body writes that the cursor is ordered by (a body that moves its own
-key leaves the table never empty of work, and a drain that never ends is the worker's tick
+row), and what the body does to the key set the cursor runs over (a body that writes the column
+the cursor is ordered by, or one that puts new rows into the table it drains, leaves the table
+never empty of work, and a drain that never ends is the worker's tick
 re-committing rows an earlier window committed). Neither reading turns on how the name was
 written — the CTE name in either spelling PostgreSQL takes, the assignment target in either shape
-it takes — and each names what it leaves alone: an inner list shadows rather than collides, a key
-merely read is not written, and an upsert's `DO UPDATE SET` names its target in the statement
-above it, which is why the bound one tick gives its drain, and not only that bound, is what stops
-a drain the reading cannot see.
+it takes and the target in every spelling it is written with (`ONLY` and the parenthesis it may
+carry, the schema qualification, the star, the alias with or without its `AS`, which the server
+takes either way) — and each names what it leaves alone: an inner list shadows rather than
+collides, a key
+merely read is not written, a key set merely shrunk is the cursor's own work done for it, and an
+upsert's `DO UPDATE SET` or a `MERGE` arm names its target in the statement above it, which is
+where a re-key written that way is refused. What the bound one tick gives its drain stops is the
+body that reaches its table without naming it at all — a view over it, a function the server runs,
+a trigger the table carries.
 Four refusals are not judgements about a file's text at all but facts about this
 installation — a table that is not here, a key the window cannot walk, the expansion a
 contract half waits for, a drain past the bound a migration gives itself — and each prints

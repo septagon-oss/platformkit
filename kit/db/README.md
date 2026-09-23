@@ -141,22 +141,35 @@ logs that as the work its tick still has rather than refusing the start — the 
 failure one bound down. `platformkit migrate` and `Bootstrap` asked for a run that
 finishes, so those doors keep the error.
 A refusal of a data file leaves nothing resumable: the progress row means "this drain
-started, resume it", so a shape the window cannot run is refused before that row exists, and
-three shapes are that window's own: a body of two statements; a body whose own CTE list binds the
-window's name `batch` (PostgreSQL answers two members of one CTE list by refusing the statement,
-so such a file would be re-refused by every later run); and a body that writes the column the
-cursor is ordered by, which puts the rows it touched back above the position the drain just
-committed and so never empties the table. The first is counted; the other two are read as
-constructs and not as spellings — the members of the list the wrapper joins, with each name taken
-in either spelling the server accepts and a list inside a sub-expression left to the scope that
-shadows it, and the assignment targets of the statements naming the drained table, in both shapes
-PostgreSQL writes a column with. A body that merely *opens* with a CTE list of its own is none of
-them: the window joins that
-list, `RECURSIVE` included, because PostgreSQL takes one `WITH` per statement and pasting a
-second in front of the body answered a file the kernel had assembled with the server's own
-syntax error, after the progress row. A key merely *mentioned* — in the predicate, as the source
-of another column's value, or in the words of a value the body writes — is none of them either,
-and neither is another table's key of the same name.
+started, resume it", so a shape the window cannot run is refused before that row exists,
+and three shapes are that window's own: a body of two statements; a body whose own CTE
+list binds the window's name `batch` (PostgreSQL answers two members of one CTE list by
+refusing the statement, so such a file would be re-refused by every later run); and a
+body that moves the key set the cursor runs over — one that writes the column the cursor
+is ordered by, which puts the rows it touched back above the position the drain just
+committed, or one that puts *new* rows into the table it drains, which stands keys above
+that position that no window ever ordered. Either way the table never empties and each
+window behind the first re-commits rows an earlier one wrote. The first is counted; the
+other two are read as constructs and not as spellings — the members of the list the
+wrapper joins, with each name taken in either spelling the server accepts and a list
+inside a sub-expression left to the scope that shadows it, and, for the key set, which
+table each statement of the body writes: the assignment targets of the UPDATEs whose
+target the reader can name, in both shapes PostgreSQL writes a column with and over
+every spelling it takes for a target (`ONLY` and the parenthesis it may carry, the
+schema qualification, the `*`, the alias with or without its `AS`), and the target of
+every INSERT and MERGE. An upsert's `DO UPDATE SET` and a `MERGE` arm name no target for
+the list reader but do for the statement carrying them, which is where a re-key written
+that way is refused; what the reading leaves to the bound is a body that reaches its
+table without naming it — through a view over it, or a function the server runs or a
+trigger the table carries. A body that merely *opens* with a CTE list of its own is none
+of them: the window joins that list, `RECURSIVE` included, because PostgreSQL takes one
+`WITH` per statement and pasting a second in front of the body answered a file the
+kernel had assembled with the server's own syntax error, after the progress row. A key
+merely *mentioned* — in the predicate, as the source of another column's value, or in
+the words of a value the body writes — is none of them either, and neither is another
+table's key of the same name, nor a body that only takes rows *away*, which moves the
+key set the one safe way.
+
 The guard cannot make that refusal instead of the executor: a guard refuses a whole owner
 before any of it runs, and the wrongness here is the window's own — the owner's earlier
 file has applied, and the version behind it is one statement too many. How many statements
