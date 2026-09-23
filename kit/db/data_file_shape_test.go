@@ -128,3 +128,89 @@ UPDATE probe SET passes = passes + 1`)}
 		t.Errorf("the finished drain wrote %d history rows", n)
 	}
 }
+
+// TestADataBodyThatOpensWithItsOwnCTEIsDrainedAsOneStatement is the wrapper's half of the
+// promise that "a shape the window cannot run is refused before that row exists": the shape
+// a backfill takes naturally — a named list of the rows it is about to touch, then the
+// update — is not refused, it is drained, because PostgreSQL takes one WITH per statement
+// and the kernel's window joins the body's own list rather than standing in front of it. The
+// window leads the merged list, so a body CTE may read it, and RECURSIVE is a property of a
+// list rather than of one member, so the body's word for it moves to the front.
+func TestADataBodyThatOpensWithItsOwnCTEIsDrainedAsOneStatement(t *testing.T) {
+	for _, tc := range []struct {
+		name, body    string
+		drained, kept int
+	}{
+		{"a plain list", `WITH stale AS (SELECT id FROM probe WHERE note = 'stale')
+UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM stale INTERSECT SELECT id FROM batch)`, 6, 6},
+		{"a recursive one", `WITH RECURSIVE stale_low AS (SELECT id FROM probe WHERE note = 'stale' AND id < 9)
+UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM stale_low INTERSECT SELECT id FROM batch)`, 4, 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			migrateURL, _ := dbtest.URLs(t)
+			files := fstest.MapFS{
+				"000001_probe.up.sql": {Data: []byte(`CREATE TABLE probe (id bigint PRIMARY KEY, note text NOT NULL DEFAULT 'fresh');
+INSERT INTO probe (id, note) SELECT g, CASE WHEN g % 2 = 0 THEN 'stale' ELSE 'fresh' END FROM generate_series(1, 12) g`)},
+				"000002_fill.up.sql": {Data: []byte("-- pkit: phase=data\n-- pkit: batch=5\n-- pkit: table=probe\n" + tc.body)},
+			}
+			if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "ctebody", Files: files}); err != nil {
+				t.Fatalf("the window answered a body that opens with its own list: %v", err)
+			}
+			admin := dbtest.Open(t, migrateURL)
+			if n := countRows(t, admin, "SELECT count(*) FROM probe WHERE note = 'done'"); n != tc.drained {
+				t.Errorf("%d of the %d rows the body named drained: the body's own list and the kernel's window are one statement or neither", n, tc.drained)
+			}
+			if n := countRows(t, admin, "SELECT count(*) FROM probe WHERE note = 'fresh'"); n != tc.kept {
+				t.Errorf("%d rows the body excluded were written: the merged statement ran past the body's own filter", n)
+			}
+			if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'ctebody' AND version = 2"); n != 1 {
+				t.Errorf("%d history rows for a drain that ran", n)
+			}
+			if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 0 {
+				t.Errorf("%d progress rows outlive a drain that ran to the end of the table", n)
+			}
+		})
+	}
+}
+
+// TestADataBodyThatBindsTheWindowsOwnNameIsRefusedBeforeTheDrainStarts is the body the
+// merged list still cannot run: one that calls its own relation `batch`, which is the name
+// the window answers to. PostgreSQL refuses two CTEs of one name, and it refuses them after
+// the progress row — the row every later run reads as "this drain started" — so the drain
+// refuses the file first, and writes neither row. The last leg is the same case from the
+// other side: the word `batch` inside a value the body is writing binds nothing, and the
+// file that says it still drains.
+func TestADataBodyThatBindsTheWindowsOwnNameIsRefusedBeforeTheDrainStarts(t *testing.T) {
+	migrateURL, _ := dbtest.URLs(t)
+	files := fstest.MapFS{
+		"000001_probe.up.sql": {Data: []byte(`CREATE TABLE probe (id bigint PRIMARY KEY, note text NOT NULL DEFAULT '');
+INSERT INTO probe (id) SELECT g FROM generate_series(1, 12) g`)},
+		"000002_fill.up.sql": {Data: []byte(`-- pkit: phase=data
+-- pkit: batch=5
+-- pkit: table=probe
+WITH batch AS (SELECT id FROM probe WHERE id < 7)
+UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch)`)},
+	}
+	err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "shadowed", Files: files})
+	if err == nil || !strings.Contains(err.Error(), "relation named batch") {
+		t.Fatalf("a data file that redefines the window reported %v; the rows it reads would be its own and the cursor would advance over a window nobody read", err)
+	}
+	admin := dbtest.Open(t, migrateURL)
+	if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 0 {
+		t.Errorf("%d progress rows behind a file the window will never run", n)
+	}
+	if n := countRows(t, admin, "SELECT count(*) FROM probe WHERE note = 'done'"); n != 0 {
+		t.Errorf("%d rows were written by a run that refused the file", n)
+	}
+
+	files["000002_fill.up.sql"] = &fstest.MapFile{Data: []byte(`-- pkit: phase=data
+-- pkit: batch=5
+-- pkit: table=probe
+UPDATE probe SET note = 'batch as it was' WHERE id IN (SELECT id FROM batch)`)}
+	if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "shadowed", Files: files}); err != nil {
+		t.Fatalf("the corrected file: %v", err)
+	}
+	if n := countRows(t, admin, "SELECT count(*) FROM probe WHERE note = 'batch as it was'"); n != 12 {
+		t.Errorf("%d of 12 rows drained: a body that writes the word batch as data binds nothing", n)
+	}
+}

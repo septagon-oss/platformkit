@@ -56,8 +56,19 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 	// the body one statement, and the window wraps it whole. This refusal has no marker,
 	// so the reading behind it has to be right — a file it refuses has no remedy, and
 	// "split the file" cannot split a file that is already one statement.
-	if m.windowed() && len(splitServerStatements(m.plain)) > 1 {
-		return drainReport{}, fmt.Errorf("a data file is one statement: the window wraps the body, and a second statement would be run over a window of its own with no cursor between them; split the file")
+	if m.windowed() {
+		if len(splitServerStatements(m.plain)) > 1 {
+			return drainReport{}, fmt.Errorf("a data file is one statement: the window wraps the body, and a second statement would be run over a window of its own with no cursor between them; split the file")
+		}
+		// The same sentence covers the other body the window cannot wrap: one that binds
+		// the window's own name. The wrapper carries a body's own CTE list (see
+		// windowedBody), so the file that defines `batch` itself is not a shape the window
+		// refuses to run but one whose rows the drain would never advance — PostgreSQL
+		// gives two CTEs of one name to nobody at all, and the error arrives after the
+		// progress row, which is the state this check exists to leave uncreated.
+		if reWindowShadowed.MatchString(m.shape) {
+			return drainReport{}, fmt.Errorf("the window is the relation named batch: this body defines batch itself, so it reads its own rows and the cursor would advance over a window nothing read; name the body's own relation something else and let the drain supply the window")
+		}
 	}
 	conn := r.conn
 	var report drainReport
@@ -530,10 +541,72 @@ func window(ctx context.Context, tx *sql.Tx, m migration, key tableKey, from dra
 // measurement just took, so what runs is what was counted. The cursor is a parameter, never
 // text in the statement, and the body's trailing semicolon goes away because the window
 // makes the two one statement.
+//
+// A body that opens with a CTE list of its own — `WITH stale AS (…) UPDATE …`, which is the
+// shape a backfill that names the rows it is about to touch takes naturally — has that list
+// joined into *our* `WITH`, because PostgreSQL takes one `WITH` per statement: pasting a
+// second one in front of the body answered a file the kernel assembled with the server's own
+// syntax error, after the progress row, which leaves a drain forever half-started. The
+// window leads the merged list, so a body's own CTE may read it, and `RECURSIVE` is a
+// property of a list rather than of one member, so the body's word for it moves to the front
+// of the statement. A body that binds the name `batch` itself is refused before any of this
+// (drain names it): PostgreSQL answers two CTEs of one name by refusing the statement, and
+// the rows such a drain would advance over would be nobody's window.
 func (m migration) windowedBody(key tableKey, from drainPos) string {
-	return fmt.Sprintf("WITH batch AS (SELECT %s FROM %s WHERE %s ORDER BY %s LIMIT %d)\n%s",
+	window := fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s LIMIT %d",
 		quoteIdentifier(key.column), quoteIdentifier(m.table), from.bound(key),
-		quoteIdentifier(key.column), m.batch, strings.TrimRight(m.body, " \n\t;"))
+		quoteIdentifier(key.column), m.batch)
+	body := strings.TrimRight(m.body, " \n\t;")
+	if after, recursive, opens := cteLead(body); opens {
+		if recursive {
+			return "WITH RECURSIVE batch AS (" + window + "),\n" + strings.TrimLeft(body[after:], " \t\n")
+		}
+		return "WITH batch AS (" + window + "),\n" + strings.TrimLeft(body[after:], " \t\n")
+	}
+	return "WITH batch AS (" + window + ")\n" + body
+}
+
+// cteLead is the offset just past the `WITH` — and the `RECURSIVE` that may follow it — that
+// opens a body's statement, whether the body said RECURSIVE, and whether it opened with a CTE
+// list at all. Whitespace and commentary are walked with sqlToken, the reader every other
+// boundary in this package takes, so a body that opens with a comment is not read as opening
+// with the words of the comment. The only statement PostgreSQL opens with the word `with` is
+// one carrying a common table expression list, so anything else at the front is an ordinary
+// body and the answer says so rather than guessing.
+func cteLead(body string) (after int, recursive bool, opens bool) {
+	word, next, found := sqlWord(body, 0)
+	if !found || word != "with" {
+		return 0, false, false
+	}
+	if word, later, found := sqlWord(body, next); found && word == "recursive" {
+		return later, true, true
+	}
+	return next, false, true
+}
+
+// sqlWord reads the next word of text at or after i — commentary and whitespace walked over,
+// the word lower-cased the way every other reading of a file's SQL is — and the offset past
+// it. A character that starts no word (a parenthesis, a quote the scanner did not take) is an
+// answer of false: this is not a word, and the caller reads nothing from it.
+func sqlWord(text string, i int) (word string, after int, found bool) {
+	for i < len(text) {
+		if width := sqlToken(text, i); width > 0 {
+			i += width
+			continue
+		}
+		if text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r' {
+			i++
+			continue
+		}
+		start := i
+		for i < len(text) && (text[i] == '_' || text[i] == '$' ||
+			(text[i] >= 'a' && text[i] <= 'z') || (text[i] >= 'A' && text[i] <= 'Z') ||
+			(text[i] >= '0' && text[i] <= '9')) {
+			i++
+		}
+		return strings.ToLower(text[start:i]), i, i > start
+	}
+	return "", i, false
 }
 
 // windowed says whether this body goes through a window at all. It is the same
