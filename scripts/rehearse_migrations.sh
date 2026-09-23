@@ -15,9 +15,13 @@
 # neither. `--dump` is an operator's `pg_dump` of the real database — custom,
 # directory or plain format — restored under this cluster's own role rather than the
 # roles the dump names, because a rehearsal cluster is not the production cluster's
-# role directory. `--base-ref REF` builds the previous release's *own binary* out of
-# that revision and runs its `bootstrap`, which migrates the ledger with that
-# release's runner and creates the one tenant the seed file then fills: the real code
+# role directory. That last clause is a promise about the cluster, so the step
+# holds it: a cluster with no `platformkit_app` gets the role from
+# `apps/platformkit/postgres-init.sql` before its copy is restored, whichever way
+# the copy arrived, and says so in its report. `--base-ref REF` builds the
+# previous release's *own binary* out of that revision and runs its `bootstrap`,
+# which migrates the ledger with that release's runner and creates the one tenant
+# the seed file then fills: the real code
 # path at both ends, no runner reimplemented in bash. The seed
 # (`scripts/testdata/rehearse/seed.sql`, ten thousand rows in each table it names)
 # lands in the copy, where the migrations then run; CI has no production database,
@@ -263,7 +267,9 @@ role_exists() { [ -n "$(psql "$admin_url" -qtA -c "SELECT 1 FROM pg_roles WHERE 
 # the second run failing on it would be a rehearsal that refuses to run.
 create_role() {
 	[ -r "$init_file" ] || die 2 "no $init_file to create the application role from"
-	psql "$admin_url" -v ON_ERROR_STOP=1 -q -f "$init_file"
+	psql "$admin_url" -v ON_ERROR_STOP=1 -q -f "$init_file" ||
+		die 2 "the application role could not be created from $init_file: the copy would hold tables no application connection can reach"
+	note "created the application role platformkit_app from ${init_file#"$root/"} on this cluster: every copy this step measures is restored and migrated under that role, and a cluster without it has no such role to restore under"
 }
 # The rest of that file, one statement at a time: ALTER DEFAULT PRIVILEGES lives
 # inside a database, so a database this step created has none until it runs, and a
@@ -272,7 +278,14 @@ create_role() {
 # owns it, and the split is the same one start.go's own statements() makes.
 apply_defaults() {
 	local target statement
-	role_exists || return 0
+	# The silent `|| return 0` that stood here was the whole of the fault `--dump` carried:
+	# on a cluster with no platformkit_app it skipped every grant, and the step restored,
+	# seeded, applied the release and printed `ok:` over a copy no application connection
+	# could reach — the copy this comment has always said the step is not measuring.
+	# `scripts/review15_rehearsal_dump_test.sh` stage 3 runs exactly that copy. Both
+	# branches create the role before they call this, so a role missing by now is that
+	# promise broken, and a step that cannot build the copy it reports on exits 2.
+	role_exists || die 2 "no platformkit_app role on this cluster and none created: refusing to measure a copy whose tables the application role cannot reach"
 	target="$(with_database "$admin_url" "$1")"
 	while IFS= read -r statement; do
 		psql "$target" -v ON_ERROR_STOP=1 -q -c "$statement"
@@ -349,6 +362,12 @@ fi
 if [ -n "$dump" ]; then
 	note "copy: $run, restored from $dump"
 	psql "$admin_url" -q -c "CREATE DATABASE $run"
+	# The role before the copy, exactly as --base-ref does it: the header promises a dump
+	# "restored under this cluster's own role", and an operator who has a dump never takes
+	# the branch that used to create the role, so on a cluster without one the copy was
+	# restored under no application role at all, held no default privileges, and the report
+	# said nothing about either.
+	role_exists || create_role
 	apply_defaults "$run"
 	restore "$run" "$dump"
 else
