@@ -366,6 +366,19 @@ if [ -n "$seed" ]; then
 	note "seeded $seed into $run"
 fi
 
+# The ledger the candidate inherits, read before it connects. The number that says whether this
+# step measured anything at all (`N file(s) applied`) sits in the same report as the legitimate
+# no-op, and the copy's own ledger is what tells the two releases apart: nothing pending because
+# this release changes no schema, and nothing pending because the base already holds this tree's
+# bytes, which is what a wrong `--base-ref` looks like. A copy restored from a database nothing
+# migrated has no ledger to read, which is said rather than guessed at.
+if ! ledger=$(psql_as "$run" -c "SELECT coalesce(count(*), 0) || ' applied version(s) for ' || count(distinct owner) || ' owner(s), highest version ' || coalesce(max(version)::text, 'none') FROM schema_migrations" 2>"$work/ledger.err"); then
+	note "no base ledger to report: $(head -1 "$work/ledger.err")"
+	ledger=""
+else
+	note "ledger the copy starts from: $ledger"
+fi
+
 # The watcher: one session, one query, sampled every SAMPLE_MS milliseconds, and
 # only this run's session carries the application name it filters on — which is also
 # why the query excludes its own pid: the watcher's session carries that name as
@@ -491,6 +504,11 @@ fi
 
 applied=$(wc -l <"$work/files.tsv")
 note "$applied file(s) applied in ${total}ms; longest $longest at ${longest_ms}ms"
+if [ "$applied" -eq 0 ]; then
+	# Said plainly, because the line above is the same shape a no-op and a rehearsal that
+	# measured nothing both print: the ledger this copy started from is the difference.
+	note "nothing was pending for this candidate, against a copy starting from: ${ledger:-no ledger}"
+fi
 note "lock waits: $samples sample(s) of ${SAMPLE_MS}ms ≈ ${lock_ms}ms (${watched_ms}ms watched, sampled, so a wait shorter than ${SAMPLE_MS}ms can be missed)"
 if [ "$code" -ne 0 ]; then
 	# The candidate's message and the note that says what it stopped were printed
