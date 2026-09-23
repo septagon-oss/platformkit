@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -444,7 +445,11 @@ func groupedByOwner(pending []migration) [][]migration {
 // expansion it removes: on an installation that already has history, the expansion has
 // to be in the ledger before this run began, or nothing this owner has pending is
 // applied — a run that applied the expansion and then refused the contract would have
-// done half the thing the guard exists to stop.
+// done half the thing the guard exists to stop. And the version the half names has to be
+// one this release can point at, which is the same bound a source's RulesFrom floor
+// carries and for the same reason (`namesAnExpansion`): an unbounded `expand=` is applied
+// and recorded as though it had waited, and the installation is left holding a schema no
+// other installation of the same release has.
 //
 // The second is about a phase=data file whose owner already has history: a drain over
 // a table with readers, and what decides who runs it is what waits behind it. Files
@@ -465,31 +470,80 @@ func groupedByOwner(pending []migration) [][]migration {
 // data files drain here and now, bounded.
 func planOwner(ctx context.Context, conn *sql.Conn, files []migration, history migrationHistory) ([]migration, error) {
 	owner := files[0].owner
-	if history.latest[owner] == 0 {
-		return files, nil
-	}
+	// An owner with no history is the exception twice over: nobody is reading its tables,
+	// and its own files are the only release they will ever arrive in. Both of the
+	// questions below are about *this installation*, and neither has an answer to give on
+	// a fresh one. The question `expand=` asks is not one of those, so it is asked
+	// whatever the ledger says: see namesAnExpansion.
+	fresh := history.latest[owner] == 0
 	for i, m := range files {
-		if m.phase == phaseData {
-			progress := drainCursor(ctx, conn, m.migrationID)
-			if progress.err != nil {
-				return nil, progress.err
+		if m.phase == phaseContract {
+			if err := namesAnExpansion(m, files, fresh); err != nil {
+				return nil, err
 			}
-			// The drain this run owns: one it found in flight, and the owner's last
-			// pending file, which has nothing behind it and a window to bound.
-			if progress.started || (i == len(files)-1 && m.windowed()) {
-				continue
+			if !fresh && !history.applied[migrationID{owner, m.contractOf}] {
+				return nil, refusal(refusalMissingExpansion,
+					fmt.Sprintf("%s/%s waits for %s of the same owner, which this installation has not applied yet", owner, m.name, partnerFile(files, m.contractOf)),
+					"the contract half runs in the release after the expansion it removes")
 			}
-			slog.WarnContext(ctx, "db: left migrations pending behind a backfill the worker drains",
-				"owner", owner, "version", m.version, "remaining", len(files)-i)
-			return files[:i], nil
 		}
-		if m.phase == phaseContract && !history.applied[migrationID{owner, m.contractOf}] {
-			return nil, refusal(refusalMissingExpansion,
-				fmt.Sprintf("%s/%s waits for %s of the same owner, which this installation has not applied yet", owner, m.name, partnerFile(files, m.contractOf)),
-				"the contract half runs in the release after the expansion it removes")
+		if fresh || m.phase != phaseData {
+			continue
 		}
+		progress := drainCursor(ctx, conn, m.migrationID)
+		if progress.err != nil {
+			return nil, progress.err
+		}
+		// The drain this run owns: one it found in flight, and the owner's last
+		// pending file, which has nothing behind it and a window to bound.
+		if progress.started || (i == len(files)-1 && m.windowed()) {
+			continue
+		}
+		slog.WarnContext(ctx, "db: left migrations pending behind a backfill the worker drains",
+			"owner", owner, "version", m.version, "remaining", len(files)-i)
+		return files[:i], nil
 	}
 	return files, nil
+}
+
+// namesAnExpansion is the half of the release rule that a ledger cannot state, and it
+// bounds the number the file declares by what the release can check — the same bound
+// MigrationSource.RulesFrom carries on a source's floor, for the same reason. A contract
+// half waits for a version of its own owner, and the owner's files apply in order, so the
+// expansion has to be a file *before* the half that waits: a number at or above the half's
+// own version names something this run has not reached and no order of applying reaches
+// first, and a number past the owner's highest file names a version no release of this
+// owner has or will ship.
+//
+// Skipped for a fresh installation, the rule is applied by the ledger to an installed one
+// and refuses a half whose partner is pending in the same release; skipped entirely, the
+// gap lets a half whose expansion nobody ever had apply and be written to the ledger as
+// though it had waited — two installations of one release holding different schemas, which
+// is the one thing a ledger may not do. On an installed owner the same refusal is reached
+// through the ledger (no version above the one this run is applying has been applied), so
+// the sentence below is what an operator of a fresh database — a module's own test, a
+// bootstrap, a rehearsal — reads instead of a schema that quietly differs.
+func namesAnExpansion(m migration, files []migration, fresh bool) error {
+	head := files[len(files)-1].version
+	if m.contractOf >= m.version {
+		return refusal(refusalMissingExpansion,
+			fmt.Sprintf("%s/%s waits for version %d of the same owner, which is not a file before it — this release runs to version %d, and a contract half whose expansion comes after it applies in no order that makes it safe",
+				m.owner, m.name, m.contractOf, head),
+			"ship the contract half in the release after the expansion it removes, with expand=<that earlier version>")
+	}
+	if fresh && !listsVersion(files, m.contractOf) {
+		return refusal(refusalMissingExpansion,
+			fmt.Sprintf("%s/%s waits for version %d of the same owner, which no file of this release is — the versions run to %d and none is %d, so no installation can ever have applied it",
+				m.owner, m.name, m.contractOf, head, m.contractOf),
+			"expand= names the version of the same owner that added the column this file takes away")
+	}
+	return nil
+}
+
+// listsVersion says whether one of these files carries the version. It is read of the
+// pending files because those are the whole of what an owner with no history has.
+func listsVersion(files []migration, version int64) bool {
+	return slices.ContainsFunc(files, func(m migration) bool { return m.version == version })
 }
 
 // partnerFile names the version a contract half waits for as a file, because that
