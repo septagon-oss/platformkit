@@ -16,6 +16,18 @@ import (
 // not a SQL parser (docs/adr/0011). A statement inside a dollar-quoted body can
 // therefore produce a false positive, and the answer to that is the marker — which is
 // also why every correctable rule has one.
+//
+// Reading a body *through* is not optional for a rule that anchors at a statement's
+// front, and the cut alone does not give one: `splitStatements` breaks
+// `DO $$ BEGIN ALTER TABLE … DROP COLUMN …; END $$` inside the value, so the piece still
+// begins `do $$ begin alter table`, no rule is anchored there, and the dropped column
+// reaches the server with nothing named — and no marker to write, because a rule that
+// never fired cannot be excepted. So the four rules that read a statement read the
+// statements inside a body beside the file's own (`dollarBodyStatements`), over the same
+// predicates, and the two rules about `CONCURRENTLY` — which state no exception, so their
+// reading may not over-reach in either direction — ask their question of the file's own
+// SQL with the contents of every value put away, and of a stored body's SQL likewise
+// (`migrationText.shape` and `migrationText.bodySQL`).
 type rule struct {
 	name    string
 	does    string
@@ -35,8 +47,19 @@ type migrationText struct {
 	phase      string
 	autocommit bool
 	body       string
-	windowed   bool
-	statements []string
+	// shape is the body with the contents of every literal and dollar-quoted value put
+	// away, and bodySQL is the contents of those values read as the SQL they would run,
+	// with their own literals and comments put away in turn. The two together answer
+	// "does this file hold a CONCURRENTLY statement": the word in the file's own SQL is
+	// the keyword, the word inside a value it is storing is data, and the word inside a
+	// stored body is a statement the body will run someday. Both readings are asked of
+	// the same scanner, and neither of them can be wrong about where a value ends — the
+	// two rules that consult them state no exception, so their author has nothing to
+	// answer with. See splitServerStatements for the same argument about the three
+	// refusals that read a statement split.
+	shape, bodySQL string
+	windowed       bool
+	statements     []string
 	// serverStatements is the same body cut where PostgreSQL cuts it. Three questions are
 	// asked of that cut rather than of `statements`, and they are the three this table
 	// refuses with no `allow=` to answer: whether a data body is one statement (the
@@ -104,7 +127,13 @@ var (
 	reDropIndex       = regexp.MustCompile(`^drop\s+index\b`)
 	reConcurrently    = regexp.MustCompile(`\bconcurrently\b`)
 	reIndexTarget     = regexp.MustCompile(`\bon\s+(` + sqlName + `)`)
-	reCreateTable     = regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?(` + sqlName + `)`)
+	// reCreateTable is anchored because it decides an exemption, and the sentence that
+	// grants it — "this file creates the table outright, so nothing is reading it yet" —
+	// is a claim about a statement the file runs. `INSERT INTO probe (note) VALUES ('the
+	// layout used to read CREATE TABLE probe (id bigint)')` writes a sentence about a
+	// create; the build beside it is over the table the release is reading, and the words
+	// in the value say nothing about who holds a SHARE lock.
+	reCreateTable = regexp.MustCompile(`^create\s+table\s+(if\s+not\s+exists\s+)?(` + sqlName + `)`)
 	// reDropAction is `DROP [COLUMN] <name>` in either spelling PostgreSQL takes, the
 	// keyword being as optional here as it is in the two ALTER TABLE actions above. The
 	// name is captured because the word after DROP says what is being dropped, and only
@@ -150,11 +179,11 @@ var rules = []rule{
 	{name: "index-concurrent-without-autocommit",
 		does:    "runs CONCURRENTLY inside the transaction every migration file is applied in, which PostgreSQL refuses there (its error 25001)",
 		instead: "add `-- pkit: autocommit=true`, which is the file shape that runs outside the transaction",
-		fire:    func(f *migrationText) bool { return !f.autocommit && f.any(reConcurrently) }},
+		fire:    func(f *migrationText) bool { return !f.autocommit && f.anySQL(reConcurrently) }},
 	{name: "autocommit-without-concurrently",
 		does:    "takes itself out of the transaction that gives every other migration all-or-nothing, without a statement that needs it",
 		instead: "delete the marker, or move the nontransactional statement into this file",
-		fire:    func(f *migrationText) bool { return f.autocommit && !f.any(reConcurrently) }},
+		fire:    func(f *migrationText) bool { return f.autocommit && !f.holdsAConcurrentStatement() }},
 	{name: "autocommit-not-rerunnable",
 		does:    "is a file that can commit its statement and still be re-run, because its statement refuses a second run",
 		instead: "write CREATE INDEX CONCURRENTLY IF NOT EXISTS, or DROP INDEX CONCURRENTLY IF EXISTS",
@@ -255,14 +284,23 @@ func newMigrationText(m migration) *migrationText {
 		phase:      m.phase,
 		autocommit: m.autocommit,
 		body:       body,
+		shape:      m.shape,
+		bodySQL:    dollarBodySQL(body),
 		windowed:   m.windowed(),
-		statements: splitStatements(body),
+		// A body's statements are read from the inside and appended, so that a rule
+		// anchored at a statement's front reads the same predicate over the same file
+		// whoever wrapped it: see dollarBodyStatements.
+		statements: append(splitStatements(body), dollarBodyStatements(body)...),
 		// The drain asks "is this one statement?" of the same cut this file asks its two
 		// unexceptable questions of, so the three are given the same cut to begin with.
 		serverStatements: splitServerStatements(body),
 		created:          map[string]bool{},
 	}
-	for _, found := range reCreateTable.FindAllStringSubmatch(body, -1) {
+	for _, statement := range f.statements {
+		found := reCreateTable.FindStringSubmatch(strings.TrimSpace(statement))
+		if found == nil {
+			continue
+		}
 		// `IF NOT EXISTS` is the spelling that says the table may already be there, which
 		// is the one case in which "nothing is reading it yet" is not a fact this file
 		// states: on an installation that already has the table, the plain build beside it
@@ -270,14 +308,16 @@ func newMigrationText(m migration) *migrationText {
 		// therefore not known to have created the table, and the exemption is the
 		// unconditional create's alone.
 		//
-		// The name is recorded with its quotes off, because it is the table that is exempted
-		// and not the spelling: PostgreSQL reads `CREATE TABLE "probe"` as the one table
-		// `CREATE INDEX … ON probe` names, and an exemption looked up by the punctuation the
-		// two lines happened to use refuses the file that follows the rule's own remedy.
-		if found[1] == "" {
-			name, _ := sqlIdent(found[2])
-			f.created[name] = true
+		// The name is recorded with its quotes taken off, because it is the table that is
+		// exempted and not the spelling: PostgreSQL reads `CREATE TABLE "probe"` as the one
+		// table `CREATE INDEX … ON probe` names, and an exemption looked up by the
+		// punctuation the two lines happened to use refuses the file that follows the rule's
+		// own remedy.
+		if found[1] != "" {
+			continue
 		}
+		name, _ := sqlIdent(found[2])
+		f.created[name] = true
 	}
 	return f
 }
@@ -292,7 +332,28 @@ func (f *migrationText) fires() []string {
 	return fired
 }
 
-func (f *migrationText) any(re *regexp.Regexp) bool { return re.MatchString(f.body) }
+// anySQL asks a rule about CONCURRENTLY the question that rule states: it reads the body
+// with the contents of every
+// literal and dollar-quoted value put away. It is the reading of the two rules that state no
+// exception and ask after one word, and the put-away is the whole of it — outside a value,
+// `concurrently` is the keyword and nothing else, so no statement shape has to be recognised
+// to ask the question, and no value's prose can answer it. `migration.shape` is that text,
+// the one `migration.windowed` already answers the window question of, and the reason is the
+// same: a body whose only mention of a thing is data it is writing does not do that thing.
+func (f *migrationText) anySQL(re *regexp.Regexp) bool { return re.MatchString(f.shape) }
+
+// holdsAConcurrentStatement is the whole defence of `autocommit=true`: the file holds a
+// statement that needs to run outside the transaction. It is asked of the file's own SQL and
+// then of the SQL its stored bodies would run, because a build written inside a function
+// this file creates is a statement that needs the mode when the function is called, and the
+// marker is not the thing this rule exists to refuse. It is not asked of the contents of any
+// other value, which is data: the file that writes the words "rebuild with CREATE INDEX
+// CONCURRENTLY" into a column stores a sentence, and refusing it would refuse a file that
+// cannot answer — `autocommit=true`, the rule's own remedy, is refused on the data file that
+// spells it, and a marker for this rule is refused as a bypass.
+func (f *migrationText) holdsAConcurrentStatement() bool {
+	return f.anySQL(reConcurrently) || reConcurrently.MatchString(f.bodySQL)
+}
 
 // rewritesAColumnType is the first rule's subject: a statement that changes a
 // column's type. Both halves have to be in the one statement — an ALTER TABLE, and
@@ -592,6 +653,110 @@ func splitStatements(body string) []string { return splitTopLevel(body, ';', tru
 // column — keeps the reading above, where over-reading a construct costs an author a marker and
 // its sentence rather than a release.
 func splitServerStatements(body string) []string { return splitTopLevel(body, ';', false) }
+
+// eachDollarBody calls body with the contents of every dollar-quoted value in text, the
+// two delimiters gone. It is the one place the runner looks inside a value at what the
+// value would run, and the two readers below share it because they share the question:
+// where the value begins and ends is `dollarTag` and `dollarValueEnd`'s, the same pair
+// `sqlToken` gives both of the file's readings.
+//
+// A value is read whether or not it is a routine body, because telling a `DO $$ … $$`
+// block from a string a backfill is writing is a fact about the statement carrying it, and
+// the guard does not parse. What that costs is stated where each reader is: a statement
+// inside a value that is not a body has to reach the rule's anchor anyway, which is the one
+// thing both readings refuse to do — read the words of a value as a statement — and the one
+// unmarked question asked of a body is asked for the presence of a word rather than the
+// shape of a statement, so no file is refused for a construct this reader invented.
+func eachDollarBody(text string, body func(contents string)) {
+	for i := 0; i < len(text); {
+		tag := dollarTag(text[i:])
+		if tag == "" {
+			i++
+			continue
+		}
+		end, open := dollarValueEnd(text, i), i+len(tag)
+		closed := end - len(tag)
+		if closed < open {
+			// A value the file never closed: the server refuses the file for it
+			// (`unterminated dollar-quoted string`), and there are no contents to read.
+			closed = open
+		}
+		body(text[open:closed])
+		i = end
+	}
+}
+
+// dollarBodyStatements is the statements a file's dollar-quoted bodies hold, read from
+// inside the value. A rule anchored at a statement's front — `^alter table`, `^create
+// index` — cannot reach one of these any other way: `splitStatements` cuts the body at its
+// own semicolons, which leaves the piece beginning `do $$ begin alter table …`, and no
+// rule is anchored behind a dollar sign. That is not the approximation a marker exists
+// for; it is a rule that never fires, and a rule that never fires cannot be excepted, so
+// the file that wraps a `DROP COLUMN` in the conditional block every idempotent migration
+// writes applied with nothing named and its own `allow=` refused as `unused-allow`. The
+// harm is the rule's own — a name taken away from the release running now — and the only
+// thing that hid it was a wrapper.
+//
+// What it over-reads is one thing and no more: a statement the body holds behind a test the
+// running installation decides, which fires whatever the branch turns out to take. That is
+// the over-reading a marker exists for, and `allow=drop-column` with a sentence is the answer
+// the file writes. What it does not read is a value *inside* the body: the anchor still has
+// to be reached, so a `RAISE NOTICE 'alter table probe drop column b'` and an `EXECUTE` of a
+// string the body assembled keep their own verb at the front and fire nothing, exactly as the
+// same words in a plain file's literal do. The reading stops at a value's opening quote on
+// both sides of the boundary, which is the one rule these readings share.
+func dollarBodyStatements(text string) []string {
+	var out []string
+	eachDollarBody(text, func(contents string) {
+		for _, statement := range splitStatements(contents) {
+			for round := 0; round < 8; round++ {
+				// A nested block opens with its own `BEGIN` in front of the verb, so the run of
+				// control words is taken until the front is a statement's; the bound is because
+				// the alternation always leaves something behind on the pass that matches.
+				shorter := plpgsqlOpener.ReplaceAllString(statement, "")
+				if shorter == statement {
+					break
+				}
+				statement = shorter
+			}
+			if statement = strings.TrimSpace(statement); statement != "" {
+				out = append(out, statement)
+			}
+		}
+	})
+	return out
+}
+
+// dollarBodySQL is the contents of every dollar-quoted value with its own comments and
+// literals put away — the SQL a stored body would run, in the same text `migration.shape`
+// is the file's own SQL in. One word is read of it, so nothing about a statement's shape
+// is decided here: inside the value, as outside one, a word that survives the put-away is
+// a word the body says in SQL rather than one it stores.
+func dollarBodySQL(text string) string {
+	var out strings.Builder
+	eachDollarBody(text, func(contents string) {
+		out.WriteString(scanSQL(contents, true))
+		out.WriteByte('\n')
+	})
+	return out.String()
+}
+
+// plpgsqlOpener matches the run of PL/pgSQL control words that stand in front of a body's
+// statement: a block's `BEGIN`, a branch's test and the `THEN` that ends it, `ELSE`, a loop
+// header, a label. They are the whole difference between `begin alter table probe drop
+// column b` — which the rules read no action in — and the `alter table probe drop column b`
+// PostgreSQL runs, and they are a closed list from one grammar rather than an approximation
+// of the SQL one.
+//
+// What that list gives up is stated with the reading: a `CASE` arm (`WHEN … THEN`) is not in
+// it, so a statement after one keeps its `WHEN` in front and is read as no statement at all,
+// and a branch test whose own text carries `THEN` and a `BEGIN` ahead of the verb has its
+// prefix taken one word further than the grammar would. The first is a miss with the shape of
+// the finding this list exists for, and naming it is honest where growing the list on a guess
+// would not be; the second only reads past one verb to another. Both are visible in the diff
+// of the file that writes them, and a rule that reads a construct it may be wrong about is a
+// rule `allow=` reaches.
+var plpgsqlOpener = regexp.MustCompile(`(?s)^\s*(?:begin\b|if\b.*?\bthen\b|elsif\b.*?\bthen\b|else\b|while\b.*?\bloop\b|for\b.*?\bloop\b|foreach\b.*?\bloop\b|loop\b|<<.*?>>)\s*`)
 
 // splitClauses breaks one statement on the commas between its ALTER TABLE actions,
 // which is where one column definition ends and the next begins. Parentheses are
