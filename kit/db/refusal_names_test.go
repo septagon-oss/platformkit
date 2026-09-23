@@ -23,11 +23,15 @@ package db_test
 // third time, which is what the ninth review measured: a literal list of four pinned the
 // four names in both directions and the *set* in neither, so a fifth id added to either side
 // passed. The ids are therefore read out of the places they come from rather than repeated:
-// `refusalDoors` below is counted against what `refusals.go` declares, `refusals.go` is
-// counted against README's table by `review8_refusal_ids_are_the_table_test.go`, and a
-// refusal sentence written with an id inlined instead of declared is refused by name. Printed
-// ⊆ declared ⊆ tabled ⊆ declared ⊆ printed: that chain is the paragraph, and a missing door
-// case, table row or constant breaks it.
+// `refusalDoors` below is counted against every refusal constant this package's non-test files
+// declare — an id *is* such a constant, wherever the runner keeps it, and a case that opened
+// `refusals.go` by name could only ever hold the ids that stayed there, which is the tenth
+// review's fourth finding — and an id declared outside the file whose comment says it owns
+// them is refused here and by `review11_a_refusal_id_is_declared_wherever_the_runner_keeps_it_test.go`.
+// README's table is counted against the declarations by `review8_refusal_ids_are_the_table_test.go`,
+// and a refusal sentence written with an id inlined instead of declared is refused by name.
+// Printed ⊆ declared ⊆ tabled ⊆ declared ⊆ printed: that chain is the paragraph, and a missing
+// door case, table row or constant breaks it.
 
 import (
 	"errors"
@@ -130,10 +134,57 @@ func TestARuntimeRefusalNamesTheIDItsDocumentsGiveIt(t *testing.T) {
 	}
 }
 
-// declaredRefusalID is one refusal id and the constant the code calls it by, read off
-// refusals.go — the file that owns the ids — rather than repeated here, because a copy of a
-// list in the case that guards it is how the list stopped being guarded.
-var declaredRefusalID = regexp.MustCompile(`(?m)^\s*(refusal[A-Za-z]*)\s*=\s*"([a-z0-9-]+)"\s*$`)
+// declaredRefusalID is one refusal id and the constant the code calls it by. It is read off
+// every non-test file of this package rather than off `refusals.go` by name: an id *is* what
+// `refusal<Name> = "…"` makes it, wherever the runner keeps it, and a gate that opens one
+// file by name is only as wide as that file — an id declared beside the code that prints it
+// would be printed by a run, named by no list a gate reads, and invisible. The list is still
+// not repeated here, because a copy of a list in the case that guards it is how the list
+// stopped being guarded.
+var declaredRefusalID = regexp.MustCompile(`(?m)^\s*(?:const\s+)?(refusal[A-Za-z]*)\s*=\s*"([a-z0-9-]+)"\s*$`)
+
+// packageSources is this package's own non-test source, file name to text — the text both
+// halves of the id promise are read out of, so neither of them reads one file by name.
+func packageSources(t *testing.T) map[string]string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("this package's own directory: %v", err)
+	}
+	sources := map[string]string{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		text, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		sources[name] = string(text)
+	}
+	return sources
+}
+
+// refusalIDHomes is every refusal id the package declares and the file that declares it.
+// Two files declaring one id is two ids, and the file the tables count is the one the id's
+// own comment names, so a home outside it is reported rather than merged.
+func refusalIDHomes(t *testing.T) map[string]string {
+	t.Helper()
+	homes := map[string]string{}
+	for name, text := range packageSources(t) {
+		for _, found := range declaredRefusalID.FindAllStringSubmatch(text, -1) {
+			if seen, again := homes[found[2]]; again && seen != name {
+				t.Errorf("refusal id %q is declared in both %s and %s: an id has one home, and two files a gate reads by name is two ids", found[2], seen, name)
+			}
+			homes[found[2]] = name
+		}
+	}
+	if len(homes) == 0 {
+		t.Fatal("no refusal id is declared anywhere in this package, which is not what refusals.go says")
+	}
+	return homes
+}
 
 // inlinedRefusalID finds a refusal sentence whose id was written into the text instead of
 // declared beside it. Such an id reaches an operator's log line from nowhere the table can
@@ -144,28 +195,26 @@ var inlinedRefusalID = regexp.MustCompile(`"refusal ([a-z0-9-]+)`)
 // TestEveryRefusalIDTheRunnerDeclaresIsOneARefusalPrints is the half of the promise the id
 // comparison in review8_refusal_ids_are_the_table_test.go cannot make: that file holds
 // refusals.go and README.md to be one list, and a list both of them name can still be a name
-// nothing says. So every declared id has to be one of the doors above walked through a run
-// that refused and read back off the message — and no id may be printed from a literal the
-// declarations do not hold.
+// nothing says. So every declared id — read off the whole package, not off the one file the
+// gate used to open by name — has to be one of the doors above walked through a run that
+// refused and read back off the message, has to keep the one home the tables count, and no id
+// may be printed from a literal the declarations do not hold.
 func TestEveryRefusalIDTheRunnerDeclaresIsOneARefusalPrints(t *testing.T) {
-	source, err := os.ReadFile("refusals.go")
-	if err != nil {
-		t.Fatalf("kit/db/refusals.go, the file that names the ids: %v", err)
-	}
+	homes := refusalIDHomes(t)
 	declared := map[string]bool{}
-	for _, found := range declaredRefusalID.FindAllStringSubmatch(string(source), -1) {
-		declared[found[2]] = true
-	}
-	if len(declared) == 0 {
-		t.Fatal("refusals.go declares no refusal id at all, which is not what its comment says")
+	for id := range homes {
+		declared[id] = true
 	}
 	walked := map[string]bool{}
 	for _, door := range refusalDoors {
 		walked[door.id] = true
 	}
-	for id := range declared {
+	for id, file := range homes {
+		if file != "refusals.go" {
+			t.Errorf("refusal id %q is declared in %s: %s is the file whose own comment says it owns the ids, and the tables that count them read it by name — an id kept anywhere else is printed by a run and named by no list a gate reads", id, file, "refusals.go")
+		}
 		if !walked[id] {
-			t.Errorf("%q is declared by refusals.go and no case here walks a run that prints it: an id nothing prints is a name that drifts from the sentence it stands for with nothing noticing, which is the finding this file exists for", id)
+			t.Errorf("%q is declared by %s and no case here walks a run that prints it: an id nothing prints is a name that drifts from the sentence it stands for with nothing noticing, which is the finding this file exists for", id, file)
 		}
 	}
 	for _, door := range refusalDoors {
@@ -173,20 +222,9 @@ func TestEveryRefusalIDTheRunnerDeclaresIsOneARefusalPrints(t *testing.T) {
 			t.Errorf("the door case %q prints %q, which refusals.go does not declare: the id an operator greps for has to have one home, and the sentence that prints it is not one", door.name, door.id)
 		}
 	}
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("this package's own directory: %v", err)
-	}
 	var inlined []string
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		text, err := os.ReadFile(entry.Name())
-		if err != nil {
-			t.Fatalf("%s: %v", entry.Name(), err)
-		}
-		for _, found := range inlinedRefusalID.FindAllStringSubmatch(string(text), -1) {
+	for _, text := range packageSources(t) {
+		for _, found := range inlinedRefusalID.FindAllStringSubmatch(text, -1) {
 			if !declared[found[1]] && !slices.Contains(inlined, found[1]) {
 				inlined = append(inlined, found[1])
 			}
@@ -197,15 +235,25 @@ func TestEveryRefusalIDTheRunnerDeclaresIsOneARefusalPrints(t *testing.T) {
 	}
 }
 
+// readmeOf is this package's own README.md, the operator's copy of the id list. It is read
+// by both of the cases below, which is the point: the table an operator reads and the
+// declarations a gate counts have to be checked against each other and against the runs that
+// print the ids, from the same text.
+func readmeOf(t *testing.T) string {
+	t.Helper()
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("this package's own README.md: %v", err)
+	}
+	return string(readme)
+}
+
 // TestTheRuntimeRefusalIDsAreTheOnesTheRunnerDocuments reads the operator's copy of the
 // list out of this package's own README.md, beside the legs above that print each id. One
 // without the other is the finding: a table that names an id nothing prints, or a sentence
 // that prints one nothing names.
 func TestTheRuntimeRefusalIDsAreTheOnesTheRunnerDocuments(t *testing.T) {
-	readme, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatalf("this package's own README.md: %v", err)
-	}
+	readme := []byte(readmeOf(t))
 	for _, door := range refusalDoors {
 		if !strings.Contains(string(readme), "`"+door.id+"`") {
 			t.Errorf("README.md never names the refusal id %s, which a run prints: the table an operator reads and the sentence that refused them have to be one list", door.id)
