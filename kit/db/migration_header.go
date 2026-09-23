@@ -32,10 +32,24 @@ const minReason = 3
 // owner with no history at all (no reader, and no rows but the ones this installation
 // just wrote), the resume of one a previous run left unfinished, and the owner's last
 // pending data file, which has nothing behind it waiting on the work. Past it the
-// process is open too long for a deploy step, and the worker — which drains unbounded
-// because nothing waits on its boot — finishes the job, answering with
+// process is open too long for a deploy step, and the worker — which drains a table
+// under readers because nothing waits on its boot — finishes the job, answering with
 // ErrBackfillBudget.
 const installBackfillBatches = 50
+
+// workerBackfillBatches bounds one tick of that drain. Nothing waits behind a tick, so it
+// may run far longer than a boot is allowed to — but a number nothing puts on it is not a
+// bound at all, and a body the cursor model cannot bound (one that puts its own rows back
+// above the cursor, which the executor refuses by name — movesTheWindowKey — and which this
+// bound is the second answer to) would otherwise be a tick that never ends, holding the
+// advisory lock that job's name elects on and rewriting rows an earlier window committed.
+// Ten thousand windows is a billion rows at the widest window a file may declare and
+// 10,000 transactions at the narrowest: more table than one tick should empty, and enough
+// that a tick which reaches it is looping rather than draining. The report is the migration's
+// — ErrBackfillBudget, with the batches and the cursor standing — because the answer to a
+// bound a run reached is the same from either door: the next run continues where this one
+// stopped, and a tick that reports it every five seconds is the finding, not the drain.
+const workerBackfillBatches = 10000
 
 // headerLine is one line of a migration file's header. The marker is the whole line, so
 // that a comment which only looks like one is not read as one — and the spaces inside the

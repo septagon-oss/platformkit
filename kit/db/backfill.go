@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 )
@@ -35,10 +36,19 @@ import (
 // window is, so `uuid` and `bytea` — the types every entity table here is keyed by — are
 // windows and not server errors), and a key that is also the sentinel ("nothing committed
 // yet" is a NULL cursor, because for a `text` key the empty string is a row).
+//
+// The cursor being a key buys resumability at the price of one assumption, and that one is
+// refused rather than trusted: the key set does not move. A body that writes the column the
+// window runs over puts its own rows back above the cursor the drain just advanced, so the
+// table is never empty of work and every window behind the first re-commits rows an earlier one
+// wrote. The drain reads the key out of the catalog and refuses such a body by name, before it
+// writes anything (movesTheWindowKey).
 
-// ErrBackfillBudget is the bound on a drain a migration run performs for itself: past it
-// the process is open too long, and the rest belongs to the worker, which can drain a
-// table under readers. Committed batches and the cursor stand.
+// ErrBackfillBudget is the bound on a drain one run performs: the fifty windows a migration
+// gives itself, or the bound one tick of the worker gives itself (workerBackfillBatches). Past
+// either the run is open longer than what it is for, and the rest belongs to the next run. The
+// report is one error because the promise is one promise: the committed batches and the cursor
+// stand, and the batch count the sentence carries is the bound that stopped the drain.
 var ErrBackfillBudget = errors.New("refusal " + refusalBackfillBudget + ": the drain stopped at the bound an installation gives itself; the committed batches stand and the rest is the worker's to drain, then migrate again")
 
 // drain runs one pending data file to completion, or to the bound, or to the first
@@ -66,8 +76,8 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 		// refuses to run but one whose rows the drain would never advance — PostgreSQL
 		// gives two CTEs of one name to nobody at all, and the error arrives after the
 		// progress row, which is the state this check exists to leave uncreated.
-		if reWindowShadowed.MatchString(m.shape) {
-			return drainReport{}, fmt.Errorf("the window is the relation named batch: this body defines batch itself, so it reads its own rows and the cursor would advance over a window nothing read; name the body's own relation something else and let the drain supply the window")
+		if bindsWindowRelation(m.body) {
+			return drainReport{}, fmt.Errorf("the window is the relation named %s: this body's own CTE list binds %s, so it reads its own rows and the cursor would advance over a window nothing read; name the body's own relation something else and let the drain supply the window", windowRelation, windowRelation)
 		}
 	}
 	conn := r.conn
@@ -75,6 +85,18 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 	key, err := primaryKey(ctx, conn, m.table)
 	if err != nil {
 		return report, err
+	}
+	// The third body the window cannot bound, and the one that could only be read here: the
+	// cursor is a key, so everything the drain concludes from it — that a short window is the
+	// end, that a resumed cursor has no row behind it, that a row is written once — holds of a
+	// key that stays where it was. A body that writes the column the window runs over puts its
+	// own rows back above the cursor, so the table is never empty of work, and the run rewrites
+	// rows an earlier window committed until the bound stops it. Which column that is is a fact
+	// of the catalog and not of the text, which is why this refusal is the drain's and not the
+	// rule table's; it is asked before beginDrain for the same reason the two above are.
+	if m.windowed() && movesTheWindowKey(m.body, m.table, key.column) {
+		return drainReport{}, fmt.Errorf("the window runs over %s's key %s: this body writes that column, so the rows it touches land above the cursor and every window behind this one rewrites them; a backfill writes the columns a key holds, not the key it holds — re-keying a table is a schema file or a job of its own, one that keeps its own position",
+			m.table, key.column)
 	}
 	if err := beginDrain(ctx, conn, m); err != nil {
 		return report, err
@@ -85,7 +107,7 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 	}
 	cursor := progress.at
 	for {
-		if bound > 0 && report.batches >= bound {
+		if report.batches >= bound {
 			return report, fmt.Errorf("%w (owner %s version %d, %d batches of %d, cursor %s)",
 				ErrBackfillBudget, m.owner, m.version, report.batches, m.batch, cursor.text())
 		}
@@ -247,6 +269,12 @@ func finishDrain(ctx context.Context, tx *sql.Tx, m migration) error {
 // and a boot that refused would stop the only role that can finish the work. It is
 // BackfillWith with no budget named, the same pair as Migrate and MigrateWith.
 //
+// One tick still ends. It is bounded by what one tick of a job may hold the
+// `schema-backfill` advisory lock for (workerBackfillBatches), and a drain that
+// reaches it reports ErrBackfillBudget with its batches and its cursor standing, which
+// is the same report the next tick reads as "continue here". A drain with nothing to
+// stop it was a loop that only a cancelled process ended.
+//
 // It takes the files in order and stops an owner's walk at the first unapplied
 // schema file: a backfill runs against the schema the release installed, so the
 // deploy step goes first and the drain follows it. A file with a progress row
@@ -306,7 +334,7 @@ func BackfillWith(ctx context.Context, migrateURL string, budget MigrationBudget
 				break // the release has schema pending; the deploy migrates, then this drains
 			}
 			started := time.Now()
-			report, err := run.drain(ctx, m, 0)
+			report, err := run.drain(ctx, m, workerBackfillBatches)
 			if err != nil {
 				return fmt.Errorf("db: backfill: %s/%s: %w", m.owner, m.name, run.refused(err))
 			}
@@ -612,6 +640,331 @@ func sqlWord(text string, i int) (word string, after int, found bool) {
 		return strings.ToLower(text[start:i]), i, i > start
 	}
 	return "", i, false
+}
+
+// windowRelation is the name the drain's own window carries inside the statement it
+// assembles (windowedBody), and therefore the name a body's CTE list may take once: the
+// merged list carries both. `reBatchWindow` reads the name wherever the SQL selects from
+// it; this is the name the drain writes.
+const windowRelation = "batch"
+
+// bindsWindowRelation says whether the body's own top-level CTE list gives `batch` to a
+// relation of its own, which is the one merged statement PostgreSQL refuses: it hands one
+// name to two members of a list by refusing the query (42712), and it does so after the
+// drain wrote its progress row.
+//
+// The question is about the *list*, and the reading that fired the finding was a spelling:
+// `\bbatch\s+as\s*\(` asked the shape for those four characters in that order, and three
+// legal bindings of the same name answered it no — `"batch" AS (`, because a quoted
+// lower-case name is the same identifier and the shape puts a quoted name's contents away;
+// `batch (id) AS (`, because the column list the author may write sits between the name and
+// the keyword; and a second member of the list, which no wrapper would run either. A CTE
+// name is one grammar position, so this walks it: the name, the column list it may carry,
+// `AS` and the query's own parentheses, once per member, and reads the name out of that
+// position in either spelling PostgreSQL takes.
+//
+// What the two halves of the name cost is stated with the reader. A quoted name is resolved
+// as the server resolves it — `batch` and `Batch` are one relation and `"Batch"` is not —
+// so the reader takes the body's own letters rather than the case-folded text every other
+// reading here uses, and does not refuse a merged list the server would run. A nested list
+// is not this one: `WITH batch AS (…)` inside a sub-expression shadows the window in the
+// scope the server resolves it in and runs (measured at the pinned version), so the refusal
+// stops at the members of the list the wrapper joins and does not reach past them.
+func bindsWindowRelation(body string) bool {
+	at, _, opens := cteLead(body)
+	if !opens {
+		return false
+	}
+	for {
+		name, after, found := sqlNameAt(body, at)
+		if !found {
+			return false
+		}
+		if open := sqlSpace(body, after); open < len(body) && body[open] == '(' {
+			at = pastParens(body, open)
+		} else {
+			at = open
+		}
+		word, after, found := sqlWord(body, at)
+		if !found || word != "as" {
+			return false
+		}
+		open := sqlSpace(body, after)
+		if open >= len(body) || body[open] != '(' {
+			return false
+		}
+		if name == windowRelation {
+			return true
+		}
+		at = sqlSpace(body, pastParens(body, open))
+		if at >= len(body) || body[at] != ',' {
+			return false
+		}
+		at++
+	}
+}
+
+// movesTheWindowKey says whether the body writes the column the window runs over. The cursor
+// is a key, and the drain reasons from it — a short window is the end because nothing is left
+// above that key, a resumed cursor has rows behind it and not in front of it, and a row that
+// committed is never taken again. Every one of those is a statement about a key that stays
+// where it was, and `UPDATE probe SET id = id + 1000 WHERE id IN (SELECT id FROM batch)`,
+// which is what re-keying a table looks like when somebody backfills it, answers all three
+// the wrong way: the rows the body touched are above the cursor it just moved past, so the
+// table never empties, and each window commits rows an earlier window already wrote.
+//
+// So the refusal reads the assignment list of the UPDATEs that name the drained table. A
+// target is a name in the position an assignment starts in, both shapes of it (`SET id = …`
+// and the multi-column `SET (id, note) = (…)`), and a word inside a value is not a target —
+// the body that stores the text `set id =` in a column writes a sentence, not a key, which is
+// the same line every other reading in this package draws. What it gives up is stated rather
+// than assumed: an upsert's `DO UPDATE SET` and a `MERGE` arm name no target table for this
+// reader — the statement carrying them names it — and an alias written without `AS` moves the
+// word the reader expects. Those bodies are missed, and the bound a drain gives itself
+// (workerBackfillBatches) is what ends one that this reading did not stop; a body that renames
+// a key in either of those shapes, or one that only ever *reads* the key, is not refused.
+func movesTheWindowKey(body, table, column string) bool {
+	for at := 0; at < len(body); {
+		word, after, found := sqlWord(body, at)
+		if !found {
+			at++
+			continue
+		}
+		at = after
+		if word != "update" {
+			continue
+		}
+		set, ok := setList(body, after, table)
+		if ok && setWritesColumn(body, set, column) {
+			return true
+		}
+	}
+	return false
+}
+
+// setList is the offset just past the `set` that opens an UPDATE's assignment list, given the
+// text after the word `update` and the table the window drains: `ONLY`, a schema qualification
+// and an `AS` alias are all walkable spellings of the same target, and a statement whose target
+// the reader cannot name — an upsert's `DO UPDATE`, a MERGE arm — is not an UPDATE of this
+// table as far as this refusal is concerned, because refusing those would take away the marker
+// the author has no remedy for.
+func setList(text string, at int, table string) (int, bool) {
+	name, next, found := sqlNameAt(text, at)
+	if !found {
+		return 0, false
+	}
+	if name == "only" {
+		if open := sqlSpace(text, next); open < len(text) && text[open] == '(' {
+			next = open + 1
+		}
+		if name, next, found = sqlNameAt(text, next); !found {
+			return 0, false
+		}
+	}
+	for dot := sqlSpace(text, next); dot < len(text) && text[dot] == '.'; dot = sqlSpace(text, next) {
+		if name, next, found = sqlNameAt(text, dot+1); !found {
+			return 0, false
+		}
+	}
+	if name != table {
+		return 0, false
+	}
+	if close := sqlSpace(text, next); close < len(text) && text[close] == ')' {
+		next = close + 1
+	}
+	if word, after, ok := sqlWord(text, next); ok && word == "as" {
+		_, alias, ok := sqlNameAt(text, after)
+		if !ok {
+			return 0, false
+		}
+		next = alias
+	}
+	word, past, ok := sqlWord(text, next)
+	if !ok || word != "set" {
+		return 0, false
+	}
+	return past, true
+}
+
+// setWritesColumn reads the assignment list a `set` opens at from and says whether one of its
+// targets is column. The list ends where a comma the list itself holds stops opening items or
+// where a word ends the statement; the walk counts parentheses, because a call inside a value
+// keeps its own commas, and walks over everything sqlToken reads as one construct, because a
+// parenthesis, a comma or a keyword inside a value is data the body is writing rather than
+// structure this reader may read.
+func setWritesColumn(text string, from int, column string) bool {
+	for at := from; ; {
+		var targets []string
+		open := sqlSpace(text, at)
+		if open >= len(text) {
+			return false
+		}
+		if text[open] == '(' {
+			end := pastParens(text, open)
+			targets = namesIn(text[open+1 : end])
+			at = end
+		} else {
+			name, next, found := sqlNameAt(text, open)
+			if !found {
+				return false
+			}
+			targets, at = []string{name}, next
+		}
+		eq := sqlSpace(text, at)
+		if eq >= len(text) || text[eq] != '=' {
+			return false
+		}
+		if slices.Contains(targets, column) {
+			return true
+		}
+		at = pastAssignment(text, eq+1)
+		if at >= len(text) || text[at] != ',' {
+			return false
+		}
+		at++
+	}
+}
+
+// pastAssignment is where one assignment's value ends: the comma that opens the next item, the
+// word that ends the statement, the semicolon that ends the body — whichever comes first at the
+// depth the list is written at. A value's own parentheses close before its depth, so
+// `SET x = coalesce(a, b), id = 1` ends its first item at the comma the list holds and not at
+// the one the call holds.
+func pastAssignment(text string, from int) int {
+	depth := 0
+	for i := from; i < len(text); {
+		if width := sqlToken(text, i); width > 0 {
+			i += width
+			continue
+		}
+		switch text[i] {
+		case '(':
+			depth++
+			i++
+			continue
+		case ')', ',', ';':
+			if depth == 0 {
+				return i
+			}
+			depth--
+		}
+		if depth == 0 {
+			if word, _, found := sqlWord(text, i); found && endsAssignment[word] {
+				return i
+			}
+		}
+		i++
+	}
+	return len(text)
+}
+
+// endsAssignment are the words that stand between an UPDATE's last assignment and the rest of
+// its statement. `FROM` is PostgreSQL's own UPDATE … FROM, and the tail is the select the
+// statement may be wrapped in; a word outside this list is part of a value, and the walk reads
+// on rather than end the list early on a column named after one of them.
+var endsAssignment = map[string]bool{
+	"where": true, "returning": true, "from": true, "group": true, "order": true,
+	"limit": true, "offset": true, "fetch": true, "window": true, "for": true,
+	"union": true, "intersect": true, "except": true, "having": true,
+}
+
+// namesIn is every name a comma-separated list holds — the column list of a multi-column
+// assignment, whose targets are the whole of it. Each item's first name is its column: a
+// parenthesised row constructor inside one is a value, and this reader is asked about targets.
+func namesIn(list string) []string {
+	var out []string
+	for _, item := range splitClauses(list) {
+		if name, _, found := sqlNameAt(item, 0); found {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// sqlSpace is the offset of the next byte of text at or after i that stands in the statement's
+// own grammar — the position a reader looks at to see what comes next. Whitespace, commentary,
+// dollar-quoted values and ordinary string literals are gone because none of them is structure:
+// a body that puts a comment between a CTE's name and its `AS`, or stores the words `set id =`
+// in a column, is a body whose structure this reader still reads and whose data it never reads.
+// A quoted name is *not* walked over, because it is a name: the spelling PostgreSQL takes for a
+// column called `id` when something else already owns the letters, and the one spelling a reader
+// that skipped its quotes would lose.
+func sqlSpace(text string, i int) int {
+	for i < len(text) {
+		switch {
+		case text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r':
+			i++
+		case strings.HasPrefix(text[i:], "--"), strings.HasPrefix(text[i:], "/*"),
+			dollarTag(text[i:]) != "", text[i] == '\'':
+			i += sqlToken(text, i)
+		default:
+			return i
+		}
+	}
+	return i
+}
+
+// sqlNameAt reads the next name in text at or after i in either spelling PostgreSQL takes it,
+// resolved the way the server resolves it, and the offset just past it: an unquoted name
+// folded to lower case, which is what the database does to one, and a quoted name with the
+// letters its author wrote and the doubled quotes taken back, which is what it does not. Both
+// halves matter here and in opposite directions: folding `"Batch"` would refuse a body whose
+// own relation the window does not collide with, and refusing to fold `BATCH` would miss the
+// body that does.
+func sqlNameAt(text string, i int) (name string, after int, found bool) {
+	for i < len(text) {
+		if text[i] == '"' {
+			width := sqlToken(text, i)
+			if width == 0 || !strings.HasSuffix(text[i:i+width], `"`) {
+				return "", i, false
+			}
+			quoted, _ := sqlIdent(text[i : i+width])
+			return quoted, i + width, true
+		}
+		if width := sqlToken(text, i); width > 0 {
+			i += width
+			continue
+		}
+		if text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r' {
+			i++
+			continue
+		}
+		if !isIdentStart(text[i]) {
+			return "", i, false
+		}
+		start := i
+		for i < len(text) && isIdentByte(text[i]) {
+			i++
+		}
+		return strings.ToLower(text[start:i]), i, true
+	}
+	return "", i, false
+}
+
+// pastParens is the offset one step past the parenthesised group opening at i — nesting
+// counted, and every construct sqlToken reads as one token walked over whole, because a
+// parenthesis inside a value or a comment is data and not the group's end. An unclosed group
+// runs to the end of the text, which is what the server is left with there too, and it refuses
+// the file rather than run it.
+func pastParens(text string, i int) int {
+	depth := 0
+	for i < len(text) {
+		if width := sqlToken(text, i); width > 0 {
+			i += width
+			continue
+		}
+		switch text[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+		i++
+	}
+	return len(text)
 }
 
 // windowed says whether this body goes through a window at all. It is the same

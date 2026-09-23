@@ -147,18 +147,11 @@ var (
 	// is writing does not go through the window, and a body that names it in another
 	// case does: the case is folded before the reader sees it, and the literal's
 	// contents are put away by the one reading the question is asked of
-	// (migration.windowed).
+	// (migration.windowed). The body that *binds* the name rather than reading it is a
+	// different reading, of the body's own letters and its own grammar position, and it
+	// lives beside the window that cannot run such a statement (backfill.go,
+	// bindsWindowRelation).
 	reBatchWindow = regexp.MustCompile(`\b(from|join|into|using)\s+batch\b`)
-	// reWindowShadowed matches a body that *defines* the window's own name rather than
-	// reading it. The name belongs to the drain — reBatchWindow above reads it back
-	// wherever the SQL selects from it — and PostgreSQL gives one name to two CTEs of a
-	// list by refusing the statement. So this is the other body the window cannot wrap:
-	// the executor would meet it after the progress row, with the server's own text and no
-	// remedy, which is the state the drain's pre-flight refusal exists to leave uncreated.
-	// What it over-reads is a CTE of that name inside a sub-expression, which no wrapping
-	// would have run either; the remedy — call your own relation anything else — is the
-	// one the name `batch` already obliges a data file to keep.
-	reWindowShadowed = regexp.MustCompile(`\bbatch\s+as\s*\(`)
 )
 
 // rules is the table, in the order a reviewer reads it: the rewrites and locks
