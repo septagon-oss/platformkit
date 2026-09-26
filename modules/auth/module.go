@@ -195,9 +195,18 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 var permissions = []module.Permission{{Key: contracts.PermissionRoleManage}}
 
 // SeedRoles provisions a newly created tenant through auth's own storage path,
-// independently of sessions, delivery and periodic jobs. Pass trusted defaults
-// checked against the composition with contracts.CheckedPermissions before
-// bootstrap or startup. Existing role grants are preserved on repeated calls.
-func SeedRoles(ctx context.Context, tx db.Tx[db.System], tenant tenancy.Tenant, operator []string, defaults []contracts.Role) error {
-	return internal.SeedRoles(ctx, tx, tenant, operator, defaults)
+// independently of sessions, delivery and periodic jobs. Existing role grants
+// are preserved on repeated calls.
+//
+// declared is the application's permission catalogue, which it gets from
+// kit/module.Grants over the modules it composed — never a list written out
+// here or at the call site. That is the whole point of the parameter: the
+// operator grants the administrator's role is created holding are the operator
+// permissions of the composed modules, so an application that does not compose
+// the module owning a permission cannot seed it, and an initial role naming one
+// no module defines is refused here instead of warned about on the hour.
+// contracts.SeededRoles is the same decision without a database, for an
+// application that wants it refused before it opens one.
+func SeedRoles(ctx context.Context, tx db.Tx[db.System], tenant tenancy.Tenant, declared []tenancy.Grant, defaults []contracts.Role) error {
+	return internal.SeedRoles(ctx, tx, tenant, declared, defaults)
 }
