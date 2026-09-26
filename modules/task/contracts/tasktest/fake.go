@@ -69,6 +69,18 @@ func (f *Fake) Tasks() map[uuid.UUID]contracts.Task {
 	return maps.Clone(f.tasks)
 }
 
+// Task is one task as the fake holds it. The conformance suite reads it back to
+// say what "a refused command wrote nothing" means.
+func (f *Fake) Task(id uuid.UUID) (contracts.Task, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	task, err := f.get(id)
+	if err != nil {
+		return contracts.Task{}, err
+	}
+	return *task, nil
+}
+
 // Assign mirrors internal.Service.Assign.
 func (f *Fake) Assign(_ context.Context, _ db.Tx[db.Tenant], id, assignee uuid.UUID) (*contracts.Task, error) {
 	if assignee == uuid.Nil {
