@@ -14,7 +14,8 @@ import (
 func TestFakeConforms(t *testing.T) {
 	contenttest.RunService(t, func(t *testing.T, run func(contenttest.Fixture)) {
 		fake := contenttest.NewFake()
-		run(contenttest.Fixture{Ctx: t.Context(), Service: fake, Seed: fake.Put, Published: fake.Published})
+		run(contenttest.Fixture{Ctx: t.Context(), Service: fake,
+			Seed: fake.Put, Content: fake.Content, Published: fake.Published})
 	})
 }
 
