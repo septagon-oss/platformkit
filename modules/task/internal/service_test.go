@@ -41,6 +41,14 @@ func TestServiceConforms(t *testing.T) {
 					t.Fatalf("seed a task: %v", err)
 				}
 				return task.ID
+			}, Task: func(id uuid.UUID) (contracts.Task, error) {
+				// The row as this transaction sees it, which is what the
+				// suite's snapshot of "wrote nothing" compares.
+				got, err := crud.Get[*contracts.Task](tx, id)
+				if err != nil {
+					return contracts.Task{}, err
+				}
+				return *got, nil
 			}, Published: func() []string {
 				// The rows this transaction has written, which no other
 				// transaction can see: an event is exactly as visible as the
