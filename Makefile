@@ -6,6 +6,15 @@
 # Select the same compiler and tools even when PATH contains a newer Go release.
 # Child scripts and their Go subprocesses inherit this exact module version.
 export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
+
+# No goal here keeps a binary: `build` writes to /dev/null, the checks below list
+# and vet, and `image` builds in a context .dockerignore keeps .git out of. So the
+# commit and dirty flag Go would stamp into a binary is a field nothing reads —
+# and computing it makes whether this repository compiles depend on directories
+# *above* the checkout, because Go asks git about the first parent directory with
+# a .git and inside a git worktree that is not the checkout. Appended rather than
+# assigned, so a caller's own GOFLAGS survive.
+export GOFLAGS := $(GOFLAGS) -buildvcs=false
 .PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
