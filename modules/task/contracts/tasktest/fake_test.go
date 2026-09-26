@@ -8,6 +8,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/porttest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/contracts/tasktest"
 )
@@ -17,36 +18,52 @@ import (
 // rules internal/service_test.go proves the real service keeps.
 func TestFakeConforms(t *testing.T) {
 	tasktest.RunService(t, func(t *testing.T, run func(tasktest.Fixture)) {
+		// The fake's store is partitioned by the tenant on the context and
+		// refuses one that names none, so the world names a tenant exactly as a
+		// request transaction does.
+		ctx := tenancy.WithTenant(t.Context(), acme)
 		fake := tasktest.NewFake()
 		run(tasktest.Fixture{
-			Ctx: t.Context(), Service: fake,
-			Seed: fake.Put, Task: fake.Task, Published: fake.Published,
+			Ctx: ctx, Service: fake,
+			Seed:      func(task *contracts.Task) uuid.UUID { return fake.Put(ctx, task) },
+			Task:      func(id uuid.UUID) (contracts.Task, error) { return fake.Task(ctx, id) },
+			Published: fake.Events.Names,
 		})
 	})
 }
 
+// acme is the tenant the fake's cases run in. One tenant is enough here: what a
+// second one cannot reach is a row-level-security question, and
+// modules/task/internal asks it over Postgres.
+var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
+
 // TestFakeRecordsWhatItWouldPublish: the one thing the fake offers over the real
 // service, for a consumer asserting on what a task did rather than on what it is.
 func TestFakeRecordsWhatItWouldPublish(t *testing.T) {
+	ctx := tenancy.WithTenant(t.Context(), acme)
 	fake := tasktest.NewFake()
-	id := fake.Put(&contracts.Task{Title: "chiller"})
+	id := fake.Put(ctx, &contracts.Task{Title: "chiller"})
 	who := uuid.New()
 
 	for range 2 { // the second one is idempotent, so it publishes nothing
-		if _, err := fake.Assign(t.Context(), db.Tx[db.Tenant]{}, id, who); err != nil {
+		if _, err := fake.Assign(ctx, db.Tx[db.Tenant]{}, id, who); err != nil {
 			t.Fatalf("Assign: %v", err)
 		}
 	}
-	if _, err := fake.Resolve(t.Context(), db.Tx[db.Tenant]{}, id, "swapped the valve"); err != nil {
+	if _, err := fake.Resolve(ctx, db.Tx[db.Tenant]{}, id, "swapped the valve"); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 
 	want := []string{contracts.EventAssigned, contracts.EventResolved}
-	got := fake.Published()
+	got := fake.Events.Names()
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("the fake published %v, want %v", got, want)
 	}
-	if stored := fake.Tasks()[id]; stored.Status != contracts.StatusResolved {
+	stored, err := fake.Task(ctx, id)
+	if err != nil {
+		t.Fatalf("reading the task back: %v", err)
+	}
+	if stored.Status != contracts.StatusResolved {
 		t.Errorf("the store holds %q, want the resolved task", stored.Status)
 	}
 }
