@@ -1,10 +1,20 @@
 # Components
 
 `ui/components` renders the shared components as typed Go functions: Props in,
-a gomponents `Node` out, no templates and no hidden state. The files partition
-the library by role — [atoms.go](atoms.go) (buttons, inputs, badges, icons,
-text), [molecules.go](molecules.go) (tables, cards, navigation, modals, tabs),
-[sections.go](sections.go) (section headers, sections, heroes),
+a gomponents `Node` out, no templates and no hidden state. One file per
+component, named after it, so a reader looking for `Card` opens
+[card.go](card.go) — [alert.go](alert.go), [avatar.go](avatar.go),
+[badge.go](badge.go), [breadcrumb.go](breadcrumb.go), [button.go](button.go),
+[card.go](card.go), [checkbox.go](checkbox.go),
+[detail_list.go](detail_list.go), [divider.go](divider.go),
+[empty_state.go](empty_state.go), [heading.go](heading.go), [icon.go](icon.go),
+[input.go](input.go), [label.go](label.go), [link.go](link.go),
+[media.go](media.go), [modal.go](modal.go), [pagination.go](pagination.go),
+[select.go](select.go), [sidebar.go](sidebar.go), [spinner.go](spinner.go),
+[table.go](table.go), [tabs.go](tabs.go), [text.go](text.go),
+[textarea.go](textarea.go) and [helpers.go](helpers.go), which holds the two
+helpers more than one family needs. The files that hold a group rather than one
+component say so — [sections.go](sections.go) (section headers, sections, heroes),
 [layouts.go](layouts.go) (stacks, flex, grids, containers), [shell.go](shell.go)
 (the application frame and the confirm dialog), [skeleton.go](skeleton.go)
 (loading states) and [video.go](video.go). [props.go](props.go) holds every
