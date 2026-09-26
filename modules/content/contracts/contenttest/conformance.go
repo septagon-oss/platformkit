@@ -6,19 +6,29 @@
 // specification of the lifecycle written as executable cases; the real service
 // and the fake both run it, so "the fake behaves like the real thing" is a test
 // result rather than a hope.
+//
+// The suite is a kit/porttest description: the four operations, what each
+// publishes, and which calls each must refuse. What that buys over the nine
+// hand-written cases it replaces is nine more cases — an unknown row at every
+// command instead of one case covering three, the retry at every command
+// against the whole row rather than against one field, and the read asked
+// whether it publishes anything — and nine written reasons where a case is not
+// owed.
 package contenttest
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/porttest"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
-
-	"context"
 )
 
 // Fixture is one case's world: a Service, the transaction its commands take,
@@ -31,6 +41,10 @@ type Fixture struct {
 	// the suite cannot do through the interface, because the interface is the
 	// lifecycle and creating a page is kit/rest's five routes.
 	Seed func(*contracts.Content) uuid.UUID
+	// Content reads one back. The suite needs it to say what "a refused command
+	// wrote nothing" means: the snapshot either side of a refusal is this row,
+	// rendered.
+	Content func(uuid.UUID) (contracts.Content, error)
 	// Published is the events the implementation has published so far, in
 	// order. Half of what the lifecycle promises is silence: publishing what is
 	// already published is a second click on a button, not a second
@@ -38,15 +52,7 @@ type Fixture struct {
 	Published func() []string
 }
 
-func (f Fixture) silent(t *testing.T, what string, step func()) {
-	t.Helper()
-	before := len(f.Published())
-	step()
-	if after := f.Published(); len(after) != before {
-		t.Errorf("%s published %v; repeating a command changes nothing, so it says nothing", what, after[before:])
-	}
-}
-
+// one runs step and fails unless it published exactly want.
 func (f Fixture) one(t *testing.T, what, want string, step func()) {
 	t.Helper()
 	before := len(f.Published())
@@ -65,11 +71,174 @@ type Harness func(t *testing.T, run func(Fixture))
 // contracts.Service passes it, or it is not one.
 func RunService(t *testing.T, h Harness) {
 	t.Helper()
-	for name, run := range cases() {
-		t.Run(name, func(t *testing.T) {
-			h(t, func(f Fixture) { run(t, f) })
-		})
+	porttest.Run(t, Suite(h))
+}
+
+// Suite is the port, described. A consumer that wants the case names without
+// running them reads porttest.Names(contenttest.Suite(h)).
+func Suite(h Harness) porttest.Suite[Fixture] {
+	return porttest.Suite[Fixture]{
+		Port:     "contracts.Service",
+		World:    h,
+		Events:   func(f Fixture) []string { return f.Published() },
+		Classify: classify,
+		Ops: []porttest.Op[Fixture]{
+			{
+				Name: "Publish", Mutates: true,
+				Publishes: []string{contracts.EventPublished},
+				Ready:     func(_ *testing.T, f Fixture) uuid.UUID { return f.Seed(draft("about-us")) },
+				Call:      func(f Fixture, row uuid.UUID) error { return publish(f, row) },
+				Snapshot:  snapshot,
+				// The retry keeps the sentence the hand-written case used, and
+				// the generated case asserts more than it did: the publication
+				// time is one field of the snapshot the retry compares whole.
+				Names: map[porttest.Kind]string{
+					porttest.Retry: "publishing twice does not move the publication time",
+				},
+				Refusals: []porttest.Refusal[Fixture]{
+					{Kind: porttest.Unknown, Class: porttest.Immutable,
+						Call: func(f Fixture, _ uuid.UUID) error { return publish(f, uuid.New()) },
+						Is:   is(crud.ErrNotFound)},
+					{Name: "archived content is not published from the archive", Class: porttest.Immutable,
+						Provoke: func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
+							archive(t, f, row)
+							return row
+						},
+						Call: func(f Fixture, row uuid.UUID) error { return publish(f, row) },
+						Is:   is(crud.ErrConflict)},
+				},
+				Skip: notOwedHere,
+			},
+			{
+				Name: "Unpublish", Mutates: true,
+				Publishes: []string{contracts.EventUnpublished},
+				Ready:     func(t *testing.T, f Fixture) uuid.UUID { return live(t, f, "about-us").ID },
+				Call:      func(f Fixture, row uuid.UUID) error { return unpublish(f, row) },
+				Snapshot:  snapshot,
+				Refusals: []porttest.Refusal[Fixture]{
+					{Kind: porttest.Unknown, Class: porttest.Immutable,
+						Call: func(f Fixture, _ uuid.UUID) error { return unpublish(f, uuid.New()) },
+						Is:   is(crud.ErrNotFound)},
+				},
+				Skip: notOwedHere,
+			},
+			{
+				Name: "Archive", Mutates: true,
+				Publishes: []string{contracts.EventArchived},
+				Ready:     func(t *testing.T, f Fixture) uuid.UUID { return live(t, f, "about-us").ID },
+				Call:      func(f Fixture, row uuid.UUID) error { _, err := archiveErr(f, row); return err },
+				Snapshot:  snapshot,
+				Refusals: []porttest.Refusal[Fixture]{
+					{Kind: porttest.Unknown, Class: porttest.Immutable,
+						Call: func(f Fixture, _ uuid.UUID) error { _, err := archiveErr(f, uuid.New()); return err },
+						Is:   is(crud.ErrNotFound)},
+				},
+				Skip: notOwedHere,
+			},
+			{
+				// A read: not asked to be idempotent, for a revision or for a
+				// grant, which is why it claims none of those skips. It is
+				// asked the one thing a read still owes — that it publishes
+				// nothing — and the slug nobody has used.
+				Name:  "Public",
+				Ready: func(t *testing.T, f Fixture) uuid.UUID { return live(t, f, "about-us").ID },
+				Call: func(f Fixture, row uuid.UUID) error {
+					c, err := f.Content(row)
+					if err != nil {
+						return err
+					}
+					_, err = f.Service.Public(f.Ctx, f.Tx, c.Slug)
+					return err
+				},
+				Refusals: []porttest.Refusal[Fixture]{
+					{Kind: porttest.Unknown, Name: "an unused slug is not found", Class: porttest.Immutable,
+						Call: func(f Fixture, _ uuid.UUID) error {
+							_, err := f.Service.Public(f.Ctx, f.Tx, "nothing-here")
+							return err
+						},
+						Is: is(crud.ErrNotFound)},
+				},
+			},
+		},
+		Own: cases(),
 	}
+}
+
+// notOwedHere is the three floor cases this port does not owe, with the reason
+// each is not asked. They are the same for all three commands.
+var notOwedHere = map[porttest.Kind]string{
+	porttest.Denied: "the lifecycle takes no grant of its own: the three commands are reached " +
+		"through kit/rest's routes and the public page through the site, and that is where the " +
+		"grant is checked",
+	porttest.Stale: "content carries no revision; kit/crud's own PATCH owns that check",
+	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
+		"here to make the refused call from. The fake holds one tenant's rows and the real " +
+		"service runs under row-level security, which kit/db's " +
+		"TestTenantIsolationIsEnforcedByPostgres and kit/crud's TestAnotherTenantReachesNothing " +
+		"prove against the schema",
+}
+
+func is(want error) func(Fixture, error) bool {
+	return func(_ Fixture, err error) bool { return errors.Is(err, want) }
+}
+
+// classify is this port's reading of its own refusals: an input the caller can
+// retype, or a state that forbids the call however it is retyped.
+func classify(err error) porttest.Class {
+	switch {
+	case errors.Is(err, crud.ErrInvalid):
+		return porttest.Correctable
+	case errors.Is(err, crud.ErrConflict), errors.Is(err, crud.ErrNotFound):
+		return porttest.Immutable
+	default:
+		return porttest.Unclassified
+	}
+}
+
+func publish(f Fixture, row uuid.UUID) error {
+	_, err := f.Service.Publish(f.Ctx, f.Tx, row)
+	return err
+}
+
+func unpublish(f Fixture, row uuid.UUID) error {
+	_, err := f.Service.Unpublish(f.Ctx, f.Tx, row)
+	return err
+}
+
+func archiveErr(f Fixture, row uuid.UUID) (*contracts.Content, error) {
+	return f.Service.Archive(f.Ctx, f.Tx, row)
+}
+
+// archive files content away and fails the case if it could not, for the steps
+// that only need the state and not the answer.
+func archive(t *testing.T, f Fixture, row uuid.UUID) *contracts.Content {
+	t.Helper()
+	got, err := archiveErr(f, row)
+	if err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	return got
+}
+
+// snapshot is everything the three commands can write, rendered so that two
+// readings compare with ==. The publication time is in it because a retry that
+// moved it would be a page published twice, and the update time because a
+// refused call that stamped a row wrote to it.
+func snapshot(t *testing.T, f Fixture, row uuid.UUID) string {
+	t.Helper()
+	c, err := f.Content(row)
+	if err != nil {
+		return "no such content"
+	}
+	return fmt.Sprintf("slug=%q title=%q body=%q kind=%s status=%s published=%s updated=%s",
+		c.Slug, c.Title, c.Body, c.Kind, c.Status, at(c.PublishedAt), at(&c.UpdatedAt))
+}
+
+func at(when *time.Time) string {
+	if when == nil {
+		return "never"
+	}
+	return when.UTC().Format(time.RFC3339Nano)
 }
 
 // draft is content in the state everything starts in.
@@ -77,8 +246,8 @@ func draft(slug string) *contracts.Content {
 	return &contracts.Content{Slug: slug, Title: "About us", Body: "# About\n\nWe make things.", Kind: contracts.KindPage}
 }
 
-// published seeds content and publishes it, which is two steps everywhere.
-func published(t *testing.T, f Fixture, slug string) *contracts.Content {
+// live seeds content and publishes it, which is two steps everywhere.
+func live(t *testing.T, f Fixture, slug string) *contracts.Content {
 	t.Helper()
 	out, err := f.Service.Publish(f.Ctx, f.Tx, f.Seed(draft(slug)))
 	if err != nil {
@@ -87,151 +256,98 @@ func published(t *testing.T, f Fixture, slug string) *contracts.Content {
 	return out
 }
 
-func cases() map[string]func(*testing.T, Fixture) {
-	return map[string]func(*testing.T, Fixture){
-		"publishing serves it and records when": func(t *testing.T, f Fixture) {
-			var got *contracts.Content
-			f.one(t, "publishing a draft", contracts.EventPublished, func() { got = published(t, f, "about-us") })
-			if got.Status != contracts.StatusPublished {
-				t.Errorf("status is %q, want %q", got.Status, contracts.StatusPublished)
-			}
-			if got.PublishedAt == nil {
-				t.Error("published content has no publication time")
-			}
-		},
-
-		"publishing twice does not move the publication time": func(t *testing.T, f Fixture) {
-			first := published(t, f, "about-us")
-			var again *contracts.Content
-			f.silent(t, "publishing what is already published", func() {
-				var err error
-				if again, err = f.Service.Publish(f.Ctx, f.Tx, first.ID); err != nil {
-					t.Fatalf("the second Publish: %v", err)
+// cases is what the description cannot express, each with the reason it is
+// written by hand.
+func cases() []porttest.Case[Fixture] {
+	return []porttest.Case[Fixture]{
+		{
+			Name:    "publishing serves it and records when",
+			Because: "what a success leaves behind is the port's domain: published means published, at a time somebody can print",
+			Run: func(t *testing.T, f Fixture) {
+				got := live(t, f, "about-us")
+				if got.Status != contracts.StatusPublished {
+					t.Errorf("status is %q, want %q", got.Status, contracts.StatusPublished)
 				}
-			})
-			if !again.PublishedAt.Equal(*first.PublishedAt) {
-				t.Error("the second Publish moved the publication time; a page is published once")
-			}
+				if got.PublishedAt == nil {
+					t.Error("published content has no publication time")
+				}
+			},
 		},
-
-		"archived content is not published from the archive": func(t *testing.T, f Fixture) {
-			id := f.Seed(draft("about-us"))
-			if _, err := f.Service.Archive(f.Ctx, f.Tx, id); err != nil {
-				t.Fatalf("Archive: %v", err)
-			}
-			_, err := f.Service.Publish(f.Ctx, f.Tx, id)
-			mustBe(t, err, crud.ErrConflict)
-		},
-
-		"unpublishing clears the publication time": func(t *testing.T, f Fixture) {
-			live := published(t, f, "about-us")
-			var back *contracts.Content
-			f.one(t, "unpublishing", contracts.EventUnpublished, func() {
-				var err error
-				if back, err = f.Service.Unpublish(f.Ctx, f.Tx, live.ID); err != nil {
+		{
+			Name:    "unpublishing clears the publication time",
+			Because: "domain contents: published means published at a time, and this is the half that puts both away together",
+			Run: func(t *testing.T, f Fixture) {
+				back, err := f.Service.Unpublish(f.Ctx, f.Tx, live(t, f, "about-us").ID)
+				if err != nil {
 					t.Fatalf("Unpublish: %v", err)
 				}
-			})
-			if back.Status != contracts.StatusDraft || back.PublishedAt != nil {
-				t.Errorf("it is %q/%v; published means published at a time, and this is not published",
-					back.Status, back.PublishedAt)
-			}
-			f.silent(t, "unpublishing a draft", func() {
-				if _, err := f.Service.Unpublish(f.Ctx, f.Tx, live.ID); err != nil {
-					t.Fatalf("the second Unpublish: %v", err)
+				if back.Status != contracts.StatusDraft || back.PublishedAt != nil {
+					t.Errorf("it is %q/%v; published means published at a time, and this is not published",
+						back.Status, back.PublishedAt)
 				}
-			})
+			},
 		},
-
-		"unpublishing takes content out of the archive": func(t *testing.T, f Fixture) {
-			id := f.Seed(draft("about-us"))
-			if _, err := f.Service.Archive(f.Ctx, f.Tx, id); err != nil {
-				t.Fatalf("Archive: %v", err)
-			}
-			var back *contracts.Content
-			f.one(t, "unarchiving", contracts.EventUnpublished, func() {
-				var err error
-				if back, err = f.Service.Unpublish(f.Ctx, f.Tx, id); err != nil {
-					t.Fatalf("Unpublish: %v", err)
+		{
+			Name:    "unpublishing takes content out of the archive",
+			Because: "the description gives an operation one Ready, and Unpublish has two starting states: coming back from the archive is the second, and it publishes the same event",
+			Run: func(t *testing.T, f Fixture) {
+				id := f.Seed(draft("about-us"))
+				archive(t, f, id)
+				var back *contracts.Content
+				f.one(t, "unarchiving", contracts.EventUnpublished, func() {
+					var err error
+					if back, err = f.Service.Unpublish(f.Ctx, f.Tx, id); err != nil {
+						t.Fatalf("Unpublish: %v", err)
+					}
+				})
+				if back.Status != contracts.StatusDraft {
+					t.Errorf("status is %q, want %q: the archive is where a draft came back from", back.Status, contracts.StatusDraft)
 				}
-			})
-			if back.Status != contracts.StatusDraft {
-				t.Errorf("status is %q, want %q: the archive is where a draft came back from", back.Status, contracts.StatusDraft)
-			}
+			},
 		},
-
-		"archiving keeps it and serves it to nobody": func(t *testing.T, f Fixture) {
-			live := published(t, f, "about-us")
-			var filed *contracts.Content
-			f.one(t, "archiving", contracts.EventArchived, func() {
-				var err error
-				if filed, err = f.Service.Archive(f.Ctx, f.Tx, live.ID); err != nil {
-					t.Fatalf("Archive: %v", err)
+		{
+			Name:    "archiving keeps it and serves it to nobody",
+			Because: "domain contents: the archive is a status and not a delete, and an archived page is not published either",
+			Run: func(t *testing.T, f Fixture) {
+				filed := archive(t, f, live(t, f, "about-us").ID)
+				if filed.Status != contracts.StatusArchived || filed.PublishedAt != nil {
+					t.Errorf("it is %q/%v, want it archived and not published", filed.Status, filed.PublishedAt)
 				}
-			})
-			if filed.Status != contracts.StatusArchived || filed.PublishedAt != nil {
-				t.Errorf("it is %q/%v, want it archived and not published", filed.Status, filed.PublishedAt)
-			}
-			f.silent(t, "archiving twice", func() {
-				if _, err := f.Service.Archive(f.Ctx, f.Tx, live.ID); err != nil {
-					t.Fatalf("the second Archive: %v", err)
+			},
+		},
+		{
+			Name:    "only published content is served publicly",
+			Because: "the read answered across three states of one row — draft, published, archived — and the description gives Public one Ready",
+			Run: func(t *testing.T, f Fixture) {
+				id := f.Seed(draft("about-us"))
+				if _, err := f.Service.Public(f.Ctx, f.Tx, "about-us"); !errors.Is(err, crud.ErrNotFound) {
+					t.Errorf("a draft is served publicly = %v, want ErrNotFound", err)
 				}
-			})
-		},
-
-		"only published content is served publicly": func(t *testing.T, f Fixture) {
-			id := f.Seed(draft("about-us"))
-			if _, err := f.Service.Public(f.Ctx, f.Tx, "about-us"); !errors.Is(err, crud.ErrNotFound) {
-				t.Errorf("a draft is served publicly = %v, want ErrNotFound", err)
-			}
-			if _, err := f.Service.Publish(f.Ctx, f.Tx, id); err != nil {
-				t.Fatalf("Publish: %v", err)
-			}
-			got, err := f.Service.Public(f.Ctx, f.Tx, "about-us")
-			if err != nil || got.ID != id {
-				t.Fatalf("the published page = %v, %v", got, err)
-			}
-			if _, err := f.Service.Archive(f.Ctx, f.Tx, id); err != nil {
-				t.Fatalf("Archive: %v", err)
-			}
-			if _, err := f.Service.Public(f.Ctx, f.Tx, "about-us"); !errors.Is(err, crud.ErrNotFound) {
-				t.Errorf("an archived page is served publicly = %v, want ErrNotFound", err)
-			}
-		},
-
-		"a slug is stored and looked up the same way": func(t *testing.T, f Fixture) {
-			// The name was written with capitals and spaces; the URL that
-			// reaches it is the normalised one, and so is the row.
-			live := published(t, f, "About Us!")
-			if live.Slug != "about-us" {
-				t.Errorf("the slug is %q, want %q", live.Slug, "about-us")
-			}
-			if _, err := f.Service.Public(f.Ctx, f.Tx, "About  Us"); err != nil {
-				t.Errorf("looking up %q: %v; a name stored one way and looked up another is a page nobody can reach", "About  Us", err)
-			}
-		},
-
-		"an unknown id is not found": func(t *testing.T, f Fixture) {
-			id := uuid.New()
-			for what, call := range map[string]func() error{
-				"Publish":   func() error { _, err := f.Service.Publish(f.Ctx, f.Tx, id); return err },
-				"Unpublish": func() error { _, err := f.Service.Unpublish(f.Ctx, f.Tx, id); return err },
-				"Archive":   func() error { _, err := f.Service.Archive(f.Ctx, f.Tx, id); return err },
-			} {
-				if err := call(); !errors.Is(err, crud.ErrNotFound) {
-					t.Errorf("%s of unknown content = %v, want ErrNotFound", what, err)
+				if _, err := f.Service.Publish(f.Ctx, f.Tx, id); err != nil {
+					t.Fatalf("Publish: %v", err)
 				}
-			}
-			if _, err := f.Service.Public(f.Ctx, f.Tx, "nothing-here"); !errors.Is(err, crud.ErrNotFound) {
-				t.Errorf("an unused slug = %v, want ErrNotFound", err)
-			}
+				got, err := f.Service.Public(f.Ctx, f.Tx, "about-us")
+				if err != nil || got.ID != id {
+					t.Fatalf("the published page = %v, %v", got, err)
+				}
+				archive(t, f, id)
+				if _, err := f.Service.Public(f.Ctx, f.Tx, "about-us"); !errors.Is(err, crud.ErrNotFound) {
+					t.Errorf("an archived page is served publicly = %v, want ErrNotFound", err)
+				}
+			},
 		},
-	}
-}
-
-func mustBe(t *testing.T, got, want error) {
-	t.Helper()
-	if !errors.Is(got, want) {
-		t.Errorf("error is %v, want %v", got, want)
+		{
+			Name:    "a slug is stored and looked up the same way",
+			Because: "domain: the name was written with capitals and spaces, and the URL that reaches it is the normalised one, which no generated case knows about",
+			Run: func(t *testing.T, f Fixture) {
+				got := live(t, f, "About Us!")
+				if got.Slug != "about-us" {
+					t.Errorf("the slug is %q, want %q", got.Slug, "about-us")
+				}
+				if _, err := f.Service.Public(f.Ctx, f.Tx, "About  Us"); err != nil {
+					t.Errorf("looking up %q: %v; a name stored one way and looked up another is a page nobody can reach", "About  Us", err)
+				}
+			},
+		},
 	}
 }

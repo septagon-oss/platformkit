@@ -39,6 +39,15 @@ func TestServiceConforms(t *testing.T) {
 					}
 					return c.ID
 				},
+				Content: func(id uuid.UUID) (contracts.Content, error) {
+					// The row as this transaction sees it, which is what the
+					// suite's snapshot of "wrote nothing" compares.
+					got, err := crud.Get[*contracts.Content](tx, id)
+					if err != nil {
+						return contracts.Content{}, err
+					}
+					return *got, nil
+				},
 				Published: func() []string {
 					var names []string
 					err := tx.DB().Raw(`SELECT name FROM `+outbox+` WHERE tenant_id = ? ORDER BY created_at, id`, acme.ID).
