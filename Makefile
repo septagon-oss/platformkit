@@ -38,8 +38,13 @@ TEST_OPTIONS ?=
 help: ## List the targets
 	@grep -hE '^[a-z][a-z0-9-]*:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t 18
 
+# -buildvcs=false because this target answers one question — does every package
+# compile — and throws the binary away. The stamp goes to /dev/null with it, and
+# Go fails the command rather than the stamp when it cannot read a repository,
+# which it cannot from a linked worktree whose `.git` is a file. `make image`
+# builds the artifact that is worth stamping.
 build: ## Compile every package (a check; `make image` builds the artifact)
-	go build -o /dev/null ./...
+	go build -buildvcs=false -o /dev/null ./...
 
 test: ## Test selected packages, reusing successful results when inputs match
 	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- $(TEST_FLAGS)

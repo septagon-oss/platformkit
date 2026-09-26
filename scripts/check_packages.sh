@@ -141,8 +141,11 @@ if [ -z "$max" ]; then
 fi
 
 # go list failing must fail the gate, so it runs on its own line; only grep,
-# which exits 1 on no match, is allowed to fail.
-deps="$(cd "$root" && go list -deps ./apps/platformkit)"
+# which exits 1 on no match, is allowed to fail. -buildvcs=false because listing
+# a main package otherwise stamps it, and a repository Go cannot read — a linked
+# worktree, an export, a tarball — would fail this count for a reason that has
+# nothing to do with how many packages the app links.
+deps="$(cd "$root" && go list -deps -buildvcs=false ./apps/platformkit)"
 count="$(printf '%s\n' "$deps" | grep -c '^github.com/septagon-oss/platformkit/' || true)"
 
 echo "packages $count / $max"

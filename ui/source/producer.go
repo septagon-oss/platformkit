@@ -58,7 +58,12 @@ func newSession(producer GoProducer, env []string) (*session, error) {
 func (s *session) close() { os.RemoveAll(s.dir) }
 
 func (s *session) command(ctx context.Context, operation string, flags, args []string, input []byte) ([]byte, error) {
-	argv := []string{operation, "-mod=readonly", "-modfile=" + s.modfile}
+	// -buildvcs=false for the same reason as GOWORK=off and the separate modfile:
+	// what this session reads is the producer's build inputs, which it hashes
+	// itself. A stamp of whatever repository happens to contain the producer's
+	// directory is not one of them, and Go fails the whole command rather than
+	// the stamp when it cannot read one.
+	argv := []string{operation, "-mod=readonly", "-buildvcs=false", "-modfile=" + s.modfile}
 	argv = append(argv, flags...)
 	argv = append(argv, s.producer.Package)
 	argv = append(argv, args...)
