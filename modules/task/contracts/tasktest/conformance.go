@@ -88,26 +88,26 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				Name: "Assign", Mutates: true,
 				Publishes: []string{contracts.EventAssigned},
 				Ready:     func(_ *testing.T, f Fixture) uuid.UUID { return f.Seed(open("chiller")) },
-				Call:      func(f Fixture, row uuid.UUID) error { return assign(f, row, assignee) },
+				Call:      func(f Fixture, row uuid.UUID) (string, error) { return assign(f, row, assignee) },
 				Snapshot:  snapshot,
 				Names:     map[porttest.Kind]string{porttest.Retry: "assign is idempotent for the same assignee"},
 				Refusals: []porttest.Refusal[Fixture]{
 					{Kind: porttest.Unknown, Class: porttest.Immutable,
-						Call: func(f Fixture, _ uuid.UUID) error { return assign(f, uuid.New(), assignee) },
+						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return assign(f, uuid.New(), assignee) }),
 						Is:   is(crud.ErrNotFound)},
 					{Name: "assign requires an assignee", Class: porttest.Correctable,
-						Call: func(f Fixture, row uuid.UUID) error { return assign(f, row, uuid.Nil) },
+						Call: refuse(func(f Fixture, row uuid.UUID) (string, error) { return assign(f, row, uuid.Nil) }),
 						Is:   is(crud.ErrInvalid)},
 					// Two entries and not one with a loop in it: the case this
 					// replaces walked [resolved, closed] and a refusal has one
 					// row. The split names the two states.
 					{Name: "a resolved task cannot be assigned", Class: porttest.Immutable,
 						Provoke: func(_ *testing.T, f Fixture, _ uuid.UUID) uuid.UUID { return f.Seed(done(contracts.StatusResolved)) },
-						Call:    func(f Fixture, row uuid.UUID) error { return assign(f, row, assignee) },
+						Call:    refuse(func(f Fixture, row uuid.UUID) (string, error) { return assign(f, row, assignee) }),
 						Is:      is(crud.ErrConflict)},
 					{Name: "a closed task cannot be assigned", Class: porttest.Immutable,
 						Provoke: func(_ *testing.T, f Fixture, _ uuid.UUID) uuid.UUID { return f.Seed(done(contracts.StatusClosed)) },
-						Call:    func(f Fixture, row uuid.UUID) error { return assign(f, row, assignee) },
+						Call:    refuse(func(f Fixture, row uuid.UUID) (string, error) { return assign(f, row, assignee) }),
 						Is:      is(crud.ErrConflict)},
 				},
 				Skip: notOwedHere,
@@ -116,20 +116,20 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				Name: "Resolve", Mutates: true,
 				Publishes: []string{contracts.EventResolved},
 				Ready:     func(_ *testing.T, f Fixture) uuid.UUID { return f.Seed(open("chiller")) },
-				Call:      func(f Fixture, row uuid.UUID) error { return resolve(f, row, "swapped the valve") },
+				Call:      func(f Fixture, row uuid.UUID) (string, error) { return resolve(f, row, "swapped the valve") },
 				Snapshot:  snapshot,
 				Refusals: []porttest.Refusal[Fixture]{
 					{Kind: porttest.Unknown, Class: porttest.Immutable,
-						Call: func(f Fixture, _ uuid.UUID) error { return resolve(f, uuid.New(), "x") },
+						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return resolve(f, uuid.New(), "x") }),
 						Is:   is(crud.ErrNotFound)},
 					{Name: "resolve refuses a different resolution", Class: porttest.Immutable,
 						Provoke: func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
-							if err := resolve(f, row, "swapped the valve"); err != nil {
+							if _, err := resolve(f, row, "swapped the valve"); err != nil {
 								t.Fatalf("Resolve: %v", err)
 							}
 							return row
 						},
-						Call: func(f Fixture, row uuid.UUID) error { return resolve(f, row, "it fixed itself") },
+						Call: refuse(func(f Fixture, row uuid.UUID) (string, error) { return resolve(f, row, "it fixed itself") }),
 						Is:   is(crud.ErrConflict)},
 				},
 				Skip: notOwedHere,
@@ -138,7 +138,7 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				Name: "CheckSLA", Mutates: true,
 				Publishes: []string{contracts.EventSLABreached},
 				Ready:     func(_ *testing.T, f Fixture) uuid.UUID { return f.Seed(overdue()) },
-				Call:      func(f Fixture, row uuid.UUID) error { return checkSLA(f, row) },
+				Call:      checkSLA,
 				Snapshot:  snapshot,
 				// No name of the module's own for the success or the retry here:
 				// "check-sla flags an overdue task once" asserts the breach flag
@@ -147,7 +147,7 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				// the generated cases run beside it.
 				Refusals: []porttest.Refusal[Fixture]{
 					{Kind: porttest.Unknown, Class: porttest.Immutable,
-						Call: func(f Fixture, _ uuid.UUID) error { return checkSLA(f, uuid.New()) },
+						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return checkSLA(f, uuid.New()) }),
 						Is:   is(crud.ErrNotFound)},
 				},
 				Skip: notOwedHere,
@@ -192,28 +192,50 @@ func classify(err error) porttest.Class {
 }
 
 // assertions is the floor a generated case gets, for a case that is written by
-// hand: the same reading of silence, refusal and "wrote nothing".
+// hand: the same reading of silence, refusal and "wrote nothing". It is built
+// from the description this case belongs to rather than restated beside it, so
+// a port that changes how it classifies a refusal changes it in one place. The
+// harness it is taken from needs no world of its own here: the case already has
+// the one it was handed.
 func assertions(t *testing.T, f Fixture) porttest.World[Fixture] {
-	return porttest.World[Fixture]{
-		T: t, Fixture: f,
-		Events:   func(f Fixture) []string { return f.Published() },
-		Classify: classify,
+	return Suite(nil).Assert(t, f)
+}
+
+func assign(f Fixture, row, who uuid.UUID) (string, error) {
+	got, err := f.Service.Assign(f.Ctx, f.Tx, row, who)
+	return answer(got), err
+}
+
+func resolve(f Fixture, row uuid.UUID, text string) (string, error) {
+	got, err := f.Service.Resolve(f.Ctx, f.Tx, row, text)
+	return answer(got), err
+}
+
+func checkSLA(f Fixture, row uuid.UUID) (string, error) {
+	got, err := f.Service.CheckSLA(f.Ctx, f.Tx, row)
+	return answer(got), err
+}
+
+// refuse is an operation's call as a refusal reads it: the error alone, because
+// what a refused call left behind is the harness's assertion and not the port's.
+func refuse(call func(Fixture, uuid.UUID) (string, error)) func(Fixture, uuid.UUID) error {
+	return func(f Fixture, row uuid.UUID) error {
+		_, err := call(f, row)
+		return err
 	}
 }
 
-func assign(f Fixture, row, who uuid.UUID) error {
-	_, err := f.Service.Assign(f.Ctx, f.Tx, row, who)
-	return err
-}
-
-func resolve(f Fixture, row uuid.UUID, text string) error {
-	_, err := f.Service.Resolve(f.Ctx, f.Tx, row, text)
-	return err
-}
-
-func checkSLA(f Fixture, row uuid.UUID) error {
-	_, err := f.Service.CheckSLA(f.Ctx, f.Tx, row)
-	return err
+// answer is what a command handed back, rendered so that two answers compare
+// with ==. The retry reads it either side of the second call, which is where
+// "assign is idempotent for the same assignee" says its second half: a command
+// that stores the right task and answers another has handed its caller a task
+// nothing wrote, and no snapshot of the store can see that.
+func answer(task *contracts.Task) string {
+	if task == nil {
+		return "nothing"
+	}
+	return fmt.Sprintf("status=%s assignee=%s resolution=%q resolved=%s breached=%v",
+		task.Status, id(task.AssigneeID), task.Resolution, at(task.ResolvedAt), task.SLABreached)
 }
 
 // snapshot is everything the three commands can write, rendered so that two
@@ -225,8 +247,7 @@ func snapshot(t *testing.T, f Fixture, row uuid.UUID) string {
 	if err != nil {
 		return "no such task"
 	}
-	return fmt.Sprintf("status=%s assignee=%s resolution=%q resolved=%s breached=%v",
-		task.Status, id(task.AssigneeID), task.Resolution, at(task.ResolvedAt), task.SLABreached)
+	return answer(&task)
 }
 
 func id(who *uuid.UUID) string {

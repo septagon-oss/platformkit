@@ -87,24 +87,26 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				Name: "Publish", Mutates: true,
 				Publishes: []string{contracts.EventPublished},
 				Ready:     func(_ *testing.T, f Fixture) uuid.UUID { return f.Seed(draft("about-us")) },
-				Call:      func(f Fixture, row uuid.UUID) error { return publish(f, row) },
+				Call:      publish,
 				Snapshot:  snapshot,
 				// The retry keeps the sentence the hand-written case used, and
 				// the generated case asserts more than it did: the publication
-				// time is one field of the snapshot the retry compares whole.
+				// time is one field of the snapshot the retry compares whole,
+				// and one field of the answer it compares either side of the
+				// second call, which is the assertion the sentence names.
 				Names: map[porttest.Kind]string{
 					porttest.Retry: "publishing twice does not move the publication time",
 				},
 				Refusals: []porttest.Refusal[Fixture]{
 					{Kind: porttest.Unknown, Class: porttest.Immutable,
-						Call: func(f Fixture, _ uuid.UUID) error { return publish(f, uuid.New()) },
+						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return publish(f, uuid.New()) }),
 						Is:   is(crud.ErrNotFound)},
 					{Name: "archived content is not published from the archive", Class: porttest.Immutable,
 						Provoke: func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
 							archive(t, f, row)
 							return row
 						},
-						Call: func(f Fixture, row uuid.UUID) error { return publish(f, row) },
+						Call: refuse(publish),
 						Is:   is(crud.ErrConflict)},
 				},
 				Skip: notOwedHere,
@@ -113,11 +115,11 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				Name: "Unpublish", Mutates: true,
 				Publishes: []string{contracts.EventUnpublished},
 				Ready:     func(t *testing.T, f Fixture) uuid.UUID { return live(t, f, "about-us").ID },
-				Call:      func(f Fixture, row uuid.UUID) error { return unpublish(f, row) },
+				Call:      unpublish,
 				Snapshot:  snapshot,
 				Refusals: []porttest.Refusal[Fixture]{
 					{Kind: porttest.Unknown, Class: porttest.Immutable,
-						Call: func(f Fixture, _ uuid.UUID) error { return unpublish(f, uuid.New()) },
+						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return unpublish(f, uuid.New()) }),
 						Is:   is(crud.ErrNotFound)},
 				},
 				Skip: notOwedHere,
@@ -126,11 +128,11 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				Name: "Archive", Mutates: true,
 				Publishes: []string{contracts.EventArchived},
 				Ready:     func(t *testing.T, f Fixture) uuid.UUID { return live(t, f, "about-us").ID },
-				Call:      func(f Fixture, row uuid.UUID) error { _, err := archiveErr(f, row); return err },
+				Call:      archiveOp,
 				Snapshot:  snapshot,
 				Refusals: []porttest.Refusal[Fixture]{
 					{Kind: porttest.Unknown, Class: porttest.Immutable,
-						Call: func(f Fixture, _ uuid.UUID) error { _, err := archiveErr(f, uuid.New()); return err },
+						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return archiveOp(f, uuid.New()) }),
 						Is:   is(crud.ErrNotFound)},
 				},
 				Skip: notOwedHere,
@@ -142,21 +144,17 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				// nothing — and the slug nobody has used.
 				Name:  "Public",
 				Ready: func(t *testing.T, f Fixture) uuid.UUID { return live(t, f, "about-us").ID },
-				Call: func(f Fixture, row uuid.UUID) error {
+				Call: func(f Fixture, row uuid.UUID) (string, error) {
 					c, err := f.Content(row)
 					if err != nil {
-						return err
+						return "nothing", err
 					}
-					_, err = f.Service.Public(f.Ctx, f.Tx, c.Slug)
-					return err
+					return public(f, c.Slug)
 				},
 				Refusals: []porttest.Refusal[Fixture]{
 					{Kind: porttest.Unknown, Name: "an unused slug is not found", Class: porttest.Immutable,
-						Call: func(f Fixture, _ uuid.UUID) error {
-							_, err := f.Service.Public(f.Ctx, f.Tx, "nothing-here")
-							return err
-						},
-						Is: is(crud.ErrNotFound)},
+						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return public(f, "nothing-here") }),
+						Is:   is(crud.ErrNotFound)},
 				},
 			},
 		},
@@ -172,10 +170,11 @@ var notOwedHere = map[porttest.Kind]string{
 		"grant is checked",
 	porttest.Stale: "content carries no revision; kit/crud's own PATCH owns that check",
 	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
-		"here to make the refused call from. The fake holds one tenant's rows and the real " +
-		"service runs under row-level security, which kit/db's " +
-		"TestTenantIsolationIsEnforcedByPostgres and kit/crud's TestAnotherTenantReachesNothing " +
-		"prove against the schema",
+		"here to make the refused call from. The fake holds the rows of the first tenant that " +
+		"reaches it and answers any other with nothing, which this package's own " +
+		"TestAnotherTenantReachesNothingThroughTheFake pins, and the real service runs under " +
+		"row-level security, which kit/db's TestTenantIsolationIsEnforcedByPostgres and " +
+		"kit/crud's TestAnotherTenantReachesNothing prove against the schema",
 }
 
 func is(want error) func(Fixture, error) bool {
@@ -195,18 +194,50 @@ func classify(err error) porttest.Class {
 	}
 }
 
-func publish(f Fixture, row uuid.UUID) error {
-	_, err := f.Service.Publish(f.Ctx, f.Tx, row)
-	return err
+func publish(f Fixture, row uuid.UUID) (string, error) {
+	got, err := f.Service.Publish(f.Ctx, f.Tx, row)
+	return answer(got), err
 }
 
-func unpublish(f Fixture, row uuid.UUID) error {
-	_, err := f.Service.Unpublish(f.Ctx, f.Tx, row)
-	return err
+func unpublish(f Fixture, row uuid.UUID) (string, error) {
+	got, err := f.Service.Unpublish(f.Ctx, f.Tx, row)
+	return answer(got), err
+}
+
+func archiveOp(f Fixture, row uuid.UUID) (string, error) {
+	got, err := archiveErr(f, row)
+	return answer(got), err
+}
+
+func public(f Fixture, slug string) (string, error) {
+	got, err := f.Service.Public(f.Ctx, f.Tx, slug)
+	return answer(got), err
 }
 
 func archiveErr(f Fixture, row uuid.UUID) (*contracts.Content, error) {
 	return f.Service.Archive(f.Ctx, f.Tx, row)
+}
+
+// refuse is an operation's call as a refusal reads it: the error alone, because
+// what a refused call left behind is the harness's assertion and not the port's.
+func refuse(call func(Fixture, uuid.UUID) (string, error)) func(Fixture, uuid.UUID) error {
+	return func(f Fixture, row uuid.UUID) error {
+		_, err := call(f, row)
+		return err
+	}
+}
+
+// answer is what a command handed back, rendered so that two answers compare
+// with ==. The retry reads it either side of the second call: a service that
+// stores the right row and answers a publication time an hour later has handed
+// its caller a row nothing wrote, and no snapshot of the store can see that.
+// "Publishing twice does not move the publication time" is a sentence about the
+// answer as much as about the row, which is why the time is in here.
+func answer(c *contracts.Content) string {
+	if c == nil {
+		return "nothing"
+	}
+	return fmt.Sprintf("id=%s slug=%q status=%s published=%s", c.ID, c.Slug, c.Status, at(c.PublishedAt))
 }
 
 // archive files content away and fails the case if it could not, for the steps

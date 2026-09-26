@@ -230,8 +230,8 @@ func (g *Grants) Grant(actor uuid.UUID, permissions ...string) {
 // Holds answers whether the actor on the context holds the permission. It is the
 // recheck inside the command, not a wrapper the caller may forget. The module
 // wraps its own denial sentinel around a false answer, because whose sentinel
-// that is belongs to the module: serviceslaw denies with contracts.ErrDenied and
-// pets with tenancy.ErrPolicyDenied, and neither is the kernel's to name.
+// that is belongs to the module: one module denies with a contract of its own
+// and another with tenancy.ErrPolicyDenied, and the kernel names neither.
 func (g *Grants) Holds(ctx context.Context, permission string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
