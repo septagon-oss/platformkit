@@ -6,7 +6,7 @@ package page_test
 // codes, ui/page holds one table code → "fault.<code>" catalog key, fault() takes the
 // resolved language and stops pinning "en", the page carries Content-Language and
 // Vary: Accept-Language) and §9's test 16, TestRefusalPagesSpeakBothLanguages. The
-// change published the codes (kit/httpx/middleware.go:1089) and added the sentence this
+// change published the codes (kit/httpx/authorize.go) and added the sentence this
 // case holds it to — the same file, added by this commit: "ui/page holds the one table
 // from a code to a translation key, so a deployment that ships two languages answers a
 // refusal in both". No file under ui/ names a refusal code or a "fault." key

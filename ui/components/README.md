@@ -22,6 +22,12 @@ Props contract, [classlists.go](classlists.go) every class list a renderer may
 emit, and [layout_description.go](layout_description.go) what a layout
 declares about its root.
 
+Every renderer takes its Props struct and returns a gomponents `Node`, and an
+unknown variant or size string falls back to the documented default rather than
+failing — the contracts' "data schema, not behavior" stance. Interaction
+contracts stay in the shared runtime controllers, so a downstream product needs
+no private script and no duplicate markup.
+
 The rule that makes the stylesheet a Go value: a class no list declares gets no
 rule, so styling lives in class lists and `ui.Compose` resolves exactly those.
 Labels a screen reader hears — `Spinner.Label`, `Pagination.PreviousLabel`,
