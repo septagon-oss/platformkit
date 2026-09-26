@@ -34,7 +34,10 @@ is the door, and `--remove` is the decision. A role's name belonging to the
 seeder is not the same as a grant in it being the seeder's: the built-in member
 is seeded holding nothing, a customer tenant's administrator is seeded the
 wildcard and nothing else, and a permission somebody added through the roles
-screen stays where it is and goes on being reported by the hourly sweep. See
+screen stays where it is and goes on being reported by the hourly sweep — except
+in the operator's own administrator row while it still holds the wildcard, the
+one role the seeder writes named permissions into, where nothing records who
+wrote a departed permission and every dead grant is taken. See
 `contracts.SeededGrants` for that rule and for what it cannot tell apart.
 
 Compose it after tenants and notification with `auth.Deps`, naming the user
