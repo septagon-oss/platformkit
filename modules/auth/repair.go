@@ -10,10 +10,10 @@ import (
 )
 
 // RepairSeededRoles is the door for an installation seeded before a grant was
-// only ever as wide as the composition: it reports, per role, every grant in
-// the roles this module's seeder owns that no composed module declares, and
-// takes them away when remove is true. What it returns is what it found, role
-// name to permissions, whether or not it removed anything.
+// only ever as wide as the composition: it reports, per role, every grant this
+// module's seeder wrote that no composed module declares any more, and takes
+// them away when remove is true. What it returns is what it found, role name to
+// permissions, whether or not it removed anything.
 //
 // It is a command an operator runs and never a silent edit, which is why the
 // two halves are one call with a flag rather than a repair that happens on the
@@ -23,12 +23,17 @@ import (
 // composition's half: the catalogue and the initial roles it passes here are
 // the same two values it passes SeedRoles.
 //
-// It never touches a tenant's own roles. The names it is allowed to write are
-// exactly the ones contracts.SeededRoles returns for this composition — the
-// built-in administrator, the built-in member and the application's initial
-// roles — so a role a customer created naming a permission that left with its
-// module keeps it, and keeps being reported by the hourly sweep, which is the
-// only thing that can say what the customer meant by it.
+// It never takes away a grant the seeder did not write. A role's name belonging
+// to the seeder is not the same as a grant in it being the seeder's: the
+// built-in member is seeded holding nothing at all, and the built-in
+// administrator is seeded the wildcard and the operator permissions of the
+// catalogue it was handed, so an ordinary permission sitting in either of them
+// was put there by whoever administers the tenant, through SetRole, while the
+// module owning it was still composed. contracts.SeededGrants is that rule, role
+// by role, and it is the seeder's own decision read backwards. Everything it
+// leaves — a role a customer created, a grant a customer added — keeps its
+// permission and keeps being reported by the hourly sweep, which is the only
+// thing that can say what its author meant by it.
 //
 // It is idempotent because it is a filter: a second run reads roles that hold
 // only declared permissions and finds nothing to do. The removal goes through
