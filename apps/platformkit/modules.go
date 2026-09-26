@@ -22,7 +22,6 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/billing"
-	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/notification"
@@ -71,8 +70,13 @@ func compose(cfg config.Config) composition {
 	// application that decides administration is made of roles.
 	users, userModule := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
 
+	// mods is declared here and filled below because the role seeder is wired
+	// into the tenant module and asks what the whole composition declares — the
+	// tenant module included. It is read when a tenant is created, which is
+	// after this function has returned. See seedRoles.
+	var mods []module.Module
 	tenants, tenantModule := tenant.Module(tenant.Deps{
-		OnCreate: []tenantcontracts.Hook{seedRoles},
+		OnCreate: []tenantcontracts.Hook{seedRoles(func() []tenancy.Grant { return module.Grants(mods) })},
 		Invite:   firstAdmin{users: users},
 	})
 	active := tenantcontracts.Active{Service: tenants}
@@ -136,7 +140,7 @@ func compose(cfg config.Config) composition {
 		QuotaBytes: cfg.Files.QuotaBytes,
 	})
 
-	mods := []module.Module{
+	mods = []module.Module{
 		userModule,
 		tenantModule,
 		notificationModule,
@@ -296,11 +300,28 @@ func (a firstAdmin) Invite(ctx context.Context, tx db.Tx[db.System], tenantID uu
 	return err
 }
 
+// initialRoles is what this application seeds beyond the two built-in ones:
+// nothing. It is a named value rather than a nil at each call site because it
+// is read twice — by the hook below and by the repair-roles command — and the
+// repair is only allowed to touch the roles the seeder owns, so the two lists
+// being the same one is what makes that true.
+var initialRoles []authcontracts.Role
+
 // seedRoles provisions auth's defaults in the tenant's creation transaction.
-// Operator grants are named by the application that composes their owners.
-func seedRoles(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
-	return auth.SeedRoles(ctx, tx, t.Tenancy(), []string{
-		tenantcontracts.PermissionTenantManage,
-		billingcontracts.PermissionBillingCatalog,
-	}, nil)
+//
+// The operator grants it seeds are the operator permissions of the modules this
+// file composes, read off their manifests, and never a list written here. That
+// sentence used to be a comment over a two-element literal naming tenant:manage
+// and billing:catalog, which is the defect: a product built from this file
+// without the billing module seeded its administrator billing:catalog, a grant
+// no route in it would ever accept, and said so only in an hourly warning.
+//
+// catalogue is a function because the hook runs when a tenant is created and
+// compose has finished long before — the modules it asks about include the
+// tenant module this hook is being wired into, so there is no order in which
+// the list could be a value here.
+func seedRoles(catalogue func() []tenancy.Grant) tenantcontracts.Hook {
+	return func(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
+		return auth.SeedRoles(ctx, tx, t.Tenancy(), catalogue(), initialRoles)
+	}
 }
