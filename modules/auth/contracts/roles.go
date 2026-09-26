@@ -2,6 +2,7 @@ package contracts
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -176,5 +177,83 @@ func CheckedPermissions(permissions []string, declared []tenancy.Grant, tenant t
 		out = append(out, p)
 	}
 	slices.Sort(out)
+	return out, nil
+}
+
+// OperatorGrants is the permissions of a catalogue that belong to the operator
+// of the installation: the ones no wildcard satisfies, which a role has to name
+// to hold. Sorted, so the row a seeder writes does not depend on the order the
+// modules happened to be composed in.
+//
+// declared is the composition's own catalogue (kit/module.Grants), which is why
+// this answers the question the hourly warning used to ask an hour late: a
+// permission is in it exactly when a composed module defines it.
+func OperatorGrants(declared []tenancy.Grant) []string {
+	out := make([]string, 0, len(declared))
+	for _, g := range declared {
+		if g.Operator {
+			out = append(out, g.Permission)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// SeededRoles is what a composition provisions a new tenant with: the built-in
+// administrator, the built-in member, and the initial roles the application
+// names, each with the grants they are created holding.
+//
+// It is the whole of the seeder's decision and it opens no database, so an
+// application can ask it before it has one — which is the point of it being
+// here. SeedRoles writes exactly this and nothing else, so "what the seeder
+// produces" and "what the composition says it should" are one function and
+// cannot drift; the repair that removes a grant an older seeder wrote reads it
+// for the role names it is allowed to touch.
+//
+// The administrator's operator grants are OperatorGrants(declared) and nothing
+// else. A product that does not compose the module owning a permission never
+// seeds it: a grant is only ever as wide as the composition. The wildcard is
+// beside them rather than filtered with them — it is the rule and not a
+// permission (see Grants), and a filter applied to it would take every ordinary
+// grant away from every administrator in the installation.
+//
+// An initial role is a customer-shaped role and is held to two rules the
+// administrator's is not. It may not name the wildcard, because a second role
+// granting everything is an administrator nobody called one; and it may not
+// name an operator permission, in the operator's own tenant either, because the
+// one role that holds those is the one this function builds. Everything else
+// goes through CheckedPermissions, which is where "no module defines it" is
+// refused — the rule that used to be a warning an hour later.
+func SeededRoles(declared []tenancy.Grant, defaults []Role, tenant tenancy.Tenant) ([]Role, error) {
+	operator := OperatorGrants(declared)
+	admin := Permissions{Wildcard}
+	if tenant.Operator {
+		admin = append(admin, operator...)
+	}
+	roles := map[string]Permissions{RoleAdmin: admin, RoleMember: {}}
+	seen := map[string]bool{RoleAdmin: true}
+	for _, role := range defaults {
+		name, err := ValidRoleName(role.Name)
+		if err != nil {
+			return nil, err
+		}
+		if seen[name] || len(role.Grants) == 0 {
+			return nil, fmt.Errorf("%w: initial role %q is reserved, duplicated or grants nothing", fault.ErrInvalid, name)
+		}
+		for _, p := range role.Grants {
+			if p == Wildcard || slices.Contains(operator, p) {
+				return nil, fmt.Errorf("%w: initial role %q cannot grant %q", fault.ErrInvalid, name, p)
+			}
+		}
+		grants, err := CheckedPermissions(role.Grants, declared, tenant)
+		if err != nil {
+			return nil, fmt.Errorf("initial role %q: %w", name, err)
+		}
+		seen[name], roles[name] = true, grants
+	}
+	out := make([]Role, 0, len(roles))
+	for _, name := range slices.Sorted(maps.Keys(roles)) {
+		out = append(out, Role{Name: name, Grants: roles[name]})
+	}
 	return out, nil
 }
