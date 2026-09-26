@@ -7,6 +7,14 @@
 // and the fake both run it, so "the fake behaves like the real thing" is a test
 // result rather than a hope, and a consumer that tests against the fake is
 // testing against the rules the database enforces.
+//
+// The suite is a kit/porttest description: the operations, what each publishes,
+// and which calls it must refuse. What that buys over the ten hand-written cases
+// it replaces is eight more cases — an unknown row at every command instead of
+// one case covering three, and the retry at every command — and nine written
+// reasons where a case is not owed. It costs lines rather than saving them at
+// this size, which the description's own note says: the win scales with refusals
+// per operation, and this port has four.
 package tasktest
 
 import (
@@ -20,6 +28,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/porttest"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 )
 
@@ -34,6 +43,10 @@ type Fixture struct {
 	// the suite cannot do through the interface, because the interface is the
 	// lifecycle and creating a task is kit/rest's five routes.
 	Seed func(*contracts.Task) uuid.UUID
+	// Task reads one back. The suite needs it to say what "a refused command
+	// wrote nothing" means: the snapshot either side of a refusal is this task,
+	// rendered.
+	Task func(uuid.UUID) (contracts.Task, error)
 	// Published is the events the implementation has published so far, in
 	// order. The fake returns what it recorded; the real service's harness
 	// reads the outbox rows its transaction has written.
@@ -46,35 +59,186 @@ type Fixture struct {
 	Published func() []string
 }
 
-// silent runs step and fails if it published anything. It is how the suite
-// says "and this changed nothing", which is the claim a retry depends on.
-func (f Fixture) silent(t *testing.T, what string, step func()) {
-	t.Helper()
-	before := len(f.Published())
-	step()
-	if after := f.Published(); len(after) != before {
-		t.Errorf("%s published %v; repeating a command changes nothing, so it says nothing", what, after[before:])
-	}
-}
-
 // Harness builds one Fixture and calls run with it. It is written this way
 // round — the harness calling the case rather than returning to it — because
 // the real service's fixture is a transaction, and a transaction is a scope
 // somebody has to close: the harness wraps the case in db.Run and rolls back on
 // the way out, which a Harness that only returned a Fixture could not do.
 //
-// RunService calls it once per case, so no case sees another's rows.
+// The suite calls it once per case, so no case sees another's rows.
 type Harness func(t *testing.T, run func(Fixture))
 
 // RunService is the conformance suite. Every implementation of
 // contracts.Service passes it, or it is not one.
 func RunService(t *testing.T, h Harness) {
 	t.Helper()
-	for name, run := range cases() {
-		t.Run(name, func(t *testing.T) {
-			h(t, func(f Fixture) { run(t, f) })
-		})
+	porttest.Run(t, Suite(h))
+}
+
+// Suite is the port, described. A consumer that wants the case names without
+// running them reads porttest.Names(tasktest.Suite(h)).
+func Suite(h Harness) porttest.Suite[Fixture] {
+	return porttest.Suite[Fixture]{
+		Port:     "contracts.Service",
+		World:    h,
+		Events:   func(f Fixture) []string { return f.Published() },
+		Classify: classify,
+		Ops: []porttest.Op[Fixture]{
+			{
+				Name: "Assign", Mutates: true,
+				Publishes: []string{contracts.EventAssigned},
+				Ready:     func(_ *testing.T, f Fixture) uuid.UUID { return f.Seed(open("chiller")) },
+				Call:      func(f Fixture, row uuid.UUID) error { return assign(f, row, assignee) },
+				Snapshot:  snapshot,
+				Names:     map[porttest.Kind]string{porttest.Retry: "assign is idempotent for the same assignee"},
+				Refusals: []porttest.Refusal[Fixture]{
+					{Kind: porttest.Unknown, Class: porttest.Immutable,
+						Call: func(f Fixture, _ uuid.UUID) error { return assign(f, uuid.New(), assignee) },
+						Is:   is(crud.ErrNotFound)},
+					{Name: "assign requires an assignee", Class: porttest.Correctable,
+						Call: func(f Fixture, row uuid.UUID) error { return assign(f, row, uuid.Nil) },
+						Is:   is(crud.ErrInvalid)},
+					// Two entries and not one with a loop in it: the case this
+					// replaces walked [resolved, closed] and a refusal has one
+					// row. The split names the two states.
+					{Name: "a resolved task cannot be assigned", Class: porttest.Immutable,
+						Provoke: func(_ *testing.T, f Fixture, _ uuid.UUID) uuid.UUID { return f.Seed(done(contracts.StatusResolved)) },
+						Call:    func(f Fixture, row uuid.UUID) error { return assign(f, row, assignee) },
+						Is:      is(crud.ErrConflict)},
+					{Name: "a closed task cannot be assigned", Class: porttest.Immutable,
+						Provoke: func(_ *testing.T, f Fixture, _ uuid.UUID) uuid.UUID { return f.Seed(done(contracts.StatusClosed)) },
+						Call:    func(f Fixture, row uuid.UUID) error { return assign(f, row, assignee) },
+						Is:      is(crud.ErrConflict)},
+				},
+				Skip: notOwedHere,
+			},
+			{
+				Name: "Resolve", Mutates: true,
+				Publishes: []string{contracts.EventResolved},
+				Ready:     func(_ *testing.T, f Fixture) uuid.UUID { return f.Seed(open("chiller")) },
+				Call:      func(f Fixture, row uuid.UUID) error { return resolve(f, row, "swapped the valve") },
+				Snapshot:  snapshot,
+				Refusals: []porttest.Refusal[Fixture]{
+					{Kind: porttest.Unknown, Class: porttest.Immutable,
+						Call: func(f Fixture, _ uuid.UUID) error { return resolve(f, uuid.New(), "x") },
+						Is:   is(crud.ErrNotFound)},
+					{Name: "resolve refuses a different resolution", Class: porttest.Immutable,
+						Provoke: func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
+							if err := resolve(f, row, "swapped the valve"); err != nil {
+								t.Fatalf("Resolve: %v", err)
+							}
+							return row
+						},
+						Call: func(f Fixture, row uuid.UUID) error { return resolve(f, row, "it fixed itself") },
+						Is:   is(crud.ErrConflict)},
+				},
+				Skip: notOwedHere,
+			},
+			{
+				Name: "CheckSLA", Mutates: true,
+				Publishes: []string{contracts.EventSLABreached},
+				Ready:     func(_ *testing.T, f Fixture) uuid.UUID { return f.Seed(overdue()) },
+				Call:      func(f Fixture, row uuid.UUID) error { return checkSLA(f, row) },
+				Snapshot:  snapshot,
+				// No name of the module's own for the success or the retry here:
+				// "check-sla flags an overdue task once" asserts the breach flag
+				// as well as the event, so a generated case that took its name
+				// would take its name and not its assertion. It stays below, and
+				// the generated cases run beside it.
+				Refusals: []porttest.Refusal[Fixture]{
+					{Kind: porttest.Unknown, Class: porttest.Immutable,
+						Call: func(f Fixture, _ uuid.UUID) error { return checkSLA(f, uuid.New()) },
+						Is:   is(crud.ErrNotFound)},
+				},
+				Skip: notOwedHere,
+			},
+		},
+		Own: cases(),
 	}
+}
+
+// notOwedHere is the three floor cases this port does not owe, with the reason
+// each is not asked. They are the same for all three commands.
+var notOwedHere = map[porttest.Kind]string{
+	porttest.Denied: "the lifecycle takes no grant of its own: the three commands are reached " +
+		"through kit/rest's routes, and that is where the grant is checked",
+	porttest.Stale: "a task carries no revision; kit/crud's own PATCH owns that check",
+	porttest.Elsewhere: "the tenant is the request transaction's and the fake ignores it, " +
+		"so the isolation case would assert nothing here; it is proven over Postgres " +
+		"in modules/task/internal",
+}
+
+// assignee is the person every case assigns to, so that "the same assignee"
+// means the same person in the retry.
+var assignee = uuid.New()
+
+func is(want error) func(Fixture, error) bool {
+	return func(_ Fixture, err error) bool { return errors.Is(err, want) }
+}
+
+// classify is this port's reading of its own refusals: an input the caller can
+// retype, or a state that forbids the call however it is retyped.
+func classify(err error) porttest.Class {
+	switch {
+	case errors.Is(err, crud.ErrInvalid):
+		return porttest.Correctable
+	case errors.Is(err, crud.ErrConflict), errors.Is(err, crud.ErrNotFound):
+		return porttest.Immutable
+	default:
+		return porttest.Unclassified
+	}
+}
+
+// assertions is the floor a generated case gets, for a case that is written by
+// hand: the same reading of silence, refusal and "wrote nothing".
+func assertions(t *testing.T, f Fixture) porttest.World[Fixture] {
+	return porttest.World[Fixture]{
+		T: t, Fixture: f,
+		Events:   func(f Fixture) []string { return f.Published() },
+		Classify: classify,
+	}
+}
+
+func assign(f Fixture, row, who uuid.UUID) error {
+	_, err := f.Service.Assign(f.Ctx, f.Tx, row, who)
+	return err
+}
+
+func resolve(f Fixture, row uuid.UUID, text string) error {
+	_, err := f.Service.Resolve(f.Ctx, f.Tx, row, text)
+	return err
+}
+
+func checkSLA(f Fixture, row uuid.UUID) error {
+	_, err := f.Service.CheckSLA(f.Ctx, f.Tx, row)
+	return err
+}
+
+// snapshot is everything the three commands can write, rendered so that two
+// readings compare with ==. The resolution time is in it because a retry that
+// moved it would be a loop closing twice.
+func snapshot(t *testing.T, f Fixture, row uuid.UUID) string {
+	t.Helper()
+	task, err := f.Task(row)
+	if err != nil {
+		return "no such task"
+	}
+	return fmt.Sprintf("status=%s assignee=%s resolution=%q resolved=%s breached=%v",
+		task.Status, id(task.AssigneeID), task.Resolution, at(task.ResolvedAt), task.SLABreached)
+}
+
+func id(who *uuid.UUID) string {
+	if who == nil {
+		return "nobody"
+	}
+	return who.String()
+}
+
+func at(when *time.Time) string {
+	if when == nil {
+		return "never"
+	}
+	return when.UTC().Format(time.RFC3339Nano)
 }
 
 // past and future are deadlines either side of now, far enough out that a slow
@@ -87,162 +251,119 @@ func open(title string) *contracts.Task {
 	return &contracts.Task{Title: title, Status: contracts.StatusOpen, Priority: contracts.PriorityHigh}
 }
 
-func cases() map[string]func(*testing.T, Fixture) {
-	return map[string]func(*testing.T, Fixture){
-		"assign acknowledges an open task": func(t *testing.T, f Fixture) {
-			id, who := f.Seed(open("chiller")), uuid.New()
-			got, err := f.Service.Assign(f.Ctx, f.Tx, id, who)
-			if err != nil {
-				t.Fatalf("Assign: %v", err)
-			}
-			if got.Status != contracts.StatusAcknowledged {
-				t.Errorf("status is %q, want %q: taking a task is acknowledging it",
-					got.Status, contracts.StatusAcknowledged)
-			}
-			if got.AssigneeID == nil || *got.AssigneeID != who {
-				t.Errorf("assignee is %v, want %s", got.AssigneeID, who)
-			}
-		},
-
-		"assign requires an assignee": func(t *testing.T, f Fixture) {
-			_, err := f.Service.Assign(f.Ctx, f.Tx, f.Seed(open("chiller")), uuid.Nil)
-			mustBe(t, err, crud.ErrInvalid)
-		},
-
-		"assign is idempotent for the same assignee": func(t *testing.T, f Fixture) {
-			id, who := f.Seed(open("chiller")), uuid.New()
-			before := len(f.Published())
-			if _, err := f.Service.Assign(f.Ctx, f.Tx, id, who); err != nil {
-				t.Fatalf("the first Assign: %v", err)
-			}
-			if len(f.Published()) != before+1 {
-				t.Fatalf("the first Assign published %v, want one event", f.Published()[before:])
-			}
-			var got *contracts.Task
-			f.silent(t, "assigning the same person again", func() {
-				var err error
-				if got, err = f.Service.Assign(f.Ctx, f.Tx, id, who); err != nil {
-					t.Fatalf("the second Assign: %v", err)
-				}
-			})
-			if got.Status != contracts.StatusAcknowledged || *got.AssigneeID != who {
-				t.Errorf("the second Assign left %q/%v", got.Status, got.AssigneeID)
-			}
-		},
-
-		"resolve records the resolution and the time": func(t *testing.T, f Fixture) {
-			got, err := f.Service.Resolve(f.Ctx, f.Tx, f.Seed(open("chiller")), "  swapped the valve  ")
-			if err != nil {
-				t.Fatalf("Resolve: %v", err)
-			}
-			if got.Status != contracts.StatusResolved {
-				t.Errorf("status is %q, want %q", got.Status, contracts.StatusResolved)
-			}
-			if got.Resolution != "swapped the valve" {
-				t.Errorf("resolution is %q; it is trimmed, so two callers cannot disagree about whitespace", got.Resolution)
-			}
-			if got.ResolvedAt == nil {
-				t.Error("a resolved task has no resolution time")
-			}
-		},
-
-		"resolve is idempotent for the same resolution": func(t *testing.T, f Fixture) {
-			id := f.Seed(open("chiller"))
-			before := len(f.Published())
-			first, err := f.Service.Resolve(f.Ctx, f.Tx, id, "swapped the valve")
-			if err != nil {
-				t.Fatalf("the first Resolve: %v", err)
-			}
-			if len(f.Published()) != before+1 {
-				t.Fatalf("the first Resolve published %v, want one event", f.Published()[before:])
-			}
-			for _, again := range []string{"swapped the valve", ""} {
-				f.silent(t, fmt.Sprintf("Resolve(%q) after resolving", again), func() {
-					got, err := f.Service.Resolve(f.Ctx, f.Tx, id, again)
-					if err != nil {
-						t.Fatalf("Resolve(%q) after resolving: %v", again, err)
-					}
-					if !got.ResolvedAt.Equal(*first.ResolvedAt) {
-						t.Errorf("Resolve(%q) moved the resolution time; the loop closed once", again)
-					}
-				})
-			}
-		},
-
-		"resolve refuses a different resolution": func(t *testing.T, f Fixture) {
-			id := f.Seed(open("chiller"))
-			if _, err := f.Service.Resolve(f.Ctx, f.Tx, id, "swapped the valve"); err != nil {
-				t.Fatalf("Resolve: %v", err)
-			}
-			_, err := f.Service.Resolve(f.Ctx, f.Tx, id, "it fixed itself")
-			mustBe(t, err, crud.ErrConflict)
-		},
-
-		"check-sla flags an overdue task once": func(t *testing.T, f Fixture) {
-			overdue := open("chiller")
-			overdue.SLADeadline = past()
-			id := f.Seed(overdue)
-
-			before := len(f.Published())
-			got, err := f.Service.CheckSLA(f.Ctx, f.Tx, id)
-			if err != nil {
-				t.Fatalf("CheckSLA: %v", err)
-			}
-			if !got.SLABreached {
-				t.Fatal("a deadline an hour ago with the task unresolved is a breach")
-			}
-			if len(f.Published()) != before+1 {
-				t.Fatalf("the first CheckSLA published %v, want one event", f.Published()[before:])
-			}
-			// The sweep runs every minute forever, so the second call is the
-			// ordinary case: it changes nothing and, above all, says nothing.
-			f.silent(t, "the second CheckSLA", func() {
-				if got, err = f.Service.CheckSLA(f.Ctx, f.Tx, id); err != nil || !got.SLABreached {
-					t.Errorf("the second CheckSLA = %v, %v", got, err)
-				}
-			})
-		},
-
-		"check-sla leaves a future deadline alone": func(t *testing.T, f Fixture) {
-			soon := open("chiller")
-			soon.SLADeadline = future()
-			got, err := f.Service.CheckSLA(f.Ctx, f.Tx, f.Seed(soon))
-			if err != nil {
-				t.Fatalf("CheckSLA: %v", err)
-			}
-			if got.SLABreached {
-				t.Error("a deadline an hour from now is not a breach yet")
-			}
-		},
-
-		"a resolved task cannot be assigned": func(t *testing.T, f Fixture) {
-			for _, status := range []string{contracts.StatusResolved, contracts.StatusClosed} {
-				done := open("chiller")
-				at := time.Now()
-				done.Status, done.ResolvedAt = status, &at
-				_, err := f.Service.Assign(f.Ctx, f.Tx, f.Seed(done), uuid.New())
-				mustBe(t, err, crud.ErrConflict)
-			}
-		},
-
-		"an unknown id is not found": func(t *testing.T, f Fixture) {
-			id := uuid.New()
-			if _, err := f.Service.Assign(f.Ctx, f.Tx, id, uuid.New()); !errors.Is(err, crud.ErrNotFound) {
-				t.Errorf("Assign of an unknown task = %v, want ErrNotFound", err)
-			}
-			if _, err := f.Service.Resolve(f.Ctx, f.Tx, id, "x"); !errors.Is(err, crud.ErrNotFound) {
-				t.Errorf("Resolve of an unknown task = %v, want ErrNotFound", err)
-			}
-			if _, err := f.Service.CheckSLA(f.Ctx, f.Tx, id); !errors.Is(err, crud.ErrNotFound) {
-				t.Errorf("CheckSLA of an unknown task = %v, want ErrNotFound", err)
-			}
-		},
-	}
+// done is a task the loop has already closed.
+func done(status string) *contracts.Task {
+	at := time.Now()
+	task := open("chiller")
+	task.Status, task.ResolvedAt = status, &at
+	return task
 }
 
-func mustBe(t *testing.T, got, want error) {
-	t.Helper()
-	if !errors.Is(got, want) {
-		t.Errorf("error is %v, want %v", got, want)
+// overdue is a task whose deadline went by an hour ago.
+func overdue() *contracts.Task {
+	task := open("chiller")
+	task.SLADeadline = past()
+	return task
+}
+
+// cases is what the description cannot express, each with the reason it is
+// written by hand.
+func cases() []porttest.Case[Fixture] {
+	return []porttest.Case[Fixture]{
+		{
+			Name:    "assign acknowledges an open task",
+			Because: "what a success leaves behind is the port's domain: taking a task is acknowledging it, and the assignee is the person named",
+			Run: func(t *testing.T, f Fixture) {
+				id, who := f.Seed(open("chiller")), uuid.New()
+				got, err := f.Service.Assign(f.Ctx, f.Tx, id, who)
+				if err != nil {
+					t.Fatalf("Assign: %v", err)
+				}
+				if got.Status != contracts.StatusAcknowledged {
+					t.Errorf("status is %q, want %q: taking a task is acknowledging it",
+						got.Status, contracts.StatusAcknowledged)
+				}
+				if got.AssigneeID == nil || *got.AssigneeID != who {
+					t.Errorf("assignee is %v, want %s", got.AssigneeID, who)
+				}
+			},
+		},
+		{
+			Name:    "resolve records the resolution and the time",
+			Because: "domain contents: the text is trimmed so two callers cannot disagree about whitespace, and the resolution time is stamped",
+			Run: func(t *testing.T, f Fixture) {
+				got, err := f.Service.Resolve(f.Ctx, f.Tx, f.Seed(open("chiller")), "  swapped the valve  ")
+				if err != nil {
+					t.Fatalf("Resolve: %v", err)
+				}
+				if got.Status != contracts.StatusResolved {
+					t.Errorf("status is %q, want %q", got.Status, contracts.StatusResolved)
+				}
+				if got.Resolution != "swapped the valve" {
+					t.Errorf("resolution is %q; it is trimmed, so two callers cannot disagree about whitespace", got.Resolution)
+				}
+				if got.ResolvedAt == nil {
+					t.Error("a resolved task has no resolution time")
+				}
+			},
+		},
+		{
+			Name:    "resolve is idempotent for the same resolution",
+			Because: "the retry is asked twice, with the same text and with none at all, and neither may move the resolution time; a generated retry makes one call",
+			Run: func(t *testing.T, f Fixture) {
+				world := assertions(t, f)
+				id := f.Seed(open("chiller"))
+				first, err := f.Service.Resolve(f.Ctx, f.Tx, id, "swapped the valve")
+				if err != nil {
+					t.Fatalf("the first Resolve: %v", err)
+				}
+				for _, again := range []string{"swapped the valve", ""} {
+					world.Silent(fmt.Sprintf("Resolve(%q) after resolving", again), func() {
+						got, err := f.Service.Resolve(f.Ctx, f.Tx, id, again)
+						if err != nil {
+							t.Fatalf("Resolve(%q) after resolving: %v", again, err)
+						}
+						if !got.ResolvedAt.Equal(*first.ResolvedAt) {
+							t.Errorf("Resolve(%q) moved the resolution time; the loop closed once", again)
+						}
+					})
+				}
+			},
+		},
+		{
+			Name:    "check-sla flags an overdue task once",
+			Because: "domain contents: the breach flag itself, and the sweep's second call, which runs every minute forever and must change nothing",
+			Run: func(t *testing.T, f Fixture) {
+				world := assertions(t, f)
+				id := f.Seed(overdue())
+				got, err := f.Service.CheckSLA(f.Ctx, f.Tx, id)
+				if err != nil {
+					t.Fatalf("CheckSLA: %v", err)
+				}
+				if !got.SLABreached {
+					t.Fatal("a deadline an hour ago with the task unresolved is a breach")
+				}
+				world.Silent("the second CheckSLA", func() {
+					if got, err = f.Service.CheckSLA(f.Ctx, f.Tx, id); err != nil || !got.SLABreached {
+						t.Errorf("the second CheckSLA = %v, %v", got, err)
+					}
+				})
+			},
+		},
+		{
+			Name:    "check-sla leaves a future deadline alone",
+			Because: "domain: a deadline an hour from now is not a breach yet, which is a success that publishes nothing",
+			Run: func(t *testing.T, f Fixture) {
+				soon := open("chiller")
+				soon.SLADeadline = future()
+				got, err := f.Service.CheckSLA(f.Ctx, f.Tx, f.Seed(soon))
+				if err != nil {
+					t.Fatalf("CheckSLA: %v", err)
+				}
+				if got.SLABreached {
+					t.Error("a deadline an hour from now is not a breach yet")
+				}
+			},
+		},
 	}
 }
