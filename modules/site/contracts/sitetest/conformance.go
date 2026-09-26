@@ -80,16 +80,16 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 				// site used to assert by hand.
 				Name:  "Settings",
 				Ready: nothingToReady,
-				Call: func(f Fixture, _ uuid.UUID) error {
-					_, err := f.Service.Settings(f.Ctx, f.Tx)
-					return err
+				Call: func(f Fixture, _ uuid.UUID) (string, error) {
+					got, err := f.Service.Settings(f.Ctx, f.Tx)
+					return answer(got), err
 				},
 			},
 			{
 				Name: "Save", Mutates: true,
 				Publishes: []string{contracts.EventSettingsUpdated},
 				Ready:     nothingToReady,
-				Call:      func(f Fixture, _ uuid.UUID) error { return saveErr(f, acme()) },
+				Call:      func(f Fixture, _ uuid.UUID) (string, error) { return saveAnswer(f, acme()) },
 				Snapshot:  snapshot,
 				Names: map[porttest.Kind]string{
 					porttest.Retry: "saving what is already stored says nothing",
@@ -239,6 +239,27 @@ func save(t *testing.T, f Fixture, in *contracts.SiteSettings) *contracts.SiteSe
 func saveErr(f Fixture, in *contracts.SiteSettings) error {
 	_, err := f.Service.Save(f.Ctx, f.Tx, in)
 	return err
+}
+
+// saveAnswer is Save and what it answered, rendered. The retry reads it either
+// side of the second save: "saving what is already stored says nothing" is a
+// sentence about the answer too, and a second save that answered a site with a
+// new id would have made a second row for a tenant that has one.
+func saveAnswer(f Fixture, in *contracts.SiteSettings) (string, error) {
+	out, err := f.Service.Save(f.Ctx, f.Tx, in)
+	return answer(out), err
+}
+
+// answer renders what a call handed back, so that two answers compare with ==.
+// It is the site as the caller was told it stands, which is not the same
+// assertion as the site as stored: a service that stores the right row and
+// answers another returns a stale row to its caller.
+func answer(got *contracts.SiteSettings) string {
+	if got == nil {
+		return "nothing"
+	}
+	return fmt.Sprintf("id=%s title=%q tagline=%q home=%q theme=%s colour=%s nav=%v",
+		got.ID, got.Title, got.Tagline, got.HomeSlug, got.Theme, got.PrimaryColor, got.Nav)
 }
 
 // cases is what the description cannot express, each with the reason it is
