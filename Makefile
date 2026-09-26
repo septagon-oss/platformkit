@@ -44,10 +44,10 @@ help: ## List the targets
 # writes to /dev/null — so the stamp it would compute is a field nothing reads, and
 # computing it makes whether this repository compiles depend on a directory *above*
 # the checkout: Go asks git about the first parent directory holding a .git, and the
-# .git of a worktree is a file, which the toolchain go.mod pins walks past. Nothing
-# in this file assigns GOFLAGS, so a checkout where git refuses that parent — and so
-# cannot be stamped at all — passes GOFLAGS=-buildvcs=false itself, for the four goals
-# that do keep a binary.
+# .git of a worktree is a file — one go1.27 reads (go.dev/issue/58218) and the
+# toolchain go.mod pins walks past. Nothing in this file assigns GOFLAGS, so a
+# checkout where git refuses that parent — and so cannot be stamped at all — passes
+# GOFLAGS=-buildvcs=false itself, for the four goals that do keep a binary.
 build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -buildvcs=false -o /dev/null ./...
 
