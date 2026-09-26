@@ -16,6 +16,22 @@ which every write is permitted still reaches a tenant nobody can administer. See
 like, and for which lockouts the control plane's invitation can still repair.
 `SeedRoles` runs inside tenant creation, so roles exist before the service does.
 
+A grant is only ever as wide as the composition. `SeedRoles` takes the
+application's permission catalogue — `kit/module.Grants` over the modules it
+actually composed — and the operator grants the administrator's role is created
+holding are the operator permissions of those modules and nothing else; an
+initial role naming a permission no composed module defines is refused where it
+used to be written. The catalogue used to be a list each application wrote out by
+hand, and no application narrowed it when it dropped a module: one served from
+2026-09-22 20:11 with an administrator holding `billing:catalog`, a permission
+`modules/billing` defines and that installation did not compose, and the only
+thing that ever said so was the hourly sweep below — fourteen identical warnings
+by the next morning, about a grant no route would ever have accepted. Rows
+written by an older seeder are a customer's and are not edited on the way past:
+`auth.RepairSeededRoles` lists them per tenant and removes them when asked,
+touching only the roles the seeder owns — `apps/platformkit repair-roles` is the
+door, and `--remove` is the decision.
+
 Compose it after tenants and notification with `auth.Deps`, naming the user
 service, hosts, tenants, the mailer and, when wanted, one of `Registration`,
 `ApprovalRegistration` or `EmailRegistration`; the OIDC client secret arrives
