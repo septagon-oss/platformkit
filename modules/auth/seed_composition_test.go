@@ -231,3 +231,44 @@ func TestARoleTheRepairCannotFinishIsLeftWhole(t *testing.T) {
 		}
 	}
 }
+
+// TestTheOperatorsOwnAdministratorCannotSayWhoWroteADeadGrant is the one row
+// where "it never takes a grant the seeder did not write" is not true, put here
+// so that the sentence the doc comments carry is a sentence something checks.
+//
+// The operator's own administrator is the only role the seeder writes named
+// permissions into: the wildcard, and the operator permissions of the catalogue
+// it was handed. Once the module owning one of those leaves, neither the row nor
+// the catalogue records whether the departed permission was an operator one, so
+// the seeder's grant and one an operator typed into the roles screen are the
+// same bytes and the branch takes both. Every other row is narrowed by
+// contracts.SeededGrants and keeps what a hand put there — the cases in
+// review2_repair_narrowing_test.go are those.
+//
+// It costs nothing that was granting anything: each grant taken is dead by
+// definition, and the wildcard is still beside them granting every ordinary
+// permission. The reachability probe is the initial role finance, whose own dead
+// grant the same run removes, so this cannot pass by the repair doing nothing.
+func TestTheOperatorsOwnAdministratorCannotSayWhoWroteADeadGrant(t *testing.T) {
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
+	svc, _ := auth.Module(auth.Deps{})
+	operator := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
+	seedForRepair(t, conn, operator)
+	handEdit(t, conn, svc, operator, contracts.RoleAdmin,
+		[]string{contracts.Wildcard, "task:read", "tenant:manage", "billing:catalog"})
+
+	found := repair(t, conn, svc, operator, true)
+	took := slices.Sorted(slices.Values(found[contracts.RoleAdmin]))
+	if !slices.Equal(took, []string{"billing:catalog", "task:read"}) {
+		t.Errorf("reported %v for the administrator, want the seeder's billing:catalog and the"+
+			" hand's task:read, which this row cannot tell apart", took)
+	}
+	if grants := roleGrants(t, conn, svc, operator, contracts.RoleAdmin); !slices.Equal(grants,
+		[]string{contracts.Wildcard, "tenant:manage"}) {
+		t.Errorf("the administrator holds %v, want the wildcard and the one operator permission"+
+			" a composed module still declares", grants)
+	}
+	if grants := roleGrants(t, conn, svc, operator, "finance"); !slices.Equal(grants, []string{"role:manage"}) {
+		t.Errorf("finance holds %v, want [role:manage]: the run removed nothing it was meant to", grants)
+	}
+}
