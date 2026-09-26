@@ -30,7 +30,8 @@ type Target struct {
 // Package is . or a relative ./path. Args select the full source composition.
 // The producer must emit one DesignExport JSON object, and accept the same Args
 // followed by --proposal with PropsProposal JSON on stdin. Builds disable cgo,
-// workspaces and GOFLAGS; custom build configurations are not supported yet.
+// workspaces, GOFLAGS and VCS stamping; custom build configurations are not
+// supported yet.
 // Constructors must be deterministic and free of external side effects.
 type GoProducer struct {
 	Dir, Package string
@@ -89,7 +90,11 @@ func Prepare(ctx context.Context, producer GoProducer, target Target, proposal e
 		return nil, err
 	}
 	producer.Args = slices.Clone(producer.Args)
-	env := append(os.Environ(), "GOWORK=off", "GOFLAGS=", "CGO_ENABLED=0")
+	// -buildvcs=false because these are throwaway builds off a temporary
+	// modfile, not the caller's release: a revision stamped into them describes
+	// nothing, and asking for it makes the session depend on whatever
+	// repository — or broken directory — sits above the producer's module root.
+	env := append(os.Environ(), "GOWORK=off", "GOFLAGS=-buildvcs=false", "CGO_ENABLED=0")
 	session, err := newSession(producer, env)
 	if err != nil {
 		return nil, err

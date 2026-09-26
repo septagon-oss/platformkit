@@ -6,6 +6,19 @@
 # Select the same compiler and tools even when PATH contains a newer Go release.
 # Child scripts and their Go subprocesses inherit this exact module version.
 export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
+
+# No target here builds a release artifact: `build` writes to /dev/null and
+# `check-packages` only lists a main package's dependencies, so a revision stamp
+# is a fact neither one checks. Asking for one makes every goal below depend on
+# the directories *above* the checkout — Go looks for the repository there when a
+# worktree's .git is a file — and a stray .git in a parent fails the whole gate.
+# `make image` builds the artifact that does carry a stamp, and that is the
+# binary modules/admin's footer reads (mount.go version()); docker gets its own
+# environment, so it is unaffected. The one binary this does change is the
+# throwaway `e2e` builds into a mktemp directory and deletes again: its footer
+# now reads "(development)", which is the fallback version() already had and
+# which no browser case looks at. An ambient GOFLAGS is kept, ours last.
+export GOFLAGS := $(GOFLAGS) -buildvcs=false
 .PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
