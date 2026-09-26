@@ -199,6 +199,66 @@ func OperatorGrants(declared []tenancy.Grant) []string {
 	return out
 }
 
+// SeededGrants narrows the grants of one role that no composed module declares
+// to the ones this module's seeder is the writer of. gone is what
+// internal.Undeclared found in role — a permission that left with its module and
+// grants nothing now; the question here is who put it there, because a role's
+// name belonging to the seeder is not the same as a grant in it being the
+// seeder's.
+//
+// SeededRoles above is the whole of what the seeder writes, so this is the same
+// three decisions read backwards:
+//
+//   - The built-in administrator, in the operator's own tenant: the seeder wrote
+//     the wildcard and the operator permissions of the catalogue it was handed,
+//     and a departed permission was one of those. A name beside the wildcard is
+//     the only kind that can add anything to that row — the wildcard already
+//     grants every ordinary permission — and an operator permission is what the
+//     seeder puts there. So a dead grant is taken back, unless somebody has
+//     since taken the wildcard off the row, in which case the ordinary names in
+//     it are theirs and mean something and none of it is touched.
+//   - An initial role the application names: the seeder wrote the list in that
+//     literal, so a dead grant that literal still names is the seeder's. One it
+//     does not name was added through SetRole by whoever administers the tenant.
+//   - Anything else, the built-in member included: the seeder wrote it holding
+//     nothing, so every permission in it is somebody's decision. A customer's
+//     tenant is not the operator's either, so its administrator's row is only
+//     ever seeded the wildcard and nothing in it is the seeder's.
+//
+// Limits. In the operator's own tenant the row does not record which writer put
+// an operator permission in it, and an operator may have named one by hand; the
+// seeder and that hand are indistinguishable here. It is dead either way, the
+// only tenant it can happen in is the operator's own, and the command that reads
+// this lists before it removes so that a person decides. What is left over —
+// every dead grant in every other role — stays where it is and goes on being
+// reported by the hourly sweep, which is the only thing entitled to say what its
+// author meant by it.
+func SeededGrants(role Role, gone []string, defaults []Role, tenant tenancy.Tenant) []string {
+	if role.Name == RoleAdmin {
+		if !tenant.Operator || !slices.Contains(role.Grants, Wildcard) {
+			return nil
+		}
+		return slices.Clone(gone)
+	}
+	i := slices.IndexFunc(defaults, func(d Role) bool {
+		name, err := ValidRoleName(d.Name)
+		return err == nil && name == role.Name
+	})
+	if i < 0 {
+		return nil
+	}
+	ours := make([]string, 0, len(gone))
+	for _, p := range gone {
+		for _, named := range defaults[i].Grants {
+			if strings.ToLower(strings.TrimSpace(named)) == p {
+				ours = append(ours, p)
+				break
+			}
+		}
+	}
+	return ours
+}
+
 // SeededRoles is what a composition provisions a new tenant with: the built-in
 // administrator, the built-in member, and the initial roles the application
 // names, each with the grants they are created holding.
