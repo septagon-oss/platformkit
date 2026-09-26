@@ -165,14 +165,19 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 // Undeclared reports, for one tenant, every role row naming a permission the
 // application does not define.
 //
-// The hourly sweep is its one caller, once per tenant, inside that tenant's own
-// transaction; it logs what it finds. It is a warning and not a refusal: the
-// rows belong to customers and were legal when they were written — a module
-// removed from a composition takes its permissions with it — so a sweep that
-// refused would turn dropping a module into an installation somebody has to
-// repair by hand. What it buys is that "this role grants nothing and nobody can
-// see why" is a line in the log within the hour of the deploy that caused it
-// rather than a support conversation months later.
+// It has two callers and they read one list for different reasons. The hourly
+// sweep runs it once per tenant, inside that tenant's own transaction, and logs
+// everything it finds; RepairSeededRoles runs it and then narrows what it finds
+// to the grants this module's own seeder wrote, which is the only part an
+// operator can ask to have taken away.
+//
+// What this function answers is a warning and not a refusal: the rows belong to
+// customers and were legal when they were written — a module removed from a
+// composition takes its permissions with it — so a sweep that refused would turn
+// dropping a module into an installation somebody has to repair by hand. What it
+// buys is that "this role grants nothing and nobody can see why" is a line in the
+// log within the hour of the deploy that caused it rather than a support
+// conversation months later.
 func Undeclared(roles []*contracts.Role, declared []tenancy.Grant) map[string][]string {
 	known := make(map[string]bool, len(declared)+1)
 	known[contracts.Wildcard] = true

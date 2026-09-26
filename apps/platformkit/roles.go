@@ -28,17 +28,19 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
 
-// repairRoles walks every tenant and reports the grants in the seeded roles
-// that no composed module defines. --remove takes them away, one transaction
-// per tenant, through the module's ordinary role write: the tenant's lock, the
-// floor that keeps somebody able to administer it, and an auth.role_set event
-// in the same transaction, so the repair is in the audit like any other change
-// to a role.
+// repairRoles walks every tenant and reports the grants its own seeder wrote
+// that no composed module defines any more. --remove takes them away, one
+// transaction per tenant, through the module's ordinary role write: the tenant's
+// lock, the floor that keeps somebody able to administer it, and an auth.role_set
+// event in the same transaction, so the repair is in the audit like any other
+// change to a role.
 //
 // The two values it passes are the two the seeder is given — the catalogue of
-// this composition and the initial roles this application names — because the
-// repair may only touch the roles that seeder owns. It is idempotent: a second
-// run finds nothing, and prints that.
+// this composition and the initial roles this application names — because those
+// two are what the seeder decided with, and a grant it did not write is not this
+// command's to take away. A grant somebody added by hand is reported by the
+// hourly sweep and by nothing here. It is idempotent: a second run finds nothing,
+// and prints that.
 func repairRoles(args []string) error {
 	fs := flag.NewFlagSet("repair-roles", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
@@ -71,7 +73,7 @@ func repairRoles(args []string) error {
 				}
 				for _, name := range slices.Sorted(maps.Keys(stale)) {
 					found++
-					verb := "grants no composed module defines"
+					verb := "seeded grants no composed module defines"
 					if *remove {
 						verb = "removed"
 					}
@@ -84,7 +86,7 @@ func repairRoles(args []string) error {
 		return err
 	}
 	if found == 0 {
-		fmt.Println("every seeded role grants only what a composed module defines")
+		fmt.Println("every grant this installation's seeder wrote is one a composed module defines")
 	}
 	return nil
 }
