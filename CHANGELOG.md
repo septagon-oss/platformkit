@@ -115,7 +115,11 @@ as an `auth.role_set`. What the seeder did not write it does not touch: the buil
 member is seeded holding nothing, a customer tenant's administrator is seeded the
 wildcard and nothing else, and a permission somebody added through the roles screen
 stays where it is and goes on being reported by the sweep, which is the only thing
-entitled to say what its author meant by it.
+entitled to say what its author meant by it. The one row that cannot be said of is
+the operator's own administrator while it still holds the wildcard, the only role
+the seeder writes named permissions into: once a module leaves, nothing records
+whether a departed grant was the seeder's or a hand's, so every dead grant there is
+taken — each dead either way, and beside a wildcard that still grants the rest.
 
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
