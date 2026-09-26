@@ -113,8 +113,10 @@ cp "$scripts/check_packages.sh" "$packages_repo/scripts/"
 printf 'module github.com/septagon-oss/platformkit\n\n' > "$packages_repo/go.mod"
 sed -n '/^go[[:space:]]/p' "$scripts/../go.mod" >> "$packages_repo/go.mod"
 printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
-# Resolve before forcing local execution: PATH may otherwise contain Go 1.27.
-selected_root="$(GOTOOLCHAIN="go$(sed -n 's/^go //p' "$scripts/../go.mod")" go env GOROOT)"
+# Resolve before forcing local execution: PATH may otherwise hold another Go
+# release. The selected toolchain is go.mod's `toolchain` line, which is what the
+# Makefile exports, so this fixture counts packages with the gate's own compiler.
+selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
 for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
@@ -657,7 +659,7 @@ echo 'rehearsal step: the candidate line names the tree the binary was built fro
 
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
-sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"
+sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p; /^toolchain[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"
 test_commands() {
 	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "$@" |
 		sed -n '/^go tool gotestsum /s/[[:blank:]]*$//p'
@@ -702,7 +704,7 @@ exit 73
 SH
 chmod +x "$formatting/bin/go" "$formatting/bin/gofmt"
 formatter=(env PATH="$formatting/bin:$PATH" REAL_GO="$(command -v go)"
-    EXPECTED_GOTOOLCHAIN="go$(sed -n 's/^go //p' "$formatting/go.mod")")
+    EXPECTED_GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$formatting/go.mod")")
 format_check=(make --no-print-directory -C "$formatting" -f "$scripts/../Makefile" fmt-check)
 if [[ "$("${formatter[@]}" "${format_check[@]}" 2>&1)" != 'gofmt clean' ]]; then
     echo 'FAIL: formatting did not use the selected Go toolchain' >&2
