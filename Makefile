@@ -14,11 +14,23 @@ export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
 # worktree's .git is a file — and a stray .git in a parent fails the whole gate.
 # `make image` builds the artifact that does carry a stamp, and that is the
 # binary modules/admin's footer reads (mount.go version()); docker gets its own
-# environment, so it is unaffected. The one binary this does change is the
-# throwaway `e2e` builds into a mktemp directory and deletes again: its footer
-# now reads "(development)", which is the fallback version() already had and
-# which no browser case looks at. An ambient GOFLAGS is kept, ours last.
+# environment, so it is unaffected. An ambient GOFLAGS is kept, ours last.
 export GOFLAGS := $(GOFLAGS) -buildvcs=false
+
+# One goal below does build a binary somebody looks at, and it gets the stamp
+# back. `make run` serves the admin footer to a person, and a footer reading
+# "(development)" on a checkout that has a revision is that footer lying about
+# which one it is running; the flag above would have unstamped it too, because a
+# variable this file exports reaches every recipe. A target-specific value is
+# exported to the recipe and to its prerequisites, so this one line is the whole
+# exception. Where the checkout is one Go cannot read a revision out of, `run`
+# fails where the gate does not, and that is the right way round: the gate
+# checks source, and a person running the application is told the truth about
+# the binary they are running. The one binary still unstamped is the throwaway
+# `e2e` builds into a mktemp directory and deletes again: its footer reads
+# "(development)", the fallback version() already had, and no browser case looks
+# at it.
+run: GOFLAGS := $(filter-out -buildvcs=false,$(GOFLAGS))
 .PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
