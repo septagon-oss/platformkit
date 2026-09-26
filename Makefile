@@ -6,15 +6,6 @@
 # Select the same compiler and tools even when PATH contains a newer Go release.
 # Child scripts and their Go subprocesses inherit this exact module version.
 export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
-
-# No goal here keeps a binary: `build` writes to /dev/null, the checks below list
-# and vet, and `image` builds in a context .dockerignore keeps .git out of. So the
-# commit and dirty flag Go would stamp into a binary is a field nothing reads —
-# and computing it makes whether this repository compiles depend on directories
-# *above* the checkout, because Go asks git about the first parent directory with
-# a .git and inside a git worktree that is not the checkout. Appended rather than
-# assigned, so a caller's own GOFLAGS survive.
-export GOFLAGS := $(GOFLAGS) -buildvcs=false
 .PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
@@ -47,8 +38,18 @@ TEST_OPTIONS ?=
 help: ## List the targets
 	@grep -hE '^[a-z][a-z0-9-]*:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t 18
 
+# The commit Go stamps into a binary is read: it is what the admin shell's footer
+# renders (modules/admin/internal/mount.go's version()), so `run`, `e2e`, `rehearse`
+# and `image` are left to stamp theirs. This goal keeps no binary — the linker
+# writes to /dev/null — so the stamp it would compute is a field nothing reads, and
+# computing it makes whether this repository compiles depend on a directory *above*
+# the checkout: Go asks git about the first parent directory holding a .git, and the
+# .git of a worktree is a file, which the toolchain go.mod pins walks past. Nothing
+# in this file assigns GOFLAGS, so a checkout where git refuses that parent — and so
+# cannot be stamped at all — passes GOFLAGS=-buildvcs=false itself, for the four goals
+# that do keep a binary.
 build: ## Compile every package (a check; `make image` builds the artifact)
-	go build -o /dev/null ./...
+	go build -buildvcs=false -o /dev/null ./...
 
 test: ## Test selected packages, reusing successful results when inputs match
 	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- $(TEST_FLAGS)
