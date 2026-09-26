@@ -112,7 +112,7 @@ func loadSource(ctx context.Context, filename string, content []byte, buildFlags
 	loaded, err := packages.Load(&packages.Config{
 		Context: ctx, Dir: filepath.Dir(filename), Mode: packages.LoadSyntax,
 		Env:        append(os.Environ(), "GOWORK=off", "GOFLAGS=", "CGO_ENABLED=0"),
-		BuildFlags: append([]string{"-mod=readonly"}, buildFlags...),
+		BuildFlags: append([]string{"-mod=readonly", "-buildvcs=false"}, buildFlags...),
 		Overlay:    map[string][]byte{filename: content},
 	}, ".")
 	if err != nil {

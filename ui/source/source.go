@@ -30,7 +30,8 @@ type Target struct {
 // Package is . or a relative ./path. Args select the full source composition.
 // The producer must emit one DesignExport JSON object, and accept the same Args
 // followed by --proposal with PropsProposal JSON on stdin. Builds disable cgo,
-// workspaces and GOFLAGS; custom build configurations are not supported yet.
+// workspaces, GOFLAGS and VCS stamping; custom build configurations are not
+// supported yet.
 // Constructors must be deterministic and free of external side effects.
 type GoProducer struct {
 	Dir, Package string

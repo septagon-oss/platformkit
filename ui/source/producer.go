@@ -57,8 +57,14 @@ func newSession(producer GoProducer, env []string) (*session, error) {
 
 func (s *session) close() { os.RemoveAll(s.dir) }
 
+// The producer's module is the caller's, wherever it sits on disk, and a build
+// input is a file this package reads — not the version control history of some
+// directory above it. -buildvcs=false keeps both out: the result is the same
+// export whether the tree is committed, dirty or not in a repository at all,
+// and a parent directory that git refuses to read cannot fail the build. The
+// binary `go run` writes is a temporary whose stamp nothing ever reads.
 func (s *session) command(ctx context.Context, operation string, flags, args []string, input []byte) ([]byte, error) {
-	argv := []string{operation, "-mod=readonly", "-modfile=" + s.modfile}
+	argv := []string{operation, "-mod=readonly", "-modfile=" + s.modfile, "-buildvcs=false"}
 	argv = append(argv, flags...)
 	argv = append(argv, s.producer.Package)
 	argv = append(argv, args...)
