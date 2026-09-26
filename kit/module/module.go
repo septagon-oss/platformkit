@@ -27,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // Module is one business capability, described to the kernel.
@@ -120,6 +121,31 @@ type Permission struct {
 	// customer's administrator, and an ordinary route that declared this one
 	// would be reachable by nobody but the operator.
 	Operator bool
+}
+
+// Grants is every permission the composed modules declare: the catalogue of
+// what a role in this installation may be granted at all, and the only honest
+// answer to that question, because a permission is defined by the module that
+// owns it and a module that is not composed defines nothing.
+//
+// It is exported rather than built where it is needed because it is needed
+// twice and the two answers have to be the same list. kit/app hands it to
+// kit/httpx so that a module validating a permission somebody typed asks the
+// composition instead of guessing; a composition hands it to whatever seeds a
+// new tenant's roles for the same reason. A product that wrote the second list
+// out by hand — and every one of them did — seeds a grant no route will ever
+// accept the day it drops the module that defined it. See modules/auth.SeedRoles.
+//
+// Valid has already refused a manifest whose permission is malformed or defined
+// twice, so this does not check either; it is the list, in composition order.
+func Grants(mods []Module) []tenancy.Grant {
+	var out []tenancy.Grant
+	for _, m := range mods {
+		for _, p := range m.Permissions {
+			out = append(out, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+		}
+	}
+	return out
 }
 
 // NavEntry is one link in the application's navigation, shown to a caller who

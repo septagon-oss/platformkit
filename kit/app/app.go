@@ -394,14 +394,11 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 
 	// The catalogue before the routes: a module that validates a permission
 	// somebody typed asks the kernel for the list, and Routes is the one moment
-	// it is being wired and the whole composition is known.
-	var catalogue []tenancy.Grant
-	for _, m := range a.mods {
-		for _, p := range m.Permissions {
-			catalogue = append(catalogue, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
-		}
-	}
-	api.Declare(catalogue)
+	// it is being wired and the whole composition is known. It is
+	// module.Grants and not a loop written here, because a composition seeding
+	// a tenant's roles needs the same list before it opens a database, and two
+	// copies of it are two answers to one question.
+	api.Declare(module.Grants(a.mods))
 
 	for _, m := range a.mods {
 		if m.Routes != nil {
