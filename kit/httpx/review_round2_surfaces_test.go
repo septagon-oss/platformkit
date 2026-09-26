@@ -174,7 +174,7 @@ func TestAMissingFileUnderAMountedTreeTakesTheRefusalOfAnAddressNobodyMounted(t 
 
 // TestThePublicWriteLimitCountsTwoTenantsApartInTheCounterItWritesTo is the pin over the
 // promise the first review called High: README.md's "counted by tenant, route and
-// address", and middleware.go's "two customers therefore never share a counter". The
+// address", and public_writes.go's "two customers therefore never share a counter". The
 // existing cases read the *key* the kernel composes, with a double in place of the
 // counter; this one uses limit.Postgres — the limiter kit/app actually wires — so the
 // statement that decides the answer, and the tenant kit/limit scopes a stored key with,

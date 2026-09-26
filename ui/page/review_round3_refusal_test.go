@@ -236,7 +236,7 @@ func TestTheRefusalOfAnAddressNobodyMountedSpeaksTheRequestThroughTheRouter(t *t
 // by translating them.
 //
 // The guard that asks for a permission refuses with huma.WriteErr
-// (kit/httpx/middleware.go:1024 → :1213), and Options.Fault is consulted in exactly one
+// (kit/httpx/authorize.go, in authorize and deny), and Options.Fault is consulted in one
 // place, kit/httpx/fault.go:52. A person who is signed in, lacks the grant, and navigated,
 // therefore gets application/problem+json in the browser window: the page this package ships
 // is never reached, so fault.AUTH_DENIED and its five siblings are rows no shell can fill.
@@ -296,7 +296,7 @@ func TestAGrantDenialOfAPersonWhoIsSignedInIsTheShellsPageInTheRequestsLanguage(
 // no account to lock out, which is why the brief puts a rate limit on its writes and why the
 // person who meets that limit is the one person this kernel refuses without a session, a
 // tenant of their own or an account to be told anything to. They are refused by
-// kit/httpx/middleware.go:1181, with huma.WriteErr. apps/platformkit/app_fault_test.go's own
+// kit/httpx/public_writes.go, with huma.WriteErr. apps/platformkit/app_fault_test.go's own
 // standard is the one this case applies to them: "a person who navigated and gets JSON" is
 // the defect.
 func TestThePublicWriteLimitRefusalIsTheShellsPage(t *testing.T) {
