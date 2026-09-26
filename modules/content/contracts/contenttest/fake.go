@@ -66,6 +66,18 @@ func (f *Fake) Contents() map[uuid.UUID]contracts.Content {
 	return maps.Clone(f.rows)
 }
 
+// Content is one row as the fake holds it, which is what the suite's snapshot
+// of "a refused command wrote nothing" compares either side of a call.
+func (f *Fake) Content(id uuid.UUID) (contracts.Content, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.rows[id]
+	if !ok {
+		return contracts.Content{}, crud.ErrNotFound
+	}
+	return c, nil
+}
+
 // Publish mirrors internal.Service.Publish.
 func (f *Fake) Publish(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.Content, error) {
 	f.mu.Lock()
