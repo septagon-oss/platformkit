@@ -5,11 +5,22 @@
 // second production implementation (AGENTS.md rule 8). RunService is the
 // specification written as executable cases; the real service and the fake both
 // run it.
+//
+// The suite is a kit/porttest description, and this port is the shape the
+// description was least sure of: a per-tenant singleton. There is no row an id
+// names — every tenant has a site whether or not anybody has saved anything
+// about it — so the floor's "an unknown row is not found" is not owed here and
+// says so in writing. What the port does have is eleven refusals on one
+// operation, which is the shape the description is for: each is four lines
+// here, and each gets the whole floor of a refusal — the error, its class, an
+// unchanged site and silence — where the loops this replaces asserted the error
+// alone.
 package sitetest
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -17,6 +28,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/porttest"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
 )
 
@@ -30,15 +42,6 @@ type Fixture struct {
 	// of what Save promises is silence: a screen that submits its form twice
 	// must not invalidate a cache twice.
 	Published func() []string
-}
-
-func (f Fixture) silent(t *testing.T, what string, step func()) {
-	t.Helper()
-	before := len(f.Published())
-	step()
-	if after := f.Published(); len(after) != before {
-		t.Errorf("%s published %v; saving what is already stored changes nothing, so it says nothing", what, after[before:])
-	}
 }
 
 func (f Fixture) one(t *testing.T, what string, step func()) {
@@ -58,11 +61,146 @@ type Harness func(t *testing.T, run func(Fixture))
 // contracts.Service passes it, or it is not one.
 func RunService(t *testing.T, h Harness) {
 	t.Helper()
-	for name, run := range cases() {
-		t.Run(name, func(t *testing.T) {
-			h(t, func(f Fixture) { run(t, f) })
-		})
+	porttest.Run(t, Suite(h))
+}
+
+// Suite is the port, described. A consumer that wants the case names without
+// running them reads porttest.Names(sitetest.Suite(h)).
+func Suite(h Harness) porttest.Suite[Fixture] {
+	return porttest.Suite[Fixture]{
+		Port:     "contracts.Service",
+		World:    h,
+		Events:   func(f Fixture) []string { return f.Published() },
+		Classify: classify,
+		Ops: []porttest.Op[Fixture]{
+			{
+				// A read of a singleton: nothing to make ready, nothing to get
+				// wrong. It is asked the one thing a read still owes — that it
+				// publishes nothing — which is what reading an unconfigured
+				// site used to assert by hand.
+				Name:  "Settings",
+				Ready: nothingToReady,
+				Call: func(f Fixture, _ uuid.UUID) error {
+					_, err := f.Service.Settings(f.Ctx, f.Tx)
+					return err
+				},
+			},
+			{
+				Name: "Save", Mutates: true,
+				Publishes: []string{contracts.EventSettingsUpdated},
+				Ready:     nothingToReady,
+				Call:      func(f Fixture, _ uuid.UUID) error { return saveErr(f, acme()) },
+				Snapshot:  snapshot,
+				Names: map[porttest.Kind]string{
+					porttest.Retry: "saving what is already stored says nothing",
+				},
+				Refusals: []porttest.Refusal[Fixture]{
+					// The four below go through the update path as well as the
+					// create one: the two used to answer with different errors,
+					// which is a 500 where a 422 belongs. Provoke is what puts
+					// a stored site under them.
+					refuses("a colour that is not #rrggbb is refused", configured,
+						&contracts.SiteSettings{Title: "Acme", PrimaryColor: "red"}),
+					refuses("a three-digit colour is refused", configured,
+						&contracts.SiteSettings{Title: "Acme", PrimaryColor: "#fff"}),
+					refuses("a colour in another notation is refused", configured,
+						&contracts.SiteSettings{Title: "Acme", PrimaryColor: "rgb(1,2,3)"}),
+					refuses("a theme outside the three is refused", configured,
+						&contracts.SiteSettings{Title: "Acme", Theme: "neon"}),
+
+					// The rest go through the create path, on a site nobody has
+					// configured, which is where a form first reaches them.
+					refuses("a link to another site is refused", nil, navigating("https://evil.example.com")),
+					refuses("a link that is not rooted is refused", nil, navigating("about-us")),
+					refuses("a link to nowhere is refused", nil, navigating("")),
+					refuses("a link with nothing to say is refused", nil, &contracts.SiteSettings{
+						Title: "Acme", Nav: contracts.Nav{{Label: "  ", Path: "/about-us"}}}),
+					refuses("a navigation is bounded", nil, &contracts.SiteSettings{
+						Title: "Acme", Nav: tooManyLinks()}),
+					refuses("a title is bounded", nil, &contracts.SiteSettings{
+						Title: strings.Repeat("a", contracts.MaxTitle+1)}),
+					refuses("a home page is named by a slug", nil, &contracts.SiteSettings{
+						Title: "Acme", HomeSlug: "Welcome Home"}),
+				},
+				Skip: notOwedHere,
+			},
+		},
+		Own: cases(),
 	}
+}
+
+// nothingToReady is Ready for both operations: a tenant that has configured
+// nothing is the state each succeeds from, and it is the state every world
+// starts in.
+func nothingToReady(_ *testing.T, _ Fixture) uuid.UUID { return uuid.Nil }
+
+// notOwedHere is the four floor refusals this port does not owe, with the
+// reason each is not asked.
+var notOwedHere = map[porttest.Kind]string{
+	porttest.Unknown: "a tenant's site is a singleton and Save takes no id: every tenant has one, " +
+		"whether or not anybody has saved anything about it, so there is no row to name wrongly " +
+		"and Settings never reports one missing",
+	porttest.Denied: "the settings take no grant of their own: the screen is reached through " +
+		"kit/rest's routes and modules/site's own mount test, and that is where the grant is checked",
+	porttest.Stale: "the settings carry no revision; a save that changes nothing is silent instead, " +
+		"which is the retry above",
+	porttest.Elsewhere: "the world is one tenant's transaction and the fake stands in for one " +
+		"tenant, so there is no second tenant here to make the refused call from. The real service " +
+		"runs under row-level security, which kit/db's TestTenantIsolationIsEnforcedByPostgres and " +
+		"kit/crud's TestAnotherTenantReachesNothing prove against the schema",
+}
+
+// refuses is one invalid save: the settings a caller submitted, and the state
+// they were submitted from. Every refusal this port has is the same shape, so
+// it is written once.
+func refuses(name string, from func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID, in *contracts.SiteSettings) porttest.Refusal[Fixture] {
+	return porttest.Refusal[Fixture]{
+		Name: name, Class: porttest.Correctable, Provoke: from,
+		Call: func(f Fixture, _ uuid.UUID) error { return saveErr(f, clone(in)) },
+		Is:   func(_ Fixture, err error) bool { return errors.Is(err, crud.ErrInvalid) },
+	}
+}
+
+// configured is a Provoke that stores a site first, so the refusal under it
+// takes the update path.
+func configured(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
+	t.Helper()
+	save(t, f, acme())
+	return row
+}
+
+// clone is a copy of the settings a refusal submits, because Save stamps the
+// value it is handed and a case must not hand the next one a stamped copy.
+func clone(in *contracts.SiteSettings) *contracts.SiteSettings {
+	out := *in
+	out.Nav = append(contracts.Nav(nil), in.Nav...)
+	return &out
+}
+
+// classify is this port's reading of its own refusals. Every one of them is an
+// input the caller can retype: a colour, a theme, a link, a length.
+func classify(err error) porttest.Class {
+	switch {
+	case errors.Is(err, crud.ErrInvalid):
+		return porttest.Correctable
+	case errors.Is(err, crud.ErrConflict), errors.Is(err, crud.ErrNotFound):
+		return porttest.Immutable
+	default:
+		return porttest.Unclassified
+	}
+}
+
+// snapshot is the whole site as a reader sees it, rendered so that two readings
+// compare with ==. The id is in it because a tenant has one site: a second save
+// that made a second row would change it.
+func snapshot(t *testing.T, f Fixture, _ uuid.UUID) string {
+	t.Helper()
+	got, err := f.Service.Settings(f.Ctx, f.Tx)
+	if err != nil {
+		return "no settings: " + err.Error()
+	}
+	return fmt.Sprintf("id=%s title=%q tagline=%q home=%q theme=%s colour=%s nav=%v",
+		got.ID, got.Title, got.Tagline, got.HomeSlug, got.Theme, got.PrimaryColor, got.Nav)
 }
 
 // acme is a site somebody has configured.
@@ -72,6 +210,20 @@ func acme() *contracts.SiteSettings {
 		Theme: contracts.ThemeDark, PrimaryColor: "#ff8800",
 		Nav: contracts.Nav{{Label: "About", Path: "/about-us"}, {Label: "Blog", Path: "/blog"}},
 	}
+}
+
+// navigating is a site whose one link points at path.
+func navigating(path string) *contracts.SiteSettings {
+	return &contracts.SiteSettings{Title: "Acme", Nav: contracts.Nav{{Label: "About", Path: path}}}
+}
+
+// tooManyLinks is one link more than a navigation holds.
+func tooManyLinks() contracts.Nav {
+	long := contracts.Nav{}
+	for range contracts.MaxNav + 1 {
+		long = append(long, contracts.NavItem{Label: "Link", Path: "/link"})
+	}
+	return long
 }
 
 // save is Save with the error checked, which every case but the refusals does.
@@ -84,10 +236,19 @@ func save(t *testing.T, f Fixture, in *contracts.SiteSettings) *contracts.SiteSe
 	return out
 }
 
-func cases() map[string]func(*testing.T, Fixture) {
-	return map[string]func(*testing.T, Fixture){
-		"a tenant that has configured nothing has the defaults": func(t *testing.T, f Fixture) {
-			f.silent(t, "reading the settings of a site nobody has touched", func() {
+func saveErr(f Fixture, in *contracts.SiteSettings) error {
+	_, err := f.Service.Save(f.Ctx, f.Tx, in)
+	return err
+}
+
+// cases is what the description cannot express, each with the reason it is
+// written by hand.
+func cases() []porttest.Case[Fixture] {
+	return []porttest.Case[Fixture]{
+		{
+			Name:    "a tenant that has configured nothing has the defaults",
+			Because: "what a read answers before anybody has written is the port's domain: system, not dark, and a colour somebody chose for everyone",
+			Run: func(t *testing.T, f Fixture) {
 				got, err := f.Service.Settings(f.Ctx, f.Tx)
 				if err != nil {
 					t.Fatalf("Settings: %v", err)
@@ -101,106 +262,51 @@ func cases() map[string]func(*testing.T, Fixture) {
 				case got.Title != "" || len(got.Nav) != 0:
 					t.Errorf("an unconfigured site says %+v", got)
 				}
-			})
+			},
 		},
-
-		"saving records what was configured": func(t *testing.T, f Fixture) {
-			var out *contracts.SiteSettings
-			f.one(t, "the first save", func() { out = save(t, f, acme()) })
-			if out.ID == uuid.Nil {
-				t.Error("the saved settings have no id")
-			}
-			got, err := f.Service.Settings(f.Ctx, f.Tx)
-			if err != nil {
-				t.Fatalf("Settings: %v", err)
-			}
-			switch {
-			case got.Title != "Acme" || got.Tagline != "We make things" || got.HomeSlug != "welcome":
-				t.Errorf("the settings read back as %+v", got)
-			case got.Theme != contracts.ThemeDark || got.PrimaryColor != "#ff8800":
-				t.Errorf("the look reads back as %q/%q", got.Theme, got.PrimaryColor)
-			case len(got.Nav) != 2 || got.Nav[0].Label != "About" || got.Nav[1].Path != "/blog":
-				t.Errorf("the navigation reads back as %+v, and its order is the order it was written in", got.Nav)
-			}
+		{
+			Name:    "saving records what was configured",
+			Because: "domain contents: every field reads back as it was written, and the navigation in the order it was written in",
+			Run: func(t *testing.T, f Fixture) {
+				if out := save(t, f, acme()); out.ID == uuid.Nil {
+					t.Error("the saved settings have no id")
+				}
+				got, err := f.Service.Settings(f.Ctx, f.Tx)
+				if err != nil {
+					t.Fatalf("Settings: %v", err)
+				}
+				switch {
+				case got.Title != "Acme" || got.Tagline != "We make things" || got.HomeSlug != "welcome":
+					t.Errorf("the settings read back as %+v", got)
+				case got.Theme != contracts.ThemeDark || got.PrimaryColor != "#ff8800":
+					t.Errorf("the look reads back as %q/%q", got.Theme, got.PrimaryColor)
+				case len(got.Nav) != 2 || got.Nav[0].Label != "About" || got.Nav[1].Path != "/blog":
+					t.Errorf("the navigation reads back as %+v, and its order is the order it was written in", got.Nav)
+				}
+			},
 		},
-
-		"saving what is already stored says nothing": func(t *testing.T, f Fixture) {
-			first := save(t, f, acme())
-			var again *contracts.SiteSettings
-			f.silent(t, "saving the same settings again", func() { again = save(t, f, acme()) })
-			if again.ID != first.ID {
-				t.Errorf("the second save made %s where there was %s; a tenant has one site", again.ID, first.ID)
-			}
+		{
+			Name:    "changing one thing says so",
+			Because: "the generated success saves onto an unconfigured site; this is the other half of the same promise — a second save that does change something is news, and it is still one site",
+			Run: func(t *testing.T, f Fixture) {
+				first := save(t, f, acme())
+				changed := acme()
+				changed.Nav = append(changed.Nav, contracts.NavItem{Label: "Contact", Path: "/contact"})
+				var out *contracts.SiteSettings
+				f.one(t, "adding a link", func() { out = save(t, f, changed) })
+				if out.ID != first.ID || len(out.Nav) != 3 {
+					t.Errorf("the changed settings are %s with %d links", out.ID, len(out.Nav))
+				}
+			},
 		},
-
-		"changing one thing says so": func(t *testing.T, f Fixture) {
-			first := save(t, f, acme())
-			changed := acme()
-			changed.Nav = append(changed.Nav, contracts.NavItem{Label: "Contact", Path: "/contact"})
-			var out *contracts.SiteSettings
-			f.one(t, "adding a link", func() { out = save(t, f, changed) })
-			if out.ID != first.ID || len(out.Nav) != 3 {
-				t.Errorf("the changed settings are %s with %d links", out.ID, len(out.Nav))
-			}
+		{
+			Name:    "a site with no home page is saved",
+			Because: "the success half of \"a home page is named by a slug\": empty is not a refusal, because a site is configurable before anything is published at any name, and a description states a refusal or a success and not both",
+			Run: func(t *testing.T, f Fixture) {
+				if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme"}); err != nil {
+					t.Errorf("a site with no home page: %v", err)
+				}
+			},
 		},
-
-		"a colour is #rrggbb and a theme is one of three": func(t *testing.T, f Fixture) {
-			// Saved once first, so the refusals below go through the update
-			// path as well as the create one: the two used to answer with
-			// different errors, which is a 500 where a 422 belongs.
-			save(t, f, acme())
-			for _, bad := range []*contracts.SiteSettings{
-				{Title: "Acme", PrimaryColor: "red"},
-				{Title: "Acme", PrimaryColor: "#fff"},
-				{Title: "Acme", PrimaryColor: "rgb(1,2,3)"},
-				{Title: "Acme", Theme: "neon"},
-			} {
-				_, err := f.Service.Save(f.Ctx, f.Tx, bad)
-				mustBe(t, err, crud.ErrInvalid)
-			}
-		},
-
-		"a link points inside this site": func(t *testing.T, f Fixture) {
-			for _, path := range []string{"https://evil.example.com", "about-us", ""} {
-				_, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{
-					Title: "Acme", Nav: contracts.Nav{{Label: "About", Path: path}},
-				})
-				mustBe(t, err, crud.ErrInvalid)
-			}
-			// And a link needs something to say.
-			_, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{
-				Title: "Acme", Nav: contracts.Nav{{Label: "  ", Path: "/about-us"}},
-			})
-			mustBe(t, err, crud.ErrInvalid)
-		},
-
-		"a navigation is bounded and so is a title": func(t *testing.T, f Fixture) {
-			long := contracts.Nav{}
-			for range contracts.MaxNav + 1 {
-				long = append(long, contracts.NavItem{Label: "Link", Path: "/link"})
-			}
-			_, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", Nav: long})
-			mustBe(t, err, crud.ErrInvalid)
-
-			_, err = f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: strings.Repeat("a", contracts.MaxTitle+1)})
-			mustBe(t, err, crud.ErrInvalid)
-		},
-
-		"a home page is named by a slug": func(t *testing.T, f Fixture) {
-			_, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", HomeSlug: "Welcome Home"})
-			mustBe(t, err, crud.ErrInvalid)
-			// Empty is not a refusal: a site is configurable before anything is
-			// published at any name.
-			if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme"}); err != nil {
-				t.Errorf("a site with no home page: %v", err)
-			}
-		},
-	}
-}
-
-func mustBe(t *testing.T, got, want error) {
-	t.Helper()
-	if !errors.Is(got, want) {
-		t.Errorf("error is %v, want %v", got, want)
 	}
 }
