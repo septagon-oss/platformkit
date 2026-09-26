@@ -87,6 +87,7 @@ func TestTokenSelectionKeepsIndependentPackagesAndEqualIdentities(t *testing.T) 
 		"empty":                         {},
 		"scales without modes":          {Scales: selectedTokens().Scales},
 		"assets without fonts or modes": {Assets: []design.Asset{asset}},
+
 		"static metadata outside provider subset": {Assets: []design.Asset{asset}, Faces: []design.FontFace{{ID: "a", Asset: "a", Family: "Body", PostScriptName: "Body-Regular", Weight: "650.5", Style: "normal"}}},
 		"none needs no timing":                    {Transitions: []style.TransitionValue{{Key: "none", Properties: []string{"none"}}}},
 	} {
