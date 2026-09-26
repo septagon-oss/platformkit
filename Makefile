@@ -3,9 +3,17 @@
 
 .DEFAULT_GOAL := help
 
-# Select the same compiler and tools even when PATH contains a newer Go release.
-# Child scripts and their Go subprocesses inherit this exact module version.
-export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
+# Select the same compiler and tools even when PATH contains a different Go
+# release. Child scripts and their Go subprocesses inherit this exact version.
+# It is go.mod's `toolchain` line rather than its `go` line: `go` is the floor a
+# consumer of this module has to clear, `toolchain` is the version this repository
+# is built and gated with, and it is the line the go command and actions/setup-go
+# (go-version-file) already read as that. They differ because a gate needs a
+# compiler that can identify the checkout it is building, and the `.git` of a git
+# worktree is a file — one go1.27 reads (go.dev/issue/58218) and go1.26 walks past,
+# asking git about the first parent directory with a .git of its own instead, which
+# stamps another repository's revision into the binary or fails the build outright.
+export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
 .PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
@@ -42,11 +50,9 @@ help: ## List the targets
 # renders (modules/admin/internal/mount.go's version()), so `run`, `e2e`, `rehearse`
 # and `image` are left to stamp theirs. This goal keeps no binary — the linker
 # writes to /dev/null — so the stamp it would compute is a field nothing reads, and
-# computing it makes whether this repository compiles depend on a directory *above*
-# the checkout: Go asks git about the first parent directory holding a .git, and the
-# .git of a worktree is a file — one go1.27 reads (go.dev/issue/58218) and the
-# toolchain go.mod pins walks past. Nothing in this file assigns GOFLAGS, so a
-# checkout where git refuses that parent — and so cannot be stamped at all — passes
+# computing it would make whether this repository compiles depend on whether git can
+# answer for the directory the source sits in. Nothing in this file assigns GOFLAGS,
+# so a checkout no git answers for — an unpacked archive, say — passes
 # GOFLAGS=-buildvcs=false itself, for the four goals that do keep a binary.
 build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -buildvcs=false -o /dev/null ./...

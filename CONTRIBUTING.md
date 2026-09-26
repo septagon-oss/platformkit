@@ -61,10 +61,12 @@ an installation's applied migration history.
 
 ## Verify at the relevant boundary
 
-Use the Go version in [go.mod](go.mod), Make and Docker with Compose.
-Make selects that exact Go toolchain for its commands and child scripts, including
-the formatter; an installed newer Go does not change the verification version.
-The Go command downloads the selected toolchain if it is not already available.
+Use the Go toolchain in [go.mod](go.mod), Make and Docker with Compose. The `go`
+line there is the floor a consumer of this module has to clear; the `toolchain`
+line is the version this repository is verified with. Make selects that exact
+toolchain for its commands and child scripts, including the formatter; a different
+installed Go does not change the verification version. The Go command downloads the
+selected toolchain if it is not already available.
 From the repository root, start the development PostgreSQL and NATS services:
 
 ```sh
