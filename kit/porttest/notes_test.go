@@ -66,6 +66,10 @@ type knobs struct {
 	// oneTenant keeps one set of rows for every tenant, which is what a fake
 	// that never had a tenant key behaves like.
 	oneTenant bool
+	// answerMoves stores the right row and answers a revision it is not at,
+	// which is a stale row handed to the caller: the bug a suite that reads the
+	// store either side of a retry and never the answer cannot see.
+	answerMoves bool
 }
 
 // notes is the fake service: this package's plumbing, one store, and the
@@ -98,15 +102,17 @@ func (s *notes) scope(ctx context.Context) context.Context {
 }
 
 // File is the port's one command: grant, load, revision, decide, then write and
-// say so.
-func (s *notes) File(ctx context.Context, row uuid.UUID, expected int64) error {
+// say so. It answers the note as it now stands, which is what the caller of a
+// command reads and what the retry compares either side of the second call.
+func (s *notes) File(ctx context.Context, row uuid.UUID, expected int64) (note, error) {
+	before, _ := s.rows.Get(s.scope(ctx), row)
 	if s.knobs.writeFirst {
 		if stored, err := s.rows.Get(s.scope(ctx), row); err == nil {
 			stored.Filed, stored.Rev = true, stored.Rev+1
 			s.rows.Put(s.scope(ctx), stored)
 		}
 	}
-	_, err := Do(s.scope(ctx), s.Fake, s.rows, Command[note]{
+	filed, err := Do(s.scope(ctx), s.Fake, s.rows, Command[note]{
 		Permission: filePermission,
 		Denied:     errDenied,
 		Row:        row,
@@ -132,7 +138,12 @@ func (s *notes) File(ctx context.Context, row uuid.UUID, expected int64) error {
 			return []string{"note.filed"}
 		},
 	})
-	return err
+	if err == nil && s.knobs.answerMoves && before.Filed {
+		// Nothing was written — the note was filed already — and the caller is
+		// told it moved all the same.
+		filed.Rev++
+	}
+	return filed, err
 }
 
 // Note is the read a snapshot renders.
@@ -198,8 +209,9 @@ func noteSuite(k knobs) Suite[world] {
 			Mutates:   true,
 			Publishes: []string{"note.filed"},
 			Ready:     func(t *testing.T, w world) uuid.UUID { return w.seed(t, false) },
-			Call: func(w world, row uuid.UUID) error {
-				return w.service.File(w.ctx, row, revisionOf(w, row))
+			Call: func(w world, row uuid.UUID) (string, error) {
+				filed, err := w.service.File(w.ctx, row, revisionOf(w, row))
+				return fmt.Sprintf("filed=%v rev=%d", filed.Filed, filed.Rev), err
 			},
 			Snapshot: func(t *testing.T, w world, row uuid.UUID) string {
 				t.Helper()
@@ -211,27 +223,34 @@ func noteSuite(k knobs) Suite[world] {
 			},
 			Refusals: []Refusal[world]{
 				{Kind: Unknown,
-					Call: func(w world, _ uuid.UUID) error { return w.service.File(w.ctx, uuid.New(), 0) },
-					Is:   func(_ world, err error) bool { return errors.Is(err, crud.ErrNotFound) }},
+					Call: func(w world, _ uuid.UUID) error {
+						_, err := w.service.File(w.ctx, uuid.New(), 0)
+						return err
+					},
+					Is: func(_ world, err error) bool { return errors.Is(err, crud.ErrNotFound) }},
 				{Kind: Denied,
 					Call: func(w world, row uuid.UUID) error {
-						return w.service.File(w.stranger, row, revisionOf(w, row))
+						_, err := w.service.File(w.stranger, row, revisionOf(w, row))
+						return err
 					},
 					Is: func(_ world, err error) bool { return errors.Is(err, errDenied) }},
 				{Kind: Stale, Class: Correctable,
 					Call: func(w world, row uuid.UUID) error {
-						return w.service.File(w.ctx, row, revisionOf(w, row)+1)
+						_, err := w.service.File(w.ctx, row, revisionOf(w, row)+1)
+						return err
 					},
 					Is: func(_ world, err error) bool { return errors.Is(err, errStale) }},
 				{Kind: Elsewhere,
 					Call: func(w world, row uuid.UUID) error {
-						return w.service.File(w.elsewhere, row, revisionOf(w, row))
+						_, err := w.service.File(w.elsewhere, row, revisionOf(w, row))
+						return err
 					},
 					Is: func(_ world, err error) bool { return errors.Is(err, crud.ErrNotFound) }},
 				{Name: "a sealed note is not filed twice", Class: Immutable,
 					Provoke: func(t *testing.T, w world, _ uuid.UUID) uuid.UUID { return w.seed(t, true) },
 					Call: func(w world, row uuid.UUID) error {
-						return w.service.File(w.ctx, row, revisionOf(w, row))
+						_, err := w.service.File(w.ctx, row, revisionOf(w, row))
+						return err
 					},
 					Is: func(_ world, err error) bool { return errors.Is(err, errSealed) }},
 			},
@@ -241,7 +260,7 @@ func noteSuite(k knobs) Suite[world] {
 			Because: "what a success leaves behind is the port's domain, and no description reaches it",
 			Run: func(t *testing.T, w world) {
 				row := w.seed(t, false)
-				if err := w.service.File(w.ctx, row, 0); err != nil {
+				if _, err := w.service.File(w.ctx, row, 0); err != nil {
 					t.Fatalf("File: %v", err)
 				}
 				stored, err := w.service.Note(w.ctx, row)
