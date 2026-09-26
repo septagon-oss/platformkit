@@ -65,6 +65,12 @@ func TestRetryCaseFailsWhenTheSecondCallEmits(t *testing.T) {
 	log.mustPassApartFrom(t, "File: the same command twice writes nothing and says nothing")
 }
 
+func TestRetryCaseFailsWhenTheSecondCallAnswersARowNothingWrote(t *testing.T) {
+	log := watch(t, noteSuite(knobs{answerMoves: true}))
+	log.mustFail(t, "File: the same command twice writes nothing and says nothing", "a row nothing wrote")
+	log.mustPassApartFrom(t, "File: the same command twice writes nothing and says nothing")
+}
+
 func TestTenantCaseFailsWhenTheStoreIsShared(t *testing.T) {
 	log := watch(t, noteSuite(knobs{oneTenant: true}))
 	log.mustFail(t, "File: another tenant cannot reach the row", "was not refused")
