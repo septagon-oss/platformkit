@@ -58,11 +58,6 @@ type Suite[W any] struct {
 	// the generated cases assert Refusal.Is alone.
 	Classify func(error) Class
 
-	// Invariant is the assertion the module makes of any state at all, run after
-	// every case — generated or its own — against the row the case acted on. Nil
-	// where a port has no such statement.
-	Invariant func(t *testing.T, w W, row uuid.UUID)
-
 	// Ops is the port's operations, in the order a reader of the port meets them.
 	Ops []Op[W]
 
@@ -100,9 +95,14 @@ type Op[W any] struct {
 	Ready func(t *testing.T, w W) uuid.UUID
 
 	// Call runs the operation against the row Ready returned, as an actor who
-	// holds what it needs. The harness calls it once for the success case and
-	// twice for the retry case.
-	Call func(w W, row uuid.UUID) error
+	// holds what it needs, and renders what the operation answered so that two
+	// answers compare with ==. The harness calls it once for the success case
+	// and twice for the retry, where the second answer must equal the first: a
+	// command that stores the right row and answers a moved one returns a stale
+	// row to its caller, which is house rule 9's third clause and the half no
+	// snapshot of the store can see. An operation that answers nothing but an
+	// error renders "", and its retry then asserts the store alone.
+	Call func(w W, row uuid.UUID) (answer string, err error)
 
 	// Snapshot is everything this operation could have written, rendered so that
 	// two snapshots of one world compare with ==. It is the module's answer to
@@ -258,13 +258,21 @@ func run[W any](rep reporter, s Suite[W]) {
 	for _, c := range s.plan() {
 		body := c.body
 		rep.Run(c.name, func(rep reporter) {
+			ran := false
 			s.World(rep.T(), func(w W) {
+				ran = true
 				if reflect.ValueOf(&w).Elem().IsZero() {
 					rep.Errorf("%s: the world handed back a zero fixture, so every case below it would assert nothing", s.Port)
 					return
 				}
 				body(rep, w)
 			})
+			// A world is a transaction-shaped closure with error paths in it,
+			// and one that returns without calling the case would report it
+			// green having touched no implementation at all.
+			if !ran {
+				rep.Errorf("%s: the world returned without running this case, so it passed against nothing", s.Port)
+			}
 		})
 	}
 }
@@ -302,7 +310,6 @@ func (s Suite[W]) plan() []planned[W] {
 	for _, c := range s.Own {
 		plan = append(plan, planned[W]{c.Name, func(rep reporter, w W) {
 			c.Run(rep.T(), w)
-			s.invariant(rep.T(), w, uuid.Nil)
 		}})
 	}
 	return plan
@@ -339,33 +346,39 @@ func (s Suite[W]) success(rep reporter, op Op[W], w W) {
 	rep.Helper()
 	row := op.Ready(rep.T(), w)
 	before := len(s.Events(w))
-	if err := op.Call(w, row); err != nil {
+	if _, err := op.Call(w, row); err != nil {
 		rep.Errorf("%s: %v; this is the call the operation is for", op.Name, err)
 		return
 	}
 	s.published(rep, op.Name, w, before, op.Publishes)
-	s.invariant(rep.T(), w, row)
 }
 
 // retry is case 2: the same command twice. The second call succeeds, writes
-// nothing and — the half a return value cannot show — says nothing, because an
-// idempotent command that publishes is a subscriber told twice about one thing.
+// nothing, says nothing — an idempotent command that publishes is a subscriber
+// told twice about one thing — and answers what the first call answered, which
+// is the half neither a snapshot of the store nor an error can show.
 func (s Suite[W]) retry(rep reporter, op Op[W], w W) {
 	rep.Helper()
 	row := op.Ready(rep.T(), w)
-	if err := op.Call(w, row); err != nil {
+	first, err := op.Call(w, row)
+	if err != nil {
 		rep.Errorf("%s: the first call: %v", op.Name, err)
 		return
 	}
 	world := s.world(rep, w)
 	world.Silent(op.Name+" a second time", func() {
 		world.Unchanged(op.Name+" a second time", s.snapshot(rep.T(), op, w, row), func() {
-			if err := op.Call(w, row); err != nil {
+			again, err := op.Call(w, row)
+			if err != nil {
 				rep.Errorf("%s: the same command twice: %v; a command that refuses its own retry cannot be retried", op.Name, err)
+				return
+			}
+			if again != first {
+				rep.Errorf("%s: the first call answered %s and the second %s; a retry answers the row as it stands, "+
+					"and a caller told otherwise was handed a row nothing wrote", op.Name, first, again)
 			}
 		})
 	})
-	s.invariant(rep.T(), w, row)
 }
 
 // refused is cases 3 to 7: a call that must be refused, asserted through the
@@ -388,7 +401,6 @@ func (s Suite[W]) refused(rep reporter, op Op[W], r Refusal[W], w W) {
 	if r.Kind == Elsewhere && op.Snapshot != nil && snapshot() == "" {
 		rep.Errorf("%s: after another tenant's refused call the row renders as nothing; it is still this tenant's row", name)
 	}
-	s.invariant(rep.T(), w, row)
 }
 
 // snapshot is the operation's own rendering of everything it could have written,
@@ -411,12 +423,6 @@ func (s Suite[W]) published(rep reporter, what string, w W, before int, want []s
 	}
 	if said := all[before:]; !slices.Equal(said, want) {
 		rep.Errorf("%s published %v, want %v in this order", what, said, want)
-	}
-}
-
-func (s Suite[W]) invariant(t *testing.T, w W, row uuid.UUID) {
-	if s.Invariant != nil {
-		s.Invariant(t, w, row)
 	}
 }
 
@@ -458,7 +464,12 @@ func (s Suite[W]) problems() []string {
 			say("%s: %q has no body", s.Port, c.Name)
 		}
 	}
-	for _, c := range s.plan() {
+	plan := s.plan()
+	if len(plan) == 0 {
+		say("%s: the description runs no case at all; a suite that asserts nothing passes every implementation "+
+			"of the port, including the one that does nothing", s.Port)
+	}
+	for _, c := range plan {
 		if was, dup := seen[c.name]; dup && was == "case" {
 			say("%s: two cases would run under the name %q, and a requirements index cannot point at either", s.Port, c.name)
 		}

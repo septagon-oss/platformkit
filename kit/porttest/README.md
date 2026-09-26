@@ -21,15 +21,15 @@ A field no case reads does not belong in the description. That is the table:
 | `Suite.World` | every case; one world per case, closed on the way out |
 | `Suite.Events` | the success case, the retry, and every refusal ("a refusal is not news") |
 | `Suite.Classify` | every refusal whose `Class` is not `Unclassified` |
-| `Suite.Invariant` | after every case, generated or the module's own |
 | `Suite.Ops` | the generated cases |
 | `Suite.Own` | run after them, under the module's own name, unnested |
+| `Suite.Assert` | a hand-written case, which takes the floor from the suite it belongs to |
 | `Case.Name` | the subtest name, verbatim |
 | `Case.Because` | the floor: a hand-written case with no reason is refused |
 | `Op.Name` | the first half of a generated case name, and uniqueness |
 | `Op.Mutates` | whether the retry and the four refusals are owed |
 | `Op.Ready` | every case of that operation |
-| `Op.Call` | the success case and the retry |
+| `Op.Call` | the success case, and the retry, which compares what it answered either side of the second call |
 | `Op.Snapshot` | the retry and every refusal: "writes nothing" |
 | `Op.Publishes` | the success case, in order |
 | `Op.Refusals` | one case each |
@@ -49,7 +49,7 @@ Per operation:
 | # | name | generated for | asserts |
 |---|---|---|---|
 | 1 | `<Op>: the operation says what it did` | every operation | the call succeeds and publishes exactly `Publishes`, in order |
-| 2 | `<Op>: the same command twice writes nothing and says nothing` | `Mutates` | the second call succeeds, the snapshot does not move and nothing is published |
+| 2 | `<Op>: the same command twice writes nothing and says nothing` | `Mutates` | the second call succeeds, the snapshot does not move, nothing is published, and it answers what the first call answered |
 | 3 | `<Op>: an unknown row is not found` | `Mutates` | the refusal is the one named, in the class named; nothing written, nothing said |
 | 4 | `<Op>: a caller with no grant is refused and writes nothing` | `Mutates` | as above |
 | 5 | `<Op>: a revision the row is not at is refused and writes nothing` | `Mutates` | as above |
@@ -77,10 +77,16 @@ described one.
 - a mutating operation has no `Snapshot` — "a refused mutation writes nothing" is
   unassertable without one;
 - a refusal has no `Is`: what counts as that refusal is the port's own answer,
-  and a harness that guessed would relax an assertion.
+  and a harness that guessed would relax an assertion;
+- the description would run no case at all: a suite that asserts nothing passes
+  every implementation of the port, including the one that does nothing, and
+  deleting the last operation from a converted suite looks exactly like that.
 
-A world that hands back a zero fixture is refused too, in the first case that
-builds one, because that is the first moment anybody can know.
+Two mistakes a world makes are caught in the case rather than before it, because
+that is the first moment anybody can know: a world that hands back a zero
+fixture, and a world that returns without ever running the case it was handed —
+which would otherwise report every case green having touched no implementation
+at all.
 
 ## What a description cannot express
 
@@ -143,7 +149,27 @@ that settles two writers. Those are database facts, tested against the schema.
 
 `porttest_test.go` runs the generated cases against deliberately broken copies of
 the fake in `notes_test.go`: one that writes before it decides, one that says
-something on an idempotent retry, one with a single set of rows for every tenant.
-Each proves that the case bites. `Run` reports through a narrow internal
+something on an idempotent retry, one that stores the right row and answers a
+revision it is not at, one with a single set of rows for every tenant. Each
+proves that the case bites. `Run` reports through a narrow internal
 reporter so that a test can watch a generated case fail without failing the test
 that is watching it.
+
+## Reused, added, made reusable
+
+**Reused**: `kit/crud`'s sentinels (`ErrNotFound`, `ErrInvalid`, `ErrConflict`)
+and its `Entity`/`Validator` contracts, `kit/entity.BaseOf` for the stamp a seed
+leaves, `kit/tenancy` for the tenant and the actor on the context, and
+`testing`'s own subtests for every case name. The SQL harnesses this package's
+consumers write keep using `kit/db/dbtest.Schema` unchanged.
+
+**Added**: the description (`Suite`, `Op`, `Refusal`), the cases generated from
+it, and the fake's plumbing — `Store`, `Seed`, `Clock`, `Grants`, `Recorder`,
+`Do` — because the repository had no kernel clock, store or recorder to compose:
+every fake had grown its own map and its own event slice.
+
+**Made reusable**: the floor itself. "A refused mutation writes nothing, emits
+nothing and returns no stale row" was a discipline each suite kept by hand, in
+its own words, at whichever commands its author remembered; it is now
+`World.Refused` and four generated cases that every port either answers or
+declines in writing.
