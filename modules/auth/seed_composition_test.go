@@ -163,3 +163,71 @@ func TestRepairTakesTheSeedersDeadGrantsAndLeavesTheTenantsOwn(t *testing.T) {
 		}
 	}
 }
+
+// TestARoleTheRepairCannotFinishIsLeftWhole is the case behind the one branch
+// the narrowing needs: an initial role holding a dead grant of the seeder's
+// beside a dead grant of the tenant's own.
+//
+// The application's literal named finance content:read, so the seeder wrote that
+// one; an administrator added task:read while the module owning it was still
+// composed, so that one is theirs. Both modules then leave. The repair cannot
+// take the first without the second — SetRole goes through
+// contracts.CheckedPermissions, which refuses any list still naming a permission
+// no module defines — and the second is not its to take. So the role is left
+// whole and out of the report, and the hourly sweep goes on naming both.
+//
+// The reachability probe is the administrator's own seeded operator grant, which
+// the same run does remove: the case cannot pass by the repair doing nothing.
+func TestARoleTheRepairCannotFinishIsLeftWhole(t *testing.T) {
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
+	svc, _ := auth.Module(auth.Deps{})
+	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
+	was := []tenancy.Grant{{Permission: "role:manage"}, {Permission: "task:read"},
+		{Permission: "content:read"}, {Permission: "billing:catalog", Operator: true}}
+	now := []tenancy.Grant{{Permission: "role:manage"}}
+	initial := []contracts.Role{{Name: "finance", Grants: contracts.Permissions{"content:read"}}}
+
+	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		return auth.SeedRoles(ctx, tx, tenant, was, initial)
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		_, e := svc.SetRole(ctx, tx, "finance", []string{"content:read", "task:read"}, was)
+		return e
+	}); err != nil {
+		t.Fatalf("the administrator's own edit: %v", err)
+	}
+
+	var found map[string][]string
+	var roles []*contracts.Role
+	if err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var e error
+		if found, e = auth.RepairSeededRoles(ctx, tx, svc, now, initial, true); e != nil {
+			return e
+		}
+		roles, e = svc.Roles(ctx, tx)
+		return e
+	}); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if !slices.Equal(found["admin"], []string{"billing:catalog"}) {
+		t.Fatalf("reported %v for admin, want [billing:catalog]", found["admin"])
+	}
+	if _, touched := found["finance"]; touched {
+		t.Errorf("reported a role it cannot repair: %v", found)
+	}
+	for _, r := range roles {
+		switch r.Name {
+		case "admin":
+			if !slices.Equal([]string(r.Grants), []string{"*"}) {
+				t.Errorf("admin grants %v, want [*]", r.Grants)
+			}
+		case "finance":
+			if !slices.Equal([]string(r.Grants), []string{"content:read", "task:read"}) {
+				t.Errorf("the repair wrote a role it could not finish: %v", r.Grants)
+			}
+		}
+	}
+}

@@ -94,6 +94,29 @@ copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
 
+**A seeded grant is only ever as wide as the composition, and there is a door for the
+rows an older seeder left.** The operator permissions a new tenant's administrator was
+created holding were a list each application wrote out by hand, and no application
+narrowed it when it dropped a module: one installation served from 2026-09-22 with an
+administrator granted `billing:catalog` and no billing module to exercise it against,
+and the only thing that said so was the hourly sweep — fourteen identical warnings by
+the next morning. `auth.SeedRoles` now takes the permission catalogue of the modules
+the application actually composed (`kit/module.Grants`, which the kernel's own
+manifest check already read) and seeds the operator permissions of that catalogue and
+nothing else; an initial role naming a permission no composed module defines is
+refused where it used to be written, and `contracts.SeededRoles` is what the seeder
+writes, so an application can ask what a composition seeds before it has a database.
+The rows already written belong to a customer and are not edited on the way past:
+`platformkit repair-roles` lists, per tenant and per role, the grants this
+installation's own seeder wrote that no composed module defines any more, and
+`--remove` is the decision — through the module's ordinary role write, so each
+removal takes the tenant's role lock, is held to the floor below and is in the audit
+as an `auth.role_set`. What the seeder did not write it does not touch: the built-in
+member is seeded holding nothing, a customer tenant's administrator is seeded the
+wildcard and nothing else, and a permission somebody added through the roles screen
+stays where it is and goes on being reported by the sweep, which is the only thing
+entitled to say what its author meant by it.
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was

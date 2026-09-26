@@ -29,8 +29,13 @@ thing that ever said so was the hourly sweep below — fourteen identical warnin
 by the next morning, about a grant no route would ever have accepted. Rows
 written by an older seeder are a customer's and are not edited on the way past:
 `auth.RepairSeededRoles` lists them per tenant and removes them when asked,
-touching only the roles the seeder owns — `apps/platformkit repair-roles` is the
-door, and `--remove` is the decision.
+taking away only the grants that seeder wrote — `apps/platformkit repair-roles`
+is the door, and `--remove` is the decision. A role's name belonging to the
+seeder is not the same as a grant in it being the seeder's: the built-in member
+is seeded holding nothing, a customer tenant's administrator is seeded the
+wildcard and nothing else, and a permission somebody added through the roles
+screen stays where it is and goes on being reported by the hourly sweep. See
+`contracts.SeededGrants` for that rule and for what it cannot tell apart.
 
 Compose it after tenants and notification with `auth.Deps`, naming the user
 service, hosts, tenants, the mailer and, when wanted, one of `Registration`,
@@ -42,3 +47,21 @@ through `PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET`. Consumers import
 another: which of a tenant's roles grant `role:manage`, which is what
 `modules/user` needs in order to refuse taking its last administrator away.
 [policies/](policies/README.md) shows the optional Topaz policy check.
+
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt, and the seeded-grant change above composed all of it. **Reused:**
+`module.Permission{Key, Operator}` and the catalogue loop `kit/app` already ran
+over an application's manifests; `contracts.CheckedPermissions`, which is where
+"no module defines it" was already refused, so the seeder gained no rule of its
+own; `internal.Undeclared`, so the repair takes back exactly what the hourly
+sweep names; `internal.SetRole` for the write, with its tenant lock, its
+administration floor and its `auth.role_set` event; and `jobs.PerTenant` for the
+walk. **Added:** `contracts.SeededGrants`, because who wrote a grant is a
+question no existing unit answered, and `auth.RepairSeededRoles` with the
+`repair-roles` subcommand as its only caller. **Made reusable:**
+`kit/module.Grants`, the one catalogue of a composition, which was a loop inside
+`kit/app`'s manifest check and is now what an application hands the seeder — one
+implementation, and the caller moved to it rather than a second one being
+written.
