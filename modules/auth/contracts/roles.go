@@ -226,10 +226,13 @@ func OperatorGrants(declared []tenancy.Grant) []string {
 //     ever seeded the wildcard and nothing in it is the seeder's.
 //
 // Limits. In the operator's own tenant the row does not record which writer put
-// an operator permission in it, and an operator may have named one by hand; the
-// seeder and that hand are indistinguishable here. It is dead either way, the
-// only tenant it can happen in is the operator's own, and the command that reads
-// this lists before it removes so that a person decides. What is left over —
+// a permission in it, and an operator may have named one by hand — an ordinary
+// permission as much as an operator one, since once the module owning it leaves
+// nothing says any more which it was; the seeder and that hand are
+// indistinguishable here, so the first branch takes both. It is dead either way,
+// the wildcard beside it still grants every ordinary permission, the only tenant
+// it can happen in is the operator's own, and the command that reads this lists
+// before it removes so that a person decides. What is left over —
 // every dead grant in every other role — stays where it is and goes on being
 // reported by the hourly sweep, which is the only thing entitled to say what its
 // author meant by it.
