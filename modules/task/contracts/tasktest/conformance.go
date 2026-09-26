@@ -163,9 +163,11 @@ var notOwedHere = map[porttest.Kind]string{
 	porttest.Denied: "the lifecycle takes no grant of its own: the three commands are reached " +
 		"through kit/rest's routes, and that is where the grant is checked",
 	porttest.Stale: "a task carries no revision; kit/crud's own PATCH owns that check",
-	porttest.Elsewhere: "the tenant is the request transaction's and the fake ignores it, " +
-		"so the isolation case would assert nothing here; it is proven over Postgres " +
-		"in modules/task/internal",
+	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
+		"here to make the refused call from. The fake partitions its store by the tenant on the " +
+		"context and the real service runs under row-level security, which kit/db's " +
+		"TestTenantIsolationIsEnforcedByPostgres and kit/crud's TestAnotherTenantReachesNothing " +
+		"prove against the schema",
 }
 
 // assignee is the person every case assigns to, so that "the same assignee"
