@@ -18,13 +18,22 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user"
 )
 
+// composed is a composition's permission catalogue, the shape kit/module.Grants
+// hands SeedRoles: one ordinary permission a module defines and one that
+// belongs to the operator of the installation. Nothing else is declared here,
+// so anything else an initial role names is a grant no module defines.
+var composed = []tenancy.Grant{
+	{Permission: "task:read"},
+	{Permission: "tenant:manage", Operator: true},
+}
+
 func TestRoleProvisioningNeedsOnlyItsTransaction(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	for _, operator := range []bool{false, true} {
 		tenant := tenancy.Tenant{ID: uuid.New(), Operator: operator}
 		defaults := []contracts.Role{{Name: "member", Grants: contracts.Permissions{"task:read"}}}
 		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-			if err := auth.SeedRoles(ctx, tx, tenant, []string{"tenant:manage"}, defaults); err != nil {
+			if err := auth.SeedRoles(ctx, tx, tenant, composed, defaults); err != nil {
 				return err
 			}
 			var roles []contracts.Role
@@ -42,7 +51,7 @@ func TestRoleProvisioningNeedsOnlyItsTransaction(t *testing.T) {
 			if err := tx.DB().Exec("UPDATE roles SET permissions = '{}' WHERE tenant_id = ?", tenant.ID).Error; err != nil {
 				return err
 			}
-			if err := auth.SeedRoles(ctx, tx, tenant, []string{"tenant:manage"}, defaults); err != nil {
+			if err := auth.SeedRoles(ctx, tx, tenant, composed, defaults); err != nil {
 				return err
 			}
 			var changed int64
@@ -69,9 +78,13 @@ func TestInitialRoleRefusalsAndRollbackLeaveNoRoles(t *testing.T) {
 		{Name: "empty"},
 		{Name: "member", Grants: contracts.Permissions{"*"}},
 		{Name: "member", Grants: contracts.Permissions{"tenant:manage"}},
+		// The refusal this task added: a grant no composed module defines is
+		// refused at the write, where it used to be seeded and then warned
+		// about on the hour for the life of the installation.
+		{Name: "member", Grants: contracts.Permissions{"billing:catalog"}},
 	} {
 		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-			return auth.SeedRoles(ctx, tx, tenant, []string{"tenant:manage"}, []contracts.Role{role})
+			return auth.SeedRoles(ctx, tx, tenant, composed, []contracts.Role{role})
 		})
 		if !errors.Is(err, crud.ErrInvalid) {
 			t.Fatalf("initial role %+v: %v, want ErrInvalid", role, err)
