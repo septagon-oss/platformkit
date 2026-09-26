@@ -95,7 +95,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// rather than inherited from either: neither pin above describes a vocabulary
 	// that exists after this merge, and a digest copied from one side would be a
 	// number that certifies a thing nobody shipped.
-	if legacy.SHA256 != "b69e2daea357acbcfa31f9300734850ba370271796a7ff061d5e777b655d309b" {
+	//
+	// LICENSE is canonical Apache-2.0 again — the copyright block that had been
+	// inserted into the licence body moved out and the appendix came back — and
+	// design-notices.txt carries LICENSE and NOTICE verbatim, so the snapshot's
+	// attribution text is 26 lines longer and 14 lines shorter in the same two
+	// places. Nothing rendered moved: a leaf-by-leaf diff of the v1 export before
+	// and after the restoration changes 2 of 6,400 leaves, /notices and /sha256.
+	if legacy.SHA256 != "69f9d1dd603251201d91c57a28d02b23892879fe2e21c6ef305cde12968d06aa" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
