@@ -25,7 +25,8 @@ import (
 //
 // It takes away a grant the seeder did not write in one row and nowhere else. A
 // role's name belonging to the seeder is not the same as a grant in it being the
-// seeder's: the built-in member is seeded holding nothing at all, and a customer
+// seeder's: the built-in member is seeded holding nothing unless the
+// application's initial roles name that name too, and a customer
 // tenant's administrator is seeded the wildcard and nothing else, so an ordinary
 // permission sitting in either of them was put there by whoever administers the
 // tenant, through SetRole, while the module owning it was still composed.
@@ -49,6 +50,16 @@ import (
 // somebody able to administer the tenant, and publishes auth.role_set in the
 // same transaction — a repair no audit could see would be the silent edit this
 // exists not to be.
+//
+// It has one direction. An installation that later adds a module does not gain
+// that module's operator permissions on the roles already seeded — SeedRoles
+// writes ON CONFLICT DO NOTHING, so a row that exists keeps what it was given —
+// and this reports nothing there, because it takes grants back rather than
+// handing them out. That is the same refusal to edit silently, seen from the
+// other side. The way back is the roles screen, and it works because the
+// administrator's row still holds the wildcard, which CheckedPermissions lets an
+// operator tenant pair with an operator permission: one deliberate decision by a
+// person who is adding a module, and no repair.
 func RepairSeededRoles(ctx context.Context, tx db.Tx[db.Tenant], roles contracts.Service,
 	declared []tenancy.Grant, defaults []contracts.Role, remove bool,
 ) (map[string][]string, error) {
