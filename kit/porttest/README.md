@@ -19,7 +19,7 @@ A field no case reads does not belong in the description. That is the table:
 |---|---|
 | `Suite.Port` | every failure sentence |
 | `Suite.World` | every case; one world per case, closed on the way out |
-| `Suite.Events` | the success case, the retry, and every refusal ("a refusal is not news") |
+| `Suite.Events` | the success case, the retry, and every refusal — the list event for event, not its length alone ("a refusal is not news") |
 | `Suite.Classify` | every refusal whose `Class` is not `Unclassified`; the floor refuses a description that names a class and classifies nothing |
 | `Suite.Ops` | the generated cases |
 | `Suite.Own` | run after them, under the module's own name, unnested |
@@ -132,6 +132,12 @@ turning every singleton port's "writes nothing" into a comparison of two constan
 in a green tree, and that same line reddening `sitetest` beside it.
 `TestRowBlindSuccessFailsWhenTheSnapshotCannotMove` watches the check;
 `review7_rowblind_test.go` watches the half only a fake that writes can show.
+
+**The silence is one comparison.** `World.Refused` and `World.Silent` share
+`saidNothing`: the event list, event for event, not merely its length — a rewritten
+outbox row keeps the length, and a shrunken list was an index walked past its end.
+`silence_test.go` watches the rewrite and the loss; review 8's
+`TestRefusalCaseFailsWhenTheRefusedCallSpoke` watches the append through a denial case.
 
 **What the floor does not assert.** House rule 9 has three clauses; this harness
 asserts two. `Refusal.Call` answers the error alone — `func(w W, row uuid.UUID) error`
