@@ -32,13 +32,17 @@ written by an older seeder are a customer's and are not edited on the way past:
 taking away only the grants that seeder wrote — `apps/platformkit repair-roles`
 is the door, and `--remove` is the decision. A role's name belonging to the
 seeder is not the same as a grant in it being the seeder's: the built-in member
-is seeded holding nothing, a customer tenant's administrator is seeded the
-wildcard and nothing else, and a permission somebody added through the roles
-screen stays where it is and goes on being reported by the hourly sweep — except
-in the operator's own administrator row while it still holds the wildcard, the
-one role the seeder writes named permissions into, where nothing records who
-wrote a departed permission and every dead grant is taken. See
-`contracts.SeededGrants` for that rule and for what it cannot tell apart.
+is seeded holding nothing unless the application's initial roles name it, a
+customer tenant's administrator is seeded the wildcard and nothing else, and a
+permission somebody added through the roles screen stays where it is and goes on
+being reported by the hourly sweep — except in the operator's own administrator
+row while it still holds the wildcard, the one role the seeder writes named
+permissions into, where nothing records who wrote a departed permission and every
+dead grant is taken. See `contracts.SeededGrants` for that rule and for what it
+cannot tell apart. The repair runs one way: an installation that later *adds* a
+module does not gain its operator permissions on roles already seeded, and there
+`repair-roles` has nothing to say — the roles screen adds them, the row still
+holding the wildcard that admits an operator permission.
 
 Compose it after tenants and notification with `auth.Deps`, naming the user
 service, hosts, tenants, the mailer and, when wanted, one of `Registration`,
