@@ -396,21 +396,38 @@ func (s Suite[W]) retry(rep reporter, op Op[W], w W) {
 // same World a module's own case uses, so "refused" means one thing here.
 func (s Suite[W]) refused(rep reporter, op Op[W], r Refusal[W], w W) {
 	rep.Helper()
-	row := op.Ready(rep.T(), w)
+	seeded := op.Ready(rep.T(), w)
+	row := seeded
 	if r.Provoke != nil {
 		row = r.Provoke(rep.T(), w, row)
 	}
 	name := s.refusalName(op, r)
+	// The tenant case owes one assertion more than the other three: the row has
+	// to still be there for the tenant that owns it. The operation's Snapshot
+	// cannot make it, because Provoke has just moved the world into another
+	// tenant's and the snapshot below reads through that world — either side of
+	// the refused call it renders the row absent, whichever way the refusal went,
+	// so "wrote nothing" here is written from the visitor's side of the refusal.
+	// The store is the one party that cannot be moved by a description, so the
+	// case asks it: the row this case seeded is watched from the moment the world
+	// starts moving until the refused call has answered.
+	watched := func() string { return "" }
+	if r.Kind == Elsewhere {
+		seeds := []uuid.UUID{seeded}
+		if row != seeded {
+			seeds = append(seeds, row)
+		}
+		watched = storeWitness.watch(seeds...)
+	}
 	world := s.world(rep, w)
 	snapshot := s.snapshot(rep.T(), op, w, row)
 	world.Refused(func(err error) bool { return r.Is(w, err) }, r.Class, snapshot, func() error {
 		return r.Call(w, row)
 	})
-	// The tenant case owes one assertion more than the other three: a refusal
-	// that took the row away with it would leave an unchanged snapshot of
-	// nothing, and the row has to still be there for the tenant that owns it.
-	if r.Kind == Elsewhere && op.Snapshot != nil && snapshot() == "" {
-		rep.Errorf("%s: after another tenant's refused call the row renders as nothing; it is still this tenant's row", name)
+	// Reported after the shared floor, so a case that was refused badly says that
+	// first and only then says what the refusal did to the row.
+	if lost := watched(); lost != "" {
+		rep.Errorf("%s: another tenant's refused call took the row away: %s. A refusal writes nothing, and the row has to still be there for the tenant that owns it", name, lost)
 	}
 }
 

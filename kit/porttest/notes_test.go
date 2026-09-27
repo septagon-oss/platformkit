@@ -70,6 +70,11 @@ type knobs struct {
 	// which is a stale row handed to the caller: the bug a suite that reads the
 	// store either side of a retry and never the answer cannot see.
 	answerMoves bool
+	// erases answers another tenant's call with the refusal it owes and takes the
+	// row away from the tenant that owns it, which is the defect the tenant case
+	// exists to catch and the one a snapshot taken through the moved world cannot
+	// show, because the visitor never saw the row to begin with.
+	erases bool
 }
 
 // notes is the fake service: this package's plumbing, one store, and the
@@ -105,6 +110,11 @@ func (s *notes) scope(ctx context.Context) context.Context {
 // say so. It answers the note as it now stands, which is what the caller of a
 // command reads and what the retry compares either side of the second call.
 func (s *notes) File(ctx context.Context, row uuid.UUID, expected int64) (note, error) {
+	var zero note
+	if s.knobs.erases && tenantOf(ctx) != s.first.ID {
+		s.rows.Delete(tenancy.WithTenant(context.Background(), s.first), row)
+		return zero, fmt.Errorf("%w: no such note", crud.ErrNotFound)
+	}
 	before, _ := s.rows.Get(s.scope(ctx), row)
 	if s.knobs.writeFirst {
 		if stored, err := s.rows.Get(s.scope(ctx), row); err == nil {

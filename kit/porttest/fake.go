@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -132,13 +133,81 @@ func (s *Store[T]) Find(ctx context.Context, match func(T) bool) (T, bool) {
 	return zero, false
 }
 
-// Delete removes a row from this tenant's store.
+// Delete removes a row from this tenant's store, and tells the witness when a
+// case was watching that row: a refused call that took the row away from the
+// tenant that owns it is what the tenant case exists to catch.
 func (s *Store[T]) Delete(ctx context.Context, id uuid.UUID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tenant := tenantOf(ctx)
 	delete(s.rows[tenant], id)
 	s.order[tenant] = slices.DeleteFunc(s.order[tenant], func(held uuid.UUID) bool { return held == id })
+	storeWitness.lost(id, tenant)
+}
+
+// rowWitness is the store's answer to the one question a tenant case cannot ask
+// its own description.
+//
+// Provoke's documented job is to move the world into the state the refusal
+// answers, and for the tenant case that state is another tenant's. A Snapshot
+// taken through that world renders the row absent whether the refusal left it
+// with its owner or destroyed it, so "a refused call wrote nothing" is written
+// from the visitor's side of the refusal and the row's owner is not asked. The
+// store is the one party in a fake the description cannot move: it holds the row
+// for the tenant that owns it, and it can say whether it still does.
+//
+// A row is watched by the id the case minted for it, for as long as one refused
+// call runs, and a loss is recorded only against a watched row. So the account
+// holds nothing between cases, and no case reads another's: the ids are uuids one
+// case made for itself. A world whose rows live where this Store cannot watch
+// them — a real transaction — is not covered by this; its tenant case reads the
+// row through the owner's own context, as this package's notes port does, or
+// declines the case with a reason that says so.
+type rowWitness struct {
+	mu       sync.Mutex
+	watching map[uuid.UUID]bool
+	gone     map[uuid.UUID][]string
+}
+
+// storeWitness is the one account, because it belongs to the stores and the
+// harness reads it between them; they never meet otherwise.
+var storeWitness rowWitness
+
+// watch starts one case watching rows and returns the reading that ends it: what
+// the stores lost of them in the meantime, in the store's own words, or "" when
+// it lost nothing of them.
+func (w *rowWitness) watch(rows ...uuid.UUID) func() string {
+	w.mu.Lock()
+	if w.watching == nil {
+		w.watching = map[uuid.UUID]bool{}
+		w.gone = map[uuid.UUID][]string{}
+	}
+	for _, row := range rows {
+		w.watching[row] = true
+	}
+	w.mu.Unlock()
+	return func() string {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		var out []string
+		for _, row := range rows {
+			out = append(out, w.gone[row]...)
+			delete(w.gone, row)
+			delete(w.watching, row)
+		}
+		return strings.Join(out, "; ")
+	}
+}
+
+// lost is a store reporting that one tenant no longer holds a row. A row nobody
+// is watching is the store's own business, which is what keeps the account empty.
+func (w *rowWitness) lost(row, tenant uuid.UUID) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.watching[row] {
+		return
+	}
+	w.gone[row] = append(w.gone[row], fmt.Sprintf("row %s is gone from tenant %s's store", row, tenant))
 }
 
 // Seed puts a row in the store the way a create route would: it gives the row an
