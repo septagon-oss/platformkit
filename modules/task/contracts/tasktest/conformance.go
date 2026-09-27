@@ -175,7 +175,12 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 // reason each is not asked. They are the same for all three commands; an
 // operation that owes nothing else more reads them through oweNothingBut.
 var notOwedHere = map[porttest.Kind]string{
-	porttest.Stale: "a task carries no revision; kit/crud's own PATCH owns that check",
+	porttest.Stale: "a task carries no revision field, and nothing below this port owns " +
+		"an optimistic-concurrency check to decline one: kit/crud.Update takes the columns " +
+		"to write and kit/crud.GetForUpdate takes a row lock; neither compares a revision. " +
+		"This package's TestTheStaleSkipReasonStillStatesWhatTheKernelHas watches both, so a " +
+		"kernel that grows the check reddens this sentence rather than leaving it standing. " +
+		"When it does, the case is the harness's to generate and the skip goes away",
 	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
 		"here to make the refused call from. The fake partitions its store by the tenant on the " +
 		"context and the real service runs under row-level security, which kit/db's " +
