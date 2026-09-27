@@ -63,6 +63,14 @@ verbatim and replaces the whole generated name, prefix included. That is what
 keeps an evidence link pointing at something when a hand-written case becomes a
 described one.
 
+One sentence means two things across the suites today, and a reader of an evidence
+link has to know it: `an unknown id is not found` is still one hand-written case in
+the suites this change did not convert (`filetest`, `usertest`), and in the three it
+did convert it is case 3, which the harness names per operation (`Assign: an unknown
+row is not found` …). Nothing in this repository can tell a requirement which of the
+two a client's index meant. Whichever way the unconverted suites go, one meaning has
+to win, and which one that is is not this package's call.
+
 ### Who answers "the row is still there"
 
 Case 6 asks something the operation's own `Snapshot` cannot. `Provoke` moves the
@@ -114,6 +122,17 @@ where the assertion lives — the success case asserts the events and no snapsho
 and is not asked it. A row `Ready` does not name is exempt: a per-tenant
 singleton's `Snapshot` has no row argument to read, which is why `sitetest` passes
 this check without satisfying it.
+
+**What the floor does not assert.** House rule 9 has three clauses; this harness
+asserts two. `Refusal.Call` answers the error alone — `func(w W, row uuid.UUID) error`
+— so what a refused call handed back to its caller reaches no comparison: "returns no
+stale row" is asserted of the store and of the events, and not of the answer. Every
+shipped port answers `nil` with the error (`sitetest.Save` answers no row at all), so
+no current fake is unasserted behind the gap. The channel would be `Op.Call`'s
+`(answer string, err error)` on the refusal side too, with the zero rendering demanded
+of a refusal; it is not, because review 6's pin assigns a `func(W, uuid.UUID) error` to
+that field and the harness takes a reviewer's file unchanged. The gap is named here so
+a reader of `World.Refused` does not mistake the sentence for the assertion.
 
 ## What a description cannot express
 
@@ -209,8 +228,9 @@ it, and the fake's plumbing — `Store`, `Seed`, `Clock`, `Grants`, `Recorder`,
 `Do` — because the repository had no kernel clock, store or recorder to compose:
 every fake had grown its own map and its own event slice.
 
-**Made reusable**: the floor itself. "A refused mutation writes nothing, emits
-nothing and returns no stale row" was a discipline each suite kept by hand, in
-its own words, at whichever commands its author remembered; it is now
-`World.Refused` and four generated cases that every port either answers or
-declines in writing.
+**Made reusable**: the floor itself. "A refused mutation writes nothing and
+emits nothing" was a discipline each suite kept by hand, in its own words, at
+whichever commands its author remembered; it is now `World.Refused` and four
+generated cases that every port either answers or declines in writing. The rule's
+third clause, "a refusal returns no stale row", is left out of that sentence
+because `World.Refused` does not assert it — see "What the floor does not assert".
