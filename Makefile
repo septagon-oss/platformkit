@@ -51,9 +51,16 @@ help: ## List the targets
 # and `image` are left to stamp theirs. This goal keeps no binary — the linker
 # writes to /dev/null — so the stamp it would compute is a field nothing reads, and
 # computing it would make whether this repository compiles depend on whether git can
-# answer for the directory the source sits in. Nothing in this file assigns GOFLAGS,
-# so a checkout no git answers for — an unpacked archive, say — passes
-# GOFLAGS=-buildvcs=false itself, for the four goals that do keep a binary.
+# answer for the directory the source sits in. Nothing in this file assigns GOFLAGS.
+# A source tree outside every repository — an unpacked archive — needs no flag for
+# that reason either: with no repository above it there is nothing for Go to ask, and
+# it stamps nothing. The tree that needs the flag is one with no repository of its
+# own sitting under a directory whose `.git` git refuses to read — a home directory
+# holding an unreadable `.git`, say. Stamping then asks about that parent instead,
+# and the build dies with `error obtaining VCS status: exit status 128`. GOFLAGS
+# reaches a goal's `go` subprocess from the caller, so such a tree builds with the
+# flag its caller passes: `GOFLAGS=-buildvcs=false make run`. Only the four goals
+# above keep a binary, so only they can be without a revision.
 build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -buildvcs=false -o /dev/null ./...
 
