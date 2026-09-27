@@ -126,6 +126,23 @@ nothing records whether a departed grant was the seeder's or a hand's, so every 
 grant there is taken — each dead either way, and beside a wildcard that still grants the
 rest.
 
+**One published signature moved, and that is this change's cost.** `auth.SeedRoles` is
+exported from a published package, and its fourth parameter changed type: the
+hand-written `[]string` of operator permissions is now `[]tenancy.Grant`, the catalogue
+of what the composition declares. Nothing a caller can write repairs the old shape,
+because the old shape is the defect; a caller asks its own composition with
+`kit/module.Grants`, the call the kernel's own manifest check already made. Measured
+with the comparison the release process asks for (`python3 scripts/check_public_api.py
+v1.1.0 HEAD`): 19 reported incompatibilities at this tip against 18 at `origin/main`,
+the added line this signature.
+[RELEASE.md](RELEASE.md#choose-the-compatible-release-line) measures a break against
+v1.1.0 with no accepted-break baseline, and
+[scripts/PUBLIC-API.md](scripts/PUBLIC-API.md) keeps that comparison out of `make check`
+and in a scheduled workflow; the `usertest.NewFake` entry below names the same
+constraint and the `/v2` migration it owes. The reference composition, this repository's
+tests and the repair command are on the new shape; the products repository, whose
+`registry.go` passes the literal, is the caller left to move.
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was
