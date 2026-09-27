@@ -13,7 +13,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
-	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -42,56 +41,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedIn, contracts.EventLoginFailed}},
-	}, httpx.Public(), func(ctx context.Context, in *loginInput) (*sessionOutput, error) {
-		// The verdict first, the sleep second, the transaction third, and that
-		// order is the whole point of this being three statements.
-		//
-		// An account under a distributed attack earns a two-second pause
-		// (contracts.SoftDelay). Taken inside the request's transaction — which
-		// is where it used to be — those two seconds are two seconds holding
-		// one of sixteen pool connections: twenty-four delayed logins from one
-		// address held sixteen of a replica's seventeen, a legitimate request
-		// waited twenty-nine seconds, and the background jobs starved. The
-		// limiter is memory, so nothing has to be open to ask it, and a request
-		// that is asleep holds a goroutine and nothing else.
-		r, _ := httpx.RequestFrom(ctx)
-		// The kernel's cross-site check does not cover this route, and that is
-		// correct in general and wrong here. It guards a request that carries a
-		// session cookie, because a cookie is a credential the browser attached
-		// on the caller's behalf; a sign-in carries none, so nothing was
-		// attached. But a sign-in mints a credential rather than spending one:
-		// another site can post a form here with its own account's password and
-		// leave the visitor signed in as somebody else, and then read whatever
-		// the visitor does next — a document they upload, an address they
-		// enter. So this route asks the same question the middleware asks.
-		//
-		// The session cookie's SameSite=Lax is the layer underneath: a cookie
-		// this response sets is stored, and the browser will not send it back on
-		// a cross-site subrequest, so a page that forced a sign-in cannot then
-		// act as that session from its own origin. What Lax does not stop is the
-		// visitor's own next top-level navigation to this site, which is exactly
-		// the attack — hence the check here rather than the cookie alone.
-		if !httpx.SameSite(r) {
-			return nil, problem.New(http.StatusForbidden,
-				"this sign-in came from another site; sign in from the page itself")
-		}
-		from := ClientOf(r)
-		if svc.Precheck(ctx, in.Body.Email, from.IP) == contracts.Delay {
-			pause(ctx, contracts.SoftDelay)
-		}
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		session, identity, err := svc.Login(ctx, tx, in.Body.Email, in.Body.Password, from)
-		if err != nil {
-			return nil, refusal(err)
-		}
-		return &sessionOutput{
-			SetCookie: cookies.Session(session.ID, session.ExpiresAt),
-			Body:      identity,
-		}, nil
-	})
+	}, httpx.Public(), handleLogin(svc, cookies))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-logout",
@@ -102,20 +52,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedOut}},
-	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*clearOutput, error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if id, ok := sessionOf(ctx); ok {
-			if err := svc.Logout(ctx, tx, id); err != nil {
-				return nil, rest.Fault(err)
-			}
-		}
-		out := &clearOutput{SetCookie: cookies.Clear()}
-		out.Body.SignedOut = true
-		return out, nil
-	})
+	}, httpx.SignedIn(), handleLogout(svc, cookies))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-me",
@@ -125,24 +62,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Description: "The caller's identity and the permissions their roles grant in this tenant.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusServiceUnavailable},
-	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*identityOutput, error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		id, ok := sessionOf(ctx)
-		if !ok {
-			// SignedIn was satisfied, so somebody is here; they arrived with
-			// something other than a session cookie, which nothing issues yet.
-			return nil, problem.New(http.StatusForbidden, "this operation answers for a cookie session")
-		}
-		r, _ := httpx.RequestFrom(ctx)
-		identity, err := svc.Identify(ctx, tx, id, ClientOf(r))
-		if err != nil {
-			return nil, rest.Fault(err)
-		}
-		return &identityOutput{Body: identity}, nil
-	})
+	}, httpx.SignedIn(), handleIdentity(svc))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-password-change",
@@ -153,24 +73,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{usercontracts.EventPasswordSet}},
-	}, httpx.SignedIn(), func(ctx context.Context, in *changeInput) (*doneOutput, error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		p, ok := tenancy.PrincipalFrom(ctx)
-		if !ok || p.UserID == uuid.Nil {
-			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
-		}
-		// The session to keep is the caller's own, read off the cookie the
-		// kernel already recognised. A caller who arrived some other way keeps
-		// nothing, which is the safe direction.
-		keep, _ := sessionOf(ctx)
-		if err := svc.ChangePassword(ctx, tx, p.UserID, keep, in.Body.Current, in.Body.New); err != nil {
-			return nil, refusal(err)
-		}
-		return done(), nil
-	})
+	}, httpx.SignedIn(), handleChangePassword(svc))
 
 	httpx.Register(public, huma.Operation{
 		OperationID: "auth-password-forgot",
@@ -183,27 +86,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventResetRequested,
 		}},
-	}, httpx.Public(), func(ctx context.Context, in *forgotInput) (*doneOutput, error) {
-		// The cap is on the address making the request and is checked before
-		// the transaction, for the reason the login delay is: a public route
-		// that costs a mail needs a limit, and twenty-three requests were
-		// twenty-three mails to somebody who asked for none. It cannot be a
-		// limit on the address asked about — that would be the oracle this
-		// route exists not to be.
-		r, _ := httpx.RequestFrom(ctx)
-		if !svc.MayAsk(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests,
-				"too many reset requests from this address; wait and try again")
-		}
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := svc.Forget(ctx, tx, in.Body.Email); err != nil {
-			return nil, rest.Fault(err)
-		}
-		return done(), nil
-	})
+	}, httpx.Public(), handleForgotPassword(svc))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-password-reset",
@@ -217,30 +100,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
 		}},
-	}, httpx.Public(), func(ctx context.Context, in *resetInput) (*clearOutput, error) {
-		// Asking for a link is capped and so is spending one, before the
-		// transaction and for the same reason: a public route that a stranger
-		// can call in a loop needs a limit whether or not the thing it checks is
-		// hard to guess.
-		r, _ := httpx.RequestFrom(ctx)
-		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests,
-				"too many reset attempts from this address; wait and try again")
-		}
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := svc.Reset(ctx, tx, in.Body.Token, in.Body.New); err != nil {
-			return nil, refusal(err)
-		}
-		// The cookie goes too. Every session ended, so one left in the browser
-		// is a credential that names nothing, and clearing it is what makes the
-		// next page load a sign-in rather than a silent 403.
-		out := &clearOutput{SetCookie: cookies.Clear()}
-		out.Body.SignedOut = true
-		return out, nil
-	})
+	}, httpx.Public(), handleResetPassword(svc, cookies))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-role-list",
@@ -250,19 +110,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Description: "What every role name grants here, which is what everybody holding one may do.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusServiceUnavailable},
-	}, httpx.Permission(contracts.PermissionRoleManage), func(ctx context.Context, _ *struct{}) (*rolesOutput, error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		roles, err := svc.Roles(ctx, tx)
-		if err != nil {
-			return nil, rest.Fault(err)
-		}
-		out := &rolesOutput{}
-		out.Body.Items, out.Body.Total = roles, len(roles)
-		return out, nil
-	})
+	}, httpx.Permission(contracts.PermissionRoleManage), handleListRoles(svc))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-role-set",
@@ -273,18 +121,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRoleSet}},
-	}, httpx.Permission(contracts.PermissionRoleManage), func(ctx context.Context, in *roleInput) (*roleOutput, error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		// The catalogue comes from the kernel, which read it off every
-		// manifest before any route was registered. Asking each module would
-		// make this one know its neighbours; asking the kernel makes it know
-		// only that there is a list. See httpx.API.Declare.
-		role, err := svc.SetRole(ctx, tx, in.Name, in.Body.Permissions, surfaces.Permissions())
-		return &roleOutput{Body: role}, rest.Fault(err)
-	})
+	}, httpx.Permission(contracts.PermissionRoleManage), handleSetRole(svc, surfaces))
 }
 
 // sessionOf is the session id the caller presented, read back off the request

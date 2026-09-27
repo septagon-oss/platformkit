@@ -141,8 +141,11 @@ if [ -z "$max" ]; then
 fi
 
 # go list failing must fail the gate, so it runs on its own line; only grep,
-# which exits 1 on no match, is allowed to fail.
-deps="$(cd "$root" && go list -deps ./apps/platformkit)"
+# which exits 1 on no match, is allowed to fail. The answer is a list of import
+# paths, so the commit the app would be stamped from is no part of it — and asking
+# for one makes this gate depend on the history of a directory above the checkout,
+# which is why check_public_api.py and check_public_module.py pass the same flag.
+deps="$(cd "$root" && go list -buildvcs=false -deps ./apps/platformkit)"
 count="$(printf '%s\n' "$deps" | grep -c '^github.com/septagon-oss/platformkit/' || true)"
 
 echo "packages $count / $max"

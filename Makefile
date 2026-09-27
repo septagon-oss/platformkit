@@ -3,9 +3,17 @@
 
 .DEFAULT_GOAL := help
 
-# Select the same compiler and tools even when PATH contains a newer Go release.
-# Child scripts and their Go subprocesses inherit this exact module version.
-export GOTOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
+# Select the same compiler and tools even when PATH contains a different Go
+# release. Child scripts and their Go subprocesses inherit this exact version.
+# It is go.mod's `toolchain` line rather than its `go` line: `go` is the floor a
+# consumer of this module has to clear, `toolchain` is the version this repository
+# is built and gated with, and it is the line the go command and actions/setup-go
+# (go-version-file) already read as that. They differ because a gate needs a
+# compiler that can identify the checkout it is building, and the `.git` of a git
+# worktree is a file — one go1.27 reads (go.dev/issue/58218) and go1.26 walks past,
+# asking git about the first parent directory with a .git of its own instead, which
+# stamps another repository's revision into the binary or fails the build outright.
+export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
 .PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
@@ -38,8 +46,23 @@ TEST_OPTIONS ?=
 help: ## List the targets
 	@grep -hE '^[a-z][a-z0-9-]*:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t 18
 
+# The commit Go stamps into a binary is read: it is what the admin shell's footer
+# renders (modules/admin/internal/mount.go's version()), so `run`, `e2e`, `rehearse`
+# and `image` are left to stamp theirs. This goal keeps no binary — the linker
+# writes to /dev/null — so the stamp it would compute is a field nothing reads, and
+# computing it would make whether this repository compiles depend on whether git can
+# answer for the directory the source sits in. Nothing in this file assigns GOFLAGS.
+# A source tree outside every repository — an unpacked archive — needs no flag for
+# that reason either: with no repository above it there is nothing for Go to ask, and
+# it stamps nothing. The tree that needs the flag is one with no repository of its
+# own sitting under a directory whose `.git` git refuses to read — a home directory
+# holding an unreadable `.git`, say. Stamping then asks about that parent instead,
+# and the build dies with `error obtaining VCS status: exit status 128`. GOFLAGS
+# reaches a goal's `go` subprocess from the caller, so such a tree builds with the
+# flag its caller passes: `GOFLAGS=-buildvcs=false make run`. Only the four goals
+# above keep a binary, so only they can be without a revision.
 build: ## Compile every package (a check; `make image` builds the artifact)
-	go build -o /dev/null ./...
+	go build -buildvcs=false -o /dev/null ./...
 
 test: ## Test selected packages, reusing successful results when inputs match
 	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- $(TEST_FLAGS)

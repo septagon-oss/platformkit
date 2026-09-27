@@ -44,8 +44,8 @@ const (
 // anything a body smuggled in does not.
 //
 // style-src carries 'unsafe-inline', and it is the one concession: ui/components
-// emits style attributes for a table column's width and for an element that is
-// hidden (ui/components/molecules.go), and a nonce cannot cover a style
+// emits style attributes for a table column's width (table.go) and for an element
+// that is hidden (modal.go), and a nonce cannot cover a style
 // attribute — CSP nonces apply to elements, and 'unsafe-hashes' would mean
 // listing every width anybody ever writes. The exposure is CSS, not script.
 //

@@ -904,7 +904,7 @@ func TestInvalidateHostForgetsTheResolution(t *testing.T) {
 //
 // The counter is the other half: it is not enough that the answer is 403, the
 // question must never have been asked. Deleting the four lines at the refusal
-// in middleware.go turns both halves red.
+// in authorize.go turns both halves red.
 func TestAnOperatorRouteIsRefusedBeforeTheAuthorizer(t *testing.T) {
 	api, router, f := setup(t)
 	httpx.Register(api.Surfaces(probe).App, huma.Operation{

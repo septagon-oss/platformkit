@@ -11,7 +11,7 @@ package httpx_test
 // and at the installation's host a tenant that is not the installation's is refused the
 // same way, before the Authorizer is consulted". CHANGELOG.md repeats it ("the same
 // status, the same body and the same headers every other refusal of that host carries …
-// including to a tenant that is not the installation's"), and middleware.go's notHere —
+// including to a tenant that is not the installation's"), and authorize.go's notHere —
 // the guard the second half names — states it most precisely: "the same verdict, the same
 // sentence and the same writer as the address nobody mounted … This is what makes the
 // answer byte-identical to the one a never-mounted address gets, Fault page included".

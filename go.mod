@@ -2,6 +2,8 @@ module github.com/septagon-oss/platformkit
 
 go 1.26.6
 
+toolchain go1.27.1
+
 require (
 	github.com/aserto-dev/go-authorizer v0.24.1
 	github.com/coreos/go-oidc/v3 v3.21.0
