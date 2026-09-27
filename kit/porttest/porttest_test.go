@@ -166,6 +166,21 @@ func TestRunFailsEveryCaseWhoseSnapshotCannotSeeTheRow(t *testing.T) {
 		"File: "+string(Stale), "File: "+string(Elsewhere), "a sealed note is not filed twice")
 }
 
+// TestRowBlindSuccessFailsWhenTheSnapshotCannotMove pays for the exemption the row
+// witness grants a per-tenant singleton. A row Ready does not name is not asked of
+// the Snapshot, because there is no row argument for it to read, and the one question
+// a rendering with no row argument can still answer is asked of the success case
+// instead: did it move across a call the description records as a write. A description
+// that renders a constant is refused there, because every "writes nothing" comparison
+// that rendering feeds is then one nothing can move. Delete the check in success and
+// this case reports green a port whose Snapshot renders one fixed string, which is a
+// singleton port with no assertion left in it.
+func TestRowBlindSuccessFailsWhenTheSnapshotCannotMove(t *testing.T) {
+	suite := rowBlindSuite(knobs{})
+	suite.Ops[0].Snapshot = func(*testing.T, world, uuid.UUID) string { return "nothing stored" }
+	watch(t, suite).mustFail(t, rowBlindSuccess, `compares two renderings nothing can move`)
+}
+
 // The floor: what Run refuses to run at all, before any case.
 
 func TestRunRefusesAMutatingOpWithNoUnknownCaseAndNoReason(t *testing.T) {
