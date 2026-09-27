@@ -102,7 +102,68 @@ func TestTenantCaseFailsWhenTheRefusalTookTheRowAwayFromItsOwner(t *testing.T) {
 	const name = "File: " + string(Elsewhere)
 	log := watch(t, suite)
 	log.mustFail(t, name, "still be there for the tenant that owns it")
+	// The snapshot above reads through the visitor's context, which makes it blind
+	// to the note in every case and not only this one, so the harness now says so
+	// wherever a "writes nothing" assertion rests on it. The witness's own message
+	// above stays the tenant case's alone: it is the only case that asks the store.
+	for _, blind := range []string{
+		"File: " + string(Retry), "File: " + string(Unknown), "File: " + string(Denied),
+		"File: " + string(Stale), "a sealed note is not filed twice",
+	} {
+		log.mustFail(t, blind, "render the row the case names")
+	}
+	log.mustPassApartFrom(t, name, "File: "+string(Retry), "File: "+string(Unknown),
+		"File: "+string(Denied), "File: "+string(Stale), "a sealed note is not filed twice")
+}
+
+// TestTenantCaseFailsWhenTheRowWasTakenAwayDuringProvoke pins the window the
+// tenant case watches: from the moment the row is seeded, and not from the moment
+// the refused call is about to run. Provoke's documented job is to move the world,
+// and moving a world runs the implementation — so a row taken away there is the
+// same defect with the refused call left out, and a watch that started after it
+// would report the case green because the refusal still answers correctly.
+func TestTenantCaseFailsWhenTheRowWasTakenAwayDuringProvoke(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Own = nil
+	for i, r := range suite.Ops[0].Refusals {
+		if r.Kind == Elsewhere {
+			r.Provoke = func(t *testing.T, w world, row uuid.UUID) uuid.UUID {
+				t.Helper()
+				w.service.rows.Delete(w.ctx, row) // the setup runs, as Provoke may
+				return row
+			}
+			suite.Ops[0].Refusals[i] = r
+		}
+	}
+	const name = "File: " + string(Elsewhere)
+	log := watch(t, suite)
+	log.mustFail(t, name, "still be there for the tenant that owns it")
 	log.mustPassApartFrom(t, name)
+}
+
+// TestRunFailsEveryCaseWhoseSnapshotCannotSeeTheRow is the same hole as the one
+// 32aee9b closed, one field over. An answer that rendered nothing made the retry
+// compare two empty strings; a Snapshot that cannot tell the seeded row from a row
+// nobody seeded makes "writes nothing" compare two renderings nothing can move,
+// in the retry and in every refusal at once, and the fake under it is not even
+// wrong. The success case is silent below on purpose: it asserts the events and no
+// snapshot, so nothing about this rendering is owed there.
+func TestRunFailsEveryCaseWhoseSnapshotCannotSeeTheRow(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Own = nil
+	suite.Ops[0].Snapshot = func(*testing.T, world, uuid.UUID) string { return "no such note" }
+	log := watch(t, suite)
+	for _, blind := range []string{
+		"File: " + string(Retry), "File: " + string(Unknown), "File: " + string(Denied),
+		"File: " + string(Stale), "File: " + string(Elsewhere), "a sealed note is not filed twice",
+	} {
+		log.mustFail(t, blind, "render the row the case names")
+	}
+	if said := log.failures("File: " + string(Success)); len(said) > 0 {
+		t.Errorf("%q failed: %v; the success asserts what the call published, and no snapshot", "File: "+string(Success), said)
+	}
+	log.mustPassApartFrom(t, "File: "+string(Retry), "File: "+string(Unknown), "File: "+string(Denied),
+		"File: "+string(Stale), "File: "+string(Elsewhere), "a sealed note is not filed twice")
 }
 
 // The floor: what Run refuses to run at all, before any case.
@@ -153,6 +214,17 @@ func TestRunRefusesAMutatingOpWithNoSnapshot(t *testing.T) {
 	suite := noteSuite(knobs{})
 	suite.Ops[0].Snapshot = nil
 	watch(t, suite).mustRefuseTheSuite(t, "is unassertable without one")
+}
+
+// TestRunRefusesARefusalThatNamesAClassTheSuiteCannotClassify closes the same hole
+// in the class: World.Refused asks it through Suite.Classify, so a suite that names
+// a class on its refusals and then classifies nothing skipped the assertion in
+// silence and stayed green — the harness had a rule for a refusal with no Is and
+// none for the one party that could answer what class an error is in.
+func TestRunRefusesARefusalThatNamesAClassTheSuiteCannotClassify(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Classify = nil
+	watch(t, suite).mustRefuseTheSuite(t, "names the class correctable and the suite classifies nothing")
 }
 
 func TestRunRefusesARefusalWithNoIs(t *testing.T) {

@@ -55,7 +55,9 @@ type Suite[W any] struct {
 
 	// Classify is the module's own reading of one of its refusals. A port whose
 	// refusals carry no classification returns Unclassified for every error and
-	// the generated cases assert Refusal.Is alone.
+	// the generated cases assert Refusal.Is alone. A suite whose refusals do name
+	// a class has to supply it: Run refuses one that does not, because the class
+	// would then be asserted by nobody and skipped by the case in silence.
 	Classify func(error) Class
 
 	// Ops is the port's operations, in the order a reader of the port meets them.
@@ -110,7 +112,9 @@ type Op[W any] struct {
 	// two snapshots of one world compare with ==. It is the module's answer to
 	// "a refused mutation writes nothing": the harness reads it either side of
 	// every refused call and either side of a retry. A read may leave it nil, and
-	// then its refusals assert silence alone.
+	// then its refusals assert silence alone. Every case that reads it asks it
+	// first whether it can tell the row it acts on from a row nobody seeded, since
+	// a rendering that cannot would make the comparison one nothing can move.
 	Snapshot func(t *testing.T, w W, row uuid.UUID) string
 
 	// Publishes is the event names one successful Call must publish, in order. An
@@ -365,6 +369,7 @@ func (s Suite[W]) success(rep reporter, op Op[W], w W) {
 func (s Suite[W]) retry(rep reporter, op Op[W], w W) {
 	rep.Helper()
 	row := op.Ready(rep.T(), w)
+	s.snapshotSeesTheRow(rep, op, w, row)
 	first, err := op.Call(w, row)
 	if err != nil {
 		rep.Errorf("%s: the first call: %v", op.Name, err)
@@ -397,9 +402,20 @@ func (s Suite[W]) retry(rep reporter, op Op[W], w W) {
 func (s Suite[W]) refused(rep reporter, op Op[W], r Refusal[W], w W) {
 	rep.Helper()
 	seeded := op.Ready(rep.T(), w)
+	s.snapshotSeesTheRow(rep, op, w, seeded)
+	// The tenant case watches the row from the moment it is seeded — before
+	// Provoke moves the world, which is a step that may run the implementation —
+	// until the refused call has answered.
+	var watched []func() string
+	if r.Kind == Elsewhere {
+		watched = append(watched, storeWitness.watch(seeded))
+	}
 	row := seeded
 	if r.Provoke != nil {
 		row = r.Provoke(rep.T(), w, row)
+		if r.Kind == Elsewhere && row != seeded {
+			watched = append(watched, storeWitness.watch(row))
+		}
 	}
 	name := s.refusalName(op, r)
 	// The tenant case owes one assertion more than the other three: the row has
@@ -409,16 +425,7 @@ func (s Suite[W]) refused(rep reporter, op Op[W], r Refusal[W], w W) {
 	// the refused call it renders the row absent, whichever way the refusal went,
 	// so "wrote nothing" here is written from the visitor's side of the refusal.
 	// The store is the one party that cannot be moved by a description, so the
-	// case asks it: the row this case seeded is watched from the moment the world
-	// starts moving until the refused call has answered.
-	watched := func() string { return "" }
-	if r.Kind == Elsewhere {
-		seeds := []uuid.UUID{seeded}
-		if row != seeded {
-			seeds = append(seeds, row)
-		}
-		watched = storeWitness.watch(seeds...)
-	}
+	// case asks it whether the row is still there.
 	world := s.world(rep, w)
 	snapshot := s.snapshot(rep.T(), op, w, row)
 	world.Refused(func(err error) bool { return r.Is(w, err) }, r.Class, snapshot, func() error {
@@ -426,8 +433,38 @@ func (s Suite[W]) refused(rep reporter, op Op[W], r Refusal[W], w W) {
 	})
 	// Reported after the shared floor, so a case that was refused badly says that
 	// first and only then says what the refusal did to the row.
-	if lost := watched(); lost != "" {
-		rep.Errorf("%s: another tenant's refused call took the row away: %s. A refusal writes nothing, and the row has to still be there for the tenant that owns it", name, lost)
+	for _, stop := range watched {
+		if lost := stop(); lost != "" {
+			rep.Errorf("%s: another tenant's refused call took the row away: %s. A refusal writes nothing, and the row has to still be there for the tenant that owns it", name, lost)
+		}
+	}
+}
+
+// snapshotSeesTheRow is the harness asking the description's Snapshot whether it
+// can tell the row this case seeded from a row nobody ever seeded. Every "writes
+// nothing" assertion in the retry and in every refusal compares two renderings of
+// that one function, so a Snapshot that renders the same string for both makes
+// them assertions about nothing: a fake can lose the row, the whole port can lose
+// the row, and the suite stays green behind it. This is the hole 32aee9b closed
+// for an answer that rendered nothing — the empty Call made the retry compare two
+// empty strings — in the field that actually carries the assertion, and it is said
+// on every case whose assertion rests on the rendering.
+//
+// A row Ready does not name has no identity for a Snapshot to look at — a
+// per-tenant singleton's snapshot has no row argument to read — and is not asked.
+// The check is sensitive to the row argument by design: a Snapshot that renders
+// the whole world rather than the row would be refused here too, and the
+// correction it is told is to render the row, because a rendering that cannot
+// name one row cannot show that a refused call left it alone.
+func (s Suite[W]) snapshotSeesTheRow(rep reporter, op Op[W], w W, row uuid.UUID) {
+	rep.Helper()
+	if op.Snapshot == nil || row == uuid.Nil {
+		return
+	}
+	seen := op.Snapshot(rep.T(), w, row)
+	if anon := op.Snapshot(rep.T(), w, uuid.New()); anon == seen {
+		rep.Errorf("%s: the Snapshot renders %q both for the row this case seeded and for a row nobody seeded, so "+
+			"\"writes nothing\" compares two renderings nothing can move; render the row the case names", op.Name, seen)
 	}
 }
 
@@ -480,7 +517,7 @@ func (s Suite[W]) problems() []string {
 			say("%s: two operations named %q (%s)", s.Port, op.Name, was)
 		}
 		seen[op.Name] = "operation"
-		out = append(out, op.problems(s.Port)...)
+		out = append(out, op.problems(s.Port, s.Classify != nil)...)
 	}
 	for _, c := range s.Own {
 		switch {
@@ -507,8 +544,10 @@ func (s Suite[W]) problems() []string {
 }
 
 // problems is one operation's share: the floor it owes, the fields a case reads,
-// and the skips it claims.
-func (op Op[W]) problems(port string) []string {
+// and the skips it claims. classifies says whether the suite can answer what
+// class one of these refusals is in, which is the half of a named class a case
+// cannot assert on its own.
+func (op Op[W]) problems(port string, classifies bool) []string {
 	var out []string
 	say := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
 	if op.Ready == nil {
@@ -540,6 +579,10 @@ func (op Op[W]) problems(port string) []string {
 		}
 		if r.Is == nil {
 			say("%s %s: the refusal %q has no Is, and what counts as that refusal is the port's own answer", port, op.Name, r.Name)
+		}
+		if r.Class != Unclassified && !classifies {
+			say("%s %s: the refusal %q names the class %s and the suite classifies nothing, so no case would ever ask "+
+				"whether the error is in it; give the suite a Classify or leave the class out", port, op.Name, r.Name, r.Class)
 		}
 		if reason, skipped := op.Skip[r.Kind]; skipped && r.Kind != Named {
 			say("%s %s: %q is described and skipped (%q); one of the two is wrong", port, op.Name, string(r.Kind), reason)
