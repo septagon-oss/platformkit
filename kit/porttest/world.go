@@ -1,6 +1,9 @@
 package porttest
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // World is what the harness's assertions need of a world, so a module's own
 // hand-written case gets the floor a generated case gets. Suite.Assert builds
@@ -19,7 +22,7 @@ type World[W any] struct {
 // Refused runs a step that must be refused, and asserts the three things a refusal
 // owes that this harness has a channel for: the error is the refusal this case names
 // (and, when the case names a class, that the error is in it), the snapshot did not
-// move, and nothing was published. House rule 9's first two clauses as one
+// move, and the event list is the one the call found, event for event (saidNothing). House rule 9's first two clauses as one
 // assertion, so no suite has to remember them.
 //
 // The rule's third clause — a refusal returns no stale row — is not one of them, and
@@ -34,7 +37,7 @@ type World[W any] struct {
 func (w World[W]) Refused(is func(error) bool, class Class, snapshot func() string, step func() error) {
 	rep := w.report()
 	rep.Helper()
-	before, said := snapshot(), len(w.Events(w.Fixture))
+	before, said := snapshot(), slices.Clone(w.Events(w.Fixture))
 	err := step()
 	switch {
 	case err == nil:
@@ -49,8 +52,29 @@ func (w World[W]) Refused(is func(error) bool, class Class, snapshot func() stri
 	if after := snapshot(); after != before {
 		rep.Errorf("a refused call wrote: %s became %s", before, after)
 	}
-	if now := w.Events(w.Fixture); len(now) != said {
-		rep.Errorf("a refused call published %v; a refusal is not news", now[said:])
+	w.saidNothing(rep, "a refused call", said, "a refusal is not news")
+}
+
+// saidNothing is house rule 9's second clause as one comparison, for the two cases
+// that owe it — a refused call and the retry of a command that already ran — where
+// it used to be spelled twice as a length check of their own. A length is not the
+// claim: an outbox row rewritten rather than appended to leaves the list the same
+// length and says something the caller never published, and a list that went down
+// is a contradiction in words, not a slice index to walk past. The success case has
+// always compared the events by content, in published; the two silences read the
+// same list the same way now, so there is one place left to delete the clause from
+// and one test file that watches it.
+//
+// was is the list as the step found it, and tail why this step owed its silence, so
+// each failure says which rule it broke.
+func (w World[W]) saidNothing(rep reporter, what string, was []string, tail string) {
+	rep.Helper()
+	now := w.Events(w.Fixture)
+	switch {
+	case len(now) > len(was):
+		rep.Errorf("%s published %v; %s", what, now[len(was):], tail)
+	case !slices.Equal(now, was):
+		rep.Errorf("%s left %v where it found %v, and a step that says nothing rewrites no event: %s", what, now, was, tail)
 	}
 }
 
@@ -60,11 +84,9 @@ func (w World[W]) Refused(is func(error) bool, class Class, snapshot func() stri
 func (w World[W]) Silent(what string, step func()) {
 	rep := w.report()
 	rep.Helper()
-	before := len(w.Events(w.Fixture))
+	before := slices.Clone(w.Events(w.Fixture))
 	step()
-	if after := w.Events(w.Fixture); len(after) != before {
-		rep.Errorf("%s published %v; repeating a command changes nothing, so it says nothing", what, after[before:])
-	}
+	w.saidNothing(rep, what, before, "repeating a command changes nothing, so it says nothing")
 }
 
 // Unchanged runs a step and asserts the snapshot either side of it is the same
