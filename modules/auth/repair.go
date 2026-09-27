@@ -12,8 +12,12 @@ import (
 // RepairSeededRoles is the door for an installation seeded before a grant was
 // only ever as wide as the composition: it reports, per role, every grant this
 // module's seeder wrote that no composed module declares any more, and takes
-// them away when remove is true. What it returns is what it found, role name to
-// permissions, whether or not it removed anything.
+// them away when remove is true. What it returns is what the caller may say it
+// did: with remove false, what it found, role name to permissions; with remove
+// true, only the grants this run actually wrote away. A run that read a dead
+// grant and found the row already cleaned when it got the tenant's lock — the
+// same command in another terminal, or a retry of one still walking nine hundred
+// tenants — wrote no row and publishes no event, and reports nothing.
 //
 // It is a command an operator runs and never a silent edit, which is why the
 // two halves are one call with a flag rather than a repair that happens on the
