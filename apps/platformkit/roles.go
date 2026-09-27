@@ -51,6 +51,10 @@ import (
 // sentence says nothing about its rows: a grant left there is inert and the
 // sweep is quiet about it for the same reason, so the all-clear is not the place
 // to start listing suspended tenants, and it is not a place to call them clean.
+// It names the run as well, and for the same reason: a role holding a dead grant
+// of the seeder's beside one of somebody else's is declined whole — the write
+// would take both, and the second is not this command's — so the run that finds
+// nothing it can write is not a run that proved there is nothing anywhere.
 func repairRoles(args []string) error {
 	fs := flag.NewFlagSet("repair-roles", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
@@ -109,7 +113,7 @@ func repairRoles(args []string) error {
 		return err
 	}
 	if found == 0 {
-		fmt.Println("no active tenant holds a grant its own seeder wrote that no composed module defines")
+		fmt.Println("nothing for this run to take from any active tenant; the hourly sweep reports what is left")
 	}
 	return nil
 }
