@@ -144,10 +144,12 @@ var notOwedHere = map[porttest.Kind]string{
 		"kit/rest's routes and modules/site's own mount test, and that is where the grant is checked",
 	porttest.Stale: "the settings carry no revision; a save that changes nothing is silent instead, " +
 		"which is the retry above",
-	porttest.Elsewhere: "the world is one tenant's transaction and the fake stands in for one " +
-		"tenant, so there is no second tenant here to make the refused call from. The real service " +
-		"runs under row-level security, which kit/db's TestTenantIsolationIsEnforcedByPostgres and " +
-		"kit/crud's TestAnotherTenantReachesNothing prove against the schema",
+	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
+		"here to make the refused call from. The fake keeps one settings row per tenant, the way " +
+		"row-level security gives the real service one, which this package's own " +
+		"TestTheFakeKeepsEachTenantOnItsOwnRow pins, and the real service runs under row-level " +
+		"security, which kit/db's TestTenantIsolationIsEnforcedByPostgres and kit/crud's " +
+		"TestAnotherTenantReachesNothing prove against the schema",
 }
 
 // refuses is one invalid save: the settings a caller submitted, and the state
