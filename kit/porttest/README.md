@@ -172,6 +172,18 @@ proves that the case bites. `Run` reports through a narrow internal
 reporter so that a test can watch a generated case fail without failing the test
 that is watching it.
 
+## The mutation proofs run their suite twice
+
+Three modules' pins run their `RunService` a second time through
+`testing.RunTests`, inside a test of the same binary, to ask whether a mutant is
+refused. The nested runner writes the framing lines a test runner writes —
+`=== RUN`, `--- FAIL` — and cmd/go cannot tell the two runners apart, so a mutant
+the suite refused arrives as a failing test the package does not contain, and
+`make check` fails on it. `NestedRuns`, which each of those packages calls from
+its `TestMain`, takes the framing byte off those lines and no others: the text
+still reaches a reader of `-v`, the mutant is still reported by the name of the
+pin that refused it, and no event is invented.
+
 ## Reused, added, made reusable
 
 **Reused**: `kit/crud`'s sentinels (`ErrNotFound`, `ErrInvalid`, `ErrConflict`)
