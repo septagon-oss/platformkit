@@ -104,7 +104,11 @@ func TestAFreshSiteSaysSoAndPointsAtTheAdmin(t *testing.T) {
 
 func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 	h, settings, contents := site(t)
-	ctx := t.Context()
+	// The tenant the request below resolves by host. Both fakes keep their rows in
+	// the caller's tenant — which is what row-level security gives the real
+	// services — so a fixture that seeds as itself and serves as Acme would seed
+	// a row no reader reaches.
+	ctx := tenancy.WithTenant(t.Context(), acme)
 	if _, err := settings.Save(ctx, db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{
 		Title: "Acme Journal", Tagline: "Notes from the workshop", HomeSlug: "welcome",
 		Theme: "dark", PrimaryColor: "#c0ffee",
@@ -139,7 +143,8 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 
 func TestAMissingHomePageAndAnUnknownSlugAreSaidPlainly(t *testing.T) {
 	h, settings, _ := site(t)
-	if _, err := settings.Save(t.Context(), db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{HomeSlug: "later", Theme: "system", PrimaryColor: "#2563eb"}); err != nil {
+	ctx := tenancy.WithTenant(t.Context(), acme)
+	if _, err := settings.Save(ctx, db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{HomeSlug: "later", Theme: "system", PrimaryColor: "#2563eb"}); err != nil {
 		t.Fatal(err)
 	}
 	if status, body := get(t, h, "/"); status != http.StatusOK || !strings.Contains(body, "The home page is not published") {
