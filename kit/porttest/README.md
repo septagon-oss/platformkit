@@ -134,6 +134,17 @@ of a refusal; it is not, because review 6's pin assigns a `func(W, uuid.UUID) er
 that field and the harness takes a reviewer's file unchanged. The gap is named here so
 a reader of `World.Refused` does not mistake the sentence for the assertion.
 
+**A declined case is prose, and prose is the one claim no check reads.** A `Skip`
+reason that cites an owner must cite one that exists: `kit/crud`'s `Update` takes the
+columns to write and `GetForUpdate` takes a row lock, so a reason saying "`kit/crud`'s
+own PATCH owns the revision check" was false about a package that is really there, and
+the harness accepted it — it requires a reason, not a true one, and no check in this
+package can read what a function does. What the two converted suites now do instead is
+watch the load-bearing fact of their reason in Go, where a kernel change reddens it:
+`tasktest`'s and `contenttest`'s `TestTheStaleSkipReasonStillStatesWhatTheKernelHas`
+asks `porttest.RevisionField` whether their entity carries a revision and asks
+`kit/crud.Update` what it takes.
+
 ## What a description cannot express
 
 These stay hand-written, in `Own`, with the reason beside the case. They are
