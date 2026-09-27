@@ -100,8 +100,10 @@ type Op[W any] struct {
 	// and twice for the retry, where the second answer must equal the first: a
 	// command that stores the right row and answers a moved one returns a stale
 	// row to its caller, which is house rule 9's third clause and the half no
-	// snapshot of the store can see. An operation that answers nothing but an
-	// error renders "", and its retry then asserts the store alone.
+	// snapshot of the store can see. A mutating operation that renders the empty
+	// string fails its own retry, because two empty strings compare equal and the
+	// case would assert the store alone: a command that answers no row still
+	// renders a word for what it answered.
 	Call func(w W, row uuid.UUID) (answer string, err error)
 
 	// Snapshot is everything this operation could have written, rendered so that
@@ -356,7 +358,10 @@ func (s Suite[W]) success(rep reporter, op Op[W], w W) {
 // retry is case 2: the same command twice. The second call succeeds, writes
 // nothing, says nothing — an idempotent command that publishes is a subscriber
 // told twice about one thing — and answers what the first call answered, which
-// is the half neither a snapshot of the store nor an error can show.
+// is the half neither a snapshot of the store nor an error can show. It refuses
+// an answer that renders nothing first, because an assertion made between two
+// empty strings is not an assertion and a port can lose this one by emptying a
+// rendering rather than by deleting a comparison.
 func (s Suite[W]) retry(rep reporter, op Op[W], w W) {
 	rep.Helper()
 	row := op.Ready(rep.T(), w)
@@ -364,6 +369,12 @@ func (s Suite[W]) retry(rep reporter, op Op[W], w W) {
 	if err != nil {
 		rep.Errorf("%s: the first call: %v", op.Name, err)
 		return
+	}
+	if first == "" {
+		rep.Errorf("%s: the first call rendered the empty string as its answer. The case compares what the "+
+			"two calls answered, and two empty strings always compare equal, so it would assert the store "+
+			"and nothing about the answer; render what the command answered, and a command that answers no "+
+			"row renders a word for that", op.Name)
 	}
 	world := s.world(rep, w)
 	world.Silent(op.Name+" a second time", func() {
