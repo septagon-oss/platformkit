@@ -9,6 +9,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/porttest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/domain"
 )
@@ -33,6 +34,11 @@ import (
 type Fake struct {
 	*porttest.Fake
 	tasks *porttest.Store[contracts.Task]
+	// Policy is the same tenancy.Policy internal.Service.Policy holds, asked the
+	// same question before either command writes. Left nil it retains the
+	// composition's declared grants, exactly as the real service does, so a
+	// consumer that never tests a refusal sees the fake it had.
+	Policy tenancy.Policy
 }
 
 // NewFake returns an empty store, its clock reading now.
@@ -76,6 +82,9 @@ func (f *Fake) Assign(ctx context.Context, _ db.Tx[db.Tenant], id, assignee uuid
 	return f.command(ctx, porttest.Command[contracts.Task]{
 		Row: id,
 		Decide: func(task contracts.Task) error {
+			if err := f.authorize(ctx, task, "task:assign"); err != nil {
+				return err
+			}
 			if task.Status == contracts.StatusResolved || task.Status == contracts.StatusClosed {
 				return fmt.Errorf("%w: a %s task cannot be assigned", crud.ErrConflict, task.Status)
 			}
@@ -103,6 +112,9 @@ func (f *Fake) Resolve(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, re
 	return f.command(ctx, porttest.Command[contracts.Task]{
 		Row: id,
 		Decide: func(task contracts.Task) error {
+			if err := f.authorize(ctx, task, "task:resolve"); err != nil {
+				return err
+			}
 			proposed, err := domain.Resolve(task.Status, task.Resolution, resolution)
 			if err != nil {
 				return fmt.Errorf("%w: %v", crud.ErrConflict, err)
@@ -134,6 +146,41 @@ func (f *Fake) CheckSLA(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 			return []string{contracts.EventSLABreached}
 		},
 	})
+}
+
+// authorize is internal.Service.authorize read against the fake's context rather
+// than the transaction's: the same tenancy.RequirePolicy call, the same actor,
+// action and resource, the same sentinel, and inside Decide, which is where
+// porttest.Do puts a command's rules — after the row was loaded and before
+// anything was written — so the fake refuses a caller where the real service does.
+//
+// Two differences, both stated. The attributes internal sends describe the task
+// to a policy that reads them; tasktest.Policy reads the actor and nothing else,
+// and a fact nothing reads is not written here. And Stranger is refused before
+// the policy is asked, whoever holds the fake: the port's Denied case needs a
+// caller with no grant, and a world that had to install a policy to be refused
+// one would be a world with an opinion about grants it may not have.
+func (f *Fake) authorize(ctx context.Context, task contracts.Task, action string) error {
+	if porttest.Actor(ctx) == Stranger {
+		return tenancy.ErrPolicyDenied
+	}
+	if f.Policy == nil {
+		return nil // Compositions without an external policy retain their declared grants.
+	}
+	principal, ok := tenancy.PrincipalFrom(ctx)
+	if !ok || principal.UserID == uuid.Nil {
+		return tenancy.ErrPolicyDenied
+	}
+	tenant, _ := tenancy.FromContext(ctx) // porttest.Do refused a context naming no tenant already
+	_, err := tenancy.RequirePolicy(ctx, f.Policy, tenancy.PolicyRequest{
+		Tenant: tenant,
+		Actor:  tenancy.PolicyActor{Kind: tenancy.PolicyUser, ID: principal.UserID.String()},
+		Action: action,
+		Resource: tenancy.PolicyResource{
+			TenantID: task.TenantID, Kind: "task", ID: task.ID.String(),
+		},
+	})
+	return err
 }
 
 // command runs one of the three and answers with the task as it now stands. The
