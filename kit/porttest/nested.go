@@ -26,15 +26,29 @@ const markFraming = 0x16
 // cmd/go cannot tell the two runners apart, so the suite's cases arrive as
 // events of tests the package does not contain: a package whose every test
 // passed reports a failing tasktest_RunService, and make check fails on the
-// mutant a suite refused on purpose. The names are the mutation proofs' own,
-// and none of them can ever be a test of the package, because a test function
-// begins with Test: what is stripped here is a name no real test could report
-// under, and every other line leaves this writer byte for byte as it arrived.
+// mutant a suite refused on purpose. The names are the mutation proofs' own, and
+// none of them can ever be a test of the package — which is now this function's own
+// refusal and not the habit of its callers. A name beginning with Test is one a real
+// test could report under, and demoting a genuine `--- FAIL: TestSomething` to output
+// is how a red package arrives green under make check, so NestedRuns runs nothing and
+// returns 1 on such a name. Given no name at all it would buy a pipe to strip nothing
+// and returns 1 for that too — both refusals are decided before m.Run, so both are
+// reachable without a test binary to run.
 //
 // A package calls this from its TestMain:
 //
 //	func TestMain(m *testing.M) { os.Exit(porttest.NestedRuns(m, "tasktest_RunService")) }
 func NestedRuns(m *testing.M, names ...string) int {
+	if len(names) == 0 {
+		fmt.Fprintln(os.Stderr, "porttest: NestedRuns was given no nested run to strip, so it would move the whole suite through a pipe to change nothing")
+		return 1
+	}
+	for _, name := range names {
+		if strings.HasPrefix(name, "Test") {
+			fmt.Fprintf(os.Stderr, "porttest: NestedRuns refuses to strip %q: a test function's name begins with Test, so stripping it would demote a real --- FAIL: %s to output and turn a failing package green\n", name, name)
+			return 1
+		}
+	}
 	saved := os.Stdout
 	reading, writing, err := os.Pipe()
 	if err != nil {
