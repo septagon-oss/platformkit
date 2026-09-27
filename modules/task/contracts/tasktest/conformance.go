@@ -10,17 +10,19 @@
 //
 // The suite is a kit/porttest description: the operations, what each publishes,
 // and which calls it must refuse. What that buys over the ten hand-written cases
-// it replaces is eight more cases — an unknown row at every command instead of
-// one case covering three, and the retry at every command — and nine written
-// reasons where a case is not owed. It costs lines rather than saving them at
-// this size, which the description's own note says: the win scales with refusals
-// per operation, and this port has four.
+// it replaces is ten more cases — an unknown row at every command instead of one
+// case covering three, the retry at every command, and the refused grant at the
+// two commands that ask for one — and seven written reasons where a case is not
+// owed. It costs lines rather than saving them at this size, which the
+// description's own note says: the win scales with refusals per operation, and
+// this port has four.
 package tasktest
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"testing"
 	"time"
 
@@ -29,6 +31,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/porttest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 )
 
@@ -95,6 +98,9 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 					{Kind: porttest.Unknown, Class: porttest.Immutable,
 						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return assign(f, uuid.New(), assignee) }),
 						Is:   is(crud.ErrNotFound)},
+					{Kind: porttest.Denied, Class: porttest.Immutable,
+						Call: refuse(func(f Fixture, row uuid.UUID) (string, error) { return assign(f.under(Stranger), row, assignee) }),
+						Is:   is(tenancy.ErrPolicyDenied)},
 					{Name: "assign requires an assignee", Class: porttest.Correctable,
 						Call: refuse(func(f Fixture, row uuid.UUID) (string, error) { return assign(f, row, uuid.Nil) }),
 						Is:   is(crud.ErrInvalid)},
@@ -122,6 +128,11 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 					{Kind: porttest.Unknown, Class: porttest.Immutable,
 						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return resolve(f, uuid.New(), "x") }),
 						Is:   is(crud.ErrNotFound)},
+					{Kind: porttest.Denied, Class: porttest.Immutable,
+						Call: refuse(func(f Fixture, row uuid.UUID) (string, error) {
+							return resolve(f.under(Stranger), row, "swapped the valve")
+						}),
+						Is: is(tenancy.ErrPolicyDenied)},
 					{Name: "resolve refuses a different resolution", Class: porttest.Immutable,
 						Provoke: func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
 							if _, err := resolve(f, row, "swapped the valve"); err != nil {
@@ -150,24 +161,69 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 						Call: refuse(func(f Fixture, _ uuid.UUID) (string, error) { return checkSLA(f, uuid.New()) }),
 						Is:   is(crud.ErrNotFound)},
 				},
-				Skip: notOwedHere,
+				Skip: oweNothingBut(porttest.Denied,
+					"CheckSLA consults no policy, and internal.SLASweep runs it inside a system transaction "+
+						"with no principal on the context at all; the fake mirrors it. Whether the sweep runs is "+
+						"kit/jobs' advisory lock, not a grant over one task"),
 			},
 		},
 		Own: cases(),
 	}
 }
 
-// notOwedHere is the three floor cases this port does not owe, with the reason
-// each is not asked. They are the same for all three commands.
+// notOwedHere is the two floor cases no command of this port owes, with the
+// reason each is not asked. They are the same for all three commands; an
+// operation that owes nothing else more reads them through oweNothingBut.
 var notOwedHere = map[porttest.Kind]string{
-	porttest.Denied: "the lifecycle takes no grant of its own: the three commands are reached " +
-		"through kit/rest's routes, and that is where the grant is checked",
 	porttest.Stale: "a task carries no revision; kit/crud's own PATCH owns that check",
 	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
 		"here to make the refused call from. The fake partitions its store by the tenant on the " +
 		"context and the real service runs under row-level security, which kit/db's " +
 		"TestTenantIsolationIsEnforcedByPostgres and kit/crud's TestAnotherTenantReachesNothing " +
 		"prove against the schema",
+}
+
+// oweNothingBut is notOwedHere plus the one case this operation and no other
+// does not owe. A copy, because the harness reads these maps and a shared one
+// that one operation had edited would speak for all three.
+func oweNothingBut(kind porttest.Kind, reason string) map[porttest.Kind]string {
+	out := maps.Clone(notOwedHere)
+	out[kind] = reason
+	return out
+}
+
+// Holder and Stranger are the two callers the suite is built around: the
+// principal every case acts as, and the one the two commands that ask for a
+// grant refuse. They are named here rather than in each world so that the fake
+// and the real service answer for the same two people — and so that a world
+// cannot pass the Denied case by naming itself a refused caller.
+//
+// Stranger is never uuid.Nil: an absent principal is what a world built without
+// an actor model has on it, and the case has to ask with somebody.
+var (
+	Holder   = uuid.New()
+	Stranger = uuid.New()
+)
+
+// As is ctx seen as one of those callers: the tenant and everything else on the
+// context stays, the principal becomes actor.
+func As(ctx context.Context, actor uuid.UUID) context.Context {
+	return tenancy.WithPrincipal(ctx, tenancy.Principal{UserID: actor})
+}
+
+// Policy is the tenancy.Policy both worlds run the suite under: it admits Holder
+// and refuses every other actor. The real service's harness puts it in
+// internal.Service.Policy, where internal.Service.authorize sends it to
+// tenancy.RequirePolicy over a real transaction; the fake holds the same value in
+// Fake.Policy. A case that succeeds does so through this decision, so a policy
+// that refused everybody would fail the success cases and not only the denial.
+type Policy struct{}
+
+func (Policy) Decide(_ context.Context, req tenancy.PolicyRequest) (tenancy.PolicyDecision, error) {
+	if req.Actor.Kind == tenancy.PolicyUser && req.Actor.ID == Holder.String() {
+		return tenancy.PolicyDecision{Allowed: true, Reason: "the suite's holder"}, nil
+	}
+	return tenancy.PolicyDecision{Reason: "an actor the suite did not name"}, nil
 }
 
 // assignee is the person every case assigns to, so that "the same assignee"
@@ -179,16 +235,26 @@ func is(want error) func(Fixture, error) bool {
 }
 
 // classify is this port's reading of its own refusals: an input the caller can
-// retype, or a state that forbids the call however it is retyped.
+// retype, or a state or an identity that forbids the call however it is retyped.
 func classify(err error) porttest.Class {
 	switch {
 	case errors.Is(err, crud.ErrInvalid):
 		return porttest.Correctable
 	case errors.Is(err, crud.ErrConflict), errors.Is(err, crud.ErrNotFound):
 		return porttest.Immutable
+	case errors.Is(err, tenancy.ErrPolicyDenied):
+		return porttest.Immutable // who is asking is not a field the caller can retype
 	default:
 		return porttest.Unclassified
 	}
+}
+
+// under is this world seen as another caller. A Fixture is a value, so the copy
+// that changes who the commands are sent as changes nothing else: one fact
+// differs between the granted call and the refused one, and it is the actor.
+func (f Fixture) under(actor uuid.UUID) Fixture {
+	f.Ctx = As(f.Ctx, actor)
+	return f
 }
 
 // assertions is the floor a generated case gets, for a case that is written by

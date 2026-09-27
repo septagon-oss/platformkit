@@ -32,38 +32,46 @@ func TestServiceConforms(t *testing.T) {
 	tasktest.RunService(t, func(t *testing.T, run func(tasktest.Fixture)) {
 		_, conn := dbtest.Schema(t, task.Migrations)
 		svc := internal.NewService()
+		// The same tasktest.Policy the fake's world installs, so the two
+		// implementations answer the grant question of one decision and the
+		// suite's Denied case is refused by internal.Service.authorize over a
+		// real transaction rather than by anything the harness made up. The
+		// principal is set before the transaction opens and survives into it:
+		// this is a request, and a request has a person behind it.
+		svc.Policy = tasktest.Policy{}
 		// One transaction per case, rolled back on the way out: a test keeps
 		// nothing, and the commands are called exactly as a request handler
 		// calls them — inside a transaction somebody else opened.
-		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			run(tasktest.Fixture{Ctx: ctx, Tx: tx, Service: svc, Seed: func(task *contracts.Task) uuid.UUID {
-				if err := crud.Create(ctx, tx, task); err != nil {
-					t.Fatalf("seed a task: %v", err)
-				}
-				return task.ID
-			}, Task: func(id uuid.UUID) (contracts.Task, error) {
-				// The row as this transaction sees it, which is what the
-				// suite's snapshot of "wrote nothing" compares.
-				got, err := crud.Get[*contracts.Task](tx, id)
-				if err != nil {
-					return contracts.Task{}, err
-				}
-				return *got, nil
-			}, Published: func() []string {
-				// The rows this transaction has written, which no other
-				// transaction can see: an event is exactly as visible as the
-				// change it describes. created_at is clock_timestamp(), so the
-				// order is the order they were published in.
-				var names []string
-				err := tx.DB().Raw(`SELECT name FROM `+outbox+` WHERE tenant_id = ? ORDER BY created_at, id`, acme.ID).
-					Scan(&names).Error
-				if err != nil {
-					t.Fatalf("read the outbox: %v", err)
-				}
-				return names
-			}})
-			return errRollback
-		})
+		err := db.Run(tasktest.As(tenancy.WithTenant(t.Context(), acme), tasktest.Holder), conn,
+			func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				run(tasktest.Fixture{Ctx: ctx, Tx: tx, Service: svc, Seed: func(task *contracts.Task) uuid.UUID {
+					if err := crud.Create(ctx, tx, task); err != nil {
+						t.Fatalf("seed a task: %v", err)
+					}
+					return task.ID
+				}, Task: func(id uuid.UUID) (contracts.Task, error) {
+					// The row as this transaction sees it, which is what the
+					// suite's snapshot of "wrote nothing" compares.
+					got, err := crud.Get[*contracts.Task](tx, id)
+					if err != nil {
+						return contracts.Task{}, err
+					}
+					return *got, nil
+				}, Published: func() []string {
+					// The rows this transaction has written, which no other
+					// transaction can see: an event is exactly as visible as the
+					// change it describes. created_at is clock_timestamp(), so the
+					// order is the order they were published in.
+					var names []string
+					err := tx.DB().Raw(`SELECT name FROM `+outbox+` WHERE tenant_id = ? ORDER BY created_at, id`, acme.ID).
+						Scan(&names).Error
+					if err != nil {
+						t.Fatalf("read the outbox: %v", err)
+					}
+					return names
+				}})
+				return errRollback
+			})
 		if !errors.Is(err, errRollback) {
 			t.Fatalf("the case's transaction: %v", err)
 		}
