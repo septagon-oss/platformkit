@@ -156,7 +156,11 @@ type Refusal[W any] struct {
 	// nothing: a step that asserts something on the way is a case of its own.
 	Provoke func(t *testing.T, w W, row uuid.UUID) uuid.UUID
 
-	// Call is the refused call.
+	// Call is the refused call. It answers the error alone: whatever the call handed
+	// back beside that error is discarded here and compared by nothing, which is why
+	// World.Refused asserts what a refusal left in the store and in the events and not
+	// what it returned — see that function and "What the floor does not assert" in the
+	// README.
 	Call func(w W, row uuid.UUID) error
 
 	// Is reports whether the error the call returned is this refusal. A port that
