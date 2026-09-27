@@ -29,7 +29,7 @@ A field no case reads does not belong in the description. That is the table:
 | `Op.Name` | the first half of a generated case name, and uniqueness |
 | `Op.Mutates` | whether the retry and the four refusals are owed |
 | `Op.Ready` | every case of that operation |
-| `Op.Call` | the success case, and the retry, which compares what it answered either side of the second call |
+| `Op.Call` | the success case, and the retry, which compares what it answered either side of the second call — and refuses a mutating operation whose rendering is empty, since two empty strings compare equal |
 | `Op.Snapshot` | the retry and every refusal: "writes nothing" |
 | `Op.Publishes` | the success case, in order |
 | `Op.Refusals` | one case each |

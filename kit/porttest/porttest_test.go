@@ -404,3 +404,22 @@ func withoutKind[W any](refusals []Refusal[W], kind Kind) []Refusal[W] {
 func oneTenantContext() context.Context {
 	return tenancy.WithTenant(context.Background(), tenancy.Tenant{ID: uuid.New(), Slug: "here"})
 }
+
+// TestRetryCaseFailsWhenTheAnswerRendersNothing is the same regression with a
+// different shape. Deleting the comparison between the two answers is a diff
+// somebody reads; emptying an operation's rendering is not, and it leaves the
+// retry comparing two empty strings, which is green whatever the port answered.
+// A mutating operation that renders nothing is refused out loud for that reason.
+func TestRetryCaseFailsWhenTheAnswerRendersNothing(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Own = nil
+	op := suite.Ops[0]
+	op.Call = func(w world, row uuid.UUID) (string, error) {
+		_, err := w.service.File(w.ctx, row, revisionOf(w, row))
+		return "", err
+	}
+	suite.Ops[0] = op
+	log := watch(t, suite)
+	log.mustFail(t, "File: the same command twice writes nothing and says nothing", "two empty strings")
+	log.mustPassApartFrom(t, "File: the same command twice writes nothing and says nothing")
+}
