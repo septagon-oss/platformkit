@@ -20,9 +20,13 @@ func TestFakeConforms(t *testing.T) {
 	tasktest.RunService(t, func(t *testing.T, run func(tasktest.Fixture)) {
 		// The fake's store is partitioned by the tenant on the context and
 		// refuses one that names none, so the world names a tenant exactly as a
-		// request transaction does.
-		ctx := tenancy.WithTenant(t.Context(), acme)
+		// request transaction does. It names a principal too, and holds the same
+		// tenancy.Policy the real service's world installs: the two commands that
+		// ask for a grant ask it of the same decision in both worlds, and the
+		// suite's Denied case calls as the actor that decision refuses.
+		ctx := tasktest.As(tenancy.WithTenant(t.Context(), acme), tasktest.Holder)
 		fake := tasktest.NewFake()
+		fake.Policy = tasktest.Policy{}
 		run(tasktest.Fixture{
 			Ctx: ctx, Service: fake,
 			Seed:      func(task *contracts.Task) uuid.UUID { return fake.Put(ctx, task) },
@@ -71,20 +75,24 @@ func TestFakeRecordsWhatItWouldPublish(t *testing.T) {
 // TestTheSuiteRunsTheseCases pins every case name, in order. A case name is a
 // requirement's evidence, so a change to one should be a diff somebody reads —
 // and this list is also the record of what the kit/porttest description bought:
-// ten cases before it, eighteen after, with no name of the ten lost except the
+// ten cases before it, twenty after, with no name of the ten lost except the
 // parent "an unknown id is not found", whose three assertions are now three
-// cases of their own.
+// cases of their own. The two grants came back from a skip once they were read
+// against the module: internal.Service.authorize asks tenancy.RequirePolicy
+// inside Assign and Resolve, so those two commands owe the refusal.
 func TestTheSuiteRunsTheseCases(t *testing.T) {
 	want := []string{
 		"Assign: the operation says what it did",
 		"assign is idempotent for the same assignee",
 		"Assign: an unknown row is not found",
+		"Assign: a caller with no grant is refused and writes nothing",
 		"assign requires an assignee",
 		"a resolved task cannot be assigned",
 		"a closed task cannot be assigned",
 		"Resolve: the operation says what it did",
 		"Resolve: the same command twice writes nothing and says nothing",
 		"Resolve: an unknown row is not found",
+		"Resolve: a caller with no grant is refused and writes nothing",
 		"resolve refuses a different resolution",
 		"CheckSLA: the operation says what it did",
 		"CheckSLA: the same command twice writes nothing and says nothing",
