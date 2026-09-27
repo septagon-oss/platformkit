@@ -220,10 +220,12 @@ func OperatorGrants(declared []tenancy.Grant) []string {
 //   - An initial role the application names: the seeder wrote the list in that
 //     literal, so a dead grant that literal still names is the seeder's. One it
 //     does not name was added through SetRole by whoever administers the tenant.
-//   - Anything else, the built-in member included: the seeder wrote it holding
-//     nothing, so every permission in it is somebody's decision. A customer's
-//     tenant is not the operator's either, so its administrator's row is only
-//     ever seeded the wildcard and nothing in it is the seeder's.
+//   - Anything else — no name in defaults matches it, the built-in member
+//     included: an application whose literal does name member falls under the
+//     bullet above and not this one — : the seeder wrote it holding nothing, so
+//     every permission in it is somebody's decision. A customer's tenant is not
+//     the operator's either, so its administrator's row is only ever seeded the
+//     wildcard and nothing in it is the seeder's.
 //
 // Limits. In the operator's own tenant the row does not record which writer put
 // a permission in it, and an operator may have named one by hand — an ordinary

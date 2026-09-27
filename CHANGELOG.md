@@ -100,31 +100,31 @@ created holding were a list each application wrote out by hand, and no applicati
 narrowed it when it dropped a module: one installation served from 2026-09-22 with an
 administrator granted `billing:catalog` and no billing module to exercise it against,
 and the only thing that said so was the hourly sweep — fourteen identical warnings by
-the next morning. `auth.SeedRoles` now takes the permission catalogue of the modules
-the application actually composed (`kit/module.Grants`, which the kernel's own
-manifest check already read) and seeds the operator permissions of that catalogue and
-nothing else; an initial role naming a permission no composed module defines is
-refused where it used to be written, and `contracts.SeededRoles` is what the seeder
-writes, so an application can ask what a composition seeds before it has a database.
-The two rules an initial role is held to — it may not name the wildcard, and it may
-not name an operator permission — are about the permission and not the spelling of
-it, so `" * "` is refused as `*` is and `" Tenant:Manage "` as `tenant:manage`
-is; until now a space or a capital walked past both and the role was seeded —
-the row indistinguishable from one that had been allowed. The rows already
-written belong to a customer and are not edited on the way past:
-`platformkit repair-roles` lists, per tenant and per role, the grants this
-installation's own seeder wrote that no composed module defines any more, and
-`--remove` is the decision — through the module's ordinary role write, so each
-removal takes the tenant's role lock, is held to the floor below and is in the audit
-as an `auth.role_set`. What the seeder did not write it does not touch: the built-in
-member is seeded holding nothing, a customer tenant's administrator is seeded the
-wildcard and nothing else, and a permission somebody added through the roles screen
-stays where it is and goes on being reported by the sweep, which is the only thing
-entitled to say what its author meant by it. The one row that cannot be said of is
-the operator's own administrator while it still holds the wildcard, the only role
-the seeder writes named permissions into: once a module leaves, nothing records
-whether a departed grant was the seeder's or a hand's, so every dead grant there is
-taken — each dead either way, and beside a wildcard that still grants the rest.
+the next morning. `auth.SeedRoles` now takes the permission catalogue of the modules the
+application actually composed (`kit/module.Grants`, which the kernel's own manifest
+check already read) and seeds the operator permissions of that catalogue and nothing
+else; an initial role naming a permission no composed module defines is refused where it
+used to be written, and `contracts.SeededRoles` is what the seeder writes, so an
+application can ask what a composition seeds before it has a database. The two rules an
+initial role is held to — it may not name the wildcard, and it may not name an operator
+permission — are about the permission and not the spelling of it, so `" * "` is refused
+as `*` is and `" Tenant:Manage "` as `tenant:manage` is; until now a space or a capital
+walked past both and the role was seeded — the row indistinguishable from one that had
+been allowed. The rows already written belong to a customer and are not edited on the
+way past: `platformkit repair-roles` lists, per tenant and per role, the grants this
+installation's own seeder wrote that no composed module defines any more, and `--remove`
+is the decision — through the module's ordinary role write, so each removal takes the
+tenant's role lock, is held to the floor below and is in the audit as an
+`auth.role_set`. What the seeder did not write it does not touch: the built-in member is
+seeded holding nothing unless the application's initial roles name it, a customer
+tenant's administrator is seeded the wildcard and nothing else, and a permission
+somebody added through the roles screen stays where it is and goes on being reported by
+the sweep, which is the only thing entitled to say what its author meant by it. The one
+row that cannot be said of is the operator's own administrator while it still holds the
+wildcard, the only role the seeder writes named permissions into: once a module leaves,
+nothing records whether a departed grant was the seeder's or a hand's, so every dead
+grant there is taken — each dead either way, and beside a wildcard that still grants the
+rest.
 
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
