@@ -292,6 +292,11 @@ func SeededGrants(role Role, gone []string, defaults []Role, tenant tenancy.Tena
 // plausibly types, and the other four were seeded. Everything else goes through
 // CheckedPermissions, which is where "no module defines it" is refused — the
 // rule that used to be a warning an hour later.
+//
+// "grants nothing" is read from that same normalised list and not from the raw
+// literal: CheckedPermissions drops an entry that trims to nothing, so a list of
+// blanks is a list of nothing and is refused here. Measured against the raw
+// literal it was a list of one, and the role was seeded holding nothing.
 func SeededRoles(declared []tenancy.Grant, defaults []Role, tenant tenancy.Tenant) ([]Role, error) {
 	operator := OperatorGrants(declared)
 	admin := Permissions{Wildcard}
@@ -305,8 +310,8 @@ func SeededRoles(declared []tenancy.Grant, defaults []Role, tenant tenancy.Tenan
 		if err != nil {
 			return nil, err
 		}
-		if seen[name] || len(role.Grants) == 0 {
-			return nil, fmt.Errorf("%w: initial role %q is reserved, duplicated or grants nothing", fault.ErrInvalid, name)
+		if seen[name] {
+			return nil, fmt.Errorf("%w: initial role %q is reserved or duplicated", fault.ErrInvalid, name)
 		}
 		for _, p := range role.Grants {
 			p = strings.ToLower(strings.TrimSpace(p))
@@ -317,6 +322,9 @@ func SeededRoles(declared []tenancy.Grant, defaults []Role, tenant tenancy.Tenan
 		grants, err := CheckedPermissions(role.Grants, declared, tenant)
 		if err != nil {
 			return nil, fmt.Errorf("initial role %q: %w", name, err)
+		}
+		if len(grants) == 0 {
+			return nil, fmt.Errorf("%w: initial role %q grants nothing", fault.ErrInvalid, name)
 		}
 		seen[name], roles[name] = true, grants
 	}
