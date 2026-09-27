@@ -434,6 +434,33 @@ func cases() map[string]func(*testing.T, Fixture) {
 			published(t, f, contracts.EventRoleSet)
 		},
 
+		"the role write says whether the row changed": func(t *testing.T, f Fixture) {
+			// SetRoleChanged is SetRole plus the one answer SetRole computes for
+			// itself and keeps: whether this call moved a row. The caller that
+			// needs it is modules/auth's repair, whose command prints "removed" —
+			// and prints it from an answer the write already had rather than from
+			// its own read of the roles, which a second operator's identical run
+			// may have made stale between the read and the lock.
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read"}, Declared); err != nil || !changed {
+				t.Errorf("writing a new role: changed=%v (%v), want true", changed, err)
+			}
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read"}, Declared); err != nil || changed {
+				t.Errorf("the same list again: changed=%v (%v), want false", changed, err)
+			}
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read", "widget:manage"}, Declared); err != nil || !changed {
+				t.Errorf("a different list: changed=%v (%v), want true", changed, err)
+			}
+			// The refusals answer the same way they do for SetRole, with nothing
+			// changed: this method adds an answer and takes no rule away.
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read", "ghost:read"}, Declared); !errors.Is(err, crud.ErrInvalid) || changed {
+				t.Errorf("a permission nothing defines: changed=%v (%v), want false and ErrInvalid", changed, err)
+			}
+		},
+
 		"the last role that can administer roles cannot be emptied": func(t *testing.T, f Fixture) {
 			manage := tenancy.Grant{Permission: contracts.PermissionRoleManage}
 			// The wildcard is the only way this catalogue can grant role:manage

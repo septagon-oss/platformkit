@@ -62,8 +62,18 @@ func RepairSeededRoles(ctx context.Context, tx db.Tx[db.Tenant], roles contracts
 		keep := slices.DeleteFunc(slices.Clone([]string(r.Grants)), func(p string) bool {
 			return slices.Contains(gone, p)
 		})
-		if _, err := roles.SetRole(ctx, tx, r.Name, keep, declared); err != nil {
+		_, wrote, err := roles.SetRoleChanged(ctx, tx, r.Name, keep, declared)
+		if err != nil {
 			return nil, err
+		}
+		if !wrote {
+			// The row already held this list by the time this run got the
+			// tenant's lock: somebody else took the same grant between the read
+			// above and the write here, and asked for the same thing. Nothing
+			// about that is wrong — it is what a lock in front of a row is for —
+			// but this run wrote no row and publishes no event, so it says it
+			// removed nothing. A line saying "removed" is a claim about a row.
+			delete(found, r.Name)
 		}
 	}
 	return found, nil
