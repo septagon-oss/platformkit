@@ -168,7 +168,12 @@ var notOwedHere = map[porttest.Kind]string{
 	porttest.Denied: "the lifecycle takes no grant of its own: the three commands are reached " +
 		"through kit/rest's routes and the public page through the site, and that is where the " +
 		"grant is checked",
-	porttest.Stale: "content carries no revision; kit/crud's own PATCH owns that check",
+	porttest.Stale: "content carries no revision field, and nothing below this port owns " +
+		"an optimistic-concurrency check to decline one: kit/crud.Update takes the columns " +
+		"to write and kit/crud.GetForUpdate takes a row lock; neither compares a revision. " +
+		"This package's TestTheStaleSkipReasonStillStatesWhatTheKernelHas watches both, so a " +
+		"kernel that grows the check reddens this sentence rather than leaving it standing. " +
+		"When it does, the case is the harness's to generate and the skip goes away",
 	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
 		"here to make the refused call from. The fake holds the rows of the first tenant that " +
 		"reaches it and answers any other with nothing, which this package's own " +
