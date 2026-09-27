@@ -85,6 +85,24 @@ func TestUnnestLeavesEverythingElseAlone(t *testing.T) {
 	}
 }
 
+// The safety is the function's own and not the habit of its callers: a name a
+// real test could report under is refused before the binary runs, so a proof
+// that asked to strip "TestSomething" stops with a sentence instead of quietly
+// demoting that test's failures to output. A nil *testing.M is safe precisely
+// because both refusals answer before m.Run — which is also what makes them
+// testable at all.
+func TestNestedRunsRefusesANameARealTestCouldReportUnder(t *testing.T) {
+	for _, names := range [][]string{
+		{"TestFakeConforms"},
+		{"shelf_RunService", "TestUnnestTakesFramingOffTheNestedRunOnly"},
+		nil,
+	} {
+		if got := NestedRuns(nil, names...); got != 1 {
+			t.Errorf("NestedRuns(nil, %q) = %d, want 1: the run is refused and nothing runs", names, got)
+		}
+	}
+}
+
 func unnestOn(in, name string) string {
 	var out bytes.Buffer
 	unnest(strings.NewReader(in), &out, []string{name})
