@@ -77,6 +77,34 @@ func TestTenantCaseFailsWhenTheStoreIsShared(t *testing.T) {
 	log.mustPassApartFrom(t, "File: another tenant cannot reach the row")
 }
 
+// TestTenantCaseFailsWhenTheRefusalTookTheRowAwayFromItsOwner is the tenant
+// case's own mutation proof, and the reason the store answers it rather than the
+// description.
+//
+// The Snapshot below reads through the other tenant's context, which is what a
+// description whose Provoke moves the world ends up doing: the refusal answered,
+// the row is gone from the tenant that owns it, and either side of the refused
+// call the snapshot renders the same nothing, because the visitor never saw the
+// row to begin with. "A refused call wrote nothing" is then written from the far
+// side of the wall, and only the store — which cannot be moved into another
+// tenant's by a closure — can say the row it held is gone.
+func TestTenantCaseFailsWhenTheRefusalTookTheRowAwayFromItsOwner(t *testing.T) {
+	suite := noteSuite(knobs{erases: true})
+	suite.Own = nil
+	suite.Ops[0].Snapshot = func(t *testing.T, w world, row uuid.UUID) string {
+		t.Helper()
+		stored, err := w.service.Note(w.elsewhere, row)
+		if err != nil {
+			return "no such note"
+		}
+		return fmt.Sprintf("filed=%v sealed=%v rev=%d", stored.Filed, stored.Sealed, stored.Rev)
+	}
+	const name = "File: " + string(Elsewhere)
+	log := watch(t, suite)
+	log.mustFail(t, name, "still be there for the tenant that owns it")
+	log.mustPassApartFrom(t, name)
+}
+
 // The floor: what Run refuses to run at all, before any case.
 
 func TestRunRefusesAMutatingOpWithNoUnknownCaseAndNoReason(t *testing.T) {
