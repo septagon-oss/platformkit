@@ -284,9 +284,14 @@ func SeededGrants(role Role, gone []string, defaults []Role, tenant tenancy.Tena
 // administrator's is not. It may not name the wildcard, because a second role
 // granting everything is an administrator nobody called one; and it may not
 // name an operator permission, in the operator's own tenant either, because the
-// one role that holds those is the one this function builds. Everything else
-// goes through CheckedPermissions, which is where "no module defines it" is
-// refused — the rule that used to be a warning an hour later.
+// one role that holds those is the one this function builds. Both rules are
+// about the permission and not the way the literal spells it, so both read it
+// normalised — the same normalisation CheckedPermissions is about to apply, and
+// the same one SeededGrants applies to read this literal backwards. A rule that
+// compared the raw text held only for the one spelling out of five a person
+// plausibly types, and the other four were seeded. Everything else goes through
+// CheckedPermissions, which is where "no module defines it" is refused — the
+// rule that used to be a warning an hour later.
 func SeededRoles(declared []tenancy.Grant, defaults []Role, tenant tenancy.Tenant) ([]Role, error) {
 	operator := OperatorGrants(declared)
 	admin := Permissions{Wildcard}
@@ -304,6 +309,7 @@ func SeededRoles(declared []tenancy.Grant, defaults []Role, tenant tenancy.Tenan
 			return nil, fmt.Errorf("%w: initial role %q is reserved, duplicated or grants nothing", fault.ErrInvalid, name)
 		}
 		for _, p := range role.Grants {
+			p = strings.ToLower(strings.TrimSpace(p))
 			if p == Wildcard || slices.Contains(operator, p) {
 				return nil, fmt.Errorf("%w: initial role %q cannot grant %q", fault.ErrInvalid, name, p)
 			}
