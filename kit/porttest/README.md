@@ -20,7 +20,7 @@ A field no case reads does not belong in the description. That is the table:
 | `Suite.Port` | every failure sentence |
 | `Suite.World` | every case; one world per case, closed on the way out |
 | `Suite.Events` | the success case, the retry, and every refusal ("a refusal is not news") |
-| `Suite.Classify` | every refusal whose `Class` is not `Unclassified` |
+| `Suite.Classify` | every refusal whose `Class` is not `Unclassified`; the floor refuses a description that names a class and classifies nothing |
 | `Suite.Ops` | the generated cases |
 | `Suite.Own` | run after them, under the module's own name, unnested |
 | `Suite.Assert` | a hand-written case, which takes the floor from the suite it belongs to |
@@ -30,7 +30,7 @@ A field no case reads does not belong in the description. That is the table:
 | `Op.Mutates` | whether the retry and the four refusals are owed |
 | `Op.Ready` | every case of that operation |
 | `Op.Call` | the success case, and the retry, which compares what it answered either side of the second call — and refuses a mutating operation whose rendering is empty, since two empty strings compare equal |
-| `Op.Snapshot` | the retry and every refusal: "writes nothing" |
+| `Op.Snapshot` | the retry and every refusal: "writes nothing" — and the harness asks it, in each of those cases, whether it can see the row at all (below) |
 | `Op.Publishes` | the success case, in order |
 | `Op.Refusals` | one case each |
 | `Op.Names` | the generated case name where the module has its own sentence |
@@ -70,9 +70,10 @@ world into the state the refusal answers, and for this case that state is anothe
 tenant's; a snapshot taken through that world renders the row absent whether the
 refusal left it with its owner or destroyed it, so "a refused call wrote nothing"
 is written from the visitor's side of the wall. The store answers instead: the
-tenant case watches the row it seeded, from the moment the world starts moving
-until the refused call has answered, and a `Store` that no longer holds a watched
-row reports it, naming the row and the tenant whose copy went. A world whose rows
+tenant case watches the row it seeded from the moment it is seeded — before
+`Provoke` runs, which is a step that may run the implementation — until the
+refused call has answered, and a `Store` that no longer holds a watched row
+reports it, naming the row and the tenant whose copy went. A world whose rows
 live where this package's `Store` cannot reach them — a real transaction — is not
 covered by that witness, so its suite reads the row through the owner's own
 context, as this package's `notes` port does, or leaves the case out with a
@@ -93,15 +94,26 @@ reason that says so.
   unassertable without one;
 - a refusal has no `Is`: what counts as that refusal is the port's own answer,
   and a harness that guessed would relax an assertion;
+- a refusal names a `Class` and the suite has no `Classify`: the class is
+  asserted through that function and nothing else, so the case would skip its own
+  assertion in silence and report every refusal of the port green;
 - the description would run no case at all: a suite that asserts nothing passes
   every implementation of the port, including the one that does nothing, and
   deleting the last operation from a converted suite looks exactly like that.
 
-Two mistakes a world makes are caught in the case rather than before it, because
-that is the first moment anybody can know: a world that hands back a zero
-fixture, and a world that returns without ever running the case it was handed —
-which would otherwise report every case green having touched no implementation
-at all.
+Three mistakes are caught in the case rather than before it, because that is the
+first moment anybody can know: a world that hands back a zero fixture; a world
+that returns without ever running the case it was handed — which would otherwise
+report every case green having touched no implementation at all; and a `Snapshot`
+that renders the same string for the row the case seeded as for a row nobody ever
+seeded. The last is the `Snapshot`'s share of the hole `Op.Call`'s empty rendering
+opened: every "writes nothing" assertion compares two renderings of it, so one
+that cannot name the row makes them comparisons nothing can move, and a suite
+stays green behind it with a fake that is not even wrong. It is said per case,
+where the assertion lives — the success case asserts the events and no snapshot
+and is not asked it. A row `Ready` does not name is exempt: a per-tenant
+singleton's `Snapshot` has no row argument to read, which is why `sitetest` passes
+this check without satisfying it.
 
 ## What a description cannot express
 
