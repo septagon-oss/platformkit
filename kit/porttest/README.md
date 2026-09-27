@@ -53,7 +53,7 @@ Per operation:
 | 3 | `<Op>: an unknown row is not found` | `Mutates` | the refusal is the one named, in the class named; nothing written, nothing said |
 | 4 | `<Op>: a caller with no grant is refused and writes nothing` | `Mutates` | as above |
 | 5 | `<Op>: a revision the row is not at is refused and writes nothing` | `Mutates` | as above |
-| 6 | `<Op>: another tenant cannot reach the row` | `Mutates` | as above, and the row is still there for the tenant that owns it |
+| 6 | `<Op>: another tenant cannot reach the row` | `Mutates` | as above, and the row is still there for the tenant that owns it — answered by this package's `Store`, not by the operation's `Snapshot` (below) |
 | 7 | the module's own sentence | each `Named` refusal | as above |
 
 Then `Suite.Own`, in the order the module wrote them.
@@ -62,6 +62,21 @@ A sentence the module gives — `Op.Names[Kind]` or `Refusal.Name` — is used
 verbatim and replaces the whole generated name, prefix included. That is what
 keeps an evidence link pointing at something when a hand-written case becomes a
 described one.
+
+### Who answers "the row is still there"
+
+Case 6 asks something the operation's own `Snapshot` cannot. `Provoke` moves the
+world into the state the refusal answers, and for this case that state is another
+tenant's; a snapshot taken through that world renders the row absent whether the
+refusal left it with its owner or destroyed it, so "a refused call wrote nothing"
+is written from the visitor's side of the wall. The store answers instead: the
+tenant case watches the row it seeded, from the moment the world starts moving
+until the refused call has answered, and a `Store` that no longer holds a watched
+row reports it, naming the row and the tenant whose copy went. A world whose rows
+live where this package's `Store` cannot reach them — a real transaction — is not
+covered by that witness, so its suite reads the row through the owner's own
+context, as this package's `notes` port does, or leaves the case out with a
+reason that says so.
 
 ## What the floor refuses
 
@@ -150,7 +165,9 @@ that settles two writers. Those are database facts, tested against the schema.
 `porttest_test.go` runs the generated cases against deliberately broken copies of
 the fake in `notes_test.go`: one that writes before it decides, one that says
 something on an idempotent retry, one that stores the right row and answers a
-revision it is not at, one with a single set of rows for every tenant. Each
+revision it is not at, one with a single set of rows for every tenant, and one
+that refuses another tenant's call by taking the row away from the tenant that
+owns it. Each
 proves that the case bites. `Run` reports through a narrow internal
 reporter so that a test can watch a generated case fail without failing the test
 that is watching it.
