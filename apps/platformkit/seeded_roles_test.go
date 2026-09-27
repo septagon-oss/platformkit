@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
@@ -98,6 +99,87 @@ func TestTheBootstrapSeedsWhatThisFileComposes(t *testing.T) {
 			if !slices.Contains([]string(role.Grants), p) {
 				t.Errorf("role %q: the seeded role grants %q and this composition does not", role.Name, p)
 			}
+		}
+	}
+}
+
+// TestTheRepairIsGivenTheInitialRolesThisCompositionSeeds holds the one join at
+// the repair's own seam that the compiler cannot check: repair-roles must be
+// handed the same initial roles the seeding hook is, because the roles that
+// seeder owns are the only ones it may touch.
+//
+// Nothing here could say so until now. The reference application names no initial
+// roles — nil is the right list for it — so passing nil at the command's call
+// site, which is exactly the mistake a product copying this file makes while its
+// literal names roles, left the command repairing nothing and printing the
+// all-clear, and every case in this package passed: they plant their dead grants
+// in roles the seeder owns whatever the literal says. So this case borrows the
+// value for one run. The installation is the one the command exists for, made the
+// way an older one was: the module's own SeedRoles over a catalogue that still
+// declared the permission that later left, and the literal naming it. Then the
+// command runs with this composition's real catalogue, which does not declare it.
+// What it takes is the grant the literal still names, and only that: the same
+// grant beside it in the built-in member — a role the literal does not name —
+// stays, because a name in a row is not the seeder's unless the literal wrote it.
+// Pass nil at the repair's call site and the first claim below fails with
+// ghost:read still in clerk.
+func TestTheRepairIsGivenTheInitialRolesThisCompositionSeeds(t *testing.T) {
+	path, cfg := configure(t)
+	install(t, path)
+	c := compose(cfg)
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	var acme tenancy.Tenant
+	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("read the bootstrapped tenant: %v", err)
+	}
+	saved := initialRoles
+	t.Cleanup(func() { initialRoles = saved })
+	initialRoles = []authcontracts.Role{
+		{Name: "clerk", Grants: authcontracts.Permissions{"task:read", "ghost:read"}},
+	}
+	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		declared := append(slices.Clone(module.Grants(c.modules)), tenancy.Grant{Permission: "ghost:read"})
+		if e := auth.SeedRoles(ctx, tx, acme, declared, initialRoles); e != nil {
+			return e
+		}
+		return tx.DB().Exec(
+			"UPDATE roles SET permissions = array_append(permissions, 'ghost:read') WHERE tenant_id = ? AND name = ?",
+			acme.ID, authcontracts.RoleMember).Error
+	})
+	if err != nil {
+		t.Fatalf("seed the installation the way an older one was seeded: %v", err)
+	}
+
+	if err := repairRoles([]string{"--config", path, "--remove"}); err != nil {
+		t.Fatalf("repair-roles --remove: %v", err)
+	}
+	for _, want := range []struct {
+		role, grant string
+		holds       bool
+	}{
+		{"clerk", "ghost:read", false},
+		{"clerk", "task:read", true},
+		{authcontracts.RoleMember, "ghost:read", true},
+	} {
+		var roles []authcontracts.Role
+		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+			return tx.DB().Where("tenant_id = ? AND name = ?", acme.ID, want.role).Find(&roles).Error
+		})
+		if err != nil || len(roles) != 1 {
+			t.Fatalf("read role %q: %v (%d rows)", want.role, err, len(roles))
+		}
+		if got := slices.Contains(roles[0].Grants, want.grant); got != want.holds {
+			t.Errorf("role %q holds %q is %v, want %v: the repair is given %v, not what the seeding hook is given",
+				want.role, want.grant, got, want.holds, initialRoles)
 		}
 	}
 }
