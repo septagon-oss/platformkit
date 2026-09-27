@@ -102,7 +102,7 @@ func TestTheSeededRolesAreTheCompositionsAndNothingElse(t *testing.T) {
 func TestRepairTakesTheSeedersDeadGrantsAndLeavesTheTenantsOwn(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	svc, _ := auth.Module(auth.Deps{})
-	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
+	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "operator", Operator: true}
 	was := []tenancy.Grant{{Permission: "role:manage"}, {Permission: "tenant:manage", Operator: true},
 		{Permission: "billing:catalog", Operator: true}}
 	now := []tenancy.Grant{{Permission: "role:manage"}, {Permission: "tenant:manage", Operator: true}}
@@ -184,7 +184,7 @@ func TestRepairTakesTheSeedersDeadGrantsAndLeavesTheTenantsOwn(t *testing.T) {
 func TestARoleTheRepairCannotFinishIsLeftWhole(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	svc, _ := auth.Module(auth.Deps{})
-	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
+	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "operator", Operator: true}
 	was := []tenancy.Grant{{Permission: "role:manage"}, {Permission: "task:read"},
 		{Permission: "content:read"}, {Permission: "billing:catalog", Operator: true}}
 	now := []tenancy.Grant{{Permission: "role:manage"}}
@@ -255,7 +255,7 @@ func TestARoleTheRepairCannotFinishIsLeftWhole(t *testing.T) {
 func TestTheOperatorsOwnAdministratorCannotSayWhoWroteADeadGrant(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	svc, _ := auth.Module(auth.Deps{})
-	operator := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
+	operator := tenancy.Tenant{ID: uuid.New(), Slug: "operator", Operator: true}
 	seedForRepair(t, conn, operator)
 	handEdit(t, conn, svc, operator, contracts.RoleAdmin,
 		[]string{contracts.Wildcard, "task:read", "tenant:manage", "billing:catalog"})
@@ -300,7 +300,7 @@ func TestTheOperatorsOwnAdministratorCannotSayWhoWroteADeadGrant(t *testing.T) {
 func TestAnInitialRoleIsHeldToItsRulesHoweverItsLiteralSpellsThem(t *testing.T) {
 	for _, tenant := range []tenancy.Tenant{
 		{ID: uuid.New(), Slug: "acme"},
-		{ID: uuid.New(), Slug: "services-law", Operator: true},
+		{ID: uuid.New(), Slug: "operator", Operator: true},
 	} {
 		for _, spelled := range []string{"*", " * ", "\t*\n", "tenant:manage", " Tenant:Manage ", "TENANT:MANAGE"} {
 			roles, err := contracts.SeededRoles(composed,
