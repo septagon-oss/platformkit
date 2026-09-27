@@ -304,7 +304,9 @@ func (a firstAdmin) Invite(ctx context.Context, tx db.Tx[db.System], tenantID uu
 // nothing. It is a named value rather than a nil at each call site because it
 // is read twice — by the hook below and by the repair-roles command — and the
 // repair is only allowed to touch the roles the seeder owns, so the two lists
-// being the same one is what makes that true.
+// being the same one is what makes that true. That is a claim about two call
+// sites, which is the one join the compiler cannot see here, so a case holds it:
+// TestTheRepairIsGivenTheInitialRolesThisCompositionSeeds.
 var initialRoles []authcontracts.Role
 
 // seedRoles provisions auth's defaults in the tenant's creation transaction.
