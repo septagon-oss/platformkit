@@ -67,6 +67,29 @@ func (s *Service) Roles(_ context.Context, tx db.Tx[db.Tenant]) ([]*contracts.Ro
 
 // SetRole writes what a role grants, creating it if it is new.
 //
+// It is SetRoleChanged with the one answer withheld. A caller that reports what
+// it changed — the repair, which prints "removed" — needs that answer, and a
+// caller that renders the role the route was about does not.
+func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
+	role, _, err := s.SetRoleChanged(ctx, tx, name, permissions, declared)
+	return role, err
+}
+
+// SetRoleChanged is the write behind SetRole, and it reports whether this call
+// changed a row.
+//
+// The write already knows: it re-reads the role under the tenant's lock and
+// does nothing when the row holds the list it was handed, so that a retried
+// click appears once in an audit. Until now that knowledge stopped there, which
+// made the second answer free for a caller that has to say what it wrote. A
+// repair whose row moved underneath it — another operator, or the same one in
+// two terminals, both reading before either wrote — derives a list the other
+// write already committed. Its SetRole changes no row and publishes nothing, and
+// a report built from the repair's own stale read still names the grant it took
+// from nobody: two lines, one removal, and a tenant told twice that a person
+// changed something nobody changed. The line saying "removed" is a claim about a
+// row, and only the write can say whether there was one.
+//
 // Every permission is checked against the list the application declares, which
 // the caller is handed by the kernel. A role naming a permission nothing
 // defines is a grant that can never be exercised and reads, to whoever wrote
@@ -77,15 +100,15 @@ func (s *Service) Roles(_ context.Context, tx db.Tx[db.Tenant]) ([]*contracts.Ro
 // sharper reason: the kernel would refuse every request under it anyway, so
 // writing one is either a misunderstanding of what the permission is or an
 // attempt to grant the installation to a customer. Both are 422s.
-func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
+func (s *Service) SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, bool, error) {
 	name, err := contracts.ValidRoleName(name)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	tenant := db.TenantOf(tx)
 	want, err := contracts.CheckedPermissions(permissions, declared, tenant)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// Everything below reads this tenant's roles and then writes one, and the
@@ -114,7 +137,7 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 	// customer's administrator held up by another's.
 	if err := tx.DB().WithContext(ctx).
 		Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, administrationLock(tenant)).Error; err != nil {
-		return nil, fmt.Errorf("auth: lock this tenant's roles: %w", err)
+		return nil, false, fmt.Errorf("auth: lock this tenant's roles: %w", err)
 	}
 
 	var was contracts.Permissions
@@ -125,8 +148,8 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 		if slices.Equal([]string(was), []string(want)) {
 			// The same list again changes nothing and publishes nothing: a
 			// retried click must not appear twice in an audit of who was given
-			// what.
-			return role, nil
+			// what. That is also the whole answer to "what did you change": no.
+			return role, false, nil
 		}
 	case !errors.Is(err, crud.ErrNotFound):
 		// A role nobody has yet is the ordinary case and reads as not found.
@@ -135,7 +158,7 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 		// nothing was leaving, and the write went ahead regardless. A guard
 		// whose precondition is a read nobody looked at is a guard that passes
 		// by accident.
-		return nil, fmt.Errorf("auth: read the role %q: %w", name, err)
+		return nil, false, fmt.Errorf("auth: read the role %q: %w", name, err)
 	}
 	// The one write a tenant cannot undo from inside the product. The query is
 	// behind the rule rather than in front of it, so only a write that is
@@ -143,7 +166,7 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 	if err := contracts.CheckedAdministration(name, was, want, func() ([]*contracts.Role, error) {
 		return s.Roles(ctx, tx)
 	}); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	at := db.Now()
 	role.Grants, role.UpdatedAt = want, at
@@ -155,11 +178,16 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 			" ON CONFLICT (tenant_id, name) DO UPDATE SET permissions = EXCLUDED.permissions, updated_at = EXCLUDED.updated_at",
 		tenant.ID, name, want, role.CreatedAt, at).Error
 	if err != nil {
-		return nil, fmt.Errorf("auth: write the role %s: %w", name, err)
+		return nil, false, fmt.Errorf("auth: write the role %s: %w", name, err)
 	}
-	return role, events.Publish(ctx, tx, contracts.EventRoleSet, contracts.RoleSet{
+	if err := events.Publish(ctx, tx, contracts.EventRoleSet, contracts.RoleSet{
 		Role: name, Was: was, Now: want, At: at,
-	})
+	}); err != nil {
+		// State and outbox row commit together or neither does, and a change
+		// that will not be committed changed nothing.
+		return nil, false, err
+	}
+	return role, true, nil
 }
 
 // Undeclared reports, for one tenant, every role row naming a permission the

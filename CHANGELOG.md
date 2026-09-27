@@ -124,17 +124,28 @@ row that cannot be said of is the operator's own administrator while it still ho
 wildcard, the only role the seeder writes named permissions into: once a module leaves,
 nothing records whether a departed grant was the seeder's or a hand's, so every dead
 grant there is taken — each dead either way, and beside a wildcard that still grants the
-rest.
+rest. What `--remove` prints is what its transaction wrote, not what it read: two
+operators running the command at once both read one dead grant, because the tenant's
+advisory lock is taken by the write and not by the read, and the second write then finds
+the row already holding the list it was handed and changes nothing — so it reports
+nothing. Two lines for one removal would tell a tenant twice that a person changed
+something nobody changed.
 
 **One published signature moved, and that is this change's cost.** `auth.SeedRoles` is
 exported from a published package, and its fourth parameter changed type: the
 hand-written `[]string` of operator permissions is now `[]tenancy.Grant`, the catalogue
 of what the composition declares. Nothing a caller can write repairs the old shape,
 because the old shape is the defect; a caller asks its own composition with
-`kit/module.Grants`, the call the kernel's own manifest check already made. Measured
+`kit/module.Grants`, the call the kernel's own manifest check already made. The second
+line is this branch's later one: `auth/contracts.Service` gains `SetRoleChanged`, the
+same write as `SetRole` plus whether the row changed — which the write already worked
+out for itself, to decide not to publish an event twice, and kept. `SetRole` keeps its
+shape, so a caller that renders the role it was given is untouched; an out-of-tree
+implementation of the service interface owes the new method, and `authtest.NewFake`
+ships one. Measured
 with the comparison the release process asks for (`python3 scripts/check_public_api.py
-v1.1.0 HEAD`): 19 reported incompatibilities at this tip against 18 at `origin/main`,
-the added line this signature.
+v1.1.0 HEAD`): 20 reported incompatibilities at this tip against 18 at
+`origin/main`, the added lines these two.
 [RELEASE.md](RELEASE.md#choose-the-compatible-release-line) measures a break against
 v1.1.0 with no accepted-break baseline, and
 [scripts/PUBLIC-API.md](scripts/PUBLIC-API.md) keeps that comparison out of `make check`

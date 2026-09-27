@@ -36,7 +36,10 @@ import (
 // one transaction per tenant, through the module's ordinary role write: the
 // tenant's lock, the floor that keeps somebody able to administer it, and an
 // auth.role_set event in the same transaction, so the repair is in the audit like
-// any other change to a role.
+// any other change to a role. What it prints is the roles whose rows that write
+// moved: the write reports whether it changed anything, so two operators running
+// this at once — both reading the same dead grant before either reached it —
+// print one line between them and not two.
 //
 // The two values it passes are the two the seeder is given — the catalogue of
 // this composition and the initial roles this application names — because those
