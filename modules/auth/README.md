@@ -30,7 +30,11 @@ by the next morning, about a grant no route would ever have accepted. Rows
 written by an older seeder are a customer's and are not edited on the way past:
 `auth.RepairSeededRoles` lists them per tenant and removes them when asked,
 taking away only the grants that seeder wrote — `apps/platformkit repair-roles`
-is the door, and `--remove` is the decision. A role's name belonging to the
+is the door, and `--remove` is the decision. What that flag prints is what its
+transaction wrote: two operators running it at once both read the same dead
+grant, the second one's write finds the row already cleaned and changes nothing,
+and only the run that moved a row says it removed anything. A line saying
+`removed` is a claim about a row. A role's name belonging to the
 seeder is not the same as a grant in it being the seeder's: the built-in member
 is seeded holding nothing unless the application's initial roles name it, a
 customer tenant's administrator is seeded the wildcard and nothing else, and a
@@ -66,9 +70,13 @@ own; `internal.Undeclared`, so the repair takes back exactly what the hourly
 sweep names; `internal.SetRole` for the write, with its tenant lock, its
 administration floor and its `auth.role_set` event; and `jobs.PerTenant` for the
 walk. **Added:** `contracts.SeededGrants`, because who wrote a grant is a
-question no existing unit answered, and `auth.RepairSeededRoles` with the
+question no existing unit answered, `Service.SetRoleChanged` — the same write and
+the answer it already computed for itself, whether the row changed, which is what
+lets a repair say what it did — and `auth.RepairSeededRoles` with the
 `repair-roles` subcommand as its only caller. **Made reusable:**
 `kit/module.Grants`, the one catalogue of a composition, which was a loop inside
-`kit/app`'s manifest check and is now what an application hands the seeder — one
-implementation, and the caller moved to it rather than a second one being
-written.
+`kit/app`'s manifest check and is now what an application hands the seeder; that
+loop is gone and its caller moved to `Grants` rather than a second one being
+written. Two other walks of `m.Permissions` remain, and they are different
+questions: `validatePermissions` wants a kind per key and `module.Valid` wants an
+owner and a duplicate check, neither of which `Grants` produces.
