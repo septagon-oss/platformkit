@@ -2,11 +2,14 @@ package auth_test
 
 import (
 	"context"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -270,5 +273,63 @@ func TestTheOperatorsOwnAdministratorCannotSayWhoWroteADeadGrant(t *testing.T) {
 	}
 	if grants := roleGrants(t, conn, svc, operator, "finance"); !slices.Equal(grants, []string{"role:manage"}) {
 		t.Errorf("finance holds %v, want [role:manage]: the run removed nothing it was meant to", grants)
+	}
+}
+
+// TestAnInitialRoleIsHeldToItsRulesHoweverItsLiteralSpellsThem is those two
+// rules read as the rules the doc comment says they are — about the permission,
+// not about the way one spelling happens to write it.
+//
+// SeededRoles refuses an initial role naming the wildcard or an operator
+// permission and then hands the same list to CheckedPermissions, which
+// lower-cases and trims before it decides anything. So a literal one space or
+// one capital away from canonical walked past both rules and was seeded: " * "
+// reached CheckedPermissions, which takes the wildcard by design, and
+// " Tenant:Manage " reached it in the operator's own tenant, where every
+// operator permission is declared and so taken. A rule that held for one of the
+// spellings a person plausibly types and not for the other four is not a rule,
+// and the row it wrote could not be told apart from the refused one afterwards.
+//
+// Every refusal below is one only those two rules can produce — each of these
+// spellings is one CheckedPermissions lets through, which is why the case runs
+// over the operator's tenant as well as a customer's (a customer's is refused
+// "tenant:manage" by the other rule, with a different sentence) and why it reads
+// the sentence back. The accepted half is the probe that this normalises and does
+// not tighten: the same letters around an ordinary permission still seed, spelled
+// the way the row holds them, which is what SeededGrants then matches on.
+func TestAnInitialRoleIsHeldToItsRulesHoweverItsLiteralSpellsThem(t *testing.T) {
+	for _, tenant := range []tenancy.Tenant{
+		{ID: uuid.New(), Slug: "acme"},
+		{ID: uuid.New(), Slug: "services-law", Operator: true},
+	} {
+		for _, spelled := range []string{"*", " * ", "\t*\n", "tenant:manage", " Tenant:Manage ", "TENANT:MANAGE"} {
+			roles, err := contracts.SeededRoles(composed,
+				[]contracts.Role{{Name: "finance", Grants: contracts.Permissions{spelled, "task:read"}}}, tenant)
+			switch {
+			case err == nil:
+				t.Errorf("%s: an initial role granting %q seeded %v: neither the wildcard nor an"+
+					" operator permission belongs in one, however the literal spells it", tenant.Slug, spelled, roles)
+				continue
+			case !errors.Is(err, crud.ErrInvalid):
+				t.Errorf("%s: initial role granting %q: %v, want ErrInvalid", tenant.Slug, spelled, err)
+			case !strings.Contains(err.Error(), "cannot grant"):
+				t.Errorf("%s: initial role granting %q refused with %v, which is not the initial-role"+
+					" rule's refusal: what seeded that grant is the rule that should have refused it", tenant.Slug, spelled, err)
+			}
+		}
+	}
+	roles, err := contracts.SeededRoles(composed,
+		[]contracts.Role{{Name: " Finance ", Grants: contracts.Permissions{" Task:Read "}}},
+		tenancy.Tenant{ID: uuid.New(), Slug: "acme"})
+	if err != nil {
+		t.Fatalf("an ordinary permission spelled with capitals and spaces: %v", err)
+	}
+	finance := slices.IndexFunc(roles, func(r contracts.Role) bool { return r.Name == "finance" })
+	if finance < 0 {
+		t.Fatalf("the seeder wrote %v with no finance in it", roles)
+	}
+	if !slices.Equal([]string(roles[finance].Grants), []string{"task:read"}) {
+		t.Errorf(`finance holds %v, want [task:read]: " Task:Read " is the same permission`+
+			" spelled differently, and the row is what CheckedPermissions makes of it", roles[finance].Grants)
 	}
 }
