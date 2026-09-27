@@ -28,12 +28,15 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
 
-// repairRoles walks every tenant and reports the grants its own seeder wrote
-// that no composed module defines any more. --remove takes them away, one
-// transaction per tenant, through the module's ordinary role write: the tenant's
-// lock, the floor that keeps somebody able to administer it, and an auth.role_set
-// event in the same transaction, so the repair is in the audit like any other
-// change to a role.
+// repairRoles walks every active tenant and reports the grants its own seeder
+// wrote that no composed module defines any more. Active is the lister this
+// composition hands every tenant-scoped job — modules/auth's hourly sweep
+// included — so a suspended tenant is neither repaired nor swept, which is the
+// behaviour one walk of this installation should have. --remove takes them away,
+// one transaction per tenant, through the module's ordinary role write: the
+// tenant's lock, the floor that keeps somebody able to administer it, and an
+// auth.role_set event in the same transaction, so the repair is in the audit like
+// any other change to a role.
 //
 // The two values it passes are the two the seeder is given — the catalogue of
 // this composition and the initial roles this application names — because those
@@ -63,24 +66,37 @@ func repairRoles(args []string) error {
 	}
 	defer conn.Close()
 
+	verb := "seeded grants no composed module defines"
+	if *remove {
+		verb = "removed"
+	}
 	var found int
 	err = jobs.PerTenant(ctx, conn, tenantcontracts.Active{Service: c.tenants},
 		func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
-			return db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			var lines []string
+			err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 				stale, err := auth.RepairSeededRoles(ctx, tx, c.auth, declared, initialRoles, *remove)
 				if err != nil {
 					return err
 				}
 				for _, name := range slices.Sorted(maps.Keys(stale)) {
-					found++
-					verb := "seeded grants no composed module defines"
-					if *remove {
-						verb = "removed"
-					}
-					fmt.Printf("%s\t%s\t%s\t%v\n", t.Slug, name, verb, stale[name])
+					lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%v", t.Slug, name, verb, stale[name]))
 				}
 				return nil
 			})
+			if err != nil {
+				return err
+			}
+			// Printed once the transaction has committed, and not from inside it.
+			// A line saying "removed" is a claim about a row, and a commit that
+			// fails takes the removal back with it: listing from within the
+			// transaction would report a repair that never happened. A refused
+			// write already returns above, before a line exists.
+			for _, line := range lines {
+				found++
+				fmt.Println(line)
+			}
+			return nil
 		})
 	if err != nil {
 		return err
