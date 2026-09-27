@@ -106,7 +106,12 @@ manifest check already read) and seeds the operator permissions of that catalogu
 nothing else; an initial role naming a permission no composed module defines is
 refused where it used to be written, and `contracts.SeededRoles` is what the seeder
 writes, so an application can ask what a composition seeds before it has a database.
-The rows already written belong to a customer and are not edited on the way past:
+The two rules an initial role is held to — it may not name the wildcard, and it may
+not name an operator permission — are about the permission and not the spelling of
+it, so `" * "` is refused as `*` is and `" Tenant:Manage "` as `tenant:manage`
+is; until now a space or a capital walked past both and the role was seeded —
+the row indistinguishable from one that had been allowed. The rows already
+written belong to a customer and are not edited on the way past:
 `platformkit repair-roles` lists, per tenant and per role, the grants this
 installation's own seeder wrote that no composed module defines any more, and
 `--remove` is the decision — through the module's ordinary role write, so each
