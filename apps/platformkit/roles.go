@@ -46,7 +46,11 @@ import (
 // two are what the seeder decided with, and a grant it did not write is not this
 // command's to take away. A grant somebody added by hand is reported by the
 // hourly sweep and by nothing here. It is idempotent: a second run finds nothing,
-// and prints that.
+// and prints that — about the tenants it read, which is the claim worth reading.
+// Active is the lister, so a tenant somebody suspended was not read and the
+// sentence says nothing about its rows: a grant left there is inert and the
+// sweep is quiet about it for the same reason, so the all-clear is not the place
+// to start listing suspended tenants, and it is not a place to call them clean.
 func repairRoles(args []string) error {
 	fs := flag.NewFlagSet("repair-roles", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
@@ -105,7 +109,7 @@ func repairRoles(args []string) error {
 		return err
 	}
 	if found == 0 {
-		fmt.Println("every grant this installation's seeder wrote is one a composed module defines")
+		fmt.Println("no active tenant holds a grant its own seeder wrote that no composed module defines")
 	}
 	return nil
 }
