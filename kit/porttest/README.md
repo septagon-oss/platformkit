@@ -30,7 +30,7 @@ A field no case reads does not belong in the description. That is the table:
 | `Op.Mutates` | whether the retry and the four refusals are owed |
 | `Op.Ready` | every case of that operation |
 | `Op.Call` | the success case, and the retry, which compares what it answered either side of the second call — and refuses a mutating operation whose rendering is empty, since two empty strings compare equal |
-| `Op.Snapshot` | the retry and every refusal: "writes nothing" — and the harness asks it, in each of those cases, whether it can see the row at all (below) |
+| `Op.Snapshot` | the retry and every refusal: "writes nothing" — and the harness asks it, in each of those cases, whether it can see the row at all (below); the success case reads it either side of the call for the one operation the row witness cannot ask, a mutating one whose `Ready` names no row |
 | `Op.Publishes` | the success case, in order |
 | `Op.Refusals` | one case each |
 | `Op.Names` | the generated case name where the module has its own sentence |
@@ -118,10 +118,20 @@ seeded. The last is the `Snapshot`'s share of the hole `Op.Call`'s empty renderi
 opened: every "writes nothing" assertion compares two renderings of it, so one
 that cannot name the row makes them comparisons nothing can move, and a suite
 stays green behind it with a fake that is not even wrong. It is said per case,
-where the assertion lives — the success case asserts the events and no snapshot
-and is not asked it. A row `Ready` does not name is exempt: a per-tenant
-singleton's `Snapshot` has no row argument to read, which is why `sitetest` passes
-this check without satisfying it.
+where the assertion lives.
+
+A row `Ready` does not name is exempt from *that* witness: a per-tenant singleton's
+`Snapshot` has no row argument to read, which is why `sitetest` passes this check
+without satisfying it. The exemption costs such a port its row argument and not its
+assertion, so the exemption is paid for in the success case, which reads the same
+closure either side of the call the description records as a write. A rendering that
+does not move across a successful `Save` renders it the same either side of every
+refusal, and `Save: the operation says what it did` says so — which is the
+difference between review 7's one line (`|| row == uuid.Nil` in `Suite.snapshot`)
+turning every singleton port's "writes nothing" into a comparison of two constants
+in a green tree, and that same line reddening `sitetest` beside it.
+`TestRowBlindSuccessFailsWhenTheSnapshotCannotMove` watches the check;
+`review7_rowblind_test.go` watches the half only a fake that writes can show.
 
 **What the floor does not assert.** House rule 9 has three clauses; this harness
 asserts two. `Refusal.Call` answers the error alone — `func(w W, row uuid.UUID) error`

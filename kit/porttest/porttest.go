@@ -356,9 +356,27 @@ func (s Suite[W]) success(rep reporter, op Op[W], w W) {
 	rep.Helper()
 	row := op.Ready(rep.T(), w)
 	before := len(s.Events(w))
+	// snapshotSeesTheRow exempts a row Ready does not name from the row witness, because a
+	// per-tenant singleton's Snapshot has no row argument to read. The exemption costs such a
+	// port its row argument and not its assertion, so the one question a rendering with no row
+	// argument can still answer is asked here, through the same closure every "writes nothing"
+	// comparison reads: did it move across a call this case records as a success. One that did
+	// not move renders it the same either side of every refusal, and every one of those
+	// comparisons is then one nothing can move — which is how a singleton port loses its whole
+	// assertion without anybody deleting one.
+	rowless := op.Mutates && row == uuid.Nil
+	var was string
+	if rowless {
+		was = s.snapshot(rep.T(), op, w, row)()
+	}
 	if _, err := op.Call(w, row); err != nil {
 		rep.Errorf("%s: %v; this is the call the operation is for", op.Name, err)
 		return
+	}
+	if rowless && s.snapshot(rep.T(), op, w, row)() == was {
+		rep.Errorf("%s: the Snapshot renders %q both before and after a call this case records as a "+
+			"success, so \"writes nothing\" compares two renderings nothing can move; render what the "+
+			"operation writes", op.Name, was)
 	}
 	s.published(rep, op.Name, w, before, op.Publishes)
 }
@@ -455,7 +473,9 @@ func (s Suite[W]) refused(rep reporter, op Op[W], r Refusal[W], w W) {
 // on every case whose assertion rests on the rendering.
 //
 // A row Ready does not name has no identity for a Snapshot to look at — a
-// per-tenant singleton's snapshot has no row argument to read — and is not asked.
+// per-tenant singleton's snapshot has no row argument to read — and is not asked. What that
+// exemption leaves unasked is asked in the success case, which reads this same closure either
+// side of a call the description records as a write: see success.
 // The check is sensitive to the row argument by design: a Snapshot that renders
 // the whole world rather than the row would be refused here too, and the
 // correction it is told is to render the row, because a rendering that cannot
