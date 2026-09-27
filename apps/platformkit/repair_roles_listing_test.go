@@ -138,8 +138,8 @@ func TestTheRepairCommandPrintsWhatItCommitted(t *testing.T) {
 
 	if lines := printed(func() error { return repairRoles([]string{"--config", path, "--remove"}) }); len(lines) != 1 ||
 		strings.Contains(strings.Join(lines, " "), "ghost:read") ||
-		lines[0] != "no active tenant holds a grant its own seeder wrote that no composed module defines" {
-		t.Errorf("a second run printed %q, want the sentence that says no active tenant has anything left to take", lines)
+		lines[0] != "nothing for this run to take from any active tenant; the hourly sweep reports what is left" {
+		t.Errorf("a second run printed %q, want the all-clear that names this run and the tenants it read", lines)
 	}
 
 	// The row again, and the tenant out of the walk: the run that reaches neither
