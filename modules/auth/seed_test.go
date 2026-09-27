@@ -76,6 +76,7 @@ func TestInitialRoleRefusalsAndRollbackLeaveNoRoles(t *testing.T) {
 		{Name: "admin", Grants: contracts.Permissions{"task:read"}},
 		{Name: "bad-role"},
 		{Name: "empty"},
+		{Name: "blank", Grants: contracts.Permissions{"   "}}, // trims to nothing, so the list is none
 		{Name: "member", Grants: contracts.Permissions{"*"}},
 		{Name: "member", Grants: contracts.Permissions{"tenant:manage"}},
 		// The refusal this task added: a grant no composed module defines is
