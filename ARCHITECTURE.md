@@ -307,6 +307,13 @@ which the [package gate](scripts/check_packages.sh) enforces.
 [ui/README.md](ui/README.md) maps the presentation packages and the rules the
 gates enforce between them.
 
+A client that supplies values instead of copying a palette writes a seed.
+[design.FromSeed](design/seed.go) generates both themes from a sector, a name and
+an optional brand colour, and refuses the result below the contrast
+[design.Contrast](design/contrast.go) measures; [kit/designconfig](kit/designconfig/)
+decodes `clients/<slug>/design.yaml` into that pair, keyed by slug so one process
+can hold many. See [design/README.md](design/README.md).
+
 [Theme.FontFamilies](design/typography.go) projects those existing token identities
 as ordered literal or generic family names. It follows the admitted
 [CSS Fonts syntax](https://www.w3.org/TR/2026/WD-css-fonts-4-20260907/#font-family-name-syntax):
