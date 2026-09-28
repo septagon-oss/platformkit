@@ -177,7 +177,9 @@ func TestRepairTakesTheSeedersDeadGrantsAndLeavesTheTenantsOwn(t *testing.T) {
 // take the first without the second — SetRole goes through
 // contracts.CheckedPermissions, which refuses any list still naming a permission
 // no module defines — and the second is not its to take. So the role is left
-// whole and out of the report, and the hourly sweep goes on naming both.
+// whole and out of either report: the listing `repair-roles` prints before it
+// removes stops at the same line the write does, so a run that names nothing has
+// not proved there is nothing anywhere, and the hourly sweep goes on naming both.
 //
 // The reachability probe is the administrator's own seeded operator grant, which
 // the same run does remove: the case cannot pass by the repair doing nothing.
@@ -203,10 +205,13 @@ func TestARoleTheRepairCannotFinishIsLeftWhole(t *testing.T) {
 		t.Fatalf("the administrator's own edit: %v", err)
 	}
 
-	var found map[string][]string
+	var found, listed map[string][]string
 	var roles []*contracts.Role
 	if err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var e error
+		if listed, e = auth.RepairSeededRoles(ctx, tx, svc, now, initial, false); e != nil {
+			return e
+		}
 		if found, e = auth.RepairSeededRoles(ctx, tx, svc, now, initial, true); e != nil {
 			return e
 		}
@@ -220,6 +225,9 @@ func TestARoleTheRepairCannotFinishIsLeftWhole(t *testing.T) {
 	}
 	if _, touched := found["finance"]; touched {
 		t.Errorf("reported a role it cannot repair: %v", found)
+	}
+	if _, seen := listed["finance"]; seen || !slices.Equal(listed["admin"], []string{"billing:catalog"}) {
+		t.Errorf("the listing a --remove previews reported %v; want admin [billing:catalog] and no finance", listed)
 	}
 	for _, r := range roles {
 		switch r.Name {

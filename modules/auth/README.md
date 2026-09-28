@@ -34,7 +34,11 @@ is the door, and `--remove` is the decision. What that flag prints is what its
 transaction wrote: two operators running it at once both read the same dead
 grant, the second one's write finds the row already cleaned and changes nothing,
 and only the run that moved a row says it removed anything. A line saying
-`removed` is a claim about a row. A role's name belonging to the
+`removed` is a claim about a row. A listing stops at the same line, for the same
+reason: a role holding a dead grant of somebody else's beside the seeder's is
+declined whole — `contracts.CheckedPermissions` refuses the list either write
+would produce — so it is named by neither a listing nor a removal, and a run that
+prints nothing has not proved there is nothing left. A role's name belonging to the
 seeder is not the same as a grant in it being the seeder's: the built-in member
 is seeded holding nothing unless the application's initial roles name it, a
 customer tenant's administrator is seeded the wildcard and nothing else, and a
