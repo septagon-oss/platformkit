@@ -9,8 +9,10 @@ package internal_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -213,45 +215,112 @@ func TestTheResetTokenIsInTheMailAndInNoRow(t *testing.T) {
 //
 // They cost the same now because the request does the same thing either way:
 // one INSERT into the outbox, and the lookup that used to be here happens in
-// the worker. The samples are interleaved so that a busy machine moves both.
+// the worker. So the case asks that twice, and the first answer is exact:
+//
+//  1. The work. Both requests leave the same outbox row — one
+//     contracts.EventResetRequested with the same payload fields — and neither
+//     writes a password token, because the token is the worker's. A regression
+//     that brings the lookup back into the request fails here, deterministically,
+//     on any machine.
+//  2. The clock. Interleaved pairs, one known and one unknown request each, and
+//     a sign test: when the two costs are the same, the known request is the
+//     slower one in about half the pairs; the oracle this case was written
+//     against is slower in every pair. Medians of twenty samples were the test
+//     until 2026-09-28, and a CI runner whose samples ranged from 1.5 ms to
+//     102 ms read 4.45 ms against 2.85 ms off them — a coin toss, not a leak.
+//     Pairing cancels what a busy machine does to both halves of a pair; the
+//     bound below is four standard deviations from a fair split at 200 pairs
+//     (0.5 ± 4·√(0.25/200)), which also catches a single indexed lookup put
+//     back into the request — measured: 60 pairs caught it in one run of five.
 func TestTheForgottenPasswordRouteCostsTheSameEitherWay(t *testing.T) {
-	if testing.Short() {
-		t.Skip("a timing comparison needs samples")
-	}
 	router, conn, _ := mount(t, auth.OIDC{})
 	person(t, conn, "ada@acme.localhost")
 
-	const samples = 20
-	sample := func(email string, i int) time.Duration {
-		// A fresh address each time, because this route has a per-address cap
-		// and forty requests from one would be refused half way through.
+	forgot := func(email string, i int) (time.Duration, int) {
+		// A fresh caller address each time, because this route caps each caller
+		// and a hundred and twenty requests from one would be refused.
 		at := time.Now()
 		res := call(t, router, http.MethodPost, "/api/v1/public/auth/password/forgot",
-			`{"email":"`+email+`"}`, from(fmt.Sprintf("198.51.100.%d", i)))
-		took := time.Since(at)
-		if res.Code != http.StatusOK {
-			t.Fatalf("forgot(%s) = %d %s", email, res.Code, res.Body)
-		}
-		return took
+			`{"email":"`+email+`"}`, from(fmt.Sprintf("198.51.%d.%d", 100+i/200, i%200)))
+		return time.Since(at), res.Code
 	}
+	type written struct {
+		Name    string
+		Payload []byte
+	}
+	outbox := func() (rows []written, tokens int64) {
+		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			if err := tx.DB().Table("platformkit_outbox").Order("created_at, id").Find(&rows).Error; err != nil {
+				return err
+			}
+			return tx.DB().Table("password_tokens").Count(&tokens).Error
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rows, tokens
+	}
+	fields := func(payload []byte) []string {
+		var m map[string]any
+		if err := json.Unmarshal(payload, &m); err != nil {
+			t.Fatalf("an outbox payload is not an object: %s", payload)
+		}
+		return slices.Sorted(maps.Keys(m))
+	}
+
+	// 1. The work, exactly.
+	before, tokensBefore := outbox()
+	for i, email := range []string{"ada@acme.localhost", "nobody@acme.localhost"} {
+		if _, code := forgot(email, i); code != http.StatusOK {
+			t.Fatalf("forgot(%s) = %d", email, code)
+		}
+	}
+	after, tokensAfter := outbox()
+	added := after[len(before):]
+	if len(added) != 2 {
+		t.Fatalf("the two requests wrote %d outbox rows, want one each: %+v", len(added), added)
+	}
+	for _, row := range added {
+		if row.Name != contracts.EventResetRequested {
+			t.Errorf("a request wrote %q, want %q", row.Name, contracts.EventResetRequested)
+		}
+	}
+	if k, u := fields(added[0].Payload), fields(added[1].Payload); !slices.Equal(k, u) {
+		t.Errorf("the known address wrote fields %v and the unknown one %v; the request is not the same work", k, u)
+	}
+	if tokensAfter != tokensBefore {
+		t.Errorf("a request wrote %d password token(s); the token is the worker's, and a request that writes one has looked the address up", tokensAfter-tokensBefore)
+	}
+
+	// 2. The clock, paired.
+	if testing.Short() {
+		t.Skip("the timing half needs samples")
+	}
+	const pairs = 200
 	var known, unknown []time.Duration
-	for i := range samples {
-		known = append(known, sample("ada@acme.localhost", i*2))
-		unknown = append(unknown, sample("nobody@acme.localhost", i*2+1))
+	slower := 0
+	for i := range pairs {
+		k, kc := forgot("ada@acme.localhost", 2+i*2)
+		u, uc := forgot("nobody@acme.localhost", 3+i*2)
+		if kc != http.StatusOK || uc != http.StatusOK {
+			t.Fatalf("pair %d answered %d and %d", i, kc, uc)
+		}
+		known, unknown = append(known, k), append(unknown, u)
+		if k > u {
+			slower++
+		}
 	}
 	slices.Sort(known)
 	slices.Sort(unknown)
-	km, um := known[samples/2], unknown[samples/2]
-	t.Logf("known:   median %s, %s … %s", km, known[0], known[samples-1])
-	t.Logf("unknown: median %s, %s … %s", um, unknown[0], unknown[samples-1])
-
-	if ratio := float64(max(km, um)) / float64(min(km, um)); ratio > 1.25 {
-		t.Errorf("the medians differ by %.2fx (%s against %s); an address somebody has is measurably different",
-			ratio, km, um)
+	t.Logf("known:   median %s, %s … %s", known[pairs/2], known[0], known[pairs-1])
+	t.Logf("unknown: median %s, %s … %s", unknown[pairs/2], unknown[0], unknown[pairs-1])
+	t.Logf("the known request was the slower in %d of %d pairs", slower, pairs)
+	if share := float64(slower) / pairs; share < 0.359 || share > 0.641 {
+		t.Errorf("the known request was the slower in %d of %d interleaved pairs; equal costs split near half, and this is an address somebody has being measurably different", slower, pairs)
 	}
-	if known[samples-1] < unknown[0] || unknown[samples-1] < known[0] {
+	if known[pairs-1] < unknown[0] || unknown[pairs-1] < known[0] {
 		t.Errorf("the two ranges do not overlap: %s…%s against %s…%s",
-			known[0], known[samples-1], unknown[0], unknown[samples-1])
+			known[0], known[pairs-1], unknown[0], unknown[pairs-1])
 	}
 }
 
