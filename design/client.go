@@ -3,7 +3,6 @@ package design
 import (
 	"fmt"
 	"maps"
-	"regexp"
 	"slices"
 	"strings"
 )
@@ -34,20 +33,26 @@ type Client struct {
 // clientThemes are the only two themes a client may write tokens for.
 var clientThemes = []string{"light", "dark"}
 
-// fontStack and length are the two grammars a client may write that reach CSS.
-// A font stack is a comma-separated list of quoted or plain family names; a
-// length is a number and a unit. Anything richer would be a declaration, and a
-// declaration would mean this package parses CSS.
-var (
-	fontStack = regexp.MustCompile(`^[A-Za-z0-9 ,.\-"']{1,256}$`)
-	length    = regexp.MustCompile(`^[0-9]{1,4}(\.[0-9]{1,2})?(rem|em|px|%)$`)
-)
+// typographyFields names the three stacks by the token each one becomes, so a
+// refusal says which stack. There is deliberately no second grammar for a font
+// stack in this package: ParseFontFamilies is what Theme.FontFamilies and the
+// export already read, so a stack a client may write is exactly a stack the
+// renderer can project — a looser check here would only move the failure from
+// this file to ExportTokens.
+var typographyFields = []struct {
+	name  string
+	value func(Typography) string
+}{
+	{"display", func(t Typography) string { return t.Display }},
+	{"body", func(t Typography) string { return t.Body }},
+	{"mono", func(t Typography) string { return t.Mono }},
+}
 
 // Validate refuses a client file that could not be applied: no slug, a seed it
-// would refuse, a theme or token name outside the vocabulary, a token value it
-// cannot parse, or a type or shape value that is not a font stack or a length.
-// Every override is checked here and again after Resolve, against the pair it
-// would have been applied to.
+// would refuse, a theme or token name outside the vocabulary, a token value that
+// is not an opaque colour literal, or a type or shape value that is not a font
+// stack or a length. Every override is checked here and again after Resolve,
+// against the pair it would have been applied to.
 func (c Client) Validate() error {
 	if strings.TrimSpace(c.Slug) == "" {
 		return fmt.Errorf("design: client design requires a slug")
@@ -60,23 +65,33 @@ func (c Client) Validate() error {
 			return fmt.Errorf("design: client %s names theme %q, want light or dark", c.Slug, theme)
 		}
 		for _, token := range slices.Sorted(maps.Keys(c.Tokens[theme])) {
-			if _, err := parseColor(c.Tokens[theme][token]); err != nil {
+			value := c.Tokens[theme][token]
+			color, err := parseColor(value)
+			if err != nil {
 				return fmt.Errorf("design: client %s theme %s: %w", c.Slug, theme, err)
+			}
+			// A foreground with alpha has no contrast ratio until it is composited,
+			// and measuring it as though it were opaque is how invisible text passes
+			// a legibility gate — transparent measures 21:1 on a light canvas. The
+			// translucent look a client wanted is a ColorMix of two opaque literals,
+			// which is what the kernel models for exactly that.
+			if color[3] != 1 {
+				return fmt.Errorf("design: client %s theme %s overrides %q with %q, which carries alpha: name an opaque colour, because a colour with alpha has no contrast until it is composited", c.Slug, theme, token, value)
 			}
 			if _, ok := lookupColor(token); !ok {
 				return fmt.Errorf("design: client %s theme %s overrides %q, which no theme exports", c.Slug, theme, token)
 			}
 		}
 	}
-	for _, stack := range []string{c.Typography.Display, c.Typography.Body, c.Typography.Mono} {
-		if stack != "" && !fontStack.MatchString(stack) {
-			return fmt.Errorf("design: client %s names a font stack that is not one", c.Slug)
+	for _, field := range typographyFields {
+		if stack := field.value(c.Typography); stack != "" {
+			if _, err := ParseFontFamilies(stack); err != nil {
+				return fmt.Errorf("design: client %s names a %s font stack that is not one: %w", c.Slug, field.name, err)
+			}
 		}
 	}
-	for _, radius := range []string{c.Shape.ButtonRadius, c.Shape.CardRadius, c.Shape.ModalRadius} {
-		if radius != "" && !length.MatchString(radius) {
-			return fmt.Errorf("design: client %s names a shape length %q that is not one", c.Slug, radius)
-		}
+	if err := c.Shape.Validate(); err != nil {
+		return fmt.Errorf("design: client %s: %w", c.Slug, err)
 	}
 	return nil
 }

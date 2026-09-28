@@ -18,6 +18,21 @@ open: those sheets still write hex and `apps/platformkit` still composes `design
 delivery moves no client onto the loader, and the loader and the reference palette are what a client
 can be moved onto.
 
+**The gate now refuses what it cannot measure, and a client's shape reaches the document.** Measuring
+the delivery found three holes in it: an override carrying alpha is premultiplied, so a translucent
+foreground read as a darker opaque one and `transparent` — which parses — measured 21:1; a second
+font-stack regexp beside the client validator admitted stacks the package's own `ParseFontFamilies`
+refused, so they failed later, in the export; and the radius grammar lived in that regexp rather than
+beside `design.Shape`, and admitted `%`, which means a different shape per container and has no DTCG
+representation. A colour with alpha is now refused before anything is measured, a font stack is checked
+by the one parser the renderer uses, a radius by `Shape.Validate` in `px|rem`, and `design.Shape`
+decodes the spelling a person writes (`card-radius`). Shape then rides the rest of the way:
+`TokenMode` carries the three `--pk-radius-*` dimensions and `TokenExport.DTCG` emits them, pinned by
+digest, so the corners a client names reach `platformkit-mobile` instead of stopping at a Go value.
+Two refusals that had no failing case now have one: two clients on one seed are refused as one palette
+worn twice, and a third client whose own override breaks its own body role refuses the whole set rather
+than booting a roster with a client missing.
+
 Two of these entries, one property: a tenant keeps somebody who can administer
 it. Each was written because the state was reachable, not because a race was
 reported, and each says below what it leaves open rather than leaving that to a
