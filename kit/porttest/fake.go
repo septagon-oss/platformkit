@@ -368,16 +368,16 @@ func (r *Recorder) Count() int {
 	return len(r.names)
 }
 
-// Command is the shape every single-row command of every fake has. The order is
-// Do's, so "a refused mutation writes nothing and emits nothing" is structural
-// here instead of a discipline each fake keeps: Apply runs only after Decide
-// accepted.
+// Command is the shape a single-row command takes in a fake that runs it
+// through Do — all six of tasktest's and contenttest's commands. The order
+// is Do's, so "a refused mutation writes nothing and emits nothing" is
+// structural, not a discipline each fake keeps: Apply runs only after Decide.
 //
-// A command that gathers more than one row — a publication that reads a service,
-// its figures, their reviews and a register — calls Grants.Holds, Store.Get,
-// Clock.Now and Recorder.Emit directly, in that same order, and is held to it by
-// the generated cases rather than by this runner. A sequencing language would be
-// the second language decision 0034 refuses.
+// A command that gathers more than one row — a publication that reads a
+// service, its figures, their reviews and a register — calls Grants.Holds,
+// Store.Get, Clock.Now and Recorder.Emit directly, in that same order. None
+// does here; sitetest.Save keeps its fake's own doors. A sequencing language
+// would be the second language decision 0034 refuses.
 type Command[T any] struct {
 	// Permission the caller must hold, or "" for an anonymous operation.
 	Permission string
