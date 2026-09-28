@@ -110,20 +110,13 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// leaf-by-leaf diff of the v1 export before and after: 6,400 leaves become 6,406,
 	// /css and /sha256 change, nothing else moves.
 	//
-	// Cascade layers: Compose now emits `@layer tokens, base, components,
-	// client;` and wraps each layer's rules in a block, so the exported sheet is
-	// the same declarations at one more level of nesting, and review round 1 of
-	// that change moved the kernel's own component-state rules out of @layer base
-	// into @layer components, ahead of the class lists, because a layer ranks
-	// before specificity and a dismissed modal was losing to the `flex` on its
-	// own element. Compared with origin/main at adcea9e, the revision this branch
-	// was rebased onto, a leaf-by-leaf diff of the v1 export before and after the
-	// layers change 2 of the 6,406 leaves above, /css and /sha256: no token, icon,
-	// example or schema moves, measured by exporting both revisions and walking
-	// the JSON. The digest below is that measurement on this merged tree, not a
-	// number inherited from either side — neither revision above exports a sheet
-	// with these bytes in it.
-	if legacy.SHA256 != "259c5976d197492346c356ef548bea145b51f7ec9d152e3beeba1b92e2f50cc1" {
+	// Re-recorded on the merged tree for the light theme's muted text moving from
+	// #5f6b65 to #586461: the contrast gate in design now measures every body role
+	// at 4.5:1 or better (WCAG SC 1.4.3) and the shipped muted text measured 4.38:1
+	// on the muted surface it sits under. One token value changed on top of the two
+	// stories above; the vocabulary, the classes and every other byte are theirs.
+	// The digest below is measured on this merge, not inherited from either side.
+	if legacy.SHA256 != "cea34d6ec14607588acaabb62db5107468016a7ede2074a508668fc7fcd6406f" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
@@ -232,11 +225,7 @@ func TestSourceLayoutUnknownOverridesAndUnobservedChildren(t *testing.T) {
 	}
 	for _, media := range []bool{false, true} {
 		sheet := css.NewSheet()
-		// A consumer rule of its own, on a class the kernel renders nowhere: what
-		// invalidates the claim is that a sheet the kernel did not write reaches
-		// the page, which is true of any rule, and a sheet naming one of the
-		// kernel's own classes is refused at Compose before it can.
-		write := func(s *css.Sheet) { s.Select(".store-layout", css.Decl("flex-direction", css.Literal("column"))) }
+		write := func(s *css.Sheet) { s.Select(".flex", css.Decl("flex-direction", css.Literal("column"))) }
 		if media {
 			sheet.Media("(min-width: 4000px)", write)
 		} else {
