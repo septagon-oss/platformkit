@@ -142,20 +142,35 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 	if opts.Installation.Host == "" {
 		opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
 	}
+	// The wait at the end asks this application what it is serving rather than
+	// asking the address, so it needs the application's own log: this wraps the
+	// logger the case named instead of replacing it, and every record still goes
+	// where the case said it should.
+	listening := make(chan struct{})
+	var watched slog.Handler = slog.DiscardHandler
+	if opts.Log != nil {
+		watched = opts.Log.Handler()
+	}
+	opts.Log = slog.New(&servingHandler{addr: cfg.Server.Addr, inner: watched, ready: listening})
 	a, err := app.New(t.Context(), cfg, mods, opts)
 	if err != nil {
 		t.Fatalf("app.New: %v", err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	stopped := make(chan error, 1)
-	go func() { stopped <- a.Run(ctx) }()
+	stopped := make(chan struct{})
+	var runErr error
+	go func() {
+		defer close(stopped)
+		runErr = a.Run(ctx)
+	}()
 	t.Cleanup(func() {
 		cancel()
-		if err := <-stopped; err != nil {
-			t.Errorf("Run: %v", err)
+		<-stopped
+		if runErr != nil {
+			t.Errorf("Run: %v", runErr)
 		}
 	})
-	waitFor(t, cfg.Server.Addr)
+	waitServing(t, cfg.Server.Addr, listening, stopped, &runErr)
 }
 
 // TestAnEmptyDatabaseBecomesAWorkingInstallation is the README's five commands
@@ -1000,29 +1015,167 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 	return client
 }
 
-func waitFor(t *testing.T, addr string) {
+// servingSettle is how long the address has to keep answering, and this
+// application has to keep running, before the wait calls the boot served. It is
+// short because everything it can be waiting for is immediate: a listener either
+// took the address or failed to, within microseconds of the sentence.
+const servingSettle = 250 * time.Millisecond
+
+// bootDeadline bounds how long one case waits for its application. It is generous
+// on purpose: the wait it is absorbing is the queue in front of this composition at
+// the Postgres migration lock, which every suite running on this host shares, and
+// the kernel says that queue is bounded by the caller's context and not by a
+// timeout. What the case may not do is give up and then ask an address it does not
+// own — which is what a shorter bound used to turn into.
+const bootDeadline = 3 * time.Minute
+
+// waitServing returns when this application is answering at addr — not when
+// something is.
+//
+// Asking the address instead was a real failure: Run migrates before it listens
+// (kit/app, Start then serve), and the wait for the composition's advisory lock is
+// bounded only by the caller's context (kit/db/migrate.go, holdCompositionLock) —
+// one Postgres, one lock, every suite running on this host. While this case's
+// composition was still in that queue, the address was one this test had released
+// (see freeAddr) and some other process could hold, and a dial that connected was
+// read as "ready": the case then asked a stranger's composition for its own
+// sign-in page and reported the 404 it got back as its own failure, and the
+// stranger's shutdown showed up later as a refused connection.
+//
+// So the wait is on the application: it returns only once the log this composition
+// was given says it is listening at this address (servingHandler) and the address
+// keeps answering while the application is still running, and a Run that got there
+// first — a port that would not bind, a gate that refused the composition — is
+// reported as that, at once, instead of as a cascade of 404s.
+func waitServing(t *testing.T, addr string, listening <-chan struct{}, stopped <-chan struct{}, runErr *error) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
-			_ = c.Close()
+	deadline := time.After(bootDeadline)
+	gone := func() {
+		t.Fatalf("the application stopped before it served at %s: %v", addr, *runErr)
+	}
+	select {
+	case <-listening:
+	case <-stopped:
+		gone()
+	case <-deadline:
+		t.Fatalf("the application said nothing about serving at %s within %s", addr, bootDeadline)
+	}
+	// The kernel writes that sentence one statement before the listener reports
+	// whether the address was this process to take, and whatever else holds the
+	// address would answer a dial — so the sentence alone is not yet proof. What is
+	// proof is the pair of them holding together for servingSettle: this application
+	// still running, and the address answering. A bind that never succeeded arrives
+	// here as itself, which is a port and an error, rather than as somebody else's
+	// 404s.
+	settled := time.Now().Add(servingSettle)
+	for {
+		select {
+		case <-stopped:
+			gone()
+		case <-deadline:
+			t.Fatalf("the application said it is listening at %s and nothing answered there within %s", addr, bootDeadline)
+		default:
+		}
+		if time.Now().After(settled) {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		if !answering(addr) {
+			settled = time.Now().Add(servingSettle) // the window is measured from an answer
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("nothing is listening on %s", addr)
 }
 
-// freeAddr picks a port the kernel has just confirmed is free.
+// answering is one dial at the address. The listener opens a statement before the
+// sentence servingHandler waits for is written, so the socket is asked as well.
+func answering(addr string) bool {
+	c, err := net.DialTimeout("tcp", addr, time.Second)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
+}
+
+// servingHandler watches one application's log for the sentence the kernel writes
+// when it starts serving, and closes ready the first time that sentence names this
+// address. It is the only way a test can tell its own application's listener from
+// somebody else's on the same port, so it is deliberately not filtered by the level
+// the caller chose — the caller's handler still decides what its own logger keeps.
+// If the kernel ever stops writing the sentence, waitServing times out and says so;
+// TestTheKernelStillSaysWhereItIsListening reddens at the change instead.
+type servingHandler struct {
+	addr  string
+	inner slog.Handler
+	ready chan struct{}
+	once  sync.Once
+}
+
+func (h *servingHandler) Enabled(ctx context.Context, level slog.Level) bool { return true }
+
+func (h *servingHandler) Handle(ctx context.Context, record slog.Record) error {
+	if record.Message == "app: listening" && namedAddress(record) == h.addr {
+		h.once.Do(func() { close(h.ready) })
+	}
+	if h.inner.Enabled(ctx, record.Level) {
+		return h.inner.Handle(ctx, record)
+	}
+	return nil
+}
+
+// namedAddress is the address a "listening" sentence names — the kernel writes it
+// as an attribute beside the sentence, and this asks for it rather than matching on
+// the sentence alone, so a second application serving somewhere else on the host
+// cannot close this case's wait.
+func namedAddress(record slog.Record) string {
+	var addr string
+	record.Attrs(func(a slog.Attr) bool {
+		if a.Key != "addr" {
+			return true
+		}
+		addr = a.Value.String()
+		return false
+	})
+	return addr
+}
+
+func (h *servingHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return h }
+
+func (h *servingHandler) WithGroup(name string) slog.Handler { return h }
+
+// The band the serving addresses are allocated from. It has to be a band the
+// kernel will not hand to anybody else while this case is holding it open for
+// nobody: start leaves the address unbound for as long as the composition takes to
+// migrate, and an address inside the ephemeral range (32768–60999 on the
+// development host, /proc/sys/net/ipv4/ip_local_port_range) is exactly what the
+// kernel gives to the next bind(":0") or outbound connection on the host — which
+// is how one suite came to be answered by another suite's application. Below that
+// range, an address is only ever taken by something that named it on purpose.
+const (
+	testPortLow  = 20000
+	testPortHigh = 29999
+)
+
+// freeAddr picks a port the kernel has just confirmed is free, from the band that
+// is outside the range the kernel hands out.
 func freeAddr(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve a port: %v", err)
+	// One process starts at a point of its own in the band, so two suites running
+	// at once do not reach for the same address first, and a case within one
+	// process walks on from wherever the last case was refused.
+	from := testPortLow + os.Getpid()%(testPortHigh-testPortLow)
+	for i := 0; i < testPortHigh-testPortLow; i++ {
+		candidate := testPortLow + (from-testPortLow+i)%(testPortHigh-testPortLow)
+		l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(candidate))
+		if err != nil {
+			continue // something already named this address; the next is still free
+		}
+		addr := l.Addr().String()
+		_ = l.Close()
+		return addr
 	}
-	addr := l.Addr().String()
-	_ = l.Close()
-	return addr
+	t.Fatalf("every address from %d to %d is taken", testPortLow, testPortHigh)
+	return ""
 }
 
 // do sends one request to the running application at the given Host header,
