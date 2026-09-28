@@ -17,13 +17,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
-// The one stream and its one subject space. Every PlatformKit event is
-// published as platformkit.<name>, so a consumer filters by subject and an
-// operator sees the whole traffic under one prefix.
-const (
-	stream  = "PLATFORMKIT"
-	subject = "platformkit."
-)
+// The one stream. Its subject space is transport.Subject:
+// platformkit.<tenant>.<module>.<event>, so a consumer filters by subject, an
+// operator sees the whole traffic under one prefix, and a tenant's own backlog
+// is an address rather than a query. See kit/events/transport/subject.go.
+const stream = "PLATFORMKIT"
 
 // JetStream is the transport for a fleet: NATS JetStream, one stream, durable
 // consumers, explicit acknowledgement. Failed deliveries remain unacknowledged
@@ -76,7 +74,7 @@ func (e connectionError) Unwrap() error { return e.cause }
 func wantedStream() *nats.StreamConfig {
 	return &nats.StreamConfig{
 		Name:      stream,
-		Subjects:  []string{subject + ">"},
+		Subjects:  []string{transport.SubjectPrefix + ".>"},
 		Retention: nats.LimitsPolicy,
 		Storage:   nats.FileStorage,
 		MaxAge:    delivery.Keep,
@@ -93,7 +91,10 @@ func (j *jetstream) Publish(ctx context.Context, ev transport.Event) error {
 	if err != nil {
 		return fmt.Errorf("events: marshal %s: %w", ev.Name, err)
 	}
-	if _, err := j.js.Publish(subject+ev.Name, body, nats.Context(ctx)); err != nil {
+	// The address is the envelope's own subject attribute, from the one
+	// function that writes both: a bridge that reads a subject out of a document
+	// and subscribes to it lands on the messages it came from.
+	if _, err := j.js.Publish(transport.Subject(ev.TenantID, ev.Name), body, nats.Context(ctx)); err != nil {
 		return fmt.Errorf("events: publish %s: %w", ev.Name, err)
 	}
 	return nil
@@ -249,8 +250,8 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	// acknowledges, where it starts, and whether it is pushed at all. A
 	// consumer that differs in any of them is not this subscription's consumer
 	// wearing the wrong settings, it is somebody else's under the same name.
-	if info.Config.FilterSubject != subject+name {
-		immutable = append(immutable, fmt.Sprintf("filter_subject %q to %q", info.Config.FilterSubject, subject+name))
+	if want := transport.Filter(name); info.Config.FilterSubject != want {
+		immutable = append(immutable, fmt.Sprintf("filter_subject %q to %q", info.Config.FilterSubject, want))
 	}
 	if info.Config.AckPolicy != nats.AckExplicitPolicy {
 		immutable = append(immutable, fmt.Sprintf("ack_policy %s to explicit", info.Config.AckPolicy))
@@ -294,7 +295,7 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 	if err := j.reconcile(ctx, durable, name); err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}
-	sub, err := j.js.QueueSubscribe(subject+name, group(durable), func(msg *nats.Msg) {
+	sub, err := j.js.QueueSubscribe(transport.Filter(name), group(durable), func(msg *nats.Msg) {
 		var ev transport.Event
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
 			// A message that will never parse would be redelivered forever.

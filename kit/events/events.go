@@ -30,6 +30,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/trace"
 )
 
 // The three tables, each named once here and once in migrations/.
@@ -99,13 +100,33 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if id, ok := tenancy.ActorFrom(ctx); ok {
 		actor = id
 	}
+	// The trace context is stored beside the actor for the same reason the
+	// actor is: the relay publishes later, in a transaction of its own and with
+	// no request left to ask. Storing it here is what lets a delivery name the
+	// call that caused it. Absent is normal and stays absent — a periodic job,
+	// a handler reacting to another event. See kit/trace.
+	parent, state := "", ""
+	if tc, ok := trace.From(ctx); ok {
+		parent, state = tc.Parent(), tc.TraceState
+	}
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor) VALUES (?, ?, ?, ?::jsonb, ?)",
-		uuid.New(), tenantID, name, string(body), actor,
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate)"+
+			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?)",
+		uuid.New(), tenantID, name, string(body), actor, nilIfEmpty(parent), nilIfEmpty(state),
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
 	return nil
+}
+
+// nilIfEmpty stores an absent value as NULL rather than the empty string: the
+// envelope omits an attribute that does not apply, and the row that carries it
+// says the same thing the envelope does.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // Handler is what a module does with an event. It runs inside a transaction

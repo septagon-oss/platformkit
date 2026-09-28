@@ -27,12 +27,14 @@ var (
 // row is one outbox record as the relay reads it. Actor is a pointer because
 // the column is null for everything nobody asked for.
 type row struct {
-	ID        uuid.UUID
-	TenantID  uuid.UUID
-	Name      string
-	Payload   []byte
-	CreatedAt time.Time
-	Actor     *uuid.UUID
+	ID          uuid.UUID
+	TenantID    uuid.UUID
+	Name        string
+	Payload     []byte
+	CreatedAt   time.Time
+	Actor       *uuid.UUID
+	TraceParent *string
+	TraceState  *string
 }
 
 // Relay moves every unpublished row to the transport, a batch at a time, and
@@ -67,7 +69,7 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 	var moved int
 	err := db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var rows []row
-		const q = `SELECT id, tenant_id, name, payload, created_at, actor FROM ` + table + `
+		const q = `SELECT id, tenant_id, name, payload, created_at, actor, traceparent, tracestate FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
@@ -80,6 +82,16 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt}
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
+			}
+			// The trace the request left in the row, carried onto the envelope
+			// the relay publishes. This transaction has no request of its own
+			// to substitute: a relay span started here would join the delivery
+			// to the wrong trace.
+			if r.TraceParent != nil {
+				ev.TraceParent = *r.TraceParent
+			}
+			if r.TraceState != nil {
+				ev.TraceState = *r.TraceState
 			}
 			if err := t.Publish(ctx, ev); err != nil {
 				// The rows published so far are still unstamped, so they go
