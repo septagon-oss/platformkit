@@ -45,16 +45,18 @@ import (
 // this composition and the initial roles this application names — because those
 // two are what the seeder decided with, and a grant it did not write is not this
 // command's to take away. A grant somebody added by hand is reported by the
-// hourly sweep and by nothing here. It is idempotent: a second run finds nothing,
-// and prints that — about the tenants it read, which is the claim worth reading.
-// Active is the lister, so a tenant somebody suspended was not read and the
-// sentence says nothing about its rows: a grant left there is inert and the
-// sweep is quiet about it for the same reason, so the all-clear is not the place
-// to start listing suspended tenants, and it is not a place to call them clean.
-// It names the run as well, and for the same reason: a role holding a dead grant
-// of the seeder's beside one of somebody else's is declined whole — the write
-// would take both, and the second is not this command's — so the run that finds
-// nothing it can write is not a run that proved there is nothing anywhere.
+// hourly sweep and by nothing here. It is idempotent: a second run finds nothing
+// and prints the one sentence its own case pins. Read that sentence for what it
+// claims, because it claims two things and no third — that this run took nothing,
+// and that every tenant it read was an active one. It prints no count and no
+// slug. Active is the lister, so a tenant somebody suspended was never read and
+// the line says nothing about its rows: a grant left there is inert and the sweep
+// is quiet about it for the same reason, so the all-clear is not the place to
+// start listing suspended tenants, and not a place to call them clean either.
+// Nor is it a place to call the installation clean, for a second reason: a role
+// holding a dead grant of the seeder's beside one of somebody else's is declined
+// whole — the write would take both, and the second is not this command's — so a
+// run that finds nothing it can write has not proved there is nothing anywhere.
 func repairRoles(args []string) error {
 	fs := flag.NewFlagSet("repair-roles", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
