@@ -36,9 +36,10 @@ func NewFake(at time.Time, declared []string) *Fake {
 }
 
 // Store is one kind of row, partitioned by the tenant on the context and handed
-// out by value. A fake that shared one map across tenants would pass a
-// cross-tenant read the database refuses, which is the opposite of what a fake
-// is for.
+// out as a copy that shares no storage with the row it holds (`detached`), which
+// is what a read gives a real command. A fake that shared one map across tenants
+// would pass a cross-tenant read the database refuses, which is the opposite of
+// what a fake is for.
 //
 // What it still cannot claim, and what every module's fake says in its own
 // words: row-level security, the unique indexes, the append-only triggers and
@@ -71,7 +72,9 @@ func tenantOf(ctx context.Context) uuid.UUID {
 	return t.ID
 }
 
-// Put writes a row into the tenant on the context, in insertion order.
+// Put writes a row into the tenant on the context, in insertion order. What the
+// store keeps is a copy, so a fixture that goes on mutating the row it seeded
+// moves nothing it holds.
 func (s *Store[T]) Put(ctx context.Context, row T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -79,6 +82,7 @@ func (s *Store[T]) Put(ctx context.Context, row T) {
 }
 
 func (s *Store[T]) put(ctx context.Context, row T) {
+	row = detached(row)
 	tenant, id := tenantOf(ctx), s.id(row)
 	if s.rows[tenant] == nil {
 		s.rows[tenant] = map[uuid.UUID]T{}
@@ -91,7 +95,10 @@ func (s *Store[T]) put(ctx context.Context, row T) {
 
 // Get is the row as the tenant on the context holds it, or crud.ErrNotFound. A
 // row of another tenant is not in this tenant's store at all, so nothing here
-// discloses that somebody else has one.
+// discloses that somebody else has one. The row that comes back is the tenant's
+// row and nobody else's: writing through a slice, map or pointer field of it
+// cannot reach the stored one, which is what keeps a command that was refused
+// after it decided what to write from leaving the write behind.
 func (s *Store[T]) Get(ctx context.Context, id uuid.UUID) (T, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -104,11 +111,12 @@ func (s *Store[T]) get(ctx context.Context, id uuid.UUID) (T, error) {
 		var zero T
 		return zero, fmt.Errorf("%w: no such row", crud.ErrNotFound)
 	}
-	return row, nil
+	return detached(row), nil
 }
 
-// All is every row of this tenant in insertion order, so a fake never iterates a
-// Go map and a list case cannot pass by luck.
+// All is every row of this tenant in insertion order, each of them a copy on the
+// same terms as Get's, so a fake never iterates a Go map and a list case cannot
+// pass by luck.
 func (s *Store[T]) All(ctx context.Context) []T {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -116,7 +124,7 @@ func (s *Store[T]) All(ctx context.Context) []T {
 	out := make([]T, 0, len(s.order[tenant]))
 	for _, id := range s.order[tenant] {
 		if row, held := s.rows[tenant][id]; held {
-			out = append(out, row)
+			out = append(out, detached(row))
 		}
 	}
 	return out
@@ -426,7 +434,10 @@ func Do[T any](ctx context.Context, f *Fake, s *Store[T], c Command[T]) (T, erro
 	events := c.Apply(&row)
 	// The names are checked before the write, so an undeclared event cannot
 	// leave the row written and the event unsaid: domain state and what the
-	// command says commit together or neither does.
+	// command says commit together or neither does. `row` came out of `get`, which
+	// hands out a `detached` copy, so what Apply wrote is this command's storage
+	// and not the stored row's — the half a `bool` field cannot show, since a
+	// slice, map or pointer field is a header over storage the row shares.
 	for _, name := range events {
 		if !f.Events.declares(name) {
 			return zero, fmt.Errorf("porttest: %q is not one of the events this port declares (%v)", name, f.Events.declared)
