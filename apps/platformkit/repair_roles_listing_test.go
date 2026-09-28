@@ -101,24 +101,11 @@ func TestTheRepairCommandPrintsWhatItCommitted(t *testing.T) {
 	// that fails while holding it does not send its own report to it.
 	printed := func(run func() error) []string {
 		t.Helper()
-		name := filepath.Join(t.TempDir(), "printed")
-		file, err := os.Create(name)
-		if err != nil {
-			t.Fatalf("capture: %v", err)
-		}
-		saved := os.Stdout
-		os.Stdout = file
-		defer func() { os.Stdout = saved }()
-		runErr := run()
-		file.Close()
-		out, readErr := os.ReadFile(name)
+		lines, runErr := printedLines(t, run)
 		if runErr != nil {
 			t.Fatalf("repair-roles: %v", runErr)
 		}
-		if readErr != nil {
-			t.Fatalf("read what it printed: %v", readErr)
-		}
-		return strings.Split(strings.TrimSpace(string(out)), "\n")
+		return lines
 	}
 
 	plant()
@@ -159,4 +146,123 @@ func TestTheRepairCommandPrintsWhatItCommitted(t *testing.T) {
 		t.Errorf("the same grant with the tenant active again printed %q, want it listed", lines)
 	}
 	holds(true)
+}
+
+// TestTheRepairPrintsNothingThatItsCommitRefused is the other half of what the
+// case above claims: what the command prints is what committed, not what it meant
+// to write.
+//
+// The refusal is arranged where a real one happens — in the database, after the
+// write and before the work is durable — because no composition-level door can
+// fail kit/db's commit: db.Run opens the transaction, runs its body once and
+// commits it (kit/db/tx.go), and neither Conn nor dbtest offers a way to make
+// that commit answer anything other than what the server says. Postgres can. A
+// deferrable unique constraint over (tenant_id, permissions) is evaluated at
+// COMMIT, so the UPDATE is accepted, the repair has its stale grants in hand and
+// a line per role ready to print, and only then is the transaction refused — the
+// same shape as the serialisation failure and the contended lock an operator
+// actually meets. Printing from inside the transaction, which is where round 8
+// found the code had been, prints acme's administrator as removed here.
+//
+// The row is read back afterwards, because the claim worth making is not only
+// that the run kept silent: the removal it could not commit was taken back, and a
+// grant the installation still holds is a grant the hourly sweep still reports.
+func TestTheRepairPrintsNothingThatItsCommitRefused(t *testing.T) {
+	path, cfg := configure(t)
+	install(t, path)
+	c := compose(cfg)
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	var acme tenancy.Tenant
+	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("read the bootstrapped tenant: %v", err)
+	}
+
+	// The row an older seeder left, and then the row that makes committing the
+	// repair collide with itself: a second role holding exactly the grant list the
+	// repair is about to leave in the administrator. Both are written with raw SQL
+	// for the reason the case above gives — no door would offer either of them.
+	plant := func() {
+		t.Helper()
+		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+			return tx.DB().Exec(
+				"UPDATE roles SET permissions = array_append(permissions, 'ghost:read') WHERE tenant_id = ? AND name = ?",
+				acme.ID, authcontracts.RoleAdmin).Error
+		})
+		if err != nil {
+			t.Fatalf("leave the row an older seeder left: %v", err)
+		}
+	}
+	plant()
+
+	collide := func() {
+		t.Helper()
+		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+			return tx.DB().Exec(
+				"INSERT INTO roles (tenant_id, name, permissions) SELECT tenant_id, 'shadow', array_remove(permissions, 'ghost:read') FROM roles WHERE tenant_id = ? AND name = ?",
+				acme.ID, authcontracts.RoleAdmin).Error
+		})
+		if err != nil {
+			t.Fatalf("plant the row the repaired administrator collides with: %v", err)
+		}
+		// The constraint itself needs the owner connection: the application role is
+		// granted the four words it may use on a table and nothing else, which is the
+		// point of row-level security and of this role.
+		admin := dbtest.Open(t, cfg.Database.MigrateURL)
+		t.Cleanup(func() { _ = admin.Close() })
+		if _, err := admin.ExecContext(t.Context(),
+			"ALTER TABLE roles ADD CONSTRAINT repair_commit_probe UNIQUE (tenant_id, permissions) DEFERRABLE INITIALLY DEFERRED"); err != nil {
+			t.Fatalf("refuse the commit: %v", err)
+		}
+	}
+	collide()
+
+	lines, runErr := printedLines(t, func() error { return repairRoles([]string{"--config", path, "--remove"}) })
+	if runErr == nil {
+		t.Errorf("the repair reported success although the database refused its transaction at commit: printed %q", lines)
+	}
+	if len(lines) != 0 {
+		t.Errorf("the repair printed %q for a transaction the database refused at commit; a line saying removed is a claim about a row, and no row changed", lines)
+	}
+
+	if held := rolesOf(t, c, conn, acme)[authcontracts.RoleAdmin]; !slices.Contains(held, "ghost:read") {
+		t.Errorf("the grant the refused commit was about has gone: %v — either the commit went through after all, or the rollback took something else with it", held)
+	}
+}
+
+// printedLines runs the command with os.Stdout taken to a file and returns the
+// lines it printed and the error the run returned. A file rather than a pipe,
+// because the writer is this same process and a pipe would fill and wait, and the
+// swap is undone before this returns, so that a case which fails while holding it
+// does not send its own report to it. A run that printed nothing returns no lines
+// and is the answer the case below is looking for.
+func printedLines(t *testing.T, run func() error) ([]string, error) {
+	t.Helper()
+	name := filepath.Join(t.TempDir(), "printed")
+	file, err := os.Create(name)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	saved := os.Stdout
+	os.Stdout = file
+	defer func() { os.Stdout = saved }()
+	runErr := run()
+	file.Close()
+	out, readErr := os.ReadFile(name)
+	if readErr != nil {
+		t.Fatalf("read what it printed: %v", readErr)
+	}
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return nil, runErr
+	}
+	return strings.Split(trimmed, "\n"), runErr
 }
