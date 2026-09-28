@@ -14,7 +14,7 @@
 // parses, no struct tag, no expression tree and no generated file. What that
 // buys is the four refusals every mutating operation owes — an unknown row, a
 // caller with no grant, a revision that moved, another tenant's row — asserted
-// structurally instead of whenever a suite's author remembered them.
+// structurally instead of whenever an author remembered them, given Op.Mutates.
 //
 // What it deliberately cannot express is a sequence: a description rich enough
 // to generate "gather the service, its figures, their reviews, ask the register,
@@ -89,8 +89,8 @@ type Op[W any] struct {
 	// every generated case name the module does not name itself.
 	Name string
 
-	// Mutates says whether the operation writes. A read is not asked to be
-	// idempotent, is not asked for a revision and is not asked to publish.
+	// Mutates says whether the operation writes. It is the module's own claim,
+	// and no case checks it: a read owes no retry, no revision and no publish.
 	Mutates bool
 
 	// Ready puts the world into the state the operation succeeds from and returns
@@ -136,8 +136,8 @@ type Op[W any] struct {
 	Names map[Kind]string
 
 	// Skip records, by case shape or refusal Kind, why this operation is not
-	// asked that case. The harness fails a suite that leaves a required case out
-	// with no reason, and fails a reason with no case left out.
+	// asked that case. A reason counts where the case is owed, reasoned and not
+	// described; a Kind never owed is read by nothing, and nothing refuses it.
 	Skip map[Kind]string
 }
 
