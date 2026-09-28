@@ -210,9 +210,13 @@ type Fake struct {
 
 - `Store[T]` is partitioned by the tenant on the context and panics where the
   context names none: there is no door here that takes a tenant as an argument.
-  It hands rows out by value and lists them in insertion order, so a list case
-  cannot pass by luck, and another tenant's row is `crud.ErrNotFound` — the same
-  answer as a row that never existed.
+  It keeps a copy of the row it is given and hands out a copy that shares no
+  storage with the row it holds — what a read gives a real command, and the
+  reason a command cannot reach a stored row through a slice, map or pointer
+  field. A field the row type does not export is assignment's own, not a copy's.
+  It lists rows in insertion order, so a list case cannot pass by luck, and
+  another tenant's row is `crud.ErrNotFound` — the same answer as a row that
+  never existed.
 - `Seed` puts a row the way a create route would: an id, the clock's stamp and
   the entity's own `Validate`, which it panics on. It does not stamp a revision:
   the kernel's `Base` carries none, so which field holds one is the module's
@@ -225,8 +229,10 @@ type Fake struct {
   and only then apply and emit — so "a refused mutation writes nothing and emits
   nothing" is structural rather than a discipline each fake keeps. It checks the
   event names before it writes, so state and what the command says commit
-  together or neither does. A command that gathers more than one row calls the
-  parts in that same order and is held to it by the generated cases.
+  together or neither does — over the copy above, which is what makes that true
+  of a row whose field is a header rather than of its value fields alone. A
+  command that gathers more than one row calls the parts in that same order and
+  is held to it by the generated cases.
 
 What a fake still cannot claim, and what each module repeats in its own words:
 row-level security, the unique indexes, the append-only triggers and the row lock
