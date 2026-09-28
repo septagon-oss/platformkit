@@ -1,0 +1,7 @@
+slug: stray
+seed:
+  sector: legal
+  name: Stray
+tokens:
+  light:
+    sidebar-width: "#e0d8cc"

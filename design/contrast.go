@@ -1,0 +1,111 @@
+package design
+
+import (
+	"fmt"
+	"math"
+)
+
+// The two contrast floors this package gates, both from WCAG 2.2. MinContrast is
+// SC 1.4.3, the ratio text below 18pt must reach the surface it sits on.
+// MinContrastGraphic is SC 1.4.11, the ratio a graphical object such as a focus
+// ring must reach — the standard asks less of a ring than of a sentence, and a
+// gate that asked the same of both would refuse a ring nobody could mistake for
+// text. FromSeed refuses its own output at these floors and so refuses a
+// client's named token at them: one gate, applied to a generated theme and an
+// override alike.
+const (
+	MinContrast        = 4.5
+	MinContrastGraphic = 3.0
+)
+
+// Luminance returns the WCAG 2.2 relative luminance of an sRGB colour: each
+// channel linearised, then weighted 0.2126/0.7152/0.0722. The result is in
+// [0,1] for an opaque input; a transparent channel contributes as the standard
+// defines it, so a colour composited over a known backdrop is the caller's job.
+func Luminance(c SRGBA) float64 {
+	var sum float64
+	for i, weight := range [...]float64{0.2126, 0.7152, 0.0722} {
+		sum += weight * linearChannel(c[i])
+	}
+	return sum
+}
+
+// Contrast returns the WCAG 2.2 contrast ratio of two colours: 1 when they are
+// identical, 21 between black and white. It is symmetric, and it reads the
+// channels it is given, so an alpha-blended colour must be composited first.
+func Contrast(a, b SRGBA) float64 {
+	la, lb := Luminance(a), Luminance(b)
+	if lb > la {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+func linearChannel(channel float64) float64 {
+	if channel <= 0.03928 {
+		return channel / 12.92
+	}
+	return math.Pow((channel+0.055)/1.055, 2.4)
+}
+
+// contrastPair is one foreground and one background token, named as the themes
+// name them, that the gate reads together, with the floor that applies to it.
+type contrastPair struct {
+	foreground, background string
+	min                    float64
+}
+
+// bodyContrast lists the pairs a reader actually reads: text on the three
+// surfaces, the accent used as text and the text set on it, the focus ring on the
+// page, each status on its own badge, and the sidebar's two text tones on its own
+// background. Borders and tinted surfaces carry no information of their own and
+// are deliberately not in this list.
+var bodyContrast = []contrastPair{
+	{"text-primary", "surface-canvas", MinContrast},
+	{"text-primary", "surface-primary", MinContrast},
+	{"text-muted", "surface-canvas", MinContrast},
+	{"text-muted", "surface-primary", MinContrast},
+	{"text-muted", "surface-muted", MinContrast},
+	{"accent-default", "surface-canvas", MinContrast},
+	{"accent-default", "surface-primary", MinContrast},
+	{"accent-on", "accent-default", MinContrast},
+	{"accent-on", "accent-hover", MinContrast},
+	{"focus", "surface-canvas", MinContrastGraphic},
+	{"status-ok", "status-okbg", MinContrast},
+	{"status-warning", "status-warningbg", MinContrast},
+	{"status-danger", "status-dangerbg", MinContrast},
+	{"status-info", "status-infobg", MinContrast},
+	{"sidebar-text", "sidebar-bg", MinContrast},
+	{"sidebar-muted", "sidebar-bg", MinContrast},
+}
+
+// Check reports the first body role of this theme that does not reach
+// MinContrast against the surface it sits on, naming both tokens and the ratio
+// measured. A theme that names no colour is not a theme: every token the gate
+// reads has to parse.
+func (t Theme) Check() error {
+	values, err := t.colorValues()
+	if err != nil {
+		return err
+	}
+	for _, pair := range bodyContrast {
+		foreground, background := values["--pk-color-"+pair.foreground], values["--pk-color-"+pair.background]
+		if got := Contrast(foreground, background); got < pair.min {
+			return fmt.Errorf("%s: %s on %s measures %.2f:1, below %.1f:1",
+				t.Name, pair.foreground, pair.background, got, pair.min)
+		}
+	}
+	return nil
+}
+
+// Check reports the first theme of this pair that fails its own body roles.
+// ui.Compose takes a Pair, so this is the unit the gate is applied at: a light
+// theme that reads and a dark theme that does not is not shippable.
+func (p Pair) Check() error {
+	for _, theme := range p.Both() {
+		if err := theme.Check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
