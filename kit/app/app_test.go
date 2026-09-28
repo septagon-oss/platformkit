@@ -480,7 +480,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	handled := make(chan events.Event, 4)
 	ledger := module.Module{
 		Name:   "ledger",
-		Events:      []events.Declared{{Name: "ledger.entry_written"}},
+		Events: []events.Declared{{Name: "ledger.entry_written"}},
 		Subscriptions: []events.Subscription{{
 			Module: "ledger", Name: "ledger.entry_written",
 			Handler: func(_ context.Context, tx db.Tx[db.Tenant], ev events.Event) error {

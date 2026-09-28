@@ -106,7 +106,7 @@ func TestValidateChecksSubscriptionsAgainstWhatIsEmitted(t *testing.T) {
 
 	// A subscription to another module's event is the ordinary case and passes.
 	ok := []Module{
-		{Name: "billing", Events:      []events.Declared{{Name: "billing.invoice_issued"}}},
+		{Name: "billing", Events: []events.Declared{{Name: "billing.invoice_issued"}}},
 		{Name: "ledger", Subscriptions: []events.Subscription{
 			{Module: "ledger", Name: "billing.invoice_issued", Handler: handler},
 		}},
@@ -116,7 +116,7 @@ func TestValidateChecksSubscriptionsAgainstWhatIsEmitted(t *testing.T) {
 	}
 
 	bad := []Module{
-		{Name: "billing", Events:      []events.Declared{{Name: "billing.invoice_issued"}}},
+		{Name: "billing", Events: []events.Declared{{Name: "billing.invoice_issued"}}},
 		{Name: "ledger", Subscriptions: []events.Subscription{
 			{Module: "ledger", Name: "billing.invoice_voided", Handler: handler},
 			{Module: "ledger", Name: "billing.invoice_issued"},
@@ -166,9 +166,9 @@ func TestSubscribeAllHearsAModuleComposedAfterIt(t *testing.T) {
 		SubscribeAll:  true,
 		Subscriptions: []events.Subscription{{Module: "trail", Handler: record}},
 	}
-	first := Module{Name: "first", Events:      []events.Declared{{Name: "first.happened"}}}
+	first := Module{Name: "first", Events: []events.Declared{{Name: "first.happened"}}}
 	// After the subscriber in the list, which is the case that used to be lost.
-	last := Module{Name: "last", Events:      []events.Declared{{Name: "last.happened"}, {Name: "last.again"}}}
+	last := Module{Name: "last", Events: []events.Declared{{Name: "last.happened"}, {Name: "last.again"}}}
 
 	got := Expand([]Module{first, trail, last})
 	if len(got) != 3 {

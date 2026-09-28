@@ -237,6 +237,13 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	// Expanded before it is checked: a module that subscribes to everything is
 	// given the names here, once every manifest is in hand, so where it sits in
 	// the list cannot change what it hears.
+	// The kernel emits one event of its own — event_replayed, the record of an
+	// operator's replay (kit/events.Replay) — and it is declared in the module
+	// list because that is where every event is declared. Declaring it is what
+	// makes module.Expand hand it to the audit module's SubscribeAll, so the act
+	// lands in the tenant's trail beside the actions it re-ran, with the
+	// operator as its actor.
+	mods = append(mods, kernelModule)
 	mods = module.Expand(mods)
 	if err := module.Validate(mods); err != nil {
 		return nil, err
@@ -438,9 +445,15 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		return nil, err
 	}
 	counts := api.MountedBySurface()
+	// event_schema_coverage is the register's number for this pillar: how many
+	// of the events this composition emits carry a payload schema its module
+	// declared. It is printed at boot because a number nobody can read is a
+	// number that drifts back down.
+	covered, declared := CoveredEvents(a.mods)
 	a.log.InfoContext(ctx, "app: operations declared",
 		"count", len(api.Recorded()), "events", len(api.Events()),
-		"public", counts[httpx.SurfacePublic], "app", counts[httpx.SurfaceApp], "ops", counts[httpx.SurfaceOps])
+		"public", counts[httpx.SurfacePublic], "app", counts[httpx.SurfaceApp], "ops", counts[httpx.SurfaceOps],
+		"event_schema_coverage", fmt.Sprintf("%d/%d", covered, declared))
 	if a.opts.Installation.Host == "" {
 		a.log.WarnContext(ctx, "app: no installation host; the control plane (/ops) is mounted and answers nothing",
 			"fix", "server.installation_host names the host the installation itself is reached at")
@@ -662,6 +675,17 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 	}
 	sort.Strings(bad)
 	return fmt.Errorf("app: %d permission(s) do not check out:\n  %s", len(bad), strings.Join(bad, "\n  "))
+}
+
+// kernelModule is the kernel's share of the composition, in the same shape
+// every other module arrives in: a name and the events it emits. It has no
+// permissions, no routes, no SQL and no nav of its own, and saying so here is
+// cheaper than a mechanism that discovers it.
+var kernelModule = module.Module{
+	Name: "platformkit",
+	Events: []events.Declared{
+		events.Declare[events.ReplayRecord](events.EventReplayed),
+	},
 }
 
 // declaredEvents is every event every manifest declares, de-duplicated by name.
