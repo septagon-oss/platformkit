@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+**A client's identity is generated from a seed, and the gate measures it.** Seven of the eleven
+homepage.css sheets the client repository holds (19 client directories, counted here on 2026-09-28)
+express their whole visual identity in three to five raw hex values, and no code this repository can
+build computed a contrast ratio — the one implementation in the workspace is in pk-design, which no
+`go.mod` here requires — so nothing could refuse a bad four. `design.Seed{Sector, Name,
+Brand}` now generates both themes deterministically, and refuses its own output below WCAG 2.2's 4.5:1
+for the fifteen body-role pairs — the focus ring is held to SC 1.4.11's 3:1, because the standard asks
+that of a graphical object and asking more would refuse a ring nobody mistakes for text. Running the
+gate over the palette this repository ships found one: light `text-muted` measured 4.38:1 on the muted
+surface and moved to 4.85:1. `clients/<slug>/design.yaml` carries a seed plus at most named overrides
+of the 22 colour tokens, validated by the same gate over the finished pair; two clients whose palettes
+a reader would take for one another are refused at load rather than rendered side by side. What stays
+open: those sheets still write hex and `apps/platformkit` still composes `design.Default()`; this
+delivery moves no client onto the loader, and the loader and the reference palette are what a client
+can be moved onto.
+
 **The reference application's personas are declared, and each is proven to do its own
 journeys and be refused the others'.** `apps/platformkit` seeds `coordinator`
 (`task:read`, `task:update`) and `observer` (`task:read`) with every tenant, beside

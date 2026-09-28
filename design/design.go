@@ -19,7 +19,10 @@
 // a deep green accent.
 package design
 
-import "cmp"
+import (
+	"cmp"
+	"fmt"
+)
 
 // Theme supplies semantic colours and optional typography. Components read
 // these values through the same tokens in CSS and design export.
@@ -101,7 +104,7 @@ func Light() Theme {
 		SurfacePrimary:  "#fffdf7",
 		SurfaceMuted:    "#e9e4d8",
 		TextPrimary:     "#15221f",
-		TextMuted:       "#5f6b65",
+		TextMuted:       "#586461",
 		BorderDefault:   "#cbc5b8",
 		BorderStrong:    "#8f988f",
 		AccentDefault:   "#0f5d4e",
@@ -183,36 +186,47 @@ type Token struct {
 	Value string `json:"value"`
 }
 
+// colorFields is the theme's colour vocabulary in one list: the name the token
+// carries, what the field holds and how to set it. Tokens projects it, Check
+// reads it, and a client's named override is applied through it, so a token that
+// nothing reads cannot be added and a token a client may name cannot be hidden.
+type colorField struct {
+	name string
+	get  func(Theme) string
+	set  func(*Theme, string)
+}
+
+var colorFields = []colorField{
+	{"surface-canvas", func(t Theme) string { return t.SurfaceCanvas }, func(t *Theme, v string) { t.SurfaceCanvas = v }},
+	{"surface-primary", func(t Theme) string { return t.SurfacePrimary }, func(t *Theme, v string) { t.SurfacePrimary = v }},
+	{"surface-muted", func(t Theme) string { return t.SurfaceMuted }, func(t *Theme, v string) { t.SurfaceMuted = v }},
+	{"text-primary", func(t Theme) string { return t.TextPrimary }, func(t *Theme, v string) { t.TextPrimary = v }},
+	{"text-muted", func(t Theme) string { return t.TextMuted }, func(t *Theme, v string) { t.TextMuted = v }},
+	{"border-default", func(t Theme) string { return t.BorderDefault }, func(t *Theme, v string) { t.BorderDefault = v }},
+	{"border-strong", func(t Theme) string { return t.BorderStrong }, func(t *Theme, v string) { t.BorderStrong = v }},
+	{"accent-default", func(t Theme) string { return t.AccentDefault }, func(t *Theme, v string) { t.AccentDefault = v }},
+	{"accent-hover", func(t Theme) string { return t.AccentHover }, func(t *Theme, v string) { t.AccentHover = v }},
+	{"accent-on", func(t Theme) string { return t.AccentOn }, func(t *Theme, v string) { t.AccentOn = v }},
+	{"focus", func(t Theme) string { return t.Focus }, func(t *Theme, v string) { t.Focus = v }},
+	{"status-ok", func(t Theme) string { return t.StatusOK }, func(t *Theme, v string) { t.StatusOK = v }},
+	{"status-okbg", func(t Theme) string { return t.StatusOKBg }, func(t *Theme, v string) { t.StatusOKBg = v }},
+	{"status-warning", func(t Theme) string { return t.StatusWarning }, func(t *Theme, v string) { t.StatusWarning = v }},
+	{"status-warningbg", func(t Theme) string { return t.StatusWarningBg }, func(t *Theme, v string) { t.StatusWarningBg = v }},
+	{"status-danger", func(t Theme) string { return t.StatusDanger }, func(t *Theme, v string) { t.StatusDanger = v }},
+	{"status-dangerbg", func(t Theme) string { return t.StatusDangerBg }, func(t *Theme, v string) { t.StatusDangerBg = v }},
+	{"status-info", func(t Theme) string { return t.StatusInfo }, func(t *Theme, v string) { t.StatusInfo = v }},
+	{"status-infobg", func(t Theme) string { return t.StatusInfoBg }, func(t *Theme, v string) { t.StatusInfoBg = v }},
+	{"sidebar-bg", func(t Theme) string { return t.SidebarBg }, func(t *Theme, v string) { t.SidebarBg = v }},
+	{"sidebar-text", func(t Theme) string { return t.SidebarText }, func(t *Theme, v string) { t.SidebarText = v }},
+	{"sidebar-muted", func(t Theme) string { return t.SidebarMute }, func(t *Theme, v string) { t.SidebarMute = v }},
+}
+
 // Tokens returns detached values for this theme and its resolved typography.
 // This is the same list CSS renders, not a second design registry.
 func (t Theme) Tokens() []Token {
-	pairs := [...][2]string{
-		{"surface-canvas", t.SurfaceCanvas},
-		{"surface-primary", t.SurfacePrimary},
-		{"surface-muted", t.SurfaceMuted},
-		{"text-primary", t.TextPrimary},
-		{"text-muted", t.TextMuted},
-		{"border-default", t.BorderDefault},
-		{"border-strong", t.BorderStrong},
-		{"accent-default", t.AccentDefault},
-		{"accent-hover", t.AccentHover},
-		{"accent-on", t.AccentOn},
-		{"focus", t.Focus},
-		{"status-ok", t.StatusOK},
-		{"status-okbg", t.StatusOKBg},
-		{"status-warning", t.StatusWarning},
-		{"status-warningbg", t.StatusWarningBg},
-		{"status-danger", t.StatusDanger},
-		{"status-dangerbg", t.StatusDangerBg},
-		{"status-info", t.StatusInfo},
-		{"status-infobg", t.StatusInfoBg},
-		{"sidebar-bg", t.SidebarBg},
-		{"sidebar-text", t.SidebarText},
-		{"sidebar-muted", t.SidebarMute},
-	}
-	out := make([]Token, 0, len(pairs)+3)
-	for _, p := range pairs {
-		out = append(out, Token{Name: "--pk-color-" + p[0], Type: "color", Value: p[1]})
+	out := make([]Token, 0, len(colorFields)+6)
+	for _, field := range colorFields {
+		out = append(out, Token{Name: "--pk-color-" + field.name, Type: "color", Value: field.get(t)})
 	}
 	fonts := t.Typography.resolved()
 	out = append(out,
@@ -221,4 +235,42 @@ func (t Theme) Tokens() []Token {
 		Token{Name: "--pk-font-mono", Type: "fontFamily", Value: fonts.Mono},
 	)
 	return append(out, t.Shape.tokens()...)
+}
+
+// colorValues resolves every colour token of this theme to its sRGB channels, so
+// the gate and the distance measure read the same numbers CSS renders. A theme
+// that names no colour, or names one this package cannot parse, is an error with
+// no partial output.
+func (t Theme) colorValues() (map[string]SRGBA, error) {
+	base := make([]Token, 0, len(colorFields))
+	for _, field := range colorFields {
+		base = append(base, Token{Name: "--pk-color-" + field.name, Type: "color", Value: field.get(t)})
+	}
+	return ResolveColors(base, nil)
+}
+
+// setColor returns a copy of this theme with one named colour token replaced.
+// The name is a token name from colorFields and the value a colour literal this
+// package parses; anything else is refused rather than ignored.
+func (t Theme) setColor(name, value string) (Theme, error) {
+	field, ok := lookupColor(name)
+	if !ok {
+		return Theme{}, fmt.Errorf("unknown colour token %q", name)
+	}
+	if _, err := parseColor(value); err != nil {
+		return Theme{}, fmt.Errorf("token %s: %w", name, err)
+	}
+	out := t
+	field.set(&out, value)
+	return out, nil
+}
+
+// lookupColor finds a token by the name it is exported under.
+func lookupColor(name string) (colorField, bool) {
+	for _, field := range colorFields {
+		if field.name == name {
+			return field, true
+		}
+	}
+	return colorField{}, false
 }

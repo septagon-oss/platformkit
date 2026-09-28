@@ -1,0 +1,13 @@
+# One client's whole visual identity: a seed and two named overrides.
+slug: pets
+seed:
+  sector: shelter
+  name: Pets
+  brand: "#f0b978"
+tokens:
+  light:
+    accent-default: "#7a4a12"
+  dark:
+    accent-default: "#e0a35c"
+typography:
+  display: "Iowan Old Style, Georgia, serif"
