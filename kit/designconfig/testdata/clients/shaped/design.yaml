@@ -1,0 +1,12 @@
+# The spelling a person writes: card-radius, not cardradius. KnownFields decoding
+# refuses an untagged field, so an untagged Shape would accept the one nobody
+# writes and refuse the one everybody does.
+slug: shaped
+seed:
+  sector: food
+  name: Shaped
+  brand: "#7a1f3d"
+shape:
+  button-radius: 2px
+  card-radius: 0.75rem
+  modal-radius: 1.5rem

@@ -1,0 +1,10 @@
+# Eighty per cent opaque body text. Measured as if it were opaque it reads as a
+# darker green and clears the gate; on screen it is a wash of the surface behind
+# it, and on `transparent` the gate would have reported 21:1.
+slug: veil
+seed:
+  sector: retail
+  name: Veil
+tokens:
+  light:
+    text-primary: "#15221f80"
