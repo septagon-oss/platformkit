@@ -100,6 +100,17 @@ func (s TokenExport) DTCG(mode string) ([]byte, []DTCGDiagnostic, error) {
 		report(path, "font-family-kinds", "DTCG retains ordered names but has no literal-versus-generic discriminator; typed kinds remain source metadata", false)
 		emit([]string{"fonts", font.Name}, path, "fontFamily", names, font)
 	}
+	for _, dimension := range selected.Dimensions {
+		path := []string{"modes", mode, "shape", dimension.Name}
+		// Validate already refuses a unit this format cannot carry; the emitter
+		// still says so rather than writing a document with half a shape in it.
+		number, unit, err := design.ParseRadius(dimension.Value)
+		if err != nil {
+			report(path, "unsupported-shape-unit", "a DTCG dimension requires px or rem; no conversion was attempted", true)
+			continue
+		}
+		emit([]string{"shape", dimension.Name}, path, "dimension", style.Scalar{Value: json.Number(number), Unit: unit}, dimension)
+	}
 	for _, scale := range s.Scales {
 		path := []string{"scales", scale.Scale, scale.Key}
 		if scale.Number == nil || !slices.Contains([]string{"", "px", "rem", "ms", "s"}, scale.Number.Unit) {
