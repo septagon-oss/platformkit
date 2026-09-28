@@ -1,0 +1,7 @@
+slug: invisible
+seed:
+  sector: retail
+  name: Invisible
+tokens:
+  light:
+    text-primary: transparent
