@@ -60,7 +60,7 @@ import (
 func repairRoles(args []string) error {
 	fs := flag.NewFlagSet("repair-roles", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
-	remove := fs.Bool("remove", false, "Remove the grants found; without it they are only listed")
+	remove := fs.Bool("remove", false, "Remove the grants found; without it they are only listed. A role this command cannot write is named by neither run; the hourly sweep still reports it")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

@@ -129,7 +129,9 @@ operators running the command at once both read one dead grant, because the tena
 advisory lock is taken by the write and not by the read, and the second write then finds
 the row already holding the list it was handed and changes nothing — so it reports
 nothing. Two lines for one removal would tell a tenant twice that a person changed
-something nobody changed.
+something nobody changed. The listing a run without `--remove` prints is bounded by
+that same guard, so a role the write could not finish is named by neither run and the
+sweep goes on being the only thing that says it is there.
 
 **One published signature moved, and that is this change's cost.** `auth.SeedRoles` is
 exported from a published package, and its fourth parameter changed type: the
