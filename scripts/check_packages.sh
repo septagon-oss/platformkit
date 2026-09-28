@@ -36,7 +36,13 @@ done
 # both boundaries is what refuses growth — ui/export, ui/source, a module's
 # internals — in either; the "web" mode is the one that admits both
 # database/sql and net/http.
-parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy modules/task/domain design ui/forms
+#
+# A package whose own boundary check() asserts below belongs in this list even
+# when nothing here needs it for a closure: go list reports metadata for what it
+# was asked about, and check() refuses an assertion it cannot measure as
+# "missing dependency metadata". Measuring a core through whatever reaches it
+# would leave the assertion resting on a caller that may stop calling tomorrow.
+parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
