@@ -109,7 +109,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sidebar examples' schemas (six leaves: its type and default). Measured as a
 	// leaf-by-leaf diff of the v1 export before and after: 6,400 leaves become 6,406,
 	// /css and /sha256 change, nothing else moves.
-	if legacy.SHA256 != "99d5406cdf0cd972ba7b7f88c54b8934e6b0803965c495db26ab151e56f50a91" {
+	//
+	// Re-recorded on the merged tree for the light theme's muted text moving from
+	// #5f6b65 to #586461: the contrast gate in design now measures every body role
+	// at 4.5:1 or better (WCAG SC 1.4.3) and the shipped muted text measured 4.38:1
+	// on the muted surface it sits under. One token value changed on top of the two
+	// stories above; the vocabulary, the classes and every other byte are theirs.
+	// The digest below is measured on this merge, not inherited from either side.
+	if legacy.SHA256 != "cea34d6ec14607588acaabb62db5107468016a7ede2074a508668fc7fcd6406f" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

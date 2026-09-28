@@ -123,7 +123,7 @@ for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault 
     kit/app kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx kit/config modules/auth/contracts; do
+    kit/db kit/httpx kit/config kit/designconfig modules/auth/contracts; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done
@@ -142,6 +142,11 @@ boundary_rejects() {
 boundary_rejects modules/task/domain "$foundation/kit/tenancy"
 boundary_rejects kit/entity "$foundation/kit/db"
 boundary_rejects design "$foundation/ui/css"
+# kit/designconfig is the one package allowed to decode a client's design.yaml,
+# so the case worth rehearsing is it reaching past the values it decodes into:
+# the theme it fills is in its allowance, the database that would store a theme
+# per tenant is not.
+boundary_rejects kit/designconfig "$foundation/kit/db"
 boundary_rejects ui/page "$foundation/ui/export"
 boundary_rejects ui/screens "$foundation/ui/export"
 # The database-free presentation cores: a document is values and a screen is a
