@@ -137,8 +137,12 @@ readable code, delete useful tests or weaken a gate to fit a count.
 
 If a change exceeds a ceiling, first remove what it replaces and separate
 unrelated responsibilities. If the remaining cost is justified, obtain a
-separate owner budget commit before the implementation. State the affected
-bucket, expected cost, benefit and verification.
+separate owner budget commit before the implementation: a commit whose subject
+begins `build(budget):` and which changes only `loc-budget.json` and
+`packages-budget.json`. State the affected bucket, expected cost, benefit and
+verification in its message. The ratchet accepts a raise only when every commit
+on the branch that touches a budget file is such a commit, so the raise stands
+alone in history; a removed bucket or a changed measurement is never accepted.
 `go run ./tools/locbudget --write` lowers ceilings; rebaselining with
 `--round 100` can raise them and requires that review. A branch that expects an
 acceptance round prices that too, because the round arrives with a test file of
