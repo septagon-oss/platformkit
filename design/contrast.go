@@ -41,6 +41,13 @@ func Contrast(a, b SRGBA) float64 {
 	return (la + 0.05) / (lb + 0.05)
 }
 
+// linearChannel applies WCAG 2.2's own piecewise linearisation. The break is the
+// standard's literal 0.03928, not the sRGB transfer function's 0.04045 (which is
+// what the pk-design ancestor this is ported from uses): over the 256 values one
+// 8-bit channel can take, no value falls between them — 10/255 = 0.039216 is
+// below both and 11/255 = 0.043137 is above both — so the two agree on every
+// colour a theme can hold, and TestWCAGThresholdDoesNotDependOnTheBranchConstant
+// pins that rather than leaving the next reader to wonder which is a bug.
 func linearChannel(channel float64) float64 {
 	if channel <= 0.03928 {
 		return channel / 12.92
@@ -87,6 +94,15 @@ func (t Theme) Check() error {
 	values, err := t.colorValues()
 	if err != nil {
 		return err
+	}
+	// Before any ratio: a colour that carries alpha has no contrast at all until
+	// something is composited behind it, and ResolveColors premultiplies, so an
+	// 80 %-opaque foreground would read as a darker opaque one and pass a gate it
+	// should never have been measured by. The ancestor refuses the same way.
+	for _, field := range colorFields {
+		if color := values["--pk-color-"+field.name]; color[3] != 1 {
+			return fmt.Errorf("%s: %s carries alpha %.2f: a colour with alpha has no contrast until it is composited, so name an opaque colour", t.Name, field.name, color[3])
+		}
 	}
 	for _, pair := range bodyContrast {
 		foreground, background := values["--pk-color-"+pair.foreground], values["--pk-color-"+pair.background]

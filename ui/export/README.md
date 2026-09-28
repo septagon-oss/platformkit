@@ -16,3 +16,12 @@ Nothing here is needed to serve a page: `ui/page` depends on [ui](../ui.go),
 and the package gate refuses this package in its closure. Start with
 [tools/designexport](../../tools/designexport/README.md) for the command line
 and `go test ./ui/export` for the snapshot, token and proposal contracts.
+
+A client's own identity — the `design.Pair` `design.FromSeed` generates and
+`design.Client.Resolve` finishes — projects through the same owners, shape
+included: `TokenMode` carries the three `--pk-radius-*` dimensions beside the
+colours and families, and `DTCG` emits them as `$type: dimension`, which is how a
+client's corners reach the document `platformkit-mobile` reads. A client ships
+the `{Modes, Colors}` selection; the whole `ExportTokens` selection is not
+DTCG-representable for any pair, keyword scales and the transition groups
+included, and that limit is the projection's own.
