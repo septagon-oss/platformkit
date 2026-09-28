@@ -26,6 +26,7 @@ A field no case reads does not belong in the description. That is the table:
 | `Suite.Assert` | a hand-written case, which takes the floor from the suite it belongs to |
 | `Case.Name` | the subtest name, verbatim |
 | `Case.Because` | the floor: a hand-written case with no reason is refused |
+| `Case.Run` | the case body itself — the plan holds it under `Case.Name` and the world calls it; the floor refuses an own case with no body |
 | `Op.Name` | the first half of a generated case name, and uniqueness |
 | `Op.Mutates` | whether the retry and the four refusals are owed |
 | `Op.Ready` | every case of that operation |
