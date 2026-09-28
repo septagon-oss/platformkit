@@ -203,20 +203,35 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 	if opts.Installation.Host == "" {
 		opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
 	}
+	// The wait at the end asks this application what it is serving rather than
+	// asking the address, so it needs the application's own log: this wraps the
+	// logger the case named instead of replacing it, and every record still goes
+	// where the case said it should.
+	listening := make(chan struct{})
+	var watched slog.Handler = slog.DiscardHandler
+	if opts.Log != nil {
+		watched = opts.Log.Handler()
+	}
+	opts.Log = slog.New(&servingHandler{addr: cfg.Server.Addr, inner: watched, ready: listening})
 	a, err := app.New(t.Context(), cfg, mods, opts)
 	if err != nil {
 		t.Fatalf("app.New: %v", err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	stopped := make(chan error, 1)
-	go func() { stopped <- a.Run(ctx) }()
+	stopped := make(chan struct{})
+	var runErr error
+	go func() {
+		defer close(stopped)
+		runErr = a.Run(ctx)
+	}()
 	t.Cleanup(func() {
 		cancel()
-		if err := <-stopped; err != nil {
-			t.Errorf("Run: %v", err)
+		<-stopped
+		if runErr != nil {
+			t.Errorf("Run: %v", runErr)
 		}
 	})
-	waitFor(t, cfg.Server.Addr, stopped)
+	waitServing(t, cfg.Server.Addr, listening, stopped, &runErr)
 }
 
 // TestAnEmptyDatabaseBecomesAWorkingInstallation is the README's five commands
@@ -1171,62 +1186,99 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 	return client
 }
 
-// waitFor returns once the application this test started answers its own
-// liveness probe at addr.
+// servingSettle is how long the address has to keep answering this application's
+// own liveness probe, and this application has to keep running, before the wait
+// calls the boot served. It is short because everything it can be waiting for is
+// immediate: a listener either took the address or failed to, within microseconds
+// of the sentence.
+const servingSettle = 250 * time.Millisecond
+
+// waitServing returns when this application is answering at addr — not when
+// something is.
 //
-// It asks a question rather than dialling, because a dial is answered by whoever
-// holds the port and not by this test's application. The address comes from
-// freeAddr, which releases the port it chose, and Run migrates before it
-// listens, so the application is seconds away from binding it; on a host with
-// several suites live somebody else can take the port inside that window, and
-// the bare dial used to be satisfied by whoever had it. Two cases here have
-// failed that way — the second with
-// `Post "http://127.0.0.1:46755/api/v1/auth/login": ... malformed HTTP response "0"`
-// from a process that speaks no HTTP at all, in a case about signing in.
+// Two failures are answered here, and they are two different ones.
 //
-// GET /health is what the wait ends on instead: both roles serve it (kit/health
-// and app.work), it runs no check of its own, so 200 says this application is up
-// and nothing else can. Anything that answers it with something else is whoever
-// holds the port, and the case says so at once rather than after the whole bound
-// of waiting and one request that was never going to be answered here.
-func waitFor(t *testing.T, addr string, stopped ...chan error) {
+// The first is the address. Run migrates before it listens (kit/app, Start then
+// serve), and the wait for the composition's advisory lock is bounded only by the
+// caller's context (kit/db/migrate.go, holdCompositionLock) — one Postgres, one
+// lock, every suite running on this host. While this case's composition was still
+// in that queue, the address was one this test had released (see freeAddr) and some
+// other process could hold it, and a dial that connected was read as "ready": the
+// case then asked a stranger's composition for its own sign-in page and reported the
+// 404 it got back as its own failure, and the stranger's shutdown showed up later as
+// a refused connection.
+//
+// The second is that the address cannot answer for *which* application is behind
+// it. A stranger running this same binary answers GET /health with 200 too, so a
+// probe of the address — however good a question it is — is not a proof that the
+// process behind the socket is the one this case started. So the wait is on the
+// application: it returns only once the log this composition was given says it is
+// listening at this address (servingHandler matches the sentence and the address),
+// and the address then keeps answering this application's own liveness probe
+// (healthAt: 200 from the moment it listens, and anything else is somebody else's
+// socket, said at once rather than after a whole bound of waiting) while this
+// application is still running. A Run that got there first — a port it could not
+// bind, a gate that refused the composition — is reported as that, at once, instead
+// of as a cascade of 404s.
+//
+// bootWait bounds the whole thing: Run migrates a whole installation before it
+// listens, the same boot that answers in a couple of seconds alone costs an order of
+// magnitude more when every database package in the repository migrates into one
+// Postgres at once, and a bound sized for the quiet case reports a working machine as
+// a broken application. slowBoot is when a green wait starts saying how long it took.
+func waitServing(t *testing.T, addr string, listening <-chan struct{}, stopped <-chan struct{}, runErr *error) {
 	t.Helper()
 	started := time.Now()
 	deadline := started.Add(bootWait)
+	timeout := time.After(bootWait)
+	gone := func() {
+		t.Fatalf("the application stopped before it served at %s: %v", addr, *runErr)
+	}
+	select {
+	case <-listening:
+	case <-stopped:
+		gone()
+	case <-timeout:
+		t.Fatalf("the application said nothing about serving at %s within %s", addr, bootWait)
+	}
+	// The kernel writes that sentence one statement before the listener reports
+	// whether the address was this process to take, and whatever else holds the
+	// address would answer a request — so the sentence alone is not yet proof. What
+	// is proof is the pair of them holding together for servingSettle: this
+	// application still running, and its own liveness probe answering. A bind that
+	// never succeeded arrives here as itself, which is a port and an error, rather
+	// than as somebody else's 404s.
+	settled := time.Now().Add(servingSettle)
 	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
-		if len(stopped) > 0 {
-			select {
-			case err := <-stopped[0]:
-				stopped[0] <- err // the read above freed the slot, so this cannot block
-				t.Fatalf("the application stopped before it answered GET /health on %s (%s): %v",
-					addr, time.Since(started).Round(time.Millisecond), err)
-			default:
-			}
+		select {
+		case <-stopped:
+			gone()
+		default:
 		}
-		res, err := http.Get("http://" + addr + "/health")
-		if err != nil {
+		code, server, body, err := healthAt(addr)
+		switch {
+		case err != nil:
 			// Nobody is home, which is what it looks like while the application is
 			// still migrating. Keep waiting.
 			last = err.Error()
-		} else {
-			body, _ := io.ReadAll(res.Body)
-			_ = res.Body.Close()
-			if res.StatusCode == http.StatusOK {
-				if took := time.Since(started); took > slowBoot {
-					t.Logf("answered GET /health after %s: this machine was busy", took.Round(time.Millisecond))
-				}
-				return
-			}
+		case code != http.StatusOK:
 			// /health is liveness: it runs no check, and this process answers it with
 			// 200 from the moment it listens. Anything else that answers is somebody
 			// else's socket, and no amount of waiting will make this application own
 			// it — say so at once, and say who did.
 			t.Fatalf("the port %s belongs to something that is not this application: "+
-				"GET /health answered %d, Server %q, body %q",
-				addr, res.StatusCode, res.Header.Get("Server"), firstLine(string(body)))
+				"GET /health answered %d, Server %q, body %q", addr, code, server, body)
+		default:
+			if took := time.Since(started); took > slowBoot {
+				t.Logf("answered GET /health after %s: this machine was busy", took.Round(time.Millisecond))
+			}
+			settled = time.Now().Add(servingSettle) // the window is measured from an answer
+			if time.Now().After(settled) {
+				return
+			}
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("the application at %s never answered GET /health in %s: %s", addr,
 		time.Since(started).Round(time.Second), last)
@@ -1270,26 +1322,67 @@ var (
 	chosenPorts   = map[int]bool{}
 )
 
-// freeAddr picks a port the kernel cannot hand to somebody else while this test
-// is on its way to binding it.
-//
-// Asking the kernel for one and closing the listener, which is what this did,
-// picks out of the ephemeral range and then gives it back: every other process on
-// the host draws its :0 binds and its outbound source ports from that same range,
-// so the port was free at the moment it was named and possibly not one later.
-// The application migrates before it listens, so "later" is seconds, and the case
-// that noticed was speaking to whoever had taken it (waitFor carries what that
-// looked like). Below the ephemeral range a port is only ever held by something
-// that asked for that number, which is the closest thing to a guarantee this
-// shared host has. The bind is what says nobody holds it at the moment of
-// choosing, the candidate after it is what a port somebody does hold costs, and
-// the random start is what keeps two suites running at once reaching for the same
-// one.
-//
-// Even a bind is not ownership here: a container published at a host port is
-// reached there whatever socket stands underneath, so the candidate has to answer
-// the connection this test is about to make. One dial into the listener, accepted
-// on the other side, is that check, and it costs a millisecond once per case.
+// healthAt asks GET /health of an address and says what answered. An error is a
+// refusal to answer at all, which is the shape of the window while a composition is
+// still migrating; a status is an answer, and the caller decides whose it is.
+func healthAt(addr string) (code int, server, firstBodyLine string, err error) {
+	res, err := http.Get("http://" + addr + "/health")
+	if err != nil {
+		return 0, "", "", err
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	return res.StatusCode, res.Header.Get("Server"), firstLine(string(raw)), nil
+}
+
+// servingHandler watches one application's log for the sentence the kernel writes
+// when it starts serving, and closes ready the first time that sentence names this
+// address. It is the only way a test can tell its own application's listener from
+// somebody else's on the same port, so it is deliberately not filtered by the level
+// the caller chose — the caller's handler still decides what its own logger keeps.
+// If the kernel ever stops writing the sentence, waitServing times out and says so;
+// TestTheKernelStillSaysWhereItIsListening reddens at the change instead.
+type servingHandler struct {
+	addr  string
+	inner slog.Handler
+	ready chan struct{}
+	once  sync.Once
+}
+
+func (h *servingHandler) Enabled(ctx context.Context, level slog.Level) bool { return true }
+
+func (h *servingHandler) Handle(ctx context.Context, record slog.Record) error {
+	if record.Message == "app: listening" && namedAddress(record) == h.addr {
+		h.once.Do(func() { close(h.ready) })
+	}
+	if h.inner.Enabled(ctx, record.Level) {
+		return h.inner.Handle(ctx, record)
+	}
+	return nil
+}
+
+// namedAddress is the address a "listening" sentence names — the kernel writes it
+// as an attribute beside the sentence, and this asks for it rather than matching on
+// the sentence alone, so a second application serving somewhere else on the host
+// cannot close this case's wait.
+func namedAddress(record slog.Record) string {
+	var addr string
+	record.Attrs(func(a slog.Attr) bool {
+		if a.Key != "addr" {
+			return true
+		}
+		addr = a.Value.String()
+		return false
+	})
+	return addr
+}
+
+func (h *servingHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return h }
+
+func (h *servingHandler) WithGroup(name string) slog.Handler { return h }
+
+// freeAddr picks a port the kernel cannot hand to somebody else while this test is
+// on its way to binding it, from the band stated above.
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	low := min(ephemeralLow()-1, lastChosenPort)
