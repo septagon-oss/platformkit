@@ -251,6 +251,28 @@ func TestRunRunsEveryRefusalADescriptionMakes(t *testing.T) {
 	watch(t, dup).mustRefuseTheSuite(t, "two cases would run under the name")
 }
 
+// TestTheSharedNameRefusalSaysWhichFieldSharedTheSentence is the witness the fix to
+// review 10's second finding owes itself. The floor already refused two cases under
+// one sentence; what it said named the collision and not the cause. Both refusals
+// took the sentence `Op.Names` files under their Kind, which means "the case of this
+// Kind" and is one sentence per Kind only while at most one refusal of that Kind
+// carries none of its own — so the field to edit is that map entry, and a module
+// author handed "two cases share a name" has to rediscover it.
+func TestTheSharedNameRefusalSaysWhichFieldSharedTheSentence(t *testing.T) {
+	const sentence = "File: nobody's note is nobody's note"
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Names = map[Kind]string{Unknown: sentence}
+	suite.Ops[0].Refusals = append([]Refusal[world]{suite.Ops[0].Refusals[0]}, suite.Ops[0].Refusals...)
+	log := watch(t, suite)
+	log.mustRefuseTheSuite(t, "two cases would run under the name")
+	said := strings.Join(log.failures(""), "\n")
+	for _, want := range []string{"2 refusals of File", "Op.Names", "an unknown row is not found", "Refusal.Name"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the refusal says %q nowhere: %v", want, said)
+		}
+	}
+}
+
 // TestRunRefusesANameNoCaseRunsUnder is the other half of the field's own rule — a
 // field no case reads does not belong in the description. Op.Names is keyed by Kind,
 // so a sentence can be filed under a shape no case of the operation runs: a refusal

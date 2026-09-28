@@ -609,9 +609,32 @@ func (s Suite[W]) problems() []string {
 				s.Port, op.Name, string(kind), own)
 		}
 	}
+	// The collision below is one problem and deserves one sentence, so the reason
+	// is gathered here first. `Op.Names` is keyed by Kind and names "the case of this
+	// Kind", which is single-valued only while at most one refusal of that Kind
+	// carries no sentence of its own: two of them take the one sentence, and the
+	// correction is in that field, not in the two refusals.
+	borrowed := map[string]string{}
+	for _, op := range s.Ops {
+		taken := map[Kind]int{}
+		for _, r := range op.Refusals {
+			if r.Name == "" && r.Kind != Named && op.Names[r.Kind] != "" {
+				taken[r.Kind]++
+			}
+		}
+		for _, kind := range slices.Sorted(maps.Keys(taken)) {
+			if taken[kind] > 1 {
+				borrowed[op.Names[kind]] = fmt.Sprintf("%d refusals of %s carry no sentence of their own and both read the Op.Names entry filed under Kind %q, which names the case of that Kind; give each refusal its own Refusal.Name or take the Op.Names entry off the Kind", taken[kind], op.Name, string(kind))
+			}
+		}
+	}
 	for _, c := range plan {
 		if was, dup := seen[c.name]; dup && was == "case" {
-			say("%s: two cases would run under the name %q, and a requirements index cannot point at either", s.Port, c.name)
+			cause, shared := borrowed[c.name]
+			if !shared {
+				cause = "two sentences the description wrote agree, and one of the two cases has to move"
+			}
+			say("%s: two cases would run under the name %q, and a requirements index cannot point at either: %s", s.Port, c.name, cause)
 		}
 		seen[c.name] = "case"
 	}
