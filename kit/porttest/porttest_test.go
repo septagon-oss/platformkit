@@ -219,6 +219,97 @@ func TestRunRefusesTwoOpsWithOneName(t *testing.T) {
 	watch(t, suite).mustRefuseTheSuite(t, "two operations named \"File\"")
 }
 
+// TestRunRunsEveryRefusalADescriptionMakes is the positive half of the promise
+// that no case is lost. Two refusals of one floor Kind — the same refusal owed
+// from two states, which is how a module writes "a resolved task cannot be
+// assigned" and "a closed task cannot be assigned" as two entries — are two
+// cases. Planning the first of each Kind ran one and dropped the other out of a
+// green suite: `problems` refuses two refusals sharing a name and a floor refusal
+// carries none, so the entries differed only in a sentence nobody compared, and
+// `Names` reported the shortened list, so the pin a module keeps pinned the loss.
+func TestRunRunsEveryRefusalADescriptionMakes(t *testing.T) {
+	const (
+		fromAFreshNote  = "File: an unknown row is not found on a fresh note"
+		fromASealedNote = "File: an unknown row is not found on a sealed note"
+	)
+	suite := noteSuite(knobs{})
+	first, second := suite.Ops[0].Refusals[0], suite.Ops[0].Refusals[0]
+	first.Name, second.Name = fromAFreshNote, fromASealedNote
+	suite.Ops[0].Refusals = append([]Refusal[world]{first, second}, suite.Ops[0].Refusals[1:]...)
+	log := watch(t, suite)
+	log.mustPassApartFrom(t)
+	for _, want := range []string{fromAFreshNote, fromASealedNote} {
+		if !slices.Contains(log.names(), want) {
+			t.Errorf("%q was described and never ran: %v", want, log.names())
+		}
+	}
+	// The unnamed shape is the same loss with less cover: two refusals of one Kind
+	// with no name of their own would run under one name, which is a case a
+	// requirements index cannot point at, so the floor refuses the description.
+	dup := noteSuite(knobs{})
+	dup.Ops[0].Refusals = append([]Refusal[world]{dup.Ops[0].Refusals[0]}, dup.Ops[0].Refusals...)
+	watch(t, dup).mustRefuseTheSuite(t, "two cases would run under the name")
+}
+
+// TestRunRefusesANameNoCaseRunsUnder is the other half of the field's own rule — a
+// field no case reads does not belong in the description. Op.Names is keyed by Kind,
+// so a sentence can be filed under a shape no case of the operation runs: a refusal
+// it neither describes nor owes, a retry it skips, the empty Kind, or a refusal that
+// answers with its own Refusal.Name, which wins. In every one of those the case runs
+// under the harness's words while the sentence the module wrote — which is what a
+// requirements index in a client repository points at — reaches nothing.
+func TestRunRefusesANameNoCaseRunsUnder(t *testing.T) {
+	for _, tc := range []struct {
+		what   string
+		file   func(*Suite[world])
+		refuse string
+	}{
+		{"a refusal the operation declines", func(s *Suite[world]) {
+			s.Ops[0].Refusals = withoutKind(s.Ops[0].Refusals, Unknown)
+			s.Ops[0].Skip = map[Kind]string{Unknown: "the id comes from the route, which kit/rest has already resolved"}
+			s.Ops[0].Names = map[Kind]string{Unknown: "File: nobody's note is nobody's note"}
+		}, "names the case it calls \"an unknown row is not found\" as \"File: nobody's note is nobody's note\" and no case runs under that name"},
+		{"a refusal that names itself", func(s *Suite[world]) {
+			s.Ops[0].Refusals[0].Name = "File: a note nobody filed is not a note"
+			s.Ops[0].Names = map[Kind]string{Unknown: "File: nobody's note is nobody's note"}
+		}, "no case runs under that name"},
+		{"a retry the operation skips", func(s *Suite[world]) {
+			s.Ops[0].Skip = map[Kind]string{Retry: "the command is a create with no idempotency key to repeat"}
+			s.Ops[0].Names = map[Kind]string{Retry: "File: filing it twice files it once"}
+		}, "no case runs under that name"},
+		{"the empty Kind, which names no shape of the floor", func(s *Suite[world]) {
+			s.Ops[0].Names = map[Kind]string{Named: "a sealed note is not filed twice"}
+		}, "files \"a sealed note is not filed twice\" under the empty Kind"},
+		{"an empty sentence, which names no case", func(s *Suite[world]) {
+			s.Ops[0].Names = map[Kind]string{Success: ""}
+		}, "carries an empty sentence under"},
+	} {
+		suite := noteSuite(knobs{})
+		tc.file(&suite)
+		t.Run(tc.what, func(t *testing.T) {
+			watch(t, suite).mustRefuseTheSuite(t, tc.refuse)
+		})
+	}
+}
+
+// TestAFloorRefusalNamedByItsOperationRunsUnderThatName is the cure the last test
+// refuses an unread name for: a sentence the module files under a refusal Kind is
+// the name that case runs under, where the map's key type and the README table both
+// put it. Refusal.Name still wins — the test above refuses the sentence that loses.
+func TestAFloorRefusalNamedByItsOperationRunsUnderThatName(t *testing.T) {
+	const sentence = "File: nobody's note is nobody's note"
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Names = map[Kind]string{Unknown: sentence}
+	log := watch(t, suite)
+	log.mustPassApartFrom(t)
+	if !slices.Contains(log.names(), sentence) {
+		t.Errorf("the module's sentence for the unknown-row case never reached a case name: %v", log.names())
+	}
+	if slices.Contains(log.names(), "File: an unknown row is not found") {
+		t.Errorf("the case ran under the harness's words beside the module's, so one refusal is two cases: %v", log.names())
+	}
+}
+
 func TestRunRefusesAnOwnCaseWithNoBecause(t *testing.T) {
 	suite := noteSuite(knobs{})
 	suite.Own[0].Because = ""

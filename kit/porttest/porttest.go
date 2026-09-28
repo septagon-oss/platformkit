@@ -26,6 +26,7 @@ package porttest
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"testing"
@@ -305,8 +306,17 @@ func (s Suite[W]) plan() []planned[W] {
 		if op.Mutates && op.Skip[Retry] == "" {
 			plan = append(plan, planned[W]{s.caseName(op, Retry), func(rep reporter, w W) { s.retry(rep, op, w) }})
 		}
+		// Every refusal the description makes is a case, including a second refusal
+		// of one floor Kind — the same refusal owed from two states, which is how a
+		// module writes "a resolved task cannot be assigned" and "a closed task
+		// cannot be assigned" as two entries. Taking the first of each Kind instead
+		// would run one and drop the other out of a green suite, and `Names` would
+		// report the shortened list, so the module's own pin would pin the loss.
 		for _, kind := range floor {
-			if r, ok := op.refusal(kind); ok {
+			for _, r := range op.Refusals {
+				if r.Kind != kind {
+					continue
+				}
 				plan = append(plan, planned[W]{s.refusalName(op, r), func(rep reporter, w W) { s.refused(rep, op, r, w) }})
 			}
 		}
@@ -334,9 +344,20 @@ func (s Suite[W]) caseName(op Op[W], kind Kind) string {
 	return op.Name + ": " + string(kind)
 }
 
+// refusalName is the case name for a refusal: the refusal's own sentence, or the
+// sentence the operation filed for this Kind in Op.Names, or the harness's words.
+// The middle step is what makes every key of that map read: a module that writes
+// its sentence for the unknown-row case under `Unknown`, where the map's key type
+// and this package's README table both put it, has it used — which matters because
+// in a client repository a case name is what an evidence link points at, and a
+// sentence the module wrote that nothing runs under is a link pointing at nothing.
+// `problems` refuses an entry no case runs under, so an entry here is never inert.
 func (s Suite[W]) refusalName(op Op[W], r Refusal[W]) string {
 	if r.Name != "" {
 		return r.Name
+	}
+	if own := op.Names[r.Kind]; own != "" {
+		return own
 	}
 	return op.Name + ": " + string(r.Kind)
 }
@@ -557,6 +578,36 @@ func (s Suite[W]) problems() []string {
 	if len(plan) == 0 {
 		say("%s: the description runs no case at all; a suite that asserts nothing passes every implementation "+
 			"of the port, including the one that does nothing", s.Port)
+	}
+	ran := map[string]bool{}
+	for _, c := range plan {
+		ran[c.name] = true
+	}
+	for _, op := range s.Ops {
+		// An entry of Op.Names is read by the case it names, so an entry no case runs
+		// under is a field nothing reads — and worse than inert, because the module's
+		// sentence is the thing a requirements index in a client repository points at,
+		// and it would point at a sentence while the case ran under the harness's own
+		// words. Every Kind the harness reads the map at — Success, the Retry the
+		// operation owes, and each refusal Kind it runs — reaches `ran` under its name.
+		for _, kind := range slices.Sorted(maps.Keys(op.Names)) {
+			own := op.Names[kind]
+			if kind == Named {
+				say("%s %s: Op.Names files %q under the empty Kind, which is one of the module's own refusals. Such a refusal is named by its own Refusal.Name, which the harness reads; Op.Names is never read at that key, so this sentence is a field no case reads — name the refusal on the refusal or delete the entry",
+					s.Port, op.Name, own)
+				continue
+			}
+			if own == "" {
+				say("%s %s: Op.Names carries an empty sentence under %q; a name is what a case runs under, and an empty entry names none — the harness names that case itself, so delete the entry",
+					s.Port, op.Name, string(kind))
+				continue
+			}
+			if ran[own] {
+				continue
+			}
+			say("%s %s: Op.Names names the case it calls %q as %q and no case runs under that name. The harness reads that map only where a case of the shape it names runs, so the link points at a sentence nothing is tested under — describe the refusal it names (or the operation that owes it), take the sentence off the Refusal.Name that overrides it, or delete the entry",
+				s.Port, op.Name, string(kind), own)
+		}
 	}
 	for _, c := range plan {
 		if was, dup := seen[c.name]; dup && was == "case" {
