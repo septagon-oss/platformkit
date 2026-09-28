@@ -1,0 +1,10 @@
+# The third client in a set that boots: its own override puts pale text on its
+# own canvas. A set that loaded this one would ship an unreadable client with no
+# error left to read.
+slug: broken
+seed:
+  sector: retail
+  name: Broken
+tokens:
+  light:
+    text-muted: "#cfcac2"

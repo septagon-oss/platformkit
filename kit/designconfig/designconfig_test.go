@@ -1,7 +1,9 @@
 package designconfig
 
 import (
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -74,6 +76,51 @@ func TestLoadClientDesignRefusesFilesThatAreNotATrustworthyIdentity(t *testing.T
 	}
 }
 
+// The two refusals a file can carry that are not style: a foreground with alpha,
+// which has no ratio until it is composited, and a font stack the kernel's own
+// parser refuses. Both are decided here, at the file, rather than reaching a
+// theme where the contrast gate would measure a translucent colour as an opaque
+// one and report a legible client.
+func TestLoadClientDesignRefusesAValueWithNoMeaningToMeasure(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ slug, want string }{
+		{"veil", "carries alpha"},
+		{"invisible", "carries alpha"},
+		{"contextual", `family keyword "inherit" must be quoted`},
+	} {
+		_, err := LoadClientDesign(os.DirFS("testdata/clients"), tc.slug)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("client %s: got %v, want it to say %q", tc.slug, err, tc.want)
+		}
+	}
+}
+
+// A client's shape is written in the spelling the tags give it, and reaches both
+// themes of the pair so the stylesheet and the exported document agree.
+func TestLoadClientDesignReadsAShapeWrittenTheWayAPersonWritesIt(t *testing.T) {
+	t.Parallel()
+	client, err := LoadClientDesign(os.DirFS("testdata/clients"), "shaped")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if client.Shape.CardRadius != "0.75rem" || client.Shape.ButtonRadius != "2px" || client.Shape.ModalRadius != "1.5rem" {
+		t.Fatalf("kebab-case shape did not decode: %+v", client.Shape)
+	}
+	pair, err := client.Resolve()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	for _, theme := range pair.Both() {
+		tokens := map[string]string{}
+		for _, token := range theme.Tokens() {
+			tokens[token.Name] = token.Value
+		}
+		if tokens["--pk-radius-card"] != "0.75rem" || tokens["--pk-radius-button"] != "2px" || tokens["--pk-radius-modal"] != "1.5rem" {
+			t.Errorf("%s shape tokens: %v", theme.Name, tokens)
+		}
+	}
+}
+
 // One process, many clients: the set is keyed by slug, and two clients whose
 // palettes a reader would take for one another never both get in.
 func TestLoadClientDesignsKeysPairsBySlug(t *testing.T) {
@@ -96,5 +143,44 @@ func TestLoadClientDesignsKeysPairsBySlug(t *testing.T) {
 	}
 	if got := design.Distance(pairs["alpha"], pairs["beta"]); design.Colliding(pairs["alpha"], pairs["beta"]) {
 		t.Errorf("two clients sit %.3f apart, below the %.2f the register enforces", got, design.MinDistance)
+	}
+}
+
+// The set loader's headline promise, in the negative: two clients generated from
+// one seed are one palette worn twice, and the second one to arrive is refused by
+// name with the distance measured. Nothing partial comes back, so a process
+// cannot boot half a client roster.
+func TestLoadClientDesignsRefusesTwoClientsWearingOneIdentity(t *testing.T) {
+	t.Parallel()
+	pairs, err := LoadClientDesigns(os.DirFS("testdata/collide"))
+	if err == nil {
+		t.Fatalf("two clients on one seed loaded: %v", slices.Sorted(maps.Keys(pairs)))
+	}
+	if pairs != nil {
+		t.Errorf("a refused set returned %d pairs", len(pairs))
+	}
+	message := err.Error()
+	for _, want := range []string{"client b", "client a", "0.000", "below the 0.01"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("refusal does not name %q: %v", want, message)
+		}
+	}
+}
+
+// And the brief's refusal of a third: two sound clients and one whose own
+// override breaks its own body role. The set is refused whole — the message names
+// the client that broke the gate, and the two that were fine do not boot without
+// it, because a roster that silently loses a client is worse than no roster.
+func TestLoadClientDesignsRefusesAThirdClientThatDoesNotClearTheGate(t *testing.T) {
+	t.Parallel()
+	pairs, err := LoadClientDesigns(os.DirFS("testdata/third"))
+	if err == nil {
+		t.Fatalf("a set holding an unreadable client loaded: %v", slices.Sorted(maps.Keys(pairs)))
+	}
+	if pairs != nil {
+		t.Errorf("a refused set returned %d pairs", len(pairs))
+	}
+	if !strings.Contains(err.Error(), "client broken") || !strings.Contains(err.Error(), "text-muted") {
+		t.Errorf("refusal does not name the client and its token: %v", err)
 	}
 }

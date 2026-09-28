@@ -9,12 +9,16 @@ import (
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-// TokenMode holds selected theme colours and ordered fallback families under
-// their CSS identities. Other theme token kinds are outside this projection.
+// TokenMode holds selected theme colours, ordered fallback families and the
+// theme's own shape lengths under their CSS identities. A client sets its radii
+// through design.Client, so a projection that stopped at colour and font would
+// ship the client's palette and drop the client's shape — and the document
+// platformkit-mobile reads is this projection.
 type TokenMode struct {
-	Mode   string                   `json:"mode"`
-	Colors []design.Token           `json:"colors,omitempty"`
-	Fonts  []design.FontFamilyToken `json:"fonts,omitempty"`
+	Mode       string                   `json:"mode"`
+	Colors     []design.Token           `json:"colors,omitempty"`
+	Fonts      []design.FontFamilyToken `json:"fonts,omitempty"`
+	Dimensions []design.Token           `json:"dimensions,omitempty"`
 }
 
 // TokenExport composes existing declaration owners as read-only source data.
@@ -60,8 +64,16 @@ func ExportTokens(theme design.Pair, modes ...string) (TokenExport, error) {
 		}
 		value := TokenMode{Mode: mode, Fonts: fonts}
 		for _, token := range owner.Tokens() {
-			if token.Type == "color" {
+			switch token.Type {
+			case "color":
 				value.Colors = append(value.Colors, token)
+			case "dimension":
+				// The theme is trusted Go input, but the document is not: a radius
+				// in a unit DTCG cannot carry would reach a consumer as a string.
+				if _, _, err := design.ParseRadius(token.Value); err != nil {
+					return TokenExport{}, fmt.Errorf("token export mode %s: %w", mode, err)
+				}
+				value.Dimensions = append(value.Dimensions, token)
 			}
 		}
 		out.Modes = append(out.Modes, value)
@@ -118,6 +130,21 @@ func (s TokenExport) Validate() error {
 		kinds := make(map[string]string, len(base))
 		for _, token := range base {
 			kinds[token.Name] = token.Type
+		}
+		// Shape travels with the palette, so it keeps the same identity rule: a
+		// radius is a dimension this format can express, and both modes expose the
+		// same shape identities as each other (kinds is compared below).
+		for _, dimension := range mode.Dimensions {
+			if dimension.Type != "dimension" || !slices.Contains(design.RadiusTokenNames(), dimension.Name) {
+				return fmt.Errorf("token export mode %s: shape token %q is not a radius dimension", mode.Mode, dimension.Name)
+			}
+			if _, _, err := design.ParseRadius(dimension.Value); err != nil {
+				return fmt.Errorf("token export mode %s: %w", mode.Mode, err)
+			}
+			if kinds[dimension.Name] != "" {
+				return fmt.Errorf("token export mode %s: duplicate token %q", mode.Mode, dimension.Name)
+			}
+			kinds[dimension.Name] = dimension.Type
 		}
 		if firstKinds == nil {
 			firstKinds = kinds

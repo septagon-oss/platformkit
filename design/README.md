@@ -27,9 +27,31 @@ does not hold, so a process that would wear both asks and refuses.
 
 [`kit/designconfig`](../kit/designconfig/) decodes `clients/<slug>/design.yaml`
 into `design.Client` — the seed plus at most named overrides of the 22 colour
-tokens — and `Client.Resolve` runs the same gate over the finished pair. Start
-there for a new client; `design.Default()` stays what an installation that says
-nothing about colour gets.
+tokens, its own font stacks and its radii in the spelling the tags give them
+(`card-radius`) — and `Client.Resolve` runs the same gate over the finished pair.
+Start there for a new client; `design.Default()` stays what an installation that
+says nothing about colour gets.
+
+Two refusals keep the gate honest rather than theatrical. A colour that carries
+alpha is refused before anything is measured: a ratio is a property of two opaque
+paints, and premultiplied channels would let `transparent` clear the gate at 21:1.
+A font stack is checked by `ParseFontFamilies`, the package's own parser, not by a
+looser regexp beside it, and a radius is checked by `Shape.Validate` beside the
+type — `px` or `rem`, the units the DTCG document a mobile application reads can
+carry.
+
+What a client's identity is made of, in one place (decision 0022). **Reused:**
+`Pair`, `Theme`, `Both` and `Tokens` for the value; `colors.go` `parseColor` and
+`ResolveColors` for the numbers `Check` reads; `ParseFontFamilies` for the type
+grammar; `colorFields` and `shapeFields` for the vocabularies; `ui/export` for the
+DTCG document. **Added:** `contrast.go`, because no Go code in this workspace
+measured a ratio at all; `seed.go`, because nothing generated a palette; `Client`
+and `Distance`/`Colliding`, because nothing read a client's file or compared two
+clients' identities; `Shape.Validate`/`ParseRadius`, because the radius grammar
+lived in a loader's regexp rather than beside the type. **Made reusable:**
+`RadiusTokenNames` and the exported `Pair.Check`, `Luminance` and `Contrast` for
+any other gate above this package, and `designconfig`'s slug-keyed set as the
+place a process holds many clients' identities.
 
 Font assets and their licences are described, not shipped: see
 [assets.go](assets.go) and the
