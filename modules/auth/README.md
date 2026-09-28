@@ -21,7 +21,11 @@ application's permission catalogue — `kit/module.Grants` over the modules it
 actually composed — and the operator grants the administrator's role is created
 holding are the operator permissions of those modules and nothing else; an
 initial role naming a permission no composed module defines is refused where it
-used to be written. The catalogue used to be a list each application wrote out by
+used to be written. The refusal arrives at the first tenant provisioned, inside
+that tenant's own creation transaction — it writes no tenant row and emits no
+event — and not at process start: `kit/app` refuses boot for an *operation*
+guarded by an undefined permission and has no line for an initial role, which is
+a value a composition closes over rather than one the kernel can see into. The catalogue used to be a list each application wrote out by
 hand, and no application narrowed it when it dropped a module: one served from
 2026-09-22 20:11 with an administrator holding `billing:catalog`, a permission
 `modules/billing` defines and that installation did not compose, and the only
