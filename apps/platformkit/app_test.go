@@ -1161,8 +1161,8 @@ const (
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	// One process starts at a point of its own in the band, so two suites running
-	// at once do not reach for the same address first, and a case within one
-	// process walks on from wherever the last case was refused.
+	// at once do not reach for the same address first. The start is the pid and
+	// nothing else: every case in a process walks the band from the same place.
 	from := testPortLow + os.Getpid()%(testPortHigh-testPortLow)
 	for i := 0; i < testPortHigh-testPortLow; i++ {
 		candidate := testPortLow + (from-testPortLow+i)%(testPortHigh-testPortLow)
