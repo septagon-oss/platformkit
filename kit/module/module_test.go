@@ -18,13 +18,13 @@ func TestValidateNamesEveryViolation(t *testing.T) {
 		{
 			Name:        "billing",
 			Permissions: []Permission{{Key: "invoice:read"}},
-			Events:      []string{"billing.invoice_issued"},
+			Events:      []events.Declared{{Name: "billing.invoice_issued"}},
 			Nav:         []NavEntry{{Label: "Invoices", Screen: "billing/invoices", Permission: "invoice:read"}},
 		},
 		{
 			Name:        "billing",
 			Permissions: []Permission{{Key: "invoice:read"}},
-			Events:      []string{"accounts.user_created"},
+			Events:      []events.Declared{{Name: "accounts.user_created"}},
 			Nav:         []NavEntry{{Label: "Reports", Screen: "billing/reports", Permission: "report:read"}},
 		},
 	}
@@ -51,7 +51,7 @@ func TestValidateAcceptsAWellFormedComposition(t *testing.T) {
 		{
 			Name:        "accounts",
 			Permissions: []Permission{{Key: "user:read"}},
-			Events:      []string{"accounts.user_created", "accounts.user_deleted"},
+			Events:      []events.Declared{{Name: "accounts.user_created"}, {Name: "accounts.user_deleted"}},
 		},
 		{
 			Name: "billing",
@@ -82,7 +82,7 @@ func TestValidateRejectsMalformedTokens(t *testing.T) {
 	err := Validate([]Module{{
 		Name:        "Billing",
 		Permissions: []Permission{{Key: "Invoice.Read"}},
-		Events:      []string{"nodot"},
+		Events:      []events.Declared{{Name: "nodot"}},
 	}})
 	if err == nil {
 		t.Fatal("Validate accepted a malformed module")
@@ -106,7 +106,7 @@ func TestValidateChecksSubscriptionsAgainstWhatIsEmitted(t *testing.T) {
 
 	// A subscription to another module's event is the ordinary case and passes.
 	ok := []Module{
-		{Name: "billing", Events: []string{"billing.invoice_issued"}},
+		{Name: "billing", Events:      []events.Declared{{Name: "billing.invoice_issued"}}},
 		{Name: "ledger", Subscriptions: []events.Subscription{
 			{Module: "ledger", Name: "billing.invoice_issued", Handler: handler},
 		}},
@@ -116,7 +116,7 @@ func TestValidateChecksSubscriptionsAgainstWhatIsEmitted(t *testing.T) {
 	}
 
 	bad := []Module{
-		{Name: "billing", Events: []string{"billing.invoice_issued"}},
+		{Name: "billing", Events:      []events.Declared{{Name: "billing.invoice_issued"}}},
 		{Name: "ledger", Subscriptions: []events.Subscription{
 			{Module: "ledger", Name: "billing.invoice_voided", Handler: handler},
 			{Module: "ledger", Name: "billing.invoice_issued"},
@@ -166,9 +166,9 @@ func TestSubscribeAllHearsAModuleComposedAfterIt(t *testing.T) {
 		SubscribeAll:  true,
 		Subscriptions: []events.Subscription{{Module: "trail", Handler: record}},
 	}
-	first := Module{Name: "first", Events: []string{"first.happened"}}
+	first := Module{Name: "first", Events:      []events.Declared{{Name: "first.happened"}}}
 	// After the subscriber in the list, which is the case that used to be lost.
-	last := Module{Name: "last", Events: []string{"last.happened", "last.again"}}
+	last := Module{Name: "last", Events:      []events.Declared{{Name: "last.happened"}, {Name: "last.again"}}}
 
 	got := Expand([]Module{first, trail, last})
 	if len(got) != 3 {

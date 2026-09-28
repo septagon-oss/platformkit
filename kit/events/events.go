@@ -96,6 +96,11 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if err != nil {
 		return fmt.Errorf("events: %s: marshal the payload: %w", name, err)
 	}
+	// The promise the emitting module made in its manifest is checked here, at
+	// the one door, before anything is written. See catalog.go.
+	if err := checkPayload(name, body); err != nil {
+		return err
+	}
 	var actor any
 	if id, ok := tenancy.ActorFrom(ctx); ok {
 		actor = id

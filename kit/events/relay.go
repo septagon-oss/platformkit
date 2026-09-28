@@ -69,7 +69,12 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 	var moved int
 	err := db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var rows []row
-		const q = `SELECT id, tenant_id, name, payload, created_at, actor, traceparent, tracestate FROM ` + table + `
+		// The two aliases are GORM's naming rather than the columns': it maps a
+		// scanned struct field by snake_case, so TraceParent arrives as
+		// trace_parent. Naming the alias after the column and letting the field
+		// go nil is how a carried fact silently stops being carried.
+		const q = `SELECT id, tenant_id, name, payload, created_at, actor,
+			traceparent AS trace_parent, tracestate AS trace_state FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)

@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The six events this module emits: kit/rest's three, published by the Spec
@@ -21,7 +23,16 @@ const (
 )
 
 // Events is every event this module emits, for the manifest.
-var Events = []string{EventCreated, EventUpdated, EventDeleted, EventPublished, EventUnpublished, EventArchived}
+var Events = []events.Declared{
+	// The three a rest.Spec publishes carry the entity itself; the lifecycle
+	// three carry Moved, which is what a reader of a content feed acts on.
+	events.Declare[*Content](EventCreated),
+	events.Declare[*Content](EventUpdated),
+	events.Declare[*Content](EventDeleted),
+	events.Declare[Moved](EventPublished),
+	events.Declare[Moved](EventUnpublished),
+	events.Declare[Moved](EventArchived),
+}
 
 // Moved is the payload of all three lifecycle events: which content, what it
 // is now, and when it moved. One struct rather than three, because the three

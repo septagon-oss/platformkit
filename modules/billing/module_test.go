@@ -15,6 +15,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/billing"
@@ -199,7 +200,7 @@ func TestEveryEventTheRoutesDeclareIsInTheManifest(t *testing.T) {
 		}
 	}
 	for _, e := range declared {
-		if !slices.Contains(contracts.Events, e) {
+		if !slices.Contains(events.Names(contracts.Events), e) {
 			t.Errorf("a route publishes %q and the manifest does not name it", e)
 		}
 	}

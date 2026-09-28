@@ -241,6 +241,12 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if err := module.Validate(mods); err != nil {
 		return nil, err
 	}
+	// Every event this composition can emit, with the payload type its module
+	// promised, goes to the outbox: a payload that is not one is refused at the
+	// INSERT rather than published and discovered by a subscriber. One list,
+	// built from the manifests nobody else re-declares. See kit/events/catalog.go
+	// and kit/app/asyncapi.go, which emits the same list as a document.
+	events.DeclareAll(declaredEvents(mods))
 	log := opts.Log
 	if log == nil {
 		// config's log.level was validated and then read by nobody, which is
@@ -658,6 +664,22 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 	return fmt.Errorf("app: %d permission(s) do not check out:\n  %s", len(bad), strings.Join(bad, "\n  "))
 }
 
+// declaredEvents is every event every manifest declares, de-duplicated by name.
+// Two modules may not emit one name — module.Validate refuses that as a
+// namespace violation — so the first declaration seen is the only one.
+func declaredEvents(mods []module.Module) []events.Declared {
+	var out []events.Declared
+	seen := map[string]bool{}
+	for _, m := range mods {
+		for _, e := range m.Events {
+			if !seen[e.Name] {
+				seen[e.Name], out = true, append(out, e)
+			}
+		}
+	}
+	return out
+}
+
 // validateEvents is the same gate for the other direction: an operation that
 // will publish an event no module declared is an event no subscriber can be
 // written against, because the manifest is where a subscriber looks.
@@ -665,7 +687,7 @@ func validateEvents(api *httpx.API, mods []module.Module) error {
 	declared := map[string]bool{}
 	for _, m := range mods {
 		for _, e := range m.Events {
-			declared[e] = true
+			declared[e.Name] = true
 		}
 	}
 	var missing []string

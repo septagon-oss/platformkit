@@ -13,6 +13,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -126,13 +127,22 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
-		Events: []string{
-			contracts.EventCreated, contracts.EventUpdated, contracts.EventDeleted,
-			contracts.EventInvited, contracts.EventPasswordSet,
-			contracts.EventRolesSet, contracts.EventDeactivated,
-			contracts.EventHandleSet,
-			contracts.EventRegistrationPending, contracts.EventRegistrationApproved,
-			contracts.EventRegistrationUnverified, contracts.EventEmailVerified,
+		Events: []events.Declared{
+			// The three kit/rest publishes carry the entity itself, which is
+			// what Spec.emit marshals; every other name carries the payload
+			// type beside it in contracts.
+			events.Declare[*contracts.User](contracts.EventCreated),
+			events.Declare[*contracts.User](contracts.EventUpdated),
+			events.Declare[*contracts.User](contracts.EventDeleted),
+			events.Declare[contracts.Invited](contracts.EventInvited),
+			events.Declare[contracts.PasswordSet](contracts.EventPasswordSet),
+			events.Declare[contracts.RolesSet](contracts.EventRolesSet),
+			events.Declare[contracts.Deactivated](contracts.EventDeactivated),
+			events.Declare[contracts.HandleSet](contracts.EventHandleSet),
+			events.Declare[contracts.RegistrationPending](contracts.EventRegistrationPending),
+			events.Declare[contracts.RegistrationApproved](contracts.EventRegistrationApproved),
+			events.Declare[contracts.RegistrationUnverified](contracts.EventRegistrationUnverified),
+			events.Declare[contracts.EmailVerified](contracts.EventEmailVerified),
 		},
 		Nav: []module.NavEntry{
 			{Label: "Users", Screen: "user/users", Permission: contracts.PermissionUserRead},

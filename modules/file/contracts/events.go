@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The two events this module emits. There is no rest.Spec here, so there is no
@@ -15,7 +17,10 @@ const (
 )
 
 // Events is every event this module emits, for the manifest.
-var Events = []string{EventUploaded, EventDeleted}
+var Events = []events.Declared{
+	events.Declare[Uploaded](EventUploaded),
+	events.Declare[Deleted](EventDeleted),
+}
 
 // Uploaded is the payload of EventUploaded. It carries the digest as well as
 // the size because the subscriber this exists for is whatever indexes or scans

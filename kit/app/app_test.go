@@ -110,7 +110,7 @@ func hello() module.Module {
 	return module.Module{
 		Name:        "hello",
 		Permissions: []module.Permission{{Key: "note:write"}},
-		Events:      []string{"hello.note_written"},
+		Events:      []events.Declared{{Name: "hello.note_written"}},
 		Nav:         []module.NavEntry{{Label: "Notes", Screen: "hello/notes", Permission: "note:write"}},
 		// Each owner starts its own numbering at 1.
 		Migrations: fstest.MapFS{
@@ -407,11 +407,11 @@ func (Widget) TableName() string { return "widgets" }
 // manifest is where a subscriber looks.
 func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	cfg, opts := compose(t)
-	shop := func(events []string) module.Module {
+	shop := func(declared []events.Declared) module.Module {
 		return module.Module{
 			Name:        "shop",
 			Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
-			Events:      events,
+			Events:      declared,
 			Routes: func(s httpx.Surfaces) {
 				rest.Spec[*Widget]{
 					Module: "shop", Entity: "widget", Path: "/widgets",
@@ -437,7 +437,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 
 	// Declaring them is all it takes, and then the composition boots.
 	cfg, opts = compose(t)
-	declared := shop([]string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"})
+	declared := shop(rest.Spec[*Widget]{Module: "shop", Entity: "widget"}.Declared())
 	a, err = New(t.Context(), cfg, []module.Module{declared}, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -480,7 +480,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	handled := make(chan events.Event, 4)
 	ledger := module.Module{
 		Name:   "ledger",
-		Events: []string{"ledger.entry_written"},
+		Events:      []events.Declared{{Name: "ledger.entry_written"}},
 		Subscriptions: []events.Subscription{{
 			Module: "ledger", Name: "ledger.entry_written",
 			Handler: func(_ context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
@@ -634,7 +634,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	widgets := module.Module{
 		Name:        "shop",
 		Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
-		Events:      []string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"},
+		Events:      []events.Declared{{Name: "shop.widget.created"}, {Name: "shop.widget.updated"}, {Name: "shop.widget.deleted"}},
 		Routes: func(r httpx.Surfaces) {
 			rest.Spec[*Widget]{
 				Module: "shop", Entity: "widget", Path: "/widgets",

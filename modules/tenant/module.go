@@ -12,6 +12,7 @@
 package tenant
 
 import (
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -52,7 +53,11 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,
-		Events:      []string{contracts.EventCreated, contracts.EventSuspended, contracts.EventHostAdded},
+		Events: []events.Declared{
+			events.Declare[contracts.Created](contracts.EventCreated),
+			events.Declare[contracts.Suspended](contracts.EventSuspended),
+			events.Declare[contracts.HostAdded](contracts.EventHostAdded),
+		},
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above
 		// because a module's Events are the ones it owns: kit/app checks a

@@ -40,11 +40,18 @@ type Module struct {
 	// Permissions are the permission keys this module defines, "<resource>:<action>".
 	Permissions []Permission
 
-	// Events are the event names this module emits, "<name>.<event>". Every
-	// event a rest.Spec would publish has to appear here, or the app refuses to
-	// start: a module that emits something it never promised is an integration
-	// nobody can find.
-	Events []string
+	// Events are the events this module emits, each named with the Go type of
+	// its payload: events.Declare[contracts.Invited](contracts.EventInvited).
+	// Every event a rest.Spec would publish has to appear here, or the app
+	// refuses to start: a module that emits something it never promised is an
+	// integration nobody can find.
+	//
+	// The payload type is not decoration. It is projected into a JSON Schema
+	// (kit/events/schema.go), the outbox refuses a payload that is not one
+	// before the row is written, and the composition's AsyncAPI document is
+	// emitted from it (kit/app/asyncapi.go). A module that emits a payload the
+	// kernel cannot describe leaves Payload nil and says why.
+	Events []events.Declared
 
 	// Subscriptions are the events this module handles. The worker role
 	// subscribes each one; the name has to be an event some module emits.
@@ -212,12 +219,12 @@ func Validate(mods []Module) error {
 		}
 
 		for _, e := range m.Events {
-			if !events.ValidName(e) {
-				add("module %q: event %q is not %q", m.Name, e, "<name>.<event>")
+			if !events.ValidName(e.Name) {
+				add("module %q: event %q is not %q", m.Name, e.Name, "<name>.<event>")
 				continue
 			}
-			if !strings.HasPrefix(e, m.Name+".") {
-				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e)
+			if !strings.HasPrefix(e.Name, m.Name+".") {
+				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e.Name)
 			}
 		}
 	}
@@ -228,7 +235,7 @@ func Validate(mods []Module) error {
 	emitted := map[string]bool{}
 	for _, m := range mods {
 		for _, e := range m.Events {
-			emitted[e] = true
+			emitted[e.Name] = true
 		}
 	}
 	for _, m := range mods {
@@ -290,8 +297,8 @@ func Expand(mods []Module) []Module {
 	var all []string
 	for _, m := range mods {
 		for _, e := range m.Events {
-			if !seen[e] {
-				seen[e], all = true, append(all, e)
+			if !seen[e.Name] {
+				seen[e.Name], all = true, append(all, e.Name)
 			}
 		}
 	}

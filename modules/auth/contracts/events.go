@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The three events this module emits. There are no CRUD events, because this
@@ -37,9 +39,15 @@ const (
 )
 
 // Events is every event this module emits, for the manifest.
-var Events = []string{
-	EventLoggedIn, EventLoggedOut, EventLoginFailed,
-	EventResetRequested, EventPasswordReset, EventRoleSet, EventRegistrationRequested, EventVerificationRequested,
+var Events = []events.Declared{
+	events.Declare[LoggedIn](EventLoggedIn),
+	events.Declare[LoggedOut](EventLoggedOut),
+	events.Declare[LoginFailed](EventLoginFailed),
+	events.Declare[ResetRequested](EventResetRequested),
+	events.Declare[PasswordReset](EventPasswordReset),
+	events.Declare[RoleSet](EventRoleSet),
+	events.Declare[RegistrationRequested](EventRegistrationRequested),
+	events.Declare[VerificationRequested](EventVerificationRequested),
 }
 
 // ResetRequested is the payload of EventResetRequested: this address asked for
