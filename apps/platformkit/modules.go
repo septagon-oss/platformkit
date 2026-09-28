@@ -47,11 +47,18 @@ import (
 // would have been sent.
 type composition struct {
 	modules []module.Module
-	tenants tenantcontracts.Service
-	users   usercontracts.Service
-	auth    authcontracts.Auth
-	notify  notificationcontracts.Service
-	mail    notificationcontracts.Mailer
+	// catalogue is this application's permission catalogue, and the one value
+	// both of its readers are given: the seeding hook, which decides what a new
+	// tenant's roles hold, and repair-roles, which may take away only what that
+	// seeder could have written. One closure rather than two calls that happen
+	// to say the same thing, as initialRoles is for the roles beside it, and a
+	// function rather than a list because mods is still empty here: seedRoles.
+	catalogue func() []tenancy.Grant
+	tenants   tenantcontracts.Service
+	users     usercontracts.Service
+	auth      authcontracts.Auth
+	notify    notificationcontracts.Service
+	mail      notificationcontracts.Mailer
 	// plans answers what a tenant's subscription includes, for the operations
 	// that declare a feature.
 	plans httpx.Entitler
@@ -75,8 +82,9 @@ func compose(cfg config.Config) composition {
 	// tenant module included. It is read when a tenant is created, which is
 	// after this function has returned. See seedRoles.
 	var mods []module.Module
+	catalogue := func() []tenancy.Grant { return module.Grants(mods) }
 	tenants, tenantModule := tenant.Module(tenant.Deps{
-		OnCreate: []tenantcontracts.Hook{seedRoles(func() []tenancy.Grant { return module.Grants(mods) })},
+		OnCreate: []tenantcontracts.Hook{seedRoles(catalogue)},
 		Invite:   firstAdmin{users: users},
 	})
 	active := tenantcontracts.Active{Service: tenants}
@@ -205,8 +213,8 @@ func compose(cfg config.Config) composition {
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
 
-	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
-		notify: notify, mail: mail, plans: plans}
+	return composition{modules: mods, catalogue: catalogue, tenants: tenants,
+		users: users, auth: auths, notify: notify, mail: mail, plans: plans}
 }
 
 // transports is the one place this application names an event provider. The

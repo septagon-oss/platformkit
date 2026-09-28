@@ -22,7 +22,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/jobs"
-	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -41,10 +40,10 @@ import (
 // this at once — both reading the same dead grant before either reached it —
 // print one line between them and not two.
 //
-// The two values it passes are the two the seeder is given — the catalogue of
-// this composition and the initial roles this application names — because those
-// two are what the seeder decided with, and a grant it did not write is not this
-// command's to take away. A grant somebody added by hand is reported by the
+// The two values it passes are the two the seeder is given — the catalogue is the
+// very closure the seeding hook reads (see composition.catalogue) and the roles
+// are the literal it reads — because those two are what the seeder decided with,
+// and a grant it did not write is not this command's to take away. A grant somebody added by hand is reported by the
 // hourly sweep and by nothing here. It is idempotent: a second run finds nothing
 // and prints the one sentence its own case pins. Read that sentence for what it
 // claims, because it claims two things and no third — that this run took nothing,
@@ -72,7 +71,7 @@ func repairRoles(args []string) error {
 
 	ctx := context.Background()
 	c := compose(cfg)
-	declared := module.Grants(c.modules)
+	declared := c.catalogue()
 	conn, err := db.Open(ctx, cfg.Database.URL)
 	if err != nil {
 		return err

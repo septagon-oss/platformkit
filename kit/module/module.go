@@ -311,6 +311,13 @@ func Validate(mods []Module) error {
 // is not modified: the returned slice is a copy, sorted so every replica
 // registers the same consumers, and in it SubscribeAll is cleared — the flag is
 // a request and this is it answered.
+//
+// What it answers is subscriptions and nothing else, and that is a contract: the
+// permissions of every module it returns are the ones the module it came from
+// defined, so Grants reads one catalogue off either list — which is what makes
+// the catalogue kit/app declares to the request guard and the one a composition
+// hands its seeder answer "does this installation define this permission" the
+// same way. TestExpandRewritesSubscriptionsAndNothingElse holds the line.
 func Expand(mods []Module) []Module {
 	seen := map[string]bool{}
 	var all []string
