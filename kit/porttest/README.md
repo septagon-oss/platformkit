@@ -32,8 +32,8 @@ A field no case reads does not belong in the description. That is the table:
 | `Op.Call` | the success case, and the retry, which compares what it answered either side of the second call — and refuses a mutating operation whose rendering is empty, since two empty strings compare equal |
 | `Op.Snapshot` | the retry and every refusal: "writes nothing" — and the harness asks it, in each of those cases, whether it can see the row at all (below); the success case reads it either side of the call for the one operation the row witness cannot ask, a mutating one whose `Ready` names no row |
 | `Op.Publishes` | the success case, in order |
-| `Op.Refusals` | one case each |
-| `Op.Names` | the generated case name where the module has its own sentence |
+| `Op.Refusals` | one case each — a second refusal of one floor `Kind` is a second case, and runs |
+| `Op.Names` | the generated case name where the module has its own sentence: `Success`, `Retry`, and any refusal whose `Refusal.Name` is empty; the floor refuses an entry no case runs under |
 | `Op.Skip` | the floor, which asks for a case or a reason |
 | `Refusal.Kind` | which floor case this answers, and the order they run in |
 | `Refusal.Name` | the case name, verbatim |
@@ -58,15 +58,24 @@ Per operation:
 
 Then `Suite.Own`, in the order the module wrote them.
 
+A description may owe one floor refusal from two states — "a resolved task cannot be
+assigned" and "a closed task cannot be assigned" — and then it describes two cases of
+that Kind. Both run, one after the other, before the module's own refusals; two of
+them with no name of their own would run under one name, which the floor refuses.
+
 A sentence the module gives — `Op.Names[Kind]` or `Refusal.Name` — is used
 verbatim and replaces the whole generated name, prefix included. That is what
 keeps an evidence link pointing at something when a hand-written case becomes a
-described one.
+described one. `Refusal.Name` wins where both name one refusal; every key of
+`Op.Names` is read by some case, and the floor refuses an entry that reaches
+none, because a sentence nothing runs under is a link pointing at nothing.
 
 One sentence means two things across the suites today, and a reader of an evidence
 link has to know it: `an unknown id is not found` is still one hand-written case in
-the suites this change did not convert (`filetest`, `usertest`), and in the three it
-did convert it is case 3, which the harness names per operation (`Assign: an unknown
+three of the seven suites this change did not convert — `audittest`, `filetest`,
+`usertest` of the seven that keep hand-written `cases()` maps (audit, auth, billing,
+file, notification, tenant, user) — and in the three it did convert it is case 3,
+which the harness names per operation (`Assign: an unknown
 row is not found` …). Nothing in this repository can tell a requirement which of the
 two a client's index meant. Whichever way the unconverted suites go, one meaning has
 to win, and which one that is is not this package's call.
@@ -97,6 +106,11 @@ reason that says so.
   `Named`, or excuses the success;
 - two operations share a name, two refusals share a name, or two cases would run
   under one name;
+- an `Op.Names` entry reaches no case — it names a shape the operation does not run
+  (a refusal it neither describes nor owes, a `Retry` it skips, the empty Kind), or a
+  refusal of that shape already answers with its own `Refusal.Name`, which wins. The
+  map is read by the case it names, and a module's sentence that nothing runs under
+  is an evidence link pointing at a sentence while the case runs under another;
 - a hand-written case has no `Because`, no name or no body;
 - a mutating operation has no `Snapshot` — "a refused mutation writes nothing" is
   unassertable without one;
