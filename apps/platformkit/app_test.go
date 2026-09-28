@@ -1333,13 +1333,15 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
-	// 24 became 25 when modules/user/000025 added the handle column, and 25
-	// became 26 when the kernel added 000026_module_schema. The number is
-	// the point of the assertion: an upgrade fixture that silently stopped counting
-	// a migration would pass while upgrading a real installation past a file it
-	// should have applied, so a new migration has to arrive here and say so.
-	if len(before) != 26 {
-		t.Fatalf("the old layout applied %d files, want 26", len(before))
+	// 24 became 25 when modules/user/000025 added the handle column, 25 became 26
+	// when the kernel added 000026_module_schema, and 26 became 27 when
+	// 000027_outbox_trace gave the outbox the trace columns the CloudEvents
+	// envelope carries. The number is the point of the assertion: an upgrade
+	// fixture that silently stopped counting a migration would pass while
+	// upgrading a real installation past a file it should have applied, so a new
+	// migration has to arrive here and say so.
+	if len(before) != 27 {
+		t.Fatalf("the old layout applied %d files, want 27", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with

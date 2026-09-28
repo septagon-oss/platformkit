@@ -17,8 +17,44 @@ For an application that owns its own persistence, import the parts directly:
 forwards to the shared grammar. `events.Memory()` is gone: call `memory.New()`,
 so the SQL outbox package imports none of its own providers and the package gate
 holds it there. Existing outbox consumers can migrate those imports independently. The retry
-ladder, handler-attempt cap and seven-day retention have one internal owner;
-moving packages does not change stored subjects, stream names or durables.
+ladder, handler-attempt cap and seven-day retention have one internal owner.
+
+## The envelope, the subject and what a rollout has to expect
+
+The body on the broker is **CloudEvents 1.0 in structured content mode**:
+`specversion`, `id`, `source` (`/<module>`), `type` (the event name), `subject`,
+`time`, `datacontenttype`, `data`, plus `tenantid` as a **required** extension
+where the specification leaves extensions optional — an event with no tenant has
+no transaction to deliver it in — and `traceparent`/`tracestate` when a request
+caused the event. `Event` stays the programming model and the outbox keeps
+storing columns; `MarshalJSON`/`UnmarshalJSON` in
+[`transport/cloudevents.go`](transport/cloudevents.go) own the wire form.
+
+The subject is `platformkit.<tenant>.<module>.<event>`
+([`transport/subject.go`](transport/subject.go)), so a tenant's backlog is an
+address and a durable can be per tenant (decision 0053 §1). Subscriptions keep
+one durable per (module, event) and filter `platformkit.*.<module>.<event>`; an
+operator who wants one tenant's queue filters that tenant's exact subject. The
+stream is still `PLATFORMKIT` with `platformkit.>`.
+
+Three consequences, each a test rather than an assurance:
+
+* **The pre-envelope shape decodes and is never written.** That asymmetry is the
+  rolling window: while a publisher on the previous build is writing events a new
+  worker reads, refusing those messages would terminate events the relay had
+  already stamped. Deploy the consumers onto this build before any publisher, and
+  the window closes when the last previous-build publisher is gone. A
+  pre-envelope document with no tenant or no event name is refused in either form.
+* **Every stored consumer is deleted and made again**, because its
+  `filter_subject` changed and NATS cannot change one in place. It asks for
+  `DeliverAll`, so that is a re-delivery of the stream — and every replay is
+  claimed in `platformkit_handled` before the handler runs, which is why the
+  reconciliation `reconcile` logs a line rather than an incident. Independent
+  sinks that are not `Consume` must supply the same durable idempotency.
+* **The trace context is stored with the row** (`000027_outbox_trace.up.sql`,
+  nullable) and carried onto the envelope by the relay, because by relay time the
+  request is gone. `kit/trace` fixes the W3C format and collects nothing: no span
+  is exported or sampled until the metrics pillar lands a collector.
 
 The NATS constructors have moved out of the SQL package. Replace
 `events.JetStream(...)` with `nats.JetStream(...)` and
@@ -41,6 +77,16 @@ when the selected name has no constructor.
 and durable consumers. These are broker operations, not read-only readiness
 checks. The caller drains work and closes the returned `io.Closer` connection.
 No new configuration namespace, broker or lifecycle service is introduced.
+
+A module's manifest declares each event with the Go type of its payload
+(`events.Declare[contracts.Invited](contracts.EventInvited)`); the outbox refuses
+a payload that is not a projection of that type ([`schema.go`](schema.go)) inside
+the publisher's own transaction, and `kit/app.AsyncAPI` renders the composition's
+catalogue from the same declaration
+(`apps/platformkit/testdata/asyncapi.json`). `events.Replay` is the operator's
+verb for a dead letter: it clears the claim and the terminal record, returns the
+row to pending, and records `platformkit.event_replayed` with the operator's
+actor and their stated reason.
 
 Delivery is at least once. Independent sinks must provide their own durable
 idempotency and tenant checks; the transport cannot supply database isolation.

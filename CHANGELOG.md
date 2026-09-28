@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+**An event leaving the outbox is a CloudEvents 1.0 envelope, and the tenant is
+in its address.** The wire form was `transport.Event`'s own struct tags —
+`{"id","name","tenantId","payload","at","actor"}` — a private shape nothing
+outside this repository could read. It is now CloudEvents 1.0 in structured
+content mode, with `tenantid` as a required extension attribute and
+`traceparent`/`tracestate` as the distributed tracing extension, and the subject
+is `platformkit.<tenant>.<module>.<event>`: a tenant's backlog is an address, a
+durable can be per tenant, and a bridge routes a customer without opening the
+payload. The envelope decodes the pre-envelope shape and never writes it, which
+is the rolling window, not a leftover. `module.Module.Events` names the Go type
+of each payload; that projection is the JSON Schema the outbox refuses a
+mis-shaped payload against, and the AsyncAPI 3.0.0 document
+`apps/platformkit/testdata/asyncapi.json` is rendered from it and checked in by
+`make check`. `events.Replay` is the operator's verb for a terminal delivery, and
+`kit/trace` carries the W3C context from a request into the outbox row — it
+collects and exports nothing, which the metrics pillar still owns. See
+[the rollout notes](kit/events/README.md): the subject change recreates every stored consumer, and the claims are what make that safe.
+
 Two of these entries, one property: a tenant keeps somebody who can administer
 it. Each was written because the state was reachable, not because a race was
 reported, and each says below what it leaves open rather than leaving that to a
