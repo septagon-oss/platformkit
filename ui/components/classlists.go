@@ -35,7 +35,9 @@ var (
 	// own overflow-auto reach them.
 	clShellColumn = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).
 			MinWidth(style.S0)
-	clShellHeader = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
+	// FlexWrap: below ~360px the tenant, the caller, the theme switch, the way out and — since
+	// SidebarDisclosure — the Menu cannot share one row, and a header that cannot wrap widens the page.
+	clShellHeader = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexWrap().
 			Justify(style.JustifyBetween).Gap(style.S4).PaddingX(style.S6).PaddingY(style.S3).
 			Bg(style.SurfacePrimary).BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
 	clShellMain   = style.New().Flex1().PaddingX(style.S6).PaddingY(style.S6).SpaceY(style.S6)
@@ -846,6 +848,7 @@ func ShellClassLists() []style.ClassList {
 		clCardHorizontal, clCardVertical,
 		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur,
 		clSidebarRootAdmin, clSidebarRootContent, clSidebarWidthCollapsed,
+		clSidebarDisclosure, clSidebarDisclosureSummary, clSidebarDisclosurePanel,
 		clSidebarWidthExpanded, clSidebarDisabled, clSidebarInner,
 		clSidebarColumnAdmin, clSidebarColumnContent,
 		clSidebarBrandAdmin, clSidebarBrandContent, clSidebarBrandLink, clSidebarBrandText,

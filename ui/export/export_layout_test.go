@@ -102,7 +102,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// attribution text is 26 lines longer and 14 lines shorter in the same two
 	// places. Nothing rendered moved: a leaf-by-leaf diff of the v1 export before
 	// and after the restoration changes 2 of 6,400 leaves, /notices and /sha256.
-	if legacy.SHA256 != "69f9d1dd603251201d91c57a28d02b23892879fe2e21c6ef305cde12968d06aa" {
+	//
+	// SidebarDisclosure (the admin navigation below the large breakpoint, which the
+	// sidebar hides) adds three atomic rules to the sheet — .mt-2, .p-2 and a
+	// min-width:1024px .lg:hidden — and the disclosureLabel property to the three
+	// sidebar examples' schemas (six leaves: its type and default). Measured as a
+	// leaf-by-leaf diff of the v1 export before and after: 6,400 leaves become 6,406,
+	// /css and /sha256 change, nothing else moves.
+	if legacy.SHA256 != "99d5406cdf0cd972ba7b7f88c54b8934e6b0803965c495db26ab151e56f50a91" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
