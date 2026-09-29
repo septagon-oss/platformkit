@@ -10,9 +10,14 @@ installation's host only — and the switcher at `/app/tenant/tenants`; `tenant.
 first tenant inside `platformkit bootstrap`'s transaction.
 
 Compose it first, with `tenant.Deps{OnCreate, Invite, Languages}` — `Languages`
-being the ones the installation's catalogues answer in, which every new tenant
-starts out serving until `POST /api/v1/ops/tenant/tenants/{id}/locale` narrows
-them (`tenant.locale_set` says so, and the host cache is invalidated for that
+being the ones the installation's catalogues answer in, which are the most a tenant
+is ever served in. A new tenant is served in the one language its copy is written
+in, the column's default, exactly as `migrations/000028_tenant_locale.up.sql`
+backfills a tenant that predates the column: a tenant's set is a declaration and a
+create carries none. `POST /api/v1/ops/tenant/tenants/{id}/locale` is what declares
+more of them, and it refuses a language this installation has no copy for — a tenant
+served in a language nobody wrote is a page that declares it and shows the source
+copy (`tenant.locale_set` says so, and the host cache is invalidated for that
 tenant because the languages of a page changed): `OnCreate` hooks —
 `auth.SeedRoles` today — run inside the creating transaction, and `Invite`
 gives a tenant its first administrator (without one the route is not mounted).

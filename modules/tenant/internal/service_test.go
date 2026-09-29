@@ -28,7 +28,10 @@ var errRollback = errors.New("rolled back on purpose")
 func TestServiceConforms(t *testing.T) {
 	tenanttest.RunService(t, func(t *testing.T, run func(tenanttest.Fixture)) {
 		_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-		svc := internal.NewService(nil, nil)
+		// Built with the dependency the reference application passes, not with nil:
+		// a suite run against a service missing it tests a service nobody composes,
+		// and the cases below that read the installation's languages would be silent.
+		svc := internal.NewService(nil, tenanttest.InstallationLanguages())
 		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 			run(tenanttest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,

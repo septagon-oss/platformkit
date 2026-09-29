@@ -251,15 +251,26 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
-			// A tenant created by somebody who never chose a language is served in
-			// the installation's languages, and its own default is one of them: a
-			// default outside the set would be a request answered in a language the
-			// tenant is not served in, which is the one rule the command below
-			// refuses to break and so cannot be allowed to exist at birth.
-			if created.DefaultLocale == "" ||
-				!slices.Contains(append(created.Locales, created.DefaultLocale), created.DefaultLocale) {
-				t.Errorf("a new tenant is served in %v with default %q, and its default is not among them",
+			// What a tenant nobody chose a language for is served in, read the way a
+			// request reads it: exactly its default, and nothing else. The migration
+			// gives a tenant that predates the column the same single row, and this
+			// command is the only thing that adds a language, so a create that wrote
+			// a wider set would leave two identical tenants answering one browser in
+			// two different languages.
+			born, err := f.Service.ByHost(f.Ctx, f.Tx, "acme.example.com")
+			if err != nil {
+				t.Fatalf("ByHost: %v", err)
+			}
+			if created.DefaultLocale == "" {
+				t.Errorf("a new tenant named no default language, so every request to it falls back to nothing")
+			}
+			if len(created.Locales) != 0 {
+				t.Errorf("a new tenant was born served in %v beside its default %q; SetLocale is the command that says so",
 					created.Locales, created.DefaultLocale)
+			}
+			if born.Languages == nil || born.Languages.Default != created.DefaultLocale || len(born.Languages.Others) != 0 {
+				t.Errorf("resolving the tenant's own host offers %v, want the default %q alone",
+					born.Languages, created.DefaultLocale)
 			}
 			got, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, contracts.SetLocale{
 				Default:   "pt-PT",
@@ -327,6 +338,35 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			if after.DefaultLocale != created.DefaultLocale || len(after.Locales) != 0 {
 				t.Errorf("a refused SetLocale left %q with %v", after.DefaultLocale, after.Locales)
+			}
+			published(t, f, contracts.EventCreated)
+		},
+
+		"a language the installation has no copy for is refused": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			// The installation names the languages its catalogues answer in, and a
+			// tenant cannot be served in one nobody wrote: the page would declare that
+			// language and show the source copy. InstallationLanguages is en and pt-PT
+			// for both implementations, so German is the language with no copy behind
+			// it, and the assertion is the same case for the fake as for the real one.
+			for _, in := range []contracts.SetLocale{
+				{Default: "de-DE", Supported: nil},
+				{Default: "pt-PT", Supported: []string{"de-DE"}},
+			} {
+				if _, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, in); !errors.Is(err, crud.ErrInvalid) {
+					t.Errorf("SetLocale(%q, %v) = %v, want ErrInvalid: the installation has no copy in it",
+						in.Default, in.Supported, err)
+				}
+			}
+			after, err := f.Service.Get(f.Ctx, f.Tx, created.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if after.DefaultLocale != created.DefaultLocale || len(after.Locales) != 0 {
+				t.Errorf("a refused SetLocale left %q served in %v", after.DefaultLocale, after.Locales)
 			}
 			published(t, f, contracts.EventCreated)
 		},
