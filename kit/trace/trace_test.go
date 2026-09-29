@@ -255,3 +255,59 @@ func TestAContextTravelsThroughAContext(t *testing.T) {
 		t.Error("the zero context writes a traceparent")
 	}
 }
+
+// TestOversizedVendorStateIsKeptWholeOrDropped is the shape half of the bound on
+// a caller's tracestate. A length cap could be met by slicing the header mid
+// entry, and that is the one cure W3C forbids: a vendor's entry is opaque to
+// the receiver, so half of it is not a smaller value, it is a wrong one. The
+// rule that passes here is therefore the prefix of whole entries, in the order
+// the caller sent them, with the rest dropped — and the trace kept, because the
+// parent is the part this program writes into an event and the state is the
+// caller's own memory of it.
+func TestOversizedVendorStateIsKeptWholeOrDropped(t *testing.T) {
+	entries := make([]string, 8)
+	for i := range entries {
+		entries[i] = "abcdefgh"[i:i+1] + "=" + strings.Repeat("x", 100)
+	}
+	// How many whole entries fit is derived from the module's own bound rather
+	// than written down, so the case tests the rule and not one arithmetic.
+	fits, size := 0, 0
+	for i, entry := range entries {
+		width := len(entry)
+		if i > 0 {
+			width += 2 // the ", " that separates entries in the header
+		}
+		if size+width > trace.MaxTraceState {
+			break
+		}
+		size, fits = size+width, i+1
+	}
+	if fits == 0 || fits == len(entries) {
+		t.Fatalf("the fixture neither fits nor overflows: %d of %d entries in %d bytes", fits, len(entries), trace.MaxTraceState)
+	}
+
+	got, ok := trace.Parse(specParent, strings.Join(entries, ","))
+	if !ok {
+		t.Fatal("a valid traceparent was refused because of its tracestate")
+	}
+	if want := strings.Join(entries[:fits], ", "); got.TraceState != want {
+		t.Errorf("tracestate = %q, want the first %d entries kept whole and in the caller's order: %q", got.TraceState, fits, want)
+	}
+	// The trace survives its hint being trimmed. Parent() re-renders from the
+	// parsed fields, so its width is a constant whatever the caller sent.
+	if got.TraceID != specTrace || got.SpanID != specSpan {
+		t.Errorf("the trace did not survive the trimmed state: got %+v, want trace %q span %q", got, specTrace, specSpan)
+	}
+	if got.Parent() == "" || len(got.Parent()) != 55 {
+		t.Errorf("Parent() = %q, want the 55 canonical bytes whatever the caller's state was", got.Parent())
+	}
+
+	// One entry too large on its own drops the state rather than cutting it.
+	if got, ok := trace.Parse(specParent, strings.Repeat("z", trace.MaxTraceState+1)); !ok || got.TraceState != "" {
+		t.Errorf("an entry too large to keep = %q (ok = %v), want the state dropped whole and the trace kept", got.TraceState, ok)
+	}
+	// Under the ceiling nothing is rewritten: not the value, not its spacing.
+	if got, _ := trace.Parse(specParent, "a=1, b=2"); got.TraceState != "a=1, b=2" {
+		t.Errorf("a state within the bound came back as %q, want the caller's bytes untouched", got.TraceState)
+	}
+}

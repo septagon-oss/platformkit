@@ -25,7 +25,12 @@ and it fails to build until it does, because a payload contract is meant to brea
 compiler and not in a subscriber's decoder. The product-side manifests move in the
 repositories that own them. `events.Replay` is the operator's verb for a terminal delivery, and
 `kit/trace` carries the W3C context from a request into the outbox row — it
-collects and exports nothing, which the metrics pillar still owns. See
+collects and exports nothing, which the metrics pillar still owns. That carrier now
+bounds the caller's `tracestate`: `trace.Parse` keeps whole entries up to
+`trace.MaxTraceState` (512 bytes) and drops the rest, because the string is stored in
+the outbox row and republished on every event the request caused, so an unbounded one
+is a header paid for per event; the trace itself survives either way, and a state too
+large to keep is dropped whole rather than cut mid-entry. See
 [the rollout notes](kit/events/README.md): the subject change recreates every stored consumer, and the claims are what make that safe.
 
 A replay now requires its actor as it requires its reason, and the record it

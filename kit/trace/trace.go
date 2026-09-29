@@ -33,6 +33,17 @@ const (
 // for; version 255 (ff) is reserved and never accepted.
 const version = "00"
 
+// MaxTraceState bounds the vendor state a caller may hand this program. A
+// tracestate is a correlation handle, not a payload: kit/events stores exactly
+// this string in platformkit_outbox.tracestate and the relay republishes it on
+// the envelope of every event the request caused, so an unbounded header is
+// paid for once per event, and a header this package would see at all is
+// bounded only by net/http's own 1 MiB header-block ceiling. The sibling this
+// kernel writes bounds its caller-supplied id at 64 bytes for the same reason
+// (httpx.givenID). 512 is the figure the W3C Trace Context and OpenTelemetry
+// specifications both use when they price this header on the wire.
+const MaxTraceState = 512
+
 // flagsSampled is the flag byte written on a context this process minted. The
 // decision it records is "a collector that arrives later will want this trace",
 // which is the only honest answer available before there is a sampler.
@@ -45,8 +56,9 @@ type Context struct {
 	TraceID string
 	// SpanID is 16 lower-case hex characters.
 	SpanID string
-	// TraceState is the unchanged tracestate header, kept verbatim because a
-	// vendor's entry in it is not this program's to interpret or reorder.
+	// TraceState is the tracestate header, kept verbatim within MaxTraceState:
+	// a vendor's entry in it is not this program's to interpret or reorder, so
+	// what is kept is kept whole and what cannot fit is dropped, not rewritten.
 	TraceState string
 }
 
@@ -85,11 +97,44 @@ func Parse(parent, state string) (Context, bool) {
 	if len(fields) < 4 || fields[0] != version {
 		return Context{}, false
 	}
-	c := Context{TraceID: fields[1], SpanID: fields[2], TraceState: state}
+	// The caller's hint is trimmed, never cut mid-entry, and it is trimmed here
+	// rather than at each writer, so the row, the envelope and the header can
+	// only ever carry one and the same bounded value.
+	c := Context{TraceID: fields[1], SpanID: fields[2], TraceState: withinStateBound(state)}
 	if !c.Valid() {
 		return Context{}, false
 	}
 	return c, true
+}
+
+// withinStateBound trims a tracestate to MaxTraceState at entry boundaries.
+// W3C keeps an entry whole or drops it, so the one cure that would corrupt the
+// value — slicing it mid-vendor — is not what happens here: the entries that
+// fit are kept in the order the caller sent them and the first one that does
+// not fit ends the header. An entry too large on its own therefore drops the
+// state and keeps the trace, which is the pair worth having: the caller's
+// opaque hint is the cheaper half of a parsed context to lose.
+func withinStateBound(state string) string {
+	if len(state) <= MaxTraceState {
+		return state
+	}
+	var kept []string
+	size := 0
+	for _, entry := range strings.Split(state, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		width := len(entry)
+		if len(kept) > 0 {
+			width += 2 // the ", " this package writes back out between entries
+		}
+		if size+width > MaxTraceState {
+			break
+		}
+		kept, size = append(kept, entry), size+width
+	}
+	return strings.Join(kept, ", ")
 }
 
 // New mints a context of its own: a fresh trace id and a fresh span id.
