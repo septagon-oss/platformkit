@@ -86,9 +86,9 @@ func TestADeadLetterKeepsThePayloadItDescribes(t *testing.T) {
 		t.Errorf("the purge deleted the outbox row of an event whose dead letter is still there to review: %d rows left, 1 dead letter", rows)
 	}
 
-	// The operator who finds that dead letter a week later gets a refusal that
-	// blames the missing row instead of the purge that removed it.
-	if _, err := Replay(ctx, conn, id, "", "the mailer is fixed"); errors.Is(err, ErrNothingToReplay) {
+	// The operator a week later gets a refusal that blames the missing row, not the
+	// purge — under an operator, because finding 2's own pin requires one of those.
+	if _, err := Replay(tenancy.WithActor(ctx, uuid.New()), conn, id, "", "the mailer is fixed"); errors.Is(err, ErrNothingToReplay) {
 		t.Errorf("the replay is unreachable because the payload was purged: %v", err)
 	} else if err != nil {
 		t.Errorf("Replay: %v", err)
