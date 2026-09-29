@@ -40,12 +40,14 @@ type TokenExport struct {
 // checkLegible runs the contrast gate over the layer a reader is actually shown:
 // the role declarations ui/style emits on top of this pair's tokens. design's own
 // Theme.Check measures the tokens and belongs to whoever loads a client's design
-// (design.Client.Resolve); this is the other half, and the one a pair can pass
-// while still painting an unreadable sentence — a component never sets
-// --pk-color-text-primary, it sets color: var(--pk-role-fg-secondary). The seam
-// where a pair becomes a stylesheet, an export or a Storybook is where it refuses.
+// (design.Client.Resolve); this half is the one a pair can pass the tokens while
+// still painting an unreadable sentence — a component never sets
+// --pk-color-text-primary, it sets color: var(--pk-role-fg-secondary). Client.
+// Resolve runs both halves today, so this is not the only place a pair is
+// measured; it is the seam where a pair becomes a stylesheet, an export or a
+// Storybook, and it refuses whatever produced the pair.
 func checkLegible(context string, themes ...design.Theme) error {
-	roles, pairs := style.RoleColors(), append(style.BodyRolePairs(), style.TintedRolePairs()...)
+	roles, pairs := style.RoleColors(), style.GatedRolePairs()
 	for _, theme := range themes {
 		if err := theme.CheckRoles(roles, pairs); err != nil {
 			return fmt.Errorf("%s: %w", context, err)

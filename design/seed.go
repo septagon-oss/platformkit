@@ -202,14 +202,15 @@ func statusPalette(dark bool, hue, surfaceSat float64, surfaces ...string) (bg, 
 func complement(hue float64) float64 { return math.Mod(hue+180, 360) }
 
 // SoftTintPercent is how much of a foreground the role layer's soft brand
-// background holds: ui/style declares --pk-role-surface-brand-soft as
+// background holds: roles.go declares --pk-role-surface-brand-soft as
 // mix(accent N%, surface-primary) and ui/components paints that same accent as
 // copy on it (a brand badge, the active navigation link, an outline button's
 // hover state). The number belongs to this package because the generator has to
 // hold it: a background mixed from the colour painted on it always reads worse
 // than the surface the mix was taken from, so a foreground certified against
 // surfaces alone says nothing about the tint. TestSoftTintBackgroundIsMixedAt
-// ThePercentTheGeneratorCertifies pins the declaration to this constant.
+// ThePercentTheGeneratorCertifies pins the declaration to this constant, and
+// tintedRolePairs gates the pair it describes.
 const SoftTintPercent = 12.0
 
 // ground is one background enforce measures a candidate against. Most are
