@@ -18,7 +18,12 @@ refuses a mis-shaped payload against — a member the projection cannot describe
 constrains nothing, and it no longer panics the door either — and the AsyncAPI
 3.0.0 document `apps/platformkit/testdata/asyncapi.json` is rendered from it, as
 each message's `payload` where a validator reads, and checked in by
-`make check`. `events.Replay` is the operator's verb for a terminal delivery, and
+`make check`. A manifest outside this repository has one migration to make: where it
+listed names (`Events: []string{contracts.EventChanged}`) it now lists declarations
+(`Events: []events.Declared{events.Declare[contracts.Changed](contracts.EventChanged)}`),
+and it fails to build until it does, because a payload contract is meant to break at the
+compiler and not in a subscriber's decoder. The product-side manifests move in the
+repositories that own them. `events.Replay` is the operator's verb for a terminal delivery, and
 `kit/trace` carries the W3C context from a request into the outbox row — it
 collects and exports nothing, which the metrics pillar still owns. See
 [the rollout notes](kit/events/README.md): the subject change recreates every stored consumer, and the claims are what make that safe.
