@@ -163,3 +163,37 @@ func TestClientResolveRefusesAnOverrideTheRoleLayerRefuses(t *testing.T) {
 		}
 	}
 }
+
+// A tint is not only the badge it was named for: ui/components gives a failed
+// media panel the warning ground and fills it with the muted reason line, so a
+// client that ships a deeper tint than the generator draws moves a sentence no
+// token pair measures. This override holds every one of the 22 token pairs and
+// every body and brand-tinted role pair, and paints that muted line at 3.75:1 —
+// which is what the status section of the gated list is for.
+func TestClientResolveRefusesATintThatMovesTheMutedLineOnIt(t *testing.T) {
+	t.Parallel()
+	client := design.Client{
+		Slug:   "sand",
+		Seed:   design.Seed{Sector: "legal", Name: "Client211"},
+		Tokens: map[string]map[string]string{"light": {"status-warningbg": "#d0ccbc"}},
+	}
+	pair, err := client.Resolve()
+	if err == nil {
+		t.Fatalf("resolved a client whose tinted panel nobody can read: bg %q, muted %q",
+			pair.Light.StatusWarningBg, pair.Light.TextMuted)
+	}
+	if pair != (design.Pair{}) {
+		t.Errorf("a refused client returned a pair")
+	}
+	if !strings.Contains(err.Error(), "--pk-role-fg-muted") ||
+		!strings.Contains(err.Error(), "--pk-role-surface-warning-soft") {
+		t.Errorf("the refusal names neither the muted line nor the tint under it: %v", err)
+	}
+	// The same file with the tint left alone resolves: the refusal is this
+	// override, not the client's identity.
+	dropped := client
+	dropped.Tokens = nil
+	if _, err := dropped.Resolve(); err != nil {
+		t.Errorf("the client's own seed refuses: %v", err)
+	}
+}
