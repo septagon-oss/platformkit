@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -31,6 +32,7 @@ import (
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/task"
+	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/modules/user"
@@ -213,6 +215,7 @@ func compose(cfg config.Config) composition {
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
 
+	checkPersonas(mods)
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
 		notify: notify, mail: mail, plans: plans}
 }
@@ -308,11 +311,43 @@ func (a firstAdmin) Invite(ctx context.Context, tx db.Tx[db.System], tenantID uu
 	return err
 }
 
-// seedRoles provisions auth's defaults in the tenant's creation transaction.
-// Operator grants are named by the application that composes their owners.
+// personas are the people this application is for beyond its administrator, each a
+// role every new tenant is created with (decision 0011, item 6). A coordinator runs
+// the task desk — raises, assigns and resolves — and an observer follows it and
+// changes nothing. The admin role (everything but the operator's) and the member role
+// (nothing until somebody grants it) are auth's own and are not repeated here.
+//
+// What each may do, and what each is refused, is persona_test.go's table; which task a
+// coordinator may resolve is policy/task.rego's, not a grant's.
+var personas = []authcontracts.Role{
+	{Name: "coordinator", Grants: authcontracts.Permissions{taskcontracts.PermissionTaskRead, taskcontracts.PermissionTaskUpdate}},
+	{Name: "observer", Grants: authcontracts.Permissions{taskcontracts.PermissionTaskRead}},
+}
+
+// checkPersonas refuses to compose an application whose personas grant a permission no
+// composed module declares, or an operator one: a role naming it would grant nothing, or
+// would hand the control plane to every tenant. It runs in compose, so bootstrap and
+// every start fail before a database is opened rather than seeding a role that lies.
+func checkPersonas(mods []module.Module) {
+	var declared []tenancy.Grant
+	for _, m := range mods {
+		for _, p := range m.Permissions {
+			declared = append(declared, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+		}
+	}
+	for _, r := range personas {
+		if _, err := authcontracts.CheckedPermissions(r.Grants, declared, tenancy.Tenant{}); err != nil {
+			panic(fmt.Sprintf("platformkit: persona %q: %v", r.Name, err))
+		}
+	}
+}
+
+// seedRoles provisions auth's defaults and this application's personas in the
+// tenant's creation transaction. Operator grants are named by the application that
+// composes their owners.
 func seedRoles(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
 	return auth.SeedRoles(ctx, tx, t.Tenancy(), []string{
 		tenantcontracts.PermissionTenantManage,
 		billingcontracts.PermissionBillingCatalog,
-	}, nil)
+	}, personas)
 }
