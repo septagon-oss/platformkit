@@ -20,10 +20,15 @@ is the ordered projection the stylesheet and the exports share.
 A client that does not want to write hex writes a seed: `design.Seed{Sector,
 Name, Brand}` generates both themes in `design.FromSeed`, deterministically, and
 refuses the result unless `Pair.Check` passes. `Check` is WCAG 2.2 measured by
-`Luminance` and `Contrast`: every body role at 4.5:1 (SC 1.4.3), the focus ring
-at 3:1 (SC 1.4.11). `Distance`, `MinDistance` and `Colliding` are how two
-clients' palettes are compared — the generator cannot promise a separation it
-does not hold, so a process that would wear both asks and refuses.
+`Luminance` and `Contrast`: every body role at 4.5:1 (SC 1.4.3) — a status tone
+on every surface a card raises itself onto, not only the badge that carries its
+name — and the focus ring at 3:1 (SC 1.4.11). A generated foreground is repaired
+against one ground no token names: the soft brand tint, `SoftTintPercent` of the
+accent mixed into a surface, which the kernel paints that same accent's colour on
+and which always reads worse than the surface the mix was taken from.
+`Distance`, `MinDistance` and `Colliding` are how two clients' palettes are
+compared — the generator cannot promise a separation it does not hold, so a
+process that would wear both asks and refuses.
 
 [`kit/designconfig`](../kit/designconfig/) decodes `clients/<slug>/design.yaml`
 into `design.Client` — the seed plus at most named overrides of the 22 colour

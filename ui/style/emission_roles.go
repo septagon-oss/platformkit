@@ -50,7 +50,7 @@ func roleValues() map[Color]design.ColorValue {
 		SurfaceTertiary:    tokenVar("surface-muted"),
 		SurfaceBrand:       accent,
 		SurfaceBrandHover:  tokenVar("accent-hover"),
-		SurfaceBrandSoft:   mix(accent, 12, surfacePrimary),
+		SurfaceBrandSoft:   mix(accent, design.SoftTintPercent, surfacePrimary),
 		SurfaceSuccess:     tokenVar("status-ok"),
 		SurfaceSuccessSoft: tokenVar("status-okbg"),
 		SurfaceWarning:     tokenVar("status-warning"),
@@ -173,6 +173,29 @@ var bodyRolePairs = []design.RolePair{
 // is shown.
 func BodyRolePairs() []design.RolePair {
 	return slices.Clone(bodyRolePairs)
+}
+
+// tintedRolePairs names the body pairs whose background this layer invents
+// rather than takes from the theme: --pk-role-surface-brand-soft is
+// design.SoftTintPercent of the accent mixed into the card surface, and
+// clBadgeVariant["primary"], clBadgeTone["brand"], clSidebarLinkActiveContent and
+// the outline button's hover state all paint that accent's own colour on it. A
+// token pair cannot express it, because the background is no token, and the mix
+// always reads worse than the surface it was taken from — which is why
+// design.enforceTinted certifies a generated accent against it and this list
+// gates an authored override.
+var tintedRolePairs = []design.RolePair{
+	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-brand-soft", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-brand-soft", Min: design.MinContrast},
+}
+
+// TintedRolePairs returns the body pairs whose background this layer derives by
+// mixing a foreground into a surface. Whoever gates the layer a browser paints
+// hands over BodyRolePairs and these: those are what a reader is shown on a
+// theme's own surfaces, these what a reader is shown on a surface this layer
+// derives from a theme's.
+func TintedRolePairs() []design.RolePair {
+	return slices.Clone(tintedRolePairs)
 }
 
 // roleVar renders the var() reference utility rules use for a color role.

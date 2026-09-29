@@ -74,6 +74,34 @@ func TestClientResolveRefusesAnOverrideThatBreaksAGatedRole(t *testing.T) {
 	}
 }
 
+// A status tone is painted as copy, not only inside its own badge: a detail
+// value and a field's error line put it on whatever surface the card around them
+// raised itself onto. An override that keeps the badge pair legible and drags the
+// same token under the floor on a raised card is therefore refused too — the
+// refusal names the surface, which is how a reader of design.yaml learns that the
+// badge was never the only place the colour had to read.
+func TestClientResolveRefusesAStatusOverrideThatReadsOnItsBadgeOnly(t *testing.T) {
+	t.Parallel()
+	client := design.Client{
+		Slug:   "amber",
+		Seed:   design.Seed{Sector: "retail", Name: "Pale"},
+		Tokens: map[string]map[string]string{"light": {"status-warning": "#7b4e02"}},
+	}
+	pair, err := client.Resolve()
+	if err == nil {
+		t.Fatalf("resolved a client whose warning text reads 4.42:1 on a raised card: %v", pair)
+	}
+	if pair != (design.Pair{}) {
+		t.Errorf("a refused client returned a pair")
+	}
+	if !strings.Contains(err.Error(), "status-warning on surface-muted") {
+		t.Errorf("refusal does not name the surface that failed: %v", err)
+	}
+	if strings.Contains(err.Error(), "status-warningbg") {
+		t.Errorf("refusal blames the badge, which this override leaves legible: %v", err)
+	}
+}
+
 func TestClientValidateRefusesWhatTheKernelHasNoMeaningFor(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

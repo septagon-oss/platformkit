@@ -85,6 +85,77 @@ func TestCheckRolesRefusesAWashedOutRoleAndAPairThatNamesNoFloor(t *testing.T) {
 	}
 }
 
+// TestTintedRolePairsClearTheFloorOnGeneratedPalettes measures the pair the two
+// earlier rounds left out — the accent as copy on the tint mixed from it — through
+// the gate ui/export now runs, over a hashed corpus rather than the shipped
+// palette. It is the assertion the generator's own repair exists to satisfy: 39 % of
+// the first 2000 hashed seeds used to land here below the floor.
+func TestTintedRolePairsClearTheFloorOnGeneratedPalettes(t *testing.T) {
+	t.Parallel()
+	roles := style.RoleColors()
+	pairs := append(style.BodyRolePairs(), style.TintedRolePairs()...)
+	for i := range 120 {
+		h := fnv.New64a()
+		_, _ = h.Write([]byte{byte(i ^ 0x5a), byte(i >> 8), byte(i >> 16), 7})
+		seed := design.Seed{Sector: "sector-" + strconv.Itoa(int(h.Sum64()%977)), Name: "identity-" + strconv.Itoa(i)}
+		pair, err := design.FromSeed(seed)
+		if err != nil {
+			t.Fatalf("seed %+v: %v", seed, err)
+		}
+		if err := pair.CheckRoles(roles, pairs); err != nil {
+			t.Errorf("seed %+v generates a pair the export seam refuses: %v", seed, err)
+		}
+	}
+}
+
+// TestSoftTintBackgroundIsMixedAtThePercentTheGeneratorCertifies holds the two
+// halves of the tint together. ui/style declares the background as a mix; design
+// repairs a generated accent against a mix of that percent. A layer that changed
+// the number without changing the constant would quietly move the background out
+// from under the measurement, which is the whole defect this case guards.
+func TestSoftTintBackgroundIsMixedAtThePercentTheGeneratorCertifies(t *testing.T) {
+	t.Parallel()
+	var found *design.ColorMix
+	for _, role := range style.RoleColors() {
+		if role.Name != "--pk-role-surface-brand-soft" {
+			continue
+		}
+		if role.Value.Mix == nil {
+			t.Fatalf("%s is no longer a derived mix, so nothing measures it", role.Name)
+		}
+		found = role.Value.Mix
+	}
+	if found == nil {
+		t.Fatal("the role layer declares no soft brand background")
+	}
+	if found.FirstPercent != design.SoftTintPercent {
+		t.Errorf("the tint mixes %.0f%% of the accent while the generator certifies %.0f%%",
+			found.FirstPercent, design.SoftTintPercent)
+	}
+	if found.First.Reference != "--pk-color-accent-default" {
+		t.Errorf("the tint is mixed from %q, not from the accent the components paint on it", found.First.Reference)
+	}
+}
+
+// TestCheckRolesRefusesATintDeeperThanTheAccentClears: the widened list bites. A
+// brand tint mixed deeper than the accent was repaired against reads as a shade
+// of its own label, and the gate that lets it through is the one this round found
+// missing.
+func TestCheckRolesRefusesATintDeeperThanTheAccentClears(t *testing.T) {
+	t.Parallel()
+	deep := make([]design.ColorToken, 0, len(style.RoleColors()))
+	for _, role := range style.RoleColors() {
+		if role.Name == "--pk-role-surface-brand-soft" {
+			role.Value.Mix.FirstPercent = 55
+		}
+		deep = append(deep, role)
+	}
+	err := design.Default().Light.CheckRoles(deep, style.TintedRolePairs())
+	if err == nil || !strings.Contains(err.Error(), "--pk-role-fg-brand on --pk-role-surface-brand-soft") {
+		t.Errorf("a brand tint mixed to 55 percent of its own label passed the widened gate: %v", err)
+	}
+}
+
 // The list is the gate, so a body foreground missing from it is painted with no
 // measurement behind it. The accent as text is the one that was missing: three
 // roles, one colour the theme owns, painted by the kernel's own components onto
