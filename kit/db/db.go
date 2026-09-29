@@ -117,12 +117,20 @@ func OpenWithPool(ctx context.Context, url string, pool Pool) (*Conn, error) {
 	// some versions lets it write a role like the one it is not allowed to join.
 	// That is a reason to keep the application role's grants short, not a check
 	// this query could answer.
+	//
+	// pg_has_role takes the candidate by OID, not by name. The list of candidates
+	// comes from this statement's snapshot of pg_roles, but the name form resolves
+	// the role again in the live catalog, so a role dropped by anyone in between —
+	// another test package's probe role on CI (PR 55), a DBA in production — made
+	// Open fail with `role "..." does not exist` for a role it was never going to
+	// be. The OID form answers false for a role that no longer exists, which is the
+	// truth: nothing can become a role that is gone.
 	const q = `
 		SELECT rolname, rolsuper OR rolbypassrls,
 			coalesce((SELECT string_agg(r.rolname, ', ' ORDER BY r.rolname)
 				FROM pg_roles r
 				WHERE (r.rolsuper OR r.rolbypassrls) AND r.rolname <> current_user
-					AND pg_has_role(current_user, r.rolname, 'MEMBER')), '')
+					AND pg_has_role(current_user, r.oid, 'MEMBER')), '')
 		FROM pg_roles WHERE rolname = current_user`
 	if err := sqlDB.QueryRowContext(ctx, q).Scan(&role, &unrestricted, &elevated); err != nil {
 		_ = c.Close()
