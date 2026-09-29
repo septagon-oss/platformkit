@@ -64,9 +64,9 @@ type contrastPair struct {
 
 // bodyContrast lists the pairs a reader actually reads: text on the three
 // surfaces, the accent used as text and the text set on it, the focus ring on the
-// three surfaces a focused control can sit on, each status on its own badge, and
-// the sidebar's two text tones on its own background. Borders and tinted surfaces carry no information of their own and
-// are deliberately not in this list.
+// three body surfaces it is drawn onto (sidebar-bg is a fourth, ungated — see
+// CHANGELOG), each status on its own badge, and the sidebar's two text tones on
+// its own background. Borders and tints carry no information and are not listed.
 var bodyContrast = []contrastPair{
 	{"text-primary", "surface-canvas", MinContrast},
 	{"text-primary", "surface-primary", MinContrast},
