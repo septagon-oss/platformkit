@@ -114,9 +114,16 @@ func configure(t *testing.T) (string, config.Config) {
 func install(t *testing.T, path string) {
 	t.Helper()
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
+	// The installation's second language is one this tenant's people are served in,
+	// said at the same moment the tenant is created. A tenant is not served in it
+	// by accident of the catalogues somebody compiled: SetLocale is the declaration,
+	// and a bootstrap that says nothing leaves the tenant in the one language its
+	// copy is written in — which is what apps/platformkit/locale_test.go and
+	// e2e/localization.spec.ts then check the other language against.
 	err := bootstrap([]string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,
 		"--name", "Acme Corporation", "--admin-email", adminEmail,
+		"--language", "pt-PT",
 	})
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
