@@ -172,6 +172,13 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 	// media panel is text-muted on a status tint, and statusRolePairs gates that
 	// pair on all four grounds, so every tint is repaired against the muted tone.
 	tintText := []string{theme.TextMuted}
+	// The fill carries copy too, at the other end: clButtonTone paints accent-on on
+	// the tone itself and statusRolePairs gates that pair. No repair for it is needed
+	// here, because the label is the neutral pole — #fbfffb in a light theme,
+	// #0a0a0a in a dark one, more extreme in luminance than any surface enforce
+	// below walks the fill against, so the fill's ratio to its label exceeds its
+	// ratio to the lightest surface. FromSeed measures the pair anyway over
+	// GatedRolePairs, so the arithmetic stays margin rather than becoming trust.
 	for _, status := range statusRoles {
 		bg, fg := statusPalette(name == "dark", status.hue, surfaceSat, surfaces, tintText)
 		status.set(&theme, fg, bg)

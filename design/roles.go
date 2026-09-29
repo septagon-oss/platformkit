@@ -224,6 +224,13 @@ var bodyRolePairs = []RolePair{
 	{Foreground: "fg-link-hover", Background: "surface-secondary", Min: MinContrast},
 	{Foreground: "fg-link-hover", Background: "surface-tertiary", Min: MinContrast},
 	{Foreground: "fg-on-inverse", Background: "surface-inverse", Min: MinContrast},
+	// The label of a control the theme fills with its own colour: the primary
+	// button variant, the brand tone, the current pagination item and the active
+	// pill tab paint fg-on-brand on surface-brand = the accent itself. The token
+	// gate already measures accent-on against accent-default; this is the same
+	// ratio spelled in the vocabulary a stylesheet paints, which is what lets one
+	// sweep of the painted rules cover a button and a tint together.
+	{Foreground: "fg-on-brand", Background: "surface-brand", Min: MinContrast},
 }
 
 // BodyRolePairs returns the body-size text pairs the semantic layer composes on
@@ -255,27 +262,35 @@ var tintedRolePairs = []RolePair{
 // layer derives from a theme's.
 func TintedRolePairs() []RolePair { return slices.Clone(tintedRolePairs) }
 
-// statusRolePairs names the body pairs painted on a status tint, which is
+// statusRolePairs names the body pairs painted on a status ground, which is
 // neither a theme's plain surface nor a surface this layer mixes: it is the
-// fourth ground a component raises itself onto. A status tone is not only a
-// badge — clBadgeTone and clAlertVariant paint each tone on its own soft ground
-// at text-sm — and a tint carries copy that is not a status tone at all:
-// clMediaFailed gives a media panel the warning ground and mediaAbsent fills
-// that panel with clEmptyDesc, the muted reason line, at 14 px. The token gate
-// measures a tone against the badge named after it (status-warning against
-// status-warningbg) and says nothing about that muted line, so an override of
-// text-muted or of the tint itself moved a sentence nobody measured: this is the
-// pair Client.Resolve was blind to.
+// fourth ground a component raises itself onto, and it comes in two strengths.
+// The soft tint is the badge and the panel — clBadgeTone and clAlertVariant paint
+// each tone on its own soft ground at text-sm, and a tint carries copy that is
+// not a status tone at all: clMediaFailed gives a media panel the warning ground
+// and mediaAbsent fills that panel with clEmptyDesc, the muted reason line, at
+// 14 px. The full fill is the button — clButtonTone replaces a button's whole
+// appearance with the tone itself, Bg(style.SurfaceDanger) under
+// TextColor(style.FgOnBrand) at text-sm, and ui/resource asks for Tone: "danger"
+// on the delete form of every generated list. The token gate measures a tone
+// against the badge named after it (status-warning against status-warningbg) and
+// accent-on against the accent, and says nothing about either line of copy these
+// two grounds carry, so an override of text-muted, of a tint, of a fill or of
+// accent-on moved words nobody measured: these are the pairs Client.Resolve was
+// blind to.
 //
 // The muted tone is gated against all four tints rather than the one a panel
-// wears today, and the generator certifies all four, because the pair is one
-// merge deep on any of them — clMediaPanel picks the ground and clEmptyDesc picks
-// the colour, and an alert already takes arbitrary nodes in its action slot — and
-// a rule a reader can state in one sentence ("a body foreground on a status tint
-// is a measured pair") holds better than one that names a component. What is not
-// here stays out: fg-link and fg-disabled on a tint (round 7's deferred finding,
-// which belongs to the change that paints it), and the plain surfaces, which
-// bodyRolePairs already covers.
+// wears today, and the label against all four fills rather than the one a delete
+// form wears today, because the pair is one merge deep on any of them —
+// clMediaPanel picks the ground and clEmptyDesc picks the colour, clButtonTone
+// picks both and an alert already takes arbitrary nodes in its action slot — and
+// a rule a reader can state in one sentence ("a body foreground on a status
+// ground, tinted or filled, is a measured pair") holds better than one that names
+// a component. What is not here stays out: fg-link and fg-disabled on a tint
+// (round 7's deferred finding, which belongs to the change that paints it). The
+// plain surfaces are bodyRolePairs' own sweep, and it names every foreground the
+// kernel paints on them, fg-on-brand on the brand fill included — a ground being
+// "plain" was never a reason for a foreground to be unmeasured.
 var statusRolePairs = []RolePair{
 	{Foreground: "fg-success", Background: "surface-success-soft", Min: MinContrast},
 	{Foreground: "fg-warning", Background: "surface-warning-soft", Min: MinContrast},
@@ -285,11 +300,17 @@ var statusRolePairs = []RolePair{
 	{Foreground: "fg-muted", Background: "surface-warning-soft", Min: MinContrast},
 	{Foreground: "fg-muted", Background: "surface-danger-soft", Min: MinContrast},
 	{Foreground: "fg-muted", Background: "surface-info-soft", Min: MinContrast},
+	// The same ground at full strength, with the button's label on it.
+	{Foreground: "fg-on-brand", Background: "surface-success", Min: MinContrast},
+	{Foreground: "fg-on-brand", Background: "surface-warning", Min: MinContrast},
+	{Foreground: "fg-on-brand", Background: "surface-danger", Min: MinContrast},
+	{Foreground: "fg-on-brand", Background: "surface-info", Min: MinContrast},
 }
 
-// StatusRolePairs returns the body pairs a reader is shown on a status tint: the
-// tone on its own badge and the muted copy a tinted panel carries. Whoever gates
-// the layer a browser paints hands over BodyRolePairs, TintedRolePairs and these.
+// StatusRolePairs returns the body pairs a reader is shown on a status ground:
+// the tone on its own badge, the muted copy a tinted panel carries, and the label
+// a filled status button paints. Whoever gates the layer a browser paints hands
+// over BodyRolePairs, TintedRolePairs and these.
 func StatusRolePairs() []RolePair { return slices.Clone(statusRolePairs) }
 
 // GatedRolePairs returns the whole gated set: every body pair the semantic layer
