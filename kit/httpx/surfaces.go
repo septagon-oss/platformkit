@@ -33,6 +33,8 @@ package httpx
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -330,6 +332,46 @@ func (r *Router) Static(rel string, fsys fs.FS) {
 	r.api.root.Handle(at+"/*", http.StripPrefix(at, r.api.tree(fsys)))
 }
 
+// assetCaching is the static-asset row of docs/cache.md, for one file of a kernel tree.
+//
+// A kernel asset is the same bytes for every person and every tenant of a process,
+// so the session rule does not apply to it, and the surface's own answer was the
+// wrong one twice over: the workspace sent its stylesheet and its controllers
+// no-store, so every page view downloaded them again, and the public face let a
+// cache keep them for a minute with nothing to revalidate against. Now every file
+// carries an ETag that is its content — the same first eight bytes of SHA-256 that
+// ui.Sheet puts in the stylesheet's `?v=` — so a revalidation that finds it unchanged
+// is a 304 (net/http answers If-None-Match from this header), and a request whose
+// `?v=` names exactly those bytes may be kept for a year, immutable, because a
+// different body would have a different address. The hash is taken per request:
+// the files are small and a tree may be a directory that changes under a developer.
+func assetCaching(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) {
+	body, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return // the surface's own answer stands; the file server reports the error
+	}
+	sum := sha256.Sum256(body)
+	tag := hex.EncodeToString(sum[:8])
+	h := w.Header()
+	h.Set("ETag", `"`+tag+`"`)
+	if r.URL.Query().Get("v") == tag {
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		h.Set("Cache-Control", "no-cache")
+	}
+	for writer := w; writer != nil; {
+		if marker, ok := writer.(interface{ markStatic() }); ok {
+			marker.markStatic()
+			break
+		}
+		unwrapper, ok := writer.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			break
+		}
+		writer = unwrapper.Unwrap()
+	}
+}
+
 // tree is a mounted file tree inside its surface's chain, including where it
 // answers nothing.
 //
@@ -357,6 +399,7 @@ func (a *API) tree(fsys fs.FS) http.Handler {
 			a.fail(w, r, http.StatusNotFound, "nothing is served at this address")
 			return
 		}
+		assetCaching(w, r, fsys, name)
 		files.ServeHTTP(w, r)
 	})
 }

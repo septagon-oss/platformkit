@@ -46,7 +46,12 @@ func TestAContentionIsErrContendedUnderTheBudgetTheDeploymentNamed(t *testing.T)
 
 	files := fstest.MapFS{
 		"000001_probe.up.sql": first,
-		"000002_wait.up.sql":  {Data: []byte("SELECT pg_advisory_lock(7240104); CREATE TABLE later (x text)")},
+		// The file asks its own session what budget it is under before it waits, so the claim
+		// "the budget named by MigrateWith reached the session" is read, not timed: a session
+		// under any other lock_timeout raises, and a raise is not ErrContended.
+		"000002_wait.up.sql": {Data: []byte(`DO $$ BEGIN IF current_setting('lock_timeout') <> '250ms' THEN ` +
+			`RAISE EXCEPTION 'the session lock_timeout is %, not the 250ms MigrateWith was handed', current_setting('lock_timeout'); ` +
+			`END IF; END $$; SELECT pg_advisory_lock(7240104); CREATE TABLE later (x text)`)},
 	}
 	// The budget this run names — not the documented five seconds — and the file
 	// sets no budget of its own, so what bounds the wait can only be the value
@@ -67,10 +72,12 @@ func TestAContentionIsErrContendedUnderTheBudgetTheDeploymentNamed(t *testing.T)
 	if !strings.Contains(err.Error(), "probe/000002_wait.up.sql") {
 		t.Errorf("the refusal did not name the file: %q", err)
 	}
-	// The 250 ms budget, not the five-second default: a value that reaches the
-	// session is a value you can time.
-	if waited > 3*time.Second {
-		t.Errorf("the wait took %s with a %s lock budget; the budget named by MigrateWith never reached the session", waited.Round(time.Millisecond), budget)
+	// The budget reaching the session is asserted by the file itself (above). What the clock
+	// may still say is only that the wait was bounded at all: the whole call, connection and
+	// setup included, read 3.5s on a loaded CI runner (PR 56, run 149) against a 250ms budget,
+	// so a tight timing bound here measured the runner, not the budget.
+	if waited > 20*time.Second {
+		t.Errorf("the wait took %s with a %s lock budget; nothing bounded it", waited.Round(time.Millisecond), budget)
 	}
 	admin := dbtest.Open(t, migrateURL)
 	if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner='probe' AND version=2"); n != 0 {

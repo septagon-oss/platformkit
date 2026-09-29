@@ -644,23 +644,26 @@ func TestAFileTreeIsRecordedAndDressedByItsSurface(t *testing.T) {
 	if workspace.Code != http.StatusOK || !strings.Contains(workspace.Body.String(), "--a") {
 		t.Fatalf("the workspace's stylesheet = %d %q", workspace.Code, workspace.Body.String())
 	}
-	if got := workspace.Header().Get("Cache-Control"); got != "no-store" {
-		t.Errorf("a file of the workspace says %q about caching, want nobody to keep it", got)
+	// Caching is the static row of docs/cache.md, not the surface's: a kernel asset is the
+	// same bytes for every person, so it is kept and revalidated against its content ETag
+	// (no-store made every workspace page download it again). Indexing stays the surface's.
+	if got := workspace.Header().Get("Cache-Control"); got != "no-cache" || workspace.Header().Get("ETag") == "" {
+		t.Errorf("a file of the workspace says %q about caching with ETag %q, want no-cache and its content hash",
+			got, workspace.Header().Get("ETag"))
 	}
 	if got := workspace.Header().Get("X-Robots-Tag"); !strings.Contains(got, "noindex") {
 		t.Errorf("a file of the workspace says %q about indexing", got)
 	}
 
-	// The public tree is the other surface's answer: a visitor's stylesheet is
-	// nobody's own, and a face that could not be cached is a face served from
-	// this process forever.
+	// The public tree answers under the same static row; what differs is indexing.
 	visitor := httptest.NewRecorder()
 	s.router.ServeHTTP(visitor, httptest.NewRequest(http.MethodGet, "http://"+host+"/web/sheets/app.css", nil))
 	if visitor.Code != http.StatusOK {
 		t.Fatalf("the public stylesheet = %d", visitor.Code)
 	}
-	if got := visitor.Header().Get("Cache-Control"); got != "public, max-age=60" {
-		t.Errorf("a file of the public face says %q about caching, want it cacheable", got)
+	if got := visitor.Header().Get("Cache-Control"); got != "no-cache" || visitor.Header().Get("ETag") == "" {
+		t.Errorf("a file of the public face says %q about caching with ETag %q, want no-cache and its content hash",
+			got, visitor.Header().Get("ETag"))
 	}
 	if got := visitor.Header().Get("X-Robots-Tag"); got != "" {
 		t.Errorf("a file of the public face is told %q about indexing", got)
