@@ -117,3 +117,30 @@ and NATS settings described in [Contributing](../../CONTRIBUTING.md#verify-at-th
 Reserve the broker for that suite: its stream-drift test changes and reconciles
 shared stream settings. These checks do not qualify a deployed broker or a
 downstream application's handler idempotency.
+
+## Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** the outbox's own `INSERT` in `write`, which is the one door
+every event in the program already passes and is where the schema check lives;
+`Schema.Validate`, `Schema.JSONValue` and the golden-file guard this repository
+already had, each cure being a clause inside them rather than a new mechanism
+beside them; `platformkit_handled`'s claims, which are what make the
+`DeliverAll` re-delivery a log line instead of an incident; `dbtest.Schema` and
+`app.MigrationSources` in the new cases; and `module.KernelEvents`, adopted rather
+than replaced when the merged `security.denied` had to be typed, with
+`module.KernelName` added as the half that list was missing.
+**Added:** `schema.go`'s projection of a Go type into JSON Schema, because no
+existing unit could carry it — `kit/httpx/schemas.go` registers resource schemas
+by hand and holds no `reflect` at all, so there was nothing there to extend; the
+CloudEvents envelope on the wire, `transport.Event` having been a private struct
+of tags; `events.Replay`, the outbox having had no operator's verb; and the two
+nullable trace columns the envelope needs before the relay runs.
+**Made reusable:** `transport.Filters`, so a provider that must read a rolling
+window reads a list rather than re-deriving one; `events.Declare[T]`, which turns
+a payload type into a compile-time dependency of the manifest that names it;
+`Declared.Schema()` and `app.CoveredEvents`, so the coverage ratio is a number a
+test reads rather than one a release note claims; `UPDATE_GOLDEN=1` as the only
+writer of a checked-in contract; and `KernelName` with the `KernelEvents`
+exemption in `Validate`, which is the shape the next kernel-emitted event arrives
+in.
