@@ -119,12 +119,24 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 // outbox row or terminal failure record exists: losing that claim would replay
 // completed work when the pending row is relayed. Dead letters and their claims
 // require explicit operator review; they are never automatically purged.
+//
+// A dead letter keeps its outbox row with it. The row is the only place the
+// payload survives — the dead letter records the failure, not the body — so a
+// purge that took the row would leave an operator reviewing a terminal failure
+// whose payload is gone and whose replay answers that there is nothing to
+// replay. That is the write that takes the last copy away, and a dead letter is
+// still referring to the row when it happens, so the row stays. The cost is
+// bounded and worth naming: an unread dead letter keeps one JSONB row alive
+// past the window, and clearing it is the operator's verb — `events.Replay` or
+// an operator who decides the event will never run again deletes the dead
+// letter, after which the next purge takes the row.
+//
 // The database clock supplies the cutoff for all workers.
 func Purge(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, purgeToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		age := fmt.Sprintf("%d seconds", int(delivery.Keep.Seconds()))
-		if err := tx.DB().Exec("DELETE FROM "+table+
-			" WHERE published_at IS NOT NULL AND published_at < now() - ?::interval", age).Error; err != nil {
+		if err := tx.DB().Exec("DELETE FROM "+table+" o WHERE published_at IS NOT NULL AND published_at < now() - ?::interval"+
+			" AND NOT EXISTS (SELECT 1 FROM "+deadLetters+" d WHERE d.event_id = o.id)", age).Error; err != nil {
 			return fmt.Errorf("events: purge: %w", err)
 		}
 		if err := tx.DB().Exec("DELETE FROM "+handled+" h WHERE handled_at < now() - ?::interval"+

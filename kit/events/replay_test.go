@@ -200,3 +200,79 @@ func TestReplayRefusalsWriteNothing(t *testing.T) {
 		t.Errorf("a refused replay emitted %d records", records)
 	}
 }
+
+// TestADeadLetterKeepsItsPayloadPastThePurge is the other half of the verb: the
+// row a replay relays has to still be there when the operator gets to the dead
+// letter. Purge takes published history after a week, and a dead-lettered event
+// was published — the relay stamped it — so the row is the one copy of the
+// payload that exists, and the dead letter beside it says nothing about what the
+// handler choked on. A dead letter is the last account of a delivery, so the row
+// stays while one refers to it, and the operator who finds it a week later finds
+// a replay that runs rather than a refusal that blames a row a purge removed.
+func TestADeadLetterKeepsItsPayloadPastThePurge(t *testing.T) {
+	fast(t)
+	admin, conn := dbtest.Schema(t)
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+
+	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
+	operator := uuid.New()
+	transport := memory.New()
+	var handled int
+	broken := true
+	if err := Consume(ctx, conn, transport, []Subscription{{
+		Module: "audit", Name: "ledger.invoice_issued",
+		Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
+			if broken {
+				return errors.New("the mailer is down")
+			}
+			handled++
+			return nil
+		},
+	}}); err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+	if err := db.Run(tenancy.WithTenant(ctx, tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return Publish(ctx, tx, "ledger.invoice_issued", map[string]string{"why": "the invoice went out"})
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if err := Relay(ctx, conn, transport); err != nil {
+		t.Fatalf("relay: %v", err)
+	}
+	var id uuid.UUID
+	if err := admin.QueryRowContext(ctx, `SELECT event_id FROM platformkit_dead_letters LIMIT 1`).Scan(&id); err != nil {
+		t.Fatalf("the event was never dead-lettered: %v", err)
+	}
+	// A week of queue latency, from the database's own clock.
+	if _, err := admin.ExecContext(ctx,
+		`UPDATE platformkit_outbox SET published_at = now() - interval '8 days' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := Purge(ctx, conn); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+
+	var rows, dead int
+	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM platformkit_outbox WHERE id=$1`, id).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM platformkit_dead_letters WHERE event_id=$1`, id).Scan(&dead); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 || dead != 1 {
+		t.Fatalf("the purge left %d outbox rows and %d dead letters, want the pair still describing each other", rows, dead)
+	}
+	broken = false
+	if _, err := Replay(tenancy.WithActor(ctx, operator), conn, id, "", "the mailer is fixed"); err != nil {
+		t.Fatalf("Replay of a dead letter a week old: %v", err)
+	}
+	// And the payload it carried is still the payload the relay publishes: the
+	// replay runs the handler with the body the publisher wrote, not a husk.
+	if err := Relay(ctx, conn, transport); err != nil {
+		t.Fatalf("relay after the replay: %v", err)
+	}
+	if handled != 1 {
+		t.Errorf("the replayed event reached its handler %d times, want once", handled)
+	}
+}
