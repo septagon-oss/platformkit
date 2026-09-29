@@ -271,8 +271,18 @@ func checkParity(name, fallback string, entries map[string]map[string]string) {
 // verbs is the format specifiers a copy carries, in the order it carries them.
 // Two copies of one key interpolate what they are given in that order, so the
 // sequence is compared as the text it is.
+//
+// A doubled percent is how a gettext copy spells one literal percent sign, and it
+// is one character to the reader of the sentence: the pair is stepped over rather
+// than scanned, because restarting inside it turns the space and letter that
+// follow into a verb — and `%%` is the only advice a translator can be given for
+// printing a percent sign, so a scan that charged them for taking it would refuse
+// two copies that interpolate the same argument in the same order, and point at
+// neither. A lone percent followed by a space and a letter is still a conversion
+// (`Save 20% on %d items` really does ask fmt for an octal argument), and still
+// refused: this removes escaped pairs, nothing else.
 func verbs(copy string) string {
-	return strings.Join(verbPattern.FindAllString(copy, -1), " ")
+	return strings.Join(verbPattern.FindAllString(strings.ReplaceAll(copy, "%%", ""), -1), " ")
 }
 
 var verbPattern = regexp.MustCompile(`%[-+# 0]*[0-9.]*[a-zA-Z]`)
