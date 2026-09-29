@@ -4,6 +4,8 @@ package httpx
 // request, publishes the code each refusal carries, and writes the refusal.
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -131,7 +133,14 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	if !a.entitled(ctx, t, auth) {
 		return
 	}
-	next(ctx)
+	// The grant is the first question; which row is the second, and a module asks it
+	// through tenancy.RequirePolicy after this middleware is done. Its refusal is
+	// audited here, where the request is known, whatever response the module maps it to.
+	refused := func(_ context.Context, r tenancy.PolicyRequest, d tenancy.PolicyDecision) {
+		a.denied(ctx, http.StatusForbidden, CodePolicyDenied,
+			fmt.Sprintf("%s on %s %s: %s (policy %s)", r.Action, r.Resource.Kind, r.Resource.ID, d.Reason, d.Revision))
+	}
+	next(huma.WithContext(ctx, tenancy.WithPolicyRefusals(ctx.Context(), refused)))
 }
 
 // entitled answers the feature a declaration names, and writes the refusal
@@ -220,6 +229,10 @@ const (
 	CodeWriteElsewhere = "WRITE_ELSEWHERE"
 	// CodePlanExcludes names the feature to ask the tenant's plan for.
 	CodePlanExcludes = "PLAN_EXCLUDES"
+	// CodePolicyDenied is a module's object-scope refusal (tenancy.RequirePolicy): the
+	// grant was held and the policy refused this row. kit/rest answers it with the same
+	// code.
+	CodePolicyDenied = "POLICY_DENIED"
 )
 
 // notHere answers the control plane's own answer: the 404 an address nobody

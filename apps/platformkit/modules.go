@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"net/http"
 	"os"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/tenancy/providers/opa"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
@@ -63,6 +65,15 @@ type composition struct {
 // of the authentication service, so the graph needs no late binding — the user
 // module's floor below included, because it asks the roles table a question
 // rather than the authentication service.
+// taskRego is the reference application's object-scope policy for tasks, and taskPolicy
+// that policy compiled once. A policy that does not compile is a defect in this build, so
+// it fails at start rather than at the first request.
+//
+//go:embed policy/task.rego
+var taskRego string
+
+var taskPolicy = opa.MustNew("policy/task.rego", "platformkit.task", taskRego)
+
 func compose(cfg config.Config) composition {
 	// auth.AdministeringRoles is what makes "the last person who can still
 	// administer this tenant" answerable at all: the user module owns who holds
@@ -141,7 +152,8 @@ func compose(cfg config.Config) composition {
 		tenantModule,
 		notificationModule,
 		authModule,
-		task.Module(task.Deps{Tenants: active}),
+		// Object scope (decision 0011): tasks are decided by policy/task.rego, embedded OPA.
+		task.Module(task.Deps{Tenants: active, Policy: taskPolicy}),
 		// The four reference modules a product is actually made of: what a
 		// tenant pays, what it publishes, what its site looks like, and the
 		// bytes behind both. Each takes the one thing it cannot decide for
