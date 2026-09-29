@@ -59,14 +59,17 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 				// never arrives is the hardest kind of bug to be told about.
 				slog.InfoContext(ctx, "notification: the notice was gone before its mail was sent",
 					"notification", req.NotificationID, "recipient", req.Recipient)
-				return nil
+				return record(tx, req.NotificationID, ChannelEmail, OutcomeSuppressed, "the notice was deleted before its mail was sent")
 			}
 			if err != nil {
 				return err
 			}
 			to, err := address(ctx, tx, recipients, row.RecipientID)
-			if err != nil || to == "" {
+			if err != nil {
 				return err
+			}
+			if to == "" {
+				return record(tx, row.ID, ChannelEmail, OutcomeSuppressed, "the recipient had no email address when the mail was due")
 			}
 			base, err := baseURL(ctx, tx, hosts, secure)
 			if err != nil {
@@ -76,7 +79,12 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 			if err != nil {
 				return err
 			}
-			return mailer.Send(ctx, contracts.Message{To: to, Subject: row.Title, Body: body})
+			if err := mailer.Send(ctx, contracts.Message{To: to, Subject: row.Title, Body: body}); err != nil {
+				// No row: this transaction rolls back and the outbox retries on the kernel's ladder;
+				// a send that can never succeed ends in platformkit_dead_letters, which is its record.
+				return err
+			}
+			return record(tx, row.ID, ChannelEmail, OutcomeSent, "")
 		},
 	}
 }
