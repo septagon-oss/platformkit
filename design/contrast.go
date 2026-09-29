@@ -152,6 +152,13 @@ func (t Theme) Check() error {
 // layer certifies colours nobody paints, which is how a palette that passes a
 // gate can still paint text nobody can read.
 //
+// Foreground and Background name a role in either of the two vocabularies the
+// layer is written in — "fg-muted" as roles.go declares it and ui/style's Color
+// constants carry it, or "--pk-role-fg-muted" as a stylesheet emits it — and
+// CheckRoles resolves whichever spelling a caller holds against the layer it was
+// handed, refusing a name that is neither. A pair read out of a component's own
+// declaration and a pair read out of an emitted sheet are then the same pair.
+//
 // The declarations these pairs name are owned by this package (roles.go) and
 // rendered by ui/style and ui/export, so the ratio is measured in one place and
 // a caller hands over nothing it assembled itself. CheckRoles still takes both
@@ -184,13 +191,23 @@ func (t Theme) CheckRoles(roles []ColorToken, pairs []RolePair) error {
 		if pair.Min <= 0 || pair.Min > 21 {
 			return fmt.Errorf("%s: role pair %s on %s names floor %v: a pair must name the ratio it requires", t.Name, pair.Foreground, pair.Background, pair.Min)
 		}
+		// Each role is read under the name the layer actually carries: a pair may
+		// spell a role as roles.go declares it or as the stylesheet emits it, and
+		// the refusal quotes the emitted name, which is the property a reader finds
+		// in the sheet and the one ui/export quotes when it refuses the same pair.
 		var missing []string
-		for _, name := range [...]string{pair.Foreground, pair.Background} {
+		var resolved [2]string
+		for i, name := range [...]string{pair.Foreground, pair.Background} {
 			color, ok := values[name]
+			if !ok {
+				name = RoleCSSName(name)
+				color, ok = values[name]
+			}
 			if !ok {
 				missing = append(missing, name)
 				continue
 			}
+			resolved[i] = name
 			if color[3] != 1 {
 				return fmt.Errorf("%s: %s carries alpha %.2f: a colour with alpha has no contrast until it is composited, so gate a pair on an opaque role", t.Name, name, color[3])
 			}
@@ -198,9 +215,9 @@ func (t Theme) CheckRoles(roles []ColorToken, pairs []RolePair) error {
 		if len(missing) > 0 {
 			return fmt.Errorf("%s: role pair %s on %s names %v, which the resolved role layer does not define", t.Name, pair.Foreground, pair.Background, missing)
 		}
-		if got := Contrast(values[pair.Foreground], values[pair.Background]); got < pair.Min {
+		if got := Contrast(values[resolved[0]], values[resolved[1]]); got < pair.Min {
 			return fmt.Errorf("%s: %s on %s measures %.2f:1, below the %.1f:1 the body text this role paints requires",
-				t.Name, pair.Foreground, pair.Background, got, pair.Min)
+				t.Name, resolved[0], resolved[1], got, pair.Min)
 		}
 	}
 	return nil

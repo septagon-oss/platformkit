@@ -68,6 +68,18 @@ holds all 22 token pairs and moves the tint a brand badge's own label sits on do
 to 3.91:1, which is why the door a client's file passes through refuses it rather
 than the export alone.
 
+A role has two true names and this package owns the translation between them.
+Declared, it is `fg-muted` — the key of the table above, the spelling
+`style.Color` carries and the spelling a component's own class list is written
+against — and the three pair lists are written that way, so a reader can compare a
+gated name with the rule that paints it. Emitted, it is `--pk-role-fg-muted`, the
+property a `:root` block declares, and that is the name `RoleLayer` hands out, the
+name a refusal quotes, and the name `ui/style` gives the seam that ships a sheet:
+`RoleCSSName` is the one rule, `CheckRoles` resolves either spelling against a
+layer and still refuses a name that is neither (`text-muted` included — a token is
+not a role), and `ui/style`'s `TestRolePairMirrorsSpellTheEmittedNames` pins the
+mirrored lists to this file's, pair for pair, order for order and floor for floor.
+
 Two refusals keep the gate honest rather than theatrical. A colour that carries
 alpha is refused before anything is measured: a ratio is a property of two opaque
 paints, and premultiplied channels would let `transparent` clear the gate at 21:1.
