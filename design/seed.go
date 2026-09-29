@@ -116,7 +116,11 @@ func FromSeed(seed Seed) (Pair, error) {
 }
 
 // generatedTheme builds one theme of a generated pair. Surfaces come first,
-// because every foreground is repaired against the surface it will sit on.
+// because every foreground is repaired against the surface it will sit on. The
+// accent is repaired against all three surfaces, not the two a button happens to
+// own: ui/components also paints it as body-size text with no background of its
+// own, so the pair the gate reads (accent on surface-muted) is a pair a page
+// shows, and enforce is what keeps the generator's own output on its side of it.
 func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 	theme := Theme{Name: name}
 	surface := func(sat, value float64) string { return hsv(hue, sat, value) }
@@ -128,8 +132,8 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.BorderStrong = surface(surfaceSat*1.2, 0.45)
 		theme.TextPrimary = hsv(hue, 0.10, 0.95)
 		theme.TextMuted = enforce(hsv(hue, 0.14, 0.74), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
-		theme.AccentDefault = enforce(hsv(hue, accentSat*0.75, 0.74), theme.SurfaceCanvas, theme.SurfacePrimary)
-		theme.AccentHover = enforce(hsv(hue, accentSat*0.70, 0.86), theme.SurfaceCanvas, theme.SurfacePrimary)
+		theme.AccentDefault = enforce(hsv(hue, accentSat*0.75, 0.74), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		theme.AccentHover = enforce(hsv(hue, accentSat*0.70, 0.86), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentOn = enforce("#0a0a0a", theme.AccentDefault, theme.AccentHover)
 		theme.Focus = enforce(hsv(complement(hue), 0.60, 0.72), theme.SurfaceCanvas)
 		theme.SidebarBg = surface(surfaceSat*1.8, 0.07)
@@ -143,8 +147,8 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.BorderStrong = surface(surfaceSat, 0.52)
 		theme.TextPrimary = enforce(hsv(hue, 0.32, 0.12), theme.SurfaceCanvas, theme.SurfacePrimary)
 		theme.TextMuted = enforce(hsv(hue, 0.24, 0.46), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
-		theme.AccentDefault = enforce(hsv(hue, accentSat, 0.38), theme.SurfaceCanvas, theme.SurfacePrimary)
-		theme.AccentHover = enforce(hsv(hue, min(1, accentSat*1.1), 0.30), theme.SurfaceCanvas, theme.SurfacePrimary)
+		theme.AccentDefault = enforce(hsv(hue, accentSat, 0.38), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		theme.AccentHover = enforce(hsv(hue, min(1, accentSat*1.1), 0.30), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentOn = enforce("#fbfffb", theme.AccentDefault, theme.AccentHover)
 		theme.Focus = enforce(hsv(complement(hue), 0.68, 0.85), theme.SurfaceCanvas)
 		theme.SidebarBg = hsv(hue, 0.38, 0.13)

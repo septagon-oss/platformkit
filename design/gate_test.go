@@ -166,3 +166,29 @@ func TestShapeValidateAcceptsALengthAndRefusesEverythingElse(t *testing.T) {
 		t.Errorf("an empty shape was refused: %v", err)
 	}
 }
+
+// The accent is not only a button fill: ui/components paints it as body-size text
+// with no background of its own (the brand text utility, the outline and link
+// button variants, a brand detail value), so it lands on whichever surface a card
+// raised itself onto. This colour clears the two surfaces a button owns and the
+// text set on the accent itself, and fails on the third — the pair a page shows
+// and the pair the gate used not to read. Refusing it is the point: Client.Resolve
+// runs this same Check over a client's named override, so an accent chosen for how
+// it looks filled in is refused before it reaches a stylesheet.
+func TestThemeCheckRefusesAnAccentLegibleOnlyWhereAButtonPaintsIt(t *testing.T) {
+	t.Parallel()
+	pair := design.Default()
+	pair.Dark.AccentDefault = "#008ce7"
+	err := pair.Check()
+	if err == nil {
+		t.Fatalf("an accent that reads 4.17:1 on the muted surface passed the gate")
+	}
+	for _, want := range []string{"accent-default", "surface-muted", "4.5:1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not name %q", err, want)
+		}
+	}
+	if err := design.Default().Check(); err != nil {
+		t.Errorf("the pair this repository ships: %v", err)
+	}
+}

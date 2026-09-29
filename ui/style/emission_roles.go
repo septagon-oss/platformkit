@@ -126,10 +126,12 @@ type bodyRole = design.RolePair
 
 // bodyRolePairs are the text pairs ui/components actually paints, read out of
 // classlists.go: the neutral badge and the read-only field put FgSecondary on
-// SurfaceTertiary, a detail description puts it on SurfaceSecondary, and every one
-// of them is body-size copy. FgDisabled is deliberately absent: a disabled control
-// is the one text WCAG 2.2 SC 1.4.3 exempts, and a gate that measured it would
-// demand a disabled field look enabled.
+// SurfaceTertiary, a detail description puts it on SurfaceSecondary, the brand
+// text utility, the outline and link button variants and a brand detail value put
+// the accent on whatever surface the card around them raised itself onto, and
+// every one of them is body-size copy. FgDisabled is deliberately absent: a
+// disabled control is the one text WCAG 2.2 SC 1.4.3 exempts, and a gate that
+// measured it would demand a disabled field look enabled.
 var bodyRolePairs = []design.RolePair{
 	{Foreground: "--pk-role-fg-primary", Background: "--pk-role-surface-primary", Min: design.MinContrast},
 	{Foreground: "--pk-role-fg-primary", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
@@ -148,6 +150,20 @@ var bodyRolePairs = []design.RolePair{
 	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-primary", Min: design.MinContrast},
 	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
 	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	// The accent as copy a reader reads. clTextColor["brand"],
+	// clDetailValueTone["brand"] and the outline button variant paint FgBrand with
+	// no background of their own, clLink paints FgLink (the same colour, in a
+	// sentence) and its hover state paints FgLinkHover, so all three land on
+	// whichever surface the card around them raised itself onto.
+	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-link-hover", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-link-hover", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-link-hover", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
 	{Foreground: "--pk-role-fg-on-inverse", Background: "--pk-role-surface-inverse", Min: design.MinContrast},
 }
 
