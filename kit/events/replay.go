@@ -103,6 +103,13 @@ type replayRow struct {
 // where they were. The record it refuses to write is the answer to "actor,
 // tenant, what": an actor column left NULL by a verb this consequential answers
 // "nobody" while the write still happened.
+//
+// It is unconditional. A dead letter is reviewed late, so the row a replay
+// relays is usually old, and age invites the thought that an old enough one
+// needs no name. It does not: whether a person has to be named for deleting the
+// record of a finished delivery cannot turn on how many days ago that delivery
+// finished — that would waive the audit exactly where it is worth most. Who
+// asked, and why, are the only questions this verb asks.
 func Replay(ctx context.Context, conn *db.Conn, eventID uuid.UUID, durable, reason string) (ReplayRecord, error) {
 	// An empty reason is a correctable refusal: the same call with a sentence
 	// attached is allowed. It is checked before the transaction opens, because
