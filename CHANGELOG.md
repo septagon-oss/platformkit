@@ -10,15 +10,24 @@ content mode, with `tenantid` as a required extension attribute and
 `traceparent`/`tracestate` as the distributed tracing extension, and the subject
 is `platformkit.<tenant>.<module>.<event>`: a tenant's backlog is an address, a
 durable can be per tenant, and a bridge routes a customer without opening the
-payload. The envelope decodes the pre-envelope shape and never writes it, which
-is the rolling window, not a leftover. `module.Module.Events` names the Go type
-of each payload; that projection is the JSON Schema the outbox refuses a
-mis-shaped payload against, and the AsyncAPI 3.0.0 document
-`apps/platformkit/testdata/asyncapi.json` is rendered from it and checked in by
+payload. The envelope decodes the pre-envelope shape and never writes it; a
+subscription answers both addresses while that window is open, because a NATS
+`*` is one token and an unread decoder is not a window. `module.Module.Events`
+names the Go type of each payload; that projection is the JSON Schema the outbox
+refuses a mis-shaped payload against — a member the projection cannot describe
+constrains nothing, and it no longer panics the door either — and the AsyncAPI
+3.0.0 document `apps/platformkit/testdata/asyncapi.json` is rendered from it, as
+each message's `payload` where a validator reads, and checked in by
 `make check`. `events.Replay` is the operator's verb for a terminal delivery, and
 `kit/trace` carries the W3C context from a request into the outbox row — it
 collects and exports nothing, which the metrics pillar still owns. See
 [the rollout notes](kit/events/README.md): the subject change recreates every stored consumer, and the claims are what make that safe.
+
+A replay now requires its actor as it requires its reason, and the record it
+refuses to write is the one that would have named nobody. `Purge` leaves an
+outbox row a dead letter still describes: the row is the payload's only copy, and
+a terminal failure the operator can read but never run again, with nothing left
+saying what it carried, is the evidence this change set exists to stop losing.
 
 Two of these entries, one property: a tenant keeps somebody who can administer
 it. Each was written because the state was reachable, not because a race was
