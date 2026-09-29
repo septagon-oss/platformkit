@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**The reference application's personas are declared, and each is proven to do its own
+journeys and be refused the others'.** `apps/platformkit` seeds `coordinator`
+(`task:read`, `task:update`) and `observer` (`task:read`) with every tenant, beside
+auth's `admin` and `member`. It refuses to compose if a persona grants a permission
+nothing declares or one that belongs to the operator. `persona_test.go` drives seven
+journeys as each of the four roles at the shipped composition and holds a table of
+allow/deny. Resolving another person's task is refused to the administrator and the
+coordinator by the task policy, not by a grant.
+
 **Object scope is decided by a policy the composition writes, and every refusal is
 audited.** `kit/tenancy/providers/opa` embeds Open Policy Agent (Apache-2.0) as a
 `tenancy.Policy`: a composition writes its rules in Rego, they are compiled once at
