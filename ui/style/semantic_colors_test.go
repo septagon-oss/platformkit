@@ -32,6 +32,9 @@ func TestSemanticColorsProjectTheExistingRoleOwner(t *testing.T) {
 		"--pk-role-ring-focus":      "--pk-color-focus",
 		"--pk-role-fg-on-brand":     "--pk-color-accent-on",
 		"--pk-role-surface-inverse": "--pk-color-sidebar-bg",
+		// A placeholder is body text, so it is a certified colour rather than a
+		// walk toward the surface under it.
+		"--pk-role-fg-placeholder": "--pk-color-text-muted",
 	} {
 		if values[name].Reference != reference || values[name].Literal != "" || values[name].Mix != nil {
 			t.Errorf("%s lost its explicit alias to %s", name, reference)
@@ -44,9 +47,8 @@ func TestSemanticColorsProjectTheExistingRoleOwner(t *testing.T) {
 		{"surface-brand-soft", "accent-default", "surface-primary", 12},
 		{"surface-hover", "text-primary", "surface-primary", 4},
 		{"surface-active", "text-primary", "surface-primary", 8},
-		{"fg-secondary", "text-primary", "surface-primary", 78},
-		{"fg-tertiary", "text-primary", "surface-primary", 60},
-		{"fg-placeholder", "text-muted", "surface-primary", 70},
+		{"fg-secondary", "text-primary", "text-muted", 66},
+		{"fg-tertiary", "text-primary", "text-muted", 33},
 		{"fg-disabled", "text-muted", "surface-primary", 55},
 		{"border-secondary", "border-default", "surface-primary", 60},
 	} {

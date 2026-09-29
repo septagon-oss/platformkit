@@ -70,6 +70,11 @@ type contrastPair struct {
 var bodyContrast = []contrastPair{
 	{"text-primary", "surface-canvas", MinContrast},
 	{"text-primary", "surface-primary", MinContrast},
+	// The muted surface is the third surface a card raises itself onto, and the
+	// kernel's components paint ordinary text there (a neutral badge, a read-only
+	// field). A foreground certified against the two lighter surfaces says nothing
+	// about it: text on a grey is the pair that fails first.
+	{"text-primary", "surface-muted", MinContrast},
 	{"text-muted", "surface-canvas", MinContrast},
 	{"text-muted", "surface-primary", MinContrast},
 	{"text-muted", "surface-muted", MinContrast},
@@ -109,6 +114,68 @@ func (t Theme) Check() error {
 		if got := Contrast(foreground, background); got < pair.min {
 			return fmt.Errorf("%s: %s on %s measures %.2f:1, below %.1f:1",
 				t.Name, pair.foreground, pair.background, got, pair.min)
+		}
+	}
+	return nil
+}
+
+// RolePair is one foreground and one background role a stylesheet paints text
+// with, and the floor that pair must reach. Roles are the layer a browser reads
+// (the --pk-role-* declarations ui/style emits, some of them derived from tokens
+// rather than equal to one); tokens are the layer a theme sets. Measuring only
+// the token layer certifies colours nobody paints, which is how a palette that
+// passes a gate can still paint text nobody can read.
+//
+// This package names no role: the owner of the role layer hands over the
+// declarations it emits and the pairs it composes, so design keeps importing
+// nothing of ui and stays the one place a ratio is measured.
+type RolePair struct {
+	Foreground, Background string
+	// Min is the floor, usually MinContrast or MinContrastGraphic.
+	Min float64
+}
+
+// CheckRoles resolves the caller's role declarations on top of this theme's
+// tokens and reports the first pair of pairs that does not reach its own floor,
+// naming both roles and the ratio measured. An opaque colour requirement comes
+// first, for the reason Theme.Check gives: a role carrying alpha has no ratio
+// until something is composited behind it.
+func (t Theme) CheckRoles(roles []ColorToken, pairs []RolePair) error {
+	values, err := ResolveColors(t.Tokens(), roles)
+	if err != nil {
+		return fmt.Errorf("%s: role layer: %w", t.Name, err)
+	}
+	for _, pair := range pairs {
+		if pair.Min <= 0 || pair.Min > 21 {
+			return fmt.Errorf("%s: role pair %s on %s names floor %v: a pair must name the ratio it requires", t.Name, pair.Foreground, pair.Background, pair.Min)
+		}
+		var missing []string
+		for _, name := range [...]string{pair.Foreground, pair.Background} {
+			color, ok := values[name]
+			if !ok {
+				missing = append(missing, name)
+				continue
+			}
+			if color[3] != 1 {
+				return fmt.Errorf("%s: %s carries alpha %.2f: a colour with alpha has no contrast until it is composited, so gate a pair on an opaque role", t.Name, name, color[3])
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("%s: role pair %s on %s names %v, which the resolved role layer does not define", t.Name, pair.Foreground, pair.Background, missing)
+		}
+		if got := Contrast(values[pair.Foreground], values[pair.Background]); got < pair.Min {
+			return fmt.Errorf("%s: %s on %s measures %.2f:1, below the %.1f:1 the body text this role paints requires",
+				t.Name, pair.Foreground, pair.Background, got, pair.Min)
+		}
+	}
+	return nil
+}
+
+// CheckRoles reports the first theme of this pair whose role layer fails.
+func (p Pair) CheckRoles(roles []ColorToken, pairs []RolePair) error {
+	for _, theme := range p.Both() {
+		if err := theme.CheckRoles(roles, pairs); err != nil {
+			return err
 		}
 	}
 	return nil
