@@ -83,9 +83,15 @@ func compose(cfg config.Config) composition {
 	// application that decides administration is made of roles.
 	users, userModule := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
 
+	installed := catalogues()
 	tenants, tenantModule := tenant.Module(tenant.Deps{
 		OnCreate: []tenantcontracts.Hook{seedRoles},
 		Invite:   firstAdmin{users: users},
+		// A tenant created here is served in every language this installation's
+		// copy is written in, read off the catalogues rather than named: the set
+		// exists before the operator narrows it, so a page can answer a person in
+		// the language its text was authored in on the day the tenant appears.
+		Languages: installed.Languages(),
 	})
 	active := tenantcontracts.Active{Service: tenants}
 	hosts := tenantHosts{tenants: tenants}
@@ -210,7 +216,7 @@ func compose(cfg config.Config) composition {
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
 		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
-		Messages: catalogues(), Locale: loginLocale,
+		Messages: installed, Locale: loginLocale,
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
 

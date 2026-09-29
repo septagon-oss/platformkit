@@ -39,6 +39,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // faultKeys is the one table from a refusal the kernel published to the catalog key this
@@ -111,11 +112,16 @@ func faultKey(detail string, status int) (key string, lookup bool) {
 // at all. A guard answers before any of them exist, so the language of a refusal can only
 // be the one the caller brought — which is also exactly what makes Vary: Accept-Language
 // the true thing to say about the response.
-func refusalLocale(m Messages, r *http.Request) *Locale {
+func refusalLocale(m Messages, r *http.Request, tenant tenancy.Tenant) *Locale {
 	if m == nil {
 		return nil
 	}
-	loc := SelectLocale(m, r.Header.Get("Accept-Language"))
+	// The tenant the request resolved to, when a guard got that far: the languages it
+	// is served in are as much a fact about a refusal as about any other page. A guard
+	// that refused before a host resolved has no tenant to filter by, and the
+	// deployment's own catalog is then the only declaration standing — which is the
+	// answer the request would have been given anyway.
+	loc := SelectLocale(m, TenantPreferences(Request{Tenant: tenant}, r.Header.Get("Accept-Language"))...)
 	return &loc
 }
 
@@ -137,7 +143,7 @@ func FaultHandler(s Shell) httpx.Fault {
 		}
 		ctx := r.Context()
 		req := read(ctx, s.Chrome)
-		loc := refusalLocale(s.Messages, r)
+		loc := refusalLocale(s.Messages, r, req.Tenant)
 		// The frame is given the negotiated language for the same reason the sentence is:
 		// a shell whose chrome has labels of its own renders them here as it does on every
 		// page Serve mounts, and not in English because the request was refused.

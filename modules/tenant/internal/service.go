@@ -22,10 +22,18 @@ import (
 // Service is the control plane. Its one field is the list of things main asked
 // to happen inside a create, which is how the modules above this one are
 // notified without this one importing them (see contracts.Hook).
-type Service struct{ hooks []contracts.Hook }
+type Service struct {
+	hooks []contracts.Hook
+	// langs are the installation's catalogue languages, which a new tenant starts
+	// out serving; see module.Deps.
+	langs []string
+}
 
-// NewService returns the control plane. module.go constructs it.
-func NewService(hooks []contracts.Hook) *Service { return &Service{hooks: hooks} }
+// NewService returns the control plane. module.go constructs it, passing the
+// languages the composition's catalogues answer in.
+func NewService(hooks []contracts.Hook, langs []string) *Service {
+	return &Service{hooks: hooks, langs: langs}
+}
 
 var _ contracts.Service = (*Service)(nil)
 
@@ -51,8 +59,26 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 		Operator:  in.Operator,
 		CreatedAt: at, UpdatedAt: at,
 	}
-	if err := tx.DB().Omit("Hosts").Create(t).Error; err != nil {
+	if err := tx.DB().Omit("Hosts", "Locales", "DefaultLocale").Create(t).Error; err != nil {
 		return nil, crud.Classify(err)
+	}
+	// The language this tenant is served in is the one the installation's
+	// catalogues are written in, and this module does not name it: the column's
+	// default is the deployment's decision (migrations/000028), read back here so
+	// the row the create returns says what the table says. Somebody setting other
+	// languages for this tenant is SetLocale, and a create that took them from a
+	// body would put the choice in the hands of whoever called the route.
+	if err := s.readDefaultLocale(tx, t); err != nil {
+		return nil, err
+	}
+	// Written from the value the database just chose rather than from a constant
+	// this module would have to keep in step with the migration, and from the
+	// languages the composition says the installation can speak: the first set a
+	// tenant has is the installation's, and SetLocale is where it becomes the
+	// tenant's. A tenant whose default is not in its own set is a request answered
+	// in a language the tenant does not serve, so the default leads.
+	if err := s.serve(tx, t.ID, s.served(t.DefaultLocale)...); err != nil {
+		return nil, err
 	}
 	// The first host is the primary one, because it is the only one: a tenant
 	// whose links pointed nowhere until somebody remembered to choose would be
@@ -130,6 +156,68 @@ func (s *Service) Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	})
 }
 
+// SetLocale says which languages one tenant is served in, and which of them is the
+// one to fall back to. Both halves are written in the caller's transaction and one
+// event says so, because a tenant whose default is not in its own set is a request
+// answered in a language that tenant does not serve.
+func (s *Service) SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in contracts.SetLocale) (*contracts.Tenant, error) {
+	wanted, err := s.validLocales(in)
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.Get(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if t.DefaultLocale == wanted[0] && slices.Equal(t.Locales, wanted[1:]) {
+		return t, nil
+	}
+	t.DefaultLocale, t.UpdatedAt = wanted[0], db.Now()
+	if err := tx.DB().Model(t).Select("default_locale", "updated_at").Updates(t).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
+	if err := tx.DB().Exec("DELETE FROM tenant_locales WHERE tenant_id = ?", t.ID).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
+	if err := s.serve(tx, t.ID, wanted...); err != nil {
+		return nil, err
+	}
+	// The same argument as a suspension's: the host resolution believes a tenant
+	// for half a minute, and the languages of a page are not the languages of the
+	// page a person is looking at once the set behind it changed.
+	err = events.PublishFor(ctx, tx, t.ID, contracts.EventLocaleSet, contracts.LocaleSet{
+		TenantID: t.ID, Default: wanted[0], Supported: wanted[1:], At: t.UpdatedAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, tx, id)
+}
+
+// validLocales is the command's one rule, in one place: every tag is a tag, the
+// default is the first thing returned, and the set behind it is sorted, deduplicated
+// and without the default — which is the shape contracts.Tenant's two fields hold
+// them in, so the comparison above that decides "nothing changed" is one comparison
+// and not a set operation in three places.
+func (s *Service) validLocales(in contracts.SetLocale) ([]string, error) {
+	defaultTag, err := contracts.ValidLocale(in.Default)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+	}
+	set := make([]string, 0, len(in.Supported))
+	for _, tag := range in.Supported {
+		canonical, err := contracts.ValidLocale(tag)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		}
+		if canonical != defaultTag && !slices.Contains(set, canonical) {
+			set = append(set, canonical)
+		}
+	}
+	slices.Sort(set)
+	return append([]string{defaultTag}, set...), nil
+}
+
 // Get is one tenant with its hosts.
 func (s *Service) Get(_ context.Context, tx db.Tx[db.System], id uuid.UUID) (*contracts.Tenant, error) {
 	var t contracts.Tenant
@@ -141,6 +229,9 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.System], id uuid.UUID) (*co
 		return nil, err
 	}
 	t.Hosts = hosts
+	if t.Locales, err = s.localesOf(tx, t.ID, t.DefaultLocale); err != nil {
+		return nil, err
+	}
 	return &t, nil
 }
 
@@ -167,8 +258,20 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.System]) ([]*contracts.Ten
 	for _, r := range rows {
 		byTenant[r.TenantID] = append(byTenant[r.TenantID], r.Host)
 	}
+	var languages []struct {
+		TenantID uuid.UUID
+		Locale   string
+	}
+	if err := tx.DB().Table("tenant_locales").Order("tenant_id, locale").Find(&languages).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
+	spoken := map[uuid.UUID][]string{}
+	for _, r := range languages {
+		spoken[r.TenantID] = append(spoken[r.TenantID], r.Locale)
+	}
 	for _, t := range out {
 		t.Hosts = byTenant[t.ID]
+		t.Locales = without(spoken[t.ID], t.DefaultLocale)
 	}
 	return out, nil
 }
@@ -189,6 +292,14 @@ func (s *Service) ByHost(_ context.Context, tx db.Tx[db.System], host string) (t
 	}
 	if err != nil {
 		return tenancy.Tenant{}, fmt.Errorf("tenant: resolve %q: %w", host, err)
+	}
+	// The languages ride on the same resolution rather than on a query of their own
+	// per request: this is the one read every request makes, and the set of
+	// languages a page may answer in is exactly as much a fact about the tenant as
+	// its name is. It is cached with it, which is the reason the host cache is
+	// invalidated when either changes.
+	if t.Locales, err = s.localesOf(tx, t.ID, t.DefaultLocale); err != nil {
+		return tenancy.Tenant{}, err
 	}
 	return t.Tenancy(), nil
 }
@@ -269,4 +380,71 @@ func (s *Service) hostsOf(tx db.Tx[db.System], id uuid.UUID) ([]string, error) {
 		return nil, crud.Classify(err)
 	}
 	return hosts, nil
+}
+
+// localesOf is the set of languages a tenant is served in, minus the one it is
+// served in by default: the table holds every language including that one, so the
+// row is never a list whose first element happens to be the default, and the entity
+// keeps the pair the way its two fields hold it.
+func (s *Service) localesOf(tx db.Tx[db.System], id uuid.UUID, except string) ([]string, error) {
+	var stored []string
+	err := tx.DB().Table("tenant_locales").Where("tenant_id = ? AND locale <> ?", id, except).
+		Order("locale").Pluck("locale", &stored).Error
+	if err != nil {
+		return nil, crud.Classify(err)
+	}
+	return stored, nil
+}
+
+// without is a set with one entry taken out of it — the shape contracts.Tenant
+// keeps the pair in, so a read never has to remember which of the two is stored
+// twice.
+func without(set []string, one string) []string {
+	out := make([]string, 0, len(set))
+	for _, tag := range set {
+		if tag != one {
+			out = append(out, tag)
+		}
+	}
+	return out
+}
+
+// served is the set a new tenant starts out with: the installation's languages, this
+// tenant's default at their front because ui/page puts the tenant's default last and
+// a default missing from the set would be a fallback into a language the tenant is
+// not served in.
+func (s *Service) served(def string, more ...string) []string {
+	out, seen := make([]string, 0, len(s.langs)+1), map[string]bool{}
+	for _, tag := range append([]string{def}, append(more, s.langs...)...) {
+		if tag != "" && !seen[tag] {
+			seen[tag] = true
+			out = append(out, tag)
+		}
+	}
+	return out
+}
+
+// readDefaultLocale takes the language the database just chose for a tenant it
+// created. The column's default is the deployment's decision and this module never
+// writes it on a create, so the value has to come back rather than be assumed.
+func (s *Service) readDefaultLocale(tx db.Tx[db.System], t *contracts.Tenant) error {
+	var tag string
+	err := tx.DB().Table("tenants").Where("id = ?", t.ID).Pluck("default_locale", &tag).Error
+	if err != nil {
+		return crud.Classify(err)
+	}
+	t.DefaultLocale = tag
+	return nil
+}
+
+// serve writes the languages one tenant is served in, replacing whatever was there.
+// The default is the first value passed, which is the only one with a column of its
+// own; the rest is the set Accept-Language is intersected with.
+func (s *Service) serve(tx db.Tx[db.System], id uuid.UUID, locales ...string) error {
+	for _, tag := range locales {
+		if err := tx.DB().Exec("INSERT INTO tenant_locales (tenant_id, locale) VALUES (?, ?)", id, tag).Error; err != nil {
+			return crud.Classify(err)
+		}
+	}
+	return nil
 }

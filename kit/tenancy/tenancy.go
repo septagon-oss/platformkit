@@ -31,6 +31,51 @@ type Tenant struct {
 	// to list, create and suspend the tenants beside them. The column is
 	// written by the bootstrap and by nothing else; see Grant and docs/adr/0006.
 	Operator bool
+	// Languages are what this tenant is served in, or nil when the tenant declared
+	// nothing and the deployment's own default answers. The host resolution reads
+	// them with the rest of the row, which is what makes "which language is this
+	// request answered in" a fact about the tenant resolved for *this* request
+	// rather than a property of the catalog fixed at composition.
+	//
+	// A pointer rather than a slice so that Tenant stays comparable: three owners
+	// of a resolution ask "is this the tenant I resolved before?" with ==, and a
+	// struct that cannot answer that question would make them compare fields by
+	// hand — which is how a field gets forgotten.
+	Languages *Languages
+}
+
+// Languages are the languages one tenant is served in, as the control plane
+// declares them: one default, and the set a browser's list is intersected with.
+//
+// It is a value type with no behaviour, and the order inside it is the whole of
+// what a fallback means: Default first when nothing in the request's own list is
+// served here, and Others never ranking against one another.
+type Languages struct {
+	// Default is the language a request that brought nothing this tenant serves
+	// is answered in.
+	Default string
+	// Others are the remaining languages this tenant is served in, in no
+	// particular order.
+	Others []string
+}
+
+// Preferred is the tenant's language list in the one order a negotiation reads:
+// the default, then the rest. With no default set it is the rest alone.
+func (l *Languages) Preferred() []string {
+	if l == nil {
+		return nil
+	}
+	if l.Default == "" {
+		return l.Others
+	}
+	out := make([]string, 0, len(l.Others)+1)
+	out = append(out, l.Default)
+	for _, tag := range l.Others {
+		if tag != l.Default {
+			out = append(out, tag)
+		}
+	}
+	return out
 }
 
 // Grant is a permission question: which token, and whether that token is one

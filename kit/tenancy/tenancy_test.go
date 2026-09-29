@@ -1,6 +1,7 @@
 package tenancy_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -19,7 +20,11 @@ func TestContextRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatal("WithTenant did not put the tenant on the context")
 	}
-	if got != want {
+	// DeepEqual and not ==: a Tenant carries the languages it is served in, which
+	// are a slice, and a struct holding one cannot be compared with an operator.
+	// What is asserted is the same — that the tenant that came back is the tenant
+	// that went in, every field of it.
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("FromContext = %+v, want %+v", got, want)
 	}
 }

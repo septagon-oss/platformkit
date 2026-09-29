@@ -9,7 +9,11 @@ it lists, so `Module` returns the service to `main` beside the manifest.
 installation's host only — and the switcher at `/app/tenant/tenants`; `tenant.Bootstrap` creates the
 first tenant inside `platformkit bootstrap`'s transaction.
 
-Compose it first, with `tenant.Deps{OnCreate, Invite}`: `OnCreate` hooks —
+Compose it first, with `tenant.Deps{OnCreate, Invite, Languages}` — `Languages`
+being the ones the installation's catalogues answer in, which every new tenant
+starts out serving until `POST /api/v1/ops/tenant/tenants/{id}/locale` narrows
+them (`tenant.locale_set` says so, and the host cache is invalidated for that
+tenant because the languages of a page changed): `OnCreate` hooks —
 `auth.SeedRoles` today — run inside the creating transaction, and `Invite`
 gives a tenant its first administrator (without one the route is not mounted).
 It imports no other module; the modules above reach it through
