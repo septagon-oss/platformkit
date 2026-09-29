@@ -350,8 +350,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			// The installation names the languages its catalogues answer in, and a
 			// tenant cannot be served in one nobody wrote: the page would declare that
 			// language and show the source copy. InstallationLanguages is en and pt-PT
-			// for both implementations, so German is the language with no copy behind
-			// it, and the assertion is the same case for the fake as for the real one.
+			// for both implementations, so German is the one with no copy behind it.
 			for _, in := range []contracts.SetLocale{
 				{Default: "de-DE", Supported: nil},
 				{Default: "pt-PT", Supported: []string{"de-DE"}},
