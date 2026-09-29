@@ -63,17 +63,16 @@ jobs:
           python3 scripts/check_public_module.py "$version" > "$RUNNER_TEMP/public-module.json"
           echo "the example compiled, tested and vetted against $version with no replace directive"
 
-      # Gates on the whole report, because the line has no accepted break from
-      # itself. Before v1.1.0 this step was continue-on-error: apidiff found 71
-      # changes against v1.0.0 and every run was red, which is a check that has
-      # stopped working — an accidental break arrived in the same red step as fifty
-      # reviewed ones. Those 71 shipped in v1.1.0 rather than being reverted, so the
-      # supported tag now carries them and the comparison starts clean.
-      # scripts/PUBLIC-API.md documents --baseline for a line that accumulates
-      # accepted breaks again before its next major.
+      # Gates on the delta from the recorded line. Before v1.1.0 this step was
+      # continue-on-error: apidiff found 71 changes against v1.0.0 and every run
+      # was red, which is a check that has stopped working. v1.1.0 started clean,
+      # and the three-surfaces refactor then made it red the same way, 18 reviewed
+      # breaks deep. Those are recorded in scripts/public-api-v1.1-accepted.json,
+      # and ci.yml now runs this same comparison on every pull request, so what
+      # this step finds is only what reached main some other way.
       - name: Exported surface against the supported tag
         run: |
-          python3 scripts/check_public_api.py v1.1.0 HEAD > "$RUNNER_TEMP/public-api.json"
+          python3 scripts/check_public_api.py v1.1.0 HEAD --baseline scripts/public-api-v1.1-accepted.json > "$RUNNER_TEMP/public-api.json"
 
       # The scripts print a JSON report and remove their own fixtures and caches.
       # The job log carries the report; no artifact action is referenced here

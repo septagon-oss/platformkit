@@ -28,14 +28,15 @@ python3 scripts/check_public_api.py v1.1.0 HEAD --baseline <accepted-breaks.json
 python3 scripts/check_public_api.py v1.1.0 HEAD --baseline <accepted-breaks.json> --write-baseline
 ```
 
-**The v1.1.0 line has no baseline file, deliberately**, which is why the example
-above names a path rather than pointing at one. v1.1.0 is the contract, so
-[v1.0.0 → HEAD](../CHANGELOG.md#110---2026-09-18) is history rather than something to
-excuse line by line, and
-[.gitea/workflows/public-consumption.yml](../.gitea/workflows/public-consumption.yml)
-compares `v1.1.0 HEAD` with no baseline at all — a clean line, and any new break
-fails the step. The mechanism stays documented because a line accumulates accepted
-breaks faster than it gets a major release.
+**The v1.1.0 line's baseline is [public-api-v1.1-accepted.json](public-api-v1.1-accepted.json).**
+v1.1.0 started clean; the three-surfaces refactor ([ADR 0017](../docs/adr/0017-three-surfaces-by-path.md)),
+the session cookie's new name and the user handle then broke 18 exported
+declarations on purpose, and the file records them, each attributed in the commit
+that wrote it. Both `ci.yml` workflows run the comparison against it on every pull
+request, and [.gitea/workflows/public-consumption.yml](../.gitea/workflows/public-consumption.yml)
+runs it on its schedule. A pull request that breaks an exported declaration fails
+that step until the break is recorded, and a reviewer reads the recording as its
+own commit.
 
 The baseline is a reviewed list of the changes already accepted on this line. It
 fails on a reported line the file does not name, and on a named line the report no
@@ -46,8 +47,9 @@ baseline narrows what fails the step and hides nothing: with it, this comparison
 a gate. Re-recording is `--write-baseline`, and its diff is the review: run
 it deliberately and commit it alone, the way a ceiling change is committed alone.
 
-Keep the plain comparison out of `make check`: it resolves published revisions, so
-it needs the network and a supported tag, and neither belongs in a gate that must
-run offline. What this does not do is close the [release decision](../RELEASE.md#choose-the-compatible-release-line):
+Keep the comparison out of `make check`: it resolves dependencies through the Go
+proxy and needs the supported tag in the clone, and neither belongs in a gate that
+must run offline. CI has both, which is why the pull-request gate is a CI step.
+What this does not do is close the [release decision](../RELEASE.md#choose-the-compatible-release-line):
 publishing a stable release ends a baseline, and the `/v2` migration is still owed.
 Do not suppress the expected report to make a step pass.

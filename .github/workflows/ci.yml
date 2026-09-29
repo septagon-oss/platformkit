@@ -42,6 +42,8 @@ jobs:
       # action that moves is arbitrary code in a job holding this repository's
       # token. release.yml pins the same way and RELEASE.md says so.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the API gate compares with the v1.1.0 tag
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -115,6 +117,14 @@ jobs:
 
       - name: make e2e
         run: make e2e
+
+      # The exported API changes only as recorded. A pull request that breaks an
+      # outside caller either records the break in the accepted-breaks file, as its
+      # own reviewed build(api) commit, or does not merge; one that stops a recorded
+      # break removes its line. Three seconds, and it is the difference between a
+      # break reviewed in its pull request and one found by next Tuesday's report.
+      - name: The public API changes only as recorded
+        run: python3 scripts/check_public_api.py v1.1.0 HEAD --baseline scripts/public-api-v1.1-accepted.json > /dev/null
 
       # Last, and deliberately. A ceiling that rose is a decision for an owner
       # to review, not a reason to stop the job before it has said whether the
