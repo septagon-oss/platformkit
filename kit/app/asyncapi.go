@@ -2,7 +2,7 @@
 // document.
 //
 // It is a rendering, and only ever a rendering: the module manifest is what
-// says which events exist and what they carry (module.Module.Events, kit/module),
+// says which events exist and what they carry (module.Module.Declared, kit/module),
 // and this walks that list. Nothing here can add an event, and nothing outside
 // the Go program has to trust a hand-maintained document that may have drifted
 // from the code that publishes. apps/platformkit checks the bytes in as a

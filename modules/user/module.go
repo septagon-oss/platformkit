@@ -127,7 +127,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
-		Events: []events.Declared{
+		Declared: []events.Declared{
 			// The three kit/rest publishes carry the entity itself, which is
 			// what Spec.emit marshals; every other name carries the payload
 			// type beside it in contracts.

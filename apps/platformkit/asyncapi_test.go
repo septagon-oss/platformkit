@@ -64,7 +64,7 @@ func TestEveryDeclaredEventIsInTheDocumentAndCovered(t *testing.T) {
 	var declared []events.Declared
 	seen := map[string]bool{}
 	for _, m := range mods {
-		for _, e := range m.Events {
+		for _, e := range m.Emits() {
 			if !seen[e.Name] {
 				seen[e.Name], declared = true, append(declared, e)
 			}
@@ -159,7 +159,7 @@ func TestEveryDeclaredEventIsInTheDocumentAndCovered(t *testing.T) {
 // the document loses exactly that channel. The generator reads the manifests and
 // nothing else — there is no list of events beside them.
 func TestTheDocumentIsRenderedFromTheManifestsAlone(t *testing.T) {
-	body, err := app.AsyncAPI([]module.Module{{Name: "ledger", Events: []events.Declared{
+	body, err := app.AsyncAPI([]module.Module{{Name: "ledger", Declared: []events.Declared{
 		{Name: "ledger.entry_posted"},
 	}}})
 	if err != nil {

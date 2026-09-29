@@ -110,7 +110,7 @@ func hello() module.Module {
 	return module.Module{
 		Name:        "hello",
 		Permissions: []module.Permission{{Key: "note:write"}},
-		Events:      []events.Declared{{Name: "hello.note_written"}},
+		Declared:    []events.Declared{{Name: "hello.note_written"}},
 		Nav:         []module.NavEntry{{Label: "Notes", Screen: "hello/notes", Permission: "note:write"}},
 		// Each owner starts its own numbering at 1.
 		Migrations: fstest.MapFS{
@@ -411,7 +411,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 		return module.Module{
 			Name:        "shop",
 			Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
-			Events:      declared,
+			Declared:    declared,
 			Routes: func(s httpx.Surfaces) {
 				rest.Spec[*Widget]{
 					Module: "shop", Entity: "widget", Path: "/widgets",
@@ -450,6 +450,26 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+
+	// Naming them without naming the payload is enough too. This gate asks only
+	// whether the manifest promised the event; the payload type is what the
+	// outbox checks and the document carries, and a module that emits a payload
+	// the kernel cannot describe still tells a subscriber what will arrive.
+	cfg, opts = compose(t)
+	named := shop(nil)
+	named.Events = []string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"}
+	a, err = New(t.Context(), cfg, []module.Module{named}, opts)
+	if err != nil {
+		t.Fatalf("New with a name-only manifest: %v", err)
+	}
+	ctx, cancel = context.WithCancel(t.Context())
+	stopped = make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run with a name-only manifest: %v", err)
+	}
 }
 
 // TestWorkerRelaysAndAnswersItsProbes is the worker role end to end: it
@@ -479,8 +499,8 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 	handled := make(chan events.Event, 4)
 	ledger := module.Module{
-		Name:   "ledger",
-		Events: []events.Declared{{Name: "ledger.entry_written"}},
+		Name:     "ledger",
+		Declared: []events.Declared{{Name: "ledger.entry_written"}},
 		Subscriptions: []events.Subscription{{
 			Module: "ledger", Name: "ledger.entry_written",
 			Handler: func(_ context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
@@ -634,7 +654,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	widgets := module.Module{
 		Name:        "shop",
 		Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
-		Events:      []events.Declared{{Name: "shop.widget.created"}, {Name: "shop.widget.updated"}, {Name: "shop.widget.deleted"}},
+		Declared:    []events.Declared{{Name: "shop.widget.created"}, {Name: "shop.widget.updated"}, {Name: "shop.widget.deleted"}},
 		Routes: func(r httpx.Surfaces) {
 			rest.Spec[*Widget]{
 				Module: "shop", Entity: "widget", Path: "/widgets",

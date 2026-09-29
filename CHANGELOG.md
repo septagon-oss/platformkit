@@ -12,18 +12,18 @@ is `platformkit.<tenant>.<module>.<event>`: a tenant's backlog is an address, a
 durable can be per tenant, and a bridge routes a customer without opening the
 payload. The envelope decodes the pre-envelope shape and never writes it; a
 subscription answers both addresses while that window is open, because a NATS
-`*` is one token and an unread decoder is not a window. `module.Module.Events`
+`*` is one token and an unread decoder is not a window. `module.Module.Declared`
 names the Go type of each payload; that projection is the JSON Schema the outbox
 refuses a mis-shaped payload against — a member the projection cannot describe
 constrains nothing, and it no longer panics the door either — and the AsyncAPI
 3.0.0 document `apps/platformkit/testdata/asyncapi.json` is rendered from it, as
 each message's `payload` where a validator reads, and checked in by
-`make check`. A manifest outside this repository has one migration to make: where it
-listed names (`Events: []string{contracts.EventChanged}`) it now lists declarations
-(`Events: []events.Declared{events.Declare[contracts.Changed](contracts.EventChanged)}`),
-and it fails to build until it does, because a payload contract is meant to break at the
-compiler and not in a subscriber's decoder. The product-side manifests move in the
-repositories that own them. `events.Replay` is the operator's verb for a terminal delivery, and
+`make check`. A manifest outside this repository keeps the list it already wrote:
+`Events` still takes event names, and `Declared` is the field that takes
+`events.Declare[contracts.Changed](contracts.EventChanged)` beside them. An event named
+without a type is published unchecked and counted as uncovered — the state a nil payload
+already meant — and a module that wants its payload in the document, and refused at the
+outbox before the row is written, declares it. `events.Replay` is the operator's verb for a terminal delivery, and
 `kit/trace` carries the W3C context from a request into the outbox row — it
 collects and exports nothing, which the metrics pillar still owns. That carrier now
 bounds the caller's `tracestate`: `trace.Parse` keeps whole entries up to

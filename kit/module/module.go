@@ -40,18 +40,35 @@ type Module struct {
 	// Permissions are the permission keys this module defines, "<resource>:<action>".
 	Permissions []Permission
 
-	// Events are the events this module emits, each named with the Go type of
+	// Events are the events this module emits, by name: "<module>.<event>",
+	// inside the module's own namespace. A name is all the kernel needs to
+	// refuse a route that would publish what no manifest promised, to name a
+	// subscription's subject, and to expand a SubscribeAll module — so a module
+	// whose payload it cannot describe (a hand-built document, a type that
+	// marshals itself) still gets to emit by naming the event here.
+	//
+	// Every event a rest.Spec would publish has to appear in this list or in
+	// Declared, or the app refuses to start: a module that emits something it
+	// never promised is an integration nobody can find. Module.Emits is the one
+	// list that says so; nothing reads these two fields separately.
+	Events []string
+
+	// Declared are the events this module emits, each named with the Go type of
 	// its payload: events.Declare[contracts.Invited](contracts.EventInvited).
-	// Every event a rest.Spec would publish has to appear here, or the app
-	// refuses to start: a module that emits something it never promised is an
-	// integration nobody can find.
+	// It is the typed form of Events, and the one a module composes from this
+	// repository's own contracts uses.
 	//
 	// The payload type is not decoration. It is projected into a JSON Schema
 	// (kit/events/schema.go), the outbox refuses a payload that is not one
 	// before the row is written, and the composition's AsyncAPI document is
-	// emitted from it (kit/app/asyncapi.go). A module that emits a payload the
-	// kernel cannot describe leaves Payload nil and says why.
-	Events []events.Declared
+	// emitted from it (kit/app/asyncapi.go). An event named only in Events is
+	// the same list item with Payload nil, which is what events.Declared calls
+	// a payload the kernel does not describe: published unchecked, listed as
+	// uncovered rather than pretended to be.
+	//
+	// A name given in both fields is one event, described — Emits keeps the
+	// typed item and drops the bare name.
+	Declared []events.Declared
 
 	// Subscriptions are the events this module handles. The worker role
 	// subscribes each one; the name has to be an event some module emits.
@@ -109,6 +126,32 @@ type Module struct {
 	// module segment and the middleware chain are the kernel's to compose and
 	// its to refuse. See httpx.Surfaces.
 	Routes func(r httpx.Surfaces)
+}
+
+// Emits returns everything the module says it emits, in the one shape the
+// kernel checks: each typed declaration as it stands, and each bare name in
+// Events as that declaration with no payload type, which is the state
+// events.Declared reserves for a payload the kernel cannot describe. A name
+// given both ways is one event and appears once, as the typed declaration.
+//
+// Validate, Expand, the coverage line and the AsyncAPI document all read this
+// method rather than either field, so the two spellings of a manifest's event
+// list cannot disagree about what the composition emits.
+func (m Module) Emits() []events.Declared {
+	if len(m.Events) == 0 {
+		return m.Declared
+	}
+	typed := make(map[string]bool, len(m.Declared))
+	for _, d := range m.Declared {
+		typed[d.Name] = true
+	}
+	out := make([]events.Declared, 0, len(m.Declared)+len(m.Events))
+	for _, name := range m.Events {
+		if !typed[name] {
+			out = append(out, events.Declared{Name: name})
+		}
+	}
+	return append(out, m.Declared...)
 }
 
 // Permission is one thing a role can be granted.
@@ -218,7 +261,7 @@ func Validate(mods []Module) error {
 			add("module %q: adopts migration history and declares no Migrations", m.Name)
 		}
 
-		for _, e := range m.Events {
+		for _, e := range m.Emits() {
 			if !events.ValidName(e.Name) {
 				add("module %q: event %q is not %q", m.Name, e.Name, "<name>.<event>")
 				continue
@@ -244,7 +287,7 @@ func Validate(mods []Module) error {
 		emitted[e] = true
 	}
 	for _, m := range mods {
-		for _, e := range m.Events {
+		for _, e := range m.Emits() {
 			emitted[e.Name] = true
 		}
 	}
@@ -325,7 +368,7 @@ func Expand(mods []Module) []Module {
 		}
 	}
 	for _, m := range mods {
-		for _, e := range m.Events {
+		for _, e := range m.Emits() {
 			if !seen[e.Name] {
 				seen[e.Name], all = true, append(all, e.Name)
 			}

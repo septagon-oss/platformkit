@@ -121,7 +121,7 @@ func Module(deps Deps) module.Module {
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
-		Events:      contracts.Events,
+		Declared:    contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Tasks", Screen: "task/tasks", Permission: contracts.PermissionTaskRead},
 		},

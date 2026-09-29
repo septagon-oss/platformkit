@@ -121,7 +121,7 @@ const (
 )
 
 // Event is the full name of one of this Spec's events, "<module>.<entity>.<verb>".
-// A module lists these in its manifest's Events, and kit/app refuses to start
+// A module lists these in its manifest's Declared, and kit/app refuses to start
 // when a Spec would publish one that nothing declared.
 func (s Spec[T]) Event(verb string) string { return s.Module + "." + s.Entity + "." + verb }
 

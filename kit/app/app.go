@@ -694,7 +694,7 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 // event_schema_coverage would count events it does not.
 var kernelModule = module.Module{
 	Name: module.KernelName,
-	Events: []events.Declared{
+	Declared: []events.Declared{
 		events.Declare[events.ReplayRecord](events.EventReplayed),
 		events.Declare[Denied](EventDenied),
 	},
@@ -707,7 +707,7 @@ func declaredEvents(mods []module.Module) []events.Declared {
 	var out []events.Declared
 	seen := map[string]bool{}
 	for _, m := range mods {
-		for _, e := range m.Events {
+		for _, e := range m.Emits() {
 			if !seen[e.Name] {
 				seen[e.Name], out = true, append(out, e)
 			}
@@ -722,7 +722,7 @@ func declaredEvents(mods []module.Module) []events.Declared {
 func validateEvents(api *httpx.API, mods []module.Module) error {
 	declared := map[string]bool{}
 	for _, m := range mods {
-		for _, e := range m.Events {
+		for _, e := range m.Emits() {
 			declared[e.Name] = true
 		}
 	}

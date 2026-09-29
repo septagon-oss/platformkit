@@ -53,7 +53,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,
-		Events: []events.Declared{
+		Declared: []events.Declared{
 			events.Declare[contracts.Created](contracts.EventCreated),
 			events.Declare[contracts.Suspended](contracts.EventSuspended),
 			events.Declare[contracts.HostAdded](contracts.EventHostAdded),

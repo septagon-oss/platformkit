@@ -36,7 +36,7 @@ type Declared struct {
 
 // Declare names an event and the Go type of its payload:
 //
-//	Events: []events.Declared{events.Declare[contracts.Invited](contracts.EventInvited)}
+//	Declared: []events.Declared{events.Declare[contracts.Invited](contracts.EventInvited)}
 //
 // The type argument is the only way to say it that the compiler can check: a
 // module that renames its payload type finds every one of its declarations

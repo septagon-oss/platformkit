@@ -18,13 +18,13 @@ func TestValidateNamesEveryViolation(t *testing.T) {
 		{
 			Name:        "billing",
 			Permissions: []Permission{{Key: "invoice:read"}},
-			Events:      []events.Declared{{Name: "billing.invoice_issued"}},
+			Declared:    []events.Declared{{Name: "billing.invoice_issued"}},
 			Nav:         []NavEntry{{Label: "Invoices", Screen: "billing/invoices", Permission: "invoice:read"}},
 		},
 		{
 			Name:        "billing",
 			Permissions: []Permission{{Key: "invoice:read"}},
-			Events:      []events.Declared{{Name: "accounts.user_created"}},
+			Declared:    []events.Declared{{Name: "accounts.user_created"}},
 			Nav:         []NavEntry{{Label: "Reports", Screen: "billing/reports", Permission: "report:read"}},
 		},
 	}
@@ -51,7 +51,7 @@ func TestValidateAcceptsAWellFormedComposition(t *testing.T) {
 		{
 			Name:        "accounts",
 			Permissions: []Permission{{Key: "user:read"}},
-			Events:      []events.Declared{{Name: "accounts.user_created"}, {Name: "accounts.user_deleted"}},
+			Declared:    []events.Declared{{Name: "accounts.user_created"}, {Name: "accounts.user_deleted"}},
 		},
 		{
 			Name: "billing",
@@ -82,7 +82,7 @@ func TestValidateRejectsMalformedTokens(t *testing.T) {
 	err := Validate([]Module{{
 		Name:        "Billing",
 		Permissions: []Permission{{Key: "Invoice.Read"}},
-		Events:      []events.Declared{{Name: "nodot"}},
+		Declared:    []events.Declared{{Name: "nodot"}},
 	}})
 	if err == nil {
 		t.Fatal("Validate accepted a malformed module")
@@ -106,7 +106,7 @@ func TestValidateChecksSubscriptionsAgainstWhatIsEmitted(t *testing.T) {
 
 	// A subscription to another module's event is the ordinary case and passes.
 	ok := []Module{
-		{Name: "billing", Events: []events.Declared{{Name: "billing.invoice_issued"}}},
+		{Name: "billing", Declared: []events.Declared{{Name: "billing.invoice_issued"}}},
 		{Name: "ledger", Subscriptions: []events.Subscription{
 			{Module: "ledger", Name: "billing.invoice_issued", Handler: handler},
 		}},
@@ -116,7 +116,7 @@ func TestValidateChecksSubscriptionsAgainstWhatIsEmitted(t *testing.T) {
 	}
 
 	bad := []Module{
-		{Name: "billing", Events: []events.Declared{{Name: "billing.invoice_issued"}}},
+		{Name: "billing", Declared: []events.Declared{{Name: "billing.invoice_issued"}}},
 		{Name: "ledger", Subscriptions: []events.Subscription{
 			{Module: "ledger", Name: "billing.invoice_voided", Handler: handler},
 			{Module: "ledger", Name: "billing.invoice_issued"},
@@ -166,9 +166,9 @@ func TestSubscribeAllHearsAModuleComposedAfterIt(t *testing.T) {
 		SubscribeAll:  true,
 		Subscriptions: []events.Subscription{{Module: "trail", Handler: record}},
 	}
-	first := Module{Name: "first", Events: []events.Declared{{Name: "first.happened"}}}
+	first := Module{Name: "first", Declared: []events.Declared{{Name: "first.happened"}}}
 	// After the subscriber in the list, which is the case that used to be lost.
-	last := Module{Name: "last", Events: []events.Declared{{Name: "last.happened"}, {Name: "last.again"}}}
+	last := Module{Name: "last", Declared: []events.Declared{{Name: "last.happened"}, {Name: "last.again"}}}
 
 	got := Expand([]Module{first, trail, last})
 	if len(got) != 3 {
@@ -236,20 +236,74 @@ func TestSubscribeAllTakesExactlyOneSubscription(t *testing.T) {
 // for a module's name would be the same thing backwards.
 func TestTheKernelManifestIsTheOnlyOneThatMayEmitAKernelEvent(t *testing.T) {
 	t.Run("the kernel's own manifest may declare one", func(t *testing.T) {
-		if err := Validate([]Module{{Name: KernelName, Events: []events.Declared{{Name: KernelEvents[0]}}}}); err != nil {
+		if err := Validate([]Module{{Name: KernelName, Declared: []events.Declared{{Name: KernelEvents[0]}}}}); err != nil {
 			t.Errorf("Validate refused the kernel's own event: %v", err)
 		}
 	})
 	t.Run("another module may not", func(t *testing.T) {
-		err := Validate([]Module{{Name: "billing", Events: []events.Declared{{Name: KernelEvents[0]}}}})
+		err := Validate([]Module{{Name: "billing", Declared: []events.Declared{{Name: KernelEvents[0]}}}})
 		if err == nil || !strings.Contains(err.Error(), "is not namespaced by the module that emits it") {
 			t.Errorf("Validate = %v, want the namespace refusal for a module that emits a kernel event", err)
 		}
 	})
 	t.Run("and the kernel's manifest may not reach for a module's", func(t *testing.T) {
-		err := Validate([]Module{{Name: KernelName, Events: []events.Declared{{Name: "billing.invoice_issued"}}}})
+		err := Validate([]Module{{Name: KernelName, Declared: []events.Declared{{Name: "billing.invoice_issued"}}}})
 		if err == nil || !strings.Contains(err.Error(), "is not namespaced by the module that emits it") {
 			t.Errorf("Validate = %v, want the namespace refusal for a kernel manifest outside KernelEvents", err)
+		}
+	})
+}
+
+// TestAManifestMayNameAnEventWithoutNamingItsPayload: Events is the name-only
+// spelling of the same list. A module whose payload the kernel cannot describe —
+// a hand-built document, a type that marshals itself — still owns its events, is
+// namespace-checked on them, is counted as an emitter, and is expanded for a
+// SubscribeAll subscriber, because every one of those rules reads Module.Emits
+// rather than either field. A manifest that reached for another module's name
+// here would be the same violation the typed spelling refuses, and a name given
+// both ways is one event, described.
+func TestAManifestMayNameAnEventWithoutNamingItsPayload(t *testing.T) {
+	named := Module{Name: "work", Events: []string{"work.task_changed"}}
+	if err := Validate([]Module{named}); err != nil {
+		t.Errorf("Validate refused a manifest that names its event without its payload: %v", err)
+	}
+	if got := events.Names(named.Emits()); !slices.Contains(got, "work.task_changed") {
+		t.Errorf("Emits returned %v, want the bare name among what the module emits", got)
+	}
+
+	err := Validate([]Module{{Name: "work", Events: []string{"billing.invoice_issued"}}})
+	if err == nil || !strings.Contains(err.Error(), "is not namespaced by the module that emits it") {
+		t.Errorf("Validate = %v, want the namespace refusal for a bare name outside the module", err)
+	}
+
+	t.Run("a bare name reaches a SubscribeAll subscriber", func(t *testing.T) {
+		listener := Module{
+			Name:          "trail",
+			SubscribeAll:  true,
+			Subscriptions: []events.Subscription{{Module: "trail", Handler: func(context.Context, db.Tx[db.Tenant], events.Event) error { return nil }}},
+		}
+		got := Expand([]Module{named, listener})
+		var heard []string
+		for _, s := range got[1].Subscriptions {
+			heard = append(heard, s.Name)
+		}
+		if !slices.Contains(heard, "work.task_changed") {
+			t.Errorf("the subscriber hears %v, which does not include the event named without a payload", heard)
+		}
+	})
+
+	t.Run("a name given both ways is one event, described", func(t *testing.T) {
+		both := Module{
+			Name:     "work",
+			Events:   []string{"work.task_changed"},
+			Declared: []events.Declared{events.Declare[string]("work.task_changed")},
+		}
+		emitted := both.Emits()
+		if len(emitted) != 1 {
+			t.Fatalf("Emits returned %d events for one name given twice, want one", len(emitted))
+		}
+		if emitted[0].Payload == nil {
+			t.Error("the bare name stood in for the typed declaration that was given beside it")
 		}
 	})
 }
