@@ -118,7 +118,7 @@ func TestStatusRolePairsClearTheFloorOnTheShippedPalette(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, pair := range design.StatusRolePairs() {
-		got := design.Contrast(values[pair.Foreground], values[pair.Background])
+		got := design.Contrast(values[design.RoleCSSName(pair.Foreground)], values[design.RoleCSSName(pair.Background)])
 		if got < pair.Min {
 			t.Errorf("%s on %s measures %.2f:1, below the %.1f:1 the body text this role paints requires",
 				pair.Foreground, pair.Background, got, pair.Min)

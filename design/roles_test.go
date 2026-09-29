@@ -37,7 +37,9 @@ func TestTheRoleHalfRefusesAPairTheTokenHalfAccepts(t *testing.T) {
 
 // Every role a gated pair names has to be a role the layer declares: a pair that
 // drifted away from the declarations would be measured against nothing, and
-// CheckRoles would say the layer is legible.
+// CheckRoles would say the layer is legible. The list names roles as roles.go
+// declares them and the gate resolves the name a sheet emits, so this is the same
+// translation CheckRoles performs, not a spelling the test invents.
 func TestGatedRolePairsMeasureDeclaredRoles(t *testing.T) {
 	t.Parallel()
 	declared := map[string]bool{}
@@ -54,7 +56,7 @@ func TestGatedRolePairsMeasureDeclaredRoles(t *testing.T) {
 	}
 	for _, pair := range gated {
 		for _, name := range [...]string{pair.Foreground, pair.Background} {
-			if !declared[name] {
+			if !declared[design.RoleCSSName(name)] {
 				t.Errorf("the gate measures %s, which the layer does not declare", name)
 			}
 		}
@@ -108,5 +110,52 @@ func TestCheckRolesRefusesACallerThatNamesNoPair(t *testing.T) {
 	err := design.Default().Dark.CheckRoles(design.RoleLayer(), nil)
 	if err == nil || !strings.Contains(err.Error(), "no pair") {
 		t.Errorf("an empty pair list reached the colours: %v", err)
+	}
+}
+
+// TestCheckRolesRefusesARoleNeitherVocabularyNames is the price of accepting a
+// pair written in either vocabulary: a name in neither still has to be refused.
+// A role that resolved to nothing would leave the pair measured against the zero
+// colour, which reads as black on black and would be refused as 1.00:1 for the
+// wrong reason — and a token name is exactly that mistake, since the layer names
+// roles and a theme names tokens.
+func TestCheckRolesRefusesARoleNeitherVocabularyNames(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"fg-nowhere", "--pk-role-fg-nowhere", "text-muted", ""} {
+		err := design.Default().Light.CheckRoles(design.RoleLayer(), []design.RolePair{
+			{Foreground: name, Background: "surface-primary", Min: design.MinContrast},
+		})
+		if err == nil || !strings.Contains(err.Error(), "does not define") {
+			t.Errorf("CheckRoles accepted the role name %q: %v", name, err)
+		}
+	}
+}
+
+// TestCheckRolesMeasuresTheSamePairInEitherSpelling is why the two vocabularies
+// are one pair rather than two gates: the foreground a component writes and the
+// foreground a stylesheet emits have to agree, refusal and all, or a palette could
+// be steered by how a caller happened to spell a role.
+func TestCheckRolesMeasuresTheSamePairInEitherSpelling(t *testing.T) {
+	t.Parallel()
+	pair, err := design.FromSeed(design.Seed{Sector: "insurance", Name: "Meridian"})
+	if err != nil {
+		t.Fatalf("FromSeed: %v", err)
+	}
+	pair.Dark.SurfacePrimary = "#2e2920"
+	measured := func(foreground, background string) error {
+		return pair.Dark.CheckRoles(design.RoleLayer(), []design.RolePair{
+			{Foreground: foreground, Background: background, Min: design.MinContrast},
+		})
+	}
+	declared := measured("fg-brand", "surface-brand-soft")
+	emitted := measured("--pk-role-fg-brand", "--pk-role-surface-brand-soft")
+	if declared == nil || emitted == nil {
+		t.Fatalf("the warm card surface was meant to move the badge's own label under the floor: declared %v, emitted %v", declared, emitted)
+	}
+	if declared.Error() != emitted.Error() {
+		t.Errorf("one pair in two spellings gave two refusals:\n%v\n%v", declared, emitted)
+	}
+	if !strings.Contains(declared.Error(), "--pk-role-fg-brand") {
+		t.Errorf("the refusal did not name the property a reader finds in the sheet: %v", declared)
 	}
 }

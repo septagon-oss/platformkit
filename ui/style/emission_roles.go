@@ -38,8 +38,24 @@ func RoleColors() []design.ColorToken { return design.RoleLayer() }
 // BodyRolePairs returns the body-size text pairs this package's roles compose on
 // a theme's own surfaces, for design.Theme.CheckRoles. A caller that emits a
 // stylesheet hands these over with RoleColors: the token gate says what a theme
-// sets, these say what a reader is shown.
-func BodyRolePairs() []design.RolePair { return design.BodyRolePairs() }
+// sets, these say what a reader is shown. design declares them in the layer's own
+// vocabulary; these are the same pairs spelled in the names this package emits,
+// because the sheet a caller gates is written in them — and
+// TestRolePairMirrorsSpellTheEmittedNames pins that the two lists are one list.
+func BodyRolePairs() []design.RolePair { return emittedRolePairs(design.BodyRolePairs()) }
+
+// emittedRolePairs re-spells design's pair lists in the names this package
+// renders: the same pairs, the same floors, each role under the --pk-role-
+// property a browser paints. The translation is design's own, so no second copy
+// of the naming rule lives here.
+func emittedRolePairs(pairs []design.RolePair) []design.RolePair {
+	out := make([]design.RolePair, len(pairs))
+	for i, pair := range pairs {
+		pair.Foreground, pair.Background = design.RoleCSSName(pair.Foreground), design.RoleCSSName(pair.Background)
+		out[i] = pair
+	}
+	return out
+}
 
 // TintedRolePairs returns the body pairs whose background the layer derives by
 // mixing a foreground into a surface — design.SoftTintPercent of the accent into
@@ -48,14 +64,14 @@ func BodyRolePairs() []design.RolePair { return design.BodyRolePairs() }
 // certifies a generated accent against that tint, and design.Client.Resolve
 // gates a client's override against it, so a pair that reaches this package
 // already holds it; a caller that gates what it ships gates both lists anyway.
-func TintedRolePairs() []design.RolePair { return design.TintedRolePairs() }
+func TintedRolePairs() []design.RolePair { return emittedRolePairs(design.TintedRolePairs()) }
 
 // GatedRolePairs is the whole gated set: BodyRolePairs, TintedRolePairs and
 // StatusRolePairs. The
 // seam where a Pair becomes a stylesheet, an export or a Storybook hands these
 // to design.Pair.CheckRoles with RoleColors, which is the same pair of arguments
 // design.Client.Resolve reads — the two halves of one gate.
-func GatedRolePairs() []design.RolePair { return design.GatedRolePairs() }
+func GatedRolePairs() []design.RolePair { return emittedRolePairs(design.GatedRolePairs()) }
 
 // StatusRolePairs returns the body pairs a reader is shown on a status tint: each
 // tone on its own badge, and the muted line a tinted panel carries — clMediaFailed
@@ -63,7 +79,7 @@ func GatedRolePairs() []design.RolePair { return design.GatedRolePairs() }
 // line, so the tint is certified against both. design certifies a generated tint
 // against that muted tone, and design.Client.Resolve gates a client's override
 // against it, so a pair that reaches this package already holds it.
-func StatusRolePairs() []design.RolePair { return design.StatusRolePairs() }
+func StatusRolePairs() []design.RolePair { return emittedRolePairs(design.StatusRolePairs()) }
 
 // roleVar renders the var() reference utility rules use for a color role.
 func roleVar(c Color) string { return "var(--pk-role-" + string(c) + ")" }
