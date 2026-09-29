@@ -429,7 +429,9 @@ inline declaration, guarded to `#rrggbb`, and unlayered is what lets a tenant
 palette outrank every layer. The vocabulary is `components.Hooks` for the
 components' markup and `renderedHooks` for the shell, the generated screens and
 the gallery, and a test refuses either list a rendered name it omits. Deleting a
-component should not leave an independently maintained stylesheet behind.
+component should not leave an independently maintained stylesheet behind. The candidates
+this shape was chosen from, each on the four questions the brief asked, are
+[ADR 0018](docs/adr/0018-cascade-layers-decide-precedence.md).
 
 [css.Sheet](ui/css/css.go) retains ordinary rule contribution order; only
 adjacent equal selectors share a block. Repeated declarations remain ordered
