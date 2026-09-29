@@ -147,14 +147,17 @@ func (t Theme) Check() error {
 
 // RolePair is one foreground and one background role a stylesheet paints text
 // with, and the floor that pair must reach. Roles are the layer a browser reads
-// (the --pk-role-* declarations ui/style emits, some of them derived from tokens
-// rather than equal to one); tokens are the layer a theme sets. Measuring only
-// the token layer certifies colours nobody paints, which is how a palette that
-// passes a gate can still paint text nobody can read.
+// (the --pk-role-* declarations, some of them derived from tokens rather than
+// equal to one); tokens are the layer a theme sets. Measuring only the token
+// layer certifies colours nobody paints, which is how a palette that passes a
+// gate can still paint text nobody can read.
 //
-// This package names no role: the owner of the role layer hands over the
-// declarations it emits and the pairs it composes, so design keeps importing
-// nothing of ui and stays the one place a ratio is measured.
+// The declarations these pairs name are owned by this package (roles.go) and
+// rendered by ui/style and ui/export, so the ratio is measured in one place and
+// a caller hands over nothing it assembled itself. CheckRoles still takes both
+// arguments rather than reading the defaults: a caller that emits its own layer
+// gates that layer, and a role name this package does not declare stays visible
+// as an argument instead of being invented mid-measurement.
 type RolePair struct {
 	Foreground, Background string
 	// Min is the floor, usually MinContrast or MinContrastGraphic.
@@ -167,6 +170,12 @@ type RolePair struct {
 // first, for the reason Theme.Check gives: a role carrying alpha has no ratio
 // until something is composited behind it.
 func (t Theme) CheckRoles(roles []ColorToken, pairs []RolePair) error {
+	// Guard the whole call, not one pair: a caller that hands over an empty list
+	// measured nothing and would be told the layer is legible. Checked before any
+	// colour is resolved, so the failure names the missing argument.
+	if len(pairs) == 0 {
+		return fmt.Errorf("%s: role layer: no pair was handed over to measure", t.Name)
+	}
 	values, err := ResolveColors(t.Tokens(), roles)
 	if err != nil {
 		return fmt.Errorf("%s: role layer: %w", t.Name, err)
