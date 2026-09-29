@@ -224,11 +224,49 @@ var tintedRolePairs = []RolePair{
 // layer derives from a theme's.
 func TintedRolePairs() []RolePair { return slices.Clone(tintedRolePairs) }
 
+// statusRolePairs names the body pairs painted on a status tint, which is
+// neither a theme's plain surface nor a surface this layer mixes: it is the
+// fourth ground a component raises itself onto. A status tone is not only a
+// badge — clBadgeTone and clAlertVariant paint each tone on its own soft ground
+// at text-sm — and a tint carries copy that is not a status tone at all:
+// clMediaFailed gives a media panel the warning ground and mediaAbsent fills
+// that panel with clEmptyDesc, the muted reason line, at 14 px. The token gate
+// measures a tone against the badge named after it (status-warning against
+// status-warningbg) and says nothing about that muted line, so an override of
+// text-muted or of the tint itself moved a sentence nobody measured: this is the
+// pair Client.Resolve was blind to.
+//
+// The muted tone is gated against all four tints rather than the one a panel
+// wears today, and the generator certifies all four, because the pair is one
+// merge deep on any of them — clMediaPanel picks the ground and clEmptyDesc picks
+// the colour, and an alert already takes arbitrary nodes in its action slot — and
+// a rule a reader can state in one sentence ("a body foreground on a status tint
+// is a measured pair") holds better than one that names a component. What is not
+// here stays out: fg-link and fg-disabled on a tint (round 7's deferred finding,
+// which belongs to the change that paints it), and the plain surfaces, which
+// bodyRolePairs already covers.
+var statusRolePairs = []RolePair{
+	{Foreground: "--pk-role-fg-success", Background: "--pk-role-surface-success-soft", Min: MinContrast},
+	{Foreground: "--pk-role-fg-warning", Background: "--pk-role-surface-warning-soft", Min: MinContrast},
+	{Foreground: "--pk-role-fg-danger", Background: "--pk-role-surface-danger-soft", Min: MinContrast},
+	{Foreground: "--pk-role-fg-info", Background: "--pk-role-surface-info-soft", Min: MinContrast},
+	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-success-soft", Min: MinContrast},
+	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-warning-soft", Min: MinContrast},
+	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-danger-soft", Min: MinContrast},
+	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-info-soft", Min: MinContrast},
+}
+
+// StatusRolePairs returns the body pairs a reader is shown on a status tint: the
+// tone on its own badge and the muted copy a tinted panel carries. Whoever gates
+// the layer a browser paints hands over BodyRolePairs, TintedRolePairs and these.
+func StatusRolePairs() []RolePair { return slices.Clone(statusRolePairs) }
+
 // GatedRolePairs returns the whole gated set: every body pair the semantic layer
-// composes, on a theme's own surfaces and on the surfaces it derives. One gate
-// belongs to one list, so the door that accepts a client's design and the seam
-// that turns a pair into a stylesheet read theirs from here rather than each
-// assembling its own copy — which is what made the two halves disagree.
+// composes, on a theme's own surfaces, on the surfaces it derives by mixing and
+// on the status tints. One gate belongs to one list, so the door that accepts a
+// client's design and the seam that turns a pair into a stylesheet read theirs
+// from here rather than each assembling its own copy — which is what made the
+// two halves disagree.
 func GatedRolePairs() []RolePair {
-	return append(BodyRolePairs(), TintedRolePairs()...)
+	return append(append(BodyRolePairs(), TintedRolePairs()...), StatusRolePairs()...)
 }

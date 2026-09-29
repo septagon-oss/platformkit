@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+**A status tint now carries the copy painted on it, not only the tone named after
+it.** Review round 7 found the kernel painting a body-size foreground on a ground
+no list measured: `clMediaFailed` gives a failed media panel
+`--pk-role-surface-warning-soft` and `mediaAbsent` fills that panel with
+`clEmptyDesc`, 14 px copy in `--pk-role-fg-muted`. `design.Default()` holds that
+pair at 5.47:1, which is why no page in this repository shows it. Of the 400 seeds
+round 7's case generates, one theme paints it under 4.5:1 (4.475:1 at
+`legal`/`Client211`); over the 1200 seeds round 7 probed, 6 themes fell under, and
+the same muted line on a danger- or info-tinted panel — one merge apart — fell
+under on 702 and 679 of them, to 3.57:1, while every gate in the repository stayed
+quiet. The gated layer gains a third list, `design.StatusRolePairs()`: each status
+tone on its own tint and `fg-muted` on all four. The generator repairs a tint
+against that muted tone, walking it toward white in a light theme and black in a
+dark one, and `design.FromSeed` now refuses its own output over `GatedRolePairs()`
+and not only over the 22 tokens — a generator that certified only tokens is what
+let the pair through. `Client.Resolve` therefore refuses `tokens: {light:
+{status-warningbg: "#d0ccbc"}}`, which holds every token pair and paints the
+muted line at 3.75:1. A generated client's warning, danger and info tints move a
+few units toward the page, and the DTCG digest pin is re-recorded for it; the
+shipped palette, the stylesheet and every token pair are unchanged.
+
 **The gate a client's file is validated by is now the gate a stylesheet is built with.**
 Review round 5 swept the override space this branch opened and found 98 of the 23115
 overrides `design.Client.Resolve` accepts have a gated role pair below the floor: a dark

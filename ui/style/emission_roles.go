@@ -50,11 +50,20 @@ func BodyRolePairs() []design.RolePair { return design.BodyRolePairs() }
 // already holds it; a caller that gates what it ships gates both lists anyway.
 func TintedRolePairs() []design.RolePair { return design.TintedRolePairs() }
 
-// GatedRolePairs is the whole gated set: BodyRolePairs and TintedRolePairs. The
+// GatedRolePairs is the whole gated set: BodyRolePairs, TintedRolePairs and
+// StatusRolePairs. The
 // seam where a Pair becomes a stylesheet, an export or a Storybook hands these
 // to design.Pair.CheckRoles with RoleColors, which is the same pair of arguments
 // design.Client.Resolve reads — the two halves of one gate.
 func GatedRolePairs() []design.RolePair { return design.GatedRolePairs() }
+
+// StatusRolePairs returns the body pairs a reader is shown on a status tint: each
+// tone on its own badge, and the muted line a tinted panel carries — clMediaFailed
+// gives a failed media panel the warning ground and fills it with the muted reason
+// line, so the tint is certified against both. design certifies a generated tint
+// against that muted tone, and design.Client.Resolve gates a client's override
+// against it, so a pair that reaches this package already holds it.
+func StatusRolePairs() []design.RolePair { return design.StatusRolePairs() }
 
 // roleVar renders the var() reference utility rules use for a color role.
 func roleVar(c Color) string { return "var(--pk-role-" + string(c) + ")" }
