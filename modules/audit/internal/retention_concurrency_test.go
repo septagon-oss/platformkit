@@ -21,7 +21,24 @@ import (
 func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 	for _, poolSize := range []int{2, 5, 16} {
 		t.Run(fmt.Sprint(poolSize), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			// Two clocks, because two things are being said. ctx is the subtest's own and covers
+			// the setup and the assertions: `db.Migrate` takes a database-wide advisory lock, and
+			// `make check` runs seventy-four packages against one server at once, so what stands in
+			// front of that lock is a property of the machine. Charged against the ten seconds that
+			// used to cover the whole subtest, a loaded host failed this case inside the migration —
+			// `db: migrate: lock: timeout: context deadline exceeded` at 10.04 s, before a delete had
+			// been attempted — while a quiet one passed it.
+			//
+			// run is what the case measures: how long the composed job takes to get its deletes in
+			// front of the held table lock. It is a liveness bound and not the quantity under test,
+			// which is that the deletes waiting on the lock never exceed the worker bound — and that
+			// one is asked before every wait, so stretching this only delays the report of a job that
+			// never gets there, and gives the bound more samples rather than fewer. Ten seconds of a
+			// busy machine was not enough to reach the lock at all: measured over four runs with this
+			// repository's whole suite in flight beside it, the same subtests took 3.7 s to 9.8 s
+			// apiece when they were served and tripped the ten seconds when they were not.
+			ctx := t.Context()
+			run, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
 			adminURL, appURL := dbtest.URLs(t)
 			if err := db.Migrate(ctx, adminURL, migrations.Source, audit.Migrations); err != nil {
@@ -67,7 +84,7 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 			before := conn.Stats()
 			done := make(chan error, 1)
 			var work sync.WaitGroup
-			work.Go(func() { done <- job.Run(ctx, conn) })
+			work.Go(func() { done <- job.Run(run, conn) })
 			defer func() { cancel(); _ = blocker.Rollback(); work.Wait() }()
 			want := 4
 			if poolSize == 2 {
@@ -89,7 +106,7 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 				select {
 				case err := <-done:
 					t.Fatalf("retention ended before its deletes reached the lock: %v", err)
-				case <-ctx.Done():
+				case <-run.Done():
 					t.Fatal("retention did not reach its worker bound")
 				case <-time.After(10 * time.Millisecond):
 				}
