@@ -61,6 +61,18 @@ jobs:
           done
           echo "NATS did not become healthy" >&2; docker logs nats; exit 1
 
+      # The S3-compatible store modules/file's S3 adapter is tested against, started the way
+      # NATS is and on the compose stack's default port, which the Makefile's test variables name.
+      - name: Start an S3-compatible store
+        run: |
+          docker run -d --name s3 -p 8333:8333 -e AWS_ACCESS_KEY_ID=pkittest -e AWS_SECRET_ACCESS_KEY=pkittestsecret \
+            chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d server -s3 -dir=/data
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null http://localhost:8333/; then echo "s3 is up"; exit 0; fi
+            sleep 1
+          done
+          echo "the S3 store did not come up" >&2; docker logs s3; exit 1
+
       - name: Create the platformkit_app role
         env:
           PGPASSWORD: platformkit

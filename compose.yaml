@@ -32,3 +32,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  s3:
+    # An S3-compatible object store for modules/file's S3 adapter (file.S3). SeaweedFS
+    # because it is Apache-2.0 and its image is pullable anonymously; the adapter speaks
+    # plain S3 through minio-go, so any S3-compatible store serves. The credentials are
+    # the local stack's and nothing else's.
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: ["server", "-s3", "-dir=/data"]
+    environment:
+      AWS_ACCESS_KEY_ID: pkittest
+      AWS_SECRET_ACCESS_KEY: pkittestsecret
+    ports:
+      - "${PLATFORMKIT_S3_PORT:-8333}:8333"

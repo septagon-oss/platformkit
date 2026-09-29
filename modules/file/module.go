@@ -38,6 +38,14 @@ import (
 // application — the same way the mailer and the payment provider are.
 var Local = internal.NewLocal
 
+// S3 is contracts.Storage on any S3-compatible object store, every object under its
+// tenant's prefix. See internal.S3 for why the tenant is read from the request and a
+// call without one is refused.
+var S3 = internal.NewS3
+
+// S3Config is where that store is and how to reach it.
+type S3Config = internal.S3Config
+
 // DefaultQuotaBytes is the disk one tenant may fill when a deployment says
 // nothing. A gigabyte is a number a person can reason about — a thousand
 // documents, or a hundred photographs — and config.Files is where a deployment

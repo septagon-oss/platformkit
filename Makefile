@@ -28,9 +28,18 @@ PLATFORMKIT_TEST_DATABASE_URL ?= postgres://platformkit_app:platformkit@localhos
 # test fails rather than skips when this is unset: a suite that quietly skips
 # the transport it ships proves nothing.
 PLATFORMKIT_TEST_NATS_URL ?= nats://localhost:$(PLATFORMKIT_NATS_PORT)
+# modules/file's S3 adapter is tested against the S3-compatible store `make up` starts,
+# and fails rather than skips without it, for the same reason.
+PLATFORMKIT_S3_PORT ?= 8333
+PLATFORMKIT_TEST_S3_ENDPOINT ?= localhost:$(PLATFORMKIT_S3_PORT)
+PLATFORMKIT_TEST_S3_ACCESS_KEY ?= pkittest
+PLATFORMKIT_TEST_S3_SECRET_KEY ?= pkittestsecret
 export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
 export PLATFORMKIT_TEST_NATS_URL
+export PLATFORMKIT_TEST_S3_ENDPOINT
+export PLATFORMKIT_TEST_S3_ACCESS_KEY
+export PLATFORMKIT_TEST_S3_SECRET_KEY
 
 # Local feedback uses Go's package/dependency cache. The full check below always
 # runs fresh, independently of these local selectors or an earlier test goal.
