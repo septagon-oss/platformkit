@@ -465,6 +465,8 @@ type SidebarProps struct {
 	NavigationLabel string           `json:"navigationLabel,omitempty"`
 	BrandLabel      string           `json:"brandLabel,omitempty"`
 	BrandHref       string           `json:"brandHref,omitempty"`
+	// DisclosureLabel names SidebarDisclosure's summary below the large breakpoint ("Menu" when empty).
+	DisclosureLabel string `json:"disclosureLabel,omitempty"`
 }
 
 // SidebarItem represents a sidebar navigation item.

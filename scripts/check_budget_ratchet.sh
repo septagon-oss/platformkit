@@ -49,9 +49,36 @@ if git cat-file -e "$base:packages-budget.json" 2>/dev/null; then
 		problems="${problems:+$problems$'\n'}$package_problem"
 	fi
 fi
+# CONTRIBUTING.md's "separate owner budget commit before the implementation", made checkable: a raise
+# passes when every commit between the base and HEAD that touches a budget file is a `build(budget):`
+# commit touching nothing else, so the raise stands alone in history where a reviewer reads it. A removed
+# bucket or a changed measurement is never excused this way. CI checks out with fetch-depth 0; history
+# that cannot be read refuses.
+budget_files='loc-budget.json packages-budget.json'
+if [ -n "$problems" ] && ! printf '%s\n' "$problems" | grep -qv ' raised from '; then
+	if ! touched="$(git rev-list --no-merges "$base..HEAD" -- $budget_files 2>/dev/null)"; then
+		echo 'budget ratchet: the history between the base and HEAD cannot be read' >&2
+		exit 2
+	fi
+	unreviewed=''
+	for commit in $touched; do
+		subject="$(git log -1 --format=%s "$commit")"
+		others="$(git diff-tree --no-commit-id --name-only -r "$commit" | grep -vxE 'loc-budget\.json|packages-budget\.json' || true)"
+		if [[ "$subject" != build\(budget\):* ]] || [ -n "$others" ]; then
+			unreviewed="${unreviewed}${unreviewed:+$'\n'}${commit:0:12} ${subject}"
+		fi
+	done
+	if [ -n "$touched" ] && [ -z "$unreviewed" ]; then
+		printf '%s\n' "$problems"
+		echo "budget ratchet: the raises above stand alone in build(budget) commits: $(printf '%s ' $touched | cut -c1-200)"
+		problems=''
+	elif [ -n "$unreviewed" ]; then
+		problems="${problems}"$'\n'"budget ratchet: these commits change a budget file and are not a build(budget) commit touching only budget files:"$'\n'"${unreviewed}"
+	fi
+fi
 if [ -n "$problems" ]; then
 	printf '%s\n' "$problems" >&2
-	echo 'Budget changes require a separate owner review; this change does not preserve the baseline.' >&2
+	echo 'Budget changes require their own build(budget) commit, touching only budget files, reviewed apart from the change; this change does not preserve the baseline.' >&2
 	exit 1
 fi
 echo "budgets preserve the reviewed ceilings at $base"

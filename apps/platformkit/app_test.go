@@ -1235,9 +1235,15 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	if samples < 10 {
 		t.Fatalf("only %d samples were taken while the body trickled", samples)
 	}
-	if oldest > 0.5 {
-		t.Errorf("a transaction of this installation was %.2fs old while the body trickled; the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
-			oldest)
+	// The bound is half the read timeout, and it is arithmetic rather than taste. A
+	// transaction the upload pinned opens when the request arrives and is still open at
+	// the last sample, so it is at least timeout*3/4 minus one sample interval old —
+	// 2.2s here. A periodic job's transaction is milliseconds old on a quiet machine
+	// and read 0.53s on a loaded CI runner (PR 55, run 144), which a 0.5s bound
+	// refused. timeout/2 sits between the two with margin on both sides.
+	if limit := timeout.Seconds() / 2; oldest > limit {
+		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs); the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
+			oldest, limit)
 	}
 
 	var got answer
