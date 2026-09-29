@@ -7,6 +7,58 @@ it. Each was written because the state was reachable, not because a race was
 reported, and each says below what it leaves open rather than leaving that to a
 reader who depends on it.
 
+**The kernel measures itself: one trace per request, and the tenant on every
+number.** Nothing in this runtime emitted a number at all — the register was
+`log/slog` JSON, and `go.mod` named OpenTelemetry zero times — so following one
+request ended where one process ended. `kit/telemetry` now holds the vocabulary and
+nothing else (the attribute keys, the request id as W3C Baggage, three instruments,
+a closed set of refusal classes), and `kit/app` installs the one `TracerProvider` and
+the one `MeterProvider` against an OTLP/gRPC collector, because that package is the
+only one whose closure may hold a provider. A span covers each of the four
+boundaries: the HTTP operation, named after the operation id and opened before
+routing so a probe and a 404 are inside one too; the transaction under `Tx`, one per
+transaction and none per statement; the outbox relay; and the job run, with one span
+per tenant inside a run that walks them. The publisher's W3C context — both trace
+members and the baggage member that carries the request id — is written on the outbox
+row in the transaction that wrote the event, so the request that moved a
+state and the handler that reacted to it are one trace and not two that happen to sit
+next to each other, an operator reading a worker's span can quote the id the response
+header carried, and `audit_events.trace_id` makes a row of the trail name the
+request that caused it. Three numbers, each with a tenant dimension where one is
+known: `pkit.http.operation.duration`, `pkit.outbox.lag`, `pkit.http.refusals` by
+class — the last counted once per request, from the status the client was finally
+answered with, so the refusals the router writes for itself (a query value that is
+not an integer, a body that is not JSON, a handler that returned an error) are in it
+beside the ones the guards write. A number carries the tenant and never the request
+id: a metric attribute is part of a time series' identity, so a value unique to one
+request would be one series per request and a dashboard that can average nothing.
+The exemplar OpenTelemetry attaches to every measurement names the span it came
+from, which is how a number leads to an example of itself. 80 of the 81 boundaries
+the reference application registers — 69 operations,
+5 jobs, 7 subscriptions — carry a tenant on their span; the one that does not is
+`file-reconcile`, a sweep whose question crosses every tenant by construction. With no
+endpoint configured nothing is installed at all, which is cheaper than a no-op, and an
+unreachable collector fails no boot, moves no health verdict and does not decide an
+exit code: `kit/health` reports its last success as a reading an operator sees, not as
+a check, and the last flush of a process that is leaving is a log line. A bare
+`host:port` is accepted as the unencrypted endpoint it names, which is the form the
+example file prints. Left open on purpose:
+no dashboard, which the brief refused, and no collector in a Helm chart, which is a
+deployment's stanza rather than this repository's. `make trace` starts a collector for
+the machine in front of you — `deploy/otel-collector.yaml`, printing every span and
+datapoint it receives to the container log — so the claim that the kernel is traced is
+checkable without an account at a trace backend.
+
+*Reused:* the existing `X-Request-ID` mechanism, `log/slog`, `kit/problem`'s one
+error shape, `health.Check` (a sibling type, not a fork), the T-0018 migration
+runner, `otelhttp` as the inbound span, and the SDK's own span recorder and manual
+reader as the test doubles. *Added:* `kit/telemetry`, the two outbox columns and
+`audit_events.trace_id`, the four boundary spans and the three instruments.
+*Made reusable:* `health.Report`, `telemetry.Propagators`, `telemetry.SpanAttrs`,
+`telemetry.MetricAttrs`, `telemetry.Shared` and `telemetry.WithRequestID`, each
+documented at [kit/telemetry] (kit/telemetry/README.md), which carries the same three
+sentences for the package itself.
+
 **A migration now says what kind of migration it is, and the runner holds it to
 that shape.** A rewrite and a ten-million-row backfill were the same file: one
 transaction, no bound, and the expand/contract rule a review comment. A file may
