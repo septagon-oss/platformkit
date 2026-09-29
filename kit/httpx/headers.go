@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -118,7 +119,7 @@ func (a *API) headers(next http.Handler) http.Handler {
 		if s != SurfacePublic {
 			h.Set("X-Robots-Tag", noindex)
 		}
-		next.ServeHTTP(&secured{ResponseWriter: w, nonce: n, surface: s, method: r.Method},
+		next.ServeHTTP(&secured{ResponseWriter: w, nonce: n, surface: s, method: r.Method, path: r.URL.Path, ctx: r.Context()},
 			r.WithContext(context.WithValue(r.Context(), nonceKey{}, n)))
 	})
 }
@@ -130,8 +131,18 @@ type secured struct {
 	nonce   string
 	surface Surface
 	method  string
+	path    string
+	ctx     context.Context
 	done    bool
+	// static is set by the kernel's own file tree (API.tree) for its asset answers, whose
+	// caching is the static-asset row of docs/cache.md rather than the surface's.
+	static bool
 }
+
+// markStatic is how API.tree claims the static-asset row for its own answer. It is
+// reached through the writer chain the handler was given, so nothing but the kernel's
+// tree — which knows it serves the kernel's own immutable files — can claim it.
+func (s *secured) markStatic() { s.static = true }
 
 func (s *secured) WriteHeader(status int) {
 	s.policy(status)
@@ -180,10 +191,23 @@ func (s *secured) policy(status int) {
 //     cache may keep is a refusal nobody can recover from without a hard
 //     reload.
 //
-// Either way a handler that said something about caching first is believed: it
-// knows whether the bytes are somebody's own, and this function does not.
+// A handler that said something about caching first is believed only in the
+// direction of less caching (docs/cache.md). On the public face it knows whether
+// its bytes are somebody's own and this function does not. On the workspace and
+// the control plane every answer sits under a session, so a handler may add to
+// no-store and never take it away: a value without no-store — `public, max-age=…`
+// from a module that meant well — would let a shared cache hand one tenant's page
+// to the next person through. That value is replaced, and the replacement is logged
+// with the route, because a contradiction of the policy is a finding and not a
+// preference. The kernel's own asset tree answers under the static row instead.
 func (s *secured) caching(status int) {
 	if h := s.Header(); h.Get("Cache-Control") != "" {
+		if s.surface == SurfacePublic || s.static || storesNothing(h.Get("Cache-Control")) {
+			return
+		}
+		slog.WarnContext(s.ctx, "httpx: a handler set a storable Cache-Control under a session; replaced with no-store (docs/cache.md)",
+			"surface", s.surface, "method", s.method, "path", s.path, "refused", h.Get("Cache-Control"))
+		h.Set("Cache-Control", noStore)
 		return
 	}
 	switch {
@@ -198,6 +222,17 @@ func (s *secured) caching(status int) {
 		// page somebody has to hard-reload to get rid of.
 		s.Header().Set("Cache-Control", noStore)
 	}
+}
+
+// storesNothing is whether a Cache-Control value forbids storing the response at all:
+// the one answer a session-bearing surface may give.
+func storesNothing(value string) bool {
+	for _, directive := range strings.Split(value, ",") {
+		if strings.EqualFold(strings.TrimSpace(directive), noStore) {
+			return true
+		}
+	}
+	return false
 }
 
 // Unwrap is how net/http's ResponseController reaches the real writer, and how
