@@ -12,8 +12,10 @@ import (
 // TokenMode holds selected theme colours, ordered fallback families and the
 // theme's own shape lengths under their CSS identities. A client sets its radii
 // through design.Client, so a projection that stopped at colour and font would
-// ship the client's palette and drop the client's shape — and the document
-// platformkit-mobile reads is this projection.
+// ship the client's palette and drop the client's shape. The other projection,
+// Export's design-export document — the themes[].tokens list a native
+// application reads — has carried the same lengths since before this branch gave
+// this one its Dimensions field.
 type TokenMode struct {
 	Mode       string                   `json:"mode"`
 	Colors     []design.Token           `json:"colors,omitempty"`
