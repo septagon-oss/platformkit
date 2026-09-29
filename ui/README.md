@@ -43,6 +43,24 @@ and refuses growth beyond these recorded closures:
 - `ui/components` never imports `ui/components/examples`: a renderer needs no
   reflection. `ui` never imports `ui/export`: a shell needs no design tooling.
 
+## The cascade layers
+
+`ui.Compose` returns one sheet in four cascade layers — `tokens`, `base`,
+`components`, `client` — and the `@layer` order statement it emits is what says
+so; [ARCHITECTURE.md](../ARCHITECTURE.md#compose-the-interface) owns the
+precedence contract. What a change to that seam is made of, in the same words a
+review reads:
+
+- **Reused** — `components.Hooks`, `css.WalkRules`, `style.For`, `design.Pair`
+  and the existing `Extra{Lists, Sheets}` split. `Compose` is still the only
+  place a sheet is assembled and `ui/style` still resolves each class list once.
+- **Added** — the layer order statement, `componentState` for a kernel
+  component's own rules, and `attrNames`/`renderedHooks`/`css.Heads` for the gate,
+  which reads a consumer's rules through `css.Verbatim` and at the heads
+  `css.Heads` names: what a browser parses is the emitted text, not the field.
+- **Made reusable** — `components.Hooks`: the attributes the components render,
+  now exported, documented and read by the gate instead of recopied into it.
+
 ## Next action
 
 To serve a page, compose the stylesheet once with `ui.Compose`, mount
