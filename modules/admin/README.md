@@ -62,3 +62,29 @@ gallery controls, responsive layout, actual widget interactions and selected axe
 checks in both themes. These checks do not establish native editor fidelity or
 replace a screen-reader review. New product integrations must supply their selector
 and repeat these checks against their own examples and private asset routes.
+
+## Authorization
+
+### Permissions
+
+The manifest in `modules/admin/module.go` declares one permission, `gallery:read` (`PermissionGalleryRead`). It guards the gallery page `admin-gallery`, the `admin-gallery-preview` and `admin-gallery-export` routes (`mountGallery` in `modules/admin/internal/gallery.go`) and the private storybook file route `admin-storybook-file` (`mountStorybook` in `modules/admin/internal/storybook.go`). The sidebar link to the gallery is shown only when the authorizer allows `gallery:read` and `Shell.storybook` succeeds (`frame` in `modules/admin/internal/mount.go`). The other pages use permissions declared by other modules: the roles page uses `role:manage` (`httpx.Permission(authcontracts.PermissionRoleManage)` in `modules/admin/internal/roles.go`), and the tenant switcher uses `tenant:manage` through `httpx.OperatorPermission` (`modules/admin/internal/pages.go`). The dashboard (`admin-dashboard`) and health page (`admin-health`) are `httpx.SignedIn()` and name no permission.
+
+### Object scope
+
+None. The code searched shows no call to `tenancy.Policy` in this module. Access to the gallery is decided by `Shell.storybook` in `modules/admin/internal/gallery.go`, which calls the composition's `Deps.Storybook` callback for the tenant and principal in the context. With no callback, only a tenant with `tenant.Operator` set gets the built-in `examples.Gallery()`. Any other tenant gets 403.
+
+### Duties the module enforces itself
+
+The module writes no rows, so it has no ownership or separation-of-duties refusals. The one rule it enforces is fail-closed storybook selection: `Shell.storybook` refuses when there is no tenant in the context, and `mountStorybook` refuses a build whose `platformkit.json` does not match the selected book. The last administrator rule for roles is enforced by the auth module (`SetRole` in `modules/auth/internal/roles.go`), not here.
+
+### Public faces
+
+One route is public: the sign-in page `admin-login` (`httpx.Public()` in `modules/admin/internal/pages.go`). It serves a form that posts to the auth module's login route. It exposes no tenant data. The page does no writes and calls no `kit/limit` limiter. Rate limiting of the login itself belongs to the auth module (`Limiter` in `modules/auth/contracts/limiter.go`).
+
+### The operator boundary
+
+The module declares no permission with `Operator: true`. Its one manifest permission is `gallery:read`. It does mount one operator-only page: `admin-tenants` uses `httpx.OperatorPermission(tenantcontracts.PermissionTenantManage)` in `modules/admin/internal/pages.go`, and the tenant module owns that `tenant:manage` permission. The roles page also hides operator permissions from non-operator tenants (`offeredPermissions` in `modules/admin/internal/roles.go`).
+
+### Provisioning
+
+The module does not grant anything itself. `gallery:read` is held by any role that names it, or by the `*` wildcard that `SeedRoles` in `modules/auth/internal/seed.go` gives the built-in `admin` role. A composition grants it by editing a role on the roles page or through `PUT /api/v1/auth/roles/{name}`, or by passing default roles to `auth.SeedRoles` (called from `seedRoles` in `apps/platformkit/modules.go`). A role in a client's `client.yaml` is not shown by the code read for this section. The operator tenant needs `Deps.Storybook` or `tenant.Operator` to serve any gallery content.

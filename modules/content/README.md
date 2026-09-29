@@ -13,3 +13,42 @@ Compose it with `content.Deps{}`; it needs nothing from other modules.
 Consumers import [contracts/](contracts/) and its [fake](contracts/contenttest/),
 never `internal/`. `make test TEST_PACKAGES=./modules/content/...` needs the
 development database.
+
+## Authorization
+
+### Permissions
+
+The manifest in `modules/content/module.go` (`permissions`) declares two keys, defined in `modules/content/contracts/permissions.go`.
+`content:read` is the `Read` permission of the `rest.Spec` (list and read routes) and guards the "Content" nav entry and its generated screen `content/contents`.
+`content:manage` is the `Write` permission of the same spec: create, update and delete routes, and the `publish`, `unpublish` and `archive` commands registered by `RegisterRoutes` in `modules/content/internal/handler.go`.
+The public slug route is guarded by neither key (see Public faces).
+
+### Object scope
+
+None. A search of the module finds no call to `tenancy.Policy` and no `Resource.Kind`.
+Scope is the tenant: rows carry the tenant id and row-level security matches on it (`Deps` in `modules/content/module.go`).
+The code does not show any per-object attribute check.
+
+### Duties the module enforces itself
+
+The module has no ownership or separation-of-duties refusal.
+`Content.Validate` in `modules/content/contracts/content.go` stamps `AuthorID` from `tenancy.ActorFrom` when it is unset, and `spec.Immutable` (`status`, `publishedAt`, `author`) stops a patch from rewriting them.
+Status moves only through `Service.Publish`, `Unpublish` and `Archive` (`modules/content/internal/service.go`), which publish an event in the same transaction.
+These are lifecycle rules, not checks on who the caller is.
+
+### Public faces
+
+One route is public: `GET /contents/{slug}` (`httpx.Public()` in `RegisterRoutes`, operation `content-content-public`).
+It returns `Page` in `modules/content/internal/handler.go`: `slug`, `title`, `kind`, `html` (rendered and sanitized) and `publishedAt`.
+A draft, an archived page and an unknown slug are the same 404, and a host that resolves to no tenant is also a 404.
+It is a read. The module has no public write, so `kit/limit` (used by the public-write limit in `kit/httpx/surfaces.go`) does not apply to it.
+
+### The operator boundary
+
+None. No permission in `permissions` sets `Operator: true`, and the module registers no `OperatorRead` or `OperatorWrite` route.
+
+### Provisioning
+
+The code names no role. A composition grants `content:read` to people who may see the content list, and `content:manage` to people who may edit and publish.
+Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
+This repository does not show a client `client.yaml` for this module, so the exact file is not documented here.
