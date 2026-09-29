@@ -18,7 +18,12 @@ text roles mix `text-primary` toward `text-muted`, two colours the contrast gate
 certifies on every surface, rather than toward the surface one of them was
 authored against — `BodyRolePairs()` names the pairs the components compose and
 `design.Theme.CheckRoles` measures them, which [`ui/export`](../export/README.md)
-runs before it emits anything. An element rule no class can express reads the
+runs before it emits anything. `TintedRolePairs()` names the pairs whose
+background this layer derives rather than takes from a theme — the brand tint is
+`design.SoftTintPercent` of the accent mixed into the card surface, and the
+accent's own colour is painted on it — and the export gates those too, because a
+background mixed toward a foreground always reads worse than the surface it came
+from. An element rule no class can express reads the
 same scales back with `Value()` — `S8.Value()` is `"2rem"` — so an article and
 the page around it share one scale (see [modules/web](../../modules/web/README.md)).
 `Measurements`, `ScaleValues`, `ShadowValues`, `EasingValues` and

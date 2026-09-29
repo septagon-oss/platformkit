@@ -10,6 +10,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui/export"
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // A client's generated identity exports as the same DTCG document the shipped
@@ -136,3 +137,25 @@ func TestExportTokensProjectsAGeneratedPair(t *testing.T) {
 // consumer that reads the role layer sees three recolours, and one that reads only
 // the theme modes sees no change at all.
 const dtcgGeneratedLightDigest = "4ef2f0b2693933c7649631b3399ff54f7bad6759129590ab5fb42f6b182c1d1a"
+
+// TestExportTokensRefusesAnAccentThatReadsOnlyOnTheSurfaces is the widened seam
+// biting: a pair whose accent clears every surface the theme names, and so clears
+// the list of pairs on those surfaces, while failing the tint the role layer
+// derives from the accent itself. The narrower list passes it; the export refuses
+// it. Both halves are asserted, because a union that dropped the derived pair
+// would keep exporting it.
+func TestExportTokensRefusesAnAccentThatReadsOnlyOnTheSurfaces(t *testing.T) {
+	t.Parallel()
+	pair := design.Default()
+	// Two surfaces are lifted to white so the card surface binds the accent, which
+	// is the situation the tint is derived in: mix(accent, surface-primary).
+	pair.Light.SurfaceCanvas, pair.Light.SurfaceMuted = "#ffffff", "#ffffff"
+	pair.Light.AccentDefault = "#976a6a" // 4.50:1 on surface-primary, 3.90:1 on its own tint
+	if err := pair.Light.CheckRoles(style.RoleColors(), style.BodyRolePairs()); err != nil {
+		t.Fatalf("the pairs on the theme's own surfaces: %v", err)
+	}
+	_, err := export.ExportTokens(pair, "light")
+	if err == nil || !strings.Contains(err.Error(), "--pk-role-fg-brand on --pk-role-surface-brand-soft") {
+		t.Errorf("an accent legible only on the surfaces exported a document instead of refusing: %v", err)
+	}
+}
