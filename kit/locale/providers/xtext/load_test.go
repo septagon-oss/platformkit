@@ -78,7 +78,7 @@ func TestASourceCannotAnswerForAKeyAnEarlierSourceOwns(t *testing.T) {
 		xtext.Source{Name: "ui/page", Owns: []string{"fault."}, FS: files(
 			`{"fault.CSRF_ORIGIN": {"translation": "Nothing was written."}}`,
 			`{"fault.CSRF_ORIGIN": {"translation": "Nada foi escrito."}}`)},
-		xtext.Source{Name: "collect", FS: files(
+		xtext.Source{Name: "shop", FS: files(
 			`{"fault.CSRF_ORIGIN": {"translation": "Your session ended."}}`,
 			`{"fault.CSRF_ORIGIN": {"translation": "A sua sessão terminou."}}`)},
 	)
@@ -92,12 +92,12 @@ func TestTheSameSourceStillAnswersForWhatItDoesNotOwn(t *testing.T) {
 		xtext.Source{Name: "ui/page", Owns: []string{"fault."}, FS: files(
 			`{"fault.CSRF_ORIGIN": {"translation": "Nothing was written."}}`,
 			`{"fault.CSRF_ORIGIN": {"translation": "Nada foi escrito."}}`)},
-		xtext.Source{Name: "collect", FS: files(
-			`{"collect.cart": {"translation": "%d items"}}`,
-			`{"collect.cart": {"translation": "%d artigos"}}`)},
+		xtext.Source{Name: "shop", FS: files(
+			`{"shop.cart": {"translation": "%d items"}}`,
+			`{"shop.cart": {"translation": "%d artigos"}}`)},
 	)
 	pt := locale.SelectLocale(messages, "pt-PT")
-	if got := pt.Text("collect.cart", "%d items", 3); got != "3 artigos" {
+	if got := pt.Text("shop.cart", "%d items", 3); got != "3 artigos" {
 		t.Errorf("the unowned key said %q", got)
 	}
 	if got := pt.Text("fault.CSRF_ORIGIN", "Nothing was written."); got != "Nada foi escrito." {
