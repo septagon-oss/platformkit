@@ -41,15 +41,15 @@ tenant's exact subject. The stream is still `PLATFORMKIT` with `platformkit.>`.
 Three consequences, each a test rather than an assurance:
 
 * **The pre-envelope shape decodes and is never written**, and a subscription
-  answers it. That asymmetry is only half the rolling window: the previous build
-  published at `platformkit.<module>.<event>` and this build's filter has a token
-  for a tenant that message does not carry, so a decoder that accepts it while
-  nothing subscribes to its address reads a shape nobody can reach. A
-  subscription therefore filters both addresses while the window is open
-  (`transport.Filters`), and either deploy order is safe. When the last
-  previous-build publisher is gone, the second filter goes, the consumer is made
-  again, and the window is shut. A pre-envelope document with no tenant or no
-  event name is refused in either form.
+  answers it: the previous build published at `platformkit.<module>.<event>`,
+  three tokens, while this build's filter carries a tenant token that message
+  does not have, so a decoder nothing subscribes to is not a window. Deploy the
+  consumers first — publishers moved first write an address no old consumer's
+  filter can match, and only `DeliverAll` on the recreated consumer picks those
+  rows back up, within the week the stream keeps. When the last previous-build
+  publisher is gone the second filter goes, the consumer is made again, and the
+  window shuts. A pre-envelope document with no tenant or no event name is
+  refused in either form.
 * **Every stored consumer is deleted and made again**, because it went from one
   `filter_subject` to a `filter_subjects` set and NATS cannot change one in
   place. It asks for
