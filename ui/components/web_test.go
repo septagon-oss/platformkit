@@ -1337,3 +1337,59 @@ func TestTheAdminSidebarFooterIsLegibleOnTheInvertedSurface(t *testing.T) {
 		t.Error("the content sidebar's footer took the inverted colour")
 	}
 }
+
+// TestSidebarDisclosureListsTheSidebarsSectionsWhereTheSidebarIsNotShown. The admin
+// sidebar is `display: none` below the large breakpoint and nothing disclosed the
+// sections on a phone (e2e/known-defects.spec.ts recorded it). The disclosure takes
+// the sidebar's own props, so it lists the same links with the same data-nav and
+// aria-current, in a native <details> that needs no script, hidden from lg up.
+func TestSidebarDisclosureListsTheSidebarsSectionsWhereTheSidebarIsNotShown(t *testing.T) {
+	t.Parallel()
+
+	props := SidebarProps{
+		Current: "/app/task/tasks", NavigationLabel: "Admin navigation",
+		Items: []SidebarItem{
+			{Label: "Dashboard", Href: "/app", Icon: "gear"},
+			{Label: "Tasks", Href: "/app/task/tasks", Icon: "file-text"},
+		},
+	}
+	var rendered strings.Builder
+	if err := SidebarDisclosure(props).Render(&rendered); err != nil {
+		t.Fatal(err)
+	}
+	html := rendered.String()
+	for _, fragment := range []string{
+		`<details`, `data-component="sidebar-disclosure"`, `<summary`, `>Menu</summary>`,
+		`<nav`, `aria-label="Admin navigation"`, `data-nav="dashboard"`, `data-nav="tasks"`,
+		`href="/app/task/tasks"`, `aria-current="page"`,
+	} {
+		if !strings.Contains(html, fragment) {
+			t.Errorf("the disclosure lacks %q:\n%s", fragment, html)
+		}
+	}
+	if strings.Contains(html, "<script") || strings.Contains(html, "hx-") {
+		t.Errorf("the disclosure is a native <details> and needs no script:\n%s", html)
+	}
+	if !strings.Contains(html, clSidebarDisclosure.Compile()) {
+		t.Errorf("the disclosure does not carry its below-lg-only class %q", clSidebarDisclosure.Compile())
+	}
+
+	var sidebar strings.Builder
+	if err := Sidebar(props).Render(&sidebar); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{`data-nav="dashboard"`, `data-nav="tasks"`} {
+		if !strings.Contains(sidebar.String(), id) {
+			t.Errorf("the sidebar lists %s and the disclosure must list the same sections", id)
+		}
+	}
+
+	var named strings.Builder
+	props.DisclosureLabel = "Sections"
+	if err := SidebarDisclosure(props).Render(&named); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(named.String(), ">Sections</summary>") {
+		t.Errorf("DisclosureLabel does not name the summary: %s", named.String())
+	}
+}

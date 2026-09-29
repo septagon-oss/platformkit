@@ -50,6 +50,8 @@ type fixture struct {
 	// authorizer was never reached rather than that it said no.
 	asked atomic.Int32
 	app   *db.Conn
+	// denials is what Options.Denied was handed, in order.
+	denials []httpx.Denial
 	// exec runs one DDL statement as the schema owner, which is all a test
 	// wants the admin connection for.
 	exec func(query string)
@@ -178,6 +180,7 @@ func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
 		Entitle:      f,
 		Authenticate: f.authenticate,
 		Log:          slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Denied:       func(_ context.Context, d httpx.Denial) { f.denials = append(f.denials, d) },
 	})
 	return api, router, f
 }

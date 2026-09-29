@@ -31,6 +31,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/modules/notification"
 )
@@ -108,6 +109,25 @@ func TestASignedInPersonWithoutTheGrantIsShownAPageAtTheReferenceApplication(t *
 	}
 	if !strings.Contains(body, httpxCodeDenied) {
 		t.Errorf("the page a refused person is shown carries no code to read back: %s", body)
+	}
+
+	// And the refusal is on the record (T-0116): kit/app publishes security.denied for an
+	// attributable denial, and modules/audit keeps it — one row, carrying the reason, the
+	// path and the refused person as its actor.
+	owner := dbtest.Open(t, cfg.Database.MigrateURL)
+	var rows int
+	var actor, user string
+	eventually(t, "the denial reaches the audit trail", func() bool {
+		err := owner.QueryRowContext(t.Context(), `SELECT count(*), coalesce(max(actor::text), ''), coalesce(max(payload->>'userId'), '')
+			FROM audit_events WHERE name = 'security.denied' AND payload->>'path' = $1 AND payload->>'code' = $2`,
+			screen, httpxCodeDenied).Scan(&rows, &actor, &user)
+		return err == nil && rows > 0
+	})
+	if rows != 1 {
+		t.Errorf("the one refusal left %d security.denied audit rows, want one", rows)
+	}
+	if actor == "" || actor != user {
+		t.Errorf("the denial's audit row names actor %q and user %q; the refused person is both", actor, user)
 	}
 }
 

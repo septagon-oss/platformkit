@@ -181,7 +181,9 @@ func TestSubscribeAllHearsAModuleComposedAfterIt(t *testing.T) {
 		}
 		names = append(names, s.Name)
 	}
-	want := []string{"first.happened", "last.again", "last.happened"}
+	// Every event a module declares, and the events the kernel emits itself (KernelEvents),
+	// sorted: the trail hears a refused authorization like any other event.
+	want := slices.Sorted(slices.Values(append([]string{"first.happened", "last.again", "last.happened"}, KernelEvents...)))
 	if !slices.Equal(names, want) {
 		t.Errorf("the trail subscribes to %v, want %v", names, want)
 	}

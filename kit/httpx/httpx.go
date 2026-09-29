@@ -103,6 +103,22 @@ type Entitler interface {
 // Options are the collaborators main chooses for the HTTP layer. Every field
 // except Log, PublicHost and Docs is required: an API missing one of them could
 // only fail closed on every request, which is worse than failing at New.
+// Denial is one refused authorization, as Options.Denied receives it: who was
+// refused, in which tenant, at which operation, and why — the code is the first
+// word of the refusal's detail, the same machine-readable reason the response and
+// the log line carry, and RequestID joins it to both.
+type Denial struct {
+	Status    int
+	Code      string
+	Detail    string
+	Method    string
+	Path      string
+	Operation string
+	RequestID string
+	Tenant    tenancy.Tenant
+	Principal tenancy.Principal
+}
+
 type Options struct {
 	// PublicHost is the host the application believes it is reached at. It
 	// names the server in the OpenAPI document; the tenant of a request always
@@ -169,6 +185,17 @@ type Options struct {
 	// deployment that mounts no streaming route needs no larger number, and a
 	// test that mounts one is not testing the ceiling.
 	MaxUpload int64
+
+	// Denied is told about every refused authorization that has somebody to
+	// attribute it to — a signed-in principal in a resolved tenant — after the
+	// refusal is written. The composition records it (kit/app publishes
+	// security.denied, which modules/audit keeps), so a denial is an audit row
+	// and an event rather than a log line. An anonymous refusal is not passed:
+	// a stranger at the door has no account to attribute it to, and a hook
+	// that wrote a row per anonymous request would turn every probe into a
+	// database write. Nil records nothing. It must not panic and its error is
+	// its own to report; the caller's answer is already decided.
+	Denied func(ctx context.Context, d Denial)
 
 	// Installation is the host the installation itself is reached at — the one
 	// address that serves the control plane (the Ops surface). It is a

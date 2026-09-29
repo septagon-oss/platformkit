@@ -233,6 +233,9 @@ func Validate(mods []Module) error {
 	// because both point at something another module owns: a link is about what
 	// the reader may see, and a subscription is about what somebody else emits.
 	emitted := map[string]bool{}
+	for _, e := range KernelEvents {
+		emitted[e] = true
+	}
 	for _, m := range mods {
 		for _, e := range m.Events {
 			emitted[e.Name] = true
@@ -279,6 +282,13 @@ func Validate(mods []Module) error {
 	return errors.New("module: invalid composition:\n  " + strings.Join(bad, "\n  "))
 }
 
+// KernelEvents are the events the kernel itself emits, which no module's manifest
+// can declare because no module raises them: security.denied is published by kit/app
+// for every attributable refused authorization (see kit/httpx Options.Denied). They
+// count as emitted for Validate and are expanded for a SubscribeAll module, so
+// modules/audit keeps them like any other event.
+var KernelEvents = []string{"security.denied"}
+
 // Expand turns every SubscribeAll manifest's one subscription into one per
 // event the composition emits, and returns the modules with that done.
 //
@@ -295,6 +305,11 @@ func Validate(mods []Module) error {
 func Expand(mods []Module) []Module {
 	seen := map[string]bool{}
 	var all []string
+	for _, e := range KernelEvents {
+		if !seen[e] {
+			seen[e], all = true, append(all, e)
+		}
+	}
 	for _, m := range mods {
 		for _, e := range m.Events {
 			if !seen[e.Name] {

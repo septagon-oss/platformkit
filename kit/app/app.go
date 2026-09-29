@@ -403,6 +403,9 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		// the list below.
 		Installation: a.opts.Installation.Host,
 		WriteLimiter: limit.Postgres(func(context.Context) (*db.Conn, bool) { return conn, true }),
+		// Every attributable refusal is an event and, where modules/audit is composed, an
+		// audit row: see recordDenial.
+		Denied: recordDenial(conn, a.log),
 	})
 
 	// The catalogue before the routes: a module that validates a permission

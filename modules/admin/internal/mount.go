@@ -193,10 +193,13 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 				gallery = err == nil
 			}
 		}
+		// One list of sections for both surfaces: the sidebar from the large breakpoint up, and the
+		// header's disclosure below it, where the sidebar is not shown.
+		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, authorize), r, gallery)
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
-				Sidebar: []g.Node{sidebar(a, nav.Visible(ctx, r.Tenant, authorize), r, gallery)},
-				Header:  header(r),
+				Sidebar: []g.Node{components.Sidebar(navigation)},
+				Header:  header(r, navigation),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
 					Content: brand + " " + version(), Size: "xs", Color: "muted"})},
@@ -210,7 +213,7 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 // two pages about the installation. What the caller may reach is decided
 // before this is called — see page.Navigation.Visible — so this renders a
 // list and hides nothing of its own.
-func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery bool) g.Node {
+func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery bool) components.SidebarProps {
 	items := []components.SidebarItem{{Label: "Dashboard", Href: a.dashboard.at, Icon: "gear"}}
 	for _, entry := range visible {
 		items = append(items, components.SidebarItem{Label: entry.Label, Href: entry.Screen, Icon: "file-text"})
@@ -222,14 +225,15 @@ func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery boo
 	}
 	// BrandLabel rather than the Brand slot: the sidebar is inverted, and the
 	// colour that is legible on it is one the component owns.
-	return components.Sidebar(components.SidebarProps{
+	return components.SidebarProps{
 		Current: r.Path, NavigationLabel: "Admin navigation", Items: items,
 		BrandLabel: fallback(r.Tenant.Name, brand), BrandHref: a.workspace.at,
-	})
+	}
 }
 
-// header is the tenant, the caller, the theme switch and the way out.
-func header(r page.Request) []g.Node {
+// header is the tenant, the caller, the theme switch and the way out — and, below the large
+// breakpoint where the sidebar is not shown, the disclosure that lists the same sections.
+func header(r page.Request, navigation components.SidebarProps) []g.Node {
 	right := []g.Node{
 		components.ButtonWithSlots(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
@@ -251,7 +255,9 @@ func header(r page.Request) []g.Node {
 		}))
 	}
 	return []g.Node{
-		components.Text(components.TextProps{Content: fallback(r.Tenant.Name, brand), Weight: "semibold"}),
+		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"},
+			components.SidebarDisclosure(navigation),
+			components.Text(components.TextProps{Content: fallback(r.Tenant.Name, brand), Weight: "semibold"})),
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
 	}
 }

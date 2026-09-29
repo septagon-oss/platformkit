@@ -49,7 +49,9 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 
 	api.Surfaces(probe).App.Static("/assets", fstest.MapFS{"app.css": &fstest.MapFile{Data: []byte(":root{}")}})
 
-	for _, at := range []string{at(api, "/widgets"), at(api, "/page"), "/assets/app.css", "/nothing-here"} {
+	// The tree answers under the surface's page namespace; "/assets/app.css" at the root was a 404, which
+	// carried the headers too but was not the asset it named.
+	for _, at := range []string{at(api, "/widgets"), at(api, "/page"), "/app/" + probe + "/assets/app.css", "/nothing-here"} {
 		h := get(t, router, at).Header()
 		switch {
 		case h.Get("X-Frame-Options") != "DENY":

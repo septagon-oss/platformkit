@@ -150,6 +150,9 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
+	// The first delivery cannot leave the server before the relay hands the event over,
+	// so relayed bounds the first rung from below whatever the handler's own start costs.
+	relayed := time.Now()
 	if err := Relay(t.Context(), conn, transport); err != nil {
 		t.Fatalf("Relay: %v", err)
 	}
@@ -173,11 +176,24 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	if attempts != delivery.MaxDeliveries {
 		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", attempts, delivery.MaxDeliveries)
 	}
+	// JetStream schedules each redelivery from the moment it *delivered* (the message is
+	// left pending and AckWait is the ladder's first rung), and the handler stamps the
+	// moment it *started*, which trails the delivery by however long the first,
+	// cold call took: under -race on CI that was 31 ms of a 50 ms rung, and locally
+	// the gap read 1.6 ms in one run of eight. So the first rung is measured from
+	// the relay, which no delivery precedes — a lower bound no handler latency can
+	// break — and the later rungs between warm deliveries, where both ends carry the
+	// same small latency and the gaps land on their rungs to the millisecond.
 	for i := 1; i < len(deliveries); i++ {
-		gap, want := deliveries[i].Sub(deliveries[i-1]), delivery.Backoff[min(i, len(delivery.Backoff))-1]
-		t.Logf("delivery %d gap=%s configured=%s", i+1, gap, want)
-		if gap < want/2 || gap > want+250*time.Millisecond {
-			t.Errorf("delivery %d gap=%s, want one %s backoff plus scheduling tolerance", i+1, gap, want)
+		want := delivery.Backoff[min(i, len(delivery.Backoff))-1]
+		gap, from := deliveries[i].Sub(deliveries[i-1]), "the delivery before"
+		low := want / 2
+		if i == 1 {
+			gap, from, low = deliveries[1].Sub(relayed), "the relay", want
+		}
+		t.Logf("delivery %d at %s after %s, configured %s", i+1, gap, from, want)
+		if gap < low || gap > want+250*time.Millisecond {
+			t.Errorf("delivery %d came %s after %s, want one %s backoff plus scheduling tolerance", i+1, gap, from, want)
 		}
 	}
 

@@ -174,7 +174,7 @@ func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], user *usercontr
 		return nil, nil, err
 	}
 	return session, identity, events.Publish(ctx, tx, contracts.EventLoggedIn, contracts.LoggedIn{
-		UserID: user.ID, SessionID: session.ID, Method: method, IP: session.IP, At: at,
+		UserID: user.ID, SessionRef: contracts.SessionRef(session.ID), Method: method, IP: session.IP, At: at,
 	})
 }
 
@@ -351,9 +351,9 @@ func (s *Service) Logout(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	if err := tx.DB().Where("id_hash = ?", hash).Delete(&contracts.Session{}).Error; err != nil {
 		return fmt.Errorf("auth: end the session: %w", err)
 	}
-	// The id is the caller's own, not something read back: nothing stores it.
+	// The event names the session by its ref, never by the id the caller holds.
 	return events.Publish(ctx, tx, contracts.EventLoggedOut, contracts.LoggedOut{
-		UserID: session.UserID, SessionID: id, At: db.Now(),
+		UserID: session.UserID, SessionRef: contracts.SessionRef(id), At: db.Now(),
 	})
 }
 

@@ -154,6 +154,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
+	bash scripts/check_budget_ratchet_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package

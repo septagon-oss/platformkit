@@ -14,3 +14,47 @@ through `PLATFORMKIT_MAIL_PASSWORD`) and `NewMailbox()` the in-memory one.
 Consumers import [contracts/](contracts/) and its
 [fake](contracts/notificationtest/), never `internal/`; mail templates live in
 [internal/templates](internal/templates/).
+
+Every channel a notice asks for is accounted for in `notification_deliveries`
+(migration 000027), under the tenant's row-level security and append-only: a
+`requested` row when the notice is written, then a terminal row in the same
+transaction as the step that finishes the channel — `sent`, or `suppressed` with
+the reason (no address, the notice deleted before its mail was due). In-app is
+requested and sent with the row itself. A relay that refuses leaves no terminal
+row, because its transaction rolls back and the outbox retries; a send that can
+never succeed is recorded by the kernel in `platformkit_dead_letters`.
+`delivery_ledger_coverage` — requested channels with a terminal row, over all
+requested channels — is `internal.Coverage`.
+
+## Authorization
+
+### Permissions
+
+None. `permissions` in `modules/notification/module.go` is an empty `[]module.Permission`, and the module has no nav entry.
+Both routes are guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`).
+The `SendMail` event subscription (`modules/notification/internal/mail.go`) is run by the kernel and is not guarded by a permission.
+
+### Object scope
+
+None. No call to `tenancy.Policy` and no `Resource.Kind` appears in the module.
+Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.PrincipalFrom`, never from a parameter, and `ListFor` and `MarkRead` take that id.
+
+### Duties the module enforces itself
+
+`Service.MarkRead` in `modules/notification/internal/service.go` answers `crud.ErrNotFound` when the row's `RecipientID` is not the caller, so nobody learns whether another person's notification exists.
+`caller` in `handler.go` answers 403 when there is no principal or the user id is nil.
+This is a recipient check, not a separation-of-duties rule.
+
+### Public faces
+
+None. The module mounts its routes on the app surface only (`internal.RegisterRoutes(s.App, svc)`), and no `httpx.Public()` route exists.
+It has no public write, so `kit/limit` is not used.
+
+### The operator boundary
+
+None. There are no permissions, so none is marked `Operator: true`, and no `OperatorRead` or `OperatorWrite` route exists.
+
+### Provisioning
+
+Nothing needs granting. Every signed-in person can read and mark their own notifications, which is why the manifest declares no key.
+Roles and the roles API therefore do not affect this module's routes.

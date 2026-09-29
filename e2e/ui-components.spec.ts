@@ -20,7 +20,9 @@ test.beforeEach(({ page }) => {
   const faults: string[] = [];
   pageFaults.set(page, faults);
   page.on('pageerror', error => faults.push(error.message));
-  page.on('response', response => { if (response.request().resourceType() === 'script' && response.status() !== 200) faults.push(`${response.status()} ${response.url()}`); });
+  // 304 is a script the browser already holds, revalidated against its content ETag (docs/cache.md):
+  // a success, not a fault. Anything else that is not 200 is a script that did not load.
+  page.on('response', response => { if (response.request().resourceType() === 'script' && ![200, 304].includes(response.status())) faults.push(`${response.status()} ${response.url()}`); });
 });
 test.afterEach(({ page }) => expect(pageFaults.get(page)).toEqual([]));
 
