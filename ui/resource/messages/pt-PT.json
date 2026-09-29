@@ -1,0 +1,62 @@
+{
+  "screens.count": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "%d %s registados",
+    "plural": { "": "%d %s registados" }
+  },
+  "screens.new": {
+    "references": ["ui/resource/resource.go", "ui/screens/screens.go"],
+    "translation": "Nova %s",
+    "plural": { "": "Nova %s" }
+  },
+  "screens.edit_item": {
+    "references": ["ui/screens/screens.go"],
+    "translation": "Editar %s",
+    "plural": { "": "Editar %s" }
+  },
+  "screens.edit": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Editar",
+    "plural": { "": "Editar" }
+  },
+  "screens.delete": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Eliminar",
+    "plural": { "": "Eliminar" }
+  },
+  "screens.delete_this": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Eliminar esta %s",
+    "plural": { "": "Eliminar esta %s" }
+  },
+  "screens.delete_confirm": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Isto elimina %s. Não é possível anular.",
+    "plural": { "": "Isto elimina %s. Não é possível anular." }
+  },
+  "screens.empty": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Ainda sem %ss.",
+    "plural": { "": "Ainda sem %ss." }
+  },
+  "screens.pagination": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Paginação",
+    "plural": { "": "Paginação" }
+  },
+  "screens.previous": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Página anterior",
+    "plural": { "": "Página anterior" }
+  },
+  "screens.next": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Próxima página",
+    "plural": { "": "Próxima página" }
+  },
+  "screens.breadcrumb": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Caminho",
+    "plural": { "": "Caminho" }
+  }
+}

@@ -75,17 +75,27 @@ text is the fallback, and the page declares the language of the sentence it
 actually shows: a catalog with no entry for the code leaves an English page
 declaring `en`.
 
-The [reference application](../../apps/platformkit/modules.go) composes
-[`admin.Messages()`](../../modules/admin/messages.go) through `page.FromCatalog`
-for its sign-in page. Run the application as described in the [root README](../../README.md), then open
-`/app/admin/login?lang=pt-PT` or `/app/admin/login?lang=en`. The explicit URL wins over the
-browser's language. This translates the initial sign-in form, and the generated
+The [reference application](../../apps/platformkit/catalog.go) composes the copy
+each layer ships — this package's refusal sentences, `ui/resource`'s screen
+vocabulary and the sign-in page's four keys — into one catalog with
+[`xtext.Load`](../../kit/locale/providers/xtext/README.md), which reads
+`messages/<locale>.json` files and merges them in that order. Run the application
+as described in the [root README](../../README.md), then open
+`/app/admin/login?lang=pt-PT` or `/app/admin/login?lang=en`. The explicit URL wins
+over the browser's language. `fault.` is owned by this package, so a product
+catalogue cannot re-word what a refusal says; `screens.*` is unclaimed, so
+re-labelling "Delete" is a product's own decision in a later source.
+
+Which languages a request may be answered in is the tenant's decision, not this
+package's: `Serve` intersects `Accept-Language` with the languages the resolved
+tenant is served in and falls back to that tenant's default
+(`TenantPreferences`), so a guard refusing ahead of a handler and the page it is
+refusing speak the same language. The generated
 screens read their fixed labels (New, Edit, Delete, the count, the pager and the
 empty state) under `screens.*` keys with English fallbacks; entity names,
-authentication API errors, client apps, the kernel's refusal sentences
-(`fault.*`) and notification templates still need their own authored messages and
-adoption. No translation management service or remote bundle is required by this
-local runtime seam.
+authentication API errors, client apps and notification templates still need their
+own authored messages and adoption. No translation management service or remote
+bundle is required by this local runtime seam.
 
 Run `go test -race ./ui/page -count=1` for negotiation, fallbacks, pluralization,
 escaping and concurrent catalog isolation. With the repository's existing test

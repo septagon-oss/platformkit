@@ -31,8 +31,9 @@ type pages struct {
 }
 
 func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
+	// The sign-in page needs no separate wiring: it is mounted on the shell, and
+	// the shell carries the catalog and the preference resolver.
 	loginShell := p.shell
-	loginShell.Messages, loginShell.Locale = p.Messages, p.Locale
 	page.Serve(app, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: p.at.login.rel, Summary: "Sign in"},
 		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn), nil

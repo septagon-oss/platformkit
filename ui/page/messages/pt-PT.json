@@ -1,0 +1,62 @@
+{
+  "fault.AUTH_ANONYMOUS": {
+    "references": ["kit/httpx/authorize.go", "ui/page/fault.go"],
+    "translation": "Inicie sessão antes de enviar isto.",
+    "plural": { "": "Inicie sessão antes de enviar isto." }
+  },
+  "fault.AUTH_DENIED": {
+    "references": ["kit/httpx/authorize.go", "ui/page/fault.go"],
+    "translation": "Não pode fazer isto.",
+    "plural": { "": "Não pode fazer isto." }
+  },
+  "fault.AUTH_NOT_OPERATOR": {
+    "references": ["kit/httpx/authorize.go", "ui/page/fault.go"],
+    "translation": "Esta operação pertence à instalação, não ao seu tenant.",
+    "plural": { "": "Esta operação pertence à instalação, não ao seu tenant." }
+  },
+  "fault.AUTH_UNDECLARED": {
+    "references": ["kit/httpx/authorize.go", "ui/page/fault.go"],
+    "translation": "Esta operação nunca disse quem a pode chamar.",
+    "plural": { "": "Esta operação nunca disse quem a pode chamar." }
+  },
+  "fault.AUTH_NO_TENANT": {
+    "references": ["kit/httpx/authorize.go", "ui/page/fault.go"],
+    "translation": "Este trabalho pertence a um tenant e esta morada não nomeia nenhum.",
+    "plural": { "": "Este trabalho pertence a um tenant e esta morada não nomeia nenhum." }
+  },
+  "fault.AUTH_PRINCIPAL_CHANGED": {
+    "references": ["kit/httpx/authorize.go", "ui/page/fault.go"],
+    "translation": "A conta com sessão iniciada não é a que preparou este pedido.",
+    "plural": { "": "A conta com sessão iniciada não é a que preparou este pedido." }
+  },
+  "fault.CSRF_ORIGIN": {
+    "references": ["kit/httpx/csrf.go", "ui/page/fault.go"],
+    "translation": "Este pedido veio de outro site, por isso nada foi escrito.",
+    "plural": { "": "Este pedido veio de outro site, por isso nada foi escrito." }
+  },
+  "fault.PUBLIC_SETS_A_COOKIE": {
+    "references": ["kit/httpx/respond.go", "ui/page/fault.go"],
+    "translation": "Esta página promete que ninguém aqui é lembrado.",
+    "plural": { "": "Esta página promete que ninguém aqui é lembrado." }
+  },
+  "fault.LIMIT_EXHAUSTED": {
+    "references": ["kit/httpx/public_writes.go", "ui/page/fault.go"],
+    "translation": "Demasiados envios a partir deste endereço. Espere e tente de novo.",
+    "plural": { "": "Demasiados envios a partir deste endereço. Espere e tente de novo." }
+  },
+  "fault.404": {
+    "references": ["ui/page/fault.go"],
+    "translation": "Não há nada para ver nesta morada.",
+    "plural": { "": "Não há nada para ver nesta morada." }
+  },
+  "fault.405": {
+    "references": ["ui/page/fault.go"],
+    "translation": "Este endereço não aceita este pedido.",
+    "plural": { "": "Este endereço não aceita este pedido." }
+  },
+  "fault.500": {
+    "references": ["ui/page/fault.go"],
+    "translation": "Qualquer coisa correu mal do nosso lado.",
+    "plural": { "": "Qualquer coisa correu mal do nosso lado." }
+  }
+}
