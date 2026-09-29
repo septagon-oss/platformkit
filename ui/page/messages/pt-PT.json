@@ -58,5 +58,10 @@
     "references": ["ui/page/fault.go"],
     "translation": "Qualquer coisa correu mal do nosso lado.",
     "plural": { "": "Qualquer coisa correu mal do nosso lado." }
+  },
+  "fault.503": {
+    "references": ["kit/httpx/authorize.go", "kit/httpx/tenant.go", "ui/page/fault.go"],
+    "translation": "Este serviço está indisponível por um momento. Espere e tente de novo.",
+    "plural": { "": "Este serviço está indisponível por um momento. Espere e tente de novo." }
   }
 }
