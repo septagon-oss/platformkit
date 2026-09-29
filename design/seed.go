@@ -112,6 +112,14 @@ func FromSeed(seed Seed) (Pair, error) {
 	if err := pair.Check(); err != nil {
 		return Pair{}, fmt.Errorf("design: seed %q generates a pair that fails its own gate: %w", seed.seedKey(), err)
 	}
+	// The token gate says what this pair sets; the role gate says what a reader
+	// would be shown wearing it. A generator that certified only tokens is how a
+	// tinted panel whose reason line measured 3.6:1 could reach a client's file,
+	// so the pair this function returns has been measured over the same list
+	// Client.Resolve and the export seam read.
+	if err := pair.CheckRoles(RoleLayer(), GatedRolePairs()); err != nil {
+		return Pair{}, fmt.Errorf("design: seed %q generates a pair whose role layer fails its own gate: %w", seed.seedKey(), err)
+	}
 	return pair, nil
 }
 
@@ -160,8 +168,12 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 	// error line, a text utility — so each lands on whichever surface a card
 	// raised itself onto, and is certified against all three.
 	surfaces := []string{theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted}
+	// A tint holds copy besides its own tone: the muted reason line of a failed
+	// media panel is text-muted on a status tint, and statusRolePairs gates that
+	// pair on all four grounds, so every tint is repaired against the muted tone.
+	tintText := []string{theme.TextMuted}
 	for _, status := range statusRoles {
-		bg, fg := statusPalette(name == "dark", status.hue, surfaceSat, surfaces...)
+		bg, fg := statusPalette(name == "dark", status.hue, surfaceSat, surfaces, tintText)
 		status.set(&theme, fg, bg)
 	}
 	return theme
@@ -188,12 +200,22 @@ var statusRoles = []statusRole{
 // hue is left in the badge, follows the seed. The text is repaired against the
 // badge and against every surface, because the kernel paints it on both: a tone
 // certified only against its own badge is legible only inside that badge.
-func statusPalette(dark bool, hue, surfaceSat float64, surfaces ...string) (bg, fg string) {
+//
+// The badge is repaired first, against tintText: the copy this layer paints on a
+// tint that is not the tint's own tone. It is repaired as a ground, not as a
+// foreground: a ratio is symmetric, so enforce walking the tint toward the
+// neutral pole behind that copy is the same arithmetic as walking the copy away
+// from the tint. Repairing the ground rather than the copy is the deliberate
+// choice, because text-muted is set once for the whole page and is one of the
+// twelve tokens Distance measures: a tint that cannot hold a muted line moves the
+// tint, a few units toward white in a light theme, and every client's muted text
+// stays the tone its palette was drawn at.
+func statusPalette(dark bool, hue, surfaceSat float64, surfaces, tintText []string) (bg, fg string) {
 	if dark {
-		bg = hsv(hue, min(0.95, surfaceSat*1.6+0.14), 0.18)
+		bg = enforce(hsv(hue, min(0.95, surfaceSat*1.6+0.14), 0.18), tintText...)
 		return bg, enforce(hsv(hue, 0.55, 0.74), append([]string{bg}, surfaces...)...)
 	}
-	bg = hsv(hue, min(0.95, surfaceSat*0.9+0.10), 0.96)
+	bg = enforce(hsv(hue, min(0.95, surfaceSat*0.9+0.10), 0.96), tintText...)
 	return bg, enforce(hsv(hue, 0.62, 0.42), append([]string{bg}, surfaces...)...)
 }
 
