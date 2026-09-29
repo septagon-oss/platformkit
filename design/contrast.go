@@ -80,6 +80,15 @@ var bodyContrast = []contrastPair{
 	{"text-muted", "surface-muted", MinContrast},
 	{"accent-default", "surface-canvas", MinContrast},
 	{"accent-default", "surface-primary", MinContrast},
+	// The accent is not only a button fill. ui/components paints it as body-size
+	// text with no background of its own — the brand text utility, the outline and
+	// link button variants, a brand detail value — so it lands on whichever
+	// surface a card raised itself onto. Of the three, surface-muted is the one
+	// that binds: it is the lightest surface in a dark theme, where foregrounds
+	// are light, and the darkest in a light theme, where they are dark. Certifying
+	// the accent against the two lighter surfaces only said it reads there.
+	{"accent-default", "surface-muted", MinContrast},
+	{"accent-hover", "surface-muted", MinContrast},
 	{"accent-on", "accent-default", MinContrast},
 	{"accent-on", "accent-hover", MinContrast},
 	{"focus", "surface-canvas", MinContrastGraphic},
