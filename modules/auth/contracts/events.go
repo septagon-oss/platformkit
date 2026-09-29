@@ -74,8 +74,14 @@ type RoleSet struct {
 
 // LoggedIn is the payload of EventLoggedIn.
 type LoggedIn struct {
-	UserID    uuid.UUID `json:"userId"`
-	SessionID uuid.UUID `json:"sessionId"`
+	UserID uuid.UUID `json:"userId"`
+	// SessionRef names the session without being it: SessionRef(id), the hex of
+	// the digest the session row is keyed by. The session id is the browser's
+	// credential, and an event is read by every subscriber, the broker and the
+	// audit trail, so it never carries the id itself (review of 2026-09-29: an
+	// auditor holding only audit:read recovered an administrator's live session
+	// from this field). A login and its logout share one ref.
+	SessionRef string `json:"sessionRef"`
 	// Method is "password" or "oidc", because "somebody signed in with a
 	// password after we turned single sign-on on" is a question with an answer.
 	Method string    `json:"method"`
@@ -85,9 +91,10 @@ type LoggedIn struct {
 
 // LoggedOut is the payload of EventLoggedOut.
 type LoggedOut struct {
-	UserID    uuid.UUID `json:"userId"`
-	SessionID uuid.UUID `json:"sessionId"`
-	At        time.Time `json:"at"`
+	UserID uuid.UUID `json:"userId"`
+	// SessionRef is the same reference LoggedIn carried; see there.
+	SessionRef string    `json:"sessionRef"`
+	At         time.Time `json:"at"`
 }
 
 // LoginFailed is the payload of EventLoginFailed: somebody tried and did not

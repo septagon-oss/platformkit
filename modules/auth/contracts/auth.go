@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -135,6 +136,12 @@ func (Session) TableName() string { return "sessions" }
 // every request. No salt, because the lookup is by the hash itself: a salted
 // hash cannot be an index probe, and per-row salting protects against a
 // dictionary that does not exist here.
+// SessionRef is the non-secret name of a session that events and logs may
+// carry: the hex of the digest its row is keyed by. It cannot be presented as a
+// cookie — the server hashes whatever it is given — and it cannot be reversed to
+// the id. Never put a session id in an event, a log line or an audit payload.
+func SessionRef(id uuid.UUID) string { return hex.EncodeToString(Hash(id.String())) }
+
 func Hash(credential string) Digest {
 	sum := sha256.Sum256([]byte(credential))
 	return sum[:]
