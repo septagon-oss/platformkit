@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**Object scope is decided by a policy the composition writes, and every refusal is
+audited.** `kit/tenancy/providers/opa` embeds Open Policy Agent (Apache-2.0) as a
+`tenancy.Policy`: a composition writes its rules in Rego, they are compiled once at
+start, and a decision names its revision, the source's content hash. An undefined
+decision is a refusal and an answer that is not an object with a boolean `allow` is an
+outage, never an allow. The reference application composes the task module with
+`apps/platformkit/policy/task.rego` — an assigned task is its assignee's to resolve —
+so the object-scope question decision 0011 asks is answered by a running rule and not
+only by a hook. `tenancy.WithPolicyRefusals` lets the HTTP layer observe each refusal
+`tenancy.RequirePolicy` returns, so a `POLICY_DENIED` from deep in a module's service
+reaches `security.denied` with the action, reason and revision, as `AUTH_DENIED` does.
+
 Two of these entries, one property: a tenant keeps somebody who can administer
 it. Each was written because the state was reachable, not because a race was
 reported, and each says below what it leaves open rather than leaving that to a

@@ -78,3 +78,41 @@ func TestPolicyDistinguishesDenialFromAnUnavailableDecision(t *testing.T) {
 		t.Fatalf("missing provider = %v", err)
 	}
 }
+
+// TestPolicyRefusalsReachTheObserverAndNothingElseDoes is the audit half of
+// RequirePolicy: a refusal is handed to the context's observer with the decision that
+// made it, and an allow, an outage or an invalid request is not — those are not denials
+// of somebody who asked, and recording them as such would make the trail lie.
+func TestPolicyRefusalsReachTheObserverAndNothingElseDoes(t *testing.T) {
+	id := uuid.New()
+	r := tenancy.PolicyRequest{Tenant: tenancy.Tenant{ID: id}, Actor: tenancy.PolicyActor{Kind: tenancy.PolicyUser, ID: uuid.NewString()},
+		Action: "task:resolve", Resource: tenancy.PolicyResource{TenantID: id, Kind: "task", ID: uuid.NewString()}}
+	var seen []tenancy.PolicyDecision
+	ctx := tenancy.WithPolicyRefusals(t.Context(), func(_ context.Context, got tenancy.PolicyRequest, d tenancy.PolicyDecision) {
+		if got.Action != r.Action || got.Resource.ID != r.Resource.ID {
+			t.Errorf("the observer was told about %+v, want the refused request %+v", got, r)
+		}
+		seen = append(seen, d)
+	})
+	answer := func(d tenancy.PolicyDecision, err error) tenancy.Policy {
+		return decisionFunc(func(context.Context, tenancy.PolicyRequest) (tenancy.PolicyDecision, error) { return d, err })
+	}
+	refusal := tenancy.PolicyDecision{Reason: "an assigned task is resolved by its assignee", Revision: "sha256:abc"}
+	_, _ = tenancy.RequirePolicy(ctx, answer(tenancy.PolicyDecision{Allowed: true}, nil), r)
+	_, _ = tenancy.RequirePolicy(ctx, answer(tenancy.PolicyDecision{}, context.DeadlineExceeded), r)
+	invalid := r
+	invalid.Resource.TenantID = uuid.New()
+	_, _ = tenancy.RequirePolicy(ctx, answer(refusal, nil), invalid)
+	if len(seen) != 0 {
+		t.Fatalf("an allow, an outage or an invalid request reached the observer: %+v", seen)
+	}
+	if _, err := tenancy.RequirePolicy(ctx, answer(refusal, nil), r); !errors.Is(err, tenancy.ErrPolicyDenied) {
+		t.Fatalf("refusal = %v, want ErrPolicyDenied", err)
+	}
+	if len(seen) != 1 || seen[0] != refusal {
+		t.Fatalf("the observer saw %+v, want exactly the one refusal %+v", seen, refusal)
+	}
+	if _, err := tenancy.RequirePolicy(t.Context(), answer(refusal, nil), r); !errors.Is(err, tenancy.ErrPolicyDenied) {
+		t.Fatalf("a context with no observer = %v, want the same refusal", err)
+	}
+}
