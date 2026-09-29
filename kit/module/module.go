@@ -102,6 +102,22 @@ type Module struct {
 	// module segment and the middleware chain are the kernel's to compose and
 	// its to refuse. See httpx.Surfaces.
 	Routes func(r httpx.Surfaces)
+
+	// Moved is the addresses this module used to answer at and where each one
+	// lives now. The kernel answers an old address with a redirect and nothing
+	// else — 302 for a safe method, 307 for the rest, never cached, never a
+	// second mount — by the same rules as its own migration table
+	// (kit/httpx/aliases.go). A module that moves a page declares a row here
+	// rather than writing a handler for the old address; the surface gate
+	// refuses a route mounted at an address a row moves.
+	Moved []Move
+}
+
+// Move is one old address, or one old subtree, and where it lives now. Both are
+// whole paths as a browser sends them ("/pets/animals", "/app/pets/animals"); a
+// request under From keeps its remainder and its query.
+type Move struct {
+	From, To string
 }
 
 // Permission is one thing a role can be granted.
@@ -165,6 +181,28 @@ var surfacesNames = map[string]bool{"public": true, "ops": true, "app": true}
 //
 // It reports every violation in one error rather than the first, because a
 // composition is fixed once and the whole list is what a person needs.
+// validMoves refuses a row the redirect could not honour: a path that is not
+// absolute, a row that points at itself, or an old address two rows claim.
+func validMoves(mods []Module) []string {
+	var bad []string
+	from := map[string]string{}
+	for _, m := range mods {
+		for _, mv := range m.Moved {
+			switch {
+			case !strings.HasPrefix(mv.From, "/") || !strings.HasPrefix(mv.To, "/"):
+				bad = append(bad, fmt.Sprintf("module %q moves %q to %q; both must be absolute paths", m.Name, mv.From, mv.To))
+			case strings.TrimSuffix(mv.From, "/") == strings.TrimSuffix(mv.To, "/"):
+				bad = append(bad, fmt.Sprintf("module %q moves %q to itself", m.Name, mv.From))
+			case from[mv.From] != "":
+				bad = append(bad, fmt.Sprintf("modules %q and %q both move %q", from[mv.From], m.Name, mv.From))
+			default:
+				from[mv.From] = m.Name
+			}
+		}
+	}
+	return bad
+}
+
 func Validate(mods []Module) error {
 	var bad []string
 	add := func(format string, args ...any) { bad = append(bad, fmt.Sprintf(format, args...)) }
@@ -268,6 +306,7 @@ func Validate(mods []Module) error {
 		}
 	}
 
+	bad = append(bad, validMoves(mods)...)
 	if len(bad) == 0 {
 		return nil
 	}

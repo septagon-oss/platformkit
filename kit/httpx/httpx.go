@@ -267,6 +267,9 @@ func StreamedBody() (string, any) { return StreamedBodyExtension, true }
 // API is the application's Huma API: the huma.API every registration goes
 // through, plus the recording that makes boot-time validation possible.
 type API struct {
+	// moved is this composition's own migration rows (API.Alias), asked after the
+	// kernel's table in aliases.go.
+	moved []struct{ from, to string }
 	// api is the recording huma.API. It is unexported because an exported one
 	// is a door: huma.Register(api.API, ...) used to reach the bare adapter,
 	// which the recording — and therefore the boot gate — never saw.
