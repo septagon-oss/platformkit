@@ -1228,6 +1228,58 @@
       "summary": "Every tenant's delivery of platformkit.event_replayed.",
       "title": "platformkit.event_replayed"
     },
+    "security.denied": {
+      "address": "platformkit.*.security.denied",
+      "description": "Published at platformkit.{tenantId}.security.denied; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "security.denied": {
+          "contentType": "application/json",
+          "name": "security.denied",
+          "payload": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "status": {
+                "type": "integer"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "code",
+              "detail",
+              "method",
+              "path",
+              "userId"
+            ],
+            "type": "object"
+          },
+          "summary": "security — security.denied",
+          "title": "security.denied"
+        }
+      },
+      "summary": "Every tenant's delivery of security.denied.",
+      "title": "security.denied"
+    },
     "site.settings_updated": {
       "address": "platformkit.*.site.settings_updated",
       "description": "Published at platformkit.{tenantId}.site.settings_updated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -2697,6 +2749,23 @@
       "tags": [
         {
           "name": "platformkit"
+        }
+      ]
+    },
+    "security.denied": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/security.denied"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/security.denied/messages/security.denied"
+        }
+      ],
+      "summary": "The security module publishes security.denied.",
+      "tags": [
+        {
+          "name": "security"
         }
       ]
     },

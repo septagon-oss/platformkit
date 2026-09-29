@@ -223,7 +223,14 @@ func Validate(mods []Module) error {
 				add("module %q: event %q is not %q", m.Name, e.Name, "<name>.<event>")
 				continue
 			}
-			if !strings.HasPrefix(e.Name, m.Name+".") {
+			// The kernel's own manifest is the one exemption, and only for the
+			// events KernelEvents names: security.denied is raised by the kernel
+			// because the refusal is its — no module ran — so it carries the
+			// kernel's namespace and not the manifest's. Every other manifest
+			// still emits inside its own name, which is what makes a duplicate
+			// emitter impossible rather than merely discourled.
+			if !strings.HasPrefix(e.Name, m.Name+".") &&
+				!(m.Name == KernelName && slices.Contains(KernelEvents, e.Name)) {
 				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e.Name)
 			}
 		}
@@ -288,6 +295,13 @@ func Validate(mods []Module) error {
 // count as emitted for Validate and are expanded for a SubscribeAll module, so
 // modules/audit keeps them like any other event.
 var KernelEvents = []string{"security.denied"}
+
+// KernelName is the manifest name kit/app gives the kernel's own share of the
+// composition. It is named because it is read by a rule: KernelEvents are the
+// only events that may be declared outside the emitting manifest's namespace
+// (Validate), and saying which manifest is the kernel's is the other half of
+// that sentence.
+const KernelName = "platformkit"
 
 // Expand turns every SubscribeAll manifest's one subscription into one per
 // event the composition emits, and returns the modules with that done.

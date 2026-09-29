@@ -684,10 +684,19 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 // every other module arrives in: a name and the events it emits. It has no
 // permissions, no routes, no SQL and no nav of its own, and saying so here is
 // cheaper than a mechanism that discovers it.
+//
+// security.denied is declared here beside the kernel's manifest name, and it is
+// the one event that arrives by two doors: module.KernelEvents is what subscribes
+// a SubscribeAll module to it (no module raised it — the refusal is the kernel's),
+// and this declaration is what gives it a payload type, a schema the outbox checks
+// at the INSERT, and a channel in the AsyncAPI document. Without it the kernel
+// would emit an event its own catalogue knows nothing about, and
+// event_schema_coverage would count events it does not.
 var kernelModule = module.Module{
-	Name: "platformkit",
+	Name: module.KernelName,
 	Events: []events.Declared{
 		events.Declare[events.ReplayRecord](events.EventReplayed),
+		events.Declare[Denied](EventDenied),
 	},
 }
 

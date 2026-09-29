@@ -99,14 +99,18 @@ func TestEveryDeclaredEventIsInTheDocumentAndCovered(t *testing.T) {
 	if doc.AsyncAPI != app.AsyncAPIVersion {
 		t.Errorf("the document says asyncapi %q, which is not what this code emits (%s)", doc.AsyncAPI, app.AsyncAPIVersion)
 	}
-	// The kernel declares one event of its own (kit/events.Replay), and the
-	// generator adds it to whatever list it is handed: a document rendered from
-	// an app's own modules still says the installation replays things.
-	if want := len(declared) + 1; len(doc.Channels) != want {
-		t.Errorf("%d channels for %d declared events plus the kernel's", len(doc.Channels), want-1)
+	// The kernel declares two events of its own — the record kit/events.Replay
+	// writes and the refusal kit/app records — and the generator adds them to
+	// whatever list it is handed: a document rendered from an app's own modules
+	// still says the installation replays things and records what it refused.
+	kernel := []string{events.EventReplayed, app.EventDenied}
+	if want := len(declared) + len(kernel); len(doc.Channels) != want {
+		t.Errorf("%d channels for %d declared events plus the kernel's %d", len(doc.Channels), len(declared), len(kernel))
 	}
-	if _, ok := doc.Channels[events.EventReplayed]; !ok {
-		t.Errorf("the document has no %s channel", events.EventReplayed)
+	for _, name := range kernel {
+		if _, ok := doc.Channels[name]; !ok {
+			t.Errorf("the document has no %s channel", name)
+		}
 	}
 	for _, d := range declared {
 		ch, ok := doc.Channels[d.Name]
@@ -171,10 +175,11 @@ func TestTheDocumentIsRenderedFromTheManifestsAlone(t *testing.T) {
 	if uncovered, _ := doc["x-uncovered-events"].([]any); len(uncovered) != 1 || uncovered[0] != "ledger.entry_posted" {
 		t.Errorf("an event with no payload type is not named as uncovered: %v", doc["x-uncovered-events"])
 	}
-	// The one module's one event, plus the kernel's replay record: the
-	// generator adds no event of its own beyond that one declaration.
-	if got := doc["channels"].(map[string]any); len(got) != 2 {
-		t.Errorf("channels = %d, want 2", len(got))
+	// The one module's one event, plus the two the kernel's own manifest
+	// declares (platformkit.event_replayed and security.denied): the generator
+	// adds no event of its own beyond what a manifest says.
+	if got := doc["channels"].(map[string]any); len(got) != 3 {
+		t.Errorf("channels = %d, want 3", len(got))
 	}
 }
 

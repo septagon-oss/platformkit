@@ -725,11 +725,12 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 // Options.Log is used as it arrives (a caller that brings a logger has chosen
 // its own level) rather than re-wrapped at config's level.
 //
-// 1/2 is this composition: the kernel's own platformkit.event_replayed, whose
-// payload type kit/app declares, covered; hello's hello.note_written, declared
-// with no type, not. A boot whose coverage silently fell to 0/N — a catalogue
-// rebuilt from the wrong list, a DeclareAll that never ran — is the drift the
-// line exists to make visible, and it is now visible here too.
+// 2/3 is this composition: the kernel's own platformkit.event_replayed and
+// security.denied, both covered by a payload type kit/app declares, and hello's
+// hello.note_written, declared with no type, not. A boot whose coverage silently
+// fell to 0/N — a catalogue rebuilt from the wrong list, a DeclareAll that never
+// ran — is the drift the line exists to make visible, and it is now visible here
+// too.
 func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 	cfg, opts := compose(t)
 	var logs strings.Builder
@@ -760,7 +761,7 @@ func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 	if line == "" {
 		t.Fatalf("the boot log named no event_schema_coverage:\n%s", logs.String())
 	}
-	if !strings.Contains(line, "event_schema_coverage=1/2") {
-		t.Errorf("the boot line reads %q, want event_schema_coverage=1/2 for one covered declaration and one uncovered one", line)
+	if !strings.Contains(line, "event_schema_coverage=2/3") {
+		t.Errorf("the boot line reads %q, want event_schema_coverage=2/3 for the kernel's two covered declarations and one uncovered one", line)
 	}
 }

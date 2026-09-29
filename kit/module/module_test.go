@@ -227,3 +227,29 @@ func TestSubscribeAllTakesExactlyOneSubscription(t *testing.T) {
 		t.Errorf("Validate = %v, want the refusal", err)
 	}
 }
+
+// TestTheKernelManifestIsTheOnlyOneThatMayEmitAKernelEvent: KernelEvents names
+// what the kernel raises itself, and the exemption from the namespace rule is
+// bounded to the one manifest that carries them. A module named "billing" that
+// declared security.denied would be a module emitting an event it does not raise,
+// which is the same violation under the other spelling; a kernel manifest reaching
+// for a module's name would be the same thing backwards.
+func TestTheKernelManifestIsTheOnlyOneThatMayEmitAKernelEvent(t *testing.T) {
+	t.Run("the kernel's own manifest may declare one", func(t *testing.T) {
+		if err := Validate([]Module{{Name: KernelName, Events: []events.Declared{{Name: KernelEvents[0]}}}}); err != nil {
+			t.Errorf("Validate refused the kernel's own event: %v", err)
+		}
+	})
+	t.Run("another module may not", func(t *testing.T) {
+		err := Validate([]Module{{Name: "billing", Events: []events.Declared{{Name: KernelEvents[0]}}}})
+		if err == nil || !strings.Contains(err.Error(), "is not namespaced by the module that emits it") {
+			t.Errorf("Validate = %v, want the namespace refusal for a module that emits a kernel event", err)
+		}
+	})
+	t.Run("and the kernel's manifest may not reach for a module's", func(t *testing.T) {
+		err := Validate([]Module{{Name: KernelName, Events: []events.Declared{{Name: "billing.invoice_issued"}}}})
+		if err == nil || !strings.Contains(err.Error(), "is not namespaced by the module that emits it") {
+			t.Errorf("Validate = %v, want the namespace refusal for a kernel manifest outside KernelEvents", err)
+		}
+	})
+}
