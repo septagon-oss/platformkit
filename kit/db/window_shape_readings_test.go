@@ -402,12 +402,12 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // watched for a drain that ignores it is the drain's own work and not the wall clock:
 // ten thousand batches of five rows over the twelve seeded ones is fifty thousand and
 // twelve rows and no more, so the table itself says when a tick has passed the bound
-// and is still rewriting work. Measured here, those ten thousand windows cost 28.4 s
-// with this host otherwise idle, 51 s with the repository's own suite running beside
-// it and 121 s in the full-suite run that refused this case — a 4.3x spread that is
-// scheduling and nothing else, against a deadline of 120 s. The context stays as the
-// backstop for the one state a row count cannot report, a tick that writes nothing at
-// all, at a length only a stuck run spends.
+// and is still rewriting work. Measured here, those ten thousand windows cost 25.98 s
+// with this host otherwise idle, 51 s with the repository's own suite running beside it
+// and 121 s in the full-suite run that refused this case — a 4.7x spread that is
+// scheduling and nothing else, against a deadline of 120 s. What the drain wrote and
+// how recently it wrote are read off the table instead, so the case costs what the work
+// costs and refuses a tick that runs on past its bound or stops moving inside it.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	// The probe, and a plain view over it. The append below runs through the view, which is the
@@ -424,19 +424,37 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	// boundRows is what a tick that stops where it is told leaves behind; the witness waits for
-	// five hundred batches beyond it, which a drain that ignores the bound writes in seconds and
-	// a drain that honours it can never reach.
-	const boundRows = 12 + 5*10000
+	// Two bounds on the drain's work, because a bound on the clock is one the host can overspend:
+	// measured here, the same ten thousand windows cost 26 s on a quiet host, 92 s with `make check`
+	// in flight and 121 s in the gate's full-suite run that this case failed. boundRows is what a
+	// tick that stops where it is told leaves behind, and the witness refuses five hundred batches
+	// beyond it — which a drain that ignores the bound writes in seconds and a drain that honours
+	// it can never reach. stalledFor is the other half: a tick wedged behind a lock writes nothing,
+	// and the only thing that tells that apart from a slow one is how long the cursor has sat still.
+	const (
+		boundRows  = 12 + 5*10000
+		stalledFor = 90 * time.Second
+	)
 	admin := dbtest.Open(t, migrateURL)
-	ctx, cancel := context.WithTimeout(t.Context(), 6*time.Minute)
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
+	// The witness runs on channels this test owns rather than on the context alone, and the test
+	// waits for it to report back before returning: a goroutine still holding a connection from
+	// `admin`'s pool when the cleanup closes that pool makes `DB.Close` wait on the server, and on
+	// a starved machine that is how this package reaches `go test`'s ten-minute ceiling and dies as
+	// a panic instead of a result. Deferring the watch puts it ahead of every cleanup.
 	past := make(chan int64, 1)
+	stalled := make(chan time.Duration, 1)
+	stop, done := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(done)
 		tick := time.NewTicker(time.Second)
 		defer tick.Stop()
+		seen, moved := int64(-1), time.Now()
 		for {
 			select {
+			case <-stop:
+				return
 			case <-ctx.Done():
 				return
 			case <-tick.C:
@@ -445,18 +463,34 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 			if err := admin.QueryRowContext(ctx, "SELECT count(*) FROM probe").Scan(&n); err != nil {
 				return // whatever ended this read ends the watching with it
 			}
+			if n != seen {
+				seen, moved = n, time.Now()
+			}
 			if n > boundRows+5*500 {
 				past <- n
 				cancel()
 				return
 			}
+			if quiet := time.Since(moved); quiet > stalledFor {
+				stalled <- quiet
+				cancel()
+				return
+			}
 		}
 	}()
+	watch := func() {
+		close(stop)
+		<-done
+	}
+	defer watch()
 	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
 	select {
 	case n := <-past:
 		t.Fatalf("%d rows in the drained table, past the %d rows ten thousand batches of five can write: this tick is still rewriting work while holding the job's advisory lock",
 			n, boundRows)
+	case quiet := <-stalled:
+		t.Fatalf("the drain wrote nothing to the table for %s: the tick is open over work it is not moving, which is the state the bound exists to end",
+			quiet.Truncate(time.Second))
 	default:
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
