@@ -1,0 +1,14 @@
+-- The trace the recorded event happened in.
+--
+-- The trail answers "who did this, when, in which tenant". Since the outbox
+-- carries the publisher's W3C trace context (migrations/000028), a row of the
+-- trail can also answer "and which request was that" — the join an operator asks
+-- for the moment a compliance question becomes an incident question, and the
+-- reason this column is worth a migration.
+--
+-- It is the trace id and not the traceparent string: the same number, in a type a
+-- query and an index can answer from, and one that survives a vendor's header
+-- format. Nullable, because an event published by a periodic job, or by any
+-- process with no collector configured, has no trace to name, and NULL is the
+-- honest answer where the zero UUID would be a lie.
+ALTER TABLE audit_events ADD COLUMN trace_id uuid;

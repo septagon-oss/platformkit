@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/telemetry"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -135,7 +136,28 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 	host := HostOnly(ctx.Host())
 	t, err := a.resolve(ctx.Context(), host)
 	if err == nil {
-		next(huma.WithContext(ctx, tenancy.WithTenant(ctx.Context(), t)))
+		// Both keys, because they answer two questions a reader asks at different
+		// moments: the slug is what a person recognises in a trace, the id is what
+		// joins this span to the delivery spans of the events this request published
+		// and to the same tenant's share of a job. A host the loader does not know
+		// reaches neither line below, and gets neither key — see traced.go.
+		spanAttr(ctx.Context(), telemetry.AttrTenant, t.Slug)
+		spanAttr(ctx.Context(), telemetry.AttrTenantID, t.ID.String())
+		// And to the response's note, so the refusal count respond writes after the
+		// chain returns can name the tenant this request resolved: an operator
+		// filtering the number by tenant has to be able to ask it of a refusal too,
+		// not only of a latency bar. See answerNote.
+		noteAnswer(ctx.Context(), t)
+		// The latency number is recorded here and not in the operation middleware
+		// that names the span, because this is the only place that holds both the
+		// operation and the tenant the host resolved to. A bar that cannot be split
+		// by tenant is the number this runtime promises not to publish: one process,
+		// many tenants, and an aggregate that cannot say whose requests are slow
+		// answers the question nobody asked.
+		start := time.Now()
+		tctx := tenancy.WithTenant(ctx.Context(), t)
+		next(huma.WithContext(ctx, tctx))
+		observeOperation(tctx, ctx.Operation(), time.Since(start).Seconds())
 		return
 	}
 	unknown := errors.Is(err, tenancy.ErrNoSuchHost)
