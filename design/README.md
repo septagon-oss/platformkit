@@ -23,7 +23,8 @@ refuses the result unless the pair passes both halves of the gate — `Pair.Chec
 and `Pair.CheckRoles` over `RoleLayer()` and `GatedRolePairs()` below. `Check` is
 WCAG 2.2 measured by `Luminance` and `Contrast`: every body role at 4.5:1 (SC
 1.4.3) — a status tone on every surface a card raises itself onto, not only the
-badge that carries its name — and the focus ring at 3:1 (SC 1.4.11). A generated
+badge that carries its name — and the focus ring at 3:1 (SC 1.4.11) on each of the
+three surfaces its `RingOffset` draws it onto. A generated
 foreground is repaired against two grounds no token pair reaches: the soft brand
 tint, `SoftTintPercent` of the accent mixed into a surface, which the kernel
 paints that same accent's colour on and which always reads worse than the surface

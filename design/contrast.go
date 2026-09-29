@@ -64,8 +64,8 @@ type contrastPair struct {
 
 // bodyContrast lists the pairs a reader actually reads: text on the three
 // surfaces, the accent used as text and the text set on it, the focus ring on the
-// page, each status on its own badge, and the sidebar's two text tones on its own
-// background. Borders and tinted surfaces carry no information of their own and
+// three surfaces a focused control can sit on, each status on its own badge, and
+// the sidebar's two text tones on its own background. Borders and tinted surfaces carry no information of their own and
 // are deliberately not in this list.
 var bodyContrast = []contrastPair{
 	{"text-primary", "surface-canvas", MinContrast},
@@ -91,7 +91,21 @@ var bodyContrast = []contrastPair{
 	{"accent-hover", "surface-muted", MinContrast},
 	{"accent-on", "accent-default", MinContrast},
 	{"accent-on", "accent-hover", MinContrast},
+	// A focus ring is drawn outside the control it rings: clFocusRing
+	// (ui/components/classlists.go) pairs RingOffset(style.RingOffset2) with the
+	// 2px ring, so the ring lands on whatever surface the focused control sits
+	// inside — clCardFrame's surface-primary, or the muted surface a panel raises
+	// itself onto — and not on the page behind it. The canvas is one of three
+	// grounds and, in a dark theme, the darkest and therefore the one that binds
+	// least: a ring measured only there clears 3.0:1 while vanishing on the card.
+	// Every other ring role points at a token this list already certifies on all
+	// three surfaces — ring-brand is accent-default, ring-danger is status-danger,
+	// both at MinContrast — so focus is the only ring colour with a ground left
+	// unnamed, and naming the other two is what makes the graphic's floor mean
+	// what this file says a floor means.
 	{"focus", "surface-canvas", MinContrastGraphic},
+	{"focus", "surface-primary", MinContrastGraphic},
+	{"focus", "surface-muted", MinContrastGraphic},
 	{"status-ok", "status-okbg", MinContrast},
 	{"status-warning", "status-warningbg", MinContrast},
 	{"status-danger", "status-dangerbg", MinContrast},
