@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+**The contrast gate learned to measure the layer a browser paints.** Review round 1 measured the
+delivery's own claim and found it standing on the wrong layer: `design.Theme.Check` reads the 22
+`--pk-color-*` tokens, while a component sets `color: var(--pk-role-fg-secondary)`, and
+`ui/style` mutes some roles toward the surface they were authored against. On the shipped palette,
+`--pk-role-fg-tertiary` measured 3.49:1 on `--pk-role-surface-tertiary` and 4.35:1 on
+`--pk-role-surface-primary` — the same role, two surfaces, and every one of the 40 generated palettes
+reviewed failed the same way at 3.01–4.46:1, while passing `Theme.Check`. Three role values are
+re-authored: `--pk-role-fg-secondary` and `--pk-role-fg-tertiary` mix `text-primary` with
+`text-muted` (two colours the gate certifies on every surface) instead of with `surface-primary`, and
+`--pk-role-fg-placeholder` — the label of an empty field, which is read and is not exempt — is
+`text-muted` outright rather than `text-muted` walked 30% toward the surface under it, which measured
+as low as 1.62:1 on a raised card. Measured as a byte diff of `ui.Compose(design.Default())` against
+the previous commit, exactly these three declarations changed and nothing else; the two digest pins
+that cover them were re-recorded. `design.Theme.CheckRoles` / `design.Pair.CheckRoles` now measure a
+caller's role declarations against the pairs it names, `style.BodyRolePairs()` lists the 18 body-size
+text pairs `ui/components` composes (a disabled control is absent: SC 1.4.3 exempts inactive
+components), `bodyContrast` gained `text-primary` on `surface-muted` — the pair a neutral badge
+paints and nothing gated — and `ui/export` refuses a pair whose role layer is under the floor at the
+seam where a pair becomes a stylesheet or a document. What stays open, and is now named rather than
+assumed: `--pk-role-fg-brand`/`--pk-role-fg-link` are the accent, and the accent on `surface-muted`
+measures as low as 3.82:1 in dark on generated palettes — neither gate reads that pair today, and
+closing it means either holding the generated accent to a fourth surface or refusing more clients.
+
+**The client register is the only door from a design.yaml to an identity.** Review round 1 found the
+collision rule enforced on one of two routes: `designconfig.LoadClientDesigns` compared every pair it
+loaded, while a composition that read one directory at a time and called `design.Client.Resolve` per
+client met no such rule and could wear two identical palettes. `LoadClientDesign` now returns a
+`LoadedClient` that keeps its declaration unreadable, and `designconfig.Register` (`Add`, `Pair`,
+`Pairs`) is the only route from it to a `design.Pair`, so the set's rule is not a step a caller can
+omit. The same change closes a quieter one: the set loader used to `fs.Stat` a directory and then skip
+it when the stat and the read disagreed, so a client whose file the filesystem refused to hand over
+was missing from a returned set that reported no error — the quiet substitution of `design.Default()`
+for a client the package doc refuses to accept. A directory with no `design.yaml` is still not a
+client (`fs.ErrNotExist` is skipped by name); any other read failure fails the whole load.
+
 **A client's identity is generated from a seed, and the gate measures it.** Seven of the eleven
 homepage.css sheets the client repository holds (19 client directories, counted here on 2026-09-28)
 express their whole visual identity in three to five raw hex values, and no code this repository can

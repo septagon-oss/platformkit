@@ -116,7 +116,17 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// on the muted surface it sits under. One token value changed on top of the two
 	// stories above; the vocabulary, the classes and every other byte are theirs.
 	// The digest below is measured on this merge, not inherited from either side.
-	if legacy.SHA256 != "cea34d6ec14607588acaabb62db5107468016a7ede2074a508668fc7fcd6406f" {
+	//
+	// Re-recorded again for review round 1's HIGH finding: three of the role
+	// declarations in :root changed value and nothing else did — measured as a
+	// byte diff between ui.Compose(design.Default()) built here and the same
+	// sheet built from the previous commit, which differ in exactly three lines.
+	// --pk-role-fg-secondary and --pk-role-fg-tertiary now mix text-primary with
+	// text-muted, two colours the gate certifies on every surface, instead of with
+	// surface-primary, which walked them to 3.49:1 on a raised card; and
+	// --pk-role-fg-placeholder is text-muted outright rather than text-muted 70%
+	// toward that surface, which measured 1.62:1 on one.
+	if legacy.SHA256 != "7c1736b53275659082f782c57674f35fdbcce7d19dd254869d7b721c19d976d4" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

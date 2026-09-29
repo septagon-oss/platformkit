@@ -312,7 +312,10 @@ A client that supplies values instead of copying a palette writes a seed.
 an optional brand colour, and refuses the result below the contrast
 [design.Contrast](design/contrast.go) measures; [kit/designconfig](kit/designconfig/)
 decodes `clients/<slug>/design.yaml` into that pair, keyed by slug so one process
-can hold many. See [design/README.md](design/README.md).
+can hold many. Two gates decide the result, because a theme is not what is painted:
+`Theme.Check` measures the `--pk-color-*` tokens a theme sets, and
+`Theme.CheckRoles` measures the `--pk-role-*` layer a component paints, over the
+pairs [ui/style](ui/style/README.md) lists. See [design/README.md](design/README.md).
 
 [Theme.FontFamilies](design/typography.go) projects those existing token identities
 as ordered literal or generic family names. It follows the admitted

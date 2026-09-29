@@ -20,6 +20,15 @@ func tokenVar(path string) design.ColorValue {
 
 // mix records pct% of colorA mixed with its complement of colorB, in sRGB.
 // Used for the soft, hover, and disabled roles the theme does not enumerate.
+//
+// A mix toward a *surface* is only legible on that surface: it walks the
+// foreground toward the background it is painted on, so the same role falls
+// below the contrast floor the moment a component puts it on another one
+// (mixing text 60% into surface-primary measures 4.35:1 on surface-primary and
+// 3.01:1 on surface-muted). Body text therefore mixes between two colours the
+// theme's own gate certifies on every surface — text-primary and text-muted —
+// which keeps the tone between two certified ratios instead of walking it off
+// the palette. BodyRolePairs measures the result rather than trusting it.
 func mix(a design.ColorValue, pct float64, b design.ColorValue) design.ColorValue {
 	return design.ColorValue{Mix: &design.ColorMix{First: a, FirstPercent: pct, Second: b}}
 }
@@ -57,11 +66,15 @@ func roleValues() map[Color]design.ColorValue {
 		SurfaceInverse:     tokenVar("sidebar-bg"),
 
 		// Foreground.
-		FgPrimary:     textPrimary,
-		FgSecondary:   mix(textPrimary, 78, surfacePrimary),
-		FgTertiary:    mix(textPrimary, 60, surfacePrimary),
-		FgMuted:       textMuted,
-		FgPlaceholder: mix(textMuted, 70, surfacePrimary),
+		FgPrimary:   textPrimary,
+		FgSecondary: mix(textPrimary, 66, textMuted),
+		FgTertiary:  mix(textPrimary, 33, textMuted),
+		FgMuted:     textMuted,
+		// A placeholder is the label of an empty field: a user reads it to decide
+		// what to type, so it is body text and not exempt the way a disabled
+		// control is. It used to be text-muted walked 30% toward the surface under
+		// it, which measured as low as 1.62:1 on a raised card.
+		FgPlaceholder: textMuted,
 		FgBrand:       accent,
 		FgOnBrand:     tokenVar("accent-on"),
 		FgSuccess:     tokenVar("status-ok"),
@@ -105,6 +118,45 @@ func RoleColors() []design.ColorToken {
 		out = append(out, design.ColorToken{Name: "--pk-role-" + string(name), Value: roles[name]})
 	}
 	return out
+}
+
+// bodyRole is one foreground role and one surface role the kernel's components
+// compose at body size, as a design.RolePair.
+type bodyRole = design.RolePair
+
+// bodyRolePairs are the text pairs ui/components actually paints, read out of
+// classlists.go: the neutral badge and the read-only field put FgSecondary on
+// SurfaceTertiary, a detail description puts it on SurfaceSecondary, and every one
+// of them is body-size copy. FgDisabled is deliberately absent: a disabled control
+// is the one text WCAG 2.2 SC 1.4.3 exempts, and a gate that measured it would
+// demand a disabled field look enabled.
+var bodyRolePairs = []design.RolePair{
+	{Foreground: "--pk-role-fg-primary", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-primary", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-primary", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-on-surface", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-on-surface", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-secondary", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-secondary", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-secondary", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-tertiary", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-tertiary", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-tertiary", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-primary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-secondary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-tertiary", Min: design.MinContrast},
+	{Foreground: "--pk-role-fg-on-inverse", Background: "--pk-role-surface-inverse", Min: design.MinContrast},
+}
+
+// BodyRolePairs returns the body-size text pairs this package's roles compose,
+// for design.Theme.CheckRoles. A caller that emits a stylesheet hands these over
+// with RoleColors: the token gate says what a theme sets, these say what a reader
+// is shown.
+func BodyRolePairs() []design.RolePair {
+	return slices.Clone(bodyRolePairs)
 }
 
 // roleVar renders the var() reference utility rules use for a color role.
