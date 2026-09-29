@@ -103,8 +103,8 @@ the one header string it arrived as, so the caller's own quality values still de
 which of the two the answer is — a browser offering `pt-PT;q=0.1,en;q=0.9` to a tenant
 served in both is answered in English, in either order it spells them. It matches a
 language, not a region: a browser that asks for `pt-BR` is asking for Portuguese, and
-this deployment's Portuguese answers it. What the tenant adds behind that list is its
-own set, its default at its head, and that head answers a request nothing else matched.
+the tenant's own Portuguese answers it, in the region it declared. Behind that list
+the tenant adds its own set, its default at its head, which answers an unmatched request.
 The generated screens read their fixed labels (New, Edit, Delete, the count, the pager
 and the empty state) under `screens.*` keys with English fallbacks; entity names,
 authentication API errors, client apps and notification templates still need their own

@@ -37,16 +37,24 @@ func SelectLocale(messages Messages, preferences ...string) Locale {
 // hole: with no tenant there is no tenant preference to honour, and the deployment's
 // catalog is the only declaration left standing.
 //
-// Matching is on the language a tag names, which is what "this browser speaks
-// Portuguese" means when the tenant serves pt-PT: en-GB is served by an en tenant,
-// and so is every Portuguese a browser can name — bare pt, pt-BR, pt-MO — because a
-// region says where a person's Portuguese comes from, not which tenant languages it
-// is worth answering in. A tenant that declared Portuguese declares the language, and
-// the deployment decides the region its copy exists in. `de` names no language this
-// tenant serves and is refused by the same rule. A request that asked only for
-// languages this tenant does not serve is not answered in one of them — the list it
-// brought is empty by the time this returns, and the default it ends with is the
-// answer.
+// Matching is on the language a tag names, and the tag that goes on to the provider
+// is the tenant's. That is what "this browser speaks Portuguese" means when the
+// tenant serves pt-PT: en-GB is served by an en tenant, and so is every Portuguese a
+// browser can name — bare pt, pt-BR, pt-MO — because a region says where a person's
+// Portuguese comes from, not which tenant languages it is worth answering in. A
+// tenant that declared Portuguese declares the language, and the region it is
+// answered in is the one that declaration names. `de` names no language this tenant
+// serves and is refused by the same rule. A request that asked only for languages
+// this tenant does not serve is not answered in one of them — the list it brought is
+// empty by the time this returns, and the default it ends with is the answer.
+//
+// Rewriting the surviving tag, rather than passing the caller's spelling on, is the
+// half that makes the tenant's set a ceiling on the answer and not only on the input:
+// a deployment may carry two regions of one language (xtext.Load reads every
+// `<locale>.json` a source holds, so pt-BR.json beside pt-PT.json is a legal
+// catalogue), the provider selects from the tags it is handed, and a pt-BR header kept
+// whole would answer a tenant that declared only European Portuguese from the
+// Brazilian file.
 func TenantPreferences(r Request, preferences ...string) []string {
 	supported := r.Tenant.Languages.Preferred()
 	if len(supported) == 0 {
@@ -64,10 +72,17 @@ func TenantPreferences(r Request, preferences ...string) []string {
 			// caller's ranking, and the same request written in the other order
 			// would be answered in the other language.
 			token = strings.TrimSpace(token)
-			asked := strings.SplitN(token, ";", 2)[0]
-			if asked != "" && speaks(supported, asked) {
-				kept = append(kept, token)
+			asked, quality, _ := strings.Cut(token, ";")
+			tag := declared(supported, asked)
+			if tag == "" {
+				continue
 			}
+			// The caller's ranking stays on the entry — round 1's finding is that it
+			// must — the caller's region does not.
+			if quality != "" {
+				tag += ";" + quality
+			}
+			kept = append(kept, tag)
 		}
 		if len(kept) == 0 {
 			continue
@@ -96,38 +111,48 @@ func TenantPreferences(r Request, preferences ...string) []string {
 	return out
 }
 
-// speaks is whether one of the supported tags names the same language as the
-// preference. Comparing whole tags would keep the closest spelling of a language and
-// refuse the further one — a tenant serving pt-PT would read "pt" as Portuguese and
-// "pt-BR" as a foreign language, and the nearer dialect would be answered in the
-// tenant's default while the bare language got the copy. Comparing languages keeps
-// the question the filter actually asks: does this person speak a language this
-// tenant is served in. The tag that survives goes to the provider whole, which is
-// what chooses the region to answer in.
-func speaks(supported []string, preference string) bool {
-	asked := languageBase(preference)
-	if asked == "" {
-		return false
-	}
-	for _, tag := range supported {
-		if languageBase(tag) == asked {
-			return true
-		}
-	}
-	return false
-}
-
-// languageBase is the language half of a tag, without any region or script, in the
-// case the supported set is written in. A tag this parser refuses has no language
-// half at all and answers to nothing, which is what keeps a header written in junk
-// out of a tenant's set rather than in it.
-func languageBase(tag string) string {
-	parsed, err := language.Parse(tag)
+// declared is which tag of the tenant's own set answers the language half of a
+// preference, or "" when the tenant declares no language the caller speaks.
+//
+// Comparing whole tags would keep the closest spelling of a language and refuse the
+// further one — a tenant serving pt-PT would read "pt" as Portuguese and "pt-BR" as a
+// foreign language, and the nearer dialect would be answered in the tenant's default
+// while the bare language got the copy. Comparing languages keeps the question the
+// filter actually asks: does this person speak a language this tenant is served in.
+//
+// The answer is one of the tenant's tags and never the caller's spelling of it,
+// because the provider picks the copy from the tags it is given: hand it "pt-BR" over
+// a deployment carrying both regions and the browser, not the tenant, has chosen which
+// Portuguese the page is written in. An exact tag match wins first, so a tenant that
+// declared two regions still answers each person in the region they named; failing
+// that, the first declaration whose language matches answers, and Preferred() leads
+// with the tenant's default, so a person who named no region gets the region the
+// tenant defaults to rather than whichever declaration happens to be stored first.
+//
+// A tag this parser refuses has no language half at all and answers to nothing, which
+// is what keeps a header written in junk out of a tenant's set rather than in it.
+func declared(supported []string, preference string) string {
+	asked, err := language.Parse(strings.TrimSpace(preference))
 	if err != nil {
 		return ""
 	}
-	base, _ := parsed.Base()
-	return base.String()
+	want, _ := asked.Base()
+	near := ""
+	for _, tag := range supported {
+		parsed, err := language.Parse(tag)
+		if err != nil {
+			continue
+		}
+		if parsed == asked {
+			return tag
+		}
+		if near == "" {
+			if base, _ := parsed.Base(); base == want {
+				near = tag
+			}
+		}
+	}
+	return near
 }
 
 // FromCatalog adapts x/text's CLDR formatting and language negotiation. Compose
