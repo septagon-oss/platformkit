@@ -73,12 +73,15 @@ func TintedRolePairs() []design.RolePair { return emittedRolePairs(design.Tinted
 // design.Client.Resolve reads — the two halves of one gate.
 func GatedRolePairs() []design.RolePair { return emittedRolePairs(design.GatedRolePairs()) }
 
-// StatusRolePairs returns the body pairs a reader is shown on a status tint: each
-// tone on its own badge, and the muted line a tinted panel carries — clMediaFailed
+// StatusRolePairs returns the body pairs a reader is shown on a status ground:
+// each tone on its own badge, the muted line a tinted panel carries — clMediaFailed
 // gives a failed media panel the warning ground and fills it with the muted reason
-// line, so the tint is certified against both. design certifies a generated tint
-// against that muted tone, and design.Client.Resolve gates a client's override
-// against it, so a pair that reaches this package already holds it.
+// line, so the tint is certified against both — and the label of the button a tone
+// names outright, which clButtonTone paints as fg-on-brand on the tone itself at
+// text-sm. design certifies a generated tint against that muted tone; the fill
+// needs no repair, because the label is the neutral pole every fill is walked away
+// from, and design.Client.Resolve gates a client's override against every one of
+// these pairs, so a pair that reaches this package already holds it.
 func StatusRolePairs() []design.RolePair { return emittedRolePairs(design.StatusRolePairs()) }
 
 // roleVar renders the var() reference utility rules use for a color role.
