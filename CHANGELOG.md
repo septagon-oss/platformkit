@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+**The gate a client's file is validated by is now the gate a stylesheet is built with.**
+Review round 5 swept the override space this branch opened and found 98 of the 23115
+overrides `design.Client.Resolve` accepts have a gated role pair below the floor: a dark
+theme whose `surface-primary` is the warm neutral `#2e2920` holds every one of the 22
+token pairs and measures `--pk-role-fg-brand` on `--pk-role-surface-brand-soft` at 3.91:1
+— the label of a brand badge, under the 4.5:1 the badge's own copy requires. The cause was
+ownership, not arithmetic: the `--pk-role-*` declarations lived in `ui/style`, which
+`design` may not import, so `Client.Resolve` — the door a `design.yaml` actually passes
+through — could run only the token half of the gate while `ui/export` ran both. The
+declarations move down to `design/roles.go` as what they are, names, references and
+percentages, and `ui/style` renders them (`RoleVars`, `RoleColors`, `BodyRolePairs` and
+`TintedRolePairs` are the same API as before, delegating) while `design.Client.Resolve`
+gates the finished pair with `RoleLayer()` and `GatedRolePairs()`. The rendered layer is
+byte-identical: the digest pins over the shipped stylesheet, the token export and a
+generated client's DTCG document did not move. `Theme.CheckRoles` now refuses a caller
+that hands over no pair to measure, and `RoleLayer` detaches each declaration it hands
+out, because a mix is a pointer and one shared table would let a caller editing what it
+was handed move the layer every later caller in the process measures.
 **The contrast gate learned to measure the layer a browser paints.** Review round 1 measured the
 delivery's own claim and found it standing on the wrong layer: `design.Theme.Check` reads the 22
 `--pk-color-*` tokens, while a component sets `color: var(--pk-role-fg-secondary)`, and

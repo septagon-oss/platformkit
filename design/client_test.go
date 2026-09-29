@@ -53,9 +53,10 @@ func TestClientResolveAppliesItsOwnTokensAndStaysLegible(t *testing.T) {
 }
 
 // The gate is the same one FromSeed runs its own output through, applied to the
-// finished pair: an override that breaks a body role is refused whole, with the
-// ratio it measured, and resolves to no pair.
-func TestClientResolveRefusesAnOverrideThatBreaksAGatedRole(t *testing.T) {
+// finished pair: an override that breaks a gated token pair is refused whole, with
+// the ratio it measured, and resolves to no pair. (The role layer's half of the
+// same gate is TestClientResolveRefusesAnOverrideTheRoleLayerRefuses below.)
+func TestClientResolveRefusesAnOverrideThatBreaksAGatedTokenPair(t *testing.T) {
 	t.Parallel()
 	client := design.Client{
 		Slug:   "pale",
@@ -125,6 +126,40 @@ func TestClientValidateRefusesWhatTheKernelHasNoMeaningFor(t *testing.T) {
 		err := tc.client.Validate()
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: got %v, want it to say %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+// The token half is not the door. These three literals came out of the sweep
+// review round 5 ran over the override space this branch opened: each holds all
+// 22 token pairs, and each drops a pair the role layer composes under the floor —
+// the accent on the tint mixed from it, and text-primary's own mixed role on the
+// surface a card raises itself onto. Resolve owns the whole gate, so a client's
+// own file is refused at this door and not only later, where a Pair becomes a
+// stylesheet, which is what makes the two seams agree about one palette.
+func TestClientResolveRefusesAnOverrideTheRoleLayerRefuses(t *testing.T) {
+	t.Parallel()
+	seed := design.Seed{Sector: "insurance", Name: "Meridian"}
+	for _, override := range []struct{ theme, token, value string }{
+		{"dark", "surface-primary", "#2e2920"},
+		{"dark", "accent-default", "#f46218"},
+		{"dark", "text-primary", "#fa19fa"},
+	} {
+		client := design.Client{Slug: "meridian", Seed: seed,
+			Tokens: map[string]map[string]string{override.theme: {override.token: override.value}}}
+		pair, err := client.Resolve()
+		if err == nil {
+			t.Fatalf("%s.%s=%s resolved: the role layer never reached this door",
+				override.theme, override.token, override.value)
+		}
+		if pair != (design.Pair{}) {
+			t.Errorf("%s.%s=%s: a refused client returned a pair", override.theme, override.token, override.value)
+		}
+		// The refusal is the gate's, at the role layer's own words: the role it
+		// measured, the ratio it measured and the floor it fell under.
+		if !strings.Contains(err.Error(), "--pk-role-") || !strings.Contains(err.Error(), "4.5:1") {
+			t.Errorf("%s.%s=%s: refusal names no role and no floor: %v",
+				override.theme, override.token, override.value, err)
 		}
 	}
 }
