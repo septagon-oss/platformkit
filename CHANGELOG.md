@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+**A module's own workspace pages stand instead of the generated register.** The admin shell used to mount
+generated screens for every registered resource, even at addresses a module already served with its own
+page. The surface gate refuses two routes at one method and path, so such an application did not start.
+The pets client could not boot for exactly that reason (T-0126). The shell now leaves a resource's screens
+to the module when the module recorded any GET at or under that resource's screen address, and logs it at
+boot.
+
 **The reference application's personas are declared, and each is proven to do its own
 journeys and be refused the others'.** `apps/platformkit` seeds `coordinator`
 (`task:read`, `task:update`) and `observer` (`task:read`) with every tenant, beside
