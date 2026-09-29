@@ -47,3 +47,10 @@ checks existing page negotiation, plural, escaping and catalog-isolation behavio
 through the compatibility adapter. Page/request header integration remains with
 the foundation's full verification workflow.
 
+The number this seam is judged on is not "translations exist" but *coverage of the copy the
+kernel itself raises*: the keys its refusals and generated screens can ask for, and how many of
+them a second language answers for. Count them with the two coverage gates — raise the set in
+`ui/page` and `ui/resource`, list the keys the shipped `messages/` files answer for — and refuse
+the two lists to differ. Four of the kernel's twenty-eight keys were answerable in European
+Portuguese before this seam existed and twenty-eight are now; a count that goes stale fails
+`TestTheCatalogueAnswersEveryRefusalThisPackageCanShow` rather than sitting in a README.
