@@ -40,6 +40,8 @@ The request carries `Resource.Kind` `"task"`, the task id and tenant id, and the
 
 The policy is optional. With `Service.Policy == nil` the check returns nil and the route grants alone decide. A composition enables it with `Deps.Policy` or `NewServiceWithPolicy` in `modules/task/module.go`.
 
+The reference application (`apps/platformkit`) enables it with a rule written in Rego, `apps/platformkit/policy/task.rego`, evaluated in process by `kit/tenancy/providers/opa`: assignment is allowed, an unassigned task may be resolved by any holder of `task:resolve`, and an assigned one only by its assignee. A refusal answers 403 `POLICY_DENIED` and is recorded as `security.denied` with the action, the rule's reason and the policy's revision (`sha256:` and twelve hex characters of the source), because `kit/httpx` hands every `tenancy.RequirePolicy` refusal of an authenticated request to the same audit hook as a missing grant.
+
 ### Duties the module enforces itself
 
 The policy never replaces the lifecycle's state checks (see the `Service` comment in `modules/task/internal/service.go`).
