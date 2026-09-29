@@ -45,7 +45,7 @@ type TokenExport struct {
 // --pk-color-text-primary, it sets color: var(--pk-role-fg-secondary). The seam
 // where a pair becomes a stylesheet, an export or a Storybook is where it refuses.
 func checkLegible(context string, themes ...design.Theme) error {
-	roles, pairs := style.RoleColors(), style.BodyRolePairs()
+	roles, pairs := style.RoleColors(), append(style.BodyRolePairs(), style.TintedRolePairs()...)
 	for _, theme := range themes {
 		if err := theme.CheckRoles(roles, pairs); err != nil {
 			return fmt.Errorf("%s: %w", context, err)
