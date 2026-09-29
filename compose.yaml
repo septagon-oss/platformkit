@@ -2,6 +2,9 @@
 # overridable so this stack can run beside another Postgres or NATS:
 # PLATFORMKIT_PG_PORT and PLATFORMKIT_NATS_PORT. `make test` reads the same
 # variables, so overriding them once is enough.
+#
+# A third service sits behind the `telemetry` profile and so takes no part in
+# `make up`: see `make trace`.
 services:
   postgres:
     image: postgres:16
@@ -32,3 +35,35 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  collector:
+    # The local trace backend: `make trace` starts it, and
+    # telemetry.otlp_endpoint http://localhost:4317 (or localhost:4317) is what
+    # points the application at it. It prints every span and metric datapoint it
+    # receives to this container's log — `docker compose logs collector` — and
+    # keeps nothing, so a developer sees the four kernel boundaries traced on
+    # their own machine without a trace backend. deploy/otel-collector.yaml is
+    # its configuration.
+    #
+    # A profile, and not in `make up`, because that goal is what `make test` and
+    # `make check` sit on: a service that has to be pulled before the database
+    # is usable would make an offline checkout untestable, and an image that is
+    # not started is no worse than the one that is not configured.
+    #
+    # No healthcheck: the release image is scratch-based, so it carries nothing
+    # to probe with — no wget, no shell — and a probe written as
+    # `otelcol --version` would report that a binary exists rather than that it
+    # is listening. `--wait` therefore waits for this one to be running, which
+    # for a service with no dependencies is the whole of readiness.
+    # No restart policy, which is a choice rather than a default left alone: a
+    # container that restarts itself hides the fact that it died, and the one
+    # thing a local backend has to do is admit it is not running. `make trace`
+    # recreates it on every call, so a laptop that slept over the weekend gets a
+    # fresh one when somebody asks for it.
+    image: otel/opentelemetry-collector:0.116.1
+    profiles: ["telemetry"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${PLATFORMKIT_OTLP_PORT:-4317}:4317"
