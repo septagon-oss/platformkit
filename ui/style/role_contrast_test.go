@@ -109,10 +109,14 @@ func TestTintedRolePairsClearTheFloorOnGeneratedPalettes(t *testing.T) {
 }
 
 // TestSoftTintBackgroundIsMixedAtThePercentTheGeneratorCertifies holds the two
-// halves of the tint together. ui/style declares the background as a mix; design
-// repairs a generated accent against a mix of that percent. A layer that changed
-// the number without changing the constant would quietly move the background out
-// from under the measurement, which is the whole defect this case guards.
+// halves of the tint together. The layer declares --pk-role-surface-brand-soft as
+// a mix (design/roles.go, rendered by ui/style); design/seed.go repairs a
+// generated accent against a mix of that percent, and Client.Resolve gates a
+// client's override against the declared value. Since the declaration moved beside
+// the constant this case reads one file rather than crossing a package boundary,
+// but it still refuses the drift it was written for: a layer that changed the
+// number without changing the constant would quietly move the background out from
+// under the measurement, which is the whole defect this case guards.
 func TestSoftTintBackgroundIsMixedAtThePercentTheGeneratorCertifies(t *testing.T) {
 	t.Parallel()
 	var found *design.ColorMix
