@@ -110,6 +110,12 @@ type replayRow struct {
 // record of a finished delivery cannot turn on how many days ago that delivery
 // finished — that would waive the audit exactly where it is worth most. Who
 // asked, and why, are the only questions this verb asks.
+//
+// Asked, not granted. Permission is held behind kit/httpx's per-route authorizer
+// and this verb has no route, so what it can require is that a person be named,
+// not that they hold a grant. Reaching for an authorizer through a package-level
+// variable would be discovering a dependency rather than naming one, so the
+// product mounts the surface, declares the permission, and asks the question there.
 func Replay(ctx context.Context, conn *db.Conn, eventID uuid.UUID, durable, reason string) (ReplayRecord, error) {
 	// An empty reason is a correctable refusal: the same call with a sentence
 	// attached is allowed. It is checked before the transaction opens, because
