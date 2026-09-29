@@ -17,6 +17,7 @@ const (
 	EventCreated   = "tenant.created"
 	EventSuspended = "tenant.suspended"
 	EventHostAdded = "tenant.host_added"
+	EventLocaleSet = "tenant.locale_set"
 )
 
 // Created is the payload of EventCreated: there is a new customer.
@@ -44,4 +45,16 @@ type HostAdded struct {
 	Host     string    `json:"host"`
 	Primary  bool      `json:"primary"`
 	At       time.Time `json:"at"`
+}
+
+// LocaleSet is the payload of EventLocaleSet: the languages this tenant is served
+// in changed. The whole list travels rather than the difference, because what a
+// subscriber can do about it is throw away whatever it built per language — a
+// search index's analysed copy, a rendered page it kept — and that question is
+// asked of the set, not of one entry in it.
+type LocaleSet struct {
+	TenantID  uuid.UUID `json:"tenantId"`
+	Default   string    `json:"default"`
+	Supported []string  `json:"supported"`
+	At        time.Time `json:"at"`
 }

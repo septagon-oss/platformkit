@@ -41,6 +41,15 @@ type Deps struct {
 	// wreckage — and answering 501 to a route that exists is worse than not
 	// having it.
 	Invite contracts.Inviter
+
+	// Languages are the languages the installation's catalogues answer in, and a
+	// new tenant starts out serving all of them: the set exists on the day the
+	// tenant is created, so a page can be served in the language its copy was
+	// written in before anybody narrowed it. The composition reads them off the
+	// catalogues it composed (apps/platformkit/catalog.go); this module names no
+	// tag. A composition that wires no catalogues passes nothing and a new tenant
+	// is served in the one language the column defaults to.
+	Languages []string
 }
 
 // Module is the manifest, and the service it is built on.
@@ -48,11 +57,12 @@ type Deps struct {
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
 func Module(deps Deps) (contracts.Service, module.Module) {
-	svc := internal.NewService(deps.OnCreate)
+	svc := internal.NewService(deps.OnCreate, deps.Languages)
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,
-		Events:      []string{contracts.EventCreated, contracts.EventSuspended, contracts.EventHostAdded},
+		Events: []string{contracts.EventCreated, contracts.EventSuspended, contracts.EventHostAdded,
+			contracts.EventLocaleSet},
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above
 		// because a module's Events are the ones it owns: kit/app checks a
