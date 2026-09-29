@@ -65,6 +65,13 @@ type Transport interface {
 	// Subscribe delivers every event called name to sink until ctx is done.
 	// durable names the subscription. Durable brokers resume its stored state;
 	// local providers need a caller-owned replay source after process restart.
+	//
+	// A transport that routes by an address the event does not travel inside —
+	// a subject, a topic, a queue name — checks that address against the
+	// document before its sink runs and terminates a mismatch
+	// (AddressMismatch). Its filter fixes the event's name and cannot fix its
+	// tenant, so a transport that skipped the check would open the handler's
+	// transaction in whatever tenant the message's body claimed.
 	Subscribe(ctx context.Context, durable, name string, sink Sink) error
 }
 

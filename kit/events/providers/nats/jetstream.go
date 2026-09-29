@@ -1,5 +1,7 @@
 // Package nats provides the existing JetStream event transport.
-// The caller owns tenant checks and idempotent or transactional sink handling.
+// The caller owns tenant checks and idempotent or transactional sink handling;
+// what this provider owns is the address it routed by, and a delivery whose
+// document does not claim that address is terminated before the sink runs.
 package nats
 
 import (
@@ -317,6 +319,21 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 			// A message that will never parse would be redelivered forever.
 			// Terminate it and say so; the outbox still holds the row.
 			slog.ErrorContext(ctx, "events: undecodable message", "subject", msg.Subject, "error", err)
+			_ = msg.Term()
+			return
+		}
+		// The address this message arrived on is a fact the broker knows and the
+		// document does not get to decide alone. The consumer's filter fixes the
+		// event's name and leaves the tenant as a wildcard, and events.Consume
+		// opens the handler's transaction in the tenant the document names, so a
+		// message stored on one tenant's address and stamped as another's would
+		// run its handler inside the second tenant's rows. Terminating it is the
+		// same shape as the branch above: the copy is undeliverable as addressed,
+		// the outbox still holds the row, and the correctly addressed copy — the
+		// one the relay wrote — is a different message on a different subject.
+		if err := transport.AddressMismatch(msg.Subject, ev); err != nil {
+			slog.ErrorContext(ctx, "events: message at an address its document does not claim",
+				"subject", msg.Subject, "event", ev.Name, "id", ev.ID, "tenant", ev.TenantID, "error", err)
 			_ = msg.Term()
 			return
 		}

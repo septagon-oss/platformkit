@@ -165,6 +165,15 @@ func (s Subscription) durable() string {
 // the same way a request handler does and can publish events of its own into
 // the same transaction.
 //
+// "The event's own tenant" is the tenant the event names *and* the tenant its
+// delivery's address names, which is why a transport that routes by an address
+// checks the two agree before this sink runs (transport.AddressMismatch, and the
+// check its Subscribe contract asks for). Both sentences are one rule: a handler
+// runs in the tenant the event names, and a message stored on one tenant's
+// address while stamped as another's is not this kernel's event at all — its
+// body is the only thing that says otherwise, and a body is not the address the
+// broker routed by.
+//
 // Each delivery is claimed before the handler runs, so a handler sees each
 // event once however many times the transport delivers it. See claim.
 func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscription) error {

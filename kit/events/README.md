@@ -38,7 +38,7 @@ one durable per (module, event) and filter `platformkit.*.<module>.<event>`, plu
 (`transport.Filters`); an operator who wants one tenant's queue filters that
 tenant's exact subject. The stream is still `PLATFORMKIT` with `platformkit.>`.
 
-Three consequences, each a test rather than an assurance:
+Four consequences, each a test rather than an assurance:
 
 * **The pre-envelope shape decodes and is never written**, and a subscription
   answers it: the previous build published at `platformkit.<module>.<event>`,
@@ -50,6 +50,22 @@ Three consequences, each a test rather than an assurance:
   publisher is gone the second filter goes, the consumer is made again, and the
   window shuts. A pre-envelope document with no tenant or no event name is
   refused in either form.
+* **A delivery whose document does not claim the address it arrived at is
+  terminated** by the provider that routed it, before any handler's transaction
+  opens (`transport.AddressMismatch`). A consumer's filter spells out the module
+  and the event and leaves the tenant a wildcard, and `Consume` opens its
+  transaction in the tenant the envelope names, so without this comparison a
+  message stored on one tenant's address and stamped as another's would be
+  handled inside the second tenant's rows on the strength of its body — a
+  boundary held up by convention, with the broker credential as its key. The
+  envelope's own rule that `subject` is `Subject(tenantid, type)` proves the
+  document agrees with itself, which is what a self-consistent forgery satisfies;
+  this is the check against the address the broker actually routed by.
+  `platformkit.<module>.<event>`, the previous build's address, names no tenant
+  and so contradicts nothing: refusing it would be refusing the bullet above.
+  Pinned by
+  `TestAMessageStoredOnOneTenantsAddressIsNotDeliveredInsideAnotherTenantsTransaction`
+  and by `TestADeliveryIsCheckedAgainstTheAddressItArrivedAt`.
 * **Every stored consumer is deleted and made again**, because it went from one
   `filter_subject` to a `filter_subjects` set and NATS cannot change one in
   place. It asks for
@@ -104,6 +120,12 @@ dead letter is what lets the history window take the row.
 
 Delivery is at least once. Independent sinks must provide their own durable
 idempotency and tenant checks; the transport cannot supply database isolation.
+That sentence is about a reader that is not this provider — a bridge or a foreign
+consumer reads the subject as untyped text and decides its own tenancy from it.
+The one thing the provider does own is its own deliveries: the address it routed
+by has to be the address the event names, because that is how the tenant of
+`Consume`'s transaction is settled rather than guessed from a body. Neither is a
+substitute for row-level security, which is where the rows are actually scoped.
 Consumer reconciliation may replay events when an incompatible durable is
 recreated. Memory has no restart persistence and does not coordinate duplicate
 durables across processes. When using the SQL outbox, handling and terminal
