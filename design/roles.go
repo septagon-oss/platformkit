@@ -16,10 +16,23 @@ package design
 // application reads. The role names are the ones those layers emit; nothing is
 // derived at render time, so the pair Client.Resolve refuses and the pair
 // ui/export refuses are the same pair read from one list.
+//
+// One list, read in two vocabularies, both owned here, because a role has two
+// true names. Declared, it is "fg-muted": the key of roleLayer below, the
+// spelling ui/style's Color constants carry, the name a class list is written
+// against. Emitted, it is "--pk-role-fg-muted": the name RoleLayer hands out, the
+// property the :root block declares and a browser paints. RoleCSSName turns one
+// into the other and CheckRoles resolves either against a layer, so the pair
+// lists below are written in the declared spelling — the vocabulary this file
+// declares the layer in — while ui/style, the door that ships a stylesheet, hands
+// its seam the emitted spelling. Either way a refusal names the property a person
+// would find in the sheet, and a pair read out of a component's own declaration
+// names the role the same file writes.
 
 import (
 	"maps"
 	"slices"
+	"strings"
 )
 
 // roleRef names the theme token a role reads.
@@ -131,10 +144,27 @@ var roleLayer = map[string]ColorValue{
 func RoleLayer() []ColorToken {
 	out := make([]ColorToken, 0, len(roleLayer))
 	for _, name := range slices.Sorted(maps.Keys(roleLayer)) {
-		out = append(out, ColorToken{Name: "--pk-role-" + name, Value: detach(roleLayer[name])})
+		out = append(out, ColorToken{Name: rolePrefix + name, Value: detach(roleLayer[name])})
 	}
 	return out
 }
+
+// RoleCSSName returns the name a role carries in a resolved layer: the emitted
+// spelling, with the --pk-role- prefix a stylesheet declares and a browser reads.
+// A name already in that spelling is returned as it stands, so the function is a
+// translation into one vocabulary rather than a concatenation, and it is what
+// makes a pair written as "fg-muted" and a pair written as "--pk-role-fg-muted"
+// the same measurement. An empty name is not a role: it comes back as a name no
+// layer declares, so a caller that lost one is refused rather than skipped.
+func RoleCSSName(name string) string {
+	if strings.HasPrefix(name, rolePrefix) {
+		return name
+	}
+	return rolePrefix + name
+}
+
+// rolePrefix is the property prefix the renderers emit for a role.
+const rolePrefix = "--pk-role-"
 
 // detach copies a role's source value, mix included. A mix is a pointer, so one
 // table would otherwise be shared by every caller of RoleLayer, and a caller that
@@ -162,44 +192,45 @@ func detach(value ColorValue) ColorValue {
 // is the one text WCAG 2.2 SC 1.4.3 exempts, and a gate that measured it would
 // demand a disabled field look enabled.
 var bodyRolePairs = []RolePair{
-	{Foreground: "--pk-role-fg-primary", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-primary", Background: "--pk-role-surface-secondary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-primary", Background: "--pk-role-surface-tertiary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-on-surface", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-on-surface", Background: "--pk-role-surface-tertiary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-secondary", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-secondary", Background: "--pk-role-surface-secondary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-secondary", Background: "--pk-role-surface-tertiary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-tertiary", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-tertiary", Background: "--pk-role-surface-secondary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-tertiary", Background: "--pk-role-surface-tertiary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-secondary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-tertiary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-secondary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-placeholder", Background: "--pk-role-surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-primary", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-primary", Background: "surface-secondary", Min: MinContrast},
+	{Foreground: "fg-primary", Background: "surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-on-surface", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-on-surface", Background: "surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-secondary", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-secondary", Background: "surface-secondary", Min: MinContrast},
+	{Foreground: "fg-secondary", Background: "surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-tertiary", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-tertiary", Background: "surface-secondary", Min: MinContrast},
+	{Foreground: "fg-tertiary", Background: "surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-muted", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-muted", Background: "surface-secondary", Min: MinContrast},
+	{Foreground: "fg-muted", Background: "surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-placeholder", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-placeholder", Background: "surface-secondary", Min: MinContrast},
+	{Foreground: "fg-placeholder", Background: "surface-tertiary", Min: MinContrast},
 	// The accent as copy a reader reads: the brand text utility, a brand detail
 	// value and the outline button variant paint fg-brand with no background of
 	// their own, a link paints fg-link (the same colour, in a sentence) and its
 	// hover state paints fg-link-hover, so all three land on whichever surface
 	// the card around them raised itself onto.
-	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-secondary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-tertiary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-secondary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-tertiary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-link-hover", Background: "--pk-role-surface-primary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-link-hover", Background: "--pk-role-surface-secondary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-link-hover", Background: "--pk-role-surface-tertiary", Min: MinContrast},
-	{Foreground: "--pk-role-fg-on-inverse", Background: "--pk-role-surface-inverse", Min: MinContrast},
+	{Foreground: "fg-brand", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-brand", Background: "surface-secondary", Min: MinContrast},
+	{Foreground: "fg-brand", Background: "surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-link", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-link", Background: "surface-secondary", Min: MinContrast},
+	{Foreground: "fg-link", Background: "surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-link-hover", Background: "surface-primary", Min: MinContrast},
+	{Foreground: "fg-link-hover", Background: "surface-secondary", Min: MinContrast},
+	{Foreground: "fg-link-hover", Background: "surface-tertiary", Min: MinContrast},
+	{Foreground: "fg-on-inverse", Background: "surface-inverse", Min: MinContrast},
 }
 
 // BodyRolePairs returns the body-size text pairs the semantic layer composes on
 // a theme's own surfaces, for Theme.CheckRoles. Whoever gates a palette hands
 // these over with RoleLayer: the token gate says what a theme sets, these say
-// what a reader is shown.
+// what a reader is shown. Roles are named as this file declares them, without the
+// --pk-role- prefix a stylesheet emits; RoleCSSName spells them the other way.
 func BodyRolePairs() []RolePair { return slices.Clone(bodyRolePairs) }
 
 // tintedRolePairs names the body pairs whose background this layer invents
@@ -213,8 +244,8 @@ func BodyRolePairs() []RolePair { return slices.Clone(bodyRolePairs) }
 // override of the accent, or of the surface that tint is mixed into, moves that
 // badge's label, and nothing else in the pair looks worse.
 var tintedRolePairs = []RolePair{
-	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-brand-soft", Min: MinContrast},
-	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-brand-soft", Min: MinContrast},
+	{Foreground: "fg-brand", Background: "surface-brand-soft", Min: MinContrast},
+	{Foreground: "fg-link", Background: "surface-brand-soft", Min: MinContrast},
 }
 
 // TintedRolePairs returns the body pairs whose background the semantic layer
@@ -246,14 +277,14 @@ func TintedRolePairs() []RolePair { return slices.Clone(tintedRolePairs) }
 // which belongs to the change that paints it), and the plain surfaces, which
 // bodyRolePairs already covers.
 var statusRolePairs = []RolePair{
-	{Foreground: "--pk-role-fg-success", Background: "--pk-role-surface-success-soft", Min: MinContrast},
-	{Foreground: "--pk-role-fg-warning", Background: "--pk-role-surface-warning-soft", Min: MinContrast},
-	{Foreground: "--pk-role-fg-danger", Background: "--pk-role-surface-danger-soft", Min: MinContrast},
-	{Foreground: "--pk-role-fg-info", Background: "--pk-role-surface-info-soft", Min: MinContrast},
-	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-success-soft", Min: MinContrast},
-	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-warning-soft", Min: MinContrast},
-	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-danger-soft", Min: MinContrast},
-	{Foreground: "--pk-role-fg-muted", Background: "--pk-role-surface-info-soft", Min: MinContrast},
+	{Foreground: "fg-success", Background: "surface-success-soft", Min: MinContrast},
+	{Foreground: "fg-warning", Background: "surface-warning-soft", Min: MinContrast},
+	{Foreground: "fg-danger", Background: "surface-danger-soft", Min: MinContrast},
+	{Foreground: "fg-info", Background: "surface-info-soft", Min: MinContrast},
+	{Foreground: "fg-muted", Background: "surface-success-soft", Min: MinContrast},
+	{Foreground: "fg-muted", Background: "surface-warning-soft", Min: MinContrast},
+	{Foreground: "fg-muted", Background: "surface-danger-soft", Min: MinContrast},
+	{Foreground: "fg-muted", Background: "surface-info-soft", Min: MinContrast},
 }
 
 // StatusRolePairs returns the body pairs a reader is shown on a status tint: the
