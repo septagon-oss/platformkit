@@ -18,6 +18,16 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
+// writtenHere is the language of the copy written in this file. Every word on the
+// pages below is a Go string rather than a catalogue key, so each says which
+// language it is in rather than wearing the request's: document.View.Language
+// exists for exactly that, and a page that declared a language its sentences are
+// not written in would send a screen reader off with the wrong voice and tell a
+// translation tool the work is done. A page whose copy comes from a catalogue says
+// nothing here and takes the language that was negotiated — see signIn, which
+// reads its labels out of admin.login.* and declares nothing.
+const writtenHere = "en"
+
 // pages are the screens no schema describes: the way in, the way around, and
 // the two that are about the installation rather than about its data. Each is
 // a function of what it read and of the request, and returns a View; the
@@ -144,7 +154,16 @@ func (p pages) dashboard(ctx context.Context) page.View {
 	if len(failed) > 0 {
 		tone, message = "danger", "Not ready: "+strings.Join(failed, ", ")
 	}
-	return page.View{Title: "Dashboard", Body: []g.Node{
+	// Language says what this page's words are written in, which is not the
+	// request's language: every word on this page — the title, the subtitle, the
+	// health alert, the counts under the cards — is a Go string in this file, and no
+	// catalogue is consulted for any of them. A page declares the language of the
+	// copy it shows (see document.View.Language, and the refusal page in ui/document
+	// which says the same about its own words), so a browser, a screen reader and a
+	// translation tool are told the truth: this one is English, whichever language
+	// the tenant is served in. The day any of this copy goes into a catalogue, this
+	// line goes with it.
+	return page.View{Title: "Dashboard", Language: writtenHere, Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
 			Title: "Dashboard", Subtitle: "What this tenant has, and whether the instance is well."}),
 		components.Alert(components.AlertProps{Tone: tone, Message: message, Bordered: true}),
@@ -166,7 +185,7 @@ func healthPage(results []result) page.View {
 			"check": c.name, "state": state, "tone": tone,
 		}})
 	}
-	return page.View{Title: "Health", Body: []g.Node{
+	return page.View{Title: "Health", Language: writtenHere, Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
 			Title: "Health", Subtitle: "The checks behind /ready, one at a time."}),
 		components.TableWithSlots(components.TableProps{
