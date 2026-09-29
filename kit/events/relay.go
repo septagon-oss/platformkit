@@ -6,10 +6,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events/internal/delivery"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
+	"github.com/septagon-oss/platformkit/kit/telemetry"
 )
 
 // batch bounds one relay pass. Small enough that a pass is short and its rows
@@ -33,6 +36,13 @@ type row struct {
 	Payload   []byte
 	CreatedAt time.Time
 	Actor     *uuid.UUID
+	// The publisher's trace context and its correlation member, empty for everything
+	// that was not traced or had no request to name. The relay does not read them into
+	// its own span — one batch is many unrelated traces — it carries them to the
+	// envelope, where kit/events puts them back on the handler's context. See trace.go.
+	TraceParent string `gorm:"column:traceparent"`
+	TraceState  string `gorm:"column:tracestate"`
+	Baggage     string `gorm:"column:baggage"`
 }
 
 // Relay moves every unpublished row to the transport, a batch at a time, and
@@ -64,10 +74,17 @@ func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
 // The publish happens before the stamp, so a crash in between redelivers rather
 // than loses — see the package comment on idempotency.
 func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
+	// One span for the pass, not one per row: what a reader wants from a relay span
+	// is whether the queue is draining and how long a pass took, and a burst of a
+	// hundred events would otherwise make the worker's own trace a hundred spans of
+	// queue housekeeping. A pass that moved nothing still makes one, because "the
+	// relay runs and moves nothing" is the answer to a question somebody asked.
+	ctx, span := telemetry.Tracer().Start(ctx, "outbox relay batch")
+	defer func() { span.End() }()
 	var moved int
 	err := db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var rows []row
-		const q = `SELECT id, tenant_id, name, payload, created_at, actor FROM ` + table + `
+		const q = `SELECT id, tenant_id, name, payload, created_at, actor, traceparent, tracestate, baggage FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
@@ -77,10 +94,21 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		}
 		ids := make([]uuid.UUID, 0, len(rows))
 		for _, r := range rows {
-			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt}
+			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt,
+				TraceParent: r.TraceParent, TraceState: r.TraceState, Baggage: r.Baggage}
+			// The number the queue is measured by: how long this row waited between
+			// its commit and the relay that took it. Recorded per event and per
+			// tenant, because a lag that cannot be attributed to a tenant cannot tell
+			// you whose events are stuck. It is a gauge — the newest answer is the
+			// one that matters — so a batch that moves several events of one name
+			// leaves the last one written, and the oldest row of a backed-up queue is
+			// the one relayed first anyway.
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
 			}
+			telemetry.Shared().ObserveOutboxLag(ctx, db.Now().Sub(r.CreatedAt).Seconds(),
+				attribute.String(telemetry.AttrTenantID, r.TenantID.String()),
+				attribute.String("pkit.event", r.Name))
 			if err := t.Publish(ctx, ev); err != nil {
 				// The rows published so far are still unstamped, so they go
 				// again next tick. That is the at-least-once bargain.
@@ -94,6 +122,11 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		moved = len(ids)
 		return nil
 	})
+	span.SetAttributes(attribute.Int("pkit.events.relayed", moved))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
 	return moved, err
 }
 

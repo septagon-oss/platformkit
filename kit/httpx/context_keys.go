@@ -1,7 +1,8 @@
 package httpx
 
-// context_keys.go declares the three keys the request path shares — the request
-// id, the response buffer and the request transaction — together, because a key
+// context_keys.go declares the four keys the request path shares — the request
+// id, the response buffer, the request transaction and the note of the tenant a
+// request resolved — together, because a key
 // whose type is unexported is a slot nothing outside this package can fill. The
 // two keys with an exported accessor of their own, the request in request.go and
 // the connection in authenticate.go, stay beside the middleware that puts them
@@ -15,9 +16,10 @@ import (
 )
 
 type (
-	requestIDKey struct{}
-	bufferKey    struct{}
-	txKey        struct{}
+	requestIDKey  struct{}
+	bufferKey     struct{}
+	txKey         struct{}
+	answerNoteKey struct{}
 )
 
 // TxFrom returns the request's tenant transaction, opening it if this is the

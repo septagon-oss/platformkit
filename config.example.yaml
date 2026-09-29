@@ -85,6 +85,41 @@ log:
   # debug | info | warn | error
   level: "info"
 
+# Where spans and numbers go. Every key is optional and the empty default exports
+# nothing at all, which is a decision rather than an omission: a deployment that has
+# chosen no backend pays nothing for traces nobody will read, and it still propagates
+# the trace context it was handed and still leaves one on every outbox row it writes,
+# so a trace continues into a process that does export. One TracerProvider and one
+# MeterProvider live in kit/app; the vocabulary — the attribute keys and the three
+# instruments — is kit/telemetry, which holds no provider and so never reaches a
+# collector on its own. Traces are OTLP/gRPC, and the three numbers are
+# pkit.http.operation.duration, pkit.outbox.lag and pkit.http.refusals by class.
+telemetry:
+  # The collector's gRPC endpoint: "collector.example:4317", or a host:port on a
+  # network that needs no TLS. `make trace` starts one on localhost:4317 that prints
+  # whatever arrives to its own container log. An unreachable collector is never a
+  # failed boot: the
+  # exporter buffers, warns through OpenTelemetry's own error handler and keeps
+  # serving, and kit/health reports its last success as a reading an operator sees
+  # and that never moves the verdict. PLATFORMKIT_TELEMETRY_OTLP_ENDPOINT.
+  otlp_endpoint: ""
+  # What the trace backend shows this process under. Every replica of one
+  # deployment answers the same name; empty means "platformkit" rather than the
+  # SDK's own "unknown_service:" plus the executable. PLATFORMKIT_TELEMETRY_SERVICE_NAME.
+  service_name: ""
+  # Names the client this installation serves, written on the resource of every
+  # span and metric. Empty is right for a shared installation — one process serving
+  # many tenants cannot name one client, which is the same reason the tenant is a
+  # span attribute and never a resource one. PLATFORMKIT_TELEMETRY_CLIENT.
+  client: ""
+  # Fraction of the traces this process *starts* that are kept, 0 to 1. A trace that
+  # arrives with a sampled parent stays kept whatever this says, so a worker handling
+  # an event stays inside the request that caused it. Omitted keeps every new trace —
+  # 0 is an answer and an omitted key is not, which is why it is commented rather than
+  # written as an empty value. This key is read from the file alone: no environment
+  # variable names it, because a sampling decision is reviewed with the file.
+  # sample_ratio: 1.0
+
 # The optional identity provider. An empty issuer — which is the default — means
 # there is none, and the two OIDC routes are not registered at all: a route that
 # would answer "this application has no identity provider" is a route with

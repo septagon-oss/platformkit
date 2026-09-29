@@ -26,6 +26,28 @@ type Event struct {
 	Payload json.RawMessage `json:"payload"`
 	// At records when the state changed; the outbox uses its row's creation time.
 	At time.Time `json:"at"`
+	// TraceParent and TraceState are the W3C trace context of the work that
+	// published this, carried so the handler's span is a child of the request that
+	// caused the event rather than the start of a new trace. They are the two
+	// distributed-tracing extension members of the envelope, spelled as W3C spells
+	// them, and they are omitted when the publisher had no context to leave: a
+	// periodic job, a process with no collector configured, a row written before
+	// this existed. An empty pair is the ordinary case and not a loss.
+	//
+	// They live here — in the portable envelope every transport already carries —
+	// because a publisher's context cannot be carried by the process that happened
+	// to publish it: the outbox row commits in one process and the relay publishes
+	// it in another, possibly hours later.
+	TraceParent string `json:"traceparent,omitempty"`
+	TraceState  string `json:"tracestate,omitempty"`
+	// Baggage is the W3C correlation member of the same propagation set, and it is
+	// the request id the router wrote on the publisher's context. The trace members
+	// above say which span this event happened under; this says which request — the
+	// one string an operator can quote from a response header, a log line and a
+	// customer's ticket. It is spelled as W3C spells it and omitted when the
+	// publisher had nothing to leave, exactly as the pair above. See
+	// migrations/000029.
+	Baggage string `json:"baggage,omitempty"`
 	// Actor is the user whose request caused this, and the nil UUID when
 	// nothing did: a periodic job, the relay, a handler reacting to another
 	// event. The publishing owner supplies this trusted fact. The PlatformKit
