@@ -109,7 +109,21 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sidebar examples' schemas (six leaves: its type and default). Measured as a
 	// leaf-by-leaf diff of the v1 export before and after: 6,400 leaves become 6,406,
 	// /css and /sha256 change, nothing else moves.
-	if legacy.SHA256 != "99d5406cdf0cd972ba7b7f88c54b8934e6b0803965c495db26ab151e56f50a91" {
+	//
+	// Cascade layers: Compose now emits `@layer tokens, base, components,
+	// client;` and wraps each layer's rules in a block, so the exported sheet is
+	// the same declarations at one more level of nesting, and review round 1 of
+	// that change moved the kernel's own component-state rules out of @layer base
+	// into @layer components, ahead of the class lists, because a layer ranks
+	// before specificity and a dismissed modal was losing to the `flex` on its
+	// own element. Compared with origin/main at adcea9e, the revision this branch
+	// was rebased onto, a leaf-by-leaf diff of the v1 export before and after the
+	// layers change 2 of the 6,406 leaves above, /css and /sha256: no token, icon,
+	// example or schema moves, measured by exporting both revisions and walking
+	// the JSON. The digest below is that measurement on this merged tree, not a
+	// number inherited from either side — neither revision above exports a sheet
+	// with these bytes in it.
+	if legacy.SHA256 != "259c5976d197492346c356ef548bea145b51f7ec9d152e3beeba1b92e2f50cc1" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

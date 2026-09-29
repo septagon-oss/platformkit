@@ -65,14 +65,106 @@ func TestComposeResolvesAConsumersListsAndRulesOnce(t *testing.T) {
 	}
 }
 
-func TestComposeKeepsConsumerOverridesAfterSharedUtilities(t *testing.T) {
+func TestComposeEmitsTheFourLayersInOrder(t *testing.T) {
 	t.Parallel()
+	sheet := css.NewSheet().Select(".a", css.Decl("color", css.Literal("red")))
+	body := string(ui.Compose(design.Default(), ui.Extra{Sheets: []*css.Sheet{sheet}}).Body)
+	statement := "@layer tokens, base, components, client;"
+	if !strings.HasPrefix(body, statement) {
+		t.Fatalf("the sheet must open with the order statement, got:\n%.80s", body)
+	}
+	prev := 0
+	for _, block := range []string{"@layer tokens {", "@layer base {", "@layer components {", "@layer client {"} {
+		at := strings.Index(body, block)
+		if at <= prev {
+			t.Fatalf("the %s block is missing or out of order", block)
+		}
+		prev = at
+	}
+}
+
+// TestAConsumerRuleCannotDisplaceAComponentRule pins the emission the layer
+// promise rests on: a consumer's bytes land inside the client layer and nowhere
+// else, so no consumer rule moves, duplicates or precedes a kernel utility's
+// rule in the kernel's own layer.
+//
+// What the order statement then says, stated the right way round: for normal
+// declarations a LATER layer wins over an earlier one whatever the selector
+// (CSS Cascade Layers, §6), which is why the client layer is last — a client
+// restyling its own markup is the point of it — and why a !important reverses
+// that, which is where the kernel's own overrides live. What protects a kernel
+// component is therefore not the layer order but the gate: a client rule is
+// refused before it reaches a layer if it names a kernel hook, the root element
+// or a --pk- property (TestComposeRefusesConsumerSheetsThatEscapeTheClientLayer),
+// and a kernel role rule shares the components layer with the utilities on its
+// own element so its selector still decides (ui/review_round1_layers_test.go).
+func TestAConsumerRuleCannotDisplaceAComponentRule(t *testing.T) {
+	t.Parallel()
+	// The same declaration the .flex utility makes, on a doubled selector:
+	// higher specificity than any kernel rule, and the one selector a client may
+	// legitimately write because .flex is a class, not a kernel hook.
+	hijack := css.NewSheet().Select(".flex.flex", css.Decl("display", css.Literal("inline")))
+	body := string(ui.Compose(design.Default(), ui.Extra{Sheets: []*css.Sheet{hijack}}).Body)
+	client := strings.Index(body, "@layer client {")
+	if client < 0 {
+		t.Fatal("there is no client layer")
+	}
+	at := strings.Index(body, ".flex.flex {")
+	if at < client {
+		t.Fatal("a consumer rule was emitted outside the client layer")
+	}
+	if strings.Contains(body[:client], ".flex.flex {") {
+		t.Fatal("a consumer rule reached a kernel layer")
+	}
+}
+
+func TestComposeRefusesConsumerSheetsThatEscapeTheClientLayer(t *testing.T) {
+	t.Parallel()
+	hidden := css.NewSheet()
+	hidden.Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Select("[data-component=card]", css.Decl("display", css.Literal("none")))
+	})
+	for name, sheet := range map[string]*css.Sheet{
+		"a kernel component hook": css.NewSheet().Select("[data-component=button]", css.Decl("border", css.Literal("0"))),
+		"a modal panel":           css.NewSheet().Select("[data-modal-panel]", css.Decl("margin", css.Literal("0"))),
+		"the theme attribute":     css.NewSheet().Select(`[data-theme="dark"]`, css.Decl("color-scheme", css.Literal("light"))),
+		"the root element":        css.NewSheet().Select(":root", css.Decl("--pk-color-accent-default", css.Literal("#00f"))),
+		"a kernel property":       css.NewSheet().Select(".a", css.Decl("--pk-role-surface-brand", css.Literal("teal"))),
+		"a raw colour":            css.NewSheet().Select(".a", css.Decl("color", css.Literal("#ff0000"))),
+		"a raw rgb()":             css.NewSheet().Select(".a", css.Decl("background", css.Literal("rgb(0 0 0 / 0.45)"))),
+		"a role inside @media":    hidden,
+		"a layer of its own":      css.NewSheet().Layer("client", func(in *css.Sheet) { in.Select(".a", css.Decl("color", css.Literal("red"))) }),
+		"a colour in a keyframe": css.NewSheet().Keyframes("store-pulse", func(k *css.Keyframes) {
+			k.At("from", css.Decl("background-color", css.Literal("#ff0000")))
+		}),
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Compose accepted %s", name)
+				}
+			}()
+			ui.Compose(design.Default(), ui.Extra{Sheets: []*css.Sheet{sheet}})
+		}()
+	}
+}
+
+func TestComposeKeepsConsumerRulesAfterSharedUtilities(t *testing.T) {
+	t.Parallel()
+	// Carried from the round that predates cascade layers, when this asserted
+	// that a consumer's override of [data-component=button] survived after the
+	// utilities. That override is now refused outright (see the refusal test),
+	// which supersedes surviving after it; what still must hold is the two
+	// facts the old case pinned: the consumer's bytes are not folded into or
+	// moved before a shared utility's rule, and composing leaves the input
+	// sheet untouched. The hooks are the consumer's own, since a kernel role
+	// selector no longer reaches this far.
 	extra := css.NewSheet().
-		Select("[data-component=button]", css.Decl("border", css.Literal("1px dashed red"))).
-		Select("[data-component=card]", css.Decl("box-shadow", css.Literal("inset 0 1px 2px black")))
+		Select(".store-hero-button", css.Decl("border", css.Literal("1px solid var(--pk-color-accent-default)"))).
+		Select(".store-hero-card", css.Decl("box-shadow", css.Literal("inset 0 1px 2px var(--pk-color-border-strong)")))
 	before := extra.CSS()
 	body := string(ui.Compose(design.Default(), ui.Extra{Sheets: []*css.Sheet{extra}}).Body)
-	for _, pair := range [][2]string{{".border-transparent {", "[data-component=button] {"}, {".shadow {", "[data-component=card] {"}} {
+	for _, pair := range [][2]string{{".border-transparent {", ".store-hero-button {"}, {".shadow {", ".store-hero-card {"}} {
 		utility, override := strings.Index(body, pair[0]), strings.LastIndex(body, pair[1])
 		if utility < 0 || override <= utility {
 			t.Fatalf("consumer rule %s must remain after utility %s", pair[1], pair[0])
@@ -94,6 +186,9 @@ func TestGalleryIsTheDifference(t *testing.T) {
 	}
 	if strings.Contains(gallery, "--pk-color-surface-primary:") {
 		t.Fatal("gallery.css repeats the tokens")
+	}
+	if !strings.HasPrefix(gallery, "@layer components {") {
+		t.Fatal("gallery.css is not placed in the components layer")
 	}
 	if len(ui.Gallery().Fingerprint) != 16 {
 		t.Fatalf("the gallery fingerprint is %q", ui.Gallery().Fingerprint)

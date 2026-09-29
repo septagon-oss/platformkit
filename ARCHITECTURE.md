@@ -402,7 +402,22 @@ remains authoritative and consumers must review diagnostics before using files.
 Go functions returning HTML and declares the classes those functions can emit.
 [ui/style](ui/style/) resolves the declarations to CSS.
 [ui.Compose](ui/ui.go) combines the shared declarations and a consumer's own
-classes and rules into a stylesheet value. Deleting a component should not
+classes and rules into a stylesheet value. The result is four cascade layers —
+`tokens`, `base`, `components`, `client` — and the `@layer` order statement
+Compose emits is what says so: the kernel's ranking is the declared layer order,
+not file position. A layer ranks before specificity, so which layer a rule goes
+in is decided by what it must still win: the preflight sits in `base` where a
+class outspecifies it, and a rule about one of the kernel's own components sits
+in `components` beside the classes on that component, where its own selector
+decides the tie. A consumer's class lists compile into the components layer
+beside the kernel's (one rule per shared utility), and its hand-written rules
+are placed in the client layer; Compose refuses a consumer rule that names an
+attribute the kernel renders — whichever of the several spellings a browser
+resolves to that name — the root element, a `--pk-` property or a raw colour, in
+a rule or in a keyframe stop. The vocabulary is `components.Hooks` for the
+components' markup and `renderedHooks` for the shell, the generated screens and
+the gallery, and a test refuses either list a rendered name it omits. Deleting a
+component should not
 leave an independently maintained stylesheet behind.
 
 [css.Sheet](ui/css/css.go) retains ordinary rule contribution order; only
@@ -410,8 +425,9 @@ adjacent equal selectors share a block. Repeated declarations remain ordered
 so the browser can apply priorities, fallbacks and shorthand semantics. A later
 consumer override must not be merged into an earlier rule ahead of utilities,
 nor carry unrelated earlier declarations forward. Shared utility deduplication
-belongs to the style owner, before emission. The existing at-rule group still
-renders after ordinary rules; this is not an arbitrary CSS parser or minifier.
+belongs to the style owner, before emission. Layer order statements render
+ahead of everything they order; the remaining at-rule group still renders
+after ordinary rules; this is not an arbitrary CSS parser or minifier.
 
 [Gallery](ui/components/examples/gallery.go) captures the existing constructor calls with
 stable identities, typed properties and named Go slots. Passing a captured
