@@ -34,8 +34,7 @@ type Fake struct {
 	// Installation mirrors the catalogues a real composition hands the module — the
 	// languages the installation answers in, which are the most a tenant may ever be
 	// served in. It does not decide what a new tenant is served in: the real create
-	// reads the column default back from the database, and so does this. See
-	// module.Deps.Languages.
+	// reads the column default back from the database, and so does this.
 	Installation []string
 }
 
