@@ -70,10 +70,17 @@ code is keyed by its status (`fault.404`, `fault.405`, `fault.500`) — the thre
 verdicts whose sentence `kit/httpx` writes and no module does. What a translation
 replaces is the sentence and not the guard's whole line: a refusal that carries a
 code keeps it (`AUTH_DENIED: Não pode fazer isto.`), because the code is what a
-person reads back to support and an operator greps a log for. The kernel's English
-text is the fallback, and the page declares the language of the sentence it
-actually shows: a catalog with no entry for the code leaves an English page
-declaring `en`.
+person reads back to support and an operator greps a log for. What a catalogue
+answers with is one thing and what the page declares is another: the declared
+language is the one negotiated for the request, and a catalogue that carries no
+entry for it leaves the sentence in the source language under that declaration — a
+shell translated key by key is a page that declares a language some of its words are
+not in. `View.Language` is how a page says which of the two it is: the admin shell's
+dashboard and health pages, whose copy is Go strings rather than keys, declare the
+source language rather than the request's, and `TestEveryPageSaysTheSameLanguageTwice`
+in the reference application holds `<html lang>` and `Content-Language` to one
+answer. Nothing yet refuses a page that declares a language a literal in its own body
+is not written in; that gate is named, unshipped, in the task's own report.
 
 The [reference application](../../apps/platformkit/catalog.go) composes the copy
 each layer ships — this package's refusal sentences, `ui/resource`'s screen
@@ -90,7 +97,13 @@ Which languages a request may be answered in is the tenant's decision, not this
 package's: `Serve` intersects `Accept-Language` with the languages the resolved
 tenant is served in and falls back to that tenant's default
 (`TenantPreferences`), so a guard refusing ahead of a handler and the page it is
-refusing speak the same language. The generated
+refusing speak the same language. The intersection is a filter and not a re-ordering:
+what survives goes to the provider as the one header string it arrived as, so the
+caller's own quality values still decide which of the two the answer is — a browser
+offering `pt-PT;q=0.1,en;q=0.9` to a tenant served in both is answered in English, in
+either order the header spells them. What the tenant adds behind that list is its own
+set, its default at its head, and that head is what answers a request nothing else
+matched. The generated
 screens read their fixed labels (New, Edit, Delete, the count, the pager and the
 empty state) under `screens.*` keys with English fallbacks; entity names,
 authentication API errors, client apps and notification templates still need their
