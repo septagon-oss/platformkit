@@ -127,4 +127,12 @@ func TestExportTokensProjectsAGeneratedPair(t *testing.T) {
 // dtcgGeneratedLightDigest is the light-mode document of the generated client
 // above, measured at the commit that added the radii. Before that commit the
 // same projection carried the same 22 colours and 3 families and no shape at all.
-const dtcgGeneratedLightDigest = "8024dcde1dbd79ab24d8cffc5d7abecb99b99b1559b6e348d477a70294698b16"
+//
+// Re-measured for review round 1's HIGH: the document carries the role layer, and
+// three of its declarations changed value — --pk-role-fg-secondary and
+// --pk-role-fg-tertiary mix text-primary with text-muted now rather than with
+// surface-primary, and --pk-role-fg-placeholder is text-muted outright. The 22
+// theme colours, the 3 families and the 3 dimensions are the same values; a
+// consumer that reads the role layer sees three recolours, and one that reads only
+// the theme modes sees no change at all.
+const dtcgGeneratedLightDigest = "4ef2f0b2693933c7649631b3399ff54f7bad6759129590ab5fb42f6b182c1d1a"

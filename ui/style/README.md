@@ -12,9 +12,15 @@ class names and [emission_resolve.go](emission_resolve.go) for their declaration
 Two sheets sit beneath the utilities: `ThemeVars(light, dark)` renders a
 `design.Pair`'s tokens as custom properties with the attribute-over-preference
 cascade, and `RoleVars()` defines the `--pk-role-*` properties the utilities
-are written in terms of. An element rule no class can express reads the same
-scales back with `Value()` — `S8.Value()` is `"2rem"` — so an article and the
-page around it share one scale (see [modules/web](../../modules/web/README.md)).
+are written in terms of. A utility never references a theme token directly, so
+a role is the layer a browser paints and the layer a reader reads: the muted
+text roles mix `text-primary` toward `text-muted`, two colours the contrast gate
+certifies on every surface, rather than toward the surface one of them was
+authored against — `BodyRolePairs()` names the pairs the components compose and
+`design.Theme.CheckRoles` measures them, which [`ui/export`](../export/README.md)
+runs before it emits anything. An element rule no class can express reads the
+same scales back with `Value()` — `S8.Value()` is `"2rem"` — so an article and
+the page around it share one scale (see [modules/web](../../modules/web/README.md)).
 `Measurements`, `ScaleValues`, `ShadowValues`, `EasingValues` and
 `TransitionValues` project the scales for design export.
 
