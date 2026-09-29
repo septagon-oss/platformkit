@@ -46,6 +46,10 @@ specified where they are defined rather than restated in prose:
   [`000026_module_schema.up.sql`](000026_module_schema.up.sql) — carries the
   refusals, why it sets no `search_path`, and what a module's next revisions
   look like.
+- **`change_proposals`** ([`000028_change_proposals.up.sql`](000028_change_proposals.up.sql)) is
+  [`kit/change`](../kit/change/change.go)'s table: a proposal about any subject at an exact revision, reviewed
+  by an account that is not the proposer (the table refuses the other row too), applied only at that revision.
+  Tenant-scoped under row-level security like every tenant table.
 - **`dbtest.TenantTablesSQL`** ([`kit/db/dbtest`](../kit/db/dbtest/tenanttables.go))
   is the tenant-scope walk: every ordinary table in the current schema *and* in
   every schema whose name is an owner in `schema_migrations`, with RLS enabled
