@@ -222,7 +222,9 @@ func TestReplayRefusalsWriteNothing(t *testing.T) {
 // payload that exists, and the dead letter beside it says nothing about what the
 // handler choked on. A dead letter is the last account of a delivery, so the row
 // stays while one refers to it, and the operator who finds it a week later finds
-// a replay that runs rather than a refusal that blames a row a purge removed.
+// a replay that runs rather than a refusal that blames a row a purge removed. The
+// row's age changes what is kept, not who may clear it, so the same row refuses a
+// context that names no operator on its way to running for one who does.
 func TestADeadLetterKeepsItsPayloadPastThePurge(t *testing.T) {
 	fast(t)
 	admin, conn := dbtest.Schema(t)
@@ -267,15 +269,36 @@ func TestADeadLetterKeepsItsPayloadPastThePurge(t *testing.T) {
 		t.Fatalf("purge: %v", err)
 	}
 
-	var rows, dead int
+	// And age is not a waiver of the actor. The verb asks the same two questions
+	// whatever the calendar says, and a dead letter is reviewed late by design,
+	// so the row an operator clears is usually an old one: how many days ago a
+	// delivery finished cannot decide whether a person has to be named for it.
+	// This is the refusal TestReplayRefusalsWriteNothing makes of a row seconds
+	// old, in front of a row eight days old — and every row below still says a
+	// delivery finished, which is all a refused mutation ever leaves behind.
+	if _, err := Replay(ctx, conn, id, "", "the mailer is fixed"); err == nil {
+		t.Error("an eight-day-old dead letter let a replay through on a context that names no actor")
+	} else if errors.Is(err, ErrNothingToReplay) {
+		t.Errorf("the refusal blames the row, not the caller: %v", err)
+	}
+	var rows, dead, claims, records int
 	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM platformkit_outbox WHERE id=$1`, id).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
 	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM platformkit_dead_letters WHERE event_id=$1`, id).Scan(&dead); err != nil {
 		t.Fatal(err)
 	}
+	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM platformkit_handled WHERE event_id=$1`, id).Scan(&claims); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM platformkit_outbox WHERE name=$1`, EventReplayed).Scan(&records); err != nil {
+		t.Fatal(err)
+	}
 	if rows != 1 || dead != 1 {
 		t.Fatalf("the purge left %d outbox rows and %d dead letters, want the pair still describing each other", rows, dead)
+	}
+	if claims != 1 || records != 0 {
+		t.Errorf("the refused replay moved the state: %d claims, %d replay records", claims, records)
 	}
 	broken = false
 	if _, err := Replay(tenancy.WithActor(ctx, operator), conn, id, "", "the mailer is fixed"); err != nil {
