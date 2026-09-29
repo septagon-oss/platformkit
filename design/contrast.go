@@ -96,6 +96,23 @@ var bodyContrast = []contrastPair{
 	{"status-warning", "status-warningbg", MinContrast},
 	{"status-danger", "status-dangerbg", MinContrast},
 	{"status-info", "status-infobg", MinContrast},
+	// A status tone is not only a badge. clDetailValueTone paints the four of them
+	// at text-sm inside clCardFrame (surface-primary) and clTextColor/clFieldErr
+	// paint them on the page canvas, with no badge behind them, so each is a body
+	// foreground on every surface a card can be raised onto — not only on the
+	// badge the token named after it certifies.
+	{"status-ok", "surface-canvas", MinContrast},
+	{"status-ok", "surface-primary", MinContrast},
+	{"status-ok", "surface-muted", MinContrast},
+	{"status-warning", "surface-canvas", MinContrast},
+	{"status-warning", "surface-primary", MinContrast},
+	{"status-warning", "surface-muted", MinContrast},
+	{"status-danger", "surface-canvas", MinContrast},
+	{"status-danger", "surface-primary", MinContrast},
+	{"status-danger", "surface-muted", MinContrast},
+	{"status-info", "surface-canvas", MinContrast},
+	{"status-info", "surface-primary", MinContrast},
+	{"status-info", "surface-muted", MinContrast},
 	{"sidebar-text", "sidebar-bg", MinContrast},
 	{"sidebar-muted", "sidebar-bg", MinContrast},
 }

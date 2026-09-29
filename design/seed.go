@@ -132,8 +132,8 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.BorderStrong = surface(surfaceSat*1.2, 0.45)
 		theme.TextPrimary = hsv(hue, 0.10, 0.95)
 		theme.TextMuted = enforce(hsv(hue, 0.14, 0.74), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
-		theme.AccentDefault = enforce(hsv(hue, accentSat*0.75, 0.74), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
-		theme.AccentHover = enforce(hsv(hue, accentSat*0.70, 0.86), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		theme.AccentDefault = enforceTinted(hsv(hue, accentSat*0.75, 0.74), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		theme.AccentHover = enforceTinted(hsv(hue, accentSat*0.70, 0.86), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentOn = enforce("#0a0a0a", theme.AccentDefault, theme.AccentHover)
 		theme.Focus = enforce(hsv(complement(hue), 0.60, 0.72), theme.SurfaceCanvas)
 		theme.SidebarBg = surface(surfaceSat*1.8, 0.07)
@@ -147,16 +147,21 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.BorderStrong = surface(surfaceSat, 0.52)
 		theme.TextPrimary = enforce(hsv(hue, 0.32, 0.12), theme.SurfaceCanvas, theme.SurfacePrimary)
 		theme.TextMuted = enforce(hsv(hue, 0.24, 0.46), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
-		theme.AccentDefault = enforce(hsv(hue, accentSat, 0.38), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
-		theme.AccentHover = enforce(hsv(hue, min(1, accentSat*1.1), 0.30), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		theme.AccentDefault = enforceTinted(hsv(hue, accentSat, 0.38), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		theme.AccentHover = enforceTinted(hsv(hue, min(1, accentSat*1.1), 0.30), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentOn = enforce("#fbfffb", theme.AccentDefault, theme.AccentHover)
 		theme.Focus = enforce(hsv(complement(hue), 0.68, 0.85), theme.SurfaceCanvas)
 		theme.SidebarBg = hsv(hue, 0.38, 0.13)
 		theme.SidebarText = enforce("#f6faf3", theme.SidebarBg)
 		theme.SidebarMute = enforce(hsv(hue, 0.14, 0.74), theme.SidebarBg)
 	}
+	// A status tone is not only a badge. ui/components paints the four of them as
+	// body-size copy with no background of their own — a detail value, a field's
+	// error line, a text utility — so each lands on whichever surface a card
+	// raised itself onto, and is certified against all three.
+	surfaces := []string{theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted}
 	for _, status := range statusRoles {
-		bg, fg := statusPalette(name == "dark", status.hue, surfaceSat)
+		bg, fg := statusPalette(name == "dark", status.hue, surfaceSat, surfaces...)
 		status.set(&theme, fg, bg)
 	}
 	return theme
@@ -180,19 +185,61 @@ var statusRoles = []statusRole{
 
 // statusPalette returns the badge and the text on it for one status in one
 // theme. The hue is semantic; only how dark the text is, and how much of the
-// hue is left in the badge, follows the seed.
-func statusPalette(dark bool, hue, surfaceSat float64) (bg, fg string) {
+// hue is left in the badge, follows the seed. The text is repaired against the
+// badge and against every surface, because the kernel paints it on both: a tone
+// certified only against its own badge is legible only inside that badge.
+func statusPalette(dark bool, hue, surfaceSat float64, surfaces ...string) (bg, fg string) {
 	if dark {
 		bg = hsv(hue, min(0.95, surfaceSat*1.6+0.14), 0.18)
-		return bg, enforce(hsv(hue, 0.55, 0.74), bg)
+		return bg, enforce(hsv(hue, 0.55, 0.74), append([]string{bg}, surfaces...)...)
 	}
 	bg = hsv(hue, min(0.95, surfaceSat*0.9+0.10), 0.96)
-	return bg, enforce(hsv(hue, 0.62, 0.42), bg)
+	return bg, enforce(hsv(hue, 0.62, 0.42), append([]string{bg}, surfaces...)...)
 }
 
 // complement is the hue the focus ring wears: the accent's hue turned halfway
 // around the wheel, so a ring is never the colour of the control it rings.
 func complement(hue float64) float64 { return math.Mod(hue+180, 360) }
+
+// SoftTintPercent is how much of a foreground the role layer's soft brand
+// background holds: ui/style declares --pk-role-surface-brand-soft as
+// mix(accent N%, surface-primary) and ui/components paints that same accent as
+// copy on it (a brand badge, the active navigation link, an outline button's
+// hover state). The number belongs to this package because the generator has to
+// hold it: a background mixed from the colour painted on it always reads worse
+// than the surface the mix was taken from, so a foreground certified against
+// surfaces alone says nothing about the tint. TestSoftTintBackgroundIsMixedAt
+// ThePercentTheGeneratorCertifies pins the declaration to this constant.
+const SoftTintPercent = 12.0
+
+// ground is one background enforce measures a candidate against. Most are
+// colours a theme already holds; a tinted ground is the one a caller cannot name
+// as a literal, because it is a mix of the candidate itself over Base and so
+// moves as the candidate moves.
+type ground struct {
+	Base      SRGBA
+	TintOfOwn float64 // when > 0, Base holds TintOfOwn % of the candidate
+}
+
+func (g ground) under(candidate SRGBA) SRGBA {
+	if g.TintOfOwn <= 0 {
+		return g.Base
+	}
+	return blend(candidate, g.TintOfOwn, g.Base)
+}
+
+// blend returns percent % of over mixed into into in sRGB — the opaque branch of
+// the arithmetic ResolveColors applies to a ColorMix and the arithmetic CSS
+// color-mix(in srgb) applies in a browser. Both operands are opaque, which is
+// what a generated theme holds and what Theme.Check refuses any other way.
+func blend(over SRGBA, percent float64, into SRGBA) SRGBA {
+	weight := percent / 100
+	var out SRGBA
+	for i := range 3 {
+		out[i] = over[i]*weight + into[i]*(1-weight)
+	}
+	return SRGBA{out[0], out[1], out[2], 1}
+}
 
 // enforce repairs a candidate against every background it will sit on, moving it
 // along the line from where it is toward the neutral pole that reads best on
@@ -202,20 +249,46 @@ func complement(hue float64) float64 { return math.Mod(hue+180, 360) }
 // the gate allows. The value tested is the literal that would be stored, so the
 // byte a theme actually holds is what reached the gate.
 func enforce(candidate string, backgrounds ...string) string {
-	bgs := make([]SRGBA, 0, len(backgrounds))
+	grounds := make([]ground, 0, len(backgrounds))
 	for _, background := range backgrounds {
-		bgs = append(bgs, mustParse(background))
+		grounds = append(grounds, ground{Base: mustParse(background)})
 	}
-	if reaches(mustParse(candidate), bgs) {
+	return settle(candidate, grounds)
+}
+
+// enforceTinted is enforce with one ground a literal cannot name: the role
+// layer's soft tint of the candidate over tintSurface, which is what
+// --pk-role-surface-brand-soft resolves to and the background the accent's own
+// colour is painted on. Measuring it is the only way a generator can promise the
+// tint is legible, because the tint is a function of the colour being repaired:
+// repairing against surface-primary and stopping there leaves a badge whose label
+// is a shade of its own background.
+func enforceTinted(candidate, tintSurface string, backgrounds ...string) string {
+	grounds := make([]ground, 0, len(backgrounds)+1)
+	for _, background := range backgrounds {
+		grounds = append(grounds, ground{Base: mustParse(background)})
+	}
+	grounds = append(grounds, ground{Base: mustParse(tintSurface), TintOfOwn: SoftTintPercent})
+	return settle(candidate, grounds)
+}
+
+// settle walks one candidate until every ground reaches MinContrast.
+func settle(candidate string, grounds []ground) string {
+	raw := mustParse(candidate)
+	if reaches(raw, grounds) {
 		return candidate
 	}
-	hue, saturation, value := rgbToHSV(mustParse(candidate))
-	towardLight := Contrast(hsvRGB(hue, 0, 1), bgs[0]) >= Contrast(hsvRGB(hue, 0, 0), bgs[0])
+	hue, saturation, value := rgbToHSV(raw)
+	var backgrounds []SRGBA
+	for _, g := range grounds {
+		backgrounds = append(backgrounds, g.under(raw))
+	}
+	towardLight := Contrast(hsvRGB(hue, 0, 1), backgrounds[0]) >= Contrast(hsvRGB(hue, 0, 0), backgrounds[0])
 	step := 1.0 / 255
 	if towardLight {
 		for t := step; t <= 1; t += step {
 			lit := hsv(hue, saturation*(1-t), value+(1-value)*t)
-			if reaches(mustParse(lit), bgs) {
+			if reaches(mustParse(lit), grounds) {
 				return lit
 			}
 		}
@@ -223,17 +296,18 @@ func enforce(candidate string, backgrounds ...string) string {
 	}
 	for t := step; t <= 1; t += step {
 		lit := hsv(hue, saturation*(1-t), value*(1-t))
-		if reaches(mustParse(lit), bgs) {
+		if reaches(mustParse(lit), grounds) {
 			return lit
 		}
 	}
 	return "#000000"
 }
 
-// reaches reports one colour against every background at once.
-func reaches(color SRGBA, backgrounds []SRGBA) bool {
-	for _, background := range backgrounds {
-		if Contrast(color, background) < MinContrast {
+// reaches reports one colour against every ground it will be painted on, each
+// resolved under that colour.
+func reaches(color SRGBA, grounds []ground) bool {
+	for _, g := range grounds {
+		if Contrast(color, g.under(color)) < MinContrast {
 			return false
 		}
 	}
