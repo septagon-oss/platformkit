@@ -136,7 +136,15 @@ func TestExportTokensProjectsAGeneratedPair(t *testing.T) {
 // theme colours, the 3 families and the 3 dimensions are the same values; a
 // consumer that reads the role layer sees three recolours, and one that reads only
 // the theme modes sees no change at all.
-const dtcgGeneratedLightDigest = "4ef2f0b2693933c7649631b3399ff54f7bad6759129590ab5fb42f6b182c1d1a"
+//
+// Re-measured again for review round 7's HIGH, and this one moves a theme colour:
+// the generator now repairs a light-theme status tint against the muted copy a
+// tinted panel paints on it, so the warning badge of a generated client is a
+// shade paler than it was (light: #f5e3c5-style tints moved a few units toward
+// white on the seeds where the muted line measured under 4.5:1). A native screen
+// that painted a warning badge sees a shallower tint; nothing else in the
+// document moved.
+const dtcgGeneratedLightDigest = "d82e4463c91fcb1ef2ea3e1b28aaf3c17ba76cdd7a46434db2bb31c740bf2ddb"
 
 // TestExportTokensRefusesAnAccentThatReadsOnlyOnTheSurfaces is the widened seam
 // biting: a pair whose accent clears every surface the theme names, and so clears

@@ -19,13 +19,18 @@ is the ordered projection the stylesheet and the exports share.
 
 A client that does not want to write hex writes a seed: `design.Seed{Sector,
 Name, Brand}` generates both themes in `design.FromSeed`, deterministically, and
-refuses the result unless `Pair.Check` passes. `Check` is WCAG 2.2 measured by
-`Luminance` and `Contrast`: every body role at 4.5:1 (SC 1.4.3) — a status tone
-on every surface a card raises itself onto, not only the badge that carries its
-name — and the focus ring at 3:1 (SC 1.4.11). A generated foreground is repaired
-against one ground no token names: the soft brand tint, `SoftTintPercent` of the
-accent mixed into a surface, which the kernel paints that same accent's colour on
-and which always reads worse than the surface the mix was taken from.
+refuses the result unless the pair passes both halves of the gate — `Pair.Check`
+and `Pair.CheckRoles` over `RoleLayer()` and `GatedRolePairs()` below. `Check` is
+WCAG 2.2 measured by `Luminance` and `Contrast`: every body role at 4.5:1 (SC
+1.4.3) — a status tone on every surface a card raises itself onto, not only the
+badge that carries its name — and the focus ring at 3:1 (SC 1.4.11). A generated
+foreground is repaired against two grounds no token pair reaches: the soft brand
+tint, `SoftTintPercent` of the accent mixed into a surface, which the kernel
+paints that same accent's colour on and which always reads worse than the surface
+the mix was taken from, and the four status tints, which the generator walks
+toward white (or black) until the muted line a tinted panel carries reads on
+them. Repairing the tint rather than the tone is deliberate: `text-muted` is set
+once per page and is one of the twelve tokens `Distance` measures.
 `Distance`, `MinDistance` and `Colliding` are how two clients' palettes are
 compared — the generator cannot promise a separation it does not hold, so a
 process that would wear both asks and refuses.
@@ -41,16 +46,23 @@ says nothing about colour gets.
 ## The layer a browser paints
 
 The `--pk-role-*` declarations live in [roles.go](roles.go): every role in terms
-of a theme's tokens, the mixes a theme does not enumerate, and the two lists of
+of a theme's tokens, the mixes a theme does not enumerate, and the three lists of
 pairs a reader is shown — `BodyRolePairs()` on a theme's own surfaces,
-`TintedRolePairs()` on the surfaces the layer derives by mixing a foreground into
-one. They are names, references and percentages, so owning them costs this
+`TintedRolePairs()` on the surface the layer derives by mixing a foreground into
+one, and `StatusRolePairs()` on the four status tints, which hold a status tone
+and, in the panel a failed upload raises, the muted line under it. They are names,
+references and percentages, so owning them costs this
 package nothing of its dependency rule, and the package that measures a ratio has
 to own what it measures: `Client.Resolve` gates a client's finished pair with
 `RoleLayer()` and `GatedRolePairs()`, while
 [ui/style](../ui/style/README.md) renders those declarations into its `:root`
 block and [ui/export](../ui/export/README.md) projects them — all three through
-the same one list. A gate that could read only the token layer could certify
+the same one list. A pair this package paints at body size and that list does not
+name is a pair no gate measures, which is how a muted sentence inside a
+warning-tinted panel sat at 3.6:1 on a generated palette while every gate in the
+repository passed it: `ui/components/painted_status_pair_test.go` now reads the
+painted pairs out of the components' own declarations and refuses one that is
+missing from the list. A gate that could read only the token layer could certify
 colours nobody paints: overriding `surface-primary` with `#2e2920` in a dark theme
 holds all 22 token pairs and moves the tint a brand badge's own label sits on down
 to 3.91:1, which is why the door a client's file passes through refuses it rather
