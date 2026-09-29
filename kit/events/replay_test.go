@@ -138,6 +138,7 @@ func TestReplayRefusalsWriteNothing(t *testing.T) {
 	defer stop()
 
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
+	operator := uuid.New()
 	transport := memory.New()
 	err := Consume(ctx, conn, transport, []Subscription{{
 		Module: "audit", Name: "ledger.invoice_issued",
@@ -169,7 +170,9 @@ func TestReplayRefusalsWriteNothing(t *testing.T) {
 		}
 	})
 	t.Run("no outbox row", func(t *testing.T) {
-		if _, err := Replay(ctx, conn, uuid.New(), "", "an id that does not exist"); !errors.Is(err, ErrNothingToReplay) {
+		// With the operator this verb requires, so the refusal it reaches is the
+		// one about the row and not the one about the caller.
+		if _, err := Replay(tenancy.WithActor(ctx, operator), conn, uuid.New(), "", "an id that does not exist"); !errors.Is(err, ErrNothingToReplay) {
 			t.Errorf("Replay of an unknown id = %v, want ErrNothingToReplay", err)
 		}
 	})

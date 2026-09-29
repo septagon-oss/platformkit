@@ -11,7 +11,7 @@ package events
 // consequential action already happened. That is an operator's decision, made
 // under a name, with a reason, and it is the one write in this package that is
 // not a machine repeating itself. Hence: a capability of its own
-// (docs/adr/0006), the actor read off the request's context, a reason that has
+// (docs/adr/0006), the actor required of the request's context, a reason that has
 // to say itself, and the act recorded as an event in its own right.
 //
 // What is re-stamped rather than rewritten: published_at goes back to NULL, so
@@ -28,6 +28,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // EventReplayed names the record that an operator replayed an event. It is the
@@ -89,12 +90,32 @@ type replayRow struct {
 // half their way; then the claims go, then the dead letters, then the stamp,
 // then the record is written. A refusal writes nothing at all, and the sentinel
 // names which refusal it was.
+//
+// An actor is required of the context, beside the reason and for the same
+// reason: removing a claim is removing the record that a consequential action
+// already happened, and a decision nobody is named on is not a decision anyone
+// can read afterwards. ADR 0006 says the capability is not the authorization —
+// the system token says this process may cross tenants, and only the actor says
+// a person asked. kit/tenancy names the actor and kit/httpx puts it there, so a
+// context that carries none is a call with nobody behind it. Reading the actor
+// is not requiring it; this requires it, before the transaction opens, so the
+// refusal writes nothing, emits nothing, and leaves every claim and dead letter
+// where they were. The record it refuses to write is the answer to "actor,
+// tenant, what": an actor column left NULL by a verb this consequential answers
+// "nobody" while the write still happened.
 func Replay(ctx context.Context, conn *db.Conn, eventID uuid.UUID, durable, reason string) (ReplayRecord, error) {
 	// An empty reason is a correctable refusal: the same call with a sentence
 	// attached is allowed. It is checked before the transaction opens, because
 	// nothing about the database can make an unstated reason sufficient.
 	if reason == "" {
 		return ReplayRecord{}, fmt.Errorf("events: replay %s: a reason is required; it is what the trail will record", eventID)
+	}
+	// No actor, no replay. Checked beside the reason and for the reason in the
+	// comment above: nothing about the database can make an unnamed caller
+	// sufficient either, and checking here means the refusal never opened a
+	// transaction, never locked the row and never cleared anything.
+	if _, ok := tenancy.ActorFrom(ctx); !ok {
+		return ReplayRecord{}, fmt.Errorf("events: replay %s: an actor is required; the record of the act names the operator who ordered it", eventID)
 	}
 	// No check on durable's spelling: a durable that names no subscription
 	// clears nothing and restamps the row, which is what "found none" means
