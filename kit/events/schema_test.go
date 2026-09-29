@@ -230,6 +230,93 @@ func TestSchemaIsTheProjectionOfTheType(t *testing.T) {
 	}
 }
 
+// loosePayload is a module's payload with three members the projection cannot
+// describe beside one it describes exactly: already-marshalled JSON, an
+// interface, a slice of interfaces. Each is an honest unknown in
+// kit/events/schema.go — the file returns nil rather than invent a shape — and
+// a checker that recursed through that nil instead of answering it dereferenced
+// a nil pointer inside the publisher's own business transaction.
+type loosePayload struct {
+	InvoiceID uuid.UUID       `json:"invoiceId"`
+	Total     int64           `json:"total"`
+	Raw       json.RawMessage `json:"raw,omitempty"`
+	Any       any             `json:"any,omitempty"`
+	List      []any           `json:"list,omitempty"`
+}
+
+// TestTheHonestUnknownConstrainsNothingAroundItEither is the branch's own
+// guard for the rule kit/events/schema.go states three ways — the comment on
+// project, the `true` that jsonSchema emits for a nil schema, and the nil branch
+// check returns from. One of the three went missing once, so the three are
+// pinned together here: an unprojectable member is JSON Schema's `true` in the
+// document an integrator reads, any value of it is accepted at the door, and the
+// members the projection *does* describe are still refused by name and path — so
+// a checker that stops being honest about the unknown fails here rather than in
+// the next module's publisher, which is the module this kernel has not written
+// yet. The panic this case holds off killed the publisher's transaction, not the
+// publish: kit/db re-panics after the rollback and only kit/httpx catches it.
+func TestTheHonestUnknownConstrainsNothingAroundItEither(t *testing.T) {
+	admin, conn := dbtest.Schema(t)
+	declare(t, events.Declare[loosePayload]("billing.loose_issued"))
+
+	doc, err := json.Marshal(events.Declare[loosePayload]("billing.loose_issued").Schema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s map[string]any
+	if err := json.Unmarshal(doc, &s); err != nil {
+		t.Fatal(err)
+	}
+	props, _ := s["properties"].(map[string]any)
+	for _, name := range []string{"raw", "any"} {
+		if open, ok := props[name].(bool); !ok || !open {
+			t.Errorf("properties.%s is %v, want JSON Schema's true: %s", name, props[name], doc)
+		}
+	}
+	list, _ := props["list"].(map[string]any)
+	if list["type"] != "array" {
+		t.Fatalf("properties.list is %v: %s", props["list"], doc)
+	}
+	if open, ok := list["items"].(bool); !ok || !open {
+		t.Errorf("an []any's items are %v, want JSON Schema's true: %s", list["items"], doc)
+	}
+
+	for _, body := range []any{
+		loosePayload{InvoiceID: uuid.New(), Total: 1,
+			Raw: json.RawMessage(`{"a":1}`), Any: "text", List: []any{1, "two"}},
+		// The same three members carrying what an integrator's bridge sends:
+		// an object, a number and an array of mixed kinds.
+		map[string]any{"invoiceId": uuid.NewString(), "total": 2,
+			"raw": map[string]any{"a": 1}, "any": true, "list": []any{1, "two", nil}},
+		map[string]any{"invoiceId": uuid.NewString(), "total": 3}, // and absent
+	} {
+		if err := publishErr(t, conn, "billing.loose_issued", body); err != nil {
+			t.Errorf("the outbox refused a payload whose only mis-shape is in a member it does not check: %v", err)
+		}
+	}
+
+	// The honest unknown constrains nothing around it either: the two members
+	// the projection describes keep refusing what they have always refused.
+	err = publishErr(t, conn, "billing.loose_issued",
+		map[string]any{"invoiceId": "not-a-uuid", "total": 4, "raw": map[string]any{"a": 1}})
+	if err == nil {
+		t.Fatal("a member the projection describes was accepted")
+	}
+	if !strings.Contains(err.Error(), "billing.loose_issued") || !strings.Contains(err.Error(), "$.invoiceId") {
+		t.Errorf("the refusal names neither the event nor the path: %v", err)
+	}
+
+	// Three accepted publishes and one refused one: the row count is the state
+	// answer to "did the nil branch write anything extra".
+	var n int
+	if err := admin.QueryRow(`SELECT count(*) FROM platformkit_outbox WHERE name = 'billing.loose_issued'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Errorf("the outbox holds %d loose_issued rows, want the 3 accepted publishes", n)
+	}
+}
+
 func sorted(v []any) []string {
 	out := make([]string, 0, len(v))
 	for _, x := range v {
