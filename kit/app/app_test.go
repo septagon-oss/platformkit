@@ -715,3 +715,52 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 		t.Errorf("the workspace route = %d, want 200", code)
 	}
 }
+
+// TestTheBootLineNamesTheEventSchemaCoverage reads the number this pillar is
+// measured by. kit/app/app.go prints event_schema_coverage at boot "because a
+// number nobody can read is a number that drifts back down" — and until this
+// case, no test had ever read it: every fixture here passes
+// slog.DiscardHandler, so the line executed in every boot test and reached
+// nothing. Reading it needs one logger that keeps what it is handed, because
+// Options.Log is used as it arrives (a caller that brings a logger has chosen
+// its own level) rather than re-wrapped at config's level.
+//
+// 1/2 is this composition: the kernel's own platformkit.event_replayed, whose
+// payload type kit/app declares, covered; hello's hello.note_written, declared
+// with no type, not. A boot whose coverage silently fell to 0/N — a catalogue
+// rebuilt from the wrong list, a DeclareAll that never ran — is the drift the
+// line exists to make visible, and it is now visible here too.
+func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
+	cfg, opts := compose(t)
+	var logs strings.Builder
+	opts.Log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	a, err := New(t.Context(), cfg, []module.Module{hello()}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// The line is buildAPI's, and buildAPI runs inside Run, so the app is
+	// booted, waited for, and stopped before anything reads the buffer — the
+	// logger belongs to the running process, and reading it while it runs is a
+	// race the assertion is not worth.
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var line string
+	for _, l := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(l, "event_schema_coverage") {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatalf("the boot log named no event_schema_coverage:\n%s", logs.String())
+	}
+	if !strings.Contains(line, "event_schema_coverage=1/2") {
+		t.Errorf("the boot line reads %q, want event_schema_coverage=1/2 for one covered declaration and one uncovered one", line)
+	}
+}
