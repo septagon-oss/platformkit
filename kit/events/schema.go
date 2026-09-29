@@ -254,6 +254,14 @@ func (s *Schema) Validate(body []byte) error {
 }
 
 func (s *Schema) check(path string, v any) error {
+	if s == nil {
+		// The same honest unknown Validate answers and jsonSchema emits as JSON
+		// Schema's `true`. Recursing through a member the projection could not
+		// describe — a json.RawMessage, an `any`, a []any, a map with non-string
+		// keys, a type that marshals itself — is how an honest unknown turns into
+		// a nil dereference inside the publisher's own transaction.
+		return nil
+	}
 	at := func(field string) string {
 		if path == "" {
 			return "$." + field
