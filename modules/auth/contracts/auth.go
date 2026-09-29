@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -135,6 +136,9 @@ func (Session) TableName() string { return "sessions" }
 // every request. No salt, because the lookup is by the hash itself: a salted
 // hash cannot be an index probe, and per-row salting protects against a
 // dictionary that does not exist here.
+// SessionRef names a session in events and logs: hex(Hash(id)), never usable as a cookie.
+func SessionRef(id uuid.UUID) string { return hex.EncodeToString(Hash(id.String())) }
+
 func Hash(credential string) Digest {
 	sum := sha256.Sum256([]byte(credential))
 	return sum[:]
