@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+**A focus ring is now measured on each of the surfaces the kernel draws it on.**
+Review round 10 found the graphic's floor read against one ground of three:
+`clFocusRing` pairs `Ring(style.Ring2).RingColor(style.RingFocus)` with
+`RingOffset(style.RingOffset2)`, which puts the 2 px ring *outside* the control and
+onto whatever surface the focused control sits inside — `clCardFrame`'s
+`surface-primary`, or the muted surface a panel raises itself onto — while
+`bodyContrast` measured `focus` against `surface-canvas` alone. `tokens: {dark:
+{focus: "#905546"}}` therefore resolved with no error at exactly 3.000:1 on the
+page and 2.692:1 on the card and 2.305:1 on the muted panel, under the 3.0:1
+SC 1.4.11 floor the same file states; swept through `Client.Resolve`, 286 311 of
+465 088 candidate overrides were accepted and 51 385 of their readings sat under
+the floor. `bodyContrast` now names `focus` on `surface-canvas`, `surface-primary`
+and `surface-muted`, which is what makes `MinContrastGraphic` mean what its own
+comment says: one gate, applied to a generated theme and an override alike. No
+shipped or generated colour moves — `design.Default()` reads 4.09/4.62/3.71 in
+`light` and 7.38/6.78/5.96 in `dark`, and over 4000 generated seeds (8000 themes)
+no ring reading falls under the floor, the worst at 3.395:1 — so the two new lines
+refuse nothing the generator emits and nothing this repository ships. The role
+layer needs no fourth list for the ring: `ring-focus` is a bare reference to the
+`focus` token and the three surface roles bare references to the three surface
+tokens, so the two measurements agree to the last digit, which
+`design/ring_ground_test.go` pins. The fourth ground a ringed control sits on,
+`sidebar-bg` (`clSidebarBrandLink` and the sidebar's own disclosure buttons merge
+`clFocusRing`), is measured and held by the shipped palette at 3.57:1 and 7.62:1,
+but is not gated: naming it would refuse 1762 of those 8000 generated readings
+(worst 2.408:1), so it asks for the ring to be repaired toward the sidebar the way
+a tint is repaired toward the copy it carries — a colour decision, named for the
+follow-up brief with the number.
+
+**One downstream copy still wears the value this branch rejected.** This branch's
+gate moved `light` `text-muted` to `#586461` because `#5f6b65` measured 4.382:1 on
+`surface-muted`, under the 4.5:1 text floor. `platformkit-mobile` regenerates its
+palette from this repository's design export and still pins the old value
+(`testdata/design-tokens.json` → `src/ui/tokens.ts`, provenance-pinned to upstream
+commit `5fc585926ce9a7d31af131f26a08ae9e967a591d`), so the phone paints the colour
+this branch refused. Nothing in either tree fails: the refresh is a deliberate act
+in that repository, provenance-pinned the way `catalog.json` is, and cannot be
+priced from here. It is recorded rather than left silent.
+
 **The label a filled tone button paints is now a measured pair too.** Review round
 8 found the door, not the palette: `clButtonTone` replaces a button's whole
 appearance with the tone it is given — `Bg(style.SurfaceDanger)` under
