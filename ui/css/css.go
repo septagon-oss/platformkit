@@ -1,6 +1,6 @@
 // Package css is the CSS intermediate representation the stylesheet is built
-// in: typed values, declarations, rules, custom properties and the two
-// at-rules the design system uses.
+// in: typed values, declarations, rules, custom properties and the cascade
+// layers and at-rules the design system uses.
 //
 // It exists so that the application's stylesheet is a Go value rather than a
 // file somebody edits. ui/style compiles a component's class list into rules
@@ -8,10 +8,16 @@
 // once at startup and is served as one artifact. Nothing parses CSS, because
 // nothing in this repository authors any.
 //
-// Derived from github.com/septagon-oss/styleengine (Apache-2.0); see NOTICE.
-// The parser, the minifier, the diagnostics and the @layer/@supports/@font-face
-// families were left behind with the repository: this package emits what one
-// design system needs and reads nothing.
+// Derived from github.com/septagon-oss/styleengine (Apache-2.0); see NOTICE —
+// by attribution only: this package takes no upstream code, and the upstream
+// emits @layer, @supports and @font-face, so the removal the fork is remembered
+// for is upstream's, not this tree's. The parser, the minifier and the
+// diagnostics were left behind with the repository, and with them @supports and
+// @font-face, which nothing here needs: this package emits what one design
+// system needs and reads nothing.
+// Cascade layers returned because precedence by file order is not a promise:
+// Layer and LayerOrder emit them, and ui.Compose is what places a consumer's
+// rules in the layer a consumer may write.
 package css
 
 import (
@@ -124,6 +130,7 @@ func (r Rule) CSS() string {
 type Sheet struct {
 	rules   []*Rule
 	atRules []atRule
+	orders  []string
 }
 
 // NewSheet returns an empty Sheet.
@@ -166,7 +173,53 @@ func (s *Sheet) Merge(other *Sheet) *Sheet {
 		s.AddRule(*r)
 	}
 	s.atRules = append(s.atRules, other.atRules...)
+	s.orders = append(s.orders, other.orders...)
 	return s
+}
+
+// WalkRules visits every rule's selector and declarations in cascade order,
+// including the rules nested in at-rules, so a caller that must read a sheet
+// reads what a browser would apply and not just the top level. A keyframe stop
+// is such a rule: the browser applies its declarations to the animating element,
+// so the walk reports it with its offset ("from", "50%") where a selector goes.
+// Returning the error from fn stops the walk.
+func (s *Sheet) WalkRules(fn func(selector string, decls []Declaration) error) error {
+	if s == nil {
+		return nil
+	}
+	for _, r := range s.rules {
+		if err := fn(r.Selector, r.Decls); err != nil {
+			return err
+		}
+	}
+	for _, a := range s.atRules {
+		if err := a.inner.WalkRules(fn); err != nil {
+			return err
+		}
+		for _, st := range a.stops {
+			if err := fn(st.offset, st.decls); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// UsesLayers reports whether the sheet emits @layer — an order statement or a
+// block — at any depth.
+func (s *Sheet) UsesLayers() bool {
+	if s == nil {
+		return false
+	}
+	if len(s.orders) > 0 {
+		return true
+	}
+	for _, a := range s.atRules {
+		if a.layer || a.inner.UsesLayers() {
+			return true
+		}
+	}
+	return false
 }
 
 // Rules returns detached top-level rules and declarations in insertion order.
@@ -187,6 +240,38 @@ type atRule struct {
 	prelude string
 	inner   *Sheet
 	stops   []stop
+	layer   bool
+}
+
+var layerNameRE = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+// LayerOrder declares the cascade order of the named layers, emitted as one
+// `@layer a, b;` statement ahead of every rule. The statement is what makes
+// precedence a promise rather than a file order: within one origin a rule in
+// an earlier layer loses to a later one whatever its selector says.
+// It panics on a name that is not a lower-case custom identifier for the same
+// reason VarRef does: layer names are written once in Compose, so a malformed
+// one is a wiring mistake, not input.
+func (s *Sheet) LayerOrder(names ...string) *Sheet {
+	for _, n := range names {
+		if !layerNameRE.MatchString(n) {
+			panic(fmt.Sprintf("css: invalid layer name %q (want [a-z][a-z0-9_-]*)", n))
+		}
+	}
+	s.orders = append(s.orders, strings.Join(names, ", "))
+	return s
+}
+
+// Layer nests a @layer block. The sheet built inside the block stays inside
+// it; only the declared order decides whether it beats another layer.
+func (s *Sheet) Layer(name string, fn func(*Sheet)) *Sheet {
+	if !layerNameRE.MatchString(name) {
+		panic(fmt.Sprintf("css: invalid layer name %q (want [a-z][a-z0-9_-]*)", name))
+	}
+	inner := NewSheet()
+	fn(inner)
+	s.atRules = append(s.atRules, atRule{prelude: "@layer " + name, inner: inner, layer: true})
+	return s
 }
 
 type stop struct {
@@ -220,16 +305,25 @@ func (k *Keyframes) At(offset string, decls ...Declaration) *Keyframes {
 	return k
 }
 
-// CSS renders the whole sheet: rules first, at-rules after, each separated by a
-// blank line. The output is deterministic, which is what makes the stylesheet
+// CSS renders the whole sheet: layer statements first (they precede the rules
+// they order), rules next, other at-rules after, each separated by a blank
+// line. The output is deterministic, which is what makes the stylesheet
 // something a test can assert about.
 func (s *Sheet) CSS() string {
 	if s == nil {
 		return ""
 	}
 	var b strings.Builder
-	for i, r := range s.rules {
-		if i > 0 {
+	for _, o := range s.orders {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString("@layer ")
+		b.WriteString(o)
+		b.WriteByte(';')
+	}
+	for _, r := range s.rules {
+		if b.Len() > 0 {
 			b.WriteString("\n\n")
 		}
 		b.WriteString(r.CSS())

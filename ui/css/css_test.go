@@ -147,3 +147,84 @@ func TestMediaNestsAndIndents(t *testing.T) {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+func TestLayerStatementIsRenderedAheadOfEverythingItOrders(t *testing.T) {
+	t.Parallel()
+	s := css.NewSheet().Select(".a", css.Decl("color", css.Literal("red")))
+	s.LayerOrder("tokens", "client")
+	want := "@layer tokens, client;\n\n.a {\n  color: red;\n}"
+	if got := s.CSS(); got != want {
+		t.Fatalf("a statement added after the rules still precedes them:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestLayerBlockNestsAndIndents(t *testing.T) {
+	t.Parallel()
+	s := css.NewSheet()
+	s.Layer("client", func(inner *css.Sheet) {
+		inner.Select(".a", css.Decl("display", css.Literal("flex")))
+	})
+	want := "@layer client {\n  .a {\n    display: flex;\n  }\n}"
+	if got := s.CSS(); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestLayerNamesRefuseAnEscape(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []string{"Client", "tokens base", "1token", "", "tok; }"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Layer(%q) did not panic", bad)
+				}
+			}()
+			css.NewSheet().Layer(bad, func(*css.Sheet) {})
+		}()
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("LayerOrder(%q) did not panic", bad)
+				}
+			}()
+			css.NewSheet().LayerOrder("tokens", bad)
+		}()
+	}
+}
+
+func TestUsesLayersReadsThroughNestedAtRules(t *testing.T) {
+	t.Parallel()
+	plain := css.NewSheet().Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Select(".a", css.Decl("color", css.Literal("red")))
+	})
+	nested := css.NewSheet().Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Layer("client", func(in2 *css.Sheet) { in2.Select(".a", css.Decl("color", css.Literal("red"))) })
+	})
+	statement := css.NewSheet().LayerOrder("tokens")
+	if plain.UsesLayers() || !nested.UsesLayers() || !statement.UsesLayers() {
+		t.Fatal("UsesLayers missed a @layer or imagined one")
+	}
+}
+
+func TestWalkRulesVisitsNestedRulesInOrder(t *testing.T) {
+	t.Parallel()
+	s := css.NewSheet().Select(".a", css.Decl("color", css.Literal("red")))
+	s.Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Select(".b", css.Decl("color", css.Literal("blue")))
+	})
+	s.Keyframes("pulse", func(k *css.Keyframes) {
+		k.At("from", css.Decl("opacity", css.Literal("0")))
+	})
+	var seen []string
+	if err := s.WalkRules(func(sel string, _ []css.Declaration) error {
+		seen = append(seen, sel)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A keyframe stop is a rule the browser applies to the animating element, so
+	// a caller that reads the sheet reads it too, with the offset as its selector.
+	if len(seen) != 3 || seen[0] != ".a" || seen[1] != ".b" || seen[2] != "from" {
+		t.Fatalf("walked %v", seen)
+	}
+}

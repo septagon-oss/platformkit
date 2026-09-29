@@ -8,6 +8,22 @@
 // tokens they are written in terms of. Compose folds the three, plus whatever a
 // consumer adds, into one Sheet, and a Sheet is bytes and their fingerprint.
 //
+// The Sheet has four cascade layers — tokens, base, components, client — and
+// the order statement Compose emits is what says so. Precedence by file order
+// is a rumour: a consumer appended to the kernel's bytes beat the kernel for
+// one reason (it was later) and lost for one reason (a selector), and nobody
+// could read which applied. With layers a consumer's rules are in the one
+// layer they may write, the order the kernel ranks in is the order statement,
+// and a !important in the client layer still loses to a !important in a kernel
+// layer, which is the only direction layers reverse.
+//
+// A layer ranks before specificity and specificity never crosses a layer, so the
+// layer a rule goes in is decided by what it must still win. Every rule Compose
+// emits is in a layer — an unlayered rule beats every layer and would undo the
+// order statement — and a rule about one of the kernel's own components shares
+// the components layer with the utilities on that component, where its selector
+// still decides the tie; see base and componentState.
+//
 // A consumer calls Compose once, at mount, and carries the Sheet in its chrome.
 // Nothing is memoised here because nothing is called twice: the value is the
 // cache. That is also why a second consumer needs no machinery of its own — the
@@ -33,7 +49,9 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -75,12 +93,64 @@ type Sheet struct {
 }
 
 // Extra is what one consumer adds to the kernel's sheet: the class lists its
-// own markup renders with, resolved by ui/style exactly as the components' are,
-// and the rules no class can express — an attribute selector for a client's
-// grain, a keyframe for an animation.
+// own markup renders with, resolved by ui/style exactly as the components' are
+// — which is why they compile into the components layer, shared utilities and
+// all — and the rules no class can express, which Compose places in the client
+// layer. An attribute selector for a client's grain, a keyframe for an
+// animation: a consumer's rules are read, refused or placed by Compose; see
+// the refusals on refuseClientSheet.
 type Extra struct {
 	Lists  []style.ClassList
 	Sheets []*css.Sheet
+}
+
+// The four cascade layers, in the order Compose declares them.
+const (
+	layerTokens     = "tokens"
+	layerBase       = "base"
+	layerComponents = "components"
+	layerClient     = "client"
+)
+
+// rawColourRE matches the ways a rule says a colour without naming a token: a
+// hex triplet or an rgb()/hsl() call. A named colour ("red") is words a review
+// catches, not a pattern a gate can tell from a keyword.
+var rawColourRE = regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b|\b(?:rgb|hsl)a?\(`)
+
+// refuseClientSheet is the rule a consumer sheet lives under: no @layer of its
+// own (Compose places it), no attribute name the kernel renders, in whichever
+// spelling of the several a browser resolves to the same name (see attrNames and
+// kernelHooks), and no :root (that markup is the kernel's) and no raw colour or
+// --pk- property (the palette is named in one place). It reads every declaration the sheet carries, keyframe stops included,
+// because the browser applies those too. It panics for the reason VarRef panics:
+// a consumer sheet is Go source wired at mount, so a violation is a build-time
+// fact and the refused composition ships no bytes.
+func refuseClientSheet(sheet *css.Sheet) {
+	if sheet.UsesLayers() {
+		panic("ui: a client sheet declares its own @layer; Compose places every client rule in the client layer")
+	}
+	err := sheet.WalkRules(func(selector string, decls []css.Declaration) error {
+		if strings.Contains(selector, ":root") {
+			return fmt.Errorf("ui: a client rule names %q: the root element is the kernel's to style, and the tokens it carries are named in one place", selector)
+		}
+		for _, name := range attrNames(selector) {
+			if renderedBy, kernel := kernelHooks[name]; kernel {
+				return fmt.Errorf("ui: a client rule names the kernel's own attribute %q (%s), which %s renders: style your own hook and let the layer carry it", name, selector, renderedBy)
+			}
+		}
+		for _, d := range decls {
+			if strings.HasPrefix(d.Property, "--pk-") {
+				return fmt.Errorf("ui: a client rule declares %q; the --pk- namespace is the kernel's to name", d.Property)
+			}
+			if raw := rawColourRE.FindString(d.Value.CSS()); raw != "" {
+				return fmt.Errorf("ui: a client rule (%s) carries the raw colour %q; read a token with css.VarRef", d.Property, raw)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err.Error())
+	}
 }
 
 // Compose is every page's stylesheet in one palette: that palette's tokens,
@@ -88,24 +158,38 @@ type Extra struct {
 // and the extras declare, and then the extras' own rules. It is a pure function
 // of its arguments. Call it once and keep the value.
 //
-// The components' lists and the extras' lists are resolved together, which is
-// what gives a shared utility one rule: a consumer that appended its own
-// resolution to the kernel's bytes emitted .flex twice.
+// The result is four cascade layers in the declared order tokens, base,
+// components, client: the palette and roles in the first, the preflight in the
+// second, the kernel's own component-state rules and every resolved class list
+// in the third — the components' and the extras' together, which is what gives a
+// shared utility one rule — and the extras' hand-written sheets in the fourth.
+// A layer ranks before specificity, so a rule's layer is decided by what it must
+// still win: see base and componentState. A consumer gets one layer it may write
+// and no way to name a kernel hook; see refuseClientSheet.
 func Compose(theme design.Pair, extra ...Extra) Sheet {
 	sheet := css.NewSheet()
-	sheet.Merge(style.ThemeVars(theme.Light, theme.Dark))
-	sheet.Merge(style.RoleVars())
-	sheet.Merge(base())
+	sheet.LayerOrder(layerTokens, layerBase, layerComponents, layerClient)
+	sheet.Layer(layerTokens, func(t *css.Sheet) {
+		t.Merge(style.ThemeVars(theme.Light, theme.Dark))
+		t.Merge(style.RoleVars())
+	})
+	sheet.Layer(layerBase, func(b *css.Sheet) { b.Merge(base()) })
 	lists := slices.Clone(components.ShellClassLists())
 	for _, e := range extra {
 		lists = append(lists, e.Lists...)
 	}
-	sheet.Merge(rules(lists))
-	for _, e := range extra {
-		for _, s := range e.Sheets {
-			sheet.Merge(s)
+	sheet.Layer(layerComponents, func(c *css.Sheet) {
+		c.Merge(componentState())
+		c.Merge(rules(lists))
+	})
+	sheet.Layer(layerClient, func(cl *css.Sheet) {
+		for _, e := range extra {
+			for _, s := range e.Sheets {
+				refuseClientSheet(s)
+				cl.Merge(s)
+			}
 		}
-	}
+	})
 	return fingerprinted(sheet)
 }
 
@@ -131,7 +215,7 @@ var Gallery = sync.OnceValue(func() Sheet {
 	if err != nil {
 		panic("ui: the gallery declares a class the style engine cannot render: " + err.Error())
 	}
-	return fingerprinted(css.NewSheet().Merge(rules))
+	return fingerprinted(css.NewSheet().Layer(layerComponents, func(c *css.Sheet) { c.Merge(rules) }))
 })
 
 // Assets is the tree a shell serves under its asset prefix: app.css is the
@@ -186,10 +270,15 @@ func fingerprinted(sheet *css.Sheet) Sheet {
 
 // base is the small layer no utility can express: the document's own box model,
 // margins, colours and type. Everything else in the stylesheet is a utility a
-// component asked for; these eleven rules are the page itself.
+// component asked for, and the page's own box model, margins, colours and type.
 //
 // It is written here rather than as a vendored reset, because a reset is a
 // thousand lines of undoing decisions browsers stopped making a decade ago.
+//
+// What lives here is what a utility may still overrule: every selector is an
+// element or a universal selector, so a class on the element outspecifies it in
+// any layer. A rule about one of the kernel's own components does not belong
+// here — see componentState, which sits in the layer the utilities sit in.
 func base() *css.Sheet {
 	s := css.NewSheet()
 	v := func(name string) css.Value { return css.VarRef(name, "") }
@@ -226,6 +315,51 @@ func base() *css.Sheet {
 	// is how a defect hides. Every button this application renders declares its
 	// own surface, so the default is no surface at all.
 	s.Select("button", css.Decl("background-color", css.Literal("transparent")))
+	s.Select("table", css.Decl("border-collapse", css.Literal("collapse")))
+	// A navigation list is not a bulleted list. The marker inherits the
+	// document's text colour rather than the link's, so on the inverted sidebar
+	// it was invisible in the light theme and a row of dots in the dark one —
+	// which is how a defect ships: it looked right in the theme it was built in.
+	s.Select("nav ul, nav ol",
+		css.Decl("list-style", css.Literal("none")),
+		css.Decl("margin", css.Literal("0")),
+		css.Decl("padding", css.Literal("0")))
+	s.Select("a", css.Decl("color", css.Literal("inherit")), css.Decl("text-decoration", css.Literal("none")))
+	s.Select("img, svg", css.Decl("display", css.Literal("block")), css.Decl("max-width", css.Literal("100%")))
+	s.Select("dialog::backdrop", css.Decl("background", css.Literal("rgb(0 0 0 / 0.45)")))
+	s.Media("(prefers-reduced-motion: reduce)", func(inner *css.Sheet) {
+		// Override ordinary utility and consumer rules while retaining completion
+		// events for declared animations and transitions. A nonzero duration must
+		// not activate the default transition-property: all on ordinary content;
+		// later utility and consumer declarations can still name their properties.
+		inner.Select("*, *::before, *::after",
+			css.Decl("animation-duration", css.Literal("0.01ms !important")),
+			css.Decl("animation-iteration-count", css.Literal("1 !important")),
+			css.Decl("transition-property", css.Literal("none")),
+			css.Decl("transition-duration", css.Literal("0.01ms !important")),
+			css.Decl("scroll-behavior", css.Literal("auto !important")))
+	})
+	return s
+}
+
+// componentState is the other half of what base() used to be: every rule the
+// kernel writes about one of its own components — the hidden hook, the radius a
+// component owes its role, the checkbox's projected indicator, the modal that is
+// not open. These are placed in @layer components, ahead of the resolved class
+// lists, and not in @layer base with the preflight.
+//
+// A layer ranks before specificity, and specificity never crosses a layer, so a
+// role rule in an earlier layer than the utilities loses to one class sitting on
+// the element it governs whatever it declares. `dialog[data-component=modal]:not([open])`
+// loses to the `flex` on the same dialog and a dismissed modal keeps covering the
+// page; `[data-checkbox-box]` loses to the `text-transparent` on the same box and
+// a ticked box paints no mark. In the components layer the role's own selector
+// decides the tie again — and, staying ahead of the class lists, it still loses
+// the equal-specificity ties it lost before layers existed, so a class a
+// component's markup asks for is still the last word about that class.
+func componentState() *css.Sheet {
+	s := css.NewSheet()
+	v := func(name string) css.Value { return css.VarRef(name, "") }
 	// Component layout utilities must respect Hidden. Keep the override scoped
 	// so consumer HTML can reveal its own hidden content in print styles.
 	s.Select("[data-component][hidden]", css.Decl("display", css.Literal("none !important")))
@@ -270,18 +404,6 @@ func base() *css.Sheet {
 		s.Select("[data-component=checkbox] > input:disabled + [data-checkbox-box]",
 			css.Decl("border-color", css.Literal("GrayText")))
 	})
-	s.Select("table", css.Decl("border-collapse", css.Literal("collapse")))
-	// A navigation list is not a bulleted list. The marker inherits the
-	// document's text colour rather than the link's, so on the inverted sidebar
-	// it was invisible in the light theme and a row of dots in the dark one —
-	// which is how a defect ships: it looked right in the theme it was built in.
-	s.Select("nav ul, nav ol",
-		css.Decl("list-style", css.Literal("none")),
-		css.Decl("margin", css.Literal("0")),
-		css.Decl("padding", css.Literal("0")))
-	s.Select("a", css.Decl("color", css.Literal("inherit")), css.Decl("text-decoration", css.Literal("none")))
-	s.Select("img, svg", css.Decl("display", css.Literal("block")), css.Decl("max-width", css.Literal("100%")))
-	s.Select("dialog::backdrop", css.Decl("background", css.Literal("rgb(0 0 0 / 0.45)")))
 	s.Select("dialog[data-component=modal]",
 		css.Decl("width", css.Literal("100%")), css.Decl("height", css.Literal("100%")),
 		css.Decl("max-width", css.Literal("none")), css.Decl("max-height", css.Literal("none")),
@@ -289,18 +411,6 @@ func base() *css.Sheet {
 		css.Decl("background", css.Literal("transparent")), css.Decl("color", css.Literal("inherit")))
 	s.Select("dialog[data-component=modal]:not([open])", css.Decl("display", css.Literal("none")))
 	s.Select("dialog[data-component=modal]::backdrop", css.Decl("background", css.Literal("transparent")))
-	s.Media("(prefers-reduced-motion: reduce)", func(inner *css.Sheet) {
-		// Override ordinary utility and consumer rules while retaining completion
-		// events for declared animations and transitions. A nonzero duration must
-		// not activate the default transition-property: all on ordinary content;
-		// later utility and consumer declarations can still name their properties.
-		inner.Select("*, *::before, *::after",
-			css.Decl("animation-duration", css.Literal("0.01ms !important")),
-			css.Decl("animation-iteration-count", css.Literal("1 !important")),
-			css.Decl("transition-property", css.Literal("none")),
-			css.Decl("transition-duration", css.Literal("0.01ms !important")),
-			css.Decl("scroll-behavior", css.Literal("auto !important")))
-	})
 	return s
 }
 
