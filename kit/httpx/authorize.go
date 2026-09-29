@@ -168,6 +168,7 @@ func (a *API) entitled(ctx huma.Context, t tenancy.Tenant, auth Auth) bool {
 		a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: plan excludes this operation",
 			"feature", auth.feature, "tenant", t.Slug, "path", ctx.URL().Path)
 		a.refuse(ctx, http.StatusPaymentRequired, CodePlanExcludes+": this tenant's plan does not include "+auth.feature)
+		a.denied(ctx, http.StatusPaymentRequired, CodePlanExcludes, "this tenant's plan does not include "+auth.feature)
 		return false
 	}
 	return true
@@ -251,4 +252,26 @@ func (a *API) deny(ctx huma.Context, code, detail string) {
 	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: authorization denied",
 		"code", code, "method", ctx.Method(), "path", ctx.URL().Path)
 	a.refuse(ctx, http.StatusForbidden, code+": "+detail)
+	a.denied(ctx, http.StatusForbidden, code, detail)
+}
+
+// denied hands one refusal to Options.Denied when it has somebody to attribute it
+// to. See Options.Denied for why an anonymous refusal is not passed.
+func (a *API) denied(ctx huma.Context, status int, code, detail string) {
+	if a.opts.Denied == nil {
+		return
+	}
+	p, hasPrincipal := tenancy.PrincipalFrom(ctx.Context())
+	t, hasTenant := tenancy.FromContext(ctx.Context())
+	if !hasPrincipal || p.UserID == uuid.Nil || !hasTenant {
+		return
+	}
+	operation := ""
+	if op := ctx.Operation(); op != nil {
+		operation = op.OperationID
+	}
+	a.opts.Denied(ctx.Context(), Denial{
+		Status: status, Code: code, Detail: detail, Method: ctx.Method(), Path: ctx.URL().Path,
+		Operation: operation, RequestID: requestIDFrom(ctx.Context()), Tenant: t, Principal: p,
+	})
 }
