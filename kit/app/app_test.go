@@ -154,7 +154,7 @@ func TestBootMigratesAndServes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// The probes as an orchestrator sends them: at the pod's address, which
 	// names no tenant, so no transaction is opened at all.
@@ -364,17 +364,29 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 }
 
-func waitFor(t *testing.T, addr string) {
+// waitFor returns once the address answers, and gives up only when the app itself says it will
+// never answer or the test ends. What it waits for is a boot, and a boot migrates: `db.Migrate`
+// queues on an advisory lock that covers the whole database, so every package in the suite that
+// migrates is ahead of it. A fixed twenty seconds is a budget the machine spends — in the
+// full-suite run where this case failed, the log shows the app still applying migrations at the
+// moment the wait gave up, and nothing was wrong with the app. Watching `stopped`, which every
+// caller already has, is what keeps the wait honest: an app that is going to fail to listen is
+// refused the instant it says so, in far less time than any clock would have waited.
+func waitFor(t *testing.T, addr string, stopped <-chan error) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
+	for {
 		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			_ = c.Close()
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case err := <-stopped:
+			t.Fatalf("the app returned %v before anything was listening on %s", err, addr)
+		case <-t.Context().Done():
+			t.Fatalf("nothing is listening on %s while the app still runs", addr)
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
-	t.Fatalf("nothing is listening on %s", addr)
 }
 
 func get(t *testing.T, addr, host, path string) (int, string) {
@@ -445,7 +457,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -511,7 +523,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// A worker serves the two probes and nothing else.
 	for _, path := range []string{"/health", "/ready"} {
@@ -606,7 +618,7 @@ func TestTheWorkerAnswersTheSameProbeShapeAsTheWeb(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	for path, want := range map[string]string{"/health": `{"status":"ok"}`, "/ready": `{"status":"ok"}`} {
 		code, body := get(t, cfg.Server.Addr, cfg.Server.Addr, path)
@@ -650,7 +662,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// The document is for a caller the installation recognises: the resources it
 	// may reach, not everybody's.
@@ -710,7 +722,7 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- b.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/faceless/notice"); code != http.StatusOK {
 		t.Errorf("the workspace route = %d, want 200", code)
 	}
