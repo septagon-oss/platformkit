@@ -33,9 +33,28 @@ process that would wear both asks and refuses.
 [`kit/designconfig`](../kit/designconfig/) decodes `clients/<slug>/design.yaml`
 into `design.Client` — the seed plus at most named overrides of the 22 colour
 tokens, its own font stacks and its radii in the spelling the tags give them
-(`card-radius`) — and `Client.Resolve` runs the same gate over the finished pair.
+(`card-radius`) — and `Client.Resolve` runs the same gate over the finished pair:
+`Pair.Check` over the 22 tokens, then `Pair.CheckRoles` over the role layer below.
 Start there for a new client; `design.Default()` stays what an installation that
 says nothing about colour gets.
+
+## The layer a browser paints
+
+The `--pk-role-*` declarations live in [roles.go](roles.go): every role in terms
+of a theme's tokens, the mixes a theme does not enumerate, and the two lists of
+pairs a reader is shown — `BodyRolePairs()` on a theme's own surfaces,
+`TintedRolePairs()` on the surfaces the layer derives by mixing a foreground into
+one. They are names, references and percentages, so owning them costs this
+package nothing of its dependency rule, and the package that measures a ratio has
+to own what it measures: `Client.Resolve` gates a client's finished pair with
+`RoleLayer()` and `GatedRolePairs()`, while
+[ui/style](../ui/style/README.md) renders those declarations into its `:root`
+block and [ui/export](../ui/export/README.md) projects them — all three through
+the same one list. A gate that could read only the token layer could certify
+colours nobody paints: overriding `surface-primary` with `#2e2920` in a dark theme
+holds all 22 token pairs and moves the tint a brand badge's own label sits on down
+to 3.91:1, which is why the door a client's file passes through refuses it rather
+than the export alone.
 
 Two refusals keep the gate honest rather than theatrical. A colour that carries
 alpha is refused before anything is measured: a ratio is a property of two opaque
@@ -55,8 +74,11 @@ measured a ratio at all — the vendored editor plug-in under
 imports it; `seed.go`, because nothing generated a palette; `Client`
 and `Distance`/`Colliding`, because nothing read a client's file or compared two
 clients' identities; `Shape.Validate`/`ParseRadius`, because the radius grammar
-lived in a loader's regexp rather than beside the type. **Made reusable:**
-`RadiusTokenNames` and the exported `Pair.Check`, `Luminance` and `Contrast` for
+lived in a loader's regexp rather than beside the type; `roles.go`, because the
+list that gates a client's override and the list a stylesheet is rendered from
+cannot be two lists. **Made reusable:**
+`RadiusTokenNames`, `RoleLayer`/`GatedRolePairs` and the exported `Pair.Check`,
+`Luminance` and `Contrast` for
 any other gate above this package, and `designconfig`'s slug-keyed set as the
 place a process holds many clients' identities.
 

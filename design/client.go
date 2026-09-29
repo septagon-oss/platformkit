@@ -97,9 +97,19 @@ func (c Client) Validate() error {
 }
 
 // Resolve generates the pair the seed describes, applies this client's
-// overrides, and refuses the result unless it still passes Pair.Check. The gate
+// overrides, and refuses the result unless it still passes both halves of the
+// gate: Pair.Check over the twenty-two tokens the theme sets, and
+// Pair.CheckRoles over the semantic layer its screens are painted with. The gate
 // runs over the finished pair rather than each override on its own: a token is
 // only readable against the surfaces that client actually ships.
+//
+// The second half is not a courtesy to the exporter. An override can hold every
+// token pair and still break a pair no token names: paint the accent of a dark
+// theme onto the tint mixed from itself and the brand badge's own label falls
+// under the floor, and the surface that tint is mixed into is itself overridable.
+// A client's file is therefore accepted only by the same measurement ui/export
+// makes where the pair becomes a stylesheet — one that stopped at the tokens
+// would accept at the door a palette it refuses on the way out.
 //
 // The returned Pair is what ui.Compose takes. It is a value, keyed by slug by
 // whoever holds a set of clients, so one process can hold many.
@@ -128,6 +138,12 @@ func (c Client) Resolve() (Pair, error) {
 		}
 	}
 	if err := pair.Check(); err != nil {
+		return Pair{}, fmt.Errorf("design: client %s: %w", c.Slug, err)
+	}
+	// The layer a browser paints, with the pairs a reader is shown on it. These
+	// are the declarations RoleLayer owns and ui/style renders, so refusing here
+	// is refusing the same measurement the export would make.
+	if err := pair.CheckRoles(RoleLayer(), GatedRolePairs()); err != nil {
 		return Pair{}, fmt.Errorf("design: client %s: %w", c.Slug, err)
 	}
 	return pair, nil
