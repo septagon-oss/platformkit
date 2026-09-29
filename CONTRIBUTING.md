@@ -82,6 +82,15 @@ Compose volumes as well as stopping services; it is not a test step.
 Use the [local setup](README.md#try-it-locally) for application development.
 `make run` instead uses `config.yaml`, copied from `config.example.yaml` when absent.
 
+`make trace` starts a third container: an OTLP collector that prints every span and
+metric datapoint it receives to `docker compose logs collector`. Point
+`telemetry.otlp_endpoint` at `localhost:4317` and the application you are working on
+shows its own traces there, which is how a change to `kit/telemetry` is checked
+without a trace backend. It sits behind a Compose profile rather than inside `make up`
+because `make up` is what `make test` and `make check` rest on, and its image cannot
+be pulled on an offline machine; `make down` stops it along with the others.
+`PLATFORMKIT_OTLP_PORT` moves its port the same way the two above do.
+
 `make test` uses pinned gotestsum with Go's package cache. Focus a case with
 `make test TEST_PACKAGES=./modules/task/internal TEST_FLAGS='-run TestConcurrentTaskCommands'`.
 `make test TEST_OPTIONS=--watch` waits for Go edits, then checks the selected
