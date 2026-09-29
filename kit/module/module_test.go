@@ -227,3 +227,24 @@ func TestSubscribeAllTakesExactlyOneSubscription(t *testing.T) {
 		t.Errorf("Validate = %v, want the refusal", err)
 	}
 }
+
+// TestValidateRefusesAMoveTheRedirectCouldNotHonour: a moved address is a whole path
+// on both sides, never a row pointing at itself, and one old address has one owner.
+func TestValidateRefusesAMoveTheRedirectCouldNotHonour(t *testing.T) {
+	ok := Module{Name: "pets", Moved: []Move{{From: "/pets", To: "/app/pets"}}}
+	if err := Validate([]Module{ok}); err != nil {
+		t.Fatalf("a well-formed move was refused: %v", err)
+	}
+	for name, mods := range map[string][]Module{
+		"relative":  {{Name: "pets", Moved: []Move{{From: "pets", To: "/app/pets"}}}},
+		"to itself": {{Name: "pets", Moved: []Move{{From: "/pets/", To: "/pets"}}}},
+		"two owners": {
+			{Name: "pets", Moved: []Move{{From: "/shop", To: "/app/pets/shop"}}},
+			{Name: "shop", Moved: []Move{{From: "/shop", To: "/app/shop"}}},
+		},
+	} {
+		if err := Validate(mods); err == nil {
+			t.Errorf("%s: the composition was accepted", name)
+		}
+	}
+}

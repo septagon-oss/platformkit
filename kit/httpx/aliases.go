@@ -1,6 +1,9 @@
 package httpx
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // aliases.go is the one release in which an old address still means something.
 //
@@ -78,7 +81,30 @@ var aliasTable = []struct{ from, to string }{
 // one. The match is an exact address or a path segment prefix — never a bare
 // string prefix, which would send /administrator somewhere it never was.
 func alias(path string) (string, bool) {
-	for _, a := range aliasTable {
+	return lookup(aliasTable, path)
+}
+
+// Alias adds one row to this API's own migration table: a module's moved
+// address (module.Module.Moved), registered by kit/app before any route is
+// served. The kernel's rows above are asked first, then this composition's,
+// longest From first, so a module's specific row is not shadowed by its general
+// one. The same two rules hold: a redirect and never a second mount — the
+// surface gate refuses a route mounted at a moved address — and never a 301.
+func (a *API) Alias(from, to string) {
+	a.moved = append(a.moved, struct{ from, to string }{strings.TrimSuffix(from, "/"), strings.TrimSuffix(to, "/")})
+	sort.SliceStable(a.moved, func(i, j int) bool { return len(a.moved[i].from) > len(a.moved[j].from) })
+}
+
+// alias is the kernel's table, then this composition's own rows.
+func (a *API) alias(path string) (string, bool) {
+	if to, ok := alias(path); ok {
+		return to, true
+	}
+	return lookup(a.moved, path)
+}
+
+func lookup(table []struct{ from, to string }, path string) (string, bool) {
+	for _, a := range table {
 		if path == a.from {
 			return a.to, true
 		}
