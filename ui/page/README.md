@@ -94,21 +94,21 @@ catalogue cannot re-word what a refusal says; `screens.*` is unclaimed, so
 re-labelling "Delete" is a product's own decision in a later source.
 
 Which languages a request may be answered in is the tenant's decision, not this
-package's: `Serve` intersects `Accept-Language` with the languages the resolved
-tenant is served in and falls back to that tenant's default
-(`TenantPreferences`), so a guard refusing ahead of a handler and the page it is
-refusing speak the same language. The intersection is a filter and not a re-ordering:
-what survives goes to the provider as the one header string it arrived as, so the
-caller's own quality values still decide which of the two the answer is — a browser
-offering `pt-PT;q=0.1,en;q=0.9` to a tenant served in both is answered in English, in
-either order the header spells them. What the tenant adds behind that list is its own
-set, its default at its head, and that head is what answers a request nothing else
-matched. The generated
-screens read their fixed labels (New, Edit, Delete, the count, the pager and the
-empty state) under `screens.*` keys with English fallbacks; entity names,
-authentication API errors, client apps and notification templates still need their
-own authored messages and adoption. No translation management service or remote
-bundle is required by this local runtime seam.
+package's: `Serve` intersects `Accept-Language` with the languages the resolved tenant
+is served in and falls back to that tenant's default (`TenantPreferences`), so a guard
+refusing ahead of a handler and the page it is refusing speak the same language. The
+intersection is a filter and not a re-ordering: what survives goes to the provider as
+the one header string it arrived as, so the caller's own quality values still decide
+which of the two the answer is — a browser offering `pt-PT;q=0.1,en;q=0.9` to a tenant
+served in both is answered in English, in either order it spells them. It matches a
+language, not a region: a browser that asks for `pt-BR` is asking for Portuguese, and
+this deployment's Portuguese answers it. What the tenant adds behind that list is its
+own set, its default at its head, and that head answers a request nothing else matched.
+The generated screens read their fixed labels (New, Edit, Delete, the count, the pager
+and the empty state) under `screens.*` keys with English fallbacks; entity names,
+authentication API errors, client apps and notification templates still need their own
+authored messages and adoption. No translation management service or remote bundle is
+required by this local runtime seam.
 
 Run `go test -race ./ui/page -count=1` for negotiation, fallbacks, pluralization,
 escaping and concurrent catalog isolation. With the repository's existing test
