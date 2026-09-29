@@ -398,8 +398,16 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // and the answer has to be a number, because the alternative is a tick that repeats work and never
 // applies the version.
 //
-// The bound is reached, so the case costs a tick's worth of windows; its own context is the
-// deadline that turns a regression to no bound at all into a failure rather than a hang.
+// The bound is reached, so the case costs a tick's worth of windows. What has to be
+// watched for a drain that ignores it is the drain's own work and not the wall clock:
+// ten thousand batches of five rows over the twelve seeded ones is fifty thousand and
+// twelve rows and no more, so the table itself says when a tick has passed the bound
+// and is still rewriting work. Measured here, those ten thousand windows cost 28.4 s
+// with this host otherwise idle, 51 s with the repository's own suite running beside
+// it and 121 s in the full-suite run that refused this case — a 4.3x spread that is
+// scheduling and nothing else, against a deadline of 120 s. The context stays as the
+// backstop for the one state a row count cannot report, a tick that writes nothing at
+// all, at a length only a stuck run spends.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	// The probe, and a plain view over it. The append below runs through the view, which is the
@@ -416,9 +424,41 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	// boundRows is what a tick that stops where it is told leaves behind; the witness waits for
+	// five hundred batches beyond it, which a drain that ignores the bound writes in seconds and
+	// a drain that honours it can never reach.
+	const boundRows = 12 + 5*10000
+	admin := dbtest.Open(t, migrateURL)
+	ctx, cancel := context.WithTimeout(t.Context(), 6*time.Minute)
 	defer cancel()
+	past := make(chan int64, 1)
+	go func() {
+		tick := time.NewTicker(time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+			var n int64
+			if err := admin.QueryRowContext(ctx, "SELECT count(*) FROM probe").Scan(&n); err != nil {
+				return // whatever ended this read ends the watching with it
+			}
+			if n > boundRows+5*500 {
+				past <- n
+				cancel()
+				return
+			}
+		}
+	}()
 	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
+	select {
+	case n := <-past:
+		t.Fatalf("%d rows in the drained table, past the %d rows ten thousand batches of five can write: this tick is still rewriting work while holding the job's advisory lock",
+			n, boundRows)
+	default:
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("the worker's tick did not end on its own: this drain has no bound, and every tick rewrites work while holding the job's advisory lock")
 	}
@@ -428,7 +468,6 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	if !strings.Contains(err.Error(), "10000 batches of 5") {
 		t.Errorf("the report does not name the bound it stopped at: %v", err)
 	}
-	admin := dbtest.Open(t, migrateURL)
 	// A bound is a stop and not a refusal: what committed stands, the cursor says where the next
 	// tick starts, and the version is not applied over work that is still there.
 	if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 1 {
