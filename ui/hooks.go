@@ -21,10 +21,10 @@ import (
 // that markup lives there; these packages import ui rather than the other way
 // round, so their names are declared here, beside the gate that reads them, and
 // the attribution is checked rather than asserted: hooks_test.go reads the
-// source each name is attributed to, refuses a name the kernel renders that the
-// list omits and a name the list carries that nothing renders — the same pin
-// components' own test runs on its own list, with the attribution standing in
-// for the package directory.
+// markup each name is attributed to (a name in a comment is not markup), refuses
+// a name the kernel renders that the list omits and a name the list carries that
+// nothing renders — the same pin components' own test runs on its own list,
+// with the attribution standing in for the package directory.
 //
 // What a module renders is not here. The kernel does not know which modules are
 // composed, and a name the product writes is the product's to refuse.

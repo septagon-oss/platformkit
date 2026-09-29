@@ -1,6 +1,9 @@
 package components_test
 
 import (
+	"bytes"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,10 +14,55 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 )
 
-// hookNameRE matches an attribute name in the data- namespace, however it is
-// written: a quoted attribute in a template, a name built by concatenation, or
-// a name in the sentence that explains one.
+// hookNameRE matches an attribute name in the data- namespace, however the
+// markup is written: a quoted attribute in a template, a name built by
+// concatenation, or a name inside a raw markup string. It runs on source with its
+// comments blanked — hookNames — because a name in the sentence that explains one
+// is not a name this package renders.
 var hookNameRE = regexp.MustCompile(`data-[a-z0-9]+(?:-[a-z0-9]+)*`)
+
+// hookNames returns the data- attribute names src mentions outside its
+// comments. go/parser decides what a comment is; it is what tells a // inside a
+// string from a comment that starts with one, which a text search cannot. A
+// source it cannot parse fails the check rather than being read as prose.
+func hookNames(t *testing.T, src []byte) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "check.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse: %v: this check reads markup, and a file it cannot parse, it cannot scope to markup", err)
+	}
+	code := bytes.Clone(src)
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			for i := fset.Position(comment.Pos()).Offset; i < fset.Position(comment.End()).Offset; i++ {
+				if code[i] != '\n' {
+					code[i] = ' '
+				}
+			}
+		}
+	}
+	return hookNameRE.FindAllString(string(code), -1)
+}
+
+// TestANameInACommentIsNotAHookThisPackageRenders pins the scope of the check
+// above. A scan that read prose made it a text search: a branch that mentions
+// htmx's data-hx-boost in a sentence fails "is rendered by this package", and the
+// only fix inside that branch is to widen components.Hooks — the vocabulary a
+// client rule is refused for naming — with a third party's attribute. Markup
+// counts, in every form markup is written here.
+func TestANameInACommentIsNotAHookThisPackageRenders(t *testing.T) {
+	t.Parallel()
+	src := []byte("package components\n\n" +
+		"// The controller reads data-hx-boost and swaps the region.\n" +
+		"func render(g *html.G) { g.Attr(\"data-component\", \"modal\") } // data-hx-swap\n" +
+		"/* data-hx-confirm */\n" +
+		"const markup = `<span data-tone=cool>`\n")
+	got := strings.Join(hookNames(t, src), ",")
+	if want := "data-component,data-tone"; got != want {
+		t.Errorf("names read outside comments = %q, want %q: a name in a comment is not markup and a name in a template string is", got, want)
+	}
+}
 
 // TestEveryRenderedHookIsListed is the completeness pin behind components.Hooks.
 // The list is what ui refuses a client rule for naming, so an unlisted hook is a
@@ -54,7 +102,7 @@ func TestEveryRenderedHookIsListed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
-		for _, found := range hookNameRE.FindAllString(string(body), -1) {
+		for _, found := range hookNames(t, body) {
 			rendered[found] = true
 		}
 	}

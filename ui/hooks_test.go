@@ -10,6 +10,9 @@ package ui
 // on the reader that decides which name a selector names.
 
 import (
+	"bytes"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,10 +23,37 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 )
 
-// renderedHookRE matches an attribute name in the data- namespace, however it is
-// written: a quoted attribute in a template, a name built by concatenation, or
-// the name in the sentence that explains one.
+// renderedHookRE matches an attribute name in the data- namespace, however the
+// markup is written: a quoted attribute in a template, a name built by
+// concatenation, or a name inside a raw markup string. It runs on source with
+// its comments blanked — renderedHookNames — because a name in the sentence that
+// explains one is not a name the package renders.
 var renderedHookRE = regexp.MustCompile(`data-[a-z0-9]+(?:-[a-z0-9]+)*`)
+
+// renderedHookNames returns the data- attribute names src mentions outside its
+// comments. go/parser decides what a comment is; it is what tells a // inside a
+// string from a comment that starts with one, which a text search cannot. A
+// source it cannot parse fails the check: read raw it would report prose as
+// markup, and skipped it would miss real markup, and neither answers the question.
+func renderedHookNames(t *testing.T, src []byte) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "check.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse: %v: this check reads markup, and a file it cannot parse, it cannot scope to markup", err)
+	}
+	code := bytes.Clone(src)
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			for i := fset.Position(comment.Pos()).Offset; i < fset.Position(comment.End()).Offset; i++ {
+				if code[i] != '\n' {
+					code[i] = ' '
+				}
+			}
+		}
+	}
+	return renderedHookRE.FindAllString(string(code), -1)
+}
 
 // kernelMarkupDirs are the packages inside ui/ — outside ui/components — whose
 // sources render markup the kernel owns: the page shell, the screens it
@@ -50,7 +80,7 @@ func TestEveryKernelHookRenderedOutsideComponentsIsListed(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read %s: %v", name, err)
 			}
-			for _, hook := range renderedHookRE.FindAllString(string(body), -1) {
+			for _, hook := range renderedHookNames(t, body) {
 				if _, listed := kernelHooks[hook]; !listed {
 					t.Errorf("%s is rendered by %s/%s but listed by no hook vocabulary, so a client rule may name it and the client layer carries it past every kernel rule", hook, dir, name)
 				}
@@ -71,12 +101,32 @@ func TestRenderedHooksNameTheFileThatRendersThem(t *testing.T) {
 			t.Errorf("renderedHooks attributes %s to %s, which this check cannot read: %v", hook, file, err)
 			continue
 		}
-		if !strings.Contains(string(body), hook) {
-			t.Errorf("renderedHooks says %s renders %s, and that file does not name it", file, hook)
+		if !slices.Contains(renderedHookNames(t, body), hook) {
+			t.Errorf("renderedHooks says %s renders %s, and that file names it nowhere but a comment", file, hook)
 		}
 		if slices.Contains(components.Hooks, hook) {
 			t.Errorf("%s is listed twice: once in components.Hooks and once in renderedHooks", hook)
 		}
+	}
+}
+
+// TestANameInACommentIsNotAHookTheKernelRenders pins the scope both completeness
+// checks run in. A scan that read prose made them a text search: a later branch
+// that mentions htmx's data-hx-boost in a sentence fails with "is rendered by
+// page/render.go", which is false of it, and the only fix inside that branch is
+// to add a third party's attribute to the kernel's vocabulary — which would then
+// refuse every client's legitimate use of that namespace. Markup still counts,
+// in every form markup is written here.
+func TestANameInACommentIsNotAHookTheKernelRenders(t *testing.T) {
+	t.Parallel()
+	src := []byte("package page\n\n" +
+		"// The controller reads data-hx-boost and swaps the region.\n" +
+		"func render(g *html.G) { g.Attr(\"data-theme\", \"dark\") } // data-hx-swap\n" +
+		"/* data-hx-confirm */\n" +
+		"const shell = `<div data-gallery-status=ok>`\n")
+	got := strings.Join(renderedHookNames(t, src), ",")
+	if want := "data-theme,data-gallery-status"; got != want {
+		t.Errorf("names read outside comments = %q, want %q: a name in a comment is not markup and a name in a template string is", got, want)
 	}
 }
 
