@@ -409,12 +409,17 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// installation host, however its roles are written — is
 	// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx, which holds the
 	// installation host fixed and changes only the tenant.
+	//
+	// Which languages a tenant is served in is in this list because it is the newest
+	// of these routes and the one a tenant would most like to write for itself: the
+	// tenant's own host is exactly where its absence has to show.
 	for _, probe := range []struct{ method, path, body string }{
 		{http.MethodGet, tenantPath, ""},
 		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/suspend", ""},
 		{http.MethodGet, tenantPath + "/" + globexID.String(), ""},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/locale", `{"default":"pt-PT","supported":["en","pt-PT"]}`},
 	} {
 		code, body = do(t, cfg, other, probe.method, globexHost, probe.path, probe.body)
 		if code != http.StatusNotFound {
