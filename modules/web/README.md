@@ -14,3 +14,32 @@ and leave it out of an application that has a storefront of its own: the root
 belongs to one module, and two claiming it fail at boot. It is the smallest
 complete shell to copy when writing your own.
 `make test TEST_PACKAGES=./modules/web/...` needs the development database.
+
+## Authorization
+
+### Permissions
+
+The module declares none: `Permissions: nil` in `modules/web/module.go`. It has no nav entry and no generated screen. Its two routes are public and are not guarded by a permission.
+
+### Object scope
+
+None. `git grep` finds no `tenancy.Policy` use in `modules/web`. The pages come from the content module through `Site.Content.Public` (`modules/web/internal/mount.go`), which answers only published content.
+
+### Duties the module enforces itself
+
+- `Site.settings` in `modules/web/internal/mount.go` returns a 404 when the host resolves to no tenant (`tenancy.FromContext`), and a 503 when there is no database transaction.
+- `Site.page` returns the same 404 for a slug that fails the `slug` pattern and for a slug the content module does not publish. Its comment says a draft, an archived page and an unused slug look the same.
+
+The module writes no data, so it has no ownership rules.
+
+### Public faces
+
+Two routes, both declared with `httpx.Public()` in `Mount`: `GET /` (`web-home`) and `GET /{slug}` (`web-page`). They render the tenant's site settings (title, theme, primary colour, home slug), and the title and body of one published content page. They also link `SignInPath` and show the logo through `PublicFileURL`. There are no public writes, and the module uses no `kit/limit`.
+
+### The operator boundary
+
+None. The module declares no permission, so none is marked `Operator: true`, and it has no `OperatorRead` or `OperatorWrite` route.
+
+### Provisioning
+
+Nothing to grant, because the module holds no permission. A composition supplies `Deps.Site`, `Deps.Content`, `Deps.SignInPath` and `Deps.PublicFileURL`, and `Module` panics if any is missing. What visitors can see is decided by the content module's publishing state and the tenant's site settings, not by roles.

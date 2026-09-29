@@ -100,3 +100,37 @@ may claim.
 Signing in by handle is a separate decision and is not implemented here: it belongs
 to the auth module, which owns what a failed attempt costs, and it has an enumeration
 surface of its own.
+
+## Authorization
+
+### Permissions
+
+The manifest in `modules/user/module.go` (`permissions`) declares three keys, whose constants are in `modules/user/contracts/permissions.go`.
+
+- `user:read` guards the generated read routes (`spec.Read`), the screen `user/users` and its nav entry.
+- `user:manage` guards the generated write routes (`spec.Write`), the invitation route `POST /api/v1/user/invitations` (`httpx.Permission(contracts.PermissionUserManage)` in `modules/user/internal/handler.go`) and the `handle` command. The commands `set-password`, `roles` and `deactivate` use `rest.CommandOptions{}`, so they fall back to the Spec's write permission, which is `user:manage`.
+- `user:approve` guards the `approve-registration` command only (`PermissionRegistrationApprove`).
+
+### Object scope
+
+None. `git grep` finds no `tenancy.Policy` use in `modules/user`. Access is decided by the route grants and by the tenant transaction, which confines every query to the caller's tenant.
+
+### Duties the module enforces itself
+
+- The last-administrator rule. `Service.floor` in `modules/user/internal/administration.go` refuses a write that would leave the tenant with nobody who can sign in and administer it. It is called from `SetRoles` and `Deactivate` in `service.go`, and from `RefuseLastAdministrator`, which is `spec.AfterDelete` for the delete route. It takes a per-tenant advisory lock (`administrationLock`) and uses `contracts.CheckedAdministration` and `otherAdministrators`. A refusal rolls back the transaction.
+- `refuseLifecycleOnCreate` (`modules/user/module.go`) is the create hook that keeps roles and password registrations behind their own commands. `spec.Immutable` refuses `status`, `roles` and `handle` on PATCH.
+- `ApproveRegistration` (`modules/user/internal/registration.go`) requires a non-nil acting principal, takes the row lock, and only approves a pending registration that has a password. The acting user id is recorded in the event.
+
+The code does not stop an approver approving their own registration.
+
+### Public faces
+
+None. `git grep` finds no `httpx.Public()` in `modules/user`. `Service.RegisterPending` and `RegisterUnverified` exist as service methods (`modules/user/contracts/registration.go`), and any public signup route that calls them is outside this module. The module uses no `kit/limit`.
+
+### The operator boundary
+
+None. No permission sets `Operator: true` and the spec sets no `OperatorRead` or `OperatorWrite`. `user:manage` is not `tenant:manage` (comment in `modules/user/contracts/permissions.go`). The operator reaches a tenant's users only through the tenant module's `invite` route.
+
+### Provisioning
+
+The module does not create roles. A composition grants `user:read`, `user:manage` and `user:approve` through the tenant's roles, using the auth module's roles API. The administrator role holds the wildcard by construction (`auth.SeedRoles`, mentioned in `modules/auth/contracts/auth.go`), which covers all three. `user:approve` can be granted alone, because approval never changes passwords or roles (`modules/user/contracts/permissions.go`). `Deps.Administration` is required and is wired to `auth.AdministeringRoles` (see the README above).
