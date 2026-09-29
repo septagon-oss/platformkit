@@ -112,7 +112,9 @@ func TestTokenSelectionKeepsIndependentPackagesAndEqualIdentities(t *testing.T) 
 func TestExportTokensSelectsModesAndExistingOwnersDeterministically(t *testing.T) {
 	t.Parallel()
 	theme := design.Default()
-	theme.Light.AccentDefault = "#abcdef"
+	// A different accent; the assertion is that mode order changes nothing, and
+	// the accent has to clear the gate ui/export runs as body-size text.
+	theme.Light.AccentDefault = "#1f4d9e"
 	theme.Light.Typography.Body = `"Named, Family", "serif", serif`
 	first, err := export.ExportTokens(theme, "dark", "light")
 	if err != nil {
@@ -130,7 +132,7 @@ func TestExportTokensSelectsModesAndExistingOwnersDeterministically(t *testing.T
 			t.Fatalf("incomplete colour/family projection for %s", mode.Mode)
 		}
 		index := slices.IndexFunc(mode.Colors, func(color design.Token) bool { return color.Name == "--pk-color-accent-default" })
-		if index < 0 || (mode.Mode == "light" && mode.Colors[index].Value != "#abcdef") {
+		if index < 0 || (mode.Mode == "light" && mode.Colors[index].Value != "#1f4d9e") {
 			t.Fatal("caller palette was not projected")
 		}
 	}

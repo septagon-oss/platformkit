@@ -24,7 +24,9 @@ import (
 
 func TestDesignExportUsesCurrentRenderingAndAssets(t *testing.T) {
 	theme := design.Default()
-	theme.Light.AccentDefault = "#abcdef"
+	// A different accent, and a legible one: the gate ui/export runs reads
+	// the accent as body-size text on every surface a card raises itself onto.
+	theme.Light.AccentDefault = "#1f4d9e"
 	captures := examples.Gallery()
 	doc, err := export.Export(theme, captures)
 	if err != nil {
@@ -43,7 +45,7 @@ func TestDesignExportUsesCurrentRenderingAndAssets(t *testing.T) {
 		}
 	}
 	wantCSS := ui.Compose(theme, ui.Extra{Lists: c.ClassLists()})
-	if doc.CSS != string(wantCSS.Body) || !strings.Contains(doc.CSS, "#abcdef") {
+	if doc.CSS != string(wantCSS.Body) || !strings.Contains(doc.CSS, "#1f4d9e") {
 		t.Fatal("export did not use the current themed component stylesheet")
 	}
 	if len(doc.Themes) != 2 || doc.Themes[0].Mode != "light" || doc.Themes[1].Mode != "dark" {
@@ -98,7 +100,7 @@ func TestDesignExportIsDeterministicAndContentAddressed(t *testing.T) {
 		t.Fatal("digest is not the canonical payload without sha256")
 	}
 	theme := design.Default()
-	theme.Dark.AccentDefault = "#123456"
+	theme.Dark.AccentDefault = "#7fb2e5"
 	changed, err := export.Export(theme, captures)
 	if err != nil || changed.SHA256 == claimed {
 		t.Fatalf("changed token did not invalidate artifact: %v", err)
