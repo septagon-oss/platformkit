@@ -42,13 +42,17 @@ type Deps struct {
 	// having it.
 	Invite contracts.Inviter
 
-	// Languages are the languages the installation's catalogues answer in, and a
-	// new tenant starts out serving all of them: the set exists on the day the
-	// tenant is created, so a page can be served in the language its copy was
-	// written in before anybody narrowed it. The composition reads them off the
-	// catalogues it composed (apps/platformkit/catalog.go); this module names no
-	// tag. A composition that wires no catalogues passes nothing and a new tenant
-	// is served in the one language the column defaults to.
+	// Languages are the languages the installation's catalogues answer in, and the
+	// most a tenant is ever served in. They do not decide what a new tenant is
+	// served in — a create declares nothing, and a tenant starts out in the one
+	// language its copy is written in, the same single row migrations/000028 gives a
+	// tenant that predates the column. They decide what SetLocale may be told: a
+	// tenant served in a language nobody wrote copy for is a page that declares that
+	// language and shows another one, so the composition, which is the thing that
+	// read the files, says what exists and the command refuses the rest.
+	// The composition reads them off the catalogues it composed
+	// (apps/platformkit/catalog.go); this module names no tag. A composition that
+	// wires no catalogues passes nothing, and then nothing is checked against it.
 	Languages []string
 }
 

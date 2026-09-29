@@ -24,8 +24,11 @@ import (
 // notified without this one importing them (see contracts.Hook).
 type Service struct {
 	hooks []contracts.Hook
-	// langs are the installation's catalogue languages, which a new tenant starts
-	// out serving; see module.Deps.
+	// langs are the languages this installation's catalogues answer in, and the
+	// most a tenant may ever be served in: SetLocale chooses from them, because a
+	// language nobody wrote copy for is a page that declares a tongue it does not
+	// speak. Empty means the composition named none, and then nothing is checked
+	// against it. See module.Deps.
 	langs []string
 }
 
@@ -72,12 +75,16 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 		return nil, err
 	}
 	// Written from the value the database just chose rather than from a constant
-	// this module would have to keep in step with the migration, and from the
-	// languages the composition says the installation can speak: the first set a
-	// tenant has is the installation's, and SetLocale is where it becomes the
-	// tenant's. A tenant whose default is not in its own set is a request answered
-	// in a language the tenant does not serve, so the default leads.
-	if err := s.serve(tx, t.ID, s.served(t.DefaultLocale)...); err != nil {
+	// this module would have to keep in step with the migration, and it is the only
+	// language written here. The set behind it is a declaration, and on a create
+	// nobody has made one: migrations/000028 backfills a tenant that predates the
+	// column with exactly its default for the same reason, so a tenant created
+	// today and a tenant created before the migration are served in the same one
+	// language. Handing a new tenant the installation's whole set would make the
+	// migration's rule and this one disagree about two identical tenants, and it
+	// would answer a browser in a language whose only author was a composition.
+	// SetLocale is where a tenant's people start being served in a second language.
+	if err := s.serve(tx, t.ID, t.DefaultLocale); err != nil {
 		return nil, err
 	}
 	// The first host is the primary one, because it is the only one: a tenant
@@ -194,21 +201,36 @@ func (s *Service) SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 	return s.Get(ctx, tx, id)
 }
 
-// validLocales is the command's one rule, in one place: every tag is a tag, the
-// default is the first thing returned, and the set behind it is sorted, deduplicated
-// and without the default — which is the shape contracts.Tenant's two fields hold
-// them in, so the comparison above that decides "nothing changed" is one comparison
-// and not a set operation in three places.
+// validLocales is the command's rule, in one place: every tag is a tag, every tag is
+// one this installation has copy for, the default is the first thing returned, and
+// the set behind it is sorted, deduplicated and without the default — which is the
+// shape contracts.Tenant's two fields hold them in, so the comparison above that
+// decides "nothing changed" is one comparison and not a set operation in three
+// places.
+//
+// The second condition is the one that stops a page lying about its language: a
+// tenant served in a language no catalogue carries is a page that declares that
+// language and shows the source copy, which is what a browser, a screen reader and
+// a translation tool are then told. The installation knows which languages it can
+// answer in — it is the composition that read the files — so the composition says,
+// and this command refuses anything else rather than finding out at render time.
 func (s *Service) validLocales(in contracts.SetLocale) ([]string, error) {
+	spoken := s.spoken()
 	defaultTag, err := contracts.ValidLocale(in.Default)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+	}
+	if spoken != nil && !spoken[defaultTag] {
+		return nil, fmt.Errorf("%w: %s is not a language this installation has copy for", crud.ErrInvalid, defaultTag)
 	}
 	set := make([]string, 0, len(in.Supported))
 	for _, tag := range in.Supported {
 		canonical, err := contracts.ValidLocale(tag)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		}
+		if spoken != nil && !spoken[canonical] {
+			return nil, fmt.Errorf("%w: %s is not a language this installation has copy for", crud.ErrInvalid, canonical)
 		}
 		if canonical != defaultTag && !slices.Contains(set, canonical) {
 			set = append(set, canonical)
@@ -293,11 +315,13 @@ func (s *Service) ByHost(_ context.Context, tx db.Tx[db.System], host string) (t
 	if err != nil {
 		return tenancy.Tenant{}, fmt.Errorf("tenant: resolve %q: %w", host, err)
 	}
-	// The languages ride on the same resolution rather than on a query of their own
-	// per request: this is the one read every request makes, and the set of
-	// languages a page may answer in is exactly as much a fact about the tenant as
-	// its name is. It is cached with it, which is the reason the host cache is
-	// invalidated when either changes.
+	// The languages come along with the row rather than being resolved from
+	// somewhere else per request: this is the one read every request makes, and the
+	// set of languages a page may answer in is exactly as much a fact about the
+	// tenant as its name is. It is one further SELECT on tenant_locales inside the
+	// resolution — the row and its set are two tables — and the resolution is
+	// cached for the host cache's lifetime, which is why the set is invalidated
+	// with the row when either changes.
 	if t.Locales, err = s.localesOf(tx, t.ID, t.DefaultLocale); err != nil {
 		return tenancy.Tenant{}, err
 	}
@@ -409,16 +433,19 @@ func without(set []string, one string) []string {
 	return out
 }
 
-// served is the set a new tenant starts out with: the installation's languages, this
-// tenant's default at their front because ui/page puts the tenant's default last and
-// a default missing from the set would be a fallback into a language the tenant is
-// not served in.
-func (s *Service) served(def string, more ...string) []string {
-	out, seen := make([]string, 0, len(s.langs)+1), map[string]bool{}
-	for _, tag := range append([]string{def}, append(more, s.langs...)...) {
-		if tag != "" && !seen[tag] {
-			seen[tag] = true
-			out = append(out, tag)
+// spoken is the set of languages this installation can answer in, canonicalised, or
+// nil when the composition declared none and there is therefore nothing to check a
+// tenant's choice against. An entry that is not a tag is left out rather than
+// trusted: it names a language no catalogue file could be read for, and a tenant
+// asking for it is refused by the same rule.
+func (s *Service) spoken() map[string]bool {
+	if len(s.langs) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(s.langs))
+	for _, tag := range s.langs {
+		if canonical, err := contracts.ValidLocale(tag); err == nil {
+			out[canonical] = true
 		}
 	}
 	return out
