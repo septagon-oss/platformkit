@@ -47,6 +47,23 @@ checks existing page negotiation, plural, escaping and catalog-isolation behavio
 through the compatibility adapter. Page/request header integration remains with
 the foundation's full verification workflow.
 
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** `locale.Messages`, the contract `FromCatalog` returns, and the `locale.Formatter` behind it —
+what `Load` hands back satisfies that same contract and adds one readable method, so every
+existing caller, every plural rule and every number format is untouched by where its copy
+came from, and `language.Parse` is what decides
+a file's name is a tag; the source-language promise is the one `Text(key, fallback)` already makes, which is why the fallback
+needs no file of its own. **Added:** the merge in argument order, the `Owns` guard,
+and the refusals a source's files can meet — a locale file missing a key its own
+source answers for, a blank copy, a copy that changed or reordered its arguments, an
+owned key answered by a later source, an unreadable name — none of which existed to
+be composed before this seam. **Made reusable:** the one call a composition makes, so
+a module, a product and a client each ship their own `messages/` directory and are
+read in the order somebody wrote down, with no registry, no environment variable and
+no process-global catalogue to be discovered by.
+
 The number this seam is judged on is not "translations exist" but *coverage of the copy the
 kernel itself raises*: the keys its refusals and generated screens can ask for, and how many of
 them a second language answers for. Count them with the two coverage gates — raise the set in

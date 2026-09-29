@@ -55,3 +55,20 @@ None. No route uses `httpx.Public()`. `Service.ByHost` is host resolution for th
 ### Provisioning
 
 The operator tenant is the first tenant, created by `Bootstrap`. Only a role in that tenant that lists `tenant:manage` explicitly can use the control plane. Tenants created through `create` get their roles from the `OnCreate` hooks in `Deps` (see `Deps.OnCreate` in `modules/tenant/module.go`; the README names `auth.SeedRoles`). The `invite` route gives a new tenant its first administrator. The code does not show a fixed persona for the operator role. Grant it with the auth module's roles API.
+
+## Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** `SetLocale` is `Suspend`'s command shape — `Get`, compare,
+`Select(...).Updates` of the two columns it changed, `events.PublishFor` inside the
+writing transaction, read-back — and a language is refused with `crud.ErrInvalid`
+like every other bad input here; `tenant_locales` is `tenant_hosts`' table shape and
+policy, so the new fact inherits the row-level scope rather than declaring one; the
+set travels on the host resolution `ByHost` already performs, because three owners ask
+"same tenant as before?" with `==` and a slice would answer that wrong. **Added:** `default_locale`, `tenant_locales`,
+`SetLocale`/`ValidLocale`/`EventLocaleSet`, the route, and `Deps.Languages` — the
+installation's own languages, which had no owner because the catalogue decided alone.
+**Made reusable:** a control-plane write that rechecks its own rules, publishes one
+event, and invalidates the cache whose truth it moved, which is the shape the next
+`/tenants` command copies; and `tenant.locale_set`, which is what a second process
+will subscribe to when a TTL stops being good enough.

@@ -117,3 +117,19 @@ database configured, this exercises the composed HTTP sign-in page and headers:
 ```sh
 go test ./apps/platformkit -run '^TestReferenceSignInUsesIsolatedNegotiatedTranslations$' -count=1
 ```
+
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** `language.MatchStrings`, which is what answered a header before
+this package had a filter at all — the filter only decides which tags reach it, and the
+survivors go back as the one header string they arrived as, so the caller's own ranking
+is untouched; `document.View.Language`, the field the refusal page and the login alert
+already declared, is how the admin pages tell the truth about their Go copy; the
+tenant's set arrives on the host resolution `kit/httpx` already performs, so no page
+does a second lookup. **Added:** `TenantPreferences`, the intersection and the
+tenant's set behind it, and `languageBase`, which is the comparison the filter had to
+make to answer `pt-BR` in Portuguese. **Made reusable:** a `Catalogue()` that returns
+an `xtext.Source` rather than a package-level catalogue — the shape any owner of copy
+publishes — and a refusal page that negotiates from the request alone, which is the
+only language available to a guard that refuses before a tenant exists.
