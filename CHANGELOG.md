@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+**A gated role pair is now the same pair read from a component or from a
+stylesheet.** Review round 7's failing case derived the pair a failed media panel
+paints out of `ui/components`' own declarations — `Bg(style.SurfaceWarningSoft)`
+under `TextColor(style.FgMuted)` — and asked whether `design.GatedRolePairs()`
+names it. It could not: the list spelled every role as the emitted CSS property
+(`--pk-role-fg-muted`) while the pair read off a Go constant spells it as the layer
+declares it (`fg-muted`), so the gate's own vocabulary decided the answer. The two
+spellings are now one rule owned by `design`: the pair lists in `roles.go` are
+written in the declared vocabulary, `RoleLayer` still hands out the emitted one, and
+`CheckRoles` resolves either against the layer it is handed — refusing a name that
+is neither, a token name included, and quoting the emitted property in the refusal
+so `Client.Resolve` and `ui/export` still name the same line. `ui/style`'s mirrors
+re-spell design's lists for the seam that ships a sheet, and
+`TestRolePairMirrorsSpellTheEmittedNames` pins the two to one declaration; no
+emitted CSS, token document or digest pin moved. (`ui/components`'s
+`TestPaintedSoftPanelPairIsGated` now passes; the pair itself was already gated and
+certified by the entry above.)
+
 **A status tint now carries the copy painted on it, not only the tone named after
 it.** Review round 7 found the kernel painting a body-size foreground on a ground
 no list measured: `clMediaFailed` gives a failed media panel
