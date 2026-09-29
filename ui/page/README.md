@@ -49,38 +49,38 @@ language, not missing entries in unrelated languages. Review catalog completenes
 before claiming a fully translated screen, and mark deliberately mixed-language
 copy appropriately.
 
-An empty `View.Language` uses the selected locale. An explicit view language still
-wins, and the frame receives that language's formatter. A handler rendering an
-explicit language must select it before formatting its body; `SelectLocale` also
-works for that case and for non-HTTP consumers. Language metadata cannot translate
-already rendered text. Negotiated pages emit `Content-Language`, `Vary:
-Accept-Language` and `Cache-Control: private, no-store` so an account preference
-cannot leak through a shared response cache. Existing unconfigured shells retain
-their behavior; untranslated recovery notices keep their English tags. A refusal
-page (`FaultHandler`, the page a kernel guard answers a browser with) reads the
-same contract: it negotiates from the request's `Accept-Language` — a guard
-answers before a tenant, a session or a stored preference exists, so the header
-the caller brought is all there is to negotiate from — and shows the sentence this
-shell ships under `fault.<CODE>`, where the codes are `kit/httpx`'s published
-`Code*` constants and the table lives in `fault.go`. Every guard that can refuse a
-request a person may be looking at answers through that renderer
-(`API.refuse`), which is the condition that makes the table worth filling: a code
-no page is ever shown for is a key no copy can be written under. A refusal with no
-code is keyed by its status (`fault.404`, `fault.405`, `fault.500`) — the three
-verdicts whose sentence `kit/httpx` writes and no module does. What a translation
-replaces is the sentence and not the guard's whole line: a refusal that carries a
-code keeps it (`AUTH_DENIED: Não pode fazer isto.`), because the code is what a
-person reads back to support and an operator greps a log for. What a catalogue
-answers with is one thing and what the page declares is another: the declared
-language is the one negotiated for the request, and a catalogue that carries no
-entry for it leaves the sentence in the source language under that declaration — a
-shell translated key by key is a page that declares a language some of its words are
-not in. `View.Language` is how a page says which of the two it is: the admin shell's
-dashboard and health pages, whose copy is Go strings rather than keys, declare the
-source language rather than the request's, and `TestEveryPageSaysTheSameLanguageTwice`
-in the reference application holds `<html lang>` and `Content-Language` to one
-answer. Nothing yet refuses a page that declares a language a literal in its own body
-is not written in; that gate is named, unshipped, in the task's own report.
+An empty `View.Language` uses the selected locale. An explicit view language still wins,
+and the frame receives that language's formatter. A handler rendering an explicit
+language must select it before formatting its body; `SelectLocale` also works for that
+case and for non-HTTP consumers. Language metadata cannot translate already rendered
+text. Negotiated pages emit `Content-Language`, `Vary: Accept-Language` and `Cache-
+Control: private, no-store` so an account preference cannot leak through a shared
+response cache. Existing unconfigured shells retain their behavior; untranslated
+recovery notices keep their English tags. A refusal page (`FaultHandler`, the page a
+kernel guard answers a browser with) reads the same contract: it negotiates from the
+request's `Accept-Language` — a guard answers before a tenant, a session or a stored
+preference exists, so the header the caller brought is all there is to negotiate from —
+and shows the sentence this shell ships under `fault.<CODE>`, where the codes are
+`kit/httpx`'s published `Code*` constants and the table lives in `fault.go`. Every guard
+that can refuse a request a person may be looking at answers through that renderer
+(`API.refuse`), which is the condition that makes the table worth filling: a code no
+page is ever shown for is a key no copy can be written under. A refusal with no code is
+keyed by its status (`fault.404`, `fault.405`, `fault.500`) — the three verdicts whose
+sentence `kit/httpx` writes and no module does. What a translation replaces is the
+sentence and not the guard's whole line: a refusal that carries a code keeps it
+(`AUTH_DENIED: Não pode fazer isto.`), because the code is what a person reads back to
+support and an operator greps a log for. What a catalogue answers with is one thing and
+what the page declares is another: the declared language is the one negotiated for the
+request, and a catalogue that carries no entry for it leaves the sentence in the source
+language under that declaration — a shell translated key by key is a page that declares
+a language some of its words are not in. `View.Language` is how a page says which of the
+two it is: the admin shell's dashboard and health pages, whose copy is Go strings rather
+than keys, declare the source language rather than the request's, and
+`TestEveryPageSaysTheSameLanguageTwice` in the reference application holds `<html lang>`
+and `Content-Language` to one answer. Nothing yet refuses a page that declares a
+language a literal in its own body is not written in; that gate — every page rendered
+under a pseudo-locale, which turns every key a catalogue carries into a marker so a
+literal no entry covers shows — is unshipped.
 
 The [reference application](../../apps/platformkit/catalog.go) composes the copy
 each layer ships — this package's refusal sentences, `ui/resource`'s screen

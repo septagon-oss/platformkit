@@ -4,8 +4,8 @@
 -- catalog alone: composed once, the same for every tenant of the installation, with
 -- a browser's Accept-Language as the only per-request choice. That is decision 0012
 -- refused in the other direction — the generic part deciding what the specific part
--- shows — and it is why `collect` could drop `web.locales` as "one language" while
--- the site it replaced served Portuguese and English.
+-- shows — and it is how a deployment that ships one language ends up answering a
+-- site it replaced that served two: the catalog says one, nobody asks the tenant.
 --
 -- Two facts move to the tenant: `default_locale`, the language a request that
 -- brought nothing this tenant serves is answered in, and `tenant_locales`, the set
