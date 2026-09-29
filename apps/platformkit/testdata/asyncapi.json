@@ -9,36 +9,33 @@
           "contentType": "application/json",
           "name": "auth.logged_in",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "ip": {
-                  "type": "string"
-                },
-                "method": {
-                  "type": "string"
-                },
-                "sessionId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "sessionId",
-                "method",
-                "at"
-              ],
-              "type": "object"
-            }
+              "ip": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "sessionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "sessionId",
+              "method",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "auth — auth.logged_in",
           "title": "auth.logged_in"
@@ -55,29 +52,26 @@
           "contentType": "application/json",
           "name": "auth.logged_out",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "sessionId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "sessionId",
-                "at"
-              ],
-              "type": "object"
-            }
+              "sessionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "sessionId",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "auth — auth.logged_out",
           "title": "auth.logged_out"
@@ -94,30 +88,27 @@
           "contentType": "application/json",
           "name": "auth.login_failed",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                },
-                "ip": {
-                  "type": "string"
-                },
-                "locked": {
-                  "type": "boolean"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "email",
-                "locked",
-                "at"
-              ],
-              "type": "object"
-            }
+              "email": {
+                "type": "string"
+              },
+              "ip": {
+                "type": "string"
+              },
+              "locked": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "locked",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "auth — auth.login_failed",
           "title": "auth.login_failed"
@@ -134,24 +125,21 @@
           "contentType": "application/json",
           "name": "auth.password_reset",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "at"
-              ],
-              "type": "object"
-            }
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "auth — auth.password_reset",
           "title": "auth.password_reset"
@@ -168,27 +156,24 @@
           "contentType": "application/json",
           "name": "auth.registration_requested",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "displayName": {
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "email",
-                "displayName",
-                "at"
-              ],
-              "type": "object"
-            }
+              "displayName": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "email",
+              "displayName",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "auth — auth.registration_requested",
           "title": "auth.registration_requested"
@@ -205,23 +190,20 @@
           "contentType": "application/json",
           "name": "auth.reset_requested",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "email",
-                "at"
-              ],
-              "type": "object"
-            }
+              "email": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "email",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "auth — auth.reset_requested",
           "title": "auth.reset_requested"
@@ -238,37 +220,34 @@
           "contentType": "application/json",
           "name": "auth.role_set",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "now": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "role": {
-                  "type": "string"
-                },
-                "was": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "role",
-                "was",
-                "now",
-                "at"
-              ],
-              "type": "object"
-            }
+              "now": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "role": {
+                "type": "string"
+              },
+              "was": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "role",
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "auth — auth.role_set",
           "title": "auth.role_set"
@@ -285,23 +264,20 @@
           "contentType": "application/json",
           "name": "auth.verification_requested",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "email",
-                "at"
-              ],
-              "type": "object"
-            }
+              "email": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "email",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "auth — auth.verification_requested",
           "title": "auth.verification_requested"
@@ -318,36 +294,33 @@
           "contentType": "application/json",
           "name": "billing.cancelled",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "endsAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "immediate": {
-                  "type": "boolean"
-                },
-                "reason": {
-                  "type": "string"
-                },
-                "subscriptionId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "subscriptionId",
-                "endsAt",
-                "immediate",
-                "at"
-              ],
-              "type": "object"
-            }
+              "endsAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "immediate": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "subscriptionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "subscriptionId",
+              "endsAt",
+              "immediate",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "billing — billing.cancelled",
           "title": "billing.cancelled"
@@ -364,46 +337,43 @@
           "contentType": "application/json",
           "name": "billing.past_due",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "amountCents": {
-                  "type": "integer"
-                },
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "attempt": {
-                  "type": "integer"
-                },
-                "currency": {
-                  "type": "string"
-                },
-                "endsAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "since": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "subscriptionId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "amountCents": {
+                "type": "integer"
               },
-              "required": [
-                "subscriptionId",
-                "amountCents",
-                "currency",
-                "since",
-                "attempt",
-                "endsAt",
-                "at"
-              ],
-              "type": "object"
-            }
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "attempt": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "endsAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "since": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "subscriptionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "subscriptionId",
+              "amountCents",
+              "currency",
+              "since",
+              "attempt",
+              "endsAt",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "billing — billing.past_due",
           "title": "billing.past_due"
@@ -420,59 +390,56 @@
           "contentType": "application/json",
           "name": "billing.plan.created",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "active": {
-                  "type": "boolean"
-                },
-                "code": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "currency": {
-                  "type": "string"
-                },
-                "features": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "interval": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "priceCents": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "active": {
+                "type": "boolean"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "code",
-                "name",
-                "priceCents",
-                "currency",
-                "interval",
-                "active"
-              ],
-              "type": "object"
-            }
+              "code": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "features": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "interval": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "priceCents": {
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "code",
+              "name",
+              "priceCents",
+              "currency",
+              "interval",
+              "active"
+            ],
+            "type": "object"
           },
           "summary": "billing — billing.plan.created",
           "title": "billing.plan.created"
@@ -489,59 +456,56 @@
           "contentType": "application/json",
           "name": "billing.plan.deleted",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "active": {
-                  "type": "boolean"
-                },
-                "code": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "currency": {
-                  "type": "string"
-                },
-                "features": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "interval": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "priceCents": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "active": {
+                "type": "boolean"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "code",
-                "name",
-                "priceCents",
-                "currency",
-                "interval",
-                "active"
-              ],
-              "type": "object"
-            }
+              "code": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "features": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "interval": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "priceCents": {
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "code",
+              "name",
+              "priceCents",
+              "currency",
+              "interval",
+              "active"
+            ],
+            "type": "object"
           },
           "summary": "billing — billing.plan.deleted",
           "title": "billing.plan.deleted"
@@ -558,59 +522,56 @@
           "contentType": "application/json",
           "name": "billing.plan.updated",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "active": {
-                  "type": "boolean"
-                },
-                "code": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "currency": {
-                  "type": "string"
-                },
-                "features": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "interval": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "priceCents": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "active": {
+                "type": "boolean"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "code",
-                "name",
-                "priceCents",
-                "currency",
-                "interval",
-                "active"
-              ],
-              "type": "object"
-            }
+              "code": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "features": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "interval": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "priceCents": {
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "code",
+              "name",
+              "priceCents",
+              "currency",
+              "interval",
+              "active"
+            ],
+            "type": "object"
           },
           "summary": "billing — billing.plan.updated",
           "title": "billing.plan.updated"
@@ -627,37 +588,34 @@
           "contentType": "application/json",
           "name": "billing.renewed",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "periodEnd": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "periodStart": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "receipt": {
-                  "type": "string"
-                },
-                "subscriptionId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "subscriptionId",
-                "periodStart",
-                "periodEnd",
-                "at"
-              ],
-              "type": "object"
-            }
+              "periodEnd": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "periodStart": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "receipt": {
+                "type": "string"
+              },
+              "subscriptionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "subscriptionId",
+              "periodStart",
+              "periodEnd",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "billing — billing.renewed",
           "title": "billing.renewed"
@@ -674,42 +632,39 @@
           "contentType": "application/json",
           "name": "billing.subscribed",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "periodEnd": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "planCode": {
-                  "type": "string"
-                },
-                "planId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "subscriptionId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "subscriptionId",
-                "planId",
-                "planCode",
-                "status",
-                "periodEnd",
-                "at"
-              ],
-              "type": "object"
-            }
+              "periodEnd": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "planCode": {
+                "type": "string"
+              },
+              "planId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "subscriptionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "subscriptionId",
+              "planId",
+              "planCode",
+              "status",
+              "periodEnd",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "billing — billing.subscribed",
           "title": "billing.subscribed"
@@ -726,36 +681,33 @@
           "contentType": "application/json",
           "name": "content.archived",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "contentId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "contentId",
-                "slug",
-                "kind",
-                "status",
-                "at"
-              ],
-              "type": "object"
-            }
+              "contentId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "contentId",
+              "slug",
+              "kind",
+              "status",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "content — content.archived",
           "title": "content.archived"
@@ -772,56 +724,53 @@
           "contentType": "application/json",
           "name": "content.content.created",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "author": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "body": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "publishedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "author": {
+                "format": "uuid",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "slug",
-                "title",
-                "kind",
-                "status"
-              ],
-              "type": "object"
-            }
+              "body": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "slug",
+              "title",
+              "kind",
+              "status"
+            ],
+            "type": "object"
           },
           "summary": "content — content.content.created",
           "title": "content.content.created"
@@ -838,56 +787,53 @@
           "contentType": "application/json",
           "name": "content.content.deleted",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "author": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "body": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "publishedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "author": {
+                "format": "uuid",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "slug",
-                "title",
-                "kind",
-                "status"
-              ],
-              "type": "object"
-            }
+              "body": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "slug",
+              "title",
+              "kind",
+              "status"
+            ],
+            "type": "object"
           },
           "summary": "content — content.content.deleted",
           "title": "content.content.deleted"
@@ -904,56 +850,53 @@
           "contentType": "application/json",
           "name": "content.content.updated",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "author": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "body": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "publishedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "author": {
+                "format": "uuid",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "slug",
-                "title",
-                "kind",
-                "status"
-              ],
-              "type": "object"
-            }
+              "body": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "slug",
+              "title",
+              "kind",
+              "status"
+            ],
+            "type": "object"
           },
           "summary": "content — content.content.updated",
           "title": "content.content.updated"
@@ -970,36 +913,33 @@
           "contentType": "application/json",
           "name": "content.published",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "contentId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "contentId",
-                "slug",
-                "kind",
-                "status",
-                "at"
-              ],
-              "type": "object"
-            }
+              "contentId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "contentId",
+              "slug",
+              "kind",
+              "status",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "content — content.published",
           "title": "content.published"
@@ -1016,36 +956,33 @@
           "contentType": "application/json",
           "name": "content.unpublished",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "contentId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "contentId",
-                "slug",
-                "kind",
-                "status",
-                "at"
-              ],
-              "type": "object"
-            }
+              "contentId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "contentId",
+              "slug",
+              "kind",
+              "status",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "content — content.unpublished",
           "title": "content.unpublished"
@@ -1062,32 +999,29 @@
           "contentType": "application/json",
           "name": "file.deleted",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "fileId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "size": {
-                  "type": "integer"
-                },
-                "storageKey": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "fileId",
-                "storageKey",
-                "size",
-                "at"
-              ],
-              "type": "object"
-            }
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "size": {
+                "type": "integer"
+              },
+              "storageKey": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileId",
+              "storageKey",
+              "size",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "file — file.deleted",
           "title": "file.deleted"
@@ -1104,44 +1038,41 @@
           "contentType": "application/json",
           "name": "file.uploaded",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "contentType": {
-                  "type": "string"
-                },
-                "fileId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "sha256": {
-                  "type": "string"
-                },
-                "size": {
-                  "type": "integer"
-                },
-                "visibility": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "fileId",
-                "name",
-                "contentType",
-                "size",
-                "sha256",
-                "visibility",
-                "at"
-              ],
-              "type": "object"
-            }
+              "contentType": {
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer"
+              },
+              "visibility": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "contentType",
+              "size",
+              "sha256",
+              "visibility",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "file — file.uploaded",
           "title": "file.uploaded"
@@ -1158,33 +1089,30 @@
           "contentType": "application/json",
           "name": "notification.created",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "notificationId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "recipientId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "notificationId",
-                "recipientId",
-                "title",
-                "at"
-              ],
-              "type": "object"
-            }
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "notificationId",
+              "recipientId",
+              "title",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "notification — notification.created",
           "title": "notification.created"
@@ -1201,29 +1129,26 @@
           "contentType": "application/json",
           "name": "notification.email_requested",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "notificationId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "recipientId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "notificationId",
-                "recipientId",
-                "at"
-              ],
-              "type": "object"
-            }
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "notificationId",
+              "recipientId",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "notification — notification.email_requested",
           "title": "notification.email_requested"
@@ -1240,29 +1165,26 @@
           "contentType": "application/json",
           "name": "notification.read",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "notificationId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "recipientId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "notificationId",
-                "recipientId",
-                "at"
-              ],
-              "type": "object"
-            }
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "notificationId",
+              "recipientId",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "notification — notification.read",
           "title": "notification.read"
@@ -1279,30 +1201,27 @@
           "contentType": "application/json",
           "name": "platformkit.event_replayed",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "durable": {
-                  "type": "string"
-                },
-                "eventId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "reason": {
-                  "type": "string"
-                }
+            "properties": {
+              "durable": {
+                "type": "string"
               },
-              "required": [
-                "eventId",
-                "name",
-                "reason"
-              ],
-              "type": "object"
-            }
+              "eventId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "eventId",
+              "name",
+              "reason"
+            ],
+            "type": "object"
           },
           "summary": "platformkit — platformkit.event_replayed",
           "title": "platformkit.event_replayed"
@@ -1319,34 +1238,31 @@
           "contentType": "application/json",
           "name": "site.settings_updated",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "homeSlug": {
-                  "type": "string"
-                },
-                "settingsId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "theme": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "settingsId",
-                "theme",
-                "at"
-              ],
-              "type": "object"
-            }
+              "homeSlug": {
+                "type": "string"
+              },
+              "settingsId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "theme": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "settingsId",
+              "theme",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "site — site.settings_updated",
           "title": "site.settings_updated"
@@ -1363,33 +1279,30 @@
           "contentType": "application/json",
           "name": "task.assigned",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "assigneeId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "taskId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "assigneeId": {
+                "format": "uuid",
+                "type": "string"
               },
-              "required": [
-                "taskId",
-                "assigneeId",
-                "status",
-                "at"
-              ],
-              "type": "object"
-            }
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "taskId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "assigneeId",
+              "status",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "task — task.assigned",
           "title": "task.assigned"
@@ -1406,27 +1319,24 @@
           "contentType": "application/json",
           "name": "task.resolved",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "resolution": {
-                  "type": "string"
-                },
-                "taskId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "taskId",
-                "at"
-              ],
-              "type": "object"
-            }
+              "resolution": {
+                "type": "string"
+              },
+              "taskId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "task — task.resolved",
           "title": "task.resolved"
@@ -1443,33 +1353,30 @@
           "contentType": "application/json",
           "name": "task.sla_breached",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "deadline": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "priority": {
-                  "type": "string"
-                },
-                "taskId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "taskId",
-                "priority",
-                "deadline",
-                "at"
-              ],
-              "type": "object"
-            }
+              "deadline": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "priority": {
+                "type": "string"
+              },
+              "taskId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "priority",
+              "deadline",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "task — task.sla_breached",
           "title": "task.sla_breached"
@@ -1486,73 +1393,70 @@
           "contentType": "application/json",
           "name": "task.task.created",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "assigneeId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "dueAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "priority": {
-                  "type": "string"
-                },
-                "resolution": {
-                  "type": "string"
-                },
-                "resolvedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "slaBreached": {
-                  "type": "boolean"
-                },
-                "slaDeadline": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "source": {
-                  "type": "string"
-                },
-                "sourceRef": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "assigneeId": {
+                "format": "uuid",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "title",
-                "status",
-                "priority",
-                "slaBreached"
-              ],
-              "type": "object"
-            }
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "dueAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "priority": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              },
+              "resolvedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "slaBreached": {
+                "type": "boolean"
+              },
+              "slaDeadline": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "sourceRef": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "title",
+              "status",
+              "priority",
+              "slaBreached"
+            ],
+            "type": "object"
           },
           "summary": "task — task.task.created",
           "title": "task.task.created"
@@ -1569,73 +1473,70 @@
           "contentType": "application/json",
           "name": "task.task.deleted",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "assigneeId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "dueAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "priority": {
-                  "type": "string"
-                },
-                "resolution": {
-                  "type": "string"
-                },
-                "resolvedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "slaBreached": {
-                  "type": "boolean"
-                },
-                "slaDeadline": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "source": {
-                  "type": "string"
-                },
-                "sourceRef": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "assigneeId": {
+                "format": "uuid",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "title",
-                "status",
-                "priority",
-                "slaBreached"
-              ],
-              "type": "object"
-            }
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "dueAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "priority": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              },
+              "resolvedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "slaBreached": {
+                "type": "boolean"
+              },
+              "slaDeadline": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "sourceRef": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "title",
+              "status",
+              "priority",
+              "slaBreached"
+            ],
+            "type": "object"
           },
           "summary": "task — task.task.deleted",
           "title": "task.task.deleted"
@@ -1652,73 +1553,70 @@
           "contentType": "application/json",
           "name": "task.task.updated",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "assigneeId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "dueAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "priority": {
-                  "type": "string"
-                },
-                "resolution": {
-                  "type": "string"
-                },
-                "resolvedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "slaBreached": {
-                  "type": "boolean"
-                },
-                "slaDeadline": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "source": {
-                  "type": "string"
-                },
-                "sourceRef": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "assigneeId": {
+                "format": "uuid",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "title",
-                "status",
-                "priority",
-                "slaBreached"
-              ],
-              "type": "object"
-            }
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "dueAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "priority": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              },
+              "resolvedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "slaBreached": {
+                "type": "boolean"
+              },
+              "slaDeadline": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "sourceRef": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "title",
+              "status",
+              "priority",
+              "slaBreached"
+            ],
+            "type": "object"
           },
           "summary": "task — task.task.updated",
           "title": "task.task.updated"
@@ -1735,36 +1633,33 @@
           "contentType": "application/json",
           "name": "tenant.created",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "host": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "tenantId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "tenantId",
-                "slug",
-                "name",
-                "host",
-                "at"
-              ],
-              "type": "object"
-            }
+              "host": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "slug",
+              "name",
+              "host",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "tenant — tenant.created",
           "title": "tenant.created"
@@ -1781,32 +1676,29 @@
           "contentType": "application/json",
           "name": "tenant.host_added",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "host": {
-                  "type": "string"
-                },
-                "primary": {
-                  "type": "boolean"
-                },
-                "tenantId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "tenantId",
-                "host",
-                "primary",
-                "at"
-              ],
-              "type": "object"
-            }
+              "host": {
+                "type": "string"
+              },
+              "primary": {
+                "type": "boolean"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "host",
+              "primary",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "tenant — tenant.host_added",
           "title": "tenant.host_added"
@@ -1823,28 +1715,25 @@
           "contentType": "application/json",
           "name": "tenant.suspended",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "tenantId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "tenantId",
-                "slug",
-                "at"
-              ],
-              "type": "object"
-            }
+              "slug": {
+                "type": "string"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "slug",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "tenant — tenant.suspended",
           "title": "tenant.suspended"
@@ -1861,24 +1750,21 @@
           "contentType": "application/json",
           "name": "user.deactivated",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "at"
-              ],
-              "type": "object"
-            }
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.deactivated",
           "title": "user.deactivated"
@@ -1895,28 +1781,25 @@
           "contentType": "application/json",
           "name": "user.email_verified",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "email",
-                "at"
-              ],
-              "type": "object"
-            }
+              "email": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "email",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.email_verified",
           "title": "user.email_verified"
@@ -1933,32 +1816,29 @@
           "contentType": "application/json",
           "name": "user.handle_set",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "now": {
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "was": {
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "was",
-                "now",
-                "at"
-              ],
-              "type": "object"
-            }
+              "now": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "was": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.handle_set",
           "title": "user.handle_set"
@@ -1975,32 +1855,29 @@
           "contentType": "application/json",
           "name": "user.invited",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "email",
-                "status",
-                "at"
-              ],
-              "type": "object"
-            }
+              "email": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "email",
+              "status",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.invited",
           "title": "user.invited"
@@ -2017,24 +1894,21 @@
           "contentType": "application/json",
           "name": "user.password_set",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "at"
-              ],
-              "type": "object"
-            }
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.password_set",
           "title": "user.password_set"
@@ -2051,29 +1925,26 @@
           "contentType": "application/json",
           "name": "user.registration_approved",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "actor": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "actor": {
+                "format": "uuid",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "actor",
-                "at"
-              ],
-              "type": "object"
-            }
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "actor",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.registration_approved",
           "title": "user.registration_approved"
@@ -2090,24 +1961,21 @@
           "contentType": "application/json",
           "name": "user.registration_pending",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "at"
-              ],
-              "type": "object"
-            }
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.registration_pending",
           "title": "user.registration_pending"
@@ -2124,28 +1992,25 @@
           "contentType": "application/json",
           "name": "user.registration_unverified",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "email",
-                "at"
-              ],
-              "type": "object"
-            }
+              "email": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "email",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.registration_unverified",
           "title": "user.registration_unverified"
@@ -2162,38 +2027,35 @@
           "contentType": "application/json",
           "name": "user.roles_set",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "now": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "userId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "was": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "userId",
-                "was",
-                "now",
-                "at"
-              ],
-              "type": "object"
-            }
+              "now": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "was": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "userId",
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
           },
           "summary": "user — user.roles_set",
           "title": "user.roles_set"
@@ -2210,50 +2072,47 @@
           "contentType": "application/json",
           "name": "user.user.created",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "displayName": {
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                },
-                "handle": {
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "roles": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "email",
-                "status",
-                "roles"
-              ],
-              "type": "object"
-            }
+              "displayName": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "handle": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "roles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "email",
+              "status",
+              "roles"
+            ],
+            "type": "object"
           },
           "summary": "user — user.user.created",
           "title": "user.user.created"
@@ -2270,50 +2129,47 @@
           "contentType": "application/json",
           "name": "user.user.deleted",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "displayName": {
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                },
-                "handle": {
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "roles": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "email",
-                "status",
-                "roles"
-              ],
-              "type": "object"
-            }
+              "displayName": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "handle": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "roles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "email",
+              "status",
+              "roles"
+            ],
+            "type": "object"
           },
           "summary": "user — user.user.deleted",
           "title": "user.user.deleted"
@@ -2330,50 +2186,47 @@
           "contentType": "application/json",
           "name": "user.user.updated",
           "payload": {
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "properties": {
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "displayName": {
-                  "type": "string"
-                },
-                "email": {
-                  "type": "string"
-                },
-                "handle": {
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "roles": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
               },
-              "required": [
-                "id",
-                "createdAt",
-                "updatedAt",
-                "email",
-                "status",
-                "roles"
-              ],
-              "type": "object"
-            }
+              "displayName": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "handle": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "roles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "email",
+              "status",
+              "roles"
+            ],
+            "type": "object"
           },
           "summary": "user — user.user.updated",
           "title": "user.user.updated"

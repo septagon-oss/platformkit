@@ -60,8 +60,14 @@ func AsyncAPI(mods []module.Module) ([]byte, error) {
 			"name":        d.Name,
 			"title":       d.Name,
 			"contentType": "application/json",
-			"payload":     map[string]any{"schema": d.Schema()},
-			"summary":     fmt.Sprintf("%s — %s", moduleName(d.Name), d.Name),
+			// The payload member IS a Schema Object: AsyncAPI says so, and an
+			// integrator, a validator or a code generator reads the body's
+			// contract at channels.<name>.messages.<name>.payload. Wrapping the
+			// projection in a `schema` member of its own leaves a document that
+			// still validates — the AsyncAPI metaschema accepts any keyword — and
+			// constrains nothing, which is the failure a validator cannot see.
+			"payload": d.Schema().JSONValue(),
+			"summary": fmt.Sprintf("%s — %s", moduleName(d.Name), d.Name),
 		}
 		channels[d.Name] = map[string]any{
 			"address": transport.Filter(d.Name),

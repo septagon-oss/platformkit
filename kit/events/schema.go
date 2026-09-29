@@ -228,6 +228,13 @@ func (s *Schema) jsonSchema() any {
 	return out
 }
 
+// JSONValue is the projection as a JSON value, with no $schema member. An
+// enclosing document — an AsyncAPI file, a JSON Schema property — carries its
+// own dialect, and a nested member claiming a second one is a contradiction a
+// reader has to resolve by hand. Read this where the schema is a member of
+// somebody else's document, and MarshalJSON where it is the whole one.
+func (s *Schema) JSONValue() any { return s.jsonSchema() }
+
 // MarshalJSON writes the schema as its own JSON Schema document.
 func (s *Schema) MarshalJSON() ([]byte, error) {
 	doc := s.jsonSchema()

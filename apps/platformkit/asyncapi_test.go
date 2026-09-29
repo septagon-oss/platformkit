@@ -132,9 +132,21 @@ func TestEveryDeclaredEventIsInTheDocumentAndCovered(t *testing.T) {
 			t.Errorf("%s's message is %v", d.Name, msg["contentType"])
 		}
 		payload, _ := msg["payload"].(map[string]any)
-		schema, _ := payload["schema"].(map[string]any)
-		if schema["type"] != "object" {
-			t.Errorf("%s's payload schema is %v; every declared payload here is an object", d.Name, schema["type"])
+		if payload == nil {
+			t.Errorf("%s's message has no payload schema an integrator can read: %v", d.Name, msg["payload"])
+			continue
+		}
+		// The projection is the payload member itself. Wrapped in a `schema` of
+		// its own, or carrying a $schema dialect the enclosing document does not
+		// use, it is a contract no validator descends into.
+		if _, wrapped := payload["schema"]; wrapped {
+			t.Errorf("%s's payload wraps the schema in a `schema` member: %v", d.Name, payload)
+		}
+		if _, dialect := payload["$schema"]; dialect {
+			t.Errorf("%s's payload names a $schema dialect the document does not use: %v", d.Name, payload)
+		}
+		if payload["type"] != "object" {
+			t.Errorf("%s's payload schema is %v; every declared payload here is an object", d.Name, payload["type"])
 		}
 	}
 }
