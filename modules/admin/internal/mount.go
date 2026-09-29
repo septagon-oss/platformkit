@@ -163,6 +163,14 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		Tag:       "admin",
 		Back:      a.dashboard.at,
 		BackLabel: "Back to the dashboard",
+		// The whole shell and not only its sign-in page: a person who signs in in
+		// Portuguese and is then handed an English table has not been served in
+		// Portuguese. The generated screens read their labels through the
+		// negotiation this opts them into (ui/screens' screens.* keys), and a
+		// composition that supplies no catalog keeps every one of them in the
+		// language they were written in.
+		Messages: sh.Messages,
+		Locale:   sh.Locale,
 	}
 
 	for _, r := range resources {
