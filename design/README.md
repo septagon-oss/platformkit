@@ -19,22 +19,22 @@ is the ordered projection the stylesheet and the exports share.
 
 A client that does not want to write hex writes a seed: `design.Seed{Sector,
 Name, Brand}` generates both themes in `design.FromSeed`, deterministically, and
-refuses the result unless the pair passes both halves of the gate — `Pair.Check`
-and `Pair.CheckRoles` over `RoleLayer()` and `GatedRolePairs()` below. `Check` is
+refuses unless the pair passes both halves of the gate — `Pair.Check` and
+`Pair.CheckRoles` over `RoleLayer()` and `GatedRolePairs()` below. `Check` is
 WCAG 2.2 measured by `Luminance` and `Contrast`: every body role at 4.5:1 (SC
 1.4.3) — a status tone on every surface a card raises itself onto, not only the
-badge that carries its name — and the focus ring at 3:1 (SC 1.4.11) on each of the
-three surfaces its `RingOffset` draws it onto. A generated
-foreground is repaired against two grounds no token pair reaches: the soft brand
-tint, `SoftTintPercent` of the accent mixed into a surface, which the kernel
-paints that same accent's colour on and which always reads worse than the surface
-the mix was taken from, and the four status tints, which the generator walks
-toward white (or black) until the muted line a tinted panel carries reads on
-them. Repairing the tint rather than the tone is deliberate: `text-muted` is set
-once per page and is one of the twelve tokens `Distance` measures.
-`Distance`, `MinDistance` and `Colliding` are how two clients' palettes are
-compared — the generator cannot promise a separation it does not hold, so a
-process that would wear both asks and refuses.
+badge that carries its name — and the focus ring at 3:1 (SC 1.4.11) on each of
+the three body surfaces its `RingOffset` draws it onto. The sidebar is a fourth
+ground a ringed control sits on, ungated; see [CHANGELOG](../CHANGELOG.md). A
+generated foreground is repaired against two grounds no token pair reaches: the
+soft brand tint, `SoftTintPercent` of the accent mixed into a surface, which the
+kernel paints that accent's own colour on and which reads worse than its source
+surface, and the four status tints, which the generator walks toward white (or
+black) until the muted line a tinted panel carries reads on them. Repairing the
+tint and not the tone is deliberate: `text-muted` is set once per page and is
+one of the twelve tokens `Distance` measures. `Distance`, `MinDistance` and
+`Colliding` compare two clients' palettes: the generator cannot promise a
+separation it does not hold, so a process that would wear both asks and refuses.
 
 [`kit/designconfig`](../kit/designconfig/) decodes `clients/<slug>/design.yaml`
 into `design.Client` — the seed plus at most named overrides of the 22 colour
