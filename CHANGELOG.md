@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+**The label a filled tone button paints is now a measured pair too.** Review round
+8 found the door, not the palette: `clButtonTone` replaces a button's whole
+appearance with the tone it is given — `Bg(style.SurfaceDanger)` under
+`TextColor(style.FgOnBrand)` at `text-sm`, which is what `ui/resource` puts on the
+delete form of every generated list — and no list the gate reads paired
+`fg-on-brand` with a status fill. `bodyRolePairs` names no `fg-on-brand` at all,
+and the status list added above gates the *soft* tints, so the pair fell between
+them; `accent-on` is one of the 22 tokens a client may override, so
+`tokens: {light: {accent-on: "#aacc44"}}` resolved with the success button's label
+at 3.497:1 while every pair the gate does measure held. `StatusRolePairs()` now
+names `fg-on-brand` on all four status fills, and `BodyRolePairs()` names it on
+`surface-brand` — the same label on the accent the token gate already measures as
+`accent-on`/`accent-default`, spelled the way a stylesheet paints it — so one
+sweep of the painted rules covers a button and a tint together. No colour moved:
+`design.Default()` holds every one of these pairs, and 20 000 generated seeds reach
+the floor with the worst at 5.958:1, so the certification `FromSeed` now runs over
+them never fires on generated output. `Client.Resolve` refuses the override above,
+and `tokens: {light: {accent-on: "#66ccff"}}` at 3.56:1, naming both roles. The
+component sweep no longer skips a ground whose name does not end in `Soft`, the
+narrowing whose own comment this round disproved; the single ground it composes
+aside is `surface-overlay`, the sidebar's own tint over the sidebar.
+
 **A gated role pair is now the same pair read from a component or from a
 stylesheet.** Review round 7's failing case derived the pair a failed media panel
 paints out of `ui/components`' own declarations — `Bg(style.SurfaceWarningSoft)`
