@@ -8,6 +8,7 @@ package style_test
 
 import (
 	"hash/fnv"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -81,5 +82,27 @@ func TestCheckRolesRefusesAWashedOutRoleAndAPairThatNamesNoFloor(t *testing.T) {
 	}
 	if got := style.BodyRolePairs(); len(got) < 12 {
 		t.Errorf("the body pair list names %d pairs, which cannot cover the roles the components compose", len(got))
+	}
+}
+
+// The list is the gate, so a body foreground missing from it is painted with no
+// measurement behind it. The accent as text is the one that was missing: three
+// roles, one colour the theme owns, painted by the kernel's own components onto
+// every surface a card can raise itself onto. This case refuses the list dropping
+// any of them, which is how the pair gets lost a second time.
+func TestBodyRolePairsCoverTheAccentPaintedAsText(t *testing.T) {
+	t.Parallel()
+	listed := map[string][]string{}
+	for _, pair := range style.BodyRolePairs() {
+		listed[pair.Foreground] = append(listed[pair.Foreground], pair.Background)
+	}
+	surfaces := []string{"--pk-role-surface-primary", "--pk-role-surface-secondary", "--pk-role-surface-tertiary"}
+	for _, foreground := range []string{"--pk-role-fg-brand", "--pk-role-fg-link", "--pk-role-fg-link-hover"} {
+		for _, surface := range surfaces {
+			if !slices.Contains(listed[foreground], surface) {
+				t.Errorf("%s is never gated against %s: ui/components paints the accent there as body text, and BodyRolePairs lists [%s]",
+					foreground, surface, strings.Join(listed[foreground], ", "))
+			}
+		}
 	}
 }
