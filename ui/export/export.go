@@ -85,6 +85,9 @@ func Export(theme design.Pair, captures []examples.Example, extra ...ui.Extra) (
 }
 
 func export(theme design.Pair, captures []examples.Example, layout bool, extra ...ui.Extra) (DesignExport, error) {
+	if err := checkLegible("design export", theme.Both()...); err != nil {
+		return DesignExport{}, err
+	}
 	out := DesignExport{
 		Schema: "platformkit.design-export.v1", FontPolicy: "system-fallback-stacks", Notices: designNotices,
 		Themes: []ThemeExport{
