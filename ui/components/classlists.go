@@ -137,9 +137,9 @@ var (
 
 	clButtonFull     = style.New().Width(style.SFull)
 	clButtonIconOnly = style.New().MinWidth(style.S11).MinHeight(style.S11)
-	// Loading indicators use the same foreground contract as their button.
-	// This keeps filled actions on-brand while preserving contrast for neutral
-	// secondary, outline, ghost, and link variants.
+	// Loading indicators use the same foreground contract as their button, so a
+	// spinner is its label's colour on its label's ground, which clButtonTone's own
+	// gated pair measures. Neutral variants keep theirs on the page surface.
 	clButtonLoadingVariant = map[string]style.ClassList{
 		"primary":   buttonLoadingIndicator(style.FgOnBrand),
 		"secondary": buttonLoadingIndicator(style.FgPrimary),
