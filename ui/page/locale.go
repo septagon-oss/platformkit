@@ -6,6 +6,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
+	"golang.org/x/text/language"
 	"golang.org/x/text/message/catalog"
 )
 
@@ -49,21 +50,40 @@ func TenantPreferences(r Request, preferences ...string) []string {
 	}
 	out := make([]string, 0, len(preferences)+len(supported))
 	for _, preference := range preferences {
+		kept := make([]string, 0, len(preferences)+1)
 		for _, token := range strings.Split(preference, ",") {
 			// One browser header line is a list, and each entry is asked about on its
-			// own. The quality value stays on what is passed on: the provider reads
-			// it, and a list sorted by hand here would be a second negotiation.
+			// own — but the list goes on as one string. The provider reads a single
+			// header in the order its quality values put it; hand it a list of
+			// separate entries and it takes the first that matches anything, so
+			// filtering here would keep the tenant's set and throw away the
+			// caller's ranking, and the same request written in the other order
+			// would be answered in the other language.
 			token = strings.TrimSpace(token)
 			asked := strings.SplitN(token, ";", 2)[0]
 			if asked != "" && speaks(supported, asked) {
-				out = append(out, token)
+				kept = append(kept, token)
 			}
 		}
+		if len(kept) == 0 {
+			continue
+		}
+		joined := strings.Join(kept, ",")
+		if _, _, err := language.ParseAcceptLanguage(joined); err != nil {
+			// One broken quality value is not a reason to stop reading the rest: a
+			// list this parser refuses is handed over entry by entry, which is the
+			// shape the provider reads one at a time, so the junk costs the one
+			// entry that carries it rather than the caller's whole ranking.
+			out = append(out, kept...)
+			continue
+		}
+		out = append(out, joined)
 	}
-	// The tenant's default last, and its whole set with it: a preference list is
-	// what the provider negotiates over, and the languages this tenant never
-	// mentioned should not become candidates. The default is first in the tenant's
-	// own list, so it is the one that answers when none of the above does.
+	// The tenant's own set behind the caller's list, its default at their head:
+	// these are candidates the caller never named, ranked below everything that
+	// survived the filter above, and the default leads them so it is the one that
+	// answers when none of the above matches — which is why a tenant's default is
+	// never left out of its own set.
 	for _, tag := range supported {
 		if !slices.Contains(out, tag) {
 			out = append(out, tag)
