@@ -65,8 +65,9 @@ and shows the sentence this shell ships under `fault.<CODE>`, where the codes ar
 that can refuse a request a person may be looking at answers through that renderer
 (`API.refuse`), which is the condition that makes the table worth filling: a code no
 page is ever shown for is a key no copy can be written under. A refusal with no code is
-keyed by its status (`fault.404`, `fault.405`, `fault.500`) — the three verdicts whose
-sentence `kit/httpx` writes and no module does. What a translation replaces is the
+keyed by its status (`fault.404`, `fault.405`, `fault.500`, `fault.503`) — the four
+verdicts whose sentence `kit/httpx` writes and no module does, including the outage a
+guard answers when its own decision could not be made. What a translation replaces is the
 sentence and not the guard's whole line: a refusal that carries a code keeps it
 (`AUTH_DENIED: Não pode fazer isto.`), because the code is what a person reads back to
 support and an operator greps a log for. What a catalogue answers with is one thing and

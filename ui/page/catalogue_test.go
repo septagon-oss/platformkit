@@ -11,21 +11,26 @@ import (
 )
 
 // raisedFaults is every sentence this package can put on a refusal page: the codes
-// kit/httpx publishes a row in faultKeys for, and the three verdicts faultKey keys
-// by status because the router, the recoverer or chi wrote their sentence.
+// kit/httpx publishes a row in faultKeys for, and every verdict faultKey keys by
+// status because the router, the recoverer or a guard wrote its sentence.
 //
-// The list is this file's and not a new table: it is built from faultKeys, so a
-// code added there appears here without anyone remembering, and the only thing
-// hand-written is the status set — which is hand-written in faultKey too, and a
-// fourth status added there without a sentence in the catalogue is what this test
-// is for.
-func raisedFaults() []string {
-	keys := make([]string, 0, len(faultKeys)+3)
+// Nothing in here is hand-written but `faultKeys` itself, which the first half
+// reads. The verdicts are asked of `faultKey`, for every status a response can
+// carry, so a status added to that switch joins this list in the commit that added
+// it — and from both directions: its key is looked for in the file, and a key in the
+// file that no verdict and no code asks for still fails below. A list of statuses
+// written here could not say that, because the day a fourth status joined faultKey's
+// switch the list would simply be silent about it — the mutation review round 3 ran.
+func raisedFaults(t *testing.T) []string {
+	t.Helper()
+	keys := make([]string, 0, len(faultKeys)+4)
 	for _, key := range faultKeys {
 		keys = append(keys, key)
 	}
-	for _, status := range []string{"404", "405", "500"} {
-		keys = append(keys, "fault."+status)
+	for code := 100; code < 600; code++ {
+		if key, lookup := faultKey("", code); lookup {
+			keys = append(keys, key)
+		}
 	}
 	slices.Sort(keys)
 	return slices.Compact(keys)
@@ -48,7 +53,7 @@ func TestTheCatalogueAnswersEveryRefusalThisPackageCanShow(t *testing.T) {
 	if err := json.Unmarshal(body, &shipped); err != nil {
 		t.Fatalf("messages/pt-PT.json is not gotext JSON: %v", err)
 	}
-	raised := raisedFaults()
+	raised := raisedFaults(t)
 
 	for _, key := range raised {
 		if message, ok := shipped[key]; !ok || message.Translation == "" {

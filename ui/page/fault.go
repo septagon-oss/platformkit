@@ -75,11 +75,12 @@ var faultKeys = map[string]string{
 // written — an unlisted code is a sentence this package has not read, and a shell's
 // generic copy standing in for it would hide whatever that sentence says.
 //
-// A refusal with no code at all is keyed by its verdict, and only for the three
+// A refusal with no code at all is keyed by its verdict, and only for the four
 // verdicts whose sentence this layer writes because nobody else wrote it: the 404
 // of an address nobody mounted, the 405 of an address that does not take the verb
-// it was asked with, and the 500 of a handler that broke. Every one of those three
-// sentences is kit/httpx's own, written for the page this package renders it on.
+// it was asked with, the 500 of a handler that broke, and the 503 of a guard whose
+// own decision could not be made. Every one of those four sentences is kit/httpx's
+// own, written for the page this package renders it on.
 //
 // A 400, a 409 or a 422 is not one of them: it carries a sentence about the
 // caller's own request, written by a module or by the decoder, and translating
@@ -90,13 +91,23 @@ var faultKeys = map[string]string{
 // caller's request, and it is the refusal a derived client meets most often of
 // all — the catalog's write_path exists because the kernel keeps refusing clients
 // at the wrong verb.
+//
+// The 503 joins the 500 on the same ground as the other three: the sentences are
+// the kernel's about its own outage ("authorization is temporarily unavailable",
+// "the plan could not be read right now", "this host cannot be resolved right
+// now"), and a person cannot act on which subsystem is down — the guard logs each
+// one with its reason and sends Retry-After, so what the page owes the person is
+// that it is our side and it is for a moment. Which of them it was stays in the
+// problem document a monitor reads. Left untranslated it is the one refusal a
+// tenant served in Portuguese is handed in English on an outage — the outage being
+// the moment a person is most likely to be reading it.
 func faultKey(detail string, status int) (key string, lookup bool) {
 	if code, _, named := strings.Cut(detail, ": "); named {
 		key, shipped := faultKeys[code]
 		return key, shipped
 	}
 	switch status {
-	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError:
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError, http.StatusServiceUnavailable:
 		return "fault." + strconv.Itoa(status), true
 	}
 	return "", false
