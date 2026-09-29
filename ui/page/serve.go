@@ -81,7 +81,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			if req, ok := httpx.RequestFrom(ctx); ok {
 				accepted = req.Header.Get("Accept-Language")
 			}
-			r.Locale = new(SelectLocale(s.Messages, preferred, accepted))
+			r.Locale = new(SelectLocale(s.Messages, TenantPreferences(r, preferred, accepted)...))
 		}
 		v, err := handler(ctx, r, in)
 		if err != nil {

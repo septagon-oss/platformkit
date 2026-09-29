@@ -30,6 +30,11 @@ type Fake struct {
 
 	// Hooks are what Create runs, the same list the real module takes in Deps.
 	Hooks []contracts.Hook
+
+	// Installation mirrors the catalogues a real composition hands the module — the
+	// languages the installation answers in, which a created tenant starts out
+	// serving. See module.Deps.Languages.
+	Installation []string
 }
 
 // NewFake returns an empty control plane.
@@ -72,9 +77,20 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 		return nil, &crud.UniqueConflict{Constraint: "tenant_hosts_pkey"}
 	}
 	at := db.Now()
+	// The language a tenant starts out in is the installation's, not the caller's:
+	// the real create reads back the column default migrations/000028 ships and
+	// seeds the set from the catalogues the composition named (module.Deps.Languages).
+	// This mirrors both, because a fake that left them empty would let a case pass
+	// the real create cannot reach — and no caller names them: in.DefaultLocale is
+	// not read here on purpose.
+	start, serves := "en", []string{}
+	if len(f.Installation) > 0 {
+		start, serves = f.Installation[0], append([]string{}, f.Installation[1:]...)
+	}
 	t := contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
-		Hosts: []string{host}, CreatedAt: at, UpdatedAt: at,
+		Hosts: []string{host}, DefaultLocale: start, Locales: serves,
+		CreatedAt: at, UpdatedAt: at,
 	}
 	f.tenants[t.ID], f.hosts[host] = t, t.ID
 	f.mu.Unlock()
@@ -147,6 +163,53 @@ func primaryOf(was []string, host string, primary bool) string {
 		return host
 	}
 	return was[0]
+}
+
+// SetLocale mirrors internal.Service.SetLocale: the default first and the set
+// behind it sorted, the same rule the real one applies, and the same silence when
+// nothing changed.
+func (f *Fake) SetLocale(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, in contracts.SetLocale) (*contracts.Tenant, error) {
+	wanted, err := f.validLocales(in)
+	if err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	t, ok := f.tenants[id]
+	if !ok {
+		f.mu.Unlock()
+		return nil, crud.ErrNotFound
+	}
+	changed := t.DefaultLocale != wanted[0] || !slices.Equal(t.Locales, wanted[1:])
+	t.DefaultLocale, t.Locales, t.UpdatedAt = wanted[0], wanted[1:], db.Now()
+	f.tenants[id] = t
+	f.mu.Unlock()
+	if changed {
+		f.record(contracts.EventLocaleSet)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.copy(id)
+}
+
+// validLocales is internal.Service.validLocales, kept beside it rather than shared
+// because a fake that imported the implementation would stop being a second opinion.
+func (f *Fake) validLocales(in contracts.SetLocale) ([]string, error) {
+	defaultTag, err := contracts.ValidLocale(in.Default)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+	}
+	set := make([]string, 0, len(in.Supported))
+	for _, tag := range in.Supported {
+		canonical, err := contracts.ValidLocale(tag)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		}
+		if canonical != defaultTag && !slices.Contains(set, canonical) {
+			set = append(set, canonical)
+		}
+	}
+	slices.Sort(set)
+	return append([]string{defaultTag}, set...), nil
 }
 
 // Suspend mirrors internal.Service.Suspend.
