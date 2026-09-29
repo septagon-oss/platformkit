@@ -44,8 +44,10 @@ What a client's identity is made of, in one place (decision 0022). **Reused:**
 `Pair`, `Theme`, `Both` and `Tokens` for the value; `colors.go` `parseColor` and
 `ResolveColors` for the numbers `Check` reads; `ParseFontFamilies` for the type
 grammar; `colorFields` and `shapeFields` for the vocabularies; `ui/export` for the
-DTCG document. **Added:** `contrast.go`, because no Go code in this workspace
-measured a ratio at all; `seed.go`, because nothing generated a palette; `Client`
+DTCG document. **Added:** `contrast.go`, because no Go code this repository builds
+measured a ratio at all — the vendored editor plug-in under
+`tools/designexport/openpencil` ships JavaScript that does, and nothing here
+imports it; `seed.go`, because nothing generated a palette; `Client`
 and `Distance`/`Colliding`, because nothing read a client's file or compared two
 clients' identities; `Shape.Validate`/`ParseRadius`, because the radius grammar
 lived in a loader's regexp rather than beside the type. **Made reusable:**

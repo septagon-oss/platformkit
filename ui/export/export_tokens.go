@@ -37,6 +37,23 @@ type TokenExport struct {
 	Faces       []design.FontFace       `json:"faces,omitempty"`
 }
 
+// checkLegible runs the contrast gate over the layer a reader is actually shown:
+// the role declarations ui/style emits on top of this pair's tokens. design's own
+// Theme.Check measures the tokens and belongs to whoever loads a client's design
+// (design.Client.Resolve); this is the other half, and the one a pair can pass
+// while still painting an unreadable sentence — a component never sets
+// --pk-color-text-primary, it sets color: var(--pk-role-fg-secondary). The seam
+// where a pair becomes a stylesheet, an export or a Storybook is where it refuses.
+func checkLegible(context string, themes ...design.Theme) error {
+	roles, pairs := style.RoleColors(), style.BodyRolePairs()
+	for _, theme := range themes {
+		if err := theme.CheckRoles(roles, pairs); err != nil {
+			return fmt.Errorf("%s: %w", context, err)
+		}
+	}
+	return nil
+}
+
 // ExportTokens projects only explicitly selected light/dark modes, in selector
 // order, plus the existing shared colour, scale, shadow and timing owners. It
 // captures no components, CSS, icons or font bytes and performs no I/O. Failure
@@ -51,6 +68,15 @@ func ExportTokens(theme design.Pair, modes ...string) (TokenExport, error) {
 	}
 	if len(selected) == 0 {
 		return TokenExport{}, fmt.Errorf("token export: select at least one mode")
+	}
+	var chosen []design.Theme
+	for i, mode := range []string{"light", "dark"} {
+		if selected[mode] {
+			chosen = append(chosen, theme.Both()[i])
+		}
+	}
+	if err := checkLegible("token export", chosen...); err != nil {
+		return TokenExport{}, err
 	}
 	out := TokenExport{Colors: style.RoleColors()}
 	for i, mode := range []string{"light", "dark"} {

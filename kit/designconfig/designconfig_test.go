@@ -18,10 +18,10 @@ func TestLoadClientDesignReadsTheSeedAndItsOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if client.Seed.Brand != "#f0b978" || client.Slug != "pets" {
+	if client.client.Seed.Brand != "#f0b978" || client.Slug() != "pets" {
 		t.Errorf("loaded %+v", client)
 	}
-	pair, err := client.Resolve()
+	pair, err := resolved(t, client)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestLoadClientDesignRefusesAnOverrideBelowContrast(t *testing.T) {
 	if err != nil {
 		t.Fatalf("validate is the resolve step's job: %v", err)
 	}
-	pair, err := client.Resolve()
+	pair, err := resolved(t, client)
 	if err == nil {
 		t.Fatalf("an override below the gate resolved to %+v", pair.Light.TextMuted)
 	}
@@ -103,10 +103,10 @@ func TestLoadClientDesignReadsAShapeWrittenTheWayAPersonWritesIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if client.Shape.CardRadius != "0.75rem" || client.Shape.ButtonRadius != "2px" || client.Shape.ModalRadius != "1.5rem" {
-		t.Fatalf("kebab-case shape did not decode: %+v", client.Shape)
+	if c := client.client; c.Shape.CardRadius != "0.75rem" || c.Shape.ButtonRadius != "2px" || c.Shape.ModalRadius != "1.5rem" {
+		t.Fatalf("kebab-case shape did not decode: %+v", c.Shape)
 	}
-	pair, err := client.Resolve()
+	pair, err := resolved(t, client)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -182,5 +182,107 @@ func TestLoadClientDesignsRefusesAThirdClientThatDoesNotClearTheGate(t *testing.
 	}
 	if !strings.Contains(err.Error(), "client broken") || !strings.Contains(err.Error(), "text-muted") {
 		t.Errorf("refusal does not name the client and its token: %v", err)
+	}
+}
+
+// resolved gives a test the pair a client would wear, by the only route the
+// package offers: the Register. A test that resolved a client some other way would
+// be measuring a door no composition can open.
+func resolved(t *testing.T, loaded LoadedClient) (design.Pair, error) {
+	t.Helper()
+	register := NewRegister()
+	if err := register.Add(loaded); err != nil {
+		return design.Pair{}, err
+	}
+	pair, ok := register.Pair(loaded.Slug())
+	if !ok {
+		t.Fatalf("Add accepted %s and the set does not hold it", loaded.Slug())
+	}
+	return pair, nil
+}
+
+// The collision rule is not optional. LoadedClient keeps its declaration out of
+// reach on purpose: reading one directory at a time gets a process no further than
+// a Register, so the pair of clients that collide is refused whether they arrived
+// as a tree or one file at a time — and the refusal names both, as it does for the
+// set loader. This is the door review round 1 found open.
+func TestRegisterRefusesTwoClientsWearingOneIdentity(t *testing.T) {
+	t.Parallel()
+	first, err := LoadClientDesign(os.DirFS("testdata/collide"), "a")
+	if err != nil {
+		t.Fatalf("load a: %v", err)
+	}
+	second, err := LoadClientDesign(os.DirFS("testdata/collide"), "b")
+	if err != nil {
+		t.Fatalf("load b: %v", err)
+	}
+	register := NewRegister()
+	if err := register.Add(first); err != nil {
+		t.Fatalf("the first client of a colliding pair was refused: %v", err)
+	}
+	err = register.Add(second)
+	if err == nil {
+		t.Fatalf("a register wears two clients on one seed: %v", slices.Sorted(maps.Keys(register.Pairs())))
+	}
+	message := err.Error()
+	for _, want := range []string{"client b", "client a", "0.000", "below the 0.01"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("refusal does not name %q: %v", want, message)
+		}
+	}
+	if _, ok := register.Pair("b"); ok {
+		t.Errorf("a refused Add still added the client")
+	}
+	if len(register.Pairs()) != 1 {
+		t.Errorf("a refused Add changed the set: %v", slices.Sorted(maps.Keys(register.Pairs())))
+	}
+	// The same two clients, arrived at as a tree, are refused the same way.
+	if _, err := LoadClientDesigns(os.DirFS("testdata/collide")); err == nil || err.Error() != message {
+		t.Errorf("the two routes refuse the pair differently:\n  %v\n  %v", err, message)
+	}
+}
+
+// A directory that holds no design.yaml is not a client and does not stop the
+// load; a directory whose file the filesystem refuses to hand over is a client this
+// process cannot wear, and is said rather than left out of a set that claims to be
+// complete. os.DirFS is what a composition holds, so this asks it, at mode 0000.
+func TestLoadClientDesignsRefusesADirectoryItCannotRead(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000-mode file, so this fs cannot model a refused read")
+	}
+	dir := t.TempDir()
+	for _, slug := range []string{"amber", "beacon"} {
+		if err := os.MkdirAll(dir+"/"+slug, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "slug: " + slug + "\nseed:\n  sector: energy\n  name: " + slug + "\n"
+		if err := os.WriteFile(dir+"/"+slug+"/design.yaml", []byte(body), 0o444); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(dir+"/broken", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+"/broken/design.yaml", []byte("slug: broken\nseed:\n  sector: legal\n  name: broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir+"/broken/design.yaml", 0o000); err != nil {
+		t.Fatal(err)
+	}
+	// A directory with no file at all, beside the unreadable one: not a client.
+	if err := os.MkdirAll(dir+"/no-file-here", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.ReadFile(dir + "/broken/design.yaml"); err == nil {
+		t.Skip("this filesystem serves a 0000-mode file, so it cannot model a refused read")
+	}
+	pairs, err := LoadClientDesigns(os.DirFS(dir))
+	if err == nil {
+		t.Errorf("%d client directories hold a design.yaml; the load returned %d pairs and no error: the client whose file could not be read is absent from a set that claims to be complete",
+			3, len(pairs))
+	}
+	if pairs != nil {
+		t.Errorf("a refused set returned %d pairs", len(pairs))
 	}
 }
