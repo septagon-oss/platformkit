@@ -11,6 +11,30 @@ catalog, so finish building it before rendering and do not modify it during
 concurrent use. Each selection creates its own formatter; no global message
 catalog is read or written.
 
+## Catalogues from files
+
+`Load(fallback, sources...)` reads gotext JSON catalogues — one `<locale>.json`
+per locale, in each owner's own directory — and merges them in argument order,
+so a product can re-word a module's sentence and a client the product's, without
+either editing the other's file. A source may `Own` key prefixes, and a later
+source that answers for an owned key is refused at boot: the sentence a kernel
+refusal speaks stays the kernel's.
+
+The `fallback` names the language the code is written in, so that file is the one
+locale a catalogue may omit — a key with no entry in it answers from the readable
+text its call site passes, which is the same promise `Text(key, fallback)` makes.
+Every other locale must answer for every key the source wrote a copy for, in both
+directions, and no copy may change the arguments the sentence interpolates. Both
+conditions are refused with a message naming the file and the key, because a
+catalogue nobody can answer from must fail a boot and not a person.
+
+Plural messages stay composable by hand through `FromCatalog`; `Load` refuses a
+`key#one` style key rather than build a selector nobody asked it for.
+
+The [file example](load_test.go) composes a module's two files and selects
+Portuguese from a worker. The parity refusals, the merge order and the ownership
+rule are each tested where they are enforced.
+
 The [worker example](catalog_test.go) selects Portuguese from a recipient
 preference and renders text without starting a server. Ordered preferences may
 include browser language lists when supplied by a web adapter. The selected
@@ -22,3 +46,4 @@ contract and provider cases. `go test ./ui/page -run 'TestLocale|TestLocales'`
 checks existing page negotiation, plural, escaping and catalog-isolation behavior
 through the compatibility adapter. Page/request header integration remains with
 the foundation's full verification workflow.
+
