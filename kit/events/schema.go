@@ -9,9 +9,9 @@
 // omitempty, same embedded-flattening, same unexported-field rule. What a
 // publisher can produce and what a validator accepts are then one description.
 //
-// The subset is deliberate and small: the six JSON types, formats for the two
-// identifiers this program puts in every payload (uuid, date-time), enums from
-// string constants are not inferred, and additionalProperties stays open. An
+// The subset is deliberate and small: the six JSON types, formats for the three
+// shapes this program puts in a payload (uuid, date-time, and the base64 a byte
+// string marshals to), no enum inference, and additionalProperties stays open. An
 // open object is not laziness — a payload that gained a field is a payload whose
 // subscriber reads the field it came for, while a payload whose email is a
 // number or that lost its userId is a subscriber that guessed. Refusing the
@@ -20,6 +20,7 @@ package events
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -37,13 +38,11 @@ type Schema struct {
 	// Type is "", "object", "array", "string", "number", "integer" or
 	// "boolean". "" is the any type: no constraint at all.
 	Type string
-	// Format is the JSON Schema format keyword, used for the two identifiers
-	// this program puts in a payload: "uuid" and "date-time".
+	// Format is the JSON Schema format keyword, used for the three shapes this
+	// program puts in a payload: "uuid", "date-time" and "byte". Every format
+	// emitted by jsonSchema is enforced by check: a document that promises a
+	// form the checker wave through is a promise nobody keeps.
 	Format string
-	// Enum, when set, is the only set of string values the payload may carry.
-	// Nothing infers it; a payload type that is a named string with a fixed
-	// domain declares it here when that domain starts to matter.
-	Enum []string
 	// Properties is an object's fields, in declaration order.
 	Properties []Property
 	// Items is an array's element schema.
@@ -198,9 +197,6 @@ func (s *Schema) jsonSchema() any {
 	if s.Format != "" {
 		out["format"] = s.Format
 	}
-	if len(s.Enum) > 0 {
-		out["enum"] = s.Enum
-	}
 	switch {
 	case s.Type == "object" && len(s.Properties) > 0:
 		props, required := map[string]any{}, []string{}
@@ -337,6 +333,13 @@ func (s *Schema) check(path string, v any) error {
 			if _, err := time.Parse(time.RFC3339Nano, text); err != nil {
 				return fmt.Errorf("%s %q is not an RFC 3339 timestamp", orRoot(path), text)
 			}
+		case "byte":
+			// encoding/json writes a []byte as padded standard base64, which is
+			// what the document promises; anything else in that member arrived
+			// by another route and is not the bytes the type declared.
+			if _, err := base64.StdEncoding.DecodeString(text); err != nil {
+				return fmt.Errorf("%s %q is not base64, which is how a byte string marshals", orRoot(path), text)
+			}
 		}
 		return nil
 	case "boolean":
@@ -360,6 +363,9 @@ func (s *Schema) check(path string, v any) error {
 }
 
 func (s *Schema) describe() string {
+	if s.Format == "byte" {
+		return "a base64 string"
+	}
 	if s.Format != "" {
 		return "a " + s.Format
 	}

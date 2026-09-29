@@ -163,15 +163,6 @@ func TestTheSubjectIsTheAddress(t *testing.T) {
 	if !strings.HasPrefix(sub, transport.SubjectPrefix+"."+tenant.String()+".") {
 		t.Errorf("Subject(%s, %q) = %q", tenant, name, sub)
 	}
-	if got := transport.NameOf(sub); got != name {
-		t.Errorf("NameOf(%q) = %q, want %q", sub, got, name)
-	}
-	if got := transport.NameOf("orders.created"); got != "" {
-		t.Errorf("NameOf read a foreign subject as ours: %q", got)
-	}
-	if got := transport.NameOf("platformkit." + tenant.String() + ".not a name"); got != "" {
-		t.Errorf("NameOf accepted a subject whose event half breaks the grammar: %q", got)
-	}
 	// The wildcard a subscription filters matches one event across tenants and
 	// nothing else.
 	filter := transport.Filter(name)

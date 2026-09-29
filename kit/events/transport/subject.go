@@ -1,12 +1,13 @@
 // subject.go is where an event's address is written down once. The envelope's
 // CloudEvents `subject`, the broker's publish subject and a consumer's filter
-// all come from these three functions, so a bridge that reads the address out of
-// a document can subscribe to it and get the same messages.
+// all come from the functions here, so a bridge that reads the address out of a
+// document can subscribe to it and get the same messages. Nothing in this file
+// reads an address back into an event name: nothing in the program needs to —
+// the relay takes the name from the outbox row it is carrying, and a consumer's
+// filter is derived from the name it subscribed with, never from a subject.
 package transport
 
 import (
-	"strings"
-
 	"github.com/google/uuid"
 )
 
@@ -29,21 +30,6 @@ func Subject(tenantID uuid.UUID, name string) string {
 	return SubjectPrefix + "." + tenantID.String() + "." + name
 }
 
-// NameOf returns the event name a subject carries, or "" when the subject is
-// not a PlatformKit event address. It is Subject undone, and lives beside it for
-// the same reason: two decoders of one address drift.
-func NameOf(subject string) string {
-	module, event, ok := strings.Cut(subject, ".")
-	if !ok || module != SubjectPrefix {
-		return ""
-	}
-	_, rest, _ := strings.Cut(event, ".") // the tenant segment
-	if rest == "" || !ValidName(rest) {
-		return ""
-	}
-	return rest
-}
-
 // Filter is the wildcard a subscription to one event name uses: every tenant's
 // delivery of that event, and no other event.
 //
@@ -58,22 +44,18 @@ func Filter(name string) string {
 	return SubjectPrefix + ".*." + name
 }
 
-// LegacyFilter is the address the build before the subject change published
-// at: `platformkit.<module>.<event>`, with no tenant segment.
-//
-// It is a subscription filter and not an address anything here writes to. The
-// envelope never produces the old shape (see cloudevents.go); a publisher still
-// running the previous build does, and a NATS `*` matches exactly one token, so
-// `platformkit.<module>.<event>` matches no consumer filtering
-// `platformkit.*.<module>.<event>`. A rolling window therefore needs two
-// filters and not a cleverer one: there is no wildcard that means "this token,
-// or none", and a stream subject transform cannot be added to a stream that
-// already exists.
-const LegacyFilter = "platformkit." // + the event name
-
 // Filters is every address a subscription to one event name has to answer, in
 // the order a reader checks them: this build's, then the previous build's while
 // a publisher on that build is still writing events this worker reads.
+//
+// The second is `platformkit.<module>.<event>` — the address before the subject
+// carried a tenant segment. Nothing in this repository writes to it: the
+// envelope never produces the old shape (see cloudevents.go); a publisher still
+// running the previous build does. A NATS `*` matches exactly one token, so that
+// message matches no consumer filtering `platformkit.*.<module>.<event>`, and
+// there is no wildcard that means "this token, or none" and a stream subject
+// transform cannot be added to a stream that already exists: a rolling window
+// needs two filters and not a cleverer one.
 //
 // The window is the length of the rollout and no longer: the day no process
 // running the previous build publishes, this list shrinks back to Filter alone

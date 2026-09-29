@@ -34,7 +34,8 @@ type invoiceIssued struct {
 		SKU      string `json:"sku"`
 		Quantity int    `json:"quantity"`
 	} `json:"lines"`
-	Meta map[string]string `json:"meta,omitempty"`
+	Meta   map[string]string `json:"meta,omitempty"`
+	Digest []byte            `json:"digest,omitempty"`
 }
 
 // declare installs the test composition's catalog for one name. A real
@@ -64,7 +65,8 @@ func TestAMisShapedPayloadIsRefusedAtTheOutbox(t *testing.T) {
 			SKU      string `json:"sku"`
 			Quantity int    `json:"quantity"`
 		}{{SKU: "KIT-1", Quantity: 2}},
-		Meta: map[string]string{"order": "O-7"},
+		Meta:   map[string]string{"order": "O-7"},
+		Digest: []byte("sealed"),
 	}
 	if err := publishErr(t, conn, "billing.invoice_issued", good); err != nil {
 		t.Fatalf("the payload the type itself produces was refused: %v", err)
@@ -90,6 +92,9 @@ func TestAMisShapedPayloadIsRefusedAtTheOutbox(t *testing.T) {
 		{"a map value that is not a string", "$.meta", map[string]any{
 			"invoiceId": uuid.NewString(), "total": 1, "currency": "EUR",
 			"due": "2026-10-01T00:00:00Z", "lines": []any{}, "meta": map[string]any{"n": 1}}},
+		{"a byte member that is not base64", "is not base64", map[string]any{
+			"invoiceId": uuid.NewString(), "total": 1, "currency": "EUR",
+			"due": "2026-10-01T00:00:00Z", "lines": []any{}, "digest": "not base64!!!"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := publishErr(t, conn, "billing.invoice_issued", tc.payload)
@@ -209,6 +214,10 @@ func TestSchemaIsTheProjectionOfTheType(t *testing.T) {
 	due, _ := props["due"].(map[string]any)
 	if due["format"] != "date-time" {
 		t.Errorf("due format = %v", due["format"])
+	}
+	digest, _ := props["digest"].(map[string]any)
+	if digest["format"] != "byte" {
+		t.Errorf("digest format = %v", digest["format"])
 	}
 	lines, _ := props["lines"].(map[string]any)
 	if lines["type"] != "array" {
