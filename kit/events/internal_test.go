@@ -117,9 +117,10 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	ctx, stop := context.WithCancel(t.Context())
 	defer stop()
 
-	// This run's own subject and consumer: the stream is shared with every
+	// This run's own subjects and consumers: the stream is shared with every
 	// other run.
-	name := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "") + ".happened"
+	seed := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	name, warmup := seed+".happened", seed+".warmed"
 	transport, err := provider.JetStream(url)
 	if err != nil {
 		t.Fatalf("JetStream: %v", err)
@@ -130,18 +131,62 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	var mu sync.Mutex
 	attempts := 0
 	var deliveries []time.Time
-	err = Consume(ctx, conn, transport, []Subscription{{
-		Module: "ledger", Name: name,
-		Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
-			mu.Lock()
-			attempts++
-			deliveries = append(deliveries, time.Now())
-			mu.Unlock()
-			return errors.New("this will never work")
+	handled := make(chan struct{}, 1)
+	err = Consume(ctx, conn, transport, []Subscription{
+		// A second event on its own subject and its own durable, so it is not a
+		// delivery of the one under test: it is handled once and acknowledged.
+		{Module: "ledger", Name: warmup,
+			Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
+				handled <- struct{}{}
+				return nil
+			},
 		},
-	}})
+		{Module: "ledger", Name: name,
+			Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
+				mu.Lock()
+				attempts++
+				deliveries = append(deliveries, time.Now())
+				mu.Unlock()
+				return errors.New("this will never work")
+			},
+		},
+	})
 	if err != nil {
 		t.Fatalf("Consume: %v", err)
+	}
+
+	// Spend the cold start before making a measurement of a warm path.
+	//
+	// `deliveries` records when a handler is *entered*: after the broker sent
+	// the delivery, after the connection's callback goroutine woke, and after
+	// Consume opened the tenant transaction and wrote the claim — whose first
+	// use of the pool dialled a connection too. Only the first delivery of a run
+	// pays for that, so only its gap is measured short of the rung it is timed
+	// against. Sixteen runs of the ladder as it was show exactly that shape: the
+	// median gap at rung 1 was 45.9 ms against its 50 while rungs 2-4 medians
+	// were 200.5, 500.6 and 1000.8 against 200, 500 and 1000. The one recorded
+	// failure read 16.3 ms — 33.7 ms of one-sided cost, on a gate run carrying
+	// every other suite in this repository at once — and the want/2 floor refused
+	// a ladder whose broker timer had run each rung in full.
+	//
+	// Awaiting one ordinary delivery first moves that cost out of the window
+	// between two timestamps: the same sixteen runs afterwards read a rung-1
+	// median of 51.7 ms, and a worst-case shortfall (6.4 ms) below rung 2's worst
+	// (8.9 ms) in the same sample. No bound here moved: a retry that never comes,
+	// comes immediately, or is delayed twice still fails the loop below, and the
+	// rungs stay unequal so a layered second delay still doubles a gap.
+	if err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return Publish(ctx, tx, warmup, nil)
+	}); err != nil {
+		t.Fatalf("publish the warm-up event: %v", err)
+	}
+	if err := Relay(t.Context(), conn, transport); err != nil {
+		t.Fatalf("relay the warm-up event: %v", err)
+	}
+	select {
+	case <-handled:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the warm-up delivery never reached its handler")
 	}
 
 	err = db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
