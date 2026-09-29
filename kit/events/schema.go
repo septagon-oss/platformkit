@@ -41,7 +41,7 @@ type Schema struct {
 	// Format is the JSON Schema format keyword, used for the three shapes this
 	// program puts in a payload: "uuid", "date-time" and "byte". Every format
 	// emitted by jsonSchema is enforced by check: a document that promises a
-	// form the checker wave through is a promise nobody keeps.
+	// form the checker waves through is a promise nobody keeps.
 	Format string
 	// Properties is an object's fields, in declaration order.
 	Properties []Property
