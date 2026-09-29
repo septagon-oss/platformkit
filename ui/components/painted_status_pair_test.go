@@ -14,6 +14,16 @@ package components_test
 // fixed is the invariant — a pair this package paints at body size is a pair the
 // one gate measures, because Client.Resolve and ui/export refuse over that list
 // and no second copy of it exists to disagree with.
+//
+// The sweep counts every ground, not the ones whose name says "Soft". It used to
+// skip a plain surface on the comment that the body list sweeps those, and that
+// comment was false: bodyRolePairs names no fg-on-brand at all, so the filled tone
+// button — clButtonTone's Bg(style.SurfaceDanger) under
+// TextColor(style.FgOnBrand), at the text-sm every generated list's delete form
+// wears — fell between the two lists, and review round 8 measured it at 3.497:1
+// under a client's own design.yaml. A ground being named like a surface is no
+// reason to leave a label unmeasured, so the only ground allowed out of the sweep
+// is the one named by compositedGround below, with the measurement it stands for.
 
 import (
 	"os"
@@ -58,16 +68,16 @@ func TestMediaPanelCopyPaintsAGatedPair(t *testing.T) {
 	if !ok {
 		t.Fatal("clEmptyDesc no longer declares a foreground this case can read")
 	}
-	assertGated(t, []paintedPair{{
+	assertGated(t, measurableGrounds(t, []paintedPair{{
 		foreground: foreground, background: background,
 		paintedBy: "clMediaFailed's ground under clEmptyDesc's colour, merged by mediaAbsent",
-	}})
+	}}))
 }
 
 // TestTintRulesPaintGatedPairs is the sweep: every rule in this package that
-// paints text on a tint in one declaration — the badge's four tones, the alert
-// variants, the brand badge and the active navigation link, all at body size —
-// has to name a pair the gate measures.
+// paints text on a ground in one declaration — the badge's four tones, the alert
+// variants, the brand badge, the active navigation link, the filled button's
+// label, all at body size — has to name a pair the gate measures.
 func TestTintRulesPaintGatedPairs(t *testing.T) {
 	source, err := os.ReadFile("classlists.go")
 	if err != nil {
@@ -95,18 +105,56 @@ func TestTintRulesPaintGatedPairs(t *testing.T) {
 		if foreground == "" {
 			foreground, background = found[3], found[4]
 		}
-		if !strings.Contains(background, "Soft") {
-			continue // A plain surface is the body list's own sweep.
-		}
 		painted = append(painted, paintedPair{
 			foreground: "fg-" + kebabConstant(foreground), background: "surface-" + kebabConstant(background),
 			paintedBy: rule + " paints " + strings.TrimSpace(line),
 		})
 	}
 	if len(painted) < 8 {
-		t.Fatalf("the sweep read %d rules painting text on a tint; classlists.go changed shape and this case now reads nothing", len(painted))
+		t.Fatalf("the sweep read %d rules painting text on a ground; classlists.go changed shape and this case now reads nothing", len(painted))
 	}
-	assertGated(t, painted)
+	assertGated(t, measurableGrounds(t, painted))
+}
+
+// compositedGround names the one painted ground no ratio measures as it stands:
+// surface-overlay is declared as 55% of the sidebar's own colour over transparent,
+// and the only rules that paint it are the sidebar's own links, whose backdrop is
+// the sidebar — a colour composited onto the colour it is tinted from is that
+// colour, so what a reader is shown is fg-on-inverse on surface-inverse, which
+// bodyRolePairs measures. Any other translucent ground a rule paints copy on is
+// the refusal below rather than another skip: this is one measurement somebody
+// read, not a category of ground allowed to go unmeasured.
+var compositedGround = map[string]string{"surface-overlay": "surface-inverse"}
+
+// measurableGrounds turns every ground this package paints into a ground a ratio
+// means something on, and refuses a rule that paints copy on a translucent colour
+// this file has read no backdrop for.
+func measurableGrounds(t *testing.T, painted []paintedPair) []paintedPair {
+	t.Helper()
+	values, err := design.ResolveColors(design.Default().Light.Tokens(), style.RoleColors())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]paintedPair, 0, len(painted))
+	for _, pair := range painted {
+		backdrop, named := compositedGround[pair.background]
+		colour, declared := values[design.RoleCSSName(pair.background)]
+		translucent := declared && colour[3] != 1
+		switch {
+		case translucent && named:
+			pair.background = backdrop
+			out = append(out, pair)
+		case translucent:
+			t.Errorf("%s paints %s on %s, which the layer resolves to a colour %.0f%% opaque: a colour with alpha has no ratio until it is composited, and this file reads no backdrop for that ground",
+				pair.paintedBy, pair.foreground, pair.background, colour[3]*100)
+		case named:
+			t.Errorf("%s names %s as a ground that has to be composited before it can be measured, but the layer resolves it to %v: the exception has gone stale, so measure the pair this ground is now",
+				pair.paintedBy, pair.background, colour)
+		default:
+			out = append(out, pair)
+		}
+	}
+	return out
 }
 
 // TestStatusRolePairsClearTheFloorOnTheShippedPalette: the list is only worth

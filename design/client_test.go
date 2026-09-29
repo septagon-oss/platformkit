@@ -197,3 +197,40 @@ func TestClientResolveRefusesATintThatMovesTheMutedLineOnIt(t *testing.T) {
 		t.Errorf("the client's own seed refuses: %v", err)
 	}
 }
+
+// A status fill is a ground with copy on it, not only a colour: clButtonTone
+// replaces a filled button's whole appearance with the tone itself —
+// Bg(style.SurfaceDanger) under TextColor(style.FgOnBrand) at text-sm, which is
+// what ui/resource asks for on every generated list's delete form — so an
+// override of the accent's on-colour moves a button's label, and the token gate
+// measures accent-on against the two accent strengths alone. This override holds
+// all 22 token pairs and every body, brand-tinted and status-tinted role pair,
+// and puts that label on a success fill at 3.56:1, which is what the fg-on-brand
+// entries of the status list are for.
+func TestClientResolveRefusesAFillThatMovesTheLabelOffIt(t *testing.T) {
+	t.Parallel()
+	client := design.Client{
+		Slug:   "sand",
+		Seed:   design.Seed{Sector: "health", Name: "Havenkit"},
+		Tokens: map[string]map[string]string{"light": {"accent-on": "#66ccff"}},
+	}
+	pair, err := client.Resolve()
+	if err == nil {
+		t.Fatalf("resolved a client whose filled button nobody can read: accent-on %q on status-ok %q",
+			pair.Light.AccentOn, pair.Light.StatusOK)
+	}
+	if pair != (design.Pair{}) {
+		t.Errorf("a refused client returned a pair")
+	}
+	if !strings.Contains(err.Error(), "--pk-role-fg-on-brand") ||
+		!strings.Contains(err.Error(), "--pk-role-surface-success") {
+		t.Errorf("the refusal names neither the button's label nor the fill under it: %v", err)
+	}
+	// The same file with the on-colour left alone resolves: the refusal is this
+	// override, not the client's identity.
+	dropped := client
+	dropped.Tokens = nil
+	if _, err := dropped.Resolve(); err != nil {
+		t.Errorf("the client's own seed refuses: %v", err)
+	}
+}

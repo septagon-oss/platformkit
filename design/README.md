@@ -49,9 +49,12 @@ The `--pk-role-*` declarations live in [roles.go](roles.go): every role in terms
 of a theme's tokens, the mixes a theme does not enumerate, and the three lists of
 pairs a reader is shown — `BodyRolePairs()` on a theme's own surfaces,
 `TintedRolePairs()` on the surface the layer derives by mixing a foreground into
-one, and `StatusRolePairs()` on the four status tints, which hold a status tone
-and, in the panel a failed upload raises, the muted line under it. They are names,
-references and percentages, so owning them costs this
+one, and `StatusRolePairs()` on the four status grounds — tinted, holding a tone
+and the muted line a failed upload puts under it, and filled, holding the label of
+the button that tone names (`clButtonTone` paints `fg-on-brand` on
+`surface-danger` at 14 px, which is what a generated list's delete form wears)
+plus `BodyRolePairs()`'s `fg-on-brand` on the accent a primary button is filled
+with. They are names, references and percentages, so owning them costs this
 package nothing of its dependency rule, and the package that measures a ratio has
 to own what it measures: `Client.Resolve` gates a client's finished pair with
 `RoleLayer()` and `GatedRolePairs()`, while
@@ -61,8 +64,9 @@ the same one list. A pair this package paints at body size and that list does no
 name is a pair no gate measures, which is how a muted sentence inside a
 warning-tinted panel sat at 3.6:1 on a generated palette while every gate in the
 repository passed it: `ui/components/painted_status_pair_test.go` now reads the
-painted pairs out of the components' own declarations and refuses one that is
-missing from the list. A gate that could read only the token layer could certify
+painted pairs out of the components' own declarations, counts every ground a rule
+raises itself onto rather than the ones whose name says `Soft`, and refuses a pair
+that is missing from the list. A gate that could read only the token layer could certify
 colours nobody paints: overriding `surface-primary` with `#2e2920` in a dark theme
 holds all 22 token pairs and moves the tint a brand badge's own label sits on down
 to 3.91:1, which is why the door a client's file passes through refuses it rather
