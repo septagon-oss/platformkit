@@ -182,8 +182,8 @@ func BodyRolePairs() []design.RolePair {
 // the outline button's hover state all paint that accent's own colour on it. A
 // token pair cannot express it, because the background is no token, and the mix
 // always reads worse than the surface it was taken from — which is why
-// design.enforceTinted certifies a generated accent against it and this list
-// gates an authored override.
+// design.enforceTinted certifies a generated accent against it; this list is
+// gated at ui/export, where a Pair becomes a sheet, not at design.Client.Resolve.
 var tintedRolePairs = []design.RolePair{
 	{Foreground: "--pk-role-fg-brand", Background: "--pk-role-surface-brand-soft", Min: design.MinContrast},
 	{Foreground: "--pk-role-fg-link", Background: "--pk-role-surface-brand-soft", Min: design.MinContrast},
