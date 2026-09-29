@@ -76,9 +76,10 @@ type Deps struct {
 	// changes nothing else, because every rule above the tokens is written in
 	// terms of a role. See design.Pair.
 	Theme design.Pair
-	// Messages and Locale opt the sign-in page into translated copy. Compose
-	// Messages() or an application catalog before mounting. Other pages keep
-	// their authored language. Locale selects a preference before the browser.
+	// Messages and Locale opt the sign-in page into translated copy. Compose the
+	// application's catalogue (xtext.Load over the Catalogue of every layer) before
+	// mounting. Other pages keep their authored language. Locale selects a
+	// preference before the browser.
 	Messages page.Messages
 	Locale   func(context.Context, page.Request) string
 
