@@ -181,3 +181,48 @@ func TestBodyRolePairsCoverTheAccentPaintedAsText(t *testing.T) {
 		}
 	}
 }
+
+// TestRolePairMirrorsSpellTheEmittedNames pins one declaration to its two
+// vocabularies. design/roles.go declares the gated pairs in the names the layer is
+// written in ("fg-muted"), this package hands the seam that ships a stylesheet the
+// same pairs in the names it emits ("--pk-role-fg-muted"), and the two lists have
+// to be one list: same pairs, same order, same floors, each role translated by
+// design's own rule rather than by a naming convention guessed here. The gate is
+// one gate only while that holds; a mirror that drifted is the disagreement review
+// round 5 found, a client's file gated by pairs no stylesheet is built from.
+func TestRolePairMirrorsSpellTheEmittedNames(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		label          string
+		declared, here []design.RolePair
+	}{
+		{"body", design.BodyRolePairs(), style.BodyRolePairs()},
+		{"tinted", design.TintedRolePairs(), style.TintedRolePairs()},
+		{"status", design.StatusRolePairs(), style.StatusRolePairs()},
+		{"gated", design.GatedRolePairs(), style.GatedRolePairs()},
+	} {
+		if len(c.here) != len(c.declared) {
+			t.Fatalf("%s pairs: this package hands over %d, design declares %d", c.label, len(c.here), len(c.declared))
+		}
+		for i, pair := range c.declared {
+			mirror := c.here[i]
+			if mirror.Min != pair.Min {
+				t.Errorf("%s %d: %s on %s is gated at %v here and at %v in design", c.label, i,
+					pair.Foreground, pair.Background, mirror.Min, pair.Min)
+			}
+			for _, role := range [...]struct{ declared, emitted string }{
+				{pair.Foreground, mirror.Foreground},
+				{pair.Background, mirror.Background},
+			} {
+				if strings.HasPrefix(role.declared, "--pk-role-") {
+					t.Errorf("%s %d: design declares %s in the emitted spelling, so the two vocabularies have started to mix",
+						c.label, i, role.declared)
+				}
+				if role.emitted != design.RoleCSSName(role.declared) {
+					t.Errorf("%s %d: this package emits %s for the role design declares as %s",
+						c.label, i, role.emitted, role.declared)
+				}
+			}
+		}
+	}
+}
