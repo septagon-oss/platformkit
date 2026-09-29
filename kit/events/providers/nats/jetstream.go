@@ -130,6 +130,9 @@ func wanted(durable, name string) []nats.SubOpt {
 		nats.Durable(durable), nats.ManualAck(), nats.AckExplicit(), nats.DeliverAll(),
 		nats.AckWait(ackWait()), nats.MaxDeliver(-1), nats.BackOff(delivery.Backoff),
 		nats.BindStream(stream),
+		// Both addresses, while a publisher on the previous build is still
+		// writing events this worker reads. See transport.Filters.
+		nats.ConsumerFilterSubjects(transport.Filters(name)...),
 	}
 }
 
@@ -250,8 +253,16 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	// acknowledges, where it starts, and whether it is pushed at all. A
 	// consumer that differs in any of them is not this subscription's consumer
 	// wearing the wrong settings, it is somebody else's under the same name.
-	if want := transport.Filter(name); info.Config.FilterSubject != want {
-		immutable = append(immutable, fmt.Sprintf("filter_subject %q to %q", info.Config.FilterSubject, want))
+	//
+	// The filter is a set now, and a consumer stored with one filter subject is
+	// a consumer that cannot see the previous build's traffic: an update that
+	// cannot add the second one is the drift, so it is named as the immutable
+	// kind and the consumer is remade. Remaking it replays the stream under
+	// DeliverAll, and platformkit_handled claims make the replay safe — the same
+	// argument two settings above.
+	if want := transport.Filters(name); info.Config.FilterSubject != "" || !slices.Equal(info.Config.FilterSubjects, want) {
+		immutable = append(immutable, fmt.Sprintf("filter_subject %q filters %v to %v",
+			info.Config.FilterSubject, info.Config.FilterSubjects, want))
 	}
 	if info.Config.AckPolicy != nats.AckExplicitPolicy {
 		immutable = append(immutable, fmt.Sprintf("ack_policy %s to explicit", info.Config.AckPolicy))
@@ -295,7 +306,12 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 	if err := j.reconcile(ctx, durable, name); err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}
-	sub, err := j.js.QueueSubscribe(transport.Filter(name), group(durable), func(msg *nats.Msg) {
+	// No subscribe subject: a consumer with more than one filter is not
+	// addressable through the subject-based API — nats.go asks the server for a
+	// consumer whose filter is the subject it was handed, and the server refuses
+	// one with both — so the subscription binds to the durable and the consumer
+	// owns its filter set, from wanted above and from nowhere else.
+	sub, err := j.js.QueueSubscribe("", group(durable), func(msg *nats.Msg) {
 		var ev transport.Event
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
 			// A message that will never parse would be redelivered forever.

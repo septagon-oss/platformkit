@@ -57,3 +57,31 @@ func NameOf(subject string) string {
 func Filter(name string) string {
 	return SubjectPrefix + ".*." + name
 }
+
+// LegacyFilter is the address the build before the subject change published
+// at: `platformkit.<module>.<event>`, with no tenant segment.
+//
+// It is a subscription filter and not an address anything here writes to. The
+// envelope never produces the old shape (see cloudevents.go); a publisher still
+// running the previous build does, and a NATS `*` matches exactly one token, so
+// `platformkit.<module>.<event>` matches no consumer filtering
+// `platformkit.*.<module>.<event>`. A rolling window therefore needs two
+// filters and not a cleverer one: there is no wildcard that means "this token,
+// or none", and a stream subject transform cannot be added to a stream that
+// already exists.
+const LegacyFilter = "platformkit." // + the event name
+
+// Filters is every address a subscription to one event name has to answer, in
+// the order a reader checks them: this build's, then the previous build's while
+// a publisher on that build is still writing events this worker reads.
+//
+// The window is the length of the rollout and no longer: the day no process
+// running the previous build publishes, this list shrinks back to Filter alone
+// and the consumer is remade without the second filter. Until then it is the
+// only reason a pre-envelope message reaches a handler at all — the decoder
+// that reads the old shape is unreachable without it, and an event the relay
+// stamped published while nothing consumed it is the loss this whole change set
+// exists to prevent, in a new place.
+func Filters(name string) []string {
+	return []string{Filter(name), SubjectPrefix + "." + name}
+}

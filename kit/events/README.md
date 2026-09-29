@@ -33,20 +33,26 @@ storing columns; `MarshalJSON`/`UnmarshalJSON` in
 The subject is `platformkit.<tenant>.<module>.<event>`
 ([`transport/subject.go`](transport/subject.go)), so a tenant's backlog is an
 address and a durable can be per tenant (decision 0053 §1). Subscriptions keep
-one durable per (module, event) and filter `platformkit.*.<module>.<event>`; an
-operator who wants one tenant's queue filters that tenant's exact subject. The
-stream is still `PLATFORMKIT` with `platformkit.>`.
+one durable per (module, event) and filter `platformkit.*.<module>.<event>`, plus
+`platformkit.<module>.<event>` while the rollout window below is open
+(`transport.Filters`); an operator who wants one tenant's queue filters that
+tenant's exact subject. The stream is still `PLATFORMKIT` with `platformkit.>`.
 
 Three consequences, each a test rather than an assurance:
 
-* **The pre-envelope shape decodes and is never written.** That asymmetry is the
-  rolling window: while a publisher on the previous build is writing events a new
-  worker reads, refusing those messages would terminate events the relay had
-  already stamped. Deploy the consumers onto this build before any publisher, and
-  the window closes when the last previous-build publisher is gone. A
-  pre-envelope document with no tenant or no event name is refused in either form.
-* **Every stored consumer is deleted and made again**, because its
-  `filter_subject` changed and NATS cannot change one in place. It asks for
+* **The pre-envelope shape decodes and is never written**, and a subscription
+  answers it. That asymmetry is only half the rolling window: the previous build
+  published at `platformkit.<module>.<event>` and this build's filter has a token
+  for a tenant that message does not carry, so a decoder that accepts it while
+  nothing subscribes to its address reads a shape nobody can reach. A
+  subscription therefore filters both addresses while the window is open
+  (`transport.Filters`), and either deploy order is safe. When the last
+  previous-build publisher is gone, the second filter goes, the consumer is made
+  again, and the window is shut. A pre-envelope document with no tenant or no
+  event name is refused in either form.
+* **Every stored consumer is deleted and made again**, because it went from one
+  `filter_subject` to a `filter_subjects` set and NATS cannot change one in
+  place. It asks for
   `DeliverAll`, so that is a re-delivery of the stream — and every replay is
   claimed in `platformkit_handled` before the handler runs, which is why the
   reconciliation `reconcile` logs a line rather than an incident. Independent
@@ -81,12 +87,20 @@ No new configuration namespace, broker or lifecycle service is introduced.
 A module's manifest declares each event with the Go type of its payload
 (`events.Declare[contracts.Invited](contracts.EventInvited)`); the outbox refuses
 a payload that is not a projection of that type ([`schema.go`](schema.go)) inside
-the publisher's own transaction, and `kit/app.AsyncAPI` renders the composition's
+the publisher's own transaction — a member the projection cannot describe
+constrains nothing, the same honest unknown the rendered schema answers with
+`true` — and `kit/app.AsyncAPI` renders the composition's
 catalogue from the same declaration
-(`apps/platformkit/testdata/asyncapi.json`). `events.Replay` is the operator's
-verb for a dead letter: it clears the claim and the terminal record, returns the
-row to pending, and records `platformkit.event_replayed` with the operator's
-actor and their stated reason.
+(`apps/platformkit/testdata/asyncapi.json`) — as the message's `payload`, which
+is where AsyncAPI says a reader will look, and not wrapped in a member of its
+own. `events.Replay` is the operator's verb for a dead letter: it clears the
+claim and the terminal record, returns the row to pending, and records
+`platformkit.event_replayed` with the operator's actor and their stated reason.
+Both are required of the caller: a replay that cannot name who ordered it is
+refused before the transaction opens, and it writes nothing and emits nothing.
+`Purge` leaves an outbox row that a dead letter still describes, because that row
+is the payload's only copy and a replay of it has to be reachable; clearing the
+dead letter is what lets the history window take the row.
 
 Delivery is at least once. Independent sinks must provide their own durable
 idempotency and tenant checks; the transport cannot supply database isolation.
