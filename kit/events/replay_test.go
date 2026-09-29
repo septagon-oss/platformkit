@@ -129,7 +129,7 @@ func TestReplayRunsADeadLetteredEventAgainAndRecordsTheAct(t *testing.T) {
 	}
 }
 
-// The two refusals. A refused mutation writes nothing and emits nothing: the
+// The three refusals. A refused mutation writes nothing and emits nothing: the
 // claims, the dead letter and the stamp all still say what they said before.
 func TestReplayRefusalsWriteNothing(t *testing.T) {
 	fast(t)
@@ -167,6 +167,20 @@ func TestReplayRefusalsWriteNothing(t *testing.T) {
 			t.Fatal("a replay with no reason was accepted")
 		} else if !strings.Contains(err.Error(), "reason") {
 			t.Errorf("the error does not say what is missing: %v", err)
+		}
+	})
+	// Beside the reason because it is the same requirement, and pinned here as
+	// well as anywhere else because it is this verb's own audit that it protects:
+	// the call removes the record that a delivery finished and writes a record of
+	// the act, and a context that names nobody leaves both saying "nobody". It is
+	// unconditional — a dead letter is reviewed late, so the row is usually old,
+	// and how long ago a delivery finished does not decide whether a person has to
+	// be named for clearing its claim.
+	t.Run("no actor", func(t *testing.T) {
+		if _, err := Replay(ctx, conn, id, "", "the mailer is fixed"); err == nil {
+			t.Fatal("a replay with no actor was accepted")
+		} else if errors.Is(err, ErrNothingToReplay) {
+			t.Errorf("the refusal blames the row, not the caller: %v", err)
 		}
 	})
 	t.Run("no outbox row", func(t *testing.T) {
