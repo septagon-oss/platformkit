@@ -62,9 +62,9 @@ func roleMix(first ColorValue, pct float64, second ColorValue) ColorValue {
 // that package compiles rules for, so a new role fails that test until it is
 // mapped here and rendered there.
 //
-// SurfaceActive is the one declared paint no kernel rule composes yet: it is
-// declared here because the layer the export and a native application read is
-// complete, and gated nowhere because nothing paints it.
+// SurfaceActive is the one declared paint no kernel rule composes yet: declared
+// because the export ships it to a native application, and gated nowhere only
+// because nothing in this repository paints copy on the ground. The phone can.
 var roleLayer = map[string]ColorValue{
 	// Surfaces.
 	"surface-primary":      roleRef("surface-primary"),
