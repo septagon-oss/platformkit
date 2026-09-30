@@ -40,6 +40,16 @@ type Deps struct {
 	// customer locks themselves out — the same argument as file.Deps.Storage
 	// and notification.Deps.Mailer, which panic for the same reason.
 	Administration contracts.Administration
+
+	// Granting answers whether the caller of a roles write may hand out a role
+	// that administers the tenant. Wire &contracts.GrantingFunc{Ask: …} over
+	// whatever answers "may this caller manage roles" — in the reference
+	// application, the Authorizer the API already holds.
+	//
+	// Required, in Deps.Administration's own words: a composition that supplies
+	// none gets a panic at boot rather than a roles screen that promotes whoever
+	// is sitting in front of it.
+	Granting contracts.Granting
 }
 
 // spec is the entity's presence in the application: five routes, two
@@ -111,7 +121,22 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	if asked, ok := deps.Administration.(*contracts.AdministrationFunc); ok && (asked == nil || asked.Ask == nil) {
 		panic("user.Module: Deps.Administration is an adapter with no Ask; wire auth.AdministeringRoles, do not hand the floor an empty adapter")
 	}
-	svc := internal.NewService(deps.Administration)
+	if deps.Granting == nil {
+		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
+	}
+	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
+		panic("user.Module: Deps.Granting is an adapter with no Ask; wire the authorizer, do not hand the door an empty adapter")
+	}
+	// The same refusal, one field later: an adapter with nothing behind it answers
+	// "nobody may promote anybody", which reads as a working door and locks every
+	// promotion in every tenant this composition serves.
+	if deps.Granting == nil {
+		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
+	}
+	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
+		panic("user.Module: Deps.Granting is an adapter with no Ask; wire the authorizer, do not hand the door an empty adapter")
+	}
+	svc := internal.NewService(deps.Administration, deps.Granting)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate
 	// The third door, and the one that is not a lifecycle command: DELETE
