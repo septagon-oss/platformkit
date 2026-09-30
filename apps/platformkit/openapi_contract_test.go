@@ -30,6 +30,17 @@ import (
 
 const openapiGolden = "testdata/openapi.json"
 
+// contractHost is the address the checked-in document is rendered at. A document's
+// `servers` is the installation that published it — kit/httpx writes
+// "https://" + server.public_host there — and the artefact a device is generated
+// from must not carry the address of one test fixture's process, which is what
+// `platformkit.localhost` in apps/platformkit/app_test.go is. It is a host from
+// RFC 2606, so it names the role and no machine: a generated client takes its base
+// address from whoever configured the installation (the shell has a server field on
+// its sign-in form for exactly that), and a change to the fixture's own public_host
+// does not turn a contract no device depends on red.
+const contractHost = "platformkit.example"
+
 // deviceContractPaths is the set this contract promises a device: every address
 // named here answers at the reference composition and appears in the golden. It is
 // the mirror of TestEveryAliasRowOfTheReferenceApplicationLeadsSomewhereThatAnswers
@@ -58,6 +69,9 @@ var deviceContractPaths = []struct {
 // TestTheOpenAPIDocumentIsTheCompositionServed is the golden and the gate.
 func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
 	cfg, mods, fixture := deviceComposition(t)
+	// The contract is rendered at the reference installation's name, not at the
+	// address this fixture happens to listen on; see contractHost.
+	cfg.Server.PublicHost = contractHost
 	install(t, fixture.path)
 	start(t, cfg, mods, fixture.opts)
 
@@ -184,10 +198,18 @@ func TestTheServedDocumentCarriesNoEphemeralBytes(t *testing.T) {
 	if version, _ := info["version"].(string); version == "" {
 		t.Error("info.version is empty; the document says nothing about who published it")
 	}
-	for _, ephemeral := range []string{"/tmp", "127.0.0.1:", acmeHost, globexHost, adminEmail} {
+	for _, ephemeral := range []string{"/tmp", "127.0.0.1:", ".localhost", acmeHost, globexHost, adminEmail} {
 		if strings.Contains(string(body), ephemeral) {
 			t.Errorf("%s carries %q, which is a fact about one run and not about the contract", openapiGolden, ephemeral)
 		}
+	}
+	// The one address that is about the installation rather than the contract, said
+	// once and at the host the contract is rendered at.
+	servers, _ := doc["servers"].([]any)
+	if len(servers) != 1 {
+		t.Errorf("%s publishes %d servers; a generator needs one base address, which is contractHost", openapiGolden, len(servers))
+	} else if url, _ := wireMap(servers[0])["url"].(string); url != "https://"+contractHost {
+		t.Errorf("%s is published at %q, not at %q: see contractHost", openapiGolden, url, "https://"+contractHost)
 	}
 	for _, extension := range []string{"x-platformkit-surface", "x-platformkit-auth"} {
 		if !strings.Contains(string(body), extension) {
