@@ -232,10 +232,12 @@ type Options struct {
 	// composition that wires none offers no door rather than one that 404s.
 	Access AskForAccess
 
-	// Accessed is the kernel's record of one ask, in the request's own
-	// transaction beside the notices it wrote: kit/app publishes the event, which
-	// is where the payload types and the module catalogue live.
-	Accessed func(context.Context, AccessRecord)
+	// Accessed is the kernel's record of one ask, in the request's own transaction
+	// beside the notices it wrote: kit/app publishes the event, which is where the
+	// payload types and the module catalogue live. Its failure is the ask's failure —
+	// an event that did not commit rolls the notices back with it — so a composition
+	// that cannot write the trail refuses the ask rather than answering 202.
+	Accessed func(context.Context, AccessRecord) error
 }
 
 // WriteLimiter is the counting this kernel asks for and nothing more: it is the
