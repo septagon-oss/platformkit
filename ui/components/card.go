@@ -84,7 +84,11 @@ func cardNode(p CardProps, slots CardSlots, children []g.Node) g.Node {
 	}
 
 	nodes = append(nodes, body...)
-	if p.Clickable && p.Href != "" {
+	// A card given an address is a link. It used to take `Clickable` as well, and a card with `Href` and
+	// `Hoverable` but not `Clickable` rendered a hover shadow over an <article> that went nowhere: the pets
+	// adoption list's every card, which a UX walkthrough found on 2026-09-30 when an adopter could not open a
+	// single animal's page. An address the caller wrote is never dropped in silence.
+	if p.Href != "" {
 		return h.A(append(nodes, h.Href(p.Href))...)
 	}
 	return h.Article(nodes...)
@@ -183,7 +187,7 @@ func cardRootClasses(p CardProps, sectioned bool) string {
 	if p.Hoverable {
 		cl = cl.Merge(clCardHoverable)
 	}
-	if p.Clickable {
+	if p.Clickable || p.Href != "" {
 		cl = cl.Merge(clCardClickable)
 	}
 	return cl.Compile()
