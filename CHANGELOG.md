@@ -169,10 +169,16 @@ number would answer "how far behind is this tenant's queue now" with the wait of
 that went out yesterday, for as long as nobody published that name again. The ledger
 that owes the correction is per process, which is the scope the instrument has: a
 restart starts its collections from nothing. 80 of the 81
-boundaries the reference application registers — 69 operations,
-5 jobs, 7 subscriptions — carry a tenant on their span; the one that does not is
-`file-reconcile`, a sweep whose question crosses every tenant by construction. The
-tally counts what the composition registers, and each kind of boundary in it is pinned
+boundaries the reference application registers as operations and module
+declarations — 69 operations, 5 module jobs, 7 subscriptions — carry a tenant on
+their span; the one of those that does not is `file-reconcile`, a sweep whose
+question crosses every tenant by construction. That tally does not count the
+four jobs this package registers for itself — `outbox-relay`, `outbox-purge`,
+`limit-purge` and `schema-backfill` — and the run span of each carries no tenant
+either, for the same reason `file-reconcile`'s does: each is one pass over every
+tenant's rows, so the one tenant it could name would name none of them.
+`file-reconcile` is the one module boundary that carries no tenant, not the only
+boundary that does not. Each kind the tally counts is pinned
 by a case that reads a span back and asks whose tenant it names: an operation in
 `kit/httpx`, a transaction and a subscription in `kit/events`, a tenant's share of a
 run in `kit/jobs`. It was measured, not computed: no committed tool recomputes the 81, whose
