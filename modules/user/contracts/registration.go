@@ -49,6 +49,16 @@ type Registrations interface {
 	// with a password. Wrong email or lifecycle state, including replay after
 	// activation, conflicts. Credentials and roles remain unchanged.
 	VerifyEmail(context.Context, db.Tx[db.Tenant], uuid.UUID, string) (*User, error)
+	// ConfirmAddress is VerifyEmail's fact arrived at a different door: an
+	// authority outside this application — today the tenant's own identity
+	// provider — has confirmed this mailbox. It activates an invited or
+	// unverified account, which is the only way an account with no password
+	// becomes able to hold a session, and it is the user module that says so
+	// rather than whoever heard the confirmation. The address must be the one
+	// the row carries; an already-active account is returned unchanged and
+	// writes nothing; an account this tenant closed or is still reviewing
+	// conflicts. Credentials and roles remain unchanged.
+	ConfirmAddress(context.Context, db.Tx[db.Tenant], uuid.UUID, string) (*User, error)
 	// PendingRegistrations lists oldest first, then by ID, with bounded offset
 	// pagination. Zero limit uses the standard default; invalid bounds fail.
 	PendingRegistrations(context.Context, db.Tx[db.Tenant], int, int) (RegistrationPage, error)

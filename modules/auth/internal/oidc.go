@@ -131,8 +131,17 @@ func (p *Provider) of(ctx context.Context, tx db.Tx[db.Tenant]) (OIDC, bool, err
 				return OIDC{}, false, problem.New(http.StatusServiceUnavailable,
 					"this tenant's identity provider secret is not available to this installation")
 			}
+			// The mode and the roles travel with the four strings that build an
+			// authorization request, because the mode is what the two legs decide
+			// with: a tenant that says `disabled` is refused before anything is
+			// dialled, and a tenant that says `provision` is the tenant that said an
+			// address its provider verified is an account here. Dropping them here
+			// would leave every tenant answering as `existing` — the closed door
+			// open, the mode that provisions unable to fire — while the row, the
+			// trail and the control plane all said otherwise.
 			return OIDC{Issuer: settings.Issuer, ClientID: settings.ClientID, ClientSecret: secret,
-				RedirectPath: p.redirect(settings.RedirectPath)}, true, nil
+				RedirectPath: p.redirect(settings.RedirectPath),
+				Registration: settings.Registration, Roles: settings.Roles}, true, nil
 		}
 	}
 	if p.cfg.Issuer == "" {
@@ -309,6 +318,16 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		}
 		if err != nil {
 			return nil, rest.Fault(err)
+		}
+		// The provider confirmed this mailbox; the user module decides what that
+		// makes the person. Asking every time rather than when the row looks
+		// unfinished is the honest shape — this module does not hold the rule for
+		// who may sign in, and ConfirmAddress says nothing at all about a person
+		// who is already active. An account this tenant closed, or is still
+		// reviewing, conflicts here: the identity provider knowing an address does
+		// not open it, and the request commits nothing.
+		if user, err = users.ConfirmAddress(ctx, tx, user.ID, email); err != nil {
+			return nil, refusal(err)
 		}
 		session, _, err := svc.Open(ctx, tx, user.ID, ClientOf(r))
 		if err != nil {

@@ -20,7 +20,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
-	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -46,33 +45,6 @@ type EnvironmentSecrets struct{}
 // client secret.
 func (EnvironmentSecrets) Lookup(_ context.Context, ref string) (string, bool) {
 	return os.LookupEnv(ref)
-}
-
-// TenantProviders is the OIDCProviders over the tenant module: the read of the
-// tenant this request resolved to, spelled in this module's own terms so that
-// modules/auth never imports modules/tenant. The composition wires it; a test
-// wires a map.
-type TenantProviders interface {
-	OIDCOf(ctx context.Context, tx db.Tx[db.Tenant]) (*tenantcontracts.OIDCSettings, bool, error)
-}
-
-// tenantProviders is the adapter, and it is the only line in this module's
-// composition that knows both packages exist.
-// TenantProvidersOf is the composition's one line: the tenant module's read, in
-// this module's shape.
-func TenantProvidersOf(t TenantProviders) contracts.OIDCProviders { return provided{t} }
-
-type provided struct{ tenants TenantProviders }
-
-func (p provided) ProviderOf(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.OIDCProvider, bool, error) {
-	settings, ok, err := p.tenants.OIDCOf(ctx, tx)
-	if err != nil || !ok {
-		return nil, false, err
-	}
-	return &contracts.OIDCProvider{
-		Issuer: settings.Issuer, ClientID: settings.ClientID, SecretRef: settings.SecretRef,
-		RedirectPath: settings.RedirectPath, Registration: settings.Registration, Roles: settings.Roles,
-	}, true, nil
 }
 
 // OIDC is one OpenID Connect provider. It has the same shape as config.OIDC, so

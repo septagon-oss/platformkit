@@ -219,6 +219,16 @@ type Users interface {
 	ByEmail(ctx context.Context, tx db.Tx[db.Tenant], email string) (*usercontracts.User, error)
 	Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*usercontracts.User, error)
 	SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, password string) error
+	// ConfirmAddress records that an authority outside this application — the
+	// tenant's own identity provider, in the single sign-on leg — confirmed this
+	// mailbox. It is here because an address arriving from a provider is often a
+	// person this tenant has already invited and who has no password to set:
+	// without this command the callback can find them and still have nothing to
+	// open a session for, and the answer they get blames them for a secret they
+	// never had. Whether confirmation makes a person able to sign in is the user
+	// module's decision, and it refuses an account this tenant closed or has not
+	// yet approved.
+	ConfirmAddress(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) (*usercontracts.User, error)
 }
 
 // Notifier is what this module needs of the notification module to tell

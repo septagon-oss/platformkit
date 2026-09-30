@@ -147,14 +147,18 @@ func compose(cfg config.Config) composition {
 		// environment by reference, per request, so it is in no row, no outbox
 		// payload and no audit record.
 		OIDC:          auth.OIDCFromConfig(cfg.Auth.OIDC),
-		OIDCProviders: auth.TenantProvidersOf(tenants),
+		OIDCProviders: tenantProviders{tenants: tenants},
 		Secrets:       auth.EnvironmentSecrets{},
-		// Provision is refused rather than improvised: this application wires no
-		// Provisioner, so a tenant that sets `provision` behaves as `existing`
-		// and the operator is refused at the door instead of meeting an unknown
-		// person with no roles. The product that wants it wires one over the user
-		// module here, in one line, and decides which roles it hands out.
-		PublicHost: cfg.Server.PublicHost,
+		// A tenant that sets `provision` has said, at its own control-plane route,
+		// that an address its provider verified is an account here. This
+		// application honours that: the person is made over the user module — the
+		// adapter is in oidc.go, beside the other one — with the roles the tenant's
+		// row names and no others, and the address confirmation the callback
+		// records is what makes them able to sign in. A deployment that would
+		// rather not admit anyone leaves this field unwired, and auth then answers
+		// every tenant as `existing`: a refusal, and not a half-made person.
+		Provisioner: provisioner{users: users},
+		PublicHost:  cfg.Server.PublicHost,
 	})
 
 	// The file service is returned beside its manifest, as user's and

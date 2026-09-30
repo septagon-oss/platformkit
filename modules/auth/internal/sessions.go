@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -90,38 +91,65 @@ func (s *Service) RevokeSession(ctx context.Context, tx db.Tx[db.Tenant], userID
 }
 
 // RevokeAllSessions ends every session this person has and publishes one event
-// per row it removed, with All set. The rows are read before they go for that
-// reason and for no other: the event says which machine left, and the agent and
-// the address live in the row.
+// per row it removed, with All set. Each event names the machine that left —
+// which is what the trail is for — so the agent, the address and the expiry are
+// read out of the row as it goes rather than reconstructed afterwards.
 //
 // There is no `except`, so the person who asked is signed out of the page they
 // asked on — which is what "everywhere" means, and what the route then makes
 // obvious by clearing the cookie and sending them to the sign-in page.
 //
-// Two of these racing each other is idempotent: both delete the same rows and
-// the loser publishes nothing, because the DELETE that found nothing has
-// nothing to report. Nothing locks here for that reason; a row this command
-// deletes is not a row another command can be revising.
+// The read and the delete are one statement, and that is the whole of the
+// concurrency claim. Read-then-delete, two of these racing each other was not
+// idempotent: the loser's list was the state as it was a moment before, its
+// DELETE affected nothing, and it still published one revocation per row its
+// snapshot happened to name and returned that count — so the trail said a
+// machine left that nobody removed, twice. `DELETE … RETURNING` reports what
+// this transaction actually deleted, which is the same fact the one-session
+// command gets out of its row lock, from the statement that did the work. The
+// loser of that race now takes no rows, publishes nothing and reports none, and
+// nothing locks for the purpose: a row this command deletes is not a row another
+// command can be revising.
 func (s *Service) RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error) {
-	var rows []contracts.Session
-	if err := tx.DB().Where("user_id = ?", userID).Find(&rows).Error; err != nil {
-		return 0, fmt.Errorf("auth: read the sessions to revoke them: %w", err)
+	type left struct {
+		ref    string
+		agent  string
+		ip     string
+		expiry time.Time
 	}
-	if len(rows) == 0 {
-		return 0, nil
+	rows, err := tx.DB().Raw(
+		"DELETE FROM sessions WHERE user_id = ? RETURNING id_hash, user_agent, ip, expires_at", userID,
+	).Rows()
+	if err != nil {
+		return 0, fmt.Errorf("auth: revoke every session of %s: %w", userID, err)
 	}
-	if err := tx.DB().Where("user_id = ?", userID).Delete(&contracts.Session{}).Error; err != nil {
+	// Collected before anything is published: the cursor holds this transaction's
+	// connection, and the outbox insert is another statement on it.
+	var gone []left
+	for rows.Next() {
+		var (
+			hash []byte
+			row  left
+		)
+		if err := rows.Scan(&hash, &row.agent, &row.ip, &row.expiry); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("auth: read the sessions it revoked: %w", err)
+		}
+		row.ref = hex.EncodeToString(hash)
+		gone = append(gone, row)
+	}
+	if err := rows.Close(); err != nil {
 		return 0, fmt.Errorf("auth: revoke every session of %s: %w", userID, err)
 	}
 	at := db.Now()
-	for _, row := range rows {
+	for _, row := range gone {
 		err := events.Publish(ctx, tx, contracts.EventSessionRevoked, contracts.SessionRevoked{
-			UserID: userID, SessionRef: hex.EncodeToString(row.IDHash),
-			UserAgent: row.UserAgent, IP: row.IP, ExpiresAt: row.ExpiresAt, All: true, At: at,
+			UserID: userID, SessionRef: row.ref,
+			UserAgent: row.agent, IP: row.ip, ExpiresAt: row.expiry, All: true, At: at,
 		})
 		if err != nil {
 			return 0, err
 		}
 	}
-	return len(rows), nil
+	return len(gone), nil
 }
