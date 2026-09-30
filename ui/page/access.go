@@ -45,16 +45,12 @@ func MountAccess(r *httpx.Router, s Shell) {
 	Serve(r, s, Route{ID: "app-access-request", Method: http.MethodPost, Path: askPath,
 		Summary: "Ask for the access this page refused",
 		Errors:  []int{http.StatusUnprocessableEntity, http.StatusTooManyRequests, http.StatusServiceUnavailable},
-	}, httpx.SignedIn(), func(ctx context.Context, req Request, in *askForm) (View, error) {
+	}, httpx.SignedIn(), func(ctx context.Context, _ Request, in *askForm) (View, error) {
 		form, err := url.ParseQuery(string(in.RawBody))
 		if err != nil {
 			return View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
 		}
-		// The refused request's language travels with the ask, so the notice a
-		// manager reads can be worded in the words the person who asked was
-		// reading. Whether to prefer the recipient's own instead is the
-		// composition's, and it owns the wording.
-		if err := httpx.Ask(httpx.WithRefusalLanguage(ctx, spoken(req)), httpx.AccessAsk{
+		if err := httpx.Ask(ctx, httpx.AccessAsk{
 			Permission: form.Get("permission"), Path: form.Get("path"),
 		}); err != nil {
 			return View{}, err
@@ -79,15 +75,6 @@ func MountAccess(r *httpx.Router, s Shell) {
 		}
 		return v, nil
 	})
-}
-
-// language is the tag this page was drawn in, or "" for a shell with no
-// catalogue at all.
-func spoken(r Request) string {
-	if r.Locale == nil {
-		return ""
-	}
-	return r.Locale.Language
 }
 
 // askForm is the submitted refusal-page form: the grant and the address, both

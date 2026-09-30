@@ -51,16 +51,18 @@ const (
 // AccessNotice is one ask, addressed to one person who may grant it. The words
 // and the deep link are the composition's, because only the product knows that a
 // person's roles are shown at /app/user/users/<id>; the kernel names the facts
-// and nothing else. Language is the refused request's negotiated tag — "" when
-// the shell composes no catalogue — which the composition may trade for the
-// recipient's own preference.
+// and nothing else — including the language they are written in, which is the
+// composition's wording, and today is English whatever the asker was reading. The
+// refused request's negotiated tag is therefore not carried here: a field no
+// composition reads is a field the kernel does not have. When a product ships a
+// second wording for this notice, the tag to hand over is the one ui/page
+// negotiates, and the place it belongs is this struct.
 type AccessNotice struct {
 	To          uuid.UUID
 	Requester   uuid.UUID
 	Permission  string
 	Label       string
 	RefusedPath string
-	Language    string
 }
 
 // AskForAccess is the reach: who to tell, and how. An error from Recipients is
@@ -86,9 +88,11 @@ type AccessAsk struct {
 }
 
 // AccessRecord is the ask the kernel records: AccessAsk answered with how many
-// people were told. Notified is in the payload because "sent" is only true of the
-// notices that were written, and a 0 is a fact an operator can read out of the
-// trail rather than a page that claimed something it did not do.
+// people were told. Notified counts the notices this command wrote — the tenant's
+// holders of role management, less the asker, who is never told their own ask —
+// and not the length of the recipient list, because "sent" is only true of a
+// notice that exists. A 0 is a fact an operator can read out of the trail rather
+// than a page that claimed something it did not do.
 type AccessRecord struct {
 	Permission string
 	Label      string
@@ -105,9 +109,12 @@ type AccessRecord struct {
 // kit/app mounts and the browser one ui/page mounts — call this, so neither is a
 // second implementation of the command (docs/adr/0007).
 type accessDoor struct {
-	ask       AskForAccess
-	limiter   WriteLimiter
-	record    func(context.Context, AccessRecord)
+	ask     AskForAccess
+	limiter WriteLimiter
+	// record writes the ask beside the notices, in the request's transaction, and
+	// its failure is the ask's own failure: an event that did not commit is an ask
+	// that rolls back with the notices it was meant to travel with.
+	record    func(context.Context, AccessRecord) error
 	catalogue func() []tenancy.Grant
 }
 
@@ -181,6 +188,10 @@ func Ask(ctx context.Context, in AccessAsk) error {
 		// decide, and nothing was written.
 		return problem.New(http.StatusServiceUnavailable, "the people who grant access could not be reached right now")
 	}
+	// written, not len(recipients): the asker is in that list and is skipped below,
+	// and a list of people who could be told is not the same claim as the number of
+	// notices this transaction wrote.
+	written := 0
 	for _, to := range recipients {
 		if to == p.UserID {
 			// Asking your administrator when you are one is not a notice.
@@ -188,10 +199,11 @@ func Ask(ctx context.Context, in AccessAsk) error {
 		}
 		if err := d.ask.Tell(ctx, tx, AccessNotice{
 			To: to, Requester: p.UserID, Permission: in.Permission, Label: label,
-			RefusedPath: in.Path, Language: RefusalLanguage(ctx),
+			RefusedPath: in.Path,
 		}); err != nil {
 			return err
 		}
+		written++
 	}
 	if d.record != nil {
 		req, _ := RequestFrom(ctx)
@@ -199,10 +211,15 @@ func Ask(ctx context.Context, in AccessAsk) error {
 		if req != nil {
 			method = req.Method
 		}
-		d.record(ctx, AccessRecord{
+		// An ask whose event did not commit is not an ask: the notices went into this
+		// same transaction, so the failure is returned and both roll back together
+		// rather than leaving a bell with no trail or a trail with no notices.
+		if err := d.record(ctx, AccessRecord{
 			Permission: in.Permission, Label: label, Method: method, Path: path,
-			RequestID: requestIDFrom(ctx), UserID: p.UserID, Notified: len(recipients),
-		})
+			RequestID: requestIDFrom(ctx), UserID: p.UserID, Notified: written,
+		}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -242,20 +259,4 @@ func tooMany(after time.Duration) error {
 	seconds := int64(after.Seconds()) + 1
 	return problem.New(http.StatusTooManyRequests,
 		CodeLimitExhausted+": you have asked for this too often; try again in "+strconv.FormatInt(seconds, 10)+" seconds")
-}
-
-// RefusalLanguage is the tag this request's refusal is answered in, or "". It is
-// set by the page layer, which is where a language is negotiated; a JSON ask
-// carries none, and the composition then words the notice in the recipient's own
-// preference.
-func RefusalLanguage(ctx context.Context) string {
-	tag, _ := ctx.Value(refusalLanguageKey{}).(string)
-	return tag
-}
-
-type refusalLanguageKey struct{}
-
-// WithRefusalLanguage records the negotiated tag for the layers below the page.
-func WithRefusalLanguage(ctx context.Context, tag string) context.Context {
-	return context.WithValue(ctx, refusalLanguageKey{}, tag)
 }
