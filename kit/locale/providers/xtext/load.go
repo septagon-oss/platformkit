@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/locale"
@@ -42,7 +43,9 @@ import (
 // locale that needs no file — a key with no entry there is untranslated, not
 // missing, which is how gettext treats the text in the code. Every other
 // locale a source ships must answer for every key that source ships in any of
-// them, and must not renumber a sentence's arguments: both conditions are
+// them, and must ask for the same arguments its siblings do — the same positions and
+// conversions, in whatever order its own sentence reads them, since `%[2]s` exists so a
+// translation can put the second argument first. Both conditions are
 // refused here, at composition, rather than as a page that quietly answers in
 // English. The first is each source's own — a layer may ship one locale and a
 // product one key, which is what the merge is for — and the second is the
@@ -342,9 +345,27 @@ func checkParity(name, fallback string, entries map[string]map[string]string) {
 	}
 }
 
-// verbs is the format specifiers a copy carries, in the order it carries them.
-// Two copies of one key interpolate what they are given in that order, so the
-// sequence is compared as the text it is.
+// verbs is the arguments a copy asks fmt for, each spelled with the position it
+// fills: `Novo %s para %s` and `New %[1]s for %[2]s` are both `"1:%s 2:%s"`, and
+// `Novo %[2]s para %[1]s` is the same pair again, because the two sentences ask for
+// the same two arguments and differ only in which one they read first.
+//
+// Two copies of one key are rendered with the same arguments — the call site is one
+// line of Go and every language reads it — so what the checks compare is that pair
+// of (position, conversion) lists and not the text of the verbs. Position is part of
+// the answer because a copy may name its arguments instead of taking them in order:
+// `%[2]s` is Go's only way to say "put the second argument first", and re-ordering
+// is the commonest thing a translated sentence has to do to the one it translates.
+// Reading the verbs alone would call `New %[1]s for %[2]s` and `New %[2]s for %[1]s`
+// the same composition when they print the opposite pairs, and — the other way round
+// — would refuse a re-ordering that changed nothing a caller has to supply. The
+// sorted list is what makes the comparison a set of positions rather than a spelling.
+//
+// An unnumbered verb takes the next position, which is fmt's own rule and the only
+// reading that keeps the two halves of one copy comparable: `Novo %s para %[2]s` puts
+// its plain verb at 1 and its numbered one at 2, as fmt will when it renders it. A
+// copy that numbers one argument and leaves another plain past it is fmt's error to
+// report at the page, not this guard's to guess about.
 //
 // A doubled percent is how a gettext copy spells one literal percent sign, and it
 // is one character to the reader of the sentence: the pair is stepped over rather
@@ -356,10 +377,33 @@ func checkParity(name, fallback string, entries map[string]map[string]string) {
 // (`Save 20% on %d items` really does ask fmt for an octal argument), and still
 // refused: this removes escaped pairs, nothing else.
 func verbs(copy string) string {
-	return strings.Join(verbPattern.FindAllString(strings.ReplaceAll(copy, "%%", ""), -1), " ")
+	asked := strings.ReplaceAll(copy, "%%", "")
+	var slots []string
+	next := 1
+	for _, found := range verbPattern.FindAllStringSubmatch(asked, -1) {
+		at, verb := strings.Trim(found[1], "[]"), found[2]
+		if at == "" {
+			at = strconv.Itoa(next)
+		}
+		if position, err := strconv.Atoi(at); err == nil {
+			next = position + 1
+		}
+		slots = append(slots, at+":"+verb)
+	}
+	sort.Slice(slots, func(i, j int) bool {
+		lat, lverb, _ := strings.Cut(slots[i], ":")
+		rat, rverb, _ := strings.Cut(slots[j], ":")
+		lpos, _ := strconv.Atoi(lat)
+		rpos, _ := strconv.Atoi(rat)
+		if lpos != rpos {
+			return lpos < rpos
+		}
+		return lverb < rverb
+	})
+	return strings.Join(slots, " ")
 }
 
-var verbPattern = regexp.MustCompile(`%[-+# 0]*[0-9.]*[a-zA-Z]`)
+var verbPattern = regexp.MustCompile(`%(\[[0-9]+\])?([-+# 0]*[0-9.]*[a-zA-Z])`)
 
 // files is the provider Load composed: the merged copy, and the languages the
 // files named — the set a request may be answered in, which includes the source

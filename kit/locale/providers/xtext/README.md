@@ -62,7 +62,9 @@ came from, and `language.Parse` is what decides
 a file's name is a tag; the source-language promise is the one `Text(key, fallback)` already makes, which is why the fallback
 needs no file of its own. **Added:** the merge in argument order, the `Owns` guard,
 and the refusals a source's files can meet — a locale file missing a key its own
-source answers for, a blank copy, a copy that changed or reordered its arguments, an
+source answers for, a blank copy, a copy that changed the arguments its other copies
+interpolate (re-ordering them is legal and is what `%[2]s` is for: what is refused is a
+copy asking for a different *set* of arguments, not one reading them in another order), an
 argument list two sources left disagreeing about one key, an owned key answered by a
 later source, an unreadable name — none of which existed to
 be composed before this seam. **Made reusable:** the one call a composition makes, so
