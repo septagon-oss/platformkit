@@ -206,6 +206,14 @@ func refusal(err error) error {
 		return problem.New(http.StatusUnauthorized, "those credentials are not right")
 	case errors.Is(err, contracts.ErrTooManyAttempts):
 		return problem.New(http.StatusTooManyRequests, "too many failed attempts for that address; wait and try again")
+	case errors.Is(err, contracts.ErrFactorRequired):
+		// 401, and the same shape as every other login answer, because the
+		// caller is not signed in and everything else about a 401 is true. What
+		// it says is the one thing the person needs: the password was right and
+		// one more thing is missing. It is not 403, which here means "you got in
+		// and may not do that", and it is not 403 with a reset hint, which would
+		// send a person whose phone is dead down a path that cannot help them.
+		return problem.New(http.StatusUnauthorized, "that password is right; this account also answers with a second factor")
 	}
 	return rest.Fault(err)
 }

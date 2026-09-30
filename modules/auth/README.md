@@ -79,3 +79,68 @@ a user id and no list can name a session by one. **Made reusable:**
 provider cache keyed by issuer rather than by tenant, so two tenants sharing a
 door discover it once; and the discovery-port shape itself — a module that asks
 its composition per request instead of holding a client it resolved at boot.
+
+## A second factor
+
+A password proves something was typed. A second factor proves something was
+carried, and until `000031_auth_factors.up.sql` the first proof was the only
+proof: a leaked password *was* the account, with every session and revocation in
+this schema guarded by it.
+
+`contracts.Factors` is the capability, and it is its own interface rather than
+more methods on `Service` for the reason the mailer and the limiter are their own
+ports: a composition that wants passwords only composes none of this. The routes
+mount only for a deployment that set `auth.factor_key`, the key that seals an
+enrolled secret at rest — with no key there is no door that can only answer
+"unavailable", and signing in stays exactly as it was.
+
+```
+POST   /api/v1/auth/factors/totp/begin     SignedIn   the secret, once, base32 and as an otpauth URI
+POST   /api/v1/auth/factors/totp/finish    SignedIn   enrols it, and hands out the recovery codes
+GET    /api/v1/auth/factors                SignedIn   what this account proves beside its password
+DELETE /api/v1/auth/factors/{id}           SignedIn   withdraw one; the last is refused
+POST   /api/v1/auth/factors/recovery/rotate SignedIn  retire every unused code, issue a fresh set
+POST   /api/v1/auth/challenge/verify       Public     the second half of a sign-in, and the cookie
+```
+
+`Login` does the deciding in one branch: the password checked out, and if this
+person holds a factor the answer is `ErrFactorRequired` — no session, no
+`auth.logged_in`, and no `auth.login_failed` either, because the password was
+right and the trail should not record a success as an attack. The challenge route
+is `httpx.Public()` authorisation on the workspace surface, the shape
+`/login` and `/password/reset` already use: the caller has no session by design,
+and the answer to a correct code is a session cookie. The anonymous surface sets
+no cookie, so a challenge answered there could sign nobody in.
+
+TOTP is RFC 6238 in `internal/totp.go` over `crypto/hmac` — the register's own
+rule for this capability (`T-0013`: nothing beyond the standard library and
+`x/crypto`), and the ~30 lines are checkable against the RFC in one sitting; its
+Appendix B vectors are in `totp_test.go`, checked against an independent
+implementation rather than against this one. Recovery codes are 128 bits from
+`crypto/rand`, hex, hashed with SHA-256 for the reason `sessions.id_hash` gives:
+the input is not something a person chose, so a slow hash buys nothing. A
+correct code is a nonce: the factor row remembers the highest step it accepted
+(`last_step`) and the spend is `UPDATE … WHERE last_step < ?`, which is the
+refusal and the record in one statement.
+
+### Deliberately not here
+
+* **No `factor_challenges` table.** RFC 6238's step *is* the challenge; the only
+  state a table would add is "which steps were spent", which is the one column
+  above. Attempts are capped per address instead — see the next bullet.
+* **`Limiter.FactorVerify` is not new**: the challenge route reuses `Redeemed`,
+  the forgotten-password redemption cap. It is the same decision — how often may
+  one address spend a credential this module issued — and a second counter
+  meaning the same thing as the first is two knobs for one policy. Six digits
+  across three steps is 3×10⁶ guesses per window, which is nothing to a script,
+  so this route needs a rate limit and not only a wide space.
+* **No passkeys.** WebAuthn is `github.com/go-webauthn/webauthn` plus its
+  CBOR/COSE tree — a new module dependency, priced in its own `build(budget)`
+  commit, and a `webauthn.Config` built per request from the resolved host. That
+  is a round of its own and this one did not take it; the `Kind` field on
+  `Factor` and on the two factor events is where it lands when it does, and
+  nothing above has to change for it.
+* **No bearer tokens** (the brief's item 4): no token table, nothing issued as
+  `Authorization: Bearer`, and no `Principal.Permissions`. Still open.
+* **No factor page.** The JSON routes are the surface; a screen would be the
+  shell's, and this module's own nav entry is the sessions one.

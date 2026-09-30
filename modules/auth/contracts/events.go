@@ -53,6 +53,10 @@ var Events = []events.Declared{
 	events.Declare[PasswordReset](EventPasswordReset),
 	events.Declare[RoleSet](EventRoleSet),
 	events.Declare[SessionRevoked](EventSessionRevoked),
+	events.Declare[FactorEnrolled](EventFactorEnrolled),
+	events.Declare[FactorWithdrawn](EventFactorWithdrawn),
+	events.Declare[RecoveryCodesIssued](EventRecoveryCodesIssued),
+	events.Declare[RecoveryCodeUsed](EventRecoveryCodeUsed),
 	events.Declare[RegistrationRequested](EventRegistrationRequested),
 	events.Declare[VerificationRequested](EventVerificationRequested),
 }
@@ -137,5 +141,65 @@ type LoginFailed struct {
 	Email  string    `json:"email"`
 	IP     string    `json:"ip,omitempty"`
 	Locked bool      `json:"locked"`
+	At     time.Time `json:"at"`
+}
+
+// The second factor's three events, and the one that closes a set.
+//
+// None of them carries a secret, a code or a step. An event is copied into the
+// audit trail and delivered to anything subscribed, so a payload naming a
+// credential would turn the trail into a bag of spare factors — which is the
+// reason these four say only that a factor was made, stopped, spent or replaced,
+// and by whom. The one number they carry is a count, because "ten codes were
+// issued" is a fact about an account and "here is one" is a key.
+const (
+	// EventFactorEnrolled: this person proved a second thing and the platform
+	// wrote it down. Kind is which thing, so the trail distinguishes a phone
+	// from a security key without this module naming either.
+	EventFactorEnrolled = "auth.factor_enrolled"
+	// EventFactorWithdrawn: one factor stopped working, and how many are left,
+	// which is the difference between "swapped phones" and "turned the account
+	// back into a password". The latter cannot happen here, and the field is how
+	// a reader of the trail can see that it did not.
+	EventFactorWithdrawn = "auth.factor_withdrawn"
+	// EventRecoveryCodesIssued: a set was handed out. It says how many, never
+	// which.
+	EventRecoveryCodesIssued = "auth.recovery_codes_issued"
+	// EventRecoveryCodeUsed: one was spent to sign in. It is the entry an owner
+	// reads afterwards and the only hint that somebody is in with the codes
+	// rather than with the device — which is why the use is an event even though
+	// the sign-in itself is a session row and a logged_in event.
+	EventRecoveryCodeUsed = "auth.recovery_code_used"
+)
+
+// FactorEnrolled is the payload of EventFactorEnrolled.
+type FactorEnrolled struct {
+	UserID   uuid.UUID `json:"userId"`
+	FactorID uuid.UUID `json:"factorId"`
+	Kind     string    `json:"kind" enums:"totp" example:"totp"`
+	At       time.Time `json:"at"`
+}
+
+// FactorWithdrawn is the payload of EventFactorWithdrawn.
+type FactorWithdrawn struct {
+	UserID    uuid.UUID `json:"userId"`
+	FactorID  uuid.UUID `json:"factorId"`
+	Kind      string    `json:"kind" enums:"totp" example:"totp"`
+	Remaining int       `json:"remaining" example:"1"`
+	At        time.Time `json:"at"`
+}
+
+// RecoveryCodesIssued is the payload of EventRecoveryCodesIssued.
+type RecoveryCodesIssued struct {
+	UserID uuid.UUID `json:"userId"`
+	Count  int       `json:"count" example:"10"`
+	At     time.Time `json:"at"`
+}
+
+// RecoveryCodeUsed is the payload of EventRecoveryCodeUsed. It carries no
+// identifying byte of the code that was spent: which of the ten is a fact only
+// the row knows, and the row is deleted by the sweep.
+type RecoveryCodeUsed struct {
+	UserID uuid.UUID `json:"userId"`
 	At     time.Time `json:"at"`
 }

@@ -101,6 +101,15 @@ auth:
     client_secret: ""
     redirect_path: "/api/v1/auth/oidc/callback"
 
+  # The key that seals a second factor's shared secret at rest. Empty — the
+  # default — offers no second factor at all: the enrolment routes are not
+  # mounted, so signing in stays password-only rather than opening a door that
+  # can only answer "unavailable". Set it in PLATFORMKIT_AUTH_FACTOR_KEY, never
+  # here: an attacker with a database copy and this key holds working second
+  # factors, and without it holds sealed bytes. Rotating it invalidates every
+  # enrolled factor, which is a decision to make having withdrawn them.
+  factor_key: ""
+
 # The one outgoing mail server. An empty host — which is the default — means
 # there is none: every notification is still recorded and the ones marked for
 # email are logged rather than sent, which is what a development machine wants

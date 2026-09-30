@@ -51,6 +51,13 @@ type Service struct {
 	// it from another goroutine an hour later, so it is guarded.
 	mu        sync.RWMutex
 	catalogue []tenancy.Grant
+
+	// factorKey seals and opens a factor secret. EnableFactors sets it, and a
+	// service that was never handed one writes no factor at all: an empty key is
+	// not a weaker envelope, it is the absence of one. Guarded by the mutex above
+	// for the reason catalogue is — module.go sets it from the wiring path while
+	// requests are already reading it.
+	factorKey []byte
 }
 
 // Declare records the permissions the composition defines. module.go calls it
@@ -133,6 +140,24 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 		return nil, nil, s.fail(ctx, email, from)
 	}
 	s.limiter.Succeeded(ctx, email)
+	// The password arrived. Whether that is enough is a fact about the account
+	// rather than about this request: a person who enrolled a second factor is
+	// not signed in by the first half of their own sign-in, and opening a
+	// session here and taking it away afterwards would be a window in which a
+	// stolen password was a stolen account for as long as the code took to type.
+	//
+	// Nothing is published from this branch. auth.login_failed is the trail's
+	// record of an attempt that did not get in with what it had; this one did,
+	// and the answer it got is a step rather than a failure. auth.logged_in is
+	// not published either, and that is the point: there is no session, so the
+	// trail that says "signed in" would be describing a row that does not exist.
+	required, err := s.factorEnrolled(ctx, tx, user.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if required {
+		return nil, nil, contracts.ErrFactorRequired
+	}
 	session, identity, err := s.open(ctx, tx, user, from, "password")
 	if err != nil {
 		return nil, nil, err

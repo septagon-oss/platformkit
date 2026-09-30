@@ -146,6 +146,7 @@ func compose(cfg config.Config) composition {
 		// send their people to two issuers. The secret is resolved from the
 		// environment by reference, per request, so it is in no row, no outbox
 		// payload and no audit record.
+		FactorKey:     cfg.Auth.FactorKey,
 		OIDC:          auth.OIDCFromConfig(cfg.Auth.OIDC),
 		OIDCProviders: tenantProviders{tenants: tenants},
 		Secrets:       auth.EnvironmentSecrets{},

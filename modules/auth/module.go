@@ -116,6 +116,14 @@ type Deps struct {
 	// behaves.
 	OIDCProviders contracts.OIDCProviders
 
+	// FactorKey is the deployment's key for sealing a second factor's shared
+	// secret at rest. Empty — which is the default — means the factor routes are
+	// not mounted at all: without a key the only secret this module could write
+	// is a plaintext one, and a table of those is a backup an attacker can use,
+	// which is the thing this capability exists not to do. A deployment that sets
+	// no key signs people in exactly as it did before the table existed.
+	FactorKey string
+
 	// Secrets resolves the reference a tenant's row holds into the client secret
 	// it names. The reference is what is in the database, the outbox and the
 	// audit trail; the secret is in the environment and in no row. A composition
@@ -224,6 +232,14 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			// roles name a permission nothing defines any more.
 			svc.Declare(s.Permissions())
 			internal.RegisterRoutes(s, svc, cookies)
+			// The factor key is the gate, and it is a deployment's setting
+			// rather than a fact about which other modules were composed: a
+			// composition with the key mounts the routes, one without it does
+			// not, and nothing here looks at a module list to decide.
+			if deps.FactorKey != "" {
+				svc.EnableFactors([]byte(deps.FactorKey))
+				internal.RegisterFactorRoutes(s, svc, cookies)
+			}
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(s, svc)
 			}
