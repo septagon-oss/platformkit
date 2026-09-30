@@ -1,0 +1,11 @@
+{
+  "permission.site:manage": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "gerir o site",
+    "plural": {
+      "": "gerir o site"
+    }
+  }
+}

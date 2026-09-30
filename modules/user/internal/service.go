@@ -110,6 +110,9 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// as one: see contracts.Granting. Only the roles this write *adds* are
 	// asked about, and only the administering ones, so a refusal here can never
 	// be the reason a tenant cannot take a role back.
+	// The grant question first, whoever the caller is: see
+	// contracts.Granting's note about the caller that is not a person, which is a
+	// composition acting and not a promotion somebody asked for.
 	if added, err := s.addedAdministering(ctx, tx, was, want); err != nil {
 		return nil, err
 	} else if len(added) > 0 {

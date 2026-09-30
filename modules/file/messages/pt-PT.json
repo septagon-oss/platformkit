@@ -1,0 +1,20 @@
+{
+  "permission.file:read": {
+    "references": [
+      "modules/file/module.go"
+    ],
+    "translation": "ler ficheiros",
+    "plural": {
+      "": "ler ficheiros"
+    }
+  },
+  "permission.file:manage": {
+    "references": [
+      "modules/file/module.go"
+    ],
+    "translation": "gerir ficheiros",
+    "plural": {
+      "": "gerir ficheiros"
+    }
+  }
+}
