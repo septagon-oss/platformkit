@@ -286,6 +286,8 @@ type Service interface {
 	// It is deliberately not a login door. Signing in by handle is a separate
 	// decision with an enumeration surface of its own, and it belongs to the auth
 	// module, which owns what a failed attempt costs.
+	ByHandle(ctx context.Context, tx db.Tx[db.Tenant], handle string) (*User, error)
+
 	// Holders is the people in this tenant holding at least one of roles, one id
 	// each: active, not soft-deleted, and it is User.CanAdminister that decides,
 	// so this query and the floor that protects the last administrator agree by
@@ -303,8 +305,6 @@ type Service interface {
 	// difference between notifying everybody we appointed and notifying
 	// everybody who could act.
 	Holders(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error)
-
-	ByHandle(ctx context.Context, tx db.Tx[db.Tenant], handle string) (*User, error)
 
 	// ByEmail is the login lookup: the user of this tenant with that address,
 	// compared without case. It is ErrNotFound for an address nobody has.
