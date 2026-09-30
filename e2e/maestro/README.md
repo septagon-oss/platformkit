@@ -1,8 +1,8 @@
 # The device journey
 
-One flow, run by this repository's own CI: a device signs in and reads the workspace
-catalog at the address the kernel owns it at, then draws the screen one of its
-entries named. It is the device-shaped half of the mobile contract; the other half is
+One flow, which this repository's own mobile job runs: a device signs in and reads
+the workspace catalog at the address the kernel owns it at, then draws the screen one
+of its entries named. It is the device-shaped half of the mobile contract; the other half is
 the document at [testdata/openapi.json](../../apps/platformkit/testdata/openapi.json),
 gated by [openapi_contract_test.go](../../apps/platformkit/openapi_contract_test.go).
 
