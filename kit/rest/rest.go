@@ -121,7 +121,7 @@ const (
 )
 
 // Event is the full name of one of this Spec's events, "<module>.<entity>.<verb>".
-// A module lists these in its manifest's Events, and kit/app refuses to start
+// A module lists these in its manifest's Declared, and kit/app refuses to start
 // when a Spec would publish one that nothing declared.
 func (s Spec[T]) Event(verb string) string { return s.Module + "." + s.Entity + "." + verb }
 
@@ -129,6 +129,18 @@ func (s Spec[T]) Event(verb string) string { return s.Module + "." + s.Entity + 
 // without spelling them.
 func (s Spec[T]) Events() []string {
 	return []string{s.Event(Created), s.Event(Updated), s.Event(Deleted)}
+}
+
+// Declared is the same three names, each with T as its payload type: what
+// emit marshals is the entity, so the manifest's promise about a Spec's event is
+// the entity type and nothing else. A module that mounts a Spec puts this in
+// its manifest rather than writing the three types out beside the three names.
+func (s Spec[T]) Declared() []events.Declared {
+	return []events.Declared{
+		events.Declare[T](s.Event(Created)),
+		events.Declare[T](s.Event(Updated)),
+		events.Declare[T](s.Event(Deleted)),
+	}
 }
 
 // Schema describes the entity to anything that did not compile against it: the

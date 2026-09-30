@@ -103,7 +103,7 @@ func Module(deps Deps) module.Module {
 	return module.Module{
 		Name:          "admin",
 		Permissions:   []module.Permission{{Key: PermissionGalleryRead}},
-		Events:        nil,
+		Declared:      nil,
 		Nav:           nil,
 		Jobs:          nil,
 		Subscriptions: nil,
