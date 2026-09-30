@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -36,6 +37,9 @@ func bootstrap(args []string) error {
 	host := fs.String("host", "", "Host the first tenant is served at")
 	name := fs.String("name", "", "Display name of the first tenant")
 	email := fs.String("admin-email", "", "Address of the first administrator")
+	var spoken languagesFlag
+	fs.Var(&spoken, "language", "A language this tenant's people are served in, repeatable; "+
+		"the language the installation's copy is written in is always one of them")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -77,6 +81,21 @@ func bootstrap(args []string) error {
 		// the hook inside Create, in this same transaction. See modules.go.
 		_, err = c.users.Provision(ctx, tx, t.ID, *email, "", password,
 			[]string{authcontracts.RoleAdmin})
+		if err != nil {
+			return err
+		}
+		// Which languages the first tenant is served in is a deployment's own
+		// answer, and this is where it can say it: the module's create writes the
+		// one language its copy is written in and nothing else, because a tenant's
+		// set is a declaration and a create carries none. Said here rather than
+		// written to the table afterwards, so an installation is still whole or
+		// untouched, and through the module's own command rather than a second
+		// INSERT, so the set is the one the installation has copy for.
+		if len(spoken) > 0 {
+			_, err = c.tenants.SetLocale(ctx, tx, t.ID, tenantcontracts.SetLocale{
+				Default: t.DefaultLocale, Supported: spoken,
+			})
+		}
 		return err
 	})
 	if err != nil {
@@ -90,6 +109,17 @@ func bootstrap(args []string) error {
 	if generated {
 		fmt.Fprintf(os.Stderr, "\n  password for %s: %s\n  It is not stored and will not be shown again.\n\n", *email, password)
 	}
+	return nil
+}
+
+// languagesFlag is a repeatable --language: the flag package appends through Set
+// rather than overwriting, which is how a list arrives on a command line.
+type languagesFlag []string
+
+func (l *languagesFlag) String() string { return strings.Join(*l, ",") }
+
+func (l *languagesFlag) Set(tag string) error {
+	*l = append(*l, tag)
 	return nil
 }
 

@@ -49,43 +49,75 @@ language, not missing entries in unrelated languages. Review catalog completenes
 before claiming a fully translated screen, and mark deliberately mixed-language
 copy appropriately.
 
-An empty `View.Language` uses the selected locale. An explicit view language still
-wins, and the frame receives that language's formatter. A handler rendering an
-explicit language must select it before formatting its body; `SelectLocale` also
-works for that case and for non-HTTP consumers. Language metadata cannot translate
-already rendered text. Negotiated pages emit `Content-Language`, `Vary:
-Accept-Language` and `Cache-Control: private, no-store` so an account preference
-cannot leak through a shared response cache. Existing unconfigured shells retain
-their behavior; untranslated recovery notices keep their English tags. A refusal
-page (`FaultHandler`, the page a kernel guard answers a browser with) reads the
-same contract: it negotiates from the request's `Accept-Language` — a guard
-answers before a tenant, a session or a stored preference exists, so the header
-the caller brought is all there is to negotiate from — and shows the sentence this
-shell ships under `fault.<CODE>`, where the codes are `kit/httpx`'s published
-`Code*` constants and the table lives in `fault.go`. Every guard that can refuse a
-request a person may be looking at answers through that renderer
-(`API.refuse`), which is the condition that makes the table worth filling: a code
-no page is ever shown for is a key no copy can be written under. A refusal with no
-code is keyed by its status (`fault.404`, `fault.405`, `fault.500`) — the three
-verdicts whose sentence `kit/httpx` writes and no module does. What a translation
-replaces is the sentence and not the guard's whole line: a refusal that carries a
-code keeps it (`AUTH_DENIED: Não pode fazer isto.`), because the code is what a
-person reads back to support and an operator greps a log for. The kernel's English
-text is the fallback, and the page declares the language of the sentence it
-actually shows: a catalog with no entry for the code leaves an English page
-declaring `en`.
+An empty `View.Language` uses the selected locale. An explicit view language still wins,
+and the frame receives that language's formatter. A handler rendering an explicit
+language must select it before formatting its body; `SelectLocale` also works for that
+case and for non-HTTP consumers. Language metadata cannot translate already rendered
+text. Negotiated pages emit `Content-Language`, `Vary: Accept-Language` and `Cache-
+Control: private, no-store` so an account preference cannot leak through a shared
+response cache. Existing unconfigured shells retain their behavior; untranslated
+recovery notices keep their English tags. A refusal page (`FaultHandler`, the page a
+kernel guard answers a browser with) reads the same contract: it intersects the request's
+`Accept-Language` with the languages of the tenant the address belongs to, and shows the
+sentence this shell ships under `fault.<CODE>`, where the codes are `kit/httpx`'s
+published `Code*` constants and the table lives in `fault.go`. A guard answers ahead of a
+session, a handler and any stored preference, but a host is a fact a refused request still
+has, so `kit/httpx` resolves it for a refusal it renders as a page (`withHostTenant`) and
+the tenant's set binds the refusal exactly as it binds the page beside it; only an address
+whose host names no tenant is negotiated from the header the caller brought. That copy is
+reached only if the shell that registers the renderer carries `Shell.Messages` itself,
+because a failure page composed without the catalog is the branch two lines below and the
+`fault.*` copy becomes sentences nobody reads. `Serve` routes a handler's own 4xx through the same
+renderer, so a module's refusal is worded the way a guard's is in the shell that mounted
+it. Every guard
+that can refuse a request a person may be looking at answers through that renderer
+(`API.refuse`), which is the condition that makes the table worth filling: a code no
+page is ever shown for is a key no copy can be written under. A refusal with no code is
+keyed by its status (`fault.404`, `fault.405`, `fault.500`, `fault.503`) — the four
+verdicts whose sentence `kit/httpx` writes and no module does, including the outage a
+guard answers when its own decision could not be made. What a translation replaces is the
+sentence and not the guard's whole line: a refusal that carries a code keeps it
+(`AUTH_DENIED: Não pode fazer isto.`), because the code is what a person reads back to
+support and an operator greps a log for. What a catalogue answers with is one thing and
+what the page declares is another: the declared language is the one negotiated for the
+request, and a catalogue that carries no entry for it leaves the sentence in the source
+language under that declaration — a shell translated key by key is a page that declares
+a language some of its words are not in. `View.Language` is how a page says which of the
+two it is: the admin shell's dashboard and health pages, whose copy is Go strings rather
+than keys, declare the source language rather than the request's, and
+`TestEveryPageSaysTheSameLanguageTwice` in the reference application holds `<html lang>`
+and `Content-Language` to one answer. Nothing yet refuses a page that declares a
+language a literal in its own body is not written in; that gate — every page rendered
+under a pseudo-locale, which turns every key a catalogue carries into a marker so a
+literal no entry covers shows — is unshipped.
 
-The [reference application](../../apps/platformkit/modules.go) composes
-[`admin.Messages()`](../../modules/admin/messages.go) through `page.FromCatalog`
-for its sign-in page. Run the application as described in the [root README](../../README.md), then open
-`/app/admin/login?lang=pt-PT` or `/app/admin/login?lang=en`. The explicit URL wins over the
-browser's language. This translates the initial sign-in form, and the generated
-screens read their fixed labels (New, Edit, Delete, the count, the pager and the
-empty state) under `screens.*` keys with English fallbacks; entity names,
-authentication API errors, client apps, the kernel's refusal sentences
-(`fault.*`) and notification templates still need their own authored messages and
-adoption. No translation management service or remote bundle is required by this
-local runtime seam.
+The [reference application](../../apps/platformkit/catalog.go) composes the copy
+each layer ships — this package's refusal sentences, `ui/resource`'s screen
+vocabulary and the sign-in page's four keys — into one catalog with
+[`xtext.Load`](../../kit/locale/providers/xtext/README.md), which reads
+`messages/<locale>.json` files and merges them in that order. Run the application
+as described in the [root README](../../README.md), then open
+`/app/admin/login?lang=pt-PT` or `/app/admin/login?lang=en`. The explicit URL wins
+over the browser's language. `fault.` is owned by this package, so a product
+catalogue cannot re-word what a refusal says; `screens.*` is unclaimed, so
+re-labelling "Delete" is a product's own decision in a later source.
+
+Which languages a request may be answered in is the tenant's decision, not this
+package's: `Serve` intersects `Accept-Language` with the languages the resolved tenant
+is served in and falls back to that tenant's default (`TenantPreferences`), so a guard
+refusing ahead of a handler and the page it is refusing speak the same language. The
+intersection is a filter and not a re-ordering: what survives goes to the provider as
+the one header string it arrived as, so the caller's own quality values still decide
+which of the two the answer is — a browser offering `pt-PT;q=0.1,en;q=0.9` to a tenant
+served in both is answered in English, in either order it spells them. It matches a
+language, not a region: a browser that asks for `pt-BR` is asking for Portuguese, and
+the tenant's own Portuguese answers it, in the region it declared. Behind that list
+the tenant adds its own set, its default at its head, which answers an unmatched request.
+The generated screens read their fixed labels (New, Edit, Delete, the count, the pager
+and the empty state) under `screens.*` keys with English fallbacks; entity names,
+authentication API errors, client apps and notification templates still need their own
+authored messages and adoption. No translation management service or remote bundle is
+required by this local runtime seam.
 
 Run `go test -race ./ui/page -count=1` for negotiation, fallbacks, pluralization,
 escaping and concurrent catalog isolation. With the repository's existing test
@@ -94,3 +126,21 @@ database configured, this exercises the composed HTTP sign-in page and headers:
 ```sh
 go test ./apps/platformkit -run '^TestReferenceSignInUsesIsolatedNegotiatedTranslations$' -count=1
 ```
+
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** `language.MatchStrings`, which is what answered a header before
+this package had a filter at all — the filter only decides which tags reach it, and the
+survivors go back as the one header string they arrived as, so the caller's own ranking
+is untouched; `document.View.Language`, the field the refusal page and the login alert
+already declared, is how the admin pages (and `modules/web`, whose bar and footer are Go
+strings too) tell the truth about their Go copy; the
+tenant's set arrives on the host resolution `kit/httpx` already performs, so no page
+does a second lookup. **Added:** `TenantPreferences`, the intersection and the
+tenant's set behind it, and `languageBase`, which is the comparison the filter had to
+make to answer `pt-BR` in Portuguese. **Made reusable:** a `Catalogue()` that returns
+an `xtext.Source` rather than a package-level catalogue — the shape any owner of copy
+publishes — and a refusal page that negotiates from what a refused request still has: the
+header the caller brought, and since `kit/httpx` resolves the address's host for a refusal
+it renders as a page, the tenant the person was standing in front of.
