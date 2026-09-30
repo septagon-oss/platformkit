@@ -175,6 +175,12 @@ func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title s
 	if settings.Theme == "light" || settings.Theme == "dark" {
 		v.Theme = settings.Theme
 	}
+	// The tenant's accent is the one style this repository writes outside
+	// ui.Compose: the colour is a row, not a Go sheet, so no layer Compose emits
+	// can carry it. Unlayered is what lets a tenant palette outrank every layer,
+	// which is the point of a per-tenant colour, and the guard is the pattern —
+	// an inline declaration reaches the gate that refuses a consumer sheet a raw
+	// colour and the --pk- namespace. See refuseClientSheet.
 	if colour.MatchString(settings.PrimaryColor) {
 		v.Head = []g.Node{h.StyleEl(g.Raw(":root{--pk-color-accent-default:" + settings.PrimaryColor + "}"))}
 	}
