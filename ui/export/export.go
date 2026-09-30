@@ -154,10 +154,14 @@ func export(theme design.Pair, captures []examples.Example, layout bool, extra .
 			Name: name, SVG: svg, Source: glyph.Source, License: glyph.License, SHA256: digest([]byte(svg)),
 		})
 	}
-	// Compose deduplicates these declarations with the shared shell and every
-	// consumer addition. The exported sheet can render every gallery example.
+	// ComposeDesign deduplicates these declarations with the shared shell and
+	// every consumer addition. The exported sheet can render every gallery
+	// example. A capture sheet is an authored hypothesis, not a mount: it names
+	// the components a proposal is about and the colours a designer typed, which
+	// is exactly what ui.Compose refuses a sheet to do at mount, so the snapshot
+	// composes with the function documented for it; see ComposeDesign.
 	all := append([]ui.Extra{{Lists: components.ClassLists()}}, extra...)
-	out.CSS = string(ui.Compose(theme, all...).Body)
+	out.CSS = string(ui.ComposeDesign(theme, all...).Body)
 	if layout {
 		overridden := false
 		for _, e := range extra {
