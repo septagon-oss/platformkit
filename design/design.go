@@ -105,11 +105,14 @@ func Light() Theme {
 		SurfaceMuted:   "#e9e4d8",
 		TextPrimary:    "#15221f",
 		TextMuted:      "#586461",
-		// The field's edge, measured: border-default holds 3:1 on the card and the
-		// canvas it is drawn on (SC 1.4.11, the graphic's floor, because the line is
-		// what identifies the field) and border-strong reaches the body floor, since
-		// the edge that has to be seen carries the weight of what it borders.
-		BorderDefault:   "#85827d",
+		// The field's edge, measured: border-default holds the graphic's floor
+		// (SC 1.4.11, 3:1 — the line is what identifies the field) on all four grounds
+		// edgeRolePairs names, at the margin the generator emits its own edge at
+		// (3.5:1: worst reading 3.51:1 on the muted panel, 4.05:1 on the hovered fill),
+		// so the pair every installation falls back to is not the tightest one in the
+		// repository. border-strong reaches the body floor, since the edge that has to
+		// be seen carries the weight of what it borders.
+		BorderDefault:   "#7a7773",
 		BorderStrong:    "#636763",
 		AccentDefault:   "#0f5d4e",
 		AccentHover:     "#0a493e",
@@ -140,9 +143,9 @@ func Dark() Theme {
 		SurfaceMuted:   "#1e2a27",
 		TextPrimary:    "#eef3ec",
 		TextMuted:      "#a3b0aa",
-		// The same two edges at the other pole: 3:1 for the line that identifies a
-		// field, the body floor for the one that has to be seen.
-		BorderDefault:   "#60756f",
+		// The same two edges at the other pole, at the same margin: worst reading
+		// 3.53:1 on the muted panel, 3.62:1 on the hovered fill.
+		BorderDefault:   "#6b807a",
 		BorderStrong:    "#81928c",
 		AccentDefault:   "#4bbf9c",
 		AccentHover:     "#68d3b2",

@@ -68,12 +68,12 @@ type contrastPair struct {
 // bodyContrast lists the pairs a reader actually reads, and the one line a reader
 // sees: text on the three surfaces, the accent used as text and the text set on
 // it, the focus ring on the three body surfaces it is drawn onto (sidebar-bg is a
-// fourth, ungated — see CHANGELOG), each status on its own badge, and the
-// sidebar's two text tones on its own background. The last two lines are a
-// component's edge — border-default on the two grounds a field is painted on, at
-// the graphic's floor — because the edge is the visual information that
-// identifies the field: ui/components fills the field with the same surface role
-// as the card it stands on, so the line is what says where it is.
+// fourth, ungated — see CHANGELOG), each status on its own badge, the sidebar's
+// two text tones on its own background, and a component's edge —
+// border-default on each literal ground it is painted on, at the graphic's floor —
+// because the edge is the visual information that identifies the component:
+// ui/components fills a field with the same surface role as the card it stands on,
+// so the line is what says where it is.
 //
 // What stays out of this list is the decoration, not the boundary: a divider
 // between two rows the reader has already found, and a tint, which carries copy
@@ -143,16 +143,20 @@ var bodyContrast = []contrastPair{
 	{"status-info", "surface-muted", MinContrast},
 	{"sidebar-text", "sidebar-bg", MinContrast},
 	{"sidebar-muted", "sidebar-bg", MinContrast},
-	// A field's edge, on the two grounds it is shown on: clInput
+	// A component's edge, on every literal ground it is drawn on: clInput
 	// (ui/components/classlists.go) fills the field with surface-primary, the same
 	// role as the card of clCardFrame, and clInputNormal draws the line in
-	// border-default, so on a card and on the page canvas behind it that hairline
-	// is the only thing that identifies the component and its extent. The graphic's
-	// floor, not the text's: 3:1, the ratio SC 1.4.11 asks of it and the same one
-	// this list already holds the focus ring to. edgeRolePairs spells the same two
-	// pairs in the layer a browser paints.
+	// border-default, so on a card and on the page canvas behind it that hairline is
+	// the only thing that identifies the component and its extent; and
+	// clBadgeTone["neutral"] and clMediaRefused draw the same line on surface-muted.
+	// The graphic's floor, not the text's: 3:1, the ratio SC 1.4.11 asks of it and
+	// the same one this list already holds the focus ring to. edgeRolePairs spells
+	// these three grounds and the fourth — surface-hover, the mix a hovered control
+	// moves its own fill onto, which is no token and so belongs only to the role
+	// half — in the layer a browser paints.
 	{"border-default", "surface-primary", MinContrastGraphic},
 	{"border-default", "surface-canvas", MinContrastGraphic},
+	{"border-default", "surface-muted", MinContrastGraphic},
 }
 
 // Check reports the first body role of this theme that does not reach
