@@ -197,6 +197,26 @@ boundary_rejects kit/tenancy/providers/topaz "$foundation/modules/auth/contracts
 boundary_rejects kit/flags/providers/openfeature "$foundation/kit/flags/providers/ofrep"
 boundary_rejects kit/flags/providers/ofrep "$foundation/ui/components"
 boundary_rejects kit/locale/providers/xtext "$foundation/kit/flags"
+# The whole-tree form of the measurement rule. `modules/auth/contracts` is a
+# package `parts` never asks about, so no closure bound above could see what it
+# links; the SDK line of this script is what refuses a second provider installed
+# somewhere the closure list does not reach. Source text only — nothing here is
+# resolved, and no dependency is fetched.
+mkdir -p "$packages_repo/modules/auth/internal"
+printf 'package fixture\nimport _ "go.opentelemetry.io/otel/sdk/trace"\n' > "$packages_repo/modules/auth/internal/fixture.go"
+rejects 'a package outside the closure list links the measurement SDK' 'MEASUREMENT BOUNDARY' "${packages[@]}"
+printf 'package fixture\nimport _ "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"\n' > "$packages_repo/modules/auth/internal/fixture.go"
+rejects 'a package outside the closure list links an exporter' 'MEASUREMENT BOUNDARY' "${packages[@]}"
+# What the rule admits: the API beside the vocabulary package, which drags no
+# provider, and the composition itself, in a subdirectory of its own.
+printf 'package fixture\nimport _ "go.opentelemetry.io/otel/trace"\n' > "$packages_repo/modules/auth/internal/fixture.go"
+"${packages[@]}" >/dev/null
+mkdir -p "$packages_repo/kit/app/sub"
+printf 'package fixture\nimport _ "go.opentelemetry.io/otel/sdk/trace"\n' > "$packages_repo/kit/app/sub/fixture.go"
+"${packages[@]}" >/dev/null
+rm -r "$packages_repo/kit/app/sub"
+printf 'package fixture\n' > "$packages_repo/modules/auth/internal/fixture.go"
+"${packages[@]}" >/dev/null
 "${packages[@]}" >/dev/null
 fixture_import kit/tenancy database/sql
 rejects 'write mode bypasses portability' 'transitively depends on database/sql' "${packages[@]}" --write

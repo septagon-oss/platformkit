@@ -5,9 +5,13 @@ the attribute keys, the request id and how it travels, the three instruments thi
 runtime promises, and the closed set of refusal classes — and no provider, no
 exporter and no sampler. Those are chosen once, by the composition, in `kit/app`,
 which is the only package in this repository whose dependency closure may hold an
-OpenTelemetry SDK; `scripts/check_packages.sh` refuses the day that stops being
-true. `kit/httpx`, `kit/db`, `kit/events` and `kit/jobs` import this package and
-the OpenTelemetry *API* beside it.
+OpenTelemetry SDK. `scripts/check_packages.sh` refuses the day that stops being
+true, in two moves: the closure bound it measures speaks for the packages that
+script is asked about, and its last line speaks for the whole tree, refusing an
+import of `go.opentelemetry.io/otel/sdk…` or `…/exporters…` in any non-test Go file
+outside `kit/app/`, the rule `TestOnlyTheCompositionLinksTheMeasurementSDK`
+asserts from inside the suite. `kit/httpx`, `kit/db`, `kit/events` and `kit/jobs`
+import this package and the OpenTelemetry *API* beside it.
 
 ## Reused / Added / Made reusable
 

@@ -159,6 +159,24 @@ printf '%s\n' "$metadata" | awk -F '|' '
     }
 '
 
+# The one measurement rule that has to hold everywhere, not only in the packages
+# named above: a second package able to build a provider is a second answer to where
+# the traces went, and `kit/telemetry/README.md` promises this in words. The closure
+# bound above can only speak for what `go list` was asked about, so this speaks for
+# every non-test Go file in the tree — the whole-tree form of the same sentence, and
+# the one the compiler has no opinion about. Test files are outside it on purpose:
+# the doubles this repository measures with are the SDK's own span recorder and
+# manual reader, which the package guide names as the reason.
+sdk="$(grep -rl --include='*.go' --exclude='*_test.go' \
+	-e 'go.opentelemetry.io/otel/sdk' -e 'go.opentelemetry.io/otel/exporters' "$root" 2>/dev/null |
+	 sed "s|^$root/||" | grep -v '^kit/app/' || true)"
+if [ -n "$sdk" ]; then
+	echo "MEASUREMENT BOUNDARY: an OpenTelemetry SDK or exporter is imported outside kit/app, which is the" >&2
+	echo "one package that installs the process's TracerProvider and MeterProvider:" >&2
+	printf '%s\n' "$sdk" | sed 's/^/  /' >&2
+	exit 1
+fi
+
 echo "package boundaries: portable cores, design, forms, documents, resources, pages, screens, the runner and selected providers passed"
 
 if [ ! -d "$root/apps/platformkit" ]; then
