@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/telemetry"
 )
 
 // RequestIDHeader is the header a request id arrives in and leaves in.
@@ -41,7 +42,17 @@ func (a *API) requestID(next http.Handler) http.Handler {
 			id = uuid.NewString()
 		}
 		w.Header().Set(RequestIDHeader, id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, id)))
+		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+		// Two things happen to the id here, both because a request is answered by
+		// more than the process that received it. It goes in the baggage, so a span
+		// opened below — in kit/db, in a job the request started — can name the
+		// request that caused it without the id being an argument through four
+		// signatures; and it goes on the span the router already opened, which is
+		// stamped here rather than carried, so a log line and a trace can be joined by
+		// quoting the string the caller saw in the response header.
+		ctx = telemetry.WithRequestID(ctx, id)
+		spanAttr(ctx, telemetry.AttrRequestID, id)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
