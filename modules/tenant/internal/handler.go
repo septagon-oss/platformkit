@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -33,7 +34,7 @@ import (
 // and no wildcard satisfies the grant even there.
 const path = "/tenants"
 
-// RegisterRoutes mounts the five control-plane routes.
+// RegisterRoutes mounts the control-plane routes.
 //
 // They are written by hand rather than mounted from a rest.Spec because a
 // tenant is not a crud.Entity: it carries no tenant_id, so the generic
@@ -64,7 +65,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body.Items, out.Body.Total = items, len(items)
 				return err
 			})
-			return out, rest.Fault(err)
+			return out, fault(err)
 		})
 
 	httpx.Register(r, op("create", http.MethodPost, path, http.StatusCreated, "Create a tenant",
@@ -78,7 +79,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body = t
 				return err
 			})
-			return out, rest.Fault(err)
+			return out, fault(err)
 		})
 
 	httpx.Register(r, op("read", http.MethodGet, path+"/{id}", 0, "Read a tenant", "", nil),
@@ -90,7 +91,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body = t
 				return err
 			})
-			return out, rest.Fault(err)
+			return out, fault(err)
 		})
 
 	httpx.Register(r, op("suspend", http.MethodPost, path+"/{id}/suspend", 0, "Suspend a tenant",
@@ -108,11 +109,9 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				// The resolution cache believes a host for half a minute, and
 				// a suspension that takes effect in half a minute is a
 				// suspension somebody has to explain.
-				for _, host := range out.Body.Hosts {
-					r.InvalidateHost(host)
-				}
+				invalidate(r, out.Body.Hosts)
 			}
-			return out, rest.Fault(err)
+			return out, fault(err)
 		})
 
 	httpx.Register(r, op("set-locale", http.MethodPost, path+"/{id}/locale", 0, "Say which languages a tenant is served in",
@@ -131,11 +130,9 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				// the languages of a page are half a minute stale unless the
 				// resolution is forgotten here — the same reason a suspension does
 				// it, and the same one query this route already made.
-				for _, host := range out.Body.Hosts {
-					r.InvalidateHost(host)
-				}
+				invalidate(r, out.Body.Hosts)
 			}
-			return out, rest.Fault(err)
+			return out, fault(err)
 		})
 
 	httpx.Register(r, op("add-host", http.MethodPost, path+"/{id}/hosts", http.StatusCreated, "Give a tenant another host",
@@ -149,7 +146,82 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body = t
 				return err
 			})
-			return out, rest.Fault(err)
+			return out, fault(err)
+		})
+
+	httpx.Register(r, op("reactivate", http.MethodPost, path+"/{id}/reactivate", 0, "Resume serving a suspended tenant",
+		"The inverse of a suspension: the tenant's hosts resolve again. Reactivating a tenant that is already served changes nothing and publishes nothing. A deleted tenant is not found — a delete releases the slug, and what brings a retired customer back is a restore, not this.",
+		[]string{contracts.EventReactivated, contracts.EventLifecycleRecorded}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *idInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.Reactivate(ctx, tx, in.ID)
+				out.Body = t
+				return err
+			})
+			if err == nil {
+				invalidate(r, out.Body.Hosts)
+			}
+			return out, fault(err)
+		})
+
+	httpx.Register(r, op("rename", http.MethodPost, path+"/{id}/rename", 0, "Change what a tenant is called",
+		"The display name only. A slug is a DNS label and the base of every URL this platform builds for the tenant, so it has no field here: changing one is another tenant's create, not this tenant's rename. Renaming a tenant to the name it already has changes nothing and publishes nothing.",
+		[]string{contracts.EventRenamed, contracts.EventLifecycleRecorded}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *renameInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.Rename(ctx, tx, in.ID, in.Body)
+				out.Body = t
+				return err
+			})
+			if err == nil {
+				// The cached resolution carries the tenant's name with it, so a
+				// rename nobody followed up here leaves the old company on every
+				// page and mailed link for the cache's lifetime.
+				invalidate(r, out.Body.Hosts)
+			}
+			return out, fault(err)
+		})
+
+	httpx.Register(r, op("remove-host", http.MethodDelete, path+"/{id}/hosts/{host}", 0, "Stop serving one host",
+		"A tenant's primary host, and its last one, are refused: the first is what every absolute URL for this tenant is built on, the second is the name a person signs in at. Removing a host the tenant does not answer at changes nothing and publishes nothing.",
+		[]string{contracts.EventHostRemoved, contracts.EventLifecycleRecorded}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *removeHostInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.RemoveHost(ctx, tx, in.ID, in.Host)
+				out.Body = t
+				return err
+			})
+			if err == nil {
+				// The name this removed is not in the list the response carries,
+				// which is exactly the row the cache is now wrong about.
+				invalidate(r, []string{in.Host})
+			}
+			return out, fault(err)
+		})
+
+	httpx.Register(r, op("delete", http.MethodPost, path+"/{id}/delete", 0, "Retire a tenant",
+		"Writes deleted_at: the tenant's own row and every row it owns stay where they are, and the slug is released so the name can be given to a new customer later. The body repeats the slug, because a request that ends a customer is asked for twice. This installation's own tenant is refused, and a retired tenant is not found.",
+		[]string{contracts.EventDeleted, contracts.EventLifecycleRecorded}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *deleteInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.Delete(ctx, tx, in.ID, in.Body)
+				out.Body = t
+				return err
+			})
+			if err == nil {
+				// Every name the retired tenant answered at stops resolving, and
+				// the cache would go on serving it from the row it remembers.
+				invalidate(r, out.Body.Hosts)
+			}
+			return out, fault(err)
 		})
 
 	if invite == nil {
@@ -184,8 +256,33 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body = t
 				return invite.Invite(ctx, tx, t.ID, in.Body.Email, in.Body.DisplayName)
 			})
-			return out, rest.Fault(err)
+			return out, fault(err)
 		})
+}
+
+// fault is kit/rest's mapping plus the one answer these commands can give that no
+// generated route has ever needed: this installation has no operator tenant, so a
+// lifecycle verb cannot write the audit row the installation keeps beside the
+// customer's, and it wrote nothing. It is the installation's fault and not the
+// caller's, so it answers 503 rather than one of crud's three.
+func fault(err error) error {
+	if errors.Is(err, contracts.ErrNoOperatorTenant) {
+		return problem.New(http.StatusServiceUnavailable,
+			"NOT_INSTALLED: this installation has no operator tenant, so no lifecycle change could be audited from its side; nothing was written")
+	}
+	return rest.Fault(err)
+}
+
+// invalidate forgets every cached resolution of these hosts. A lifecycle command
+// that changed whether a name resolves, what tenant it resolves to, or what that
+// tenant is called and speaks has to be followed by this: the resolution is
+// believed for half a minute, and half a minute of a change that has already
+// happened in the database is a mailed link with the wrong company on it and a
+// suspension somebody has to explain.
+func invalidate(r *httpx.Router, hosts []string) {
+	for _, host := range hosts {
+		r.InvalidateHost(host)
+	}
 }
 
 // op builds one operation, including the events its handler will publish, which
@@ -210,6 +307,21 @@ func op(verb, method, at string, status int, summary, description string, publis
 
 type idInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"The tenant's id"`
+}
+
+type renameInput struct {
+	ID   uuid.UUID        `path:"id" format:"uuid" doc:"The tenant's id"`
+	Body contracts.Rename `required:"true"`
+}
+
+type deleteInput struct {
+	ID   uuid.UUID        `path:"id" format:"uuid" doc:"The tenant's id"`
+	Body contracts.Delete `required:"true"`
+}
+
+type removeHostInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"The tenant's id"`
+	Host string    `path:"host" maxLength:"253" doc:"The host this tenant stops answering at"`
 }
 
 type createInput struct {

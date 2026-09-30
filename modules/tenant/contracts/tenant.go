@@ -11,6 +11,7 @@ package contracts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -22,10 +23,19 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// The two states. A suspended tenant keeps its rows and stops being served: its
-// hosts resolve to nothing, which reads from outside as "no site here". There
-// is no third state, because "archived" and "deleted" are the same fact with
-// different retention, and retention is not a lifecycle.
+// The two states, which are both about one question: is this tenant served?
+//
+// A suspended tenant keeps its rows and stops being served: its hosts resolve
+// to nothing, which reads from outside as "no site here". Whether a tenant
+// still *is* one is a different fact and it has its own column —
+// `deleted_at`, on the row — which `Delete` writes and nothing here clears:
+// only a restore does that, and a restore is the inverse half of an export, not
+// a state. There is no third `Status`, because "archived" and "deleted" are one
+// fact with different retention, and retention is a job, not a lifecycle.
+//
+// The two axes are read together and never merged: `Get`, `List`, `ByHost` and
+// the partial index in migrations/000006 all filter on `deleted_at IS NULL`, so
+// a deleted tenant is invisible everywhere a suspended one is merely refused.
 const (
 	StatusActive    = "active"
 	StatusSuspended = "suspended"
@@ -193,6 +203,24 @@ type SetLocale struct {
 	Supported []string `json:"supported" doc:"Every language this tenant is served in, besides the default"`
 }
 
+// Rename is what a tenant is called. There is no Slug field, and that absence
+// is the decision: a slug is a DNS label and the base of every URL the platform
+// builds for the tenant, so changing it is another tenant's create, not this
+// tenant's rename. The same refusal as NewTenant.Operator's json:"-" — a thing
+// that cannot be asked for has no field to ask with.
+type Rename struct {
+	Name string `json:"name" minLength:"1" maxLength:"200" doc:"Display name" example:"Acme Corporation"`
+}
+
+// Delete is the confirmation. Slug is what the body has to repeat, because a
+// destructive control-plane verb has to be mounted somewhere, and the guard that
+// makes it safe to mount at all is that the operator writes down which customer
+// they are removing. It is not a password and it is not secret: it is the
+// one-keystroke refusal that stops a mis-clicked POST.
+type Delete struct {
+	Confirm string `json:"confirm" maxLength:"63" doc:"The tenant's slug, repeated" example:"acme"`
+}
+
 // Hook is something that has to happen inside the transaction that creates a
 // tenant. main hands this module a list of them.
 //
@@ -223,6 +251,19 @@ type Inviter interface {
 	Invite(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, email, displayName string) error
 }
 
+// ErrNoOperatorTenant says this installation has no operator tenant, so a
+// lifecycle command cannot write the audit row the installation keeps beside the
+// customer's own. The command refuses rather than half-auditing: a control-plane
+// verb whose trail is one-sided is a verb nobody can account for afterwards.
+//
+// It is not a caller's fault and it is not state the caller can change, so it is
+// not one of kit/crud's three; the routes answer 503 and write nothing. Every
+// request that could reach one of these routes came through the operator
+// tenant's own credentials, so in a bootstrapped installation this is
+// unreachable — which is the point: the failure it names is a broken
+// installation, not a bad request.
+var ErrNoOperatorTenant = errors.New("tenant: this installation has no operator tenant, so a lifecycle command cannot audit both sides")
+
 // Service is the tenant lifecycle, and the kernel's host resolution.
 //
 // Every command takes a db.Tx[db.System], because these rows belong to no
@@ -248,6 +289,37 @@ type Service interface {
 	// Suspend stops the tenant being served. Suspending it again changes
 	// nothing and publishes nothing.
 	Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// Rename changes what a tenant is called. Renaming it to what it is already
+	// called changes nothing and publishes nothing, as every other command here
+	// does. The slug never moves: see Rename.
+	Rename(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in Rename) (*Tenant, error)
+
+	// Reactivate resumes serving a suspended tenant. An active tenant changes
+	// nothing and publishes nothing. A deleted tenant is not found: only a
+	// restore brings a deleted tenant back, and there is none here.
+	Reactivate(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// RemoveHost stops serving one name. The primary host, and a tenant's last
+	// host, are refused: the first is what every absolute URL for this tenant is
+	// built on, and the second is the floor — a tenant nobody routes to cannot be
+	// signed into, which is the sentence Create's own comment uses about a create
+	// with no host.
+	//
+	// A host the tenant does not answer at changes nothing and publishes nothing.
+	// Once the row is gone there is nothing left to distinguish "never yours"
+	// from "yours and gone", and the answer that does not leak who serves it now
+	// is the one that is also retry-safe.
+	RemoveHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string) (*Tenant, error)
+
+	// Delete retires a tenant: `deleted_at` is written, the row and every row it
+	// owns stay where they are, and the slug is released by the partial index in
+	// migrations/000006, which is what lets the same name be created again later.
+	// The installation's own tenant is refused: it is the door every one of these
+	// routes is walked through, and a delete that closed it could not be undone
+	// through it. Deleting an already deleted tenant changes nothing and
+	// publishes nothing.
+	Delete(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in Delete) (*Tenant, error)
 
 	// SetLocale says which languages one tenant is served in, and which of them a
 	// request that brought nothing usable is answered in. Setting the same pair
