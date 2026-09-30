@@ -24,8 +24,13 @@ The `fallback` names the language the code is written in, so that file is the on
 locale a catalogue may omit — a key with no entry in it answers from the readable
 text its call site passes, which is the same promise `Text(key, fallback)` makes.
 Every other locale must answer for every key the source wrote a copy for, in both
-directions, and no copy may change the arguments the sentence interpolates. Both
-conditions are refused with a message naming the file and the key, because a
+directions, and no copy may change the arguments the sentence interpolates. The two
+conditions are read at different scopes on purpose: presence is each source's own,
+since a layer that ships one locale and a product that re-words one key are what the
+merge exists for, while the arguments are the merged catalogue's, because a re-wording
+merged over a sentence is read by every language an earlier source wrote — the
+argument lists of one key across all the sources are refused as one. Both are refused
+with a message naming the file, the source that wrote it and the key, because a
 catalogue nobody can answer from must fail a boot and not a person.
 
 Plural messages stay composable by hand through `FromCatalog`; `Load` refuses a
@@ -58,7 +63,8 @@ a file's name is a tag; the source-language promise is the one `Text(key, fallba
 needs no file of its own. **Added:** the merge in argument order, the `Owns` guard,
 and the refusals a source's files can meet — a locale file missing a key its own
 source answers for, a blank copy, a copy that changed or reordered its arguments, an
-owned key answered by a later source, an unreadable name — none of which existed to
+argument list two sources left disagreeing about one key, an owned key answered by a
+later source, an unreadable name — none of which existed to
 be composed before this seam. **Made reusable:** the one call a composition makes, so
 a module, a product and a client each ship their own `messages/` directory and are
 read in the order somebody wrote down, with no registry, no environment variable and

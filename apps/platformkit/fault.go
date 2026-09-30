@@ -77,7 +77,7 @@ const (
 	pinnedPublicFile = "/api/v1/public/file/files"
 )
 
-func faultPage() httpx.Fault {
+func faultPage(messages page.Messages) httpx.Fault {
 	return page.FaultHandler(page.Shell{
 		Chrome: page.Chrome{
 			Brand:      "PlatformKit",
@@ -88,6 +88,15 @@ func faultPage() httpx.Fault {
 		Frame:     func(_ context.Context, _ page.Request, body []g.Node) g.Node { return g.Group(body) },
 		Back:      pinnedWorkspace,
 		BackLabel: "Back to the workspace",
+		// The catalogues this application already composed. Without them the shell
+		// is what ui/page/fault.go documents as "a shell that ships no catalog":
+		// refusalLocale negotiates from nothing, the guard's English line is shown,
+		// and the refusal sentences this repository ships are copy nothing reads at
+		// the application that shipped them. The line is what the page is rendered
+		// *with* — a person refused by a guard ahead of routing is refused by this
+		// shell, not by the ones page.Serve mounts — and TestPinnedAddresses and the
+		// refusal cases here are asked of the page this literal builds.
+		Messages: messages,
 	})
 }
 
@@ -114,7 +123,7 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 		Authorize:    c.auth,
 		Entitle:      c.plans,
 		Authenticate: c.auth.Authenticate,
-		Fault:        faultPage(),
+		Fault:        faultPage(c.messages),
 		Role:         role,
 		Transports:   transports(),
 	}

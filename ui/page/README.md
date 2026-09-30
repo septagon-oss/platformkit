@@ -61,7 +61,12 @@ kernel guard answers a browser with) reads the same contract: it negotiates from
 request's `Accept-Language` — a guard answers before a tenant, a session or a stored
 preference exists, so the header the caller brought is all there is to negotiate from —
 and shows the sentence this shell ships under `fault.<CODE>`, where the codes are
-`kit/httpx`'s published `Code*` constants and the table lives in `fault.go`. Every guard
+`kit/httpx`'s published `Code*` constants and the table lives in `fault.go` — reached
+only if the shell that registers the renderer carries `Shell.Messages` itself, because a
+failure page composed without the catalog is the branch two lines below and the `fault.*`
+copy becomes sentences nobody reads. `Serve` routes a handler's own 4xx through the same
+renderer, so a module's refusal is worded the way a guard's is in the shell that mounted
+it. Every guard
 that can refuse a request a person may be looking at answers through that renderer
 (`API.refuse`), which is the condition that makes the table worth filling: a code no
 page is ever shown for is a key no copy can be written under. A refusal with no code is
@@ -126,7 +131,8 @@ rebuilt. **Reused:** `language.MatchStrings`, which is what answered a header be
 this package had a filter at all — the filter only decides which tags reach it, and the
 survivors go back as the one header string they arrived as, so the caller's own ranking
 is untouched; `document.View.Language`, the field the refusal page and the login alert
-already declared, is how the admin pages tell the truth about their Go copy; the
+already declared, is how the admin pages (and `modules/web`, whose bar and footer are Go
+strings too) tell the truth about their Go copy; the
 tenant's set arrives on the host resolution `kit/httpx` already performs, so no page
 does a second lookup. **Added:** `TenantPreferences`, the intersection and the
 tenant's set behind it, and `languageBase`, which is the comparison the filter had to

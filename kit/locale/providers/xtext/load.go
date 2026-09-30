@@ -44,7 +44,10 @@ import (
 // locale a source ships must answer for every key that source ships in any of
 // them, and must not renumber a sentence's arguments: both conditions are
 // refused here, at composition, rather than as a page that quietly answers in
-// English.
+// English. The first is each source's own — a layer may ship one locale and a
+// product one key, which is what the merge is for — and the second is the
+// merged catalogue's, because a re-wording that lands over a sentence is read
+// by every language an earlier source wrote.
 //
 // The provider reads no process-global catalogue and no environment variable:
 // everything it knows came through the fs.FS it was handed.
@@ -61,6 +64,11 @@ func Load(fallback string, sources ...Source) Catalog {
 	// and the source language too, whether or not a source shipped a file for it.
 	tags := []language.Tag{fallbackTag}
 	byTag := map[language.Tag]map[string]string{}
+	// merged and wroteBy hold the same copy keyed by the tag spelled out, and
+	// remember which source wrote it. The argument rule below is the composed
+	// catalogue's, so it needs the merged view and the names to say the refusal with.
+	merged := map[string]map[string]string{}
+	wroteBy := map[string]map[string]string{}
 	var owned []ownedKey
 	for _, source := range sources {
 		entries := read(source, fallback)
@@ -80,6 +88,8 @@ func Load(fallback string, sources ...Source) Catalog {
 			}
 			if byTag[tag] == nil {
 				byTag[tag] = map[string]string{}
+				merged[tag.String()] = map[string]string{}
+				wroteBy[tag.String()] = map[string]string{}
 			}
 			for key, text := range messages {
 				if guard := protected(key, owned[:len(owned)-len(source.Owns)]); guard != "" {
@@ -87,9 +97,12 @@ func Load(fallback string, sources ...Source) Catalog {
 						source.Name, name, key, guard))
 				}
 				byTag[tag][key] = text
+				merged[tag.String()][key] = text
+				wroteBy[tag.String()][key] = source.Name
 			}
 		}
 	}
+	checkMergedVerbs(fallbackTag.String(), merged, wroteBy)
 
 	messages := catalog.NewBuilder(catalog.Fallback(fallbackTag))
 	for tag, keys := range byTag {
@@ -200,6 +213,59 @@ func read(source Source, fallback string) map[string]map[string]string {
 	}
 	checkParity(source.Name, fallback, entries)
 	return entries
+}
+
+// checkMergedVerbs holds the composed catalogue — not one source's files — to the
+// half of the parity rule that only the merge can see: every copy of one key, in
+// whichever language and whichever source, interpolates the same arguments in the
+// same order.
+//
+// checkParity cannot see it because it reads one source and the merge spans them.
+// A source that ships only a translation has nothing to disagree with, and a later
+// source whose only file is the source language is exempt from presence, so each is
+// legal alone; merged, they leave the product's English sentence asking for two
+// arguments beside the module's Portuguese one asking for one, and the page a person
+// is reading prints Go's own mismatch marker in their language. Presence is not
+// checked here and that is deliberate: a layer shipping one locale and a product
+// re-wording one key in another are what the merge exists for, and requiring every
+// source to answer for every key would refuse the brief's own override.
+func checkMergedVerbs(fallback string, merged, wroteBy map[string]map[string]string) {
+	var locales []string
+	for tag := range merged {
+		if tag != fallback {
+			locales = append(locales, tag)
+		}
+	}
+	sort.Strings(locales)
+	var keys []string
+	for _, copy := range merged {
+		for key := range copy {
+			if !slices.Contains(keys, key) {
+				keys = append(keys, key)
+			}
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		want, from := "", fallback
+		if source, carried := merged[fallback][key]; carried {
+			want = verbs(source)
+		}
+		for _, tag := range locales {
+			text, carried := merged[tag][key]
+			if !carried {
+				continue
+			}
+			if want == "" {
+				want, from = verbs(text), tag
+				continue
+			}
+			if got := verbs(text); got != want {
+				panic(fmt.Sprintf("xtext: %s/%s.json and %s/%s.json disagree about the arguments of %q: one copy asks for %q, the other for %q. A copy merged over another changes the words, not the arguments",
+					wroteBy[from][key], from, wroteBy[tag][key], tag, key, want, got))
+			}
+		}
+	}
 }
 
 // checkParity holds one source to the two conditions that make a catalogue

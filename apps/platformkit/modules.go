@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -59,6 +60,10 @@ type composition struct {
 	// plans answers what a tenant's subscription includes, for the operations
 	// that declare a feature.
 	plans httpx.Entitler
+	// messages is this application's one catalogue — the same value the shells
+	// below are given — carried here so the failure page the kernel renders is
+	// worded from it rather than from a second read of the same files.
+	messages xtext.Catalog
 }
 
 // compose constructs complete dependencies in order: users, tenants,
@@ -194,6 +199,11 @@ func compose(cfg config.Config) composition {
 			// nothing at all.
 			SignInPath:    pinnedSignIn,
 			PublicFileURL: func(id string) string { return pinnedPublicFile + "/" + id },
+			// The refusal sentences the site's two addresses can answer with are the
+			// kernel layer's, so the site shows them to a visitor in the language the
+			// tenant is served in. What the site writes itself — the bar, the footer,
+			// the empty states — stays in the source language and says so.
+			Messages: installed,
 		}),
 	}
 	// The trail is this reference product's worked example of something a plan
@@ -222,7 +232,7 @@ func compose(cfg config.Config) composition {
 
 	checkPersonas(mods)
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
-		notify: notify, mail: mail, plans: plans}
+		notify: notify, mail: mail, plans: plans, messages: installed}
 }
 
 // transports is the one place this application names an event provider. The
