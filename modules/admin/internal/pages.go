@@ -61,6 +61,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 
 	p.mountGallery(app)
 	p.mountRoles(s.App)
+	p.mountSessions(s.App)
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads

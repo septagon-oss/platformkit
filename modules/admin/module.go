@@ -5,13 +5,14 @@
 // detail and form come from an entity's schema, and kit/httpx carries that
 // schema for every resource kit/rest mounted. The generated screens are
 // ui/screens'; this module composes them with its own chrome, frame and
-// navigation, adds the six pages no schema describes — the dashboard, the
-// health page, the sign-in page, the gallery, the tenant switcher and the roles
-// screen — and serves the same knowledge as JSON at the workspace catalog route for
-// a shell that is not a browser. A seventh hand-written page arrives only when
-// an interaction cannot be derived, which is what the roles screen is: a role is
-// keyed by its name rather than by an id, and a generated screen's item path is
-// a UUID.
+// navigation, adds the seven pages no schema describes — the dashboard, the
+// health page, the sign-in page, the gallery, the tenant switcher, the roles
+// screen and the session list — and serves the same knowledge as JSON at the
+// workspace catalog route for a shell that is not a browser. A further
+// hand-written page arrives only when an interaction cannot be derived, which
+// is what the two that are not generated from a resource are: a role is keyed by
+// its name rather than by an id, and a session by a ref, and a generated
+// screen's item path is a UUID.
 //
 // It is composed last, and that is load-bearing rather than tidy: kit/app calls
 // each module's Routes in composition order, so a module mounted after this one
@@ -35,6 +36,10 @@ import (
 // internal.Roles: the alias keeps the declaration beside its one implementation
 // and the name beside the Deps field that takes it.
 type Roles = internal.Roles
+
+// Sessions is what the shell needs of the auth module to draw that module's
+// sessions screen. See internal.Sessions.
+type Sessions = internal.Sessions
 
 // Deps is what the shell cannot make for itself.
 type Deps struct {
@@ -70,6 +75,11 @@ type Deps struct {
 	// nav entry either, so the two agree; a composition that has one and wires
 	// nothing here is told at boot that the entry leads nowhere.
 	Roles Roles
+
+	// Sessions is the auth module's session list and its two revocations, for
+	// the screen that module's second nav entry names. Like Roles, nil mounts
+	// nothing and the entry is reported unserved at boot.
+	Sessions Sessions
 
 	// Theme is the installation's two palettes. The zero value is the palette
 	// this repository ships; a client with its own colours sets this and
@@ -114,6 +124,7 @@ func Module(deps Deps) module.Module {
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
 				Roles:     deps.Roles,
+				Sessions:  deps.Sessions,
 				Theme:     theme(deps.Theme),
 				Storybook: deps.Storybook,
 				Messages:  deps.Messages,

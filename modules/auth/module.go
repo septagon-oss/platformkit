@@ -176,6 +176,15 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 		// rather than by an id, so no generated screen could answer this path
 		// and modules/admin writes the page. The two routes below are what it
 		// is a face for. See modules/admin/internal/roles.go.
+		// One nav entry, and deliberately only one. The session list is the
+		// caller's own — the routes reach it through the credential and no
+		// permission — and kit/module.Validate refuses an entry that names no
+		// permission, because a link everybody sees is still a decision somebody
+		// has to own. Borrowing role:manage would be the wrong decision twice
+		// over: it hides the screen from the members it is for and it would put
+		// an administrator's own list under a permission they hold for other
+		// people's rows. So the manifest says nothing here, and the product whose
+		// navigation this is names the entry beside the permission it seeds.
 		Nav: []module.NavEntry{
 			{Label: "Roles", Screen: "auth/roles", Permission: contracts.PermissionRoleManage},
 		},

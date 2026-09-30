@@ -36,7 +36,11 @@ type Shell struct {
 	// module's nav entry names. Nil mounts no screen, and then Mount reports
 	// the entry as unserved, which is what it is.
 	Roles Roles
-	Token tenancy.SystemToken
+	// Sessions is the auth module's session list, for the screen that module's
+	// second nav entry names. Nil mounts no screen, and then Mount reports the
+	// entry as unserved, which is what it is.
+	Sessions Sessions
+	Token    tenancy.SystemToken
 	// SignIn is the auth module's session route, which the sign-in form posts
 	// to. The composition names it; this module only fills the form's action.
 	SignIn string
@@ -76,6 +80,11 @@ type addresses struct {
 	// namespace, because that is where the workspace puts a module's screens.
 	tenants route
 	roles   route
+	// sessions is another module's screen again, for the same reason: the auth
+	// module names it in its nav, and this is the module that can draw it.
+	sessions      route
+	sessionRevoke route
+	sessionsRest  route
 }
 
 // at composes one address for this module's own router.
@@ -116,14 +125,17 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		dashboardRel = "/dashboard"
 	}
 	a := addresses{
-		workspace: at(app, "/"),
-		dashboard: route{dashboardRel, home.PagePath(dashboardRel)},
-		assets:    at(app, "/assets"),
-		login:     at(app, "/login"),
-		health:    at(app, "/health"),
-		gallery:   at(app, "/_gallery"),
-		tenants:   inNamespace(app, "tenant", "/tenants"),
-		roles:     inNamespace(app, "auth", "/roles"),
+		workspace:     at(app, "/"),
+		dashboard:     route{dashboardRel, home.PagePath(dashboardRel)},
+		assets:        at(app, "/assets"),
+		login:         at(app, "/login"),
+		health:        at(app, "/health"),
+		gallery:       at(app, "/_gallery"),
+		tenants:       inNamespace(app, "tenant", "/tenants"),
+		roles:         inNamespace(app, "auth", "/roles"),
+		sessions:      inNamespace(app, "auth", "/sessions"),
+		sessionRevoke: inNamespace(app, "auth", "/sessions/revoke"),
+		sessionsRest:  inNamespace(app, "auth", "/sessions/revoke-rest"),
 	}
 	// Static files are outside every middleware chain: a stylesheet has no
 	// tenant, no session and no transaction to pay for.
@@ -145,6 +157,9 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
 	if sh.Roles != nil {
 		served = append(served, a.roles.at)
+	}
+	if sh.Sessions != nil {
+		served = append(served, a.sessions.at)
 	}
 	nav := page.NewNavigation(sh.Nav, served, s.Required())
 	// A nav entry nothing answers is a mistake in a module's manifest, and it
