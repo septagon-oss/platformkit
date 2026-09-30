@@ -63,6 +63,26 @@ if [ "$target_module" = "$foundation_module" ]; then
     paths+=(':(exclude,glob)kit/db/*.go')
 fi
 
+# A reviewed exemption (root, 2026-09-30): a test that must name a tenancy setting to
+# read something — a migration's own `set_config('platformkit.…'` line, matched as a
+# string — cannot be told from a write by a text gate. scripts/gucs-exempt.txt lists
+# such files, one `<path> <reason>` per line. Only a _test.go file may be listed, since
+# a test never ships, and a row without a reason is refused rather than read. Every
+# exemption is printed on each run, so it is never silent.
+exempt="$root/scripts/gucs-exempt.txt"
+if [ -f "$exempt" ]; then
+	while read -r path reason; do
+		case "$path" in ''|'#'*) continue ;; esac
+		case "$path" in
+			*_test.go) ;;
+			*) echo "gucs: $exempt lists $path; only a _test.go file may be exempt" >&2; exit 2 ;;
+		esac
+		[ -n "$reason" ] || { echo "gucs: $exempt lists $path with no reason" >&2; exit 2; }
+		echo "gucs: $path is exempt: $reason"
+		paths+=(":(exclude,literal)$path")
+	done < "$exempt"
+fi
+
 # LIT is one of the four ways an argument starts when it is a value rather than
 # an elision: a quote of either kind, a backtick, or a bind parameter. It is
 # spelled \047 because the whole program sits in single quotes here.

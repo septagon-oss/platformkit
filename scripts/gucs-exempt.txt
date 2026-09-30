@@ -1,0 +1,6 @@
+# Test files scripts/check_gucs.sh does not read (root, 2026-09-30). One row per file:
+#
+#     <path from the repository root, ending _test.go> <reason a reviewer can check>
+#
+# A row is for a test that must name a platformkit.* setting to read something, never to write one. The gate
+# prints every row on every run. Rows are appended in the change that needs them, where a reviewer reads them.
