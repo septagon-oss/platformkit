@@ -93,7 +93,7 @@
       "dir_suffixes": [
         "test"
       ],
-      "max": 7569
+      "max": 7575
     },
     {
       "name": "go_test",
