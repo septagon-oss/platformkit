@@ -50,9 +50,9 @@ func TestGatedRolePairsMeasureDeclaredRoles(t *testing.T) {
 		declared[role.Name] = true
 	}
 	gated := design.GatedRolePairs()
-	if want := len(design.BodyRolePairs()) + len(design.TintedRolePairs()) + len(design.StatusRolePairs()); len(gated) != want || len(gated) < 29 {
-		t.Fatalf("the gated list is %d pairs, want the %d body pairs plus the %d derived ones plus the %d tinted-status ones",
-			len(gated), len(design.BodyRolePairs()), len(design.TintedRolePairs()), len(design.StatusRolePairs()))
+	if want := len(design.BodyRolePairs()) + len(design.TintedRolePairs()) + len(design.StatusRolePairs()) + len(design.EdgeRolePairs()); len(gated) != want || len(gated) < 31 {
+		t.Fatalf("the gated list is %d pairs, want the %d body pairs plus the %d derived ones plus the %d tinted-status ones plus the %d edges a component draws itself with",
+			len(gated), len(design.BodyRolePairs()), len(design.TintedRolePairs()), len(design.StatusRolePairs()), len(design.EdgeRolePairs()))
 	}
 	for _, pair := range gated {
 		for _, name := range [...]string{pair.Foreground, pair.Background} {

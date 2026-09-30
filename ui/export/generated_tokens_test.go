@@ -144,7 +144,20 @@ func TestExportTokensProjectsAGeneratedPair(t *testing.T) {
 // white on the seeds where the muted line measured under 4.5:1). A native screen
 // that painted a warning badge sees a shallower tint; nothing else in the
 // document moved.
-const dtcgGeneratedLightDigest = "d82e4463c91fcb1ef2ea3e1b28aaf3c17ba76cdd7a46434db2bb31c740bf2ddb"
+//
+// Re-measured a third time for review round 14's finding, and it moves the same
+// two theme colours again: the generator now emits a field's edge that clears
+// SC 1.4.11's 3:1 on the card and the canvas rather than a 1.4:1 hairline, so
+// --pk-color-border-default and --pk-color-border-strong carry different values
+// (for the client above, light: #baccb8 -> #6f756e and #7a8579 -> #5e645d) and the
+// two role declarations read from them move with them — --pk-role-border-primary,
+// which is the colour a field draws itself with, and --pk-role-border-secondary,
+// which is a mix of it into the card surface. Measured as a diff of every token and
+// every resolved role of the generated pair over both themes: 12 of its 196 lines —
+// 22 colour tokens and 76 resolved roles in each of its two themes — differ, and
+// they are those six per theme. A native screen that paints an input
+// border is handed a line 3:1 from its ground instead of one a door never measured.
+const dtcgGeneratedLightDigest = "8f0ce014d982bce1aff57dfa33bf7fb881b794ceb60b2ffca0ab99ff53d0d299"
 
 // TestExportTokensRefusesAnAccentThatReadsOnlyOnTheSurfaces is the widened seam
 // biting: a pair whose accent clears every surface the theme names, and so clears

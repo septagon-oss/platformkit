@@ -7,12 +7,15 @@ import (
 
 // The two contrast floors this package gates, both from WCAG 2.2. MinContrast is
 // SC 1.4.3, the ratio text below 18pt must reach the surface it sits on.
-// MinContrastGraphic is SC 1.4.11, the ratio a graphical object such as a focus
-// ring must reach — the standard asks less of a ring than of a sentence, and a
-// gate that asked the same of both would refuse a ring nobody could mistake for
-// text. FromSeed refuses its own output at these floors and so refuses a
-// client's named token at them: one gate, applied to a generated theme and an
-// override alike.
+// MinContrastGraphic is SC 1.4.11, the ratio a graphical object must reach: the
+// paint whose job is to be seen rather than read — a focus ring, and the line a
+// component draws itself with. A field's border is the standard's own worked
+// example, and it is not decoration; edgeRolePairs in roles.go names the pair and
+// bodyContrast below measures the token behind it. The standard asks less of a
+// ring or an edge than of a sentence, and a gate that asked the same of both would
+// refuse a ring nobody could mistake for text. FromSeed refuses its own output at
+// these floors and so refuses a client's named token at them: one gate, applied to
+// a generated theme and an override alike.
 const (
 	MinContrast        = 4.5
 	MinContrastGraphic = 3.0
@@ -62,11 +65,22 @@ type contrastPair struct {
 	min                    float64
 }
 
-// bodyContrast lists the pairs a reader actually reads: text on the three
-// surfaces, the accent used as text and the text set on it, the focus ring on the
-// three body surfaces it is drawn onto (sidebar-bg is a fourth, ungated — see
-// CHANGELOG), each status on its own badge, and the sidebar's two text tones on
-// its own background. Borders and tints carry no information and are not listed.
+// bodyContrast lists the pairs a reader actually reads, and the one line a reader
+// sees: text on the three surfaces, the accent used as text and the text set on
+// it, the focus ring on the three body surfaces it is drawn onto (sidebar-bg is a
+// fourth, ungated — see CHANGELOG), each status on its own badge, and the
+// sidebar's two text tones on its own background. The last two lines are a
+// component's edge — border-default on the two grounds a field is painted on, at
+// the graphic's floor — because the edge is the visual information that
+// identifies the field: ui/components fills the field with the same surface role
+// as the card it stands on, so the line is what says where it is.
+//
+// What stays out of this list is the decoration, not the boundary: a divider
+// between two rows the reader has already found, and a tint, which carries copy
+// that the body pairs measure themselves. A component's boundary is not in that
+// exempt set, and the sentence this comment used to carry ("Borders and tints
+// carry no information and are not listed") was wrong for the one border that
+// says where an input is.
 var bodyContrast = []contrastPair{
 	{"text-primary", "surface-canvas", MinContrast},
 	{"text-primary", "surface-primary", MinContrast},
@@ -129,6 +143,16 @@ var bodyContrast = []contrastPair{
 	{"status-info", "surface-muted", MinContrast},
 	{"sidebar-text", "sidebar-bg", MinContrast},
 	{"sidebar-muted", "sidebar-bg", MinContrast},
+	// A field's edge, on the two grounds it is shown on: clInput
+	// (ui/components/classlists.go) fills the field with surface-primary, the same
+	// role as the card of clCardFrame, and clInputNormal draws the line in
+	// border-default, so on a card and on the page canvas behind it that hairline
+	// is the only thing that identifies the component and its extent. The graphic's
+	// floor, not the text's: 3:1, the ratio SC 1.4.11 asks of it and the same one
+	// this list already holds the focus ring to. edgeRolePairs spells the same two
+	// pairs in the layer a browser paints.
+	{"border-default", "surface-primary", MinContrastGraphic},
+	{"border-default", "surface-canvas", MinContrastGraphic},
 }
 
 // Check reports the first body role of this theme that does not reach

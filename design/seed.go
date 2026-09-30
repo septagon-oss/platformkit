@@ -136,8 +136,22 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.SurfaceCanvas = surface(surfaceSat*1.6, 0.10)
 		theme.SurfacePrimary = surface(surfaceSat*1.5, 0.14)
 		theme.SurfaceMuted = surface(surfaceSat*1.4, 0.19)
-		theme.BorderDefault = surface(surfaceSat*1.3, 0.27)
-		theme.BorderStrong = surface(surfaceSat*1.2, 0.45)
+		// A field's edge is generated at the graphic's floor, not as a decoration.
+		// ui/components fills a field with surface-primary, the same role the card it
+		// stands on is painted with, so the line is the only thing that says where the
+		// field is, and GatedRolePairs measures it at MinContrastGraphic on the card
+		// and on the canvas alike. Walking it light is the same repair the ring gets;
+		// the strong border starts further along the same walk, so the two stay a step
+		// apart and the stronger of two edges is never the one that disappears: the
+		// strong border is repaired to the body floor, because "has to be seen" is a
+		// sentence about the edge that has to carry the weight of what it borders. The
+		// muted panel is the third ground a field can stand on: the edge is repaired
+		// against it too (no generated reading of it falls under 3.50:1) but not gated
+		// on it, because no shipped classlist draws a field's line on a muted panel
+		// today and an unpainted pair has no business in the list a client is refused
+		// by — which is a fact about the components, not a floor left unmet.
+		theme.BorderDefault = enforceAt(generatedEdgeFloor, surface(surfaceSat*1.3, 0.27), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		theme.BorderStrong = enforce(surface(surfaceSat*1.2, 0.45), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.TextPrimary = hsv(hue, 0.10, 0.95)
 		theme.TextMuted = enforce(hsv(hue, 0.14, 0.74), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentDefault = enforceTinted(hsv(hue, accentSat*0.75, 0.74), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
@@ -151,8 +165,10 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.SurfaceCanvas = surface(surfaceSat, 0.945)
 		theme.SurfacePrimary = surface(surfaceSat*0.55, 0.995)
 		theme.SurfaceMuted = surface(surfaceSat*1.35, 0.90)
-		theme.BorderDefault = surface(surfaceSat*1.1, 0.80)
-		theme.BorderStrong = surface(surfaceSat, 0.52)
+		// The field's edge, at the graphic's floor: see the dark branch, where the
+		// same two lines and the reason for them are written out.
+		theme.BorderDefault = enforceAt(generatedEdgeFloor, surface(surfaceSat*1.1, 0.80), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		theme.BorderStrong = enforce(surface(surfaceSat, 0.52), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.TextPrimary = enforce(hsv(hue, 0.32, 0.12), theme.SurfaceCanvas, theme.SurfacePrimary)
 		theme.TextMuted = enforce(hsv(hue, 0.24, 0.46), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentDefault = enforceTinted(hsv(hue, accentSat, 0.38), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
@@ -279,11 +295,34 @@ func blend(over SRGBA, percent float64, into SRGBA) SRGBA {
 // the gate allows. The value tested is the literal that would be stored, so the
 // byte a theme actually holds is what reached the gate.
 func enforce(candidate string, backgrounds ...string) string {
+	return enforceAt(MinContrast, candidate, backgrounds...)
+}
+
+// generatedEdgeFloor is the ratio a generated field's edge is repaired to, which
+// is half a step over the floor that gates it. bodyContrast and edgeRolePairs
+// refuse a client's file at MinContrastGraphic — 3:1, what SC 1.4.11 asks of the
+// visual information that identifies a component — and the generator emits 3.5:1,
+// because the ground a client files is not the ground the generator drew: naming a
+// surface-primary in design.yaml darkens or lightens the card a field stands on,
+// and an edge emitted at exactly the floor hands the door a refusal of the
+// kernel's own colour for a change the client made to the surface under it. The
+// number is measured against the one override this repository pins at the edge of
+// the gate (a light theme whose surface-primary is a bright cyan, held by
+// ui/components since round 9): 0.5 is the smallest margin that keeps it inside
+// the door. It is a measurement of one real override, not a promise that any
+// override fits — a client that files a surface the kernel's edge cannot clear at
+// 3:1 is refused, and says so.
+const generatedEdgeFloor = MinContrastGraphic + 0.5
+
+// enforceAt is enforce with the floor the caller's object carries, so one walk
+// serves the copy in this list and the graphic in it rather than one floor
+// standing in for the other.
+func enforceAt(min float64, candidate string, backgrounds ...string) string {
 	grounds := make([]ground, 0, len(backgrounds))
 	for _, background := range backgrounds {
 		grounds = append(grounds, ground{Base: mustParse(background)})
 	}
-	return settle(candidate, grounds)
+	return settle(candidate, grounds, min)
 }
 
 // enforceTinted is enforce with one ground a literal cannot name: the role
@@ -299,13 +338,13 @@ func enforceTinted(candidate, tintSurface string, backgrounds ...string) string 
 		grounds = append(grounds, ground{Base: mustParse(background)})
 	}
 	grounds = append(grounds, ground{Base: mustParse(tintSurface), TintOfOwn: SoftTintPercent})
-	return settle(candidate, grounds)
+	return settle(candidate, grounds, MinContrast)
 }
 
-// settle walks one candidate until every ground reaches MinContrast.
-func settle(candidate string, grounds []ground) string {
+// settle walks one candidate until every ground reaches the floor min.
+func settle(candidate string, grounds []ground, min float64) string {
 	raw := mustParse(candidate)
-	if reaches(raw, grounds) {
+	if reaches(raw, grounds, min) {
 		return candidate
 	}
 	hue, saturation, value := rgbToHSV(raw)
@@ -318,7 +357,7 @@ func settle(candidate string, grounds []ground) string {
 	if towardLight {
 		for t := step; t <= 1; t += step {
 			lit := hsv(hue, saturation*(1-t), value+(1-value)*t)
-			if reaches(mustParse(lit), grounds) {
+			if reaches(mustParse(lit), grounds, min) {
 				return lit
 			}
 		}
@@ -326,7 +365,7 @@ func settle(candidate string, grounds []ground) string {
 	}
 	for t := step; t <= 1; t += step {
 		lit := hsv(hue, saturation*(1-t), value*(1-t))
-		if reaches(mustParse(lit), grounds) {
+		if reaches(mustParse(lit), grounds, min) {
 			return lit
 		}
 	}
@@ -335,9 +374,9 @@ func settle(candidate string, grounds []ground) string {
 
 // reaches reports one colour against every ground it will be painted on, each
 // resolved under that colour.
-func reaches(color SRGBA, grounds []ground) bool {
+func reaches(color SRGBA, grounds []ground, min float64) bool {
 	for _, g := range grounds {
-		if Contrast(color, g.under(color)) < MinContrast {
+		if Contrast(color, g.under(color)) < min {
 			return false
 		}
 	}

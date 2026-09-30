@@ -126,7 +126,19 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// surface-primary, which walked them to 3.49:1 on a raised card; and
 	// --pk-role-fg-placeholder is text-muted outright rather than text-muted 70%
 	// toward that surface, which measured 1.62:1 on one.
-	if legacy.SHA256 != "7c1736b53275659082f782c57674f35fdbcce7d19dd254869d7b721c19d976d4" {
+	//
+	// Re-recorded again for review round 14's finding, and it moves theme colours:
+	// a field's edge is now measured, so both shipped themes carry a border that
+	// clears SC 1.4.11's 3:1 on the ground the field is drawn on instead of the
+	// 1.5:1 hairline that vanished into the card. Measured as a diff of every token
+	// and every resolved role of design.Default() before and after: four colour
+	// values move (light border-default #cbc5b8 -> #85827d and border-strong
+	// #8f988f -> #636763, dark #2c3b37 -> #60756f and #5c6d67 -> #81928c) and with
+	// them the two role declarations each theme derives from them
+	// (--pk-role-border-primary, and --pk-role-border-secondary, which mixes
+	// border-default into surface-primary). 12 of the pair's 196 measured lines —
+	// 22 colour tokens and 76 resolved roles in each of its two themes — differ; no class, no rule, no example HTML and no other colour moves.
+	if legacy.SHA256 != "0464ab40cab24ef34974b4dd79ba8d0c11428c498873150b1ad83b63cdbf3276" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

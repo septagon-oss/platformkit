@@ -23,14 +23,25 @@ refuses unless the pair passes both halves of the gate — `Pair.Check` and
 `Pair.CheckRoles` over `RoleLayer()` and `GatedRolePairs()` below. `Check` is
 WCAG 2.2 measured by `Luminance` and `Contrast`: every body role at 4.5:1 (SC
 1.4.3) — a status tone on every surface a card raises itself onto, not only the
-badge that carries its name — and the focus ring at 3:1 (SC 1.4.11) on each of
-the three body surfaces its `RingOffset` draws it onto. The sidebar is a fourth
-ground a ringed control sits on, ungated; see [CHANGELOG](../CHANGELOG.md). A
+badge that carries its name — and the two graphical paints that carry
+information at 3:1 (SC 1.4.11): the focus ring on each of the three body
+surfaces its `RingOffset` draws it onto, and `border-default`, which is a text
+field's only edge — `clInput` fills the field with the same surface role as the
+card `clCardFrame` paints, so the line, not the fill, is what says where the
+field is. The sidebar is a fourth ground a ringed
+control sits on, ungated, and the muted panel a fourth ground a field can stand
+on, repaired against but ungated because no shipped rule draws a line there
+today; both are named in [CHANGELOG](../CHANGELOG.md) with their numbers. A
 generated foreground is repaired against two grounds no token pair reaches: the
 soft brand tint, `SoftTintPercent` of the accent mixed into a surface, which the
 kernel paints that accent's own colour on and which reads worse than its source
 surface, and the four status tints, which the generator walks toward white (or
-black) until the muted line a tinted panel carries reads on them. Repairing the
+black) until the muted line a tinted panel carries reads on them. A generated
+edge is emitted at 3.5:1, half a step over the floor that gates it, because the
+ground a client files is not the ground the generator drew: naming a
+`surface-primary` in `design.yaml` moves the card a field stands on, and an edge
+emitted at exactly the floor hands the door a refusal of the kernel's own colour
+for a change the client made to the surface under it. Repairing the
 tint and not the tone is deliberate: `text-muted` is set once per page and is
 one of the twelve tokens `Distance` measures. `Distance`, `MinDistance` and
 `Colliding` compare two clients' palettes: the generator cannot promise a
@@ -47,31 +58,38 @@ says nothing about colour gets.
 ## The layer a browser paints
 
 The `--pk-role-*` declarations live in [roles.go](roles.go): every role in terms
-of a theme's tokens, the mixes a theme does not enumerate, and the three lists of
+of a theme's tokens, the mixes a theme does not enumerate, and the four lists of
 pairs a reader is shown — `BodyRolePairs()` on a theme's own surfaces,
 `TintedRolePairs()` on the surface the layer derives by mixing a foreground into
-one, and `StatusRolePairs()` on the four status grounds — tinted, holding a tone
+one, `StatusRolePairs()` on the four status grounds — tinted, holding a tone
 and the muted line a failed upload puts under it, and filled, holding the label of
 the button that tone names (`clButtonTone` paints `fg-on-brand` on
 `surface-danger` at 14 px, which is what a generated list's delete form wears)
 plus `BodyRolePairs()`'s `fg-on-brand` on the accent a primary button is filled
-with. They are names, references and percentages, so owning them costs this
+with, and `EdgeRolePairs()` at the graphic's floor over the boundary a component
+draws itself with — `border-primary` on the card and on the page canvas, the two
+grounds a text field stands on. They are names, references and percentages, so owning them costs this
 package nothing of its dependency rule, and the package that measures a ratio has
 to own what it measures: `Client.Resolve` gates a client's finished pair with
 `RoleLayer()` and `GatedRolePairs()`, while
 [ui/style](../ui/style/README.md) renders those declarations into its `:root`
 block and [ui/export](../ui/export/README.md) projects them — all three through
-the same one list. A pair this package paints at body size and that list does not
+the same one list. A pair this package paints — at body size, or as the edge of the thing the copy
+is typed into — that those lists do not
 name is a pair no gate measures, which is how a muted sentence inside a
-warning-tinted panel sat at 3.6:1 on a generated palette while every gate in the
+warning-tinted panel sat at 3.6:1 on a generated palette, and how a field's edge
+sat at 1.42:1, while every gate in the
 repository passed it: `ui/components/painted_status_pair_test.go` now reads the
 painted pairs out of the components' own declarations, counts every ground a rule
 raises itself onto rather than the ones whose name says `Soft`, and refuses a pair
 that is missing from the list. A gate that could read only the token layer could certify
-colours nobody paints: overriding `surface-primary` with `#2e2920` in a dark theme
-holds all 22 token pairs and moves the tint a brand badge's own label sits on down
-to 3.91:1, which is why the door a client's file passes through refuses it rather
-than the export alone.
+colours nobody paints. One measured instance: a client whose dark theme overrides
+`surface-primary` with `#2e2920` holds all 22 token pairs and moves the tint a
+brand badge's own label sits on down to 3.91:1 — on the seed that client files,
+which is a different accent, tint and surface than any other client's, so the
+refusal is a measurement of that pair and not a property of those seven
+characters. That is why the door a client's file passes through refuses it rather
+than the export alone, and why no literal in this file is a rule.
 
 A role has two true names and this package owns the translation between them.
 Declared, it is `fg-muted` — the key of the table above, the spelling

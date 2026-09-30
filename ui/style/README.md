@@ -27,7 +27,10 @@ background this layer derives rather than takes from a theme — the brand tint 
 `design.SoftTintPercent` of the accent mixed into the card surface, and the
 accent's own colour is painted on it — and the export gates those too, because a
 background mixed toward a foreground always reads worse than the surface it came
-from. An element rule no class can express reads the
+from, and `EdgeRolePairs()` names the boundary a component draws itself with —
+`border-primary` on the card and the page canvas, at the graphic's 3:1, because a
+text field is filled with the surface it stands on and the line is what says where
+the field is. An element rule no class can express reads the
 same scales back with `Value()` — `S8.Value()` is `"2rem"` — so an article and
 the page around it share one scale (see [modules/web](../../modules/web/README.md)).
 `Measurements`, `ScaleValues`, `ShadowValues`, `EasingValues` and

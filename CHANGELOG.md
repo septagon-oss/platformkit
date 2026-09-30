@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+**A text field's edge is now measured, and the sentence that exempted it is
+corrected.** `design/contrast.go` stated its own scope as "Borders and tints carry
+no information and are not listed" while `ui/components/classlists.go` paints one
+border as the only visual information identifying a component: `clInput` fills the
+field with `style.SurfacePrimary`, the same role `clCardFrame` paints the card with,
+so the fill says nothing about where the field is and `clInputNormal`'s
+`BorderColor(style.BorderPrimary)` is the line that does. WCAG 2.2 SC 1.4.11 asks
+3:1 of exactly that — its worked example is a text input's border — and the focus
+ring, which carries less, was already gated on three grounds while this was gated on
+none: measured on the shipped pair, the edge read 1.69:1 on the card and 1.50:1 on
+the page canvas in `light`, 1.44:1 and 1.56:1 in `dark`, and 1.42:1 at the worst of
+40 generated palettes. `bodyContrast` now names `border-default` on
+`surface-primary` and `surface-canvas` at `MinContrastGraphic`, and `edgeRolePairs`
+spells the same two pairs in the layer a browser paints
+(`--pk-role-border-primary` on `--pk-role-surface-primary` and
+`--pk-role-surface-secondary`), so `Client.Resolve` refuses a client whose own
+override drops its field edge under the floor and `ui/export` refuses it too. The
+generator emits the edge at 3.5:1 rather than at the 3:1 that gates it, because the
+ground a client files is not the ground the generator drew: a client that names its
+own `surface-primary` moves the card the field stands on, and an edge emitted at
+exactly the floor is refused for the kernel's colour when the client changed its
+surface. Measured after the change: the shipped pair reads 3.43:1 on the card,
+3.33:1 on the canvas and 3.02:1 on the muted panel in both themes, and across 400
+generated seeds (800 themes) the closest reading is 3.90:1 — the muted panel is
+repaired against but not gated, because no shipped rule draws a field's line on one
+today, which is a fact about the components and not a floor left unmet. Six colours
+move and nothing else does: `border-default` and `border-strong` in each shipped
+theme (`light` `#cbc5b8` → `#85827d` and `#8f988f` → `#636763`, `dark` `#2c3b37` →
+`#60756f` and `#5c6d67` → `#81928c`) and, in a generated pair, the same two tokens
+at the same floors; the two role declarations mixed from them move with them. A
+native screen is handed `--pk-color-border-default` as a colour, so this reaches
+`platformkit-mobile` through the token document, whose pinned digests are
+re-recorded here with their measurement — 12 of the pair's 196 measured lines
+(22 colour tokens and 76 resolved roles in each theme) differ, and no class, rule or
+example HTML does. Decorative dividers stay exempt: a line between two rows the
+reader has already found, and a tint whose copy the body pairs measure themselves.
+What is still ungated, and named rather than quietly dropped: `sidebar-bg` under a
+ringed control, and `surface-active`.
+
 **A focus ring is now measured on each of the surfaces the kernel draws it on.**
 Review round 10 found the graphic's floor read against one ground of three:
 `clFocusRing` pairs `Ring(style.Ring2).RingColor(style.RingFocus)` with
