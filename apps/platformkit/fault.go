@@ -115,10 +115,13 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 		Installation: app.Installation{Host: cfg.Server.InstallationHost},
 		// The document a native shell reads to know what this application has.
 		// The kernel owns the address and ui owns the body, and this is the one
-		// line that joins them.
-		WorkspaceCatalog: func(ctx context.Context, resources []httpx.Resource) (any, error) {
-			return screens.Describe(ctx, resources), nil
-		},
+		// line that joins them. The renderer's type is carried on the call, so the
+		// OpenAPI document names the fields a shell parses rather than an empty
+		// object — see app.WorkspaceCatalogRoute.
+		WorkspaceCatalog: app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
+			document := screens.Describe(ctx, resources)
+			return &document, nil
+		}),
 		Tenants:      c.tenants,
 		Authorize:    c.auth,
 		Entitle:      c.plans,

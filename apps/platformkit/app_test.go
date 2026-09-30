@@ -139,9 +139,10 @@ func install(t *testing.T, path string) {
 func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Options) {
 	t.Helper()
 	if opts.WorkspaceCatalog == nil {
-		opts.WorkspaceCatalog = func(ctx context.Context, resources []httpx.Resource) (any, error) {
-			return screens.Describe(ctx, resources), nil
-		}
+		opts.WorkspaceCatalog = app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
+			document := screens.Describe(ctx, resources)
+			return &document, nil
+		})
 	}
 	// Same for the installation's host: the control plane is served where the
 	// installation is reached, and a test that left it out would be starting a

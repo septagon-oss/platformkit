@@ -1,0 +1,356 @@
+package main
+
+// The HTTP contract a native shell is written against, checked in and gated the
+// way apps/platformkit/asyncapi_test.go gates the event contract: the golden is
+// the document the running composition serves at /openapi.json, rendered by the
+// same code that serves it, and a stale one fails make check naming the file and
+// the byte.
+//
+// What a golden cannot do on its own is refuse a *breaking* change: UPDATE_GOLDEN=1
+// rewrites whatever it is handed, and the shape a build already installed in a
+// pocket parses does not care what was convenient to regenerate. So the pair is
+// diffed by the rules in wire_compatibility_test.go before the flag is honoured,
+// and those rules refuse the regeneration, not the change.
+//
+// UPDATE_GOLDEN=1 go test ./apps/platformkit -run OpenAPI rewrites the document.
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
+	"github.com/septagon-oss/platformkit/kit/module"
+)
+
+const openapiGolden = "testdata/openapi.json"
+
+// deviceContractPaths is the set this contract promises a device: every address
+// named here answers at the reference composition and appears in the golden. It is
+// the mirror of TestEveryAliasRowOfTheReferenceApplicationLeadsSomewhereThatAnswers
+// one level up — an address in a document that nothing answers at is a redirect
+// into a 404 with an application behind it that cannot be fixed, which is what
+// kit/httpx/aliases.go refuses for a route.
+//
+// The bearer exchange (T-0117) and the push registration (T-0113) are not in the
+// list because nothing answers at either address yet: each joins in the same commit
+// that mounts its door. That is what makes this list a gate and not a wish list.
+var deviceContractPaths = []struct {
+	operation string // the operationId the golden publishes
+	method    string
+	path      string
+	// anonymous says the door answers for a caller nobody has recognised; the
+	// others are read with the composition's own administrator.
+	anonymous bool
+}{
+	{operation: "auth-login", method: http.MethodPost, path: "/api/v1/auth/login", anonymous: true},
+	{operation: "auth-me", method: http.MethodGet, path: "/api/v1/auth/me"},
+	{operation: "auth-logout", method: http.MethodPost, path: "/api/v1/auth/logout"},
+	{operation: "app-resources", method: http.MethodGet, path: "/api/v1/app/resources"},
+	{operation: "audit-event-list", method: http.MethodGet, path: "/api/v1/audit/events"},
+}
+
+// TestTheOpenAPIDocumentIsTheCompositionServed is the golden and the gate.
+func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
+	cfg, mods, fixture := deviceComposition(t)
+	install(t, fixture.path)
+	start(t, cfg, mods, fixture.opts)
+
+	code, body := do(t, cfg, nil, http.MethodGet, acmeHost, "/openapi.json", "")
+	if code != http.StatusOK {
+		t.Fatalf("GET /openapi.json = %d %s, want 200: the reference composition serves its document", code, body)
+	}
+	served := []byte(body)
+
+	if os.Getenv("UPDATE_GOLDEN") != "" {
+		// The refusal runs before the rewrite. A break cannot be laundered by
+		// regenerating the file it breaks, and there is no second variable to set:
+		// an escape hatch a tired person can pull is the same failure as a golden
+		// nobody regenerates.
+		refuseWireBreak(t, mustReadOpenAPIGolden(t), served)
+		if err := os.WriteFile(openapiGolden, served, 0o644); err != nil {
+			t.Fatalf("write %s: %v", openapiGolden, err)
+		}
+		t.Logf("rewrote %s", openapiGolden)
+		return
+	}
+
+	golden := mustReadOpenAPIGolden(t)
+	refuseWireBreak(t, golden, served)
+	if string(golden) != string(served) {
+		t.Fatalf("%s is stale; run with UPDATE_GOLDEN=1.\nfirst difference at byte %d",
+			openapiGolden, firstDifference(golden, served))
+	}
+}
+
+// TestTheCatalogOperationDescribesWhatAShellParses is the hole this delivery
+// closes. While the catalog route answered with `any`, its entry in the published
+// document described none of the body — and /api/v1/app/resources is the one
+// address a native shell is generated from. The type now reaches the document
+// because the composition names it on the mount (app.WorkspaceCatalogRoute), so
+// this case is red for a composition that loses the type again.
+func TestTheCatalogOperationDescribesWhatAShellParses(t *testing.T) {
+	t.Parallel()
+	doc := wireDocument(t, mustReadOpenAPIGolden(t))
+	route, ok := wireRoute(doc, "app-resources")
+	if !ok {
+		t.Fatalf("%s publishes no app-resources operation", openapiGolden)
+	}
+	// The body is a component the document points at, which is what a validator
+	// follows; this case follows it too, because the claim is about the fields.
+	schema := wireResolveRef(doc, jsonResponseSchema(route))
+	if schema == nil {
+		t.Fatalf("app-resources has no application/json response schema in %s", openapiGolden)
+	}
+	// Every name below is a JSON tag of ui/screens.Catalog or ui/screens.Entry. The
+	// optional ones are optional exactly as their tags say; a shell written against
+	// the document still reads a document that adds a key.
+	for _, name := range []string{"catalogVersion", "resources"} {
+		if wireProperty(doc, schema, name) == nil {
+			t.Errorf("the published catalog document has no %q: the shape a shell parses is not in the contract", name)
+		}
+	}
+	if required := wireStringList(schema["required"]); !slices.Contains(required, "catalogVersion") || !slices.Contains(required, "resources") {
+		t.Errorf("the catalog document requires %v; both keys are always written, so a validator reading this document would accept a body with neither", required)
+	}
+	entry := wireItemsOf(doc, schema, "resources")
+	if entry == nil {
+		t.Fatal("the catalog document's resources are not an array of objects")
+	}
+	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton"} {
+		if _, ok := wireMap(entry["properties"])[name]; !ok {
+			t.Errorf("a catalog entry in the published document has no %q: a generated screen would read a field the contract never mentions", name)
+		}
+	}
+}
+
+// TestEveryDeviceContractAddressAnswers reads each address twice: once at the
+// running application, where a 404 is the answer of an address nothing mounted, and
+// once in the document, where an absent path is a promise the composition does not
+// keep. Both are the same defect seen from either end of a phone.
+func TestEveryDeviceContractAddressAnswers(t *testing.T) {
+	cfg, mods, fixture := deviceComposition(t)
+	install(t, fixture.path)
+	start(t, cfg, mods, fixture.opts)
+	doc := wireDocument(t, mustReadOpenAPIGolden(t))
+	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
+
+	for _, want := range deviceContractPaths {
+		client := admin
+		if want.anonymous {
+			client = nil
+		}
+		body := ""
+		if want.operation == "auth-login" {
+			body = `{"email":"` + adminEmail + `","password":"` + adminPass + `"}`
+		}
+		code, answer := do(t, cfg, client, want.method, acmeHost, want.path, body)
+		// Anything but the answer of an address nobody mounted. A 401 or a 403 is a
+		// door refusing a caller, which is a door; the 404 this case refuses is a hole.
+		if code == http.StatusNotFound || strings.Contains(answer, "nothing is served at this address") {
+			t.Errorf("%s %s = %d: the contract names an address nothing answers at", want.method, want.path, code)
+		}
+		route, ok := wireRoute(doc, want.operation)
+		if !ok {
+			t.Errorf("%s has no operation in %s", want.operation, openapiGolden)
+			continue
+		}
+		if _, ok := wireMap(wireMap(doc["paths"])[want.path])[strings.ToLower(want.method)]; !ok {
+			t.Errorf("%s is not published as %s in %s: %v", want.path, want.method, openapiGolden, route["operationId"])
+		}
+	}
+}
+
+// TestTheDocumentIsTheSameForEveryCallerExceptWhoMayCall is the tenant-first claim
+// of an artefact that carries no tenant data: the document is a property of the
+// composition, so the one thing that may differ between what an operator is told
+// and what a tenant's user is told is the authorization declaration on each route.
+func TestTheServedDocumentCarriesNoEphemeralBytes(t *testing.T) {
+	t.Parallel()
+	body := mustReadOpenAPIGolden(t)
+	doc := wireDocument(t, body)
+	info := wireMap(doc["info"])
+	if info["title"] != "PlatformKit" {
+		t.Errorf("info.title = %v", info["title"])
+	}
+	// info.version is the release string of the build that served it, not a contract
+	// version: ui/screens.CatalogVersion is the version of the body a shell parses,
+	// and nothing here invents a second number beside it.
+	if version, _ := info["version"].(string); version == "" {
+		t.Error("info.version is empty; the document says nothing about who published it")
+	}
+	for _, ephemeral := range []string{"/tmp", "127.0.0.1:", acmeHost, globexHost, adminEmail} {
+		if strings.Contains(string(body), ephemeral) {
+			t.Errorf("%s carries %q, which is a fact about one run and not about the contract", openapiGolden, ephemeral)
+		}
+	}
+	for _, extension := range []string{"x-platformkit-surface", "x-platformkit-auth"} {
+		if !strings.Contains(string(body), extension) {
+			t.Errorf("%s names no %s: every route's surface and permission belong in the document a shell reads", openapiGolden, extension)
+		}
+	}
+}
+
+// TestTheWireGateRefusesEachRuleOnTheRealDocument runs each rule over the
+// composition's own document with exactly one thing done to it, so the gate is
+// proven against the contract it will actually be held to rather than against a toy
+// document that happens to agree. Every case mutates a copy; the golden is read.
+func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
+	t.Parallel()
+	golden := mustReadOpenAPIGolden(t)
+	const catalog = "paths:/api/v1/app/resources:get:responses:200:content:application/json:schema"
+
+	for _, tc := range []struct {
+		name string
+		rule string
+		// before and after are what the two documents hold. A case whose before is
+		// nil is the golden itself, so the change is one-sided by construction; the
+		// narrowing case states both, because an enum that joined a request in the
+		// first place is additive and only the narrowing may be refused.
+		before func(t *testing.T, doc map[string]any)
+		after  func(t *testing.T, doc map[string]any)
+	}{
+		{"the catalog address is gone", "B1", nil, func(t *testing.T, doc map[string]any) {
+			delete(wireMap(doc["paths"]), "/api/v1/app/resources")
+		}},
+		{"the catalog address is gone, so its operation went with it", "B2", nil, func(t *testing.T, doc map[string]any) {
+			delete(wireMap(doc["paths"]), "/api/v1/app/resources")
+		}},
+		{"the catalog address changes hands", "B2", nil, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/app/resources:get")["operationId"] = "app-something-else"
+		}},
+		{"a field of the catalog document is removed", "B3", nil, func(t *testing.T, doc map[string]any) {
+			delete(wireMap(wireAt(t, doc, "components:schemas:Catalog")["properties"]), "catalogVersion")
+		}},
+		{"a field of the catalog document is retyped", "B3", nil, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "components:schemas:Catalog:properties:catalogVersion")["type"] = "string"
+		}},
+		{"an existing write starts demanding a key", "B4", nil, func(t *testing.T, doc map[string]any) {
+			task := wireAt(t, doc, "components:schemas:Task")
+			task["required"] = append(wireStringList(task["required"]), "requested_by")
+		}},
+		{"a response's enumerated set grows past what a reader branches on", "B5", func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "components:schemas:Entry:properties:screen")["enum"] = []any{"a"}
+		}, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "components:schemas:Entry:properties:screen")["enum"] = []any{"a", "b"}
+		}},
+		{"a write stops accepting a value an older client sends", "B5", func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "components:schemas:Task:properties:priority")["enum"] = []any{"high", "low"}
+		}, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "components:schemas:Task:properties:priority")["enum"] = []any{"high"}
+		}},
+		{"a route's authorization changes", "B6", nil, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "public"
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reference := golden
+			if tc.before != nil {
+				reference = wireMutated(t, golden, tc.before)
+			}
+			problems := breakingWireChanges(t, reference, wireMutated(t, reference, tc.after))
+			if len(problems) == 0 {
+				t.Fatalf("the gate accepted it; %s was expected", tc.rule)
+			}
+			if !strings.Contains(strings.Join(problems, "\n"), tc.rule) {
+				t.Errorf("the gate said %q, which does not name %s", problems, tc.rule)
+			}
+		})
+	}
+
+	// The two changes a delivery is allowed to make on its own: a new address, and a
+	// new optional field on a document a shell already reads. Both are what
+	// ui/screens/catalog.go promises beside CatalogVersion — additive, optional, and
+	// never a change of meaning — so a composition that grows must not fight the gate.
+	for _, tc := range []struct {
+		name  string
+		after func(t *testing.T, doc map[string]any)
+	}{
+		{"a new optional field on a catalog entry", func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "components:schemas:Entry:properties")["device_label"] = map[string]any{"type": "string"}
+		}},
+		{"a new address answering a new operation", func(t *testing.T, doc map[string]any) {
+			wireMap(doc["paths"])["/api/v1/app/devices"] = map[string]any{"post": map[string]any{
+				"operationId": "app-device-register",
+				"responses":   map[string]any{"204": map[string]any{"description": "No Content"}},
+			}}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if problems := breakingWireChanges(t, golden, wireMutated(t, golden, tc.after)); len(problems) != 0 {
+				t.Errorf("an additive change was refused: %q", problems)
+			}
+		})
+	}
+}
+
+// wireMutated is the document with one thing done to it, rendered the way the
+// golden is rendered so the pair differs only in the thing the case changed.
+func wireMutated(t *testing.T, body []byte, mutate func(t *testing.T, doc map[string]any)) []byte {
+	t.Helper()
+	doc := wireDocument(t, body)
+	mutate(t, doc)
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("render the mutated document: %v", err)
+	}
+	return out
+}
+
+// wireAt is one node of the document, addressed by its keys with ":" between them,
+// which is how the cases above name a field without restating the path to it.
+func wireAt(t *testing.T, doc map[string]any, address string) map[string]any {
+	t.Helper()
+	node := doc
+	for _, key := range strings.Split(address, ":") {
+		child := wireMap(node[key])
+		if len(child) == 0 {
+			t.Fatalf("%s has no %q", address, key)
+		}
+		node = child
+	}
+	return node
+}
+
+// refuseWireBreak fails with every rule the pair violates, so one run names all of
+// what a delivery broke rather than the first thing it broke.
+func refuseWireBreak(t *testing.T, golden, served []byte) {
+	t.Helper()
+	for _, problem := range breakingWireChanges(t, golden, served) {
+		t.Error(problem)
+	}
+}
+
+func mustReadOpenAPIGolden(t *testing.T) []byte {
+	t.Helper()
+	body, err := os.ReadFile(openapiGolden)
+	if err != nil {
+		t.Fatalf("read %s: %v (run with UPDATE_GOLDEN=1)", openapiGolden, err)
+	}
+	return body
+}
+
+// deviceComposition is the reference application as the product boots it, with the
+// path of the configuration written for it so a case can bootstrap a tenant. Every
+// case here starts the same process the README's five commands start; a case that
+// spelled out its own module list would drift from apps/platformkit/modules.go the
+// way a hand-copied schema drifts from the type.
+type deviceFixture struct {
+	path string
+	opts app.Options
+}
+
+func deviceComposition(t *testing.T) (config.Config, []module.Module, deviceFixture) {
+	t.Helper()
+	path, cfg := configure(t)
+	c := compose(cfg)
+	return cfg, c.modules, deviceFixture{path: path, opts: app.Options{
+		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Role: app.All, Transport: memory.New(), Log: quiet(),
+	}}
+}
