@@ -61,6 +61,18 @@ func deref(s *string) string {
 	return *s
 }
 
+// rolesArray is `oidc_roles` spelled as the column is: a NOT NULL text[] whose
+// empty value is `{}`. A nil slice is not an empty array — pq turns it into a
+// NULL, which the column refuses — and "no roles to hand out" is the ordinary
+// answer for a tenant registered as `existing`, so the empty case is the one
+// that has to be right.
+func rolesArray(in contracts.OIDCSettings) pq.StringArray {
+	if in.Roles == nil {
+		return pq.StringArray{}
+	}
+	return pq.StringArray(in.Roles)
+}
+
 // SetOIDC says which provider one tenant's people sign in against.
 //
 // The refusals are the shape rule of migrations/000030 spelled in Go for the
@@ -83,7 +95,7 @@ func (s *Service) SetOIDC(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	err = tx.DB().Table("tenants").Where("id = ?", id).Updates(map[string]any{
 		"oidc_issuer": in.Issuer, "oidc_client_id": in.ClientID, "oidc_secret_ref": in.SecretRef,
 		"oidc_redirect_path": in.RedirectPath, "oidc_registration": registration(in),
-		"oidc_roles": pq.StringArray(in.Roles), "updated_at": db.Now(),
+		"oidc_roles": rolesArray(in), "updated_at": db.Now(),
 	}).Error
 	if err != nil {
 		return nil, crud.Classify(err)

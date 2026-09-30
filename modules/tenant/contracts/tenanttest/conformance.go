@@ -56,6 +56,22 @@ func acme() contracts.NewTenant {
 	return contracts.NewTenant{Slug: "acme", Name: "Acme Corporation", Host: "acme.example.com"}
 }
 
+// people is a provider somebody would actually configure: a realm issuer, the
+// installation's own client, and the *name* of the variable holding the secret.
+func people() contracts.OIDCSettings {
+	return contracts.OIDCSettings{
+		Issuer: "https://idp.acme.example/realms/people", ClientID: "platformkit",
+		SecretRef: "ACME_OIDC_SECRET", RedirectPath: "/oidc/callback",
+	}
+}
+
+// replaced is the same shape with a different door behind it.
+func replaced() contracts.OIDCSettings {
+	in := people()
+	in.Issuer = "https://login.acme.example"
+	return in
+}
+
 func cases() map[string]func(*testing.T, Fixture) {
 	return map[string]func(*testing.T, Fixture){
 		"create writes the tenant and its first host": func(t *testing.T, f Fixture) {
@@ -370,6 +386,92 @@ func cases() map[string]func(*testing.T, Fixture) {
 			published(t, f, contracts.EventCreated)
 		},
 
+		// The provider's four rules, run against the SQL service and the fake by
+		// the same table: a mode that is not one of three, half a provider, an
+		// issuer that is a sentence, a secret written where its name belongs.
+		"set-oidc says which provider a tenant's people sign in against": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, people()); err != nil {
+				t.Fatalf("SetOIDC: %v", err)
+			}
+			published(t, f, contracts.EventCreated, contracts.EventOIDCSet)
+		},
+
+		// Every one of these is a write that cannot be exercised: a redirect to a
+		// provider that will refuse the code, a door into a room with no roles, a
+		// secret in a column that is copied into the audit trail. Each refusal
+		// publishes nothing, which is the assertion that makes it a refusal.
+		"set-oidc refuses half a provider": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			broken := map[string]func(*contracts.OIDCSettings){
+				"no issuer":       func(in *contracts.OIDCSettings) { in.Issuer = "" },
+				"a plain host":    func(in *contracts.OIDCSettings) { in.Issuer = "idp acme" },
+				"not https":       func(in *contracts.OIDCSettings) { in.Issuer = "http://idp.acme.example" },
+				"a query":         func(in *contracts.OIDCSettings) { in.Issuer = "https://idp.acme.example?tenant=acme" },
+				"no client":       func(in *contracts.OIDCSettings) { in.ClientID = "" },
+				"a secret as ref": func(in *contracts.OIDCSettings) { in.SecretRef = "s3cr3t-value" },
+				"an unknown mode": func(in *contracts.OIDCSettings) { in.Registration = "auto" },
+				"provision, no role": func(in *contracts.OIDCSettings) {
+					in.Registration = contracts.RegistrationProvision
+					in.Roles = nil
+				},
+			}
+			for name, breakIt := range broken {
+				in := people()
+				breakIt(&in)
+				if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, in); !errors.Is(err, crud.ErrInvalid) {
+					t.Errorf("SetOIDC with %s = %v, want ErrInvalid", name, err)
+				}
+			}
+			published(t, f, contracts.EventCreated)
+		},
+
+		// A retry is the same decision reported once. An operator who pressed save
+		// twice must not read as two changes in the trail a customer is billed on.
+		"the same provider twice changes nothing and says nothing": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			for range 2 {
+				if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, people()); err != nil {
+					t.Fatalf("SetOIDC: %v", err)
+				}
+			}
+			published(t, f, contracts.EventCreated, contracts.EventOIDCSet)
+			if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, replaced()); err != nil {
+				t.Fatalf("SetOIDC with a different issuer: %v", err)
+			}
+			published(t, f, contracts.EventCreated, contracts.EventOIDCSet, contracts.EventOIDCSet)
+		},
+
+		"clearing a provider ends it once": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if _, err := f.Service.ClearOIDC(f.Ctx, f.Tx, created.ID); err != nil {
+				t.Fatalf("ClearOIDC of a tenant that never had one: %v", err)
+			}
+			published(t, f, contracts.EventCreated)
+			if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, people()); err != nil {
+				t.Fatalf("SetOIDC: %v", err)
+			}
+			if _, err := f.Service.ClearOIDC(f.Ctx, f.Tx, created.ID); err != nil {
+				t.Fatalf("ClearOIDC: %v", err)
+			}
+			if _, err := f.Service.ClearOIDC(f.Ctx, f.Tx, created.ID); err != nil {
+				t.Fatalf("ClearOIDC again: %v", err)
+			}
+			published(t, f, contracts.EventCreated, contracts.EventOIDCSet, contracts.EventOIDCCleared)
+		},
+
 		"an unknown tenant is not found": func(t *testing.T, f Fixture) {
 			id := uuid.New()
 			if _, err := f.Service.Get(f.Ctx, f.Tx, id); !errors.Is(err, crud.ErrNotFound) {
@@ -380,6 +482,12 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			if _, err := f.Service.AddHost(f.Ctx, f.Tx, id, "x.example.com", false); !errors.Is(err, crud.ErrNotFound) {
 				t.Errorf("AddHost on an unknown tenant = %v, want ErrNotFound", err)
+			}
+			if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, id, people()); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("SetOIDC on an unknown tenant = %v, want ErrNotFound: a provider cannot be attached to nobody", err)
+			}
+			if _, err := f.Service.ClearOIDC(f.Ctx, f.Tx, id); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("ClearOIDC on an unknown tenant = %v, want ErrNotFound", err)
 			}
 		},
 	}
