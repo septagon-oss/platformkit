@@ -109,7 +109,23 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sidebar examples' schemas (six leaves: its type and default). Measured as a
 	// leaf-by-leaf diff of the v1 export before and after: 6,400 leaves become 6,406,
 	// /css and /sha256 change, nothing else moves.
-	if legacy.SHA256 != "99d5406cdf0cd972ba7b7f88c54b8934e6b0803965c495db26ab151e56f50a91" {
+	// Rich states add 42 English/Portuguese captures and optional EmptyState
+	// Text/Action and Alert.Live properties. Seven Alert, two EmptyState and
+	// Media's empty example change; all 127 old IDs remain. The measured export
+	// diff changes only examples and this digest: CSS, tokens and icons agree.
+	// DataList adds 44 captures. Four Table examples gain native selection
+	// targets/sorting height, and two Pagination examples gain wrapping 44px
+	// controls. Seventeen existing empty/media examples align their text blocks.
+	// Only examples, CSS and the digest change; no old ID is removed.
+	// Detail panels add 50 captures and Modal.Placement. The existing modal
+	// examples gain 44px controls and wrapping chrome; only examples/CSS/digest
+	// change. All prior IDs, tokens and icons remain.
+	// Timeline adds 30 typed captures with standard time codecs. Review fixes add
+	// loading geometry/schema; only examples/CSS/digest change, retaining all IDs and tokens.
+	// Remaining shared families add typed examples, row-header/Hero schema and exact
+	// int64 string codecs. Only examples/CSS/notices/digest change; all prior IDs,
+	// design tokens, themes and icons remain. NOTICE pins the engines; Leaflet CSS uses LF.
+	if legacy.SHA256 != "607770e6199bb4ea2b979532da66f9605313cfbe7e21c4b16f1467c18133bfae" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
