@@ -43,13 +43,22 @@ fi
 # The Android tools are installed by the SDK and not always put on PATH: the host the
 # pkit-ci label runs on has adb and the emulator under ~/Android/Sdk with no
 # ANDROID_HOME exported at all. Found there is found; only a tool nowhere to be found
-# is missing. Maestro is not — it is one binary the runner image carries, because
-# there is no SDK directory that would supply it.
+# is missing. Maestro is searched for the same reason and not with `command -v` alone:
+# it is a Gradle start-up script plus a lib directory, so the host that has it keeps it
+# under a tools prefix of its own — $MAESTRO_HOME where one is exported, and
+# ~/.local/share/platformkit-tools/maestro/bin where this loop's tooling installs it —
+# and none of those prefixes is on a CI shell's PATH. A tool that exists and is not
+# looked for is a journey that reports itself impossible, which is the wrong answer to
+# give twice.
 for dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk"; do
 	[ -n "$dir" ] || continue
 	for part in platform-tools emulator; do
 		[ -x "$dir/$part" ] && PATH="$dir/$part:$PATH"
 	done
+done
+for dir in "${MAESTRO_HOME:-}" "${MAESTRO_HOME:+$MAESTRO_HOME/bin}" "${XDG_DATA_HOME:-$HOME/.local/share}/platformkit-tools/maestro/bin"; do
+	[ -n "$dir" ] || continue
+	[ -x "$dir/maestro" ] && PATH="$dir:$PATH"
 done
 export PATH
 
