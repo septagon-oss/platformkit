@@ -1,22 +1,47 @@
 {
   "admin.login.title": {
-    "references": ["modules/admin/internal/pages.go"],
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
     "translation": "Iniciar sessão",
-    "plural": { "": "Iniciar sessão" }
+    "plural": {
+      "": "Iniciar sessão"
+    }
   },
   "admin.login.description": {
-    "references": ["modules/admin/internal/pages.go"],
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
     "translation": "Utilize o endereço associado à sua conta nesta organização.",
-    "plural": { "": "Utilize o endereço associado à sua conta nesta organização." }
+    "plural": {
+      "": "Utilize o endereço associado à sua conta nesta organização."
+    }
   },
   "admin.login.email": {
-    "references": ["modules/admin/internal/pages.go"],
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
     "translation": "Email",
-    "plural": { "": "Email" }
+    "plural": {
+      "": "Email"
+    }
   },
   "admin.login.password": {
-    "references": ["modules/admin/internal/pages.go"],
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
     "translation": "Palavra-passe",
-    "plural": { "": "Palavra-passe" }
+    "plural": {
+      "": "Palavra-passe"
+    }
+  },
+  "permission.gallery:read": {
+    "references": [
+      "modules/admin/module.go"
+    ],
+    "translation": "ler a galeria de componentes",
+    "plural": {
+      "": "ler a galeria de componentes"
+    }
   }
 }
