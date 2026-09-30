@@ -9,6 +9,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -29,9 +30,11 @@ const EventAccessRequested = "security.access_requested"
 
 // AccessRequested is EventAccessRequested's payload: who asked, for which grant,
 // at which address, and how many people were told. Notified is in the open
-// because "sent" is only ever true of the notices that were written: an ask in a
-// tenant with nobody holding role management is a fact an operator can read out
-// of the trail (0) rather than a page that claimed a delivery it did not make.
+// because "sent" is only ever true of the notices that were written — the tenant's
+// holders of role management, less the asker, who is never told their own ask:
+// an ask in a tenant with nobody holding role management is a fact an operator can
+// read out of the trail (0) rather than a page that claimed a delivery it did not
+// make.
 //
 // The actor is the event's own — the outbox takes it from the request's
 // principal — so the asker is not repeated here; RefusedPath is what the person
@@ -50,18 +53,17 @@ type AccessRequested struct {
 // recordAccessRequest is httpx.Options.Accessed for this composition: the event,
 // in the request's own transaction, beside the notices the command wrote — so an
 // ask nobody was told about is also an ask that is not in the trail, and neither
-// happens on its own.
-func recordAccessRequest(ctx context.Context, r httpx.AccessRecord) {
+// happens on its own. Publish errors on the transaction, and the answer is that
+// error: an ask whose event did not commit rolls back with the notices it was
+// meant to travel with, so the trail and the bell never disagree.
+func recordAccessRequest(ctx context.Context, r httpx.AccessRecord) error {
 	tx, ok := httpx.TxFrom(ctx)
 	if !ok {
-		// No transaction means the notices could not have been written either; the
-		// command already refused the ask for that reason.
-		return
+		// Nothing could have been written at all: the notices need the same
+		// transaction. Saying so is the honest answer, not a silent 202.
+		return errors.New("the access request has no transaction to be recorded in")
 	}
-	// The failure is returned to the caller as the write's own failure by the
-	// command's caller below: Publish errors on the transaction, and an ask whose
-	// event did not commit is an ask that rolls back with it.
-	_ = events.Publish(ctx, tx, EventAccessRequested, AccessRequested{
+	return events.Publish(ctx, tx, EventAccessRequested, AccessRequested{
 		Permission: r.Permission, Label: r.Label, Method: r.Method, RefusedPath: r.Path,
 		RequestID: r.RequestID, UserID: r.UserID, Notified: r.Notified,
 	})
@@ -79,14 +81,9 @@ type accessInput struct {
 	Body accessBody `required:"true"`
 }
 
-// accessAnswer is what was sent, and not a row: there is no row (the ask is an
-// event and some notices), and a command with nothing to return must invent
-// nothing to return.
-type accessAnswer struct {
-	Sent       bool   `json:"sent"`
-	Permission string `json:"permission"`
-	Label      string `json:"label"`
-}
+// accessAnswer is nothing: the ask leaves no row to read back (it is an event and
+// some notices), and a command with nothing to return invents nothing to return —
+// the shape kit/rest's own write doors use for the same verdict.
 
 // mountAccessRequest mounts the kernel's ask door beside the catalog route. The
 // address is the kernel's because no module owns "the sequel to a kernel
@@ -107,16 +104,10 @@ func mountAccessRequest(api *httpx.API) {
 		Tags:          []string{"kernel"},
 		Errors:        []int{http.StatusUnprocessableEntity, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions:    map[string]any{httpx.EventsExtension: []string{EventAccessRequested}},
-	}, httpx.SignedIn(), func(ctx context.Context, in *accessInput) (*accessAnswer, error) {
+	}, httpx.SignedIn(), func(ctx context.Context, in *accessInput) (*struct{}, error) {
 		if err := httpx.Ask(ctx, httpx.AccessAsk{Permission: in.Body.Permission, Path: in.Body.Path}); err != nil {
 			return nil, err
 		}
-		label := ""
-		for _, g := range api.Permissions() {
-			if g.Permission == in.Body.Permission {
-				label = g.Label
-			}
-		}
-		return &accessAnswer{Sent: true, Permission: in.Body.Permission, Label: label}, nil
+		return nil, nil
 	})
 }
