@@ -27,6 +27,7 @@ func raisedFaults(t *testing.T) []string {
 	for _, key := range faultKeys {
 		keys = append(keys, key)
 	}
+	keys = append(keys, deniedPermissionKey) // the denial that names its permission, asked for in fault()
 	for code := 100; code < 600; code++ {
 		if key, lookup := faultKey("", code); lookup {
 			keys = append(keys, key)
