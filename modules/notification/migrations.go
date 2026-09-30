@@ -13,12 +13,12 @@ var schema embed.FS
 // "notification". The manifest hands the kernel the same files and adoption, and a test
 // composes the schema it needs beside the foundation: dbtest.Schema(t, notification.Migrations).
 //
-// The files keep the version numbers they had when the foundation applied
-// them under its own name, so an installation migrated before this module
-// owned its SQL is adopted by checksum rather than migrated again (see
-// db.Adoption and docs/adr/0011). New files continue from the highest number.
+// Every version this source ships is adopted from "platformkit", the owner that
+// applied the pre-split files under its own name: a ledger row naming it re-owns by
+// checksum rather than stranding the file, and where no such row exists — every
+// newer file, and every fresh installation — the adoption does nothing (docs/adr/0011).
 var Migrations = db.MigrationSource{
 	Owner:  "notification",
 	Files:  db.Sub(schema, "migrations"),
-	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{11, 27}}},
+	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{11, 27, 28, 29, 30}}},
 }
