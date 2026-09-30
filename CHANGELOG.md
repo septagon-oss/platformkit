@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+**The site's quotation bar is now gated the way the field's edge is.** `bodyContrast`
+named the boundary of a text field and no other, while `modules/web/internal/style.go`
+paints a second one: `[data-prose] blockquote` carries a 4 px left rule in
+`--pk-color-border-strong`, on the page canvas of every article the site serves. That
+token is named by neither half of the gate — no pair in `bodyContrast`, and no role in
+`design.RoleLayer()` references it, so `CheckRoles` could not see it, and
+`Client.Validate`, which accepts any colour a theme exports, stopped at "is it a
+colour". A `design.yaml` filing `border-strong: "#f2efe7"` — the light canvas's own
+value — was issued a palette whose quotation bars measure 1.00:1 on the page they are
+drawn on, while the table's line in the same sheet, drawn in `border-default`, was
+refused. `bodyContrast` now gates `border-strong` on `surface-canvas` at
+`MinContrastGraphic`, the floor SC 1.4.11 asks of a boundary, and on that one ground
+alone: the rule this package has always used is that an unpainted pair has no business
+in the list a client is refused by. No client's screen moves — the generator already
+repairs the token to the body floor, so across 4000 generated seeds in both themes the
+closest reading is 4.995:1, and the shipped pair reads 5.01:1 in `light` and 5.62:1 in
+`dark`. What changed is the refusal, and it names the token to the client that erased
+it. `design/README.md` carried "every rule above the tokens is written in terms of a
+role", true of the utility and class-list layers and false of the three hand-written
+sheets; the sentence now names them, and names that every token they paint is one the
+token gate reads. One shared loader's fixture (`kit/designconfig/testdata/clients/pets`)
+wore a real client's slug and sector and now wears `lantern`/`crafts`.
+
 **A component's edge is now gated on every ground the kernel paints it on, including
 the one the layer mixes.** The entry below named two grounds for a line this
 repository paints on four. `clAlertVariant["neutral"]` and `clMediaRefused` draw
