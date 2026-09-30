@@ -58,9 +58,8 @@ Four consequences, each a test rather than an assurance:
   message stored on one tenant's address and stamped as another's would be
   handled inside the second tenant's rows on the strength of its body — a
   boundary held up by convention, with the broker credential as its key. The
-  envelope's own rule that `subject` is `Subject(tenantid, type)` proves the
-  document agrees with itself, which is what a self-consistent forgery satisfies;
-  this is the check against the address the broker actually routed by.
+  envelope's own `subject == Subject(tenantid, type)` proves only that the
+  document agrees with itself, which is what a self-consistent forgery satisfies.
   `platformkit.<module>.<event>`, the previous build's address, names no tenant
   and so contradicts nothing: refusing it would be refusing the bullet above.
   Pinned by
@@ -118,6 +117,8 @@ refused before the transaction opens, and it writes nothing and emits nothing.
 is the payload's only copy and a replay of it has to be reachable; clearing the
 dead letter is what lets the history window take the row.
 
+## Limits
+
 Delivery is at least once. Independent sinks must provide their own durable
 idempotency and tenant checks; the transport cannot supply database isolation.
 That sentence is about a reader that is not this provider — a bridge or a foreign
@@ -126,8 +127,7 @@ The one thing the provider does own is its own deliveries: the address it routed
 by has to be the address the event names, because that is how the tenant of
 `Consume`'s transaction is settled rather than guessed from a body. Neither is a
 substitute for row-level security, which is where the rows are actually scoped.
-Consumer reconciliation may replay events when an incompatible durable is
-recreated. Memory has no restart persistence and does not coordinate duplicate
+Memory has no restart persistence and does not coordinate duplicate
 durables across processes. When using the SQL outbox, handling and terminal
 claims commit atomically, and unfinished memory deliveries leave rows pending.
 External effects still require provider idempotency.
