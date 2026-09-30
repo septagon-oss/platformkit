@@ -85,5 +85,10 @@ test('the inquiry door that takes no GET answers a browser with a page', async (
   expect(res.status()).toBe(405);
   expect(res.headers()['content-type'], body).toContain('text/html');
   expect(body).toContain('this address does not accept GET requests');
-  expect(body, 'a refusal page with no way out is a dead end').toContain('href="/app"');
+  // The way on is the workspace home, not the bare root: nothing serves /app
+  // itself, so a refusal whose one link leads there is the dead end this
+  // assertion exists to refuse. apps/platformkit/fault.go pins the address;
+  // TestARefusedPersonSeesWhatIsMissing... in apps/platformkit asserts the
+  // same constant from the Go side.
+  expect(body, 'a refusal page with no way out is a dead end').toContain('href="/app/dashboard"');
 });
