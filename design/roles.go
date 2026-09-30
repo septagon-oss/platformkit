@@ -310,15 +310,54 @@ var statusRolePairs = []RolePair{
 // StatusRolePairs returns the body pairs a reader is shown on a status ground:
 // the tone on its own badge, the muted copy a tinted panel carries, and the label
 // a filled status button paints. Whoever gates the layer a browser paints hands
-// over BodyRolePairs, TintedRolePairs and these.
+// over BodyRolePairs, TintedRolePairs, StatusRolePairs and EdgeRolePairs.
 func StatusRolePairs() []RolePair { return slices.Clone(statusRolePairs) }
 
+// edgeRolePairs names the pairs whose job is to be seen and not read: the line a
+// component draws itself with, on the ground it is drawn on. A text field decides
+// it. clInput (ui/components/classlists.go) fills the field with
+// style.SurfacePrimary — the same role clCardFrame paints the card with — so the
+// fill carries nothing about where the field is, and clInputNormal's
+// BorderColor(style.BorderPrimary) is the only visual information identifying the
+// component and its extent. SC 1.4.11 asks 3:1 of exactly that (its own worked
+// example is a text input's border), which is more than a decorative divider is
+// asked for and less than a sentence, so the floor is MinContrastGraphic: the one
+// this layer already holds the focus ring to.
+//
+// Two grounds, because a field is painted on two things: the card
+// (surface-primary) and the page canvas (--pk-role-surface-secondary) behind a
+// field that is not inside a card. The muted panel (surface-tertiary) reaches the
+// same floor — the shipped pair measures 3.02:1 there and no reading of 800
+// generated themes falls under 3.50:1 — but is not gated, because no shipped rule
+// draws a field's line on a muted panel today and an unpainted pair has no
+// business in the list a client's file is refused by.
+//
+// What stays exempt is the decoration, not the boundary: a divider drawn between
+// two rows the reader has already found, and a tint, whose copy the body and
+// tinted pairs measure themselves. border-secondary is border-default walked 60 %
+// toward surface-primary and is therefore lighter than the edge gated here by
+// construction; it is the exempt class — a line inside something the reader has
+// already found — and it is named here rather than left to be inferred.
+var edgeRolePairs = []RolePair{
+	{Foreground: "border-primary", Background: "surface-primary", Min: MinContrastGraphic},
+	{Foreground: "border-primary", Background: "surface-secondary", Min: MinContrastGraphic},
+}
+
+// EdgeRolePairs returns the pairs whose role is to be seen rather than read: a
+// component's own edge on each ground it is drawn on, at MinContrastGraphic. A
+// gate that measures copy and a ring but not the boundary of the field the copy is
+// typed into certifies a page whose inputs have no visible edges.
+func EdgeRolePairs() []RolePair { return slices.Clone(edgeRolePairs) }
+
 // GatedRolePairs returns the whole gated set: every body pair the semantic layer
-// composes, on a theme's own surfaces, on the surfaces it derives by mixing and
-// on the status tints. One gate belongs to one list, so the door that accepts a
-// client's design and the seam that turns a pair into a stylesheet read theirs
-// from here rather than each assembling its own copy — which is what made the
-// two halves disagree.
+// composes, on a theme's own surfaces, on the surfaces it derives by mixing, on
+// the status tints, and the edge a component draws itself with. One gate belongs
+// to one list, so the door that accepts a client's design and the seam that turns
+// a pair into a stylesheet read theirs from here rather than each assembling its
+// own copy — which is what made the two halves disagree.
 func GatedRolePairs() []RolePair {
-	return append(append(BodyRolePairs(), TintedRolePairs()...), StatusRolePairs()...)
+	pairs := BodyRolePairs()
+	pairs = append(pairs, TintedRolePairs()...)
+	pairs = append(pairs, StatusRolePairs()...)
+	return append(pairs, EdgeRolePairs()...)
 }
