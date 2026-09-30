@@ -21,12 +21,25 @@ import (
 func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 	for _, poolSize := range []int{2, 5, 16} {
 		t.Run(fmt.Sprint(poolSize), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			defer cancel()
 			adminURL, appURL := dbtest.URLs(t)
-			if err := db.Migrate(ctx, adminURL, migrations.Source, audit.Migrations); err != nil {
+			// The boot gets a bound of its own, and it is not the ten seconds below. One
+			// advisory key serialises the migration of every schema in this one database,
+			// so every package of `make check` that boots a schema queues behind every other
+			// one, and kit/db/README.md leaves that wait patient on purpose: "a replica that
+			// waits an hour and applies nothing beats one that refuses at five seconds and is
+			// read as a failed deploy". Charging that queue to this case's ten seconds is what
+			// made a busy suite answer `db: migrate: lock: timeout: context deadline exceeded`
+			// for a subtest whose own work never started: the deadline the run hit was the
+			// queue's, not the behaviour's. The ten seconds below start when the schema this
+			// case observes exists, and bound exactly what they bounded before — the retention
+			// job, its worker bound and its deletes held at a table lock.
+			boot, cancelBoot := context.WithTimeout(t.Context(), 5*time.Minute)
+			defer cancelBoot()
+			if err := db.Migrate(boot, adminURL, migrations.Source, audit.Migrations); err != nil {
 				t.Fatal(err)
 			}
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
 			admin := dbtest.Open(t, adminURL)
 			pool := db.DefaultPool()
 			pool.MaxOpenConns, pool.MaxIdleConns = poolSize, min(4, poolSize)
