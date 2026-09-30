@@ -108,7 +108,12 @@ unreachable collector fails no boot, moves no health verdict and does not decide
 exit code: `kit/health` reports its last success as a reading an operator sees, not as
 a check, and the last flush of a process that is leaving is a log line. A bare
 `host:port` is accepted as the unencrypted endpoint it names, which is the form the
-example file prints. Left open on purpose:
+example file prints. A composition notices one change: `health.Register` and
+`health.Mux` now take the checks as one slice and the reports as a trailing variadic,
+so the call that passed `Check` values passes `[]health.Check{…}`; each report then
+runs on the readiness request's own context — the one the checks run on — so a probe
+that hangs up or times out bounds the reading instead of leaving it running past the
+request it answered. Left open on purpose:
 no dashboard, which the brief refused, and no collector in a Helm chart, which is a
 deployment's stanza rather than this repository's. `make trace` starts a collector for
 the machine in front of you — `deploy/otel-collector.yaml`, printing every span and

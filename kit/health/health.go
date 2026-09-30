@@ -107,7 +107,7 @@ func Mux(log *slog.Logger, checks []Check, reports ...Report) http.Handler {
 	mux.HandleFunc("GET "+readyPath, func(w http.ResponseWriter, r *http.Request) {
 		failed := failures(r.Context(), log, checks)
 		if len(failed) == 0 {
-			write(w, http.StatusOK, ready(reports), "application/json")
+			write(w, http.StatusOK, ready(r.Context(), reports), "application/json")
 			return
 		}
 		body, _ := json.Marshal(problem.New(http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", ")))
@@ -121,13 +121,19 @@ func Mux(log *slog.Logger, checks []Check, reports ...Report) http.Handler {
 // verdict is unchanged either way — a Report cannot move it — so an existing probe
 // stanza reads the same answer as before. Keys are sorted by encoding/json, so the
 // bytes do not depend on the order two reports were registered in.
-func ready(reports []Report) string {
+//
+// The reports run on the probe request's context, the same one failures is handed:
+// a Report that asks a database or an upstream is bounded by the client that asked,
+// so a probe that hangs up or times out stops the work instead of leaving a
+// goroutine per poll running past the request. A Report run on context.Background()
+// could not be cancelled by anything.
+func ready(ctx context.Context, reports []Report) string {
 	if len(reports) == 0 {
 		return `{"status":"ok"}`
 	}
 	seen := map[string]string{}
 	for _, r := range reports {
-		msg, err := r.Report(context.Background())
+		msg, err := r.Report(ctx)
 		if err != nil {
 			msg = msg + ": " + err.Error()
 		}
