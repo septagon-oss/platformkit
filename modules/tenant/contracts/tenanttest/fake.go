@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/trace"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
 
@@ -23,10 +24,10 @@ import (
 // cannot tell a caller that a write did not commit, because nothing here
 // commits. Everything it can be wrong about is what RunService checks.
 type Fake struct {
-	mu        sync.Mutex
-	tenants   map[uuid.UUID]contracts.Tenant
-	hosts     map[string]uuid.UUID
-	published []string
+	mu      sync.Mutex
+	tenants map[uuid.UUID]contracts.Tenant
+	hosts   map[string]uuid.UUID
+	log     []publication
 
 	// Hooks are what Create runs, the same list the real module takes in Deps.
 	Hooks []contracts.Hook
@@ -36,6 +37,24 @@ type Fake struct {
 	// served in. It does not decide what a new tenant is served in: the real create
 	// reads the column default back from the database, and so does this.
 	Installation []string
+
+	// Operator is the installation's own tenant — the row Bootstrap creates and
+	// the scope every lifecycle verb mirrors its audit row into. It is set by
+	// Installed, which is how the suite's fixtures and a consumer's test both
+	// describe an installed control plane; a Fake without one is an installation
+	// that has not been bootstrapped, and every verb refuses.
+	Operator uuid.UUID
+}
+
+// publication is one event the fake would have written to the outbox: its name,
+// the tenant whose scope it belongs to, and the trace id the request carried.
+// The three fields are the three the outbox stores, because the question the
+// suite asks of them is "which tenant's trail does this row land in, and which
+// request does it name" — and that is a question about both rows, not the one.
+type publication struct {
+	name  string
+	scope uuid.UUID
+	trace string
 }
 
 // InstallationLanguages is the set the suite is written against: the fake carries it
@@ -52,11 +71,67 @@ func NewFake() *Fake {
 
 var _ contracts.Service = (*Fake)(nil)
 
-// Published is the names of the events the fake would have emitted, in order.
+// Published is the names of the events the fake would have emitted, in order,
+// both trails included: a verb that mirrors itself into the installation's scope
+// shows up twice here, on purpose.
 func (f *Fake) Published() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return slices.Clone(f.published)
+	out := make([]string, 0, len(f.log))
+	for _, p := range f.log {
+		out = append(out, p.name)
+	}
+	return out
+}
+
+// PublishedScopes is the tenant each event belongs to, in the same order as
+// Published. It is what makes "one row in the customer's trail and one in the
+// installation's" a case rather than a comment.
+func (f *Fake) PublishedScopes() []uuid.UUID {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]uuid.UUID, 0, len(f.log))
+	for _, p := range f.log {
+		out = append(out, p.scope)
+	}
+	return out
+}
+
+// PublishedTraces is the W3C trace id each event carries, "" where the caller
+// brought none. Both rows of one verb are written in one request, so the pair
+// joins on this value, which is what the trail will be queried by later.
+func (f *Fake) PublishedTraces() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.log))
+	for _, p := range f.log {
+		out = append(out, p.trace)
+	}
+	return out
+}
+
+// Installed creates the control plane the suite is written against: an empty one
+// plus the tenant Bootstrap would have created, which is the scope every verb
+// mirrors its audit row into. The event that creation would have published is
+// returned to the caller rather than left in the log, because a fixture's own
+// setup is not part of what a case asserts.
+func Installed() (*Fake, *contracts.Tenant, []string) {
+	f := NewFake()
+	operator, err := f.Create(context.Background(), db.Tx[db.System]{}, contracts.NewTenant{
+		Slug: "installation", Name: "This installation", Host: "ops.example.com", Operator: true,
+	})
+	if err != nil {
+		panic("tenanttest: the fixture cannot create its operator tenant: " + err.Error())
+	}
+	f.mu.Lock()
+	log := f.log
+	f.log = nil
+	f.mu.Unlock()
+	names := make([]string, 0, len(log))
+	for _, p := range log {
+		names = append(names, p.name)
+	}
+	return f, operator, names
 }
 
 // Create mirrors internal.Service.Create.
@@ -74,11 +149,9 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 	}
 	host = lower(host)
 	f.mu.Lock()
-	for _, t := range f.tenants {
-		if t.Slug == slug {
-			f.mu.Unlock()
-			return nil, &crud.UniqueConflict{Constraint: "tenants_slug"}
-		}
+	if f.slugTaken(slug) {
+		f.mu.Unlock()
+		return nil, &crud.UniqueConflict{Constraint: "tenants_slug"}
 	}
 	if _, taken := f.hosts[host]; taken {
 		f.mu.Unlock()
@@ -96,10 +169,15 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 	start := "en"
 	t := contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
-		Hosts: []string{host}, DefaultLocale: start,
+		// json:"-" on the request type, so the only caller that can set it is the
+		// fixture or a Bootstrap — which is the same rule the real create keeps.
+		Operator: in.Operator, Hosts: []string{host}, DefaultLocale: start,
 		CreatedAt: at, UpdatedAt: at,
 	}
 	f.tenants[t.ID], f.hosts[host] = t, t.ID
+	if t.Operator {
+		f.Operator = t.ID
+	}
 	f.mu.Unlock()
 
 	for _, hook := range f.Hooks {
@@ -107,7 +185,10 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 			return nil, err
 		}
 	}
-	f.record(contracts.EventCreated)
+	f.publish(ctx, t.ID, contracts.EventCreated)
+	if err := f.mirror(ctx, t.ID); err != nil {
+		return nil, err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.copy(t.ID)
@@ -115,14 +196,14 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 
 // AddHost mirrors internal.Service.AddHost, primary and all: the list keeps the
 // primary host first, which is the same order the real one reads rows in.
-func (f *Fake) AddHost(_ context.Context, _ db.Tx[db.System], id uuid.UUID, host string, primary bool) (*contracts.Tenant, error) {
+func (f *Fake) AddHost(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, host string, primary bool) (*contracts.Tenant, error) {
 	host, err := contracts.ValidHost(host)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
 	host = lower(host)
 	f.mu.Lock()
-	t, ok := f.tenants[id]
+	t, ok := f.live(id)
 	if !ok {
 		f.mu.Unlock()
 		return nil, crud.ErrNotFound
@@ -144,7 +225,10 @@ func (f *Fake) AddHost(_ context.Context, _ db.Tx[db.System], id uuid.UUID, host
 	t.Hosts = order(append(slices.Clone(t.Hosts), host), primaryOf(t.Hosts, host, primary))
 	f.tenants[id], f.hosts[host] = t, id
 	f.mu.Unlock()
-	f.record(contracts.EventHostAdded)
+	f.publish(ctx, id, contracts.EventHostAdded)
+	if err := f.mirror(ctx, id); err != nil {
+		return nil, err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.copy(id)
@@ -182,7 +266,7 @@ func (f *Fake) SetLocale(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, 
 		return nil, err
 	}
 	f.mu.Lock()
-	t, ok := f.tenants[id]
+	t, ok := f.live(id)
 	if !ok {
 		f.mu.Unlock()
 		return nil, crud.ErrNotFound
@@ -192,7 +276,7 @@ func (f *Fake) SetLocale(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, 
 	f.tenants[id] = t
 	f.mu.Unlock()
 	if changed {
-		f.record(contracts.EventLocaleSet)
+		f.publish(ctx, id, contracts.EventLocaleSet)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -243,20 +327,30 @@ func (f *Fake) spoken() map[string]bool {
 	return out
 }
 
-// Suspend mirrors internal.Service.Suspend.
-func (f *Fake) Suspend(_ context.Context, _ db.Tx[db.System], id uuid.UUID) (*contracts.Tenant, error) {
+// Suspend mirrors internal.Service.Suspend, the operator floor included: the
+// installation's own tenant is the one tenant nobody may stop serving, because it
+// is the tenant every control-plane request is authorized at.
+func (f *Fake) Suspend(ctx context.Context, _ db.Tx[db.System], id uuid.UUID) (*contracts.Tenant, error) {
 	f.mu.Lock()
-	t, ok := f.tenants[id]
+	t, ok := f.live(id)
 	if !ok {
 		f.mu.Unlock()
 		return nil, crud.ErrNotFound
+	}
+	if t.Operator {
+		f.mu.Unlock()
+		return nil, fmt.Errorf("%w: %q is this installation's own tenant; suspending it closes the control plane it is reached through",
+			crud.ErrConflict, t.Slug)
 	}
 	already := t.Status == contracts.StatusSuspended
 	t.Status, t.UpdatedAt = contracts.StatusSuspended, db.Now()
 	f.tenants[id] = t
 	f.mu.Unlock()
 	if !already {
-		f.record(contracts.EventSuspended)
+		f.publish(ctx, id, contracts.EventSuspended)
+		if err := f.mirror(ctx, id); err != nil {
+			return nil, err
+		}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -267,6 +361,9 @@ func (f *Fake) Suspend(_ context.Context, _ db.Tx[db.System], id uuid.UUID) (*co
 func (f *Fake) Get(_ context.Context, _ db.Tx[db.System], id uuid.UUID) (*contracts.Tenant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if _, ok := f.live(id); !ok {
+		return nil, crud.ErrNotFound
+	}
 	return f.copy(id)
 }
 
@@ -276,6 +373,9 @@ func (f *Fake) List(_ context.Context, _ db.Tx[db.System]) ([]*contracts.Tenant,
 	defer f.mu.Unlock()
 	out := make([]*contracts.Tenant, 0, len(f.tenants))
 	for id := range f.tenants {
+		if _, ok := f.live(id); !ok {
+			continue
+		}
 		t, _ := f.copy(id)
 		out = append(out, t)
 	}
@@ -291,8 +391,8 @@ func (f *Fake) ByHost(_ context.Context, _ db.Tx[db.System], host string) (tenan
 	if !ok {
 		return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 	}
-	t := f.tenants[id]
-	if t.Status != contracts.StatusActive {
+	t, ok := f.live(id)
+	if !ok || t.Status != contracts.StatusActive {
 		return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 	}
 	return t.Tenancy(), nil
@@ -314,7 +414,7 @@ func (f *Fake) Hosts(ctx context.Context, _ db.Tx[db.Tenant]) ([]string, error) 
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	t, ok := f.tenants[who.ID]
+	t, ok := f.live(who.ID)
 	if !ok {
 		return nil, nil
 	}
@@ -333,10 +433,41 @@ func (f *Fake) copy(id uuid.UUID) (*contracts.Tenant, error) {
 	return &t, nil
 }
 
-func (f *Fake) record(name string) {
+// publish is the fake's half of internal.Service.record: the event in the
+// subject tenant's own scope, with the trace id the caller's context carried.
+func (f *Fake) publish(ctx context.Context, subject uuid.UUID, name string) {
+	c, _ := trace.From(ctx)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.published = append(f.published, name)
+	f.log = append(f.log, publication{name: name, scope: subject, trace: c.Parent()})
+}
+
+// mirror is the other half: the operator's row, or the refusal that says there is
+// no installation to write it into. It returns an error rather than staying quiet,
+// because "the verb wrote nothing" is the whole point — a fake that dropped the
+// mirror would let a caller's code pass that the real service refuses.
+//
+// The row is read whether or not it is still a tenant: a delete mirrors itself
+// after it retired the subject, and the verb's other row is written for a
+// customer who can no longer be read.
+//
+// When the subject is the installation's own tenant there is nothing to mirror:
+// the verb event is already in the one trail both rows would have landed in.
+func (f *Fake) mirror(ctx context.Context, subject uuid.UUID) error {
+	f.mu.Lock()
+	t, ok := f.tenants[subject]
+	f.mu.Unlock()
+	if !ok {
+		return crud.ErrNotFound
+	}
+	if t.Operator {
+		return nil
+	}
+	if f.Operator == uuid.Nil {
+		return contracts.ErrNoOperatorTenant
+	}
+	f.publish(ctx, f.Operator, contracts.EventLifecycleRecorded)
+	return nil
 }
 
 // lower is the host as it is stored: kit/httpx normalises an incoming Host
