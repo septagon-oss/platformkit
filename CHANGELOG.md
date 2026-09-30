@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+**A denial names the permission and who can grant it.** The page a signed-in person sees when a guard refuses
+them used to say only "Não pode fazer isto." / "You can't do this", although the guard's detail carried the
+permission it asked for. It now keeps that verdict and adds "You need the <permission> permission for it. Anyone
+who manages roles here can grant it: ask your administrator.", in the request's language. A shell whose catalogue has only the
+short sentence keeps its language and gains the permission's name. From three UX walkthroughs on 2026-09-30, in
+which a staff member could not tell what to ask for; T-0184 adds asking for it.
+
 **A card with an address is a link.** `components.Card` rendered an anchor only when `Clickable` was set as well
 as `Href`. A card with `Href` and `Hoverable` got a hover shadow over an `<article>` that went nowhere, which was
 every card on the pets adoption list: a UX walkthrough found an adopter could not open a single animal's page.
