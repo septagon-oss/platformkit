@@ -74,8 +74,8 @@ var spec = rest.Spec[*contracts.Task]{
 // the manifest and not in contracts/ because it was the only thing there that
 // needed kit/module.
 var permissions = []module.Permission{
-	{Key: contracts.PermissionTaskRead},
-	{Key: contracts.PermissionTaskUpdate},
+	{Key: contracts.PermissionTaskRead, Label: "read tasks"},
+	{Key: contracts.PermissionTaskUpdate, Label: "write tasks"},
 }
 
 // NewService constructs task lifecycle commands for application composition.
