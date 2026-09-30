@@ -42,7 +42,7 @@ func collect(t *testing.T, record func(in telemetry.Instruments)) map[string]met
 // promise: one process serves many tenants, and an aggregate that cannot be split
 // by tenant cannot say whose queue is stuck or whose requests are slow.
 func TestTheThreeInstrumentsRecordATenantDimension(t *testing.T) {
-	tenant := tenancy.Tenant{ID: uuid.MustParse("11111111-1111-4111-8111-111111111111"), Slug: "academy"}
+	tenant := tenancy.Tenant{ID: uuid.MustParse("11111111-1111-4111-8111-111111111111"), Slug: "acme"}
 	ctx := tenancy.WithTenant(context.Background(), tenant)
 	attrs := telemetry.SpanAttrs(ctx)
 
@@ -74,7 +74,7 @@ func TestTheThreeInstrumentsRecordATenantDimension(t *testing.T) {
 			dur.DataPoints[0].Count, dur.DataPoints[0].Sum)
 	}
 	wantAttrs(t, dur.DataPoints[0].Attributes, map[string]string{
-		telemetry.AttrTenant: "academy", telemetry.AttrTenantID: tenant.ID.String(),
+		telemetry.AttrTenant: "acme", telemetry.AttrTenantID: tenant.ID.String(),
 	})
 
 	lag, ok := got["pkit.outbox.lag"].Data.(metricdata.Gauge[float64])
@@ -91,7 +91,7 @@ func TestTheThreeInstrumentsRecordATenantDimension(t *testing.T) {
 		t.Errorf("one refusal counted %d, want 1", refused.DataPoints[0].Value)
 	}
 	wantAttrs(t, refused.DataPoints[0].Attributes, map[string]string{
-		telemetry.AttrTenant: "academy", telemetry.AttrRefusalClass: "forbidden",
+		telemetry.AttrTenant: "acme", telemetry.AttrRefusalClass: "forbidden",
 	})
 }
 
@@ -124,11 +124,13 @@ func TestTheRequestIDTravelsAsBaggage(t *testing.T) {
 	if got := telemetry.RequestID(ctx); got != id {
 		t.Errorf("RequestID = %q, want %q", got, id)
 	}
-	// An empty id is not carried as an empty member: an attribute that reads "" is
-	// a request named nothing, which is a claim and not an absence.
-	if got := telemetry.RequestID(telemetry.WithRequestID(context.Background(), "academy/collect")); got != "academy/collect" {
+	// An id holding a separator is carried as it arrived: the baggage member's
+	// value is the id itself, so nothing in it is a delimiter to the member.
+	if got := telemetry.RequestID(telemetry.WithRequestID(context.Background(), "job/7f3a")); got != "job/7f3a" {
 		t.Errorf("RequestID = %q, want the id carried unchanged", got)
 	}
+	// An empty id is not carried as an empty member: an attribute that reads "" is
+	// a request named nothing, which is a claim and not an absence.
 	if got := telemetry.RequestID(telemetry.WithRequestID(context.Background(), "")); got != "" {
 		t.Errorf("an empty id was carried as %q, want nothing carried", got)
 	}
