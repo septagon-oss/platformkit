@@ -70,7 +70,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 
 	httpx.Register(r, op("create", http.MethodPost, path, http.StatusCreated, "Create a tenant",
 		"Writes the tenant, its first host and the roles a tenant starts with, in one transaction.",
-		[]string{contracts.EventCreated}),
+		[]string{contracts.EventCreated, contracts.EventLifecycleRecorded}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *createInput) (*itemOutput, error) {
 			out := &itemOutput{}
@@ -96,7 +96,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 
 	httpx.Register(r, op("suspend", http.MethodPost, path+"/{id}/suspend", 0, "Suspend a tenant",
 		"Stops the tenant being served: its hosts answer as though no site were there. Suspending it again changes nothing.",
-		[]string{contracts.EventSuspended}),
+		[]string{contracts.EventSuspended, contracts.EventLifecycleRecorded}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *idInput) (*itemOutput, error) {
 			out := &itemOutput{}
@@ -136,8 +136,8 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 		})
 
 	httpx.Register(r, op("add-host", http.MethodPost, path+"/{id}/hosts", http.StatusCreated, "Give a tenant another host",
-		"Adding a host the tenant already answers at changes nothing, unless it makes it the primary one. The primary host is what every absolute URL for this tenant is built on, so a link in a mail is a link to the name its people know.",
-		[]string{contracts.EventHostAdded}),
+		"Adding a host the tenant already answers at changes nothing, unless it makes it the primary one. The primary host is what every absolute URL for this tenant is built on, so a link in a mail is a link to the name its people know. A new name and a promotion both publish.",
+		[]string{contracts.EventHostAdded, contracts.EventLifecycleRecorded}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *hostInput) (*itemOutput, error) {
 			out := &itemOutput{}

@@ -59,8 +59,10 @@ type Suspended struct {
 }
 
 // HostAdded is the payload of EventHostAdded: another name resolves here.
-// Primary says it also became the name this tenant's absolute URLs are built
-// on, which is a different fact and the one a subscriber would act on.
+// Primary says it is the name this tenant's absolute URLs are built on, which
+// is a different fact and the one a subscriber would act on — and it is the only
+// fact carried when the name was already here and somebody promoted it, which is
+// the same move of the routing table seen from the other end.
 type HostAdded struct {
 	TenantID uuid.UUID `json:"tenantId"`
 	Host     string    `json:"host"`

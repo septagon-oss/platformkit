@@ -137,9 +137,22 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 }
 
 // AddHost gives an existing tenant another name to answer at, and says whether
-// it is the one to name. The same host again is the same tenant and no second
-// event — but it is still promoted, because "make this the primary" is a thing
-// somebody may ask about a host that is already there.
+// it is the one to name. Three answers, in the order the command reaches them:
+// the host is already here and nobody asked for it to be primary, so nothing
+// changed and nothing is said; the host is already here and is already the
+// primary one, which is the same nothing asked twice, and a retry of a verb that
+// wrote no column must not put a second act in two trails; and anything else is a
+// change to the routing table — a new row, or the primary moving to a name that
+// was already there — which writes, publishes `tenant.host_added` in both trails,
+// and therefore asks the audit question before it writes.
+//
+// "Make this the primary" is a thing somebody may ask about a host that is
+// already here, and that promotion is the change the route's own description names:
+// the primary host is what every absolute URL for this tenant is built on. It moves
+// a column rather than adding a row, which is the only reason it is a different
+// branch; it is recorded the way the arrival is recorded, because the trail that
+// cannot say which name a tenant's links moved to, or when, is the trail this
+// module's own rule refuses to leave an operator with.
 func (s *Service) AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string, primary bool) (*contracts.Tenant, error) {
 	host, err := contracts.ValidHost(host)
 	if err != nil {
@@ -150,22 +163,30 @@ func (s *Service) AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 		return nil, err
 	}
 	key := httpx.HostOnly(host)
-	if slices.Contains(t.Hosts, key) {
-		if !primary {
-			return t, nil
-		}
-		if err := s.promote(tx, t.ID, key); err != nil {
-			return nil, err
-		}
-		return s.Get(ctx, tx, id)
+	// Which of the three answers this is, decided from the one read the command
+	// already holds: `t.Hosts` comes back in hostOrder, so its first element is the
+	// primary host and RemoveHost reads the same fact the same way.
+	known := slices.Contains(t.Hosts, key)
+	if known && (!primary || t.Hosts[0] == key) {
+		return t, nil
 	}
-	if err := s.attach(tx, t, host, primary); err != nil {
-		return nil, err
-	}
+	// Asked before either branch writes, like every other command asks it: a verb
+	// that cannot audit both sides writes neither, and an INSERT — or a promotion —
+	// kept ahead of this call would put the refusal back into the caller's good
+	// behaviour, which leaves a hostname attached by a command that refused.
 	operator, err := s.audience(tx, t)
 	if err != nil {
 		return nil, err
 	}
+	if known {
+		if err := s.promote(tx, t.ID, key); err != nil {
+			return nil, err
+		}
+	} else if err := s.attach(tx, t, host, primary); err != nil {
+		return nil, err
+	}
+	// One event for both branches, and `primary` says which change it records: the
+	// name arrived, or the name that was here took the routing table.
 	err = s.record(ctx, tx, t, operator, verbAddHost, contracts.EventHostAdded, contracts.HostAdded{
 		TenantID: t.ID, Host: key, Primary: primary, At: db.Now(),
 	})
