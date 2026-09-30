@@ -62,6 +62,14 @@ carried a message is the adapter's fact and this package does not know it), no
 `sample_ratio` read from the environment, and no `pkit.client` invented for a shared
 installation. `kit/app` decides all of those, from `config.Telemetry`.
 
+Three of the four traced boundaries carry a *number*; the fourth carries only its span.
+`pkit.http.operation.duration` and `pkit.http.refusals` are recorded by `kit/httpx` for a registered
+operation (`traced.go`), `pkit.outbox.lag` by the relay in `kit/events` (`relay.go`), and a job's or
+a delivery's latency is asked of its span, because `kit/jobs` and `kit/events` open spans and record
+no duration. The `pkit.http.` prefix is therefore a statement of reach and not of the kind: the
+histogram holds HTTP operations today, and giving the job boundary a duration number is a fourth
+instrument with its own name, not a broader use of this one.
+
 ## Limits
 
 Two targets the brief names have no target in this repository, and the deviation belongs
