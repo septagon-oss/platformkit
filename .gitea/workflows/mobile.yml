@@ -36,7 +36,14 @@ jobs:
     timeout-minutes: 40
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
-      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@localhost:5432/platformkit?sslmode=disable
+      # The service name, not localhost, and for the reason ci.yml already uses it
+      # there: scripts/mobile_e2e.sh puts this URL in the configuration file of the
+      # binary it starts, and that process reaches the database over this job's
+      # Docker network, where the container answers at `postgres`. The owner URL is
+      # already the service name — the divergence was in this line alone, and a
+      # journey whose application cannot connect is a red job nobody would be able
+      # to read as anything else.
+      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
       PLATFORMKIT_MOBILE_PORT: '8098'
       # Which shell build the kernel tests against, and how often that pin moves, is
@@ -83,6 +90,15 @@ jobs:
               [ -x "$dir/$part" ] && PATH="$dir/$part:$PATH"
             done
           done
+          # The same prefixes scripts/mobile_e2e.sh searches, and for the same
+          # reason: Maestro is a launch script plus a lib directory, so a host that
+          # has it keeps it under a tools prefix of its own with nothing exported on
+          # PATH. A probe narrower than the harness's own search would refuse this
+          # job for a tool the journey would have found.
+          for dir in "${MAESTRO_HOME:-}" "${MAESTRO_HOME:+$MAESTRO_HOME/bin}" "${XDG_DATA_HOME:-$HOME/.local/share}/platformkit-tools/maestro/bin"; do
+            [ -n "$dir" ] || continue
+            [ -x "$dir/maestro" ] && PATH="$dir:$PATH"
+          done
           export PATH
           missing=()
           for tool in adb emulator maestro psql python3; do
@@ -95,6 +111,11 @@ jobs:
             echo "moves to a runner that has them; it does not get skipped." >&2
             exit 1
           fi
+          # The path, not just the name: "found" is a claim about a search scope,
+          # and the next reader needs to see which scope this one had.
+          for tool in adb emulator maestro; do
+            echo "$tool: $(command -v "$tool")"
+          done
           adb version
           emulator -version | head -3
 
