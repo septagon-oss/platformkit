@@ -181,6 +181,74 @@ func handleResetPassword(svc contracts.Service, cookies Cookies) func(context.Co
 	}
 }
 
+// handleListSessions answers for the caller themselves, so it takes no
+// permission and no argument: who is asking comes from the principal the kernel
+// resolved, and the sessions that come back are that person's own — which is a
+// row-level-security fact, not a filter written here.
+func handleListSessions(svc contracts.Service) func(context.Context, *struct{}) (*sessionsOutput, error) {
+	return func(ctx context.Context, _ *struct{}) (*sessionsOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		caller, ok := tenancy.PrincipalFrom(ctx)
+		if !ok || caller.UserID == uuid.Nil {
+			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
+		}
+		current, _ := sessionOf(ctx)
+		items, err := svc.Sessions(ctx, tx, caller.UserID, current)
+		if err != nil {
+			return nil, rest.Fault(err)
+		}
+		out := &sessionsOutput{}
+		out.Body.Items, out.Body.Total = items, len(items)
+		return out, nil
+	}
+}
+
+// handleRevokeSession ends one session named by its ref. The caller's own
+// sessions are the only ones the command can see, so a ref copied from another
+// person's list is a 404 here and not a 403 — the refusal does not confirm that
+// the ref was somebody's.
+func handleRevokeSession(svc contracts.Service) func(context.Context, *revokeSessionInput) (*doneOutput, error) {
+	return func(ctx context.Context, in *revokeSessionInput) (*doneOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		caller, ok := tenancy.PrincipalFrom(ctx)
+		if !ok || caller.UserID == uuid.Nil {
+			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
+		}
+		if err := svc.RevokeSession(ctx, tx, caller.UserID, in.Ref); err != nil {
+			return nil, rest.Fault(err)
+		}
+		return done(), nil
+	}
+}
+
+// handleRevokeAllSessions ends everything and clears the cookie: the caller
+// asked for every machine out, and a browser left holding a session that has
+// just been deleted is a page that 403s instead of signing in again.
+func handleRevokeAllSessions(svc contracts.Service, cookies Cookies) func(context.Context, *struct{}) (*clearOutput, error) {
+	return func(ctx context.Context, _ *struct{}) (*clearOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		caller, ok := tenancy.PrincipalFrom(ctx)
+		if !ok || caller.UserID == uuid.Nil {
+			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
+		}
+		if _, err := svc.RevokeAllSessions(ctx, tx, caller.UserID); err != nil {
+			return nil, rest.Fault(err)
+		}
+		out := &clearOutput{SetCookie: cookies.Clear()}
+		out.Body.SignedOut = true
+		return out, nil
+	}
+}
+
 func handleListRoles(svc contracts.Service) func(context.Context, *struct{}) (*rolesOutput, error) {
 	return func(ctx context.Context, _ *struct{}) (*rolesOutput, error) {
 		tx, err := transaction(ctx)

@@ -36,6 +36,12 @@ const (
 	// user.roles_set does: the interesting question about a grant is what it
 	// added.
 	EventRoleSet = "auth.role_set"
+	// EventSessionRevoked is a person ending one of their own sessions or all
+	// of them. It is distinct from auth.logged_out, which is somebody signing
+	// themselves out of the machine in front of them: this is the entry in the
+	// trail that answers "when did I kick that one out, and was it before the
+	// laptop I forgot about".
+	EventSessionRevoked = "auth.session_revoked"
 )
 
 // Events is every event this module emits, for the manifest.
@@ -46,6 +52,7 @@ var Events = []events.Declared{
 	events.Declare[ResetRequested](EventResetRequested),
 	events.Declare[PasswordReset](EventPasswordReset),
 	events.Declare[RoleSet](EventRoleSet),
+	events.Declare[SessionRevoked](EventSessionRevoked),
 	events.Declare[RegistrationRequested](EventRegistrationRequested),
 	events.Declare[VerificationRequested](EventVerificationRequested),
 }
@@ -96,6 +103,25 @@ type LoggedIn struct {
 type LoggedOut struct {
 	UserID     uuid.UUID `json:"userId"`
 	SessionRef string    `json:"sessionRef"`
+	At         time.Time `json:"at"`
+}
+
+// SessionRevoked is the payload of EventSessionRevoked: one session this person
+// ended, named by its ref. It carries the agent and the address the session was
+// opened with — the two facts the list is rendered from — so the trail says what
+// went away and not merely that something did. All is set when the revocation
+// was "everywhere": the flag is the difference between one machine leaving and a
+// person who was frightened of one machine and cleaned house.
+//
+// It carries no session id and no hash: a ref is this module's public name for a
+// session and the id is a credential.
+type SessionRevoked struct {
+	UserID     uuid.UUID `json:"userId"`
+	SessionRef string    `json:"sessionRef"`
+	UserAgent  string    `json:"userAgent,omitempty"`
+	IP         string    `json:"ip,omitempty"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+	All        bool      `json:"all,omitempty"`
 	At         time.Time `json:"at"`
 }
 

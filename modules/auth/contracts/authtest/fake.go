@@ -96,6 +96,79 @@ func (f *Fake) RevokeSessions(_ context.Context, _ db.Tx[db.Tenant], userID, exc
 	return nil
 }
 
+// Sessions mirrors internal.Service.Sessions: the caller's own rows, most
+// recently seen first, as refs rather than as sessions, with both lifetimes
+// applied. The fake can be asked for another user's id and will answer for it,
+// which is exactly the claim it cannot make and the real service can — one
+// tenant, no row-level security — so the cross-tenant case lives in
+// internal/sessions_test.go and not in the conformance suite.
+func (f *Fake) Sessions(_ context.Context, _ db.Tx[db.Tenant], userID, current uuid.UUID) ([]*contracts.SessionListing, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at := db.Now()
+	mine := contracts.SessionRef(current)
+	out := make([]*contracts.SessionListing, 0, len(f.sessions))
+	for _, s := range f.sessions {
+		if s.UserID != userID || !s.ExpiresAt.After(at) || !s.CreatedAt.Add(contracts.SessionMaxLifetime).After(at) {
+			continue
+		}
+		ref := contracts.SessionRef(s.ID)
+		out = append(out, &contracts.SessionListing{
+			Ref: ref, UserAgent: s.UserAgent, IP: s.IP,
+			CreatedAt: s.CreatedAt, LastSeenAt: s.LastSeenAt, ExpiresAt: s.ExpiresAt,
+			Current: ref == mine,
+		})
+	}
+	slices.SortFunc(out, func(a, b *contracts.SessionListing) int {
+		if a.LastSeenAt.Equal(b.LastSeenAt) {
+			return strings.Compare(a.Ref, b.Ref)
+		}
+		return b.LastSeenAt.Compare(a.LastSeenAt)
+	})
+	return out, nil
+}
+
+// RevokeSession mirrors internal.Service.RevokeSession, unknown ref included:
+// what a caller cannot see is what a caller cannot revoke.
+func (f *Fake) RevokeSession(_ context.Context, _ db.Tx[db.Tenant], userID uuid.UUID, ref string) error {
+	if _, err := contracts.SessionRefOf(ref); err != nil {
+		return crud.ErrNotFound
+	}
+	f.mu.Lock()
+	found := false
+	for id, s := range f.sessions {
+		if s.UserID == userID && contracts.SessionRefMatches(id, ref) {
+			delete(f.sessions, id)
+			found = true
+			break
+		}
+	}
+	f.mu.Unlock()
+	if !found {
+		return crud.ErrNotFound
+	}
+	f.record(contracts.EventSessionRevoked)
+	return nil
+}
+
+// RevokeAllSessions mirrors internal.Service.RevokeAllSessions, one event per
+// session that went.
+func (f *Fake) RevokeAllSessions(_ context.Context, _ db.Tx[db.Tenant], userID uuid.UUID) (int, error) {
+	f.mu.Lock()
+	gone := 0
+	for id, s := range f.sessions {
+		if s.UserID == userID {
+			delete(f.sessions, id)
+			gone++
+		}
+	}
+	f.mu.Unlock()
+	for range gone {
+		f.record(contracts.EventSessionRevoked)
+	}
+	return gone, nil
+}
+
 // ChangePassword mirrors internal.Service.ChangePassword, current password and
 // session revocation and all: both are what the route promises rather than how
 // it stores anything.

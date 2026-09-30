@@ -329,6 +329,38 @@ type Service interface {
 	// not.
 	RevokeSessions(ctx context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error
 
+	// Sessions lists this person's own live sessions, most recently seen first,
+	// for the page that lets them say "that was not me". It answers with
+	// SessionListing rather than Session, and that is the whole of the design:
+	// the row is a credential and the list is not (see SessionListing).
+	//
+	// current is the session the request is being made with, flagged as such and
+	// nothing more. Rows past either lifetime are left out rather than listed as
+	// dead: Identify refuses them, so showing one would be showing a row that is
+	// already gone and waiting for the sweep to agree.
+	Sessions(ctx context.Context, tx db.Tx[db.Tenant], userID, current uuid.UUID) ([]*SessionListing, error)
+
+	// RevokeSession ends one of this person's own sessions, named by its ref,
+	// and publishes auth.session_revoked for it.
+	//
+	// An unknown ref is crud.ErrNotFound and it is the same answer when the ref
+	// belongs to somebody else's session in this tenant and to another tenant
+	// altogether — RLS returns no row either way, so the refusal does not leak
+	// which one it was. It writes nothing and publishes nothing.
+	RevokeSession(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, ref string) error
+
+	// RevokeAllSessions ends every session this person has, including the one
+	// they are asking from, and publishes one auth.session_revoked per row it
+	// removed. It returns how many went, which is what the route reports.
+	//
+	// Unlike RevokeSessions it takes no `except`, because the person standing at
+	// this door has said they want every machine out; the caller who keeps their
+	// own session alive is changing a password, and that path keeps RevokeSessions
+	// with its `except` and publishes its own event instead. RevokeSessions stays
+	// silent for that reason: the revocation is a clause of the password change,
+	// not a decision anybody made on its own.
+	RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error)
+
 	// ChangePassword sets a new password for somebody who is signed in, having
 	// checked the one they have. It ends their other sessions and keeps the one
 	// they are asking from, so the person who did it stays where they are and a

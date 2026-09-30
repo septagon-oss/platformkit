@@ -94,8 +94,8 @@ func TestTheRouteListIsADeclarationAndEveryRouteNamesItsGuard(t *testing.T) {
 		}
 		return true
 	})
-	if registrations != 8 {
-		t.Fatalf("handler.go registers %d operations, want the 8 the module answers with: this list is "+
+	if registrations != 11 {
+		t.Fatalf("handler.go registers %d operations, want the 11 the module answers with: this list is "+
 			"the module's whole HTTP surface, so a route appearing or vanishing here is not a move",
 			registrations)
 	}
