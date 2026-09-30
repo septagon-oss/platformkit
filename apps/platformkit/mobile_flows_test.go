@@ -44,9 +44,17 @@ type mobileFlows struct {
 	} `json:"flows"`
 }
 
-// mobileKnownRunners is the set of repositories this loop has a checkout of. A flow
-// that names anything else is declared against a repository nothing can run it in.
-var mobileKnownRunners = []string{"platformkit", "platformkit-mobile"}
+// mobileOwnRunner is the repository whose specs this job runs and whose report it
+// reads. The manifest's other value, platformkit-mobile, names a repository this
+// loop has no checkout of: a flow declared there is counted in the rate and is never
+// opened from here, which is why the case below reads a spec file only for a flow
+// this repository owns.
+const mobileOwnRunner = "platformkit"
+
+// mobileKnownRunners is the vocabulary the manifest's `runs` may name. It says
+// nothing about this machine: mobileOwnRunner's specs are the only ones a case here
+// can open.
+var mobileKnownRunners = []string{mobileOwnRunner, "platformkit-mobile"}
 
 func readMobileFlows(t *testing.T) mobileFlows {
 	t.Helper()
@@ -86,7 +94,7 @@ func TestDeclaredMobileFlowsAreDeclared(t *testing.T) {
 			t.Errorf("%s is declared twice, so the ratio would count it twice", flow.ID)
 		}
 		ids = append(ids, flow.ID)
-		if flow.Runs != "platformkit" {
+		if flow.Runs != mobileOwnRunner {
 			continue
 		}
 		owned = append(owned, flow.ID)
@@ -112,6 +120,16 @@ func TestDeclaredMobileFlowsAreDeclared(t *testing.T) {
 // MAESTRO_JUNIT is set by make mobile-e2e and by the CI job, never by hand: the
 // harness has already refused the same thing by then, and this is where the rate
 // itself is recorded rather than the single pass.
+//
+// The denominator is every flow the manifest declares, which is what the manifest
+// says it is ("the ratio mobile_flow_pass_rate is a quotient of this file and the
+// JUnit the mobile job writes") and what the brief names ("declared mobile flows
+// whose Maestro spec ran and passed ÷ declared"). Counting only the flows this
+// repository runs would report 1/1 the moment its own flow passed — a clean hundred
+// percent with four declared flows still run by hand in a repository this job never
+// touches, which is the number somebody remembers the manifest exists to stop. The
+// owned share is refused; the rest of the denominator is named as what it is, because
+// this repository cannot gate a spec it does not own.
 func TestDeclaredMobileFlowsRan(t *testing.T) {
 	path := os.Getenv("MAESTRO_JUNIT")
 	if path == "" {
@@ -124,13 +142,14 @@ func TestDeclaredMobileFlowsRan(t *testing.T) {
 	results := readMaestroJUnit(t, body)
 
 	flows := readMobileFlows(t)
-	declared, passed := 0, 0
-	var missing []string
+	declared, owned, passed := len(flows.Flows), 0, 0
+	var missing, elsewhere []string
 	for _, flow := range flows.Flows {
-		if flow.Runs != "platformkit" {
+		if flow.Runs != mobileOwnRunner {
+			elsewhere = append(elsewhere, flow.ID)
 			continue
 		}
-		declared++
+		owned++
 		result, ok := results[flow.ID]
 		switch {
 		case !ok:
@@ -141,11 +160,16 @@ func TestDeclaredMobileFlowsRan(t *testing.T) {
 			passed++
 		}
 	}
+	t.Logf("mobile_flow_pass_rate = %d/%d", passed, declared)
 	if len(missing) > 0 {
-		t.Errorf("mobile_flow_pass_rate = %d/%d; these did not pass: %s", passed, declared, strings.Join(missing, ", "))
+		t.Errorf("of the %d declared flows this repository runs, %d passed; these did not: %s",
+			owned, passed, strings.Join(missing, ", "))
 		return
 	}
-	t.Logf("mobile_flow_pass_rate = %d/%d over the flows this repository runs", passed, declared)
+	if len(elsewhere) > 0 {
+		t.Logf("%d of the %d declared flows are owned by another repository and are in no report this job reads: %s",
+			len(elsewhere), declared, strings.Join(elsewhere, ", "))
+	}
 }
 
 // TestTheMobileHarnessRefusesAnUnpinnedShellBuild is the harness refusing to
