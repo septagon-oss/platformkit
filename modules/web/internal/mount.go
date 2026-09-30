@@ -31,6 +31,15 @@ const (
 	// every middleware chain.
 	assetPrefix = "/web/assets"
 	brand       = "PlatformKit"
+	// sourceLanguage is the language this module's copy is written in, said the
+	// way document.View.Language says it: the bar, the footer and the two empty
+	// states are Go strings here, and the tenant's own title, tagline, nav and
+	// page bodies arrive as they were authored. Composing Deps.Messages is what
+	// lets a refusal of this site answer in the reader's language; it says nothing
+	// about these words, and a page that declared Portuguese over them would be
+	// telling a screen reader to read English with a Portuguese voice — the same
+	// mistake modules/admin's dashboard made and unmade.
+	sourceLanguage = "en"
 )
 
 // slug is the content module's own grammar for a slug, so a path that is not
@@ -50,6 +59,9 @@ type Site struct {
 	// composition supplies both, for the reason Deps names them.
 	SignIn string
 	File   func(id string) string
+	// Messages is the composition's merged catalogue, named by web.Deps. Nil keeps
+	// the site monolingual, as it was before any shell here was translated.
+	Messages page.Messages
 }
 
 // Mount composes the stylesheet once and serves the two routes through the
@@ -68,6 +80,7 @@ func Mount(surfaces httpx.Surfaces, s Site) {
 		Tag:       "web",
 		Back:      "/",
 		BackLabel: "Back to the site",
+		Messages:  s.Messages,
 	}
 	page.Serve(home, shell, page.Route{ID: "web-home", Method: http.MethodGet, Path: "/",
 		Summary: "The site's home page", Errors: []int{http.StatusNotFound, http.StatusServiceUnavailable}}, httpx.Public(), s.home)
@@ -153,7 +166,7 @@ func (s Site) article(settings *sitecontracts.SiteSettings, r page.Request, c *c
 // otherwise the minute in which their own publish looks lost — e2e/site.spec.ts is
 // that journey, and it failed until this line.
 func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title string, main []g.Node) page.View {
-	v := page.View{Title: title, Revalidate: true, Body: []g.Node{
+	v := page.View{Title: title, Revalidate: true, Language: sourceLanguage, Body: []g.Node{
 		s.header(settings, r),
 		h.Main(h.ID("content"), h.Class(clMain.Compile()),
 			components.Container(components.ContainerProps{MaxWidth: "3xl"}, main...)),

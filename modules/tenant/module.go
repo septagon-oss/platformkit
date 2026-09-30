@@ -12,6 +12,7 @@
 package tenant
 
 import (
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -41,6 +42,20 @@ type Deps struct {
 	// wreckage — and answering 501 to a route that exists is worse than not
 	// having it.
 	Invite contracts.Inviter
+
+	// Languages are the languages the installation's catalogues answer in, and the
+	// most a tenant is ever served in. They do not decide what a new tenant is
+	// served in — a create declares nothing, and a tenant starts out in the one
+	// language its copy is written in — the one language a tenant whose row predates
+	// migrations/000029 is served in too, which its column holds and no row of that
+	// file's is read for. They decide what SetLocale may be told: a
+	// tenant served in a language nobody wrote copy for is a page that declares that
+	// language and shows another one, so the composition, which is the thing that
+	// read the files, says what exists and the command refuses the rest.
+	// The composition reads them off the catalogues it composed
+	// (apps/platformkit/catalog.go); this module names no tag. A composition that
+	// wires no catalogues passes nothing, and then nothing is checked against it.
+	Languages []string
 }
 
 // Module is the manifest, and the service it is built on.
@@ -48,11 +63,16 @@ type Deps struct {
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
 func Module(deps Deps) (contracts.Service, module.Module) {
-	svc := internal.NewService(deps.OnCreate)
+	svc := internal.NewService(deps.OnCreate, deps.Languages)
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,
-		Events:      []string{contracts.EventCreated, contracts.EventSuspended, contracts.EventHostAdded},
+		Declared: []events.Declared{
+			events.Declare[contracts.Created](contracts.EventCreated),
+			events.Declare[contracts.Suspended](contracts.EventSuspended),
+			events.Declare[contracts.HostAdded](contracts.EventHostAdded),
+			events.Declare[contracts.LocaleSet](contracts.EventLocaleSet),
+		},
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above
 		// because a module's Events are the ones it owns: kit/app checks a

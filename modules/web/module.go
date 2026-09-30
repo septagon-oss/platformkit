@@ -19,6 +19,7 @@ import (
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/web/internal"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // Deps is what the site reads: the settings, the published pages, and the
@@ -41,6 +42,16 @@ type Deps struct {
 	// the file module's business and this composition's knowledge. The logo is
 	// the one file the site renders.
 	PublicFileURL func(id string) string
+
+	// Messages opts the site into translated copy, as the admin shell's Deps of
+	// the same name does: the catalogues of every layer the composition installed,
+	// merged, this one's own refusal sentences among them. Nil leaves every page in
+	// the source language, which is what a site with no catalogue says today.
+	// What reaches through it is the refusal copy — the 404 of a slug nobody
+	// published is the answer most visitors get — because the copy the site writes
+	// for itself is Go text and declares its own language whatever is composed
+	// here; see Site.view.
+	Messages page.Messages
 }
 
 // Module is the manifest: two public routes and nothing else to declare.
@@ -54,13 +65,13 @@ func Module(deps Deps) module.Module {
 	return module.Module{
 		Name:          "web",
 		Permissions:   nil,
-		Events:        nil,
+		Declared:      nil,
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes: func(r httpx.Surfaces) {
 			internal.Mount(r, internal.Site{
 				Settings: deps.Site, Content: deps.Content, Theme: deps.Theme,
-				SignIn: deps.SignInPath, File: deps.PublicFileURL,
+				SignIn: deps.SignInPath, File: deps.PublicFileURL, Messages: deps.Messages,
 			})
 		},
 	}

@@ -114,9 +114,16 @@ func configure(t *testing.T) (string, config.Config) {
 func install(t *testing.T, path string) {
 	t.Helper()
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
+	// The installation's second language is one this tenant's people are served in,
+	// said at the same moment the tenant is created. A tenant is not served in it
+	// by accident of the catalogues somebody compiled: SetLocale is the declaration,
+	// and a bootstrap that says nothing leaves the tenant in the one language its
+	// copy is written in — which is what apps/platformkit/locale_test.go and
+	// e2e/localization.spec.ts then check the other language against.
 	err := bootstrap([]string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,
 		"--name", "Acme Corporation", "--admin-email", adminEmail,
+		"--language", "pt-PT",
 	})
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
@@ -402,12 +409,17 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// installation host, however its roles are written — is
 	// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx, which holds the
 	// installation host fixed and changes only the tenant.
+	//
+	// Which languages a tenant is served in is in this list because it is the newest
+	// of these routes and the one a tenant would most like to write for itself: the
+	// tenant's own host is exactly where its absence has to show.
 	for _, probe := range []struct{ method, path, body string }{
 		{http.MethodGet, tenantPath, ""},
 		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/suspend", ""},
 		{http.MethodGet, tenantPath + "/" + globexID.String(), ""},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/locale", `{"default":"pt-PT","supported":["en","pt-PT"]}`},
 	} {
 		code, body = do(t, cfg, other, probe.method, globexHost, probe.path, probe.body)
 		if code != http.StatusNotFound {
@@ -1339,14 +1351,29 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
-	// 24 became 25 when modules/user/000025 added the handle column, 25
-	// became 26 when the kernel added 000026_module_schema, and 26 became 27
-	// when modules/notification/000027 added the delivery ledger. The number is
-	// the point of the assertion: an upgrade fixture that silently stopped counting
-	// a migration would pass while upgrading a real installation past a file it
-	// should have applied, so a new migration has to arrive here and say so.
-	if len(before) != 27 {
-		t.Fatalf("the old layout applied %d files, want 27", len(before))
+	// 24 became 25 when modules/user/000025 added the handle column, 25 became 26
+	// when the kernel added 000026_module_schema, 26 became 27 when
+	// modules/notification/000027 added the delivery ledger, 27 became 28 when the
+	// kernel added 000028_outbox_trace, which gives the outbox the trace columns the
+	// CloudEvents envelope carries, and 28 became 29 when the kernel added
+	// 000029_tenant_locale. That file is 29 and not the 28 it was written as, for
+	// the same reason 27 moved to 28 above it: this fixture flattens every owner's
+	// files under one owner, so two files at one version are one INSERT past the
+	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
+	// in a source before that (migration_files.go, "invalid or repeated version").
+	// A new kernel file continues past the highest number anywhere in the
+	// composition.
+	// The number is the point of the assertion: an upgrade fixture that silently
+	// stopped counting a migration would pass while upgrading a real installation
+	// past a file it should have applied, so a new migration has to arrive here and
+	// say so.
+	//
+	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
+	// this head prints 29 — twelve files under migrations/ (1, 2, 3, 5, 6, 9, 12,
+	// 20, 21, 26, 28, 29) and seventeen under modules/*/migrations/ (4, 7, 8, 10,
+	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27), all distinct.
+	if len(before) != 29 {
+		t.Fatalf("the old layout applied %d files, want 29", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with

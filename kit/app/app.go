@@ -237,10 +237,23 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	// Expanded before it is checked: a module that subscribes to everything is
 	// given the names here, once every manifest is in hand, so where it sits in
 	// the list cannot change what it hears.
+	// The kernel emits one event of its own — event_replayed, the record of an
+	// operator's replay (kit/events.Replay) — and it is declared in the module
+	// list because that is where every event is declared. Declaring it is what
+	// makes module.Expand hand it to the audit module's SubscribeAll, so the act
+	// lands in the tenant's trail beside the actions it re-ran, with the
+	// operator as its actor.
+	mods = append(mods, kernelModule)
 	mods = module.Expand(mods)
 	if err := module.Validate(mods); err != nil {
 		return nil, err
 	}
+	// Every event this composition can emit, with the payload type its module
+	// promised, goes to the outbox: a payload that is not one is refused at the
+	// INSERT rather than published and discovered by a subscriber. One list,
+	// built from the manifests nobody else re-declares. See kit/events/catalog.go
+	// and kit/app/asyncapi.go, which emits the same list as a document.
+	events.DeclareAll(declaredEvents(mods))
 	log := opts.Log
 	if log == nil {
 		// config's log.level was validated and then read by nobody, which is
@@ -442,9 +455,15 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		return nil, err
 	}
 	counts := api.MountedBySurface()
+	// event_schema_coverage is the register's number for this pillar: how many
+	// of the events this composition emits carry a payload schema its module
+	// declared. It is printed at boot because a number nobody can read is a
+	// number that drifts back down.
+	covered, declared := CoveredEvents(a.mods)
 	a.log.InfoContext(ctx, "app: operations declared",
 		"count", len(api.Recorded()), "events", len(api.Events()),
-		"public", counts[httpx.SurfacePublic], "app", counts[httpx.SurfaceApp], "ops", counts[httpx.SurfaceOps])
+		"public", counts[httpx.SurfacePublic], "app", counts[httpx.SurfaceApp], "ops", counts[httpx.SurfaceOps],
+		"event_schema_coverage", fmt.Sprintf("%d/%d", covered, declared))
 	if a.opts.Installation.Host == "" {
 		a.log.WarnContext(ctx, "app: no installation host; the control plane (/ops) is mounted and answers nothing",
 			"fix", "server.installation_host names the host the installation itself is reached at")
@@ -668,14 +687,50 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 	return fmt.Errorf("app: %d permission(s) do not check out:\n  %s", len(bad), strings.Join(bad, "\n  "))
 }
 
+// kernelModule is the kernel's share of the composition, in the same shape
+// every other module arrives in: a name and the events it emits. It has no
+// permissions, no routes, no SQL and no nav of its own, and saying so here is
+// cheaper than a mechanism that discovers it.
+//
+// security.denied is declared here beside the kernel's manifest name, and it is
+// the one event that arrives by two doors: module.KernelEvents is what subscribes
+// a SubscribeAll module to it (no module raised it — the refusal is the kernel's),
+// and this declaration is what gives it a payload type, a schema the outbox checks
+// at the INSERT, and a channel in the AsyncAPI document. Without it the kernel
+// would emit an event its own catalogue knows nothing about, and
+// event_schema_coverage would count events it does not.
+var kernelModule = module.Module{
+	Name: module.KernelName,
+	Declared: []events.Declared{
+		events.Declare[events.ReplayRecord](events.EventReplayed),
+		events.Declare[Denied](EventDenied),
+	},
+}
+
+// declaredEvents is every event every manifest declares, de-duplicated by name.
+// Two modules may not emit one name — module.Validate refuses that as a
+// namespace violation — so the first declaration seen is the only one.
+func declaredEvents(mods []module.Module) []events.Declared {
+	var out []events.Declared
+	seen := map[string]bool{}
+	for _, m := range mods {
+		for _, e := range m.Emits() {
+			if !seen[e.Name] {
+				seen[e.Name], out = true, append(out, e)
+			}
+		}
+	}
+	return out
+}
+
 // validateEvents is the same gate for the other direction: an operation that
 // will publish an event no module declared is an event no subscriber can be
 // written against, because the manifest is where a subscriber looks.
 func validateEvents(api *httpx.API, mods []module.Module) error {
 	declared := map[string]bool{}
 	for _, m := range mods {
-		for _, e := range m.Events {
-			declared[e] = true
+		for _, e := range m.Emits() {
+			declared[e.Name] = true
 		}
 	}
 	var missing []string

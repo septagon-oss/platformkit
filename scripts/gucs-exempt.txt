@@ -4,3 +4,4 @@
 #
 # A row is for a test that must name a platformkit.* setting to read something, never to write one. The gate
 # prints every row on every run. Rows are appended in the change that needs them, where a reviewer reads them.
+migrations/review_r8_locale_backfill_role_test.go matches migration set_config lines as strings; it writes no setting

@@ -186,6 +186,43 @@ Two refusals that had no failing case now have one: two clients on one seed are 
 worn twice, and a third client whose own override breaks its own body role refuses the whole set rather
 than booting a roster with a client missing.
 
+**An event leaving the outbox is a CloudEvents 1.0 envelope, and the tenant is
+in its address.** The wire form was `transport.Event`'s own struct tags —
+`{"id","name","tenantId","payload","at","actor"}` — a private shape nothing
+outside this repository could read. It is now CloudEvents 1.0 in structured
+content mode, with `tenantid` as a required extension attribute and
+`traceparent`/`tracestate` as the distributed tracing extension, and the subject
+is `platformkit.<tenant>.<module>.<event>`: a tenant's backlog is an address, a
+durable can be per tenant, and a bridge routes a customer without opening the
+payload. The envelope decodes the pre-envelope shape and never writes it; a
+subscription answers both addresses while that window is open, because a NATS
+`*` is one token and an unread decoder is not a window. `module.Module.Declared`
+names the Go type of each payload; that projection is the JSON Schema the outbox
+refuses a mis-shaped payload against — a member the projection cannot describe
+constrains nothing, and it no longer panics the door either — and the AsyncAPI
+3.0.0 document `apps/platformkit/testdata/asyncapi.json` is rendered from it, as
+each message's `payload` where a validator reads, and checked in by
+`make check`. A manifest outside this repository keeps the list it already wrote:
+`Events` still takes event names, and `Declared` is the field that takes
+`events.Declare[contracts.Changed](contracts.EventChanged)` beside them. An event named
+without a type is published unchecked and counted as uncovered — the state a nil payload
+already meant — and a module that wants its payload in the document, and refused at the
+outbox before the row is written, declares it. `events.Replay` is the operator's verb for a terminal delivery, and
+`kit/trace` carries the W3C context from a request into the outbox row — it
+collects and exports nothing, which the metrics pillar still owns. That carrier now
+bounds the caller's `tracestate`: `trace.Parse` keeps whole entries up to
+`trace.MaxTraceState` (512 bytes) and drops the rest, because the string is stored in
+the outbox row and republished on every event the request caused, so an unbounded one
+is a header paid for per event; the trace itself survives either way, and a state too
+large to keep is dropped whole rather than cut mid-entry. See
+[the rollout notes](kit/events/README.md): the subject change recreates every stored consumer, and the claims are what make that safe.
+
+A replay now requires its actor as it requires its reason, and the record it
+refuses to write is the one that would have named nobody. `Purge` leaves an
+outbox row a dead letter still describes: the row is the payload's only copy, and
+a terminal failure the operator can read but never run again, with nothing left
+saying what it carried, is the evidence this change set exists to stop losing.
+
 **A test that must name a tenancy setting to read it can be exempted from the GUC gate, in a reviewed row.**
 `scripts/check_gucs.sh` reads text, so a test that matches a migration's `set_config('platformkit.…'` line as
 a string looks like a write. `scripts/gucs-exempt.txt` lists such files, one `<path> <reason>` per line.

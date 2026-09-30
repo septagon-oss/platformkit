@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -40,7 +41,6 @@ import (
 	"github.com/septagon-oss/platformkit/modules/web"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/export"
-	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // composition is the application: every module it is made of, and the values
@@ -60,6 +60,10 @@ type composition struct {
 	// plans answers what a tenant's subscription includes, for the operations
 	// that declare a feature.
 	plans httpx.Entitler
+	// messages is this application's one catalogue — the same value the shells
+	// below are given — carried here so the failure page the kernel renders is
+	// worded from it rather than from a second read of the same files.
+	messages xtext.Catalog
 }
 
 // compose constructs complete dependencies in order: users, tenants,
@@ -84,9 +88,15 @@ func compose(cfg config.Config) composition {
 	// application that decides administration is made of roles.
 	users, userModule := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
 
+	installed := catalogues()
 	tenants, tenantModule := tenant.Module(tenant.Deps{
 		OnCreate: []tenantcontracts.Hook{seedRoles},
 		Invite:   firstAdmin{users: users},
+		// A tenant created here is served in every language this installation's
+		// copy is written in, read off the catalogues rather than named: the set
+		// exists before the operator narrows it, so a page can answer a person in
+		// the language its text was authored in on the day the tenant appears.
+		Languages: installed.Languages(),
 	})
 	active := tenantcontracts.Active{Service: tenants}
 	hosts := tenantHosts{tenants: tenants}
@@ -189,6 +199,11 @@ func compose(cfg config.Config) composition {
 			// nothing at all.
 			SignInPath:    pinnedSignIn,
 			PublicFileURL: func(id string) string { return pinnedPublicFile + "/" + id },
+			// The refusal sentences the site's two addresses can answer with are the
+			// kernel layer's, so the site shows them to a visitor in the language the
+			// tenant is served in. What the site writes itself — the bar, the footer,
+			// the empty states — stays in the source language and says so.
+			Messages: installed,
 		}),
 	}
 	// The trail is this reference product's worked example of something a plan
@@ -211,13 +226,13 @@ func compose(cfg config.Config) composition {
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
 		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
-		Messages: page.FromCatalog(admin.Messages()), Locale: loginLocale,
+		Messages: installed, Locale: loginLocale,
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
 
 	checkPersonas(mods)
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
-		notify: notify, mail: mail, plans: plans}
+		notify: notify, mail: mail, plans: plans, messages: installed}
 }
 
 // transports is the one place this application names an event provider. The

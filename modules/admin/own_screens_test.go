@@ -41,7 +41,7 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 	notes := module.Module{
 		Name:        "note",
 		Permissions: []module.Permission{{Key: "note:read"}, {Key: "note:write"}},
-		Events:      spec.Events(),
+		Declared:    spec.Declared(),
 		Routes: func(s httpx.Surfaces) {
 			spec.Mount(s)
 			// The module's own desk for one note, at the address the generated register would take.
@@ -56,7 +56,7 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 	catalogue := module.Module{
 		Name:        "plan",
 		Permissions: []module.Permission{{Key: "plan:read"}, {Key: "plan:write", Operator: true}},
-		Events:      plans.Events(),
+		Declared:    plans.Declared(),
 		Routes:      func(s httpx.Surfaces) { plans.Mount(s) },
 	}
 	shell := admin.Module(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: caller{}, SignIn: "/api/v1/auth/login"})
