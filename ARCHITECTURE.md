@@ -236,6 +236,19 @@ JetStream delivery is at least once. Database claims prevent repeated committed
 handling; external effects still need the provider's own idempotency contract.
 [kit/jobs](kit/jobs/) schedules work through that event path.
 
+The same walk is measured. [kit/telemetry](kit/telemetry/) names the attributes and
+the three instruments and holds no provider, which is what lets the four packages
+above make a measurement without reaching a collector; [kit/app](kit/app/) installs
+the one `TracerProvider` and `MeterProvider`, OTLP over gRPC, and installs nothing
+where no endpoint is configured. Spans cover the boundaries above — the operation,
+named after the operation id and opened before routing, the transaction under `Tx`,
+the outbox relay, the job run — and the tenant rides on each where the request
+resolved one, as a span attribute and never a resource one, because one process
+serves many tenants. The publisher's trace context is stored on the outbox row, so a
+request and the handler that reacted to it are one trace, and
+`pkit.http.operation.duration`, `pkit.outbox.lag` and `pkit.http.refusals` are the
+numbers a dashboard would read.
+
 ## Evolve the schema by owner
 
 The foundation and each selected module supply ordered `db.MigrationSource`
