@@ -67,7 +67,7 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	}
 	// The language this tenant is served in is the one the installation's
 	// catalogues are written in, and this module does not name it: the column's
-	// default is the deployment's decision (migrations/000028), read back here so
+	// default is the deployment's decision (migrations/000029), read back here so
 	// the row the create returns says what the table says. Somebody setting other
 	// languages for this tenant is SetLocale, and a create that took them from a
 	// body would put the choice in the hands of whoever called the route.
@@ -78,7 +78,7 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	// this module would have to keep in step with the migration, and it is the only
 	// language written here. The set behind it is a declaration, and on a create
 	// nobody has made one. A tenant whose row predates the column is left with this
-	// one language too, by the other half of the same rule: migrations/000028 writes
+	// one language too, by the other half of the same rule: migrations/000029 writes
 	// no rows at all and `localesOf` takes the default out of the set on the way
 	// read, so the column alone answers for a tenant that has no row beside it, and a
 	// tenant created today and a tenant created before that file are served in the

@@ -225,7 +225,7 @@ the version is recorded over a write that wrote nothing. Rows belong in a `phase
 half beside the schema one, which the runner drains inside that marker. A file that
 writes none may say so in its commentary — `-- data: exempt reason: <sentence>` — which
 is prose the runner does not read and a reader of the ledger does, naming where the
-rows are written instead. No gate asks for the line yet; 000028_tenant_locale.up.sql
+rows are written instead. No gate asks for the line yet; 000029_tenant_locale.up.sql
 carries one.
 
 ### What the runner refuses, and what to write instead

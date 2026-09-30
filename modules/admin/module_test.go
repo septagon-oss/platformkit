@@ -187,7 +187,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	notes := module.Module{
 		Name:        "note",
 		Permissions: []module.Permission{{Key: "note:read"}, {Key: "note:write"}, {Key: "secret:read"}},
-		Events:      spec.Events(),
+		Declared:    spec.Declared(),
 		Nav: []module.NavEntry{
 			{Label: "Notes", Screen: "note/notes", Permission: "note:read"},
 			{Label: "Secrets", Screen: "note/secrets", Permission: "secret:read"},
@@ -214,7 +214,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	catalogue := module.Module{
 		Name:        "plan",
 		Permissions: []module.Permission{{Key: "plan:read"}, {Key: "plan:write", Operator: true}},
-		Events:      plans.Events(),
+		Declared:    plans.Declared(),
 		Nav: []module.NavEntry{
 			{Label: "Plans", Screen: "plan/plans", Permission: "plan:read"},
 			// The affordance the operator has and a customer does not: a nav

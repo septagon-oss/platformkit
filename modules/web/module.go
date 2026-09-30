@@ -65,7 +65,7 @@ func Module(deps Deps) module.Module {
 	return module.Module{
 		Name:          "web",
 		Permissions:   nil,
-		Events:        nil,
+		Declared:      nil,
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes: func(r httpx.Surfaces) {

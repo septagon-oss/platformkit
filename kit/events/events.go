@@ -30,6 +30,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/trace"
 )
 
 // The three tables, each named once here and once in migrations/.
@@ -95,17 +96,42 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if err != nil {
 		return fmt.Errorf("events: %s: marshal the payload: %w", name, err)
 	}
+	// The promise the emitting module made in its manifest is checked here, at
+	// the one door, before anything is written. See catalog.go.
+	if err := checkPayload(name, body); err != nil {
+		return err
+	}
 	var actor any
 	if id, ok := tenancy.ActorFrom(ctx); ok {
 		actor = id
 	}
+	// The trace context is stored beside the actor for the same reason the
+	// actor is: the relay publishes later, in a transaction of its own and with
+	// no request left to ask. Storing it here is what lets a delivery name the
+	// call that caused it. Absent is normal and stays absent — a periodic job,
+	// a handler reacting to another event. See kit/trace.
+	parent, state := "", ""
+	if tc, ok := trace.From(ctx); ok {
+		parent, state = tc.Parent(), tc.TraceState
+	}
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor) VALUES (?, ?, ?, ?::jsonb, ?)",
-		uuid.New(), tenantID, name, string(body), actor,
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate)"+
+			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?)",
+		uuid.New(), tenantID, name, string(body), actor, nilIfEmpty(parent), nilIfEmpty(state),
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
 	return nil
+}
+
+// nilIfEmpty stores an absent value as NULL rather than the empty string: the
+// envelope omits an attribute that does not apply, and the row that carries it
+// says the same thing the envelope does.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // Handler is what a module does with an event. It runs inside a transaction
@@ -138,6 +164,15 @@ func (s Subscription) durable() string {
 // transaction in the event's own tenant, so a handler reaches the tenant's rows
 // the same way a request handler does and can publish events of its own into
 // the same transaction.
+//
+// "The event's own tenant" is the tenant the event names *and* the tenant its
+// delivery's address names, which is why a transport that routes by an address
+// checks the two agree before this sink runs (transport.AddressMismatch, and the
+// check its Subscribe contract asks for). Both sentences are one rule: a handler
+// runs in the tenant the event names, and a message stored on one tenant's
+// address while stamped as another's is not this kernel's event at all — its
+// body is the only thing that says otherwise, and a body is not the address the
+// broker routed by.
 //
 // Each delivery is claimed before the handler runs, so a handler sees each
 // event once however many times the transport delivers it. See claim.

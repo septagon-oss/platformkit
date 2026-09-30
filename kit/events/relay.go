@@ -27,12 +27,14 @@ var (
 // row is one outbox record as the relay reads it. Actor is a pointer because
 // the column is null for everything nobody asked for.
 type row struct {
-	ID        uuid.UUID
-	TenantID  uuid.UUID
-	Name      string
-	Payload   []byte
-	CreatedAt time.Time
-	Actor     *uuid.UUID
+	ID          uuid.UUID
+	TenantID    uuid.UUID
+	Name        string
+	Payload     []byte
+	CreatedAt   time.Time
+	Actor       *uuid.UUID
+	TraceParent *string
+	TraceState  *string
 }
 
 // Relay moves every unpublished row to the transport, a batch at a time, and
@@ -67,7 +69,12 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 	var moved int
 	err := db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var rows []row
-		const q = `SELECT id, tenant_id, name, payload, created_at, actor FROM ` + table + `
+		// The two aliases are GORM's naming rather than the columns': it maps a
+		// scanned struct field by snake_case, so TraceParent arrives as
+		// trace_parent. Naming the alias after the column and letting the field
+		// go nil is how a carried fact silently stops being carried.
+		const q = `SELECT id, tenant_id, name, payload, created_at, actor,
+			traceparent AS trace_parent, tracestate AS trace_state FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
@@ -80,6 +87,16 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt}
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
+			}
+			// The trace the request left in the row, carried onto the envelope
+			// the relay publishes. This transaction has no request of its own
+			// to substitute: a relay span started here would join the delivery
+			// to the wrong trace.
+			if r.TraceParent != nil {
+				ev.TraceParent = *r.TraceParent
+			}
+			if r.TraceState != nil {
+				ev.TraceState = *r.TraceState
 			}
 			if err := t.Publish(ctx, ev); err != nil {
 				// The rows published so far are still unstamped, so they go
@@ -102,12 +119,24 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 // outbox row or terminal failure record exists: losing that claim would replay
 // completed work when the pending row is relayed. Dead letters and their claims
 // require explicit operator review; they are never automatically purged.
+//
+// A dead letter keeps its outbox row with it. The row is the only place the
+// payload survives — the dead letter records the failure, not the body — so a
+// purge that took the row would leave an operator reviewing a terminal failure
+// whose payload is gone and whose replay answers that there is nothing to
+// replay. That is the write that takes the last copy away, and a dead letter is
+// still referring to the row when it happens, so the row stays. The cost is
+// bounded and worth naming: an unread dead letter keeps one JSONB row alive
+// past the window, and clearing it is the operator's verb — `events.Replay` or
+// an operator who decides the event will never run again deletes the dead
+// letter, after which the next purge takes the row.
+//
 // The database clock supplies the cutoff for all workers.
 func Purge(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, purgeToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		age := fmt.Sprintf("%d seconds", int(delivery.Keep.Seconds()))
-		if err := tx.DB().Exec("DELETE FROM "+table+
-			" WHERE published_at IS NOT NULL AND published_at < now() - ?::interval", age).Error; err != nil {
+		if err := tx.DB().Exec("DELETE FROM "+table+" o WHERE published_at IS NOT NULL AND published_at < now() - ?::interval"+
+			" AND NOT EXISTS (SELECT 1 FROM "+deadLetters+" d WHERE d.event_id = o.id)", age).Error; err != nil {
 			return fmt.Errorf("events: purge: %w", err)
 		}
 		if err := tx.DB().Exec("DELETE FROM "+handled+" h WHERE handled_at < now() - ?::interval"+

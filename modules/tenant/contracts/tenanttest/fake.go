@@ -87,7 +87,7 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 	at := db.Now()
 	// The language a tenant starts out in is the installation's default, and it is
 	// the only one: the real create reads back the column default
-	// migrations/000028 ships — the language the copy is written in, which no Go
+	// migrations/000029 ships — the language the copy is written in, which no Go
 	// value hands this module — and writes that one row, because a tenant's set is a
 	// declaration and a create carries none. This mirrors it exactly, because a fake
 	// that seeded a wider set than the real create does lets a case pass the real

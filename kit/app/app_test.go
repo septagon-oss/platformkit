@@ -110,7 +110,7 @@ func hello() module.Module {
 	return module.Module{
 		Name:        "hello",
 		Permissions: []module.Permission{{Key: "note:write"}},
-		Events:      []string{"hello.note_written"},
+		Declared:    []events.Declared{{Name: "hello.note_written"}},
 		Nav:         []module.NavEntry{{Label: "Notes", Screen: "hello/notes", Permission: "note:write"}},
 		// Each owner starts its own numbering at 1.
 		Migrations: fstest.MapFS{
@@ -407,11 +407,11 @@ func (Widget) TableName() string { return "widgets" }
 // manifest is where a subscriber looks.
 func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	cfg, opts := compose(t)
-	shop := func(events []string) module.Module {
+	shop := func(declared []events.Declared) module.Module {
 		return module.Module{
 			Name:        "shop",
 			Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
-			Events:      events,
+			Declared:    declared,
 			Routes: func(s httpx.Surfaces) {
 				rest.Spec[*Widget]{
 					Module: "shop", Entity: "widget", Path: "/widgets",
@@ -437,7 +437,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 
 	// Declaring them is all it takes, and then the composition boots.
 	cfg, opts = compose(t)
-	declared := shop([]string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"})
+	declared := shop(rest.Spec[*Widget]{Module: "shop", Entity: "widget"}.Declared())
 	a, err = New(t.Context(), cfg, []module.Module{declared}, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -449,6 +449,26 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+
+	// Naming them without naming the payload is enough too. This gate asks only
+	// whether the manifest promised the event; the payload type is what the
+	// outbox checks and the document carries, and a module that emits a payload
+	// the kernel cannot describe still tells a subscriber what will arrive.
+	cfg, opts = compose(t)
+	named := shop(nil)
+	named.Events = []string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"}
+	a, err = New(t.Context(), cfg, []module.Module{named}, opts)
+	if err != nil {
+		t.Fatalf("New with a name-only manifest: %v", err)
+	}
+	ctx, cancel = context.WithCancel(t.Context())
+	stopped = make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run with a name-only manifest: %v", err)
 	}
 }
 
@@ -479,8 +499,8 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 	handled := make(chan events.Event, 4)
 	ledger := module.Module{
-		Name:   "ledger",
-		Events: []string{"ledger.entry_written"},
+		Name:     "ledger",
+		Declared: []events.Declared{{Name: "ledger.entry_written"}},
 		Subscriptions: []events.Subscription{{
 			Module: "ledger", Name: "ledger.entry_written",
 			Handler: func(_ context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
@@ -634,7 +654,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	widgets := module.Module{
 		Name:        "shop",
 		Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
-		Events:      []string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"},
+		Declared:    []events.Declared{{Name: "shop.widget.created"}, {Name: "shop.widget.updated"}, {Name: "shop.widget.deleted"}},
 		Routes: func(r httpx.Surfaces) {
 			rest.Spec[*Widget]{
 				Module: "shop", Entity: "widget", Path: "/widgets",
@@ -713,6 +733,56 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 	waitFor(t, cfg.Server.Addr)
 	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/faceless/notice"); code != http.StatusOK {
 		t.Errorf("the workspace route = %d, want 200", code)
+	}
+}
+
+// TestTheBootLineNamesTheEventSchemaCoverage reads the number this pillar is
+// measured by. kit/app/app.go prints event_schema_coverage at boot "because a
+// number nobody can read is a number that drifts back down" — and until this
+// case, no test had ever read it: every fixture here passes
+// slog.DiscardHandler, so the line executed in every boot test and reached
+// nothing. Reading it needs one logger that keeps what it is handed, because
+// Options.Log is used as it arrives (a caller that brings a logger has chosen
+// its own level) rather than re-wrapped at config's level.
+//
+// 2/3 is this composition: the kernel's own platformkit.event_replayed and
+// security.denied, both covered by a payload type kit/app declares, and hello's
+// hello.note_written, declared with no type, not. A boot whose coverage silently
+// fell to 0/N — a catalogue rebuilt from the wrong list, a DeclareAll that never
+// ran — is the drift the line exists to make visible, and it is now visible here
+// too.
+func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
+	cfg, opts := compose(t)
+	var logs strings.Builder
+	opts.Log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	a, err := New(t.Context(), cfg, []module.Module{hello()}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// The line is buildAPI's, and buildAPI runs inside Run, so the app is
+	// booted, waited for, and stopped before anything reads the buffer — the
+	// logger belongs to the running process, and reading it while it runs is a
+	// race the assertion is not worth.
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var line string
+	for _, l := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(l, "event_schema_coverage") {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatalf("the boot log named no event_schema_coverage:\n%s", logs.String())
+	}
+	if !strings.Contains(line, "event_schema_coverage=2/3") {
+		t.Errorf("the boot line reads %q, want event_schema_coverage=2/3 for the kernel's two covered declarations and one uncovered one", line)
 	}
 }
 

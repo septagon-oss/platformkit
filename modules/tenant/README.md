@@ -13,7 +13,7 @@ Compose it first, with `tenant.Deps{OnCreate, Invite, Languages}` — `Languages
 being the ones the installation's catalogues answer in, which are the most a tenant
 is ever served in. A new tenant is served in the one language its copy is written
 in, the column's default, and so is a tenant whose row predates
-`migrations/000028_tenant_locale.up.sql`: that file writes no rows, the read takes the
+`migrations/000029_tenant_locale.up.sql`: that file writes no rows, the read takes the
 default out of the set, and the column alone answers for a tenant with none beside it,
 because a tenant's set is a declaration and a create carries none. `POST
 /api/v1/ops/tenant/tenants/{id}/locale` is what declares

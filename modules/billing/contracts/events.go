@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The seven events this module emits: kit/rest's three for the plan catalogue,
@@ -24,9 +26,16 @@ const (
 )
 
 // Events is every event this module emits, for the manifest.
-var Events = []string{
-	EventPlanCreated, EventPlanUpdated, EventPlanDeleted,
-	EventSubscribed, EventCancelled, EventRenewed, EventPastDue,
+var Events = []events.Declared{
+	// The three a rest.Spec publishes carry the entity itself, which is what
+	// Spec.emit marshals: the subscriber's copy of a plan is the row's copy.
+	events.Declare[*Plan](EventPlanCreated),
+	events.Declare[*Plan](EventPlanUpdated),
+	events.Declare[*Plan](EventPlanDeleted),
+	events.Declare[Subscribed](EventSubscribed),
+	events.Declare[Cancelled](EventCancelled),
+	events.Declare[Renewed](EventRenewed),
+	events.Declare[PastDue](EventPastDue),
 }
 
 // Subscribed is the payload of EventSubscribed: the tenant is on a plan. It
