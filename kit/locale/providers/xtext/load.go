@@ -225,7 +225,9 @@ func read(source Source, fallback string) map[string]map[string]string {
 // source whose only file is the source language is exempt from presence, so each is
 // legal alone; merged, they leave the product's English sentence asking for two
 // arguments beside the module's Portuguese one asking for one, and the page a person
-// is reading prints Go's own mismatch marker in their language. Presence is not
+// is reading prints Go's own mismatch marker in their language. The same fault travels
+// the other way — a source-language sentence that interpolates nothing merged over a
+// translation that asks for one — and is refused on the same ground. Presence is not
 // checked here and that is deliberate: a layer shipping one locale and a product
 // re-wording one key in another are what the merge exists for, and requiring every
 // source to answer for every key would refuse the brief's own override.
@@ -248,16 +250,22 @@ func checkMergedVerbs(fallback string, merged, wroteBy map[string]map[string]str
 	sort.Strings(keys)
 	for _, key := range keys {
 		want, from := "", fallback
+		// `known`, and not an empty `want`, says a baseline was read. A source-language
+		// sentence that interpolates nothing ("Delete") is a baseline of zero arguments,
+		// not the absence of one: the call site passes what that English sentence asks
+		// for, so a copy merged under it which asks for one is the same fault travelling
+		// the other way — the page is short of an argument instead of short of a word.
+		known := false
 		if source, carried := merged[fallback][key]; carried {
-			want = verbs(source)
+			want, known = verbs(source), true
 		}
 		for _, tag := range locales {
 			text, carried := merged[tag][key]
 			if !carried {
 				continue
 			}
-			if want == "" {
-				want, from = verbs(text), tag
+			if !known {
+				want, from, known = verbs(text), tag, true
 				continue
 			}
 			if got := verbs(text); got != want {

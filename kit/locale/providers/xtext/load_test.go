@@ -59,6 +59,50 @@ func TestALaterSourceAnswersForAKeyAnEarlierOneCarries(t *testing.T) {
 	}
 }
 
+// The merged argument rule reads a source-language sentence that interpolates nothing
+// as a baseline of zero arguments, not as a missing one: a call site passes what that
+// English sentence asks for, so a translation merged under it which asks for one is the
+// same fault travelling the other way — a page short of an argument rather than short of
+// a word. Refused with the key and both sources named, as every refusal here is.
+func TestTheMergeRefusesACopyAskingForWhatTheSourceLanguageDropped(t *testing.T) {
+	t.Parallel()
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("a Portuguese copy asking for an argument the merged English sentence takes none of was accepted")
+		}
+		if reason, ok := recovered.(string); !ok || !strings.Contains(reason, "screens.delete") ||
+			!strings.Contains(reason, "the module") || !strings.Contains(reason, "the product") {
+			t.Fatalf("the refusal said %v, which names neither the key nor the two sources it spans", recovered)
+		}
+	}()
+	xtext.Load("en",
+		xtext.Source{Name: "the module", FS: fstest.MapFS{"pt-PT.json": &fstest.MapFile{Data: []byte(
+			`{"screens.delete": {"translation": "Eliminar %s"}}`)}}},
+		xtext.Source{Name: "the product", FS: fstest.MapFS{"en.json": &fstest.MapFile{Data: []byte(
+			`{"screens.delete": {"translation": "Delete"}}`)}}},
+	)
+}
+
+// The guard above must not become "a key two sources share, where one of them has no
+// arguments at all": a label is the commonest thing a product re-words, and a sentence
+// with no arguments in either language is the commonest kind of label there is.
+func TestTheMergeKeepsACopyThatDropsNoArgument(t *testing.T) {
+	t.Parallel()
+	messages := xtext.Load("en",
+		xtext.Source{Name: "the module", FS: fstest.MapFS{"pt-PT.json": &fstest.MapFile{Data: []byte(
+			`{"screens.delete": {"translation": "Eliminar"}}`)}}},
+		xtext.Source{Name: "the product", FS: fstest.MapFS{"en.json": &fstest.MapFile{Data: []byte(
+			`{"screens.delete": {"translation": "Delete"}}`)}}},
+	)
+	if got := locale.SelectLocale(messages, "pt-PT").Text("screens.delete", "Delete"); got != "Eliminar" {
+		t.Errorf("the merged copy said %q, want the module's own label", got)
+	}
+	if got := locale.SelectLocale(messages, "en").Text("screens.delete", "Delete"); got != "Delete" {
+		t.Errorf("the source language said %q, want the product's re-wording", got)
+	}
+}
+
 // The kernel refuses a request in a sentence the kernel chose. A product that
 // could re-word fault.* could re-word what a refusal to write says, which is
 // why the prefix is owned and the composition is refused rather than ignored.
