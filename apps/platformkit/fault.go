@@ -106,11 +106,27 @@ func faultChrome() page.Chrome {
 	}
 }
 
+// faultFrame is the column these pages are read in: the foundation's frame with
+// no navigation, the same narrow centred column the sign-in page already uses.
+//
+// It used to be `g.Group(body)` — no container at all — because this chrome has
+// no sidebar and no account menu to draw (see this file's header). A frame is
+// not only the navigation, though: it is what bounds the text. With no container
+// every sentence of a refusal, and of the confirmation page that follows an ask,
+// ran the whole viewport — 194 characters on a line at 1440px, which is over
+// twice the 75-character measure the design floor refuses. The pages a shell
+// with a frame renders were never measured by that floor either, because the
+// repository's eye (`e2e/design-audit.spec.ts`) looks inside `main`, which a
+// frameless page has no way to have; the fault pages are outside it either way.
+func faultFrame(_ context.Context, _ page.Request, body []g.Node) g.Node {
+	return page.Bare(body)
+}
+
 func faultPage(c composition) httpx.Fault {
 	messages := c.messages
 	return page.FaultHandler(page.Shell{
 		Chrome:    faultChrome(),
-		Frame:     func(_ context.Context, _ page.Request, body []g.Node) g.Node { return g.Group(body) },
+		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
 		// Who may hand out what the page refused, as a role and never as a name:
@@ -184,7 +200,7 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 func faultShell(c composition) page.Shell {
 	return page.Shell{
 		Chrome:    faultChrome(),
-		Frame:     func(_ context.Context, _ page.Request, body []g.Node) g.Node { return g.Group(body) },
+		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
 		Granter:   c.granter,
