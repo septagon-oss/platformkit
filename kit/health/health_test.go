@@ -51,7 +51,7 @@ func serve(t *testing.T, checks ...health.Check) (http.Handler, *db.Conn) {
 		Authorize:    sites{},
 		Authenticate: anonymous,
 	})
-	health.Register(api, checks...)
+	health.Register(api, checks)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the probes are not declared: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestReadinessIs503WhenTheDatabaseIsDown(t *testing.T) {
 		Authorize:    sites{},
 		Authenticate: anonymous,
 	})
-	health.Register(api, health.DatabaseCheck(app))
+	health.Register(api, []health.Check{health.DatabaseCheck(app)})
 
 	if got := probe(t, router, tenantHost, "/ready").Code; got != http.StatusOK {
 		t.Fatalf("/ready with a live database = %d, want 200", got)
@@ -221,7 +221,7 @@ func TestTheProbesNeverResolveTheHost(t *testing.T) {
 	api, router := httpx.New(httpx.Options{
 		Tenants: slow, Conn: app, Authorize: sites{}, Authenticate: anonymous,
 	})
-	health.Register(api, check{name: "queue"})
+	health.Register(api, []health.Check{check{name: "queue"}})
 
 	// Both hosts: the pod address an orchestrator uses, and a tenant's own
 	// name, which is what a probe through an ingress arrives as.
@@ -254,7 +254,7 @@ func TestReadinessAnswersWithinTheProbeTimeout(t *testing.T) {
 		Authorize:    sites{},
 		Authenticate: anonymous,
 	})
-	health.Register(api, health.DatabaseCheck(app))
+	health.Register(api, []health.Check{health.DatabaseCheck(app)})
 	if err := app.Close(); err != nil {
 		t.Fatalf("close the pool: %v", err)
 	}

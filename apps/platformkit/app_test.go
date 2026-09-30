@@ -566,7 +566,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 			m.Routes(api.Surfaces(m.Name))
 		}
 	}
-	health.Register(api, health.DatabaseCheck(conn))
+	health.Register(api, []health.Check{health.DatabaseCheck(conn)})
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the composition does not declare itself: %v", err)
 	}
@@ -1339,14 +1339,21 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
-	// 24 became 25 when modules/user/000025 added the handle column, 25
-	// became 26 when the kernel added 000026_module_schema, and 26 became 27
-	// when modules/notification/000027 added the delivery ledger. The number is
-	// the point of the assertion: an upgrade fixture that silently stopped counting
-	// a migration would pass while upgrading a real installation past a file it
-	// should have applied, so a new migration has to arrive here and say so.
-	if len(before) != 27 {
-		t.Fatalf("the old layout applied %d files, want 27", len(before))
+	// 24 became 25 when modules/user/000025 added the handle column, 25 became 26
+	// when the kernel added 000026_module_schema, 26 became 27 when
+	// modules/notification/000027 added the delivery ledger, and 27 became 30 when
+	// measurement arrived: the kernel's 000028_tracing (the publisher's trace
+	// context on the outbox row), the kernel's 000029_outbox_baggage (the request id
+	// beside it) and modules/audit's 000030_audit_trace (the trace id on the trail).
+	// They sit past 000027 rather than beside it because this fixture replays every
+	// owner's SQL under one owner, where the ledger's (owner, version) key refuses a
+	// second 27 — the versions one release ships are one sequence, not one per owner.
+	// The number is the point of the assertion: an upgrade fixture that silently
+	// stopped counting a migration would pass while upgrading a real installation
+	// past a file it should have applied, so a new migration has to arrive here and
+	// say so.
+	if len(before) != 30 {
+		t.Fatalf("the old layout applied %d files, want 30", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with
