@@ -72,7 +72,9 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Description: "Requires the password in force. Every other session of this person ends; the one making the request does not, so changing a password does not sign you out of the page you changed it on.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
-		Extensions:  map[string]any{httpx.EventsExtension: []string{usercontracts.EventPasswordSet}},
+		Extensions: map[string]any{httpx.EventsExtension: []string{
+			usercontracts.EventPasswordSet, contracts.EventSessionRevoked,
+		}},
 	}, httpx.SignedIn(), handleChangePassword(svc))
 
 	httpx.Register(public, huma.Operation{
@@ -99,6 +101,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 			http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
+			contracts.EventSessionRevoked,
 		}},
 	}, httpx.Public(), handleResetPassword(svc, cookies))
 
