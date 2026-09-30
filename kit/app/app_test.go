@@ -117,7 +117,7 @@ type helloOut struct {
 func hello() module.Module {
 	return module.Module{
 		Name:        "hello",
-		Permissions: []module.Permission{{Key: "note:write"}},
+		Permissions: []module.Permission{{Key: "note:write", Label: "write notes"}},
 		Declared:    []events.Declared{{Name: "hello.note_written"}},
 		Nav:         []module.NavEntry{{Label: "Notes", Screen: "hello/notes", Permission: "note:write"}},
 		// Each owner starts its own numbering at 1.
@@ -252,7 +252,7 @@ func TestBootRefusesARouteAndAManifestThatDisagreeAboutTheOperator(t *testing.T)
 			cfg, opts := compose(t)
 			m := module.Module{
 				Name:        "control",
-				Permissions: []module.Permission{{Key: "fleet:manage", Operator: tt.declared}},
+				Permissions: []module.Permission{{Key: "fleet:manage", Operator: tt.declared, Label: "manage the fleet"}},
 				Routes: func(s httpx.Surfaces) {
 					httpx.Register(s.App, huma.Operation{
 						OperationID: "fleet", Method: http.MethodGet, Path: "/fleet",
@@ -418,7 +418,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	shop := func(declared []events.Declared) module.Module {
 		return module.Module{
 			Name:        "shop",
-			Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
+			Permissions: []module.Permission{{Key: "widget:read", Label: "read widgets"}, {Key: "widget:write", Label: "write widgets"}},
 			Declared:    declared,
 			Routes: func(s httpx.Surfaces) {
 				rest.Spec[*Widget]{
@@ -661,7 +661,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	cfg, opts := compose(t)
 	widgets := module.Module{
 		Name:        "shop",
-		Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
+		Permissions: []module.Permission{{Key: "widget:read", Label: "read widgets"}, {Key: "widget:write", Label: "write widgets"}},
 		Declared:    []events.Declared{{Name: "shop.widget.created"}, {Name: "shop.widget.updated"}, {Name: "shop.widget.deleted"}},
 		Routes: func(r httpx.Surfaces) {
 			rest.Spec[*Widget]{
@@ -753,9 +753,9 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 // Options.Log is used as it arrives (a caller that brings a logger has chosen
 // its own level) rather than re-wrapped at config's level.
 //
-// 2/3 is this composition: the kernel's own platformkit.event_replayed and
-// security.denied, both covered by a payload type kit/app declares, and hello's
-// hello.note_written, declared with no type, not. A boot whose coverage silently
+// 3/4 is this composition: the kernel's own platformkit.event_replayed,
+// security.denied and security.access_requested, each covered by a payload type
+// kit/app declares, and hello's hello.note_written, declared with no type, not. A boot whose coverage silently
 // fell to 0/N — a catalogue rebuilt from the wrong list, a DeclareAll that never
 // ran — is the drift the line exists to make visible, and it is now visible here
 // too.
@@ -789,8 +789,8 @@ func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 	if line == "" {
 		t.Fatalf("the boot log named no event_schema_coverage:\n%s", logs.String())
 	}
-	if !strings.Contains(line, "event_schema_coverage=2/3") {
-		t.Errorf("the boot line reads %q, want event_schema_coverage=2/3 for the kernel's two covered declarations and one uncovered one", line)
+	if !strings.Contains(line, "event_schema_coverage=3/4") {
+		t.Errorf("the boot line reads %q, want event_schema_coverage=3/4 for the kernel's three covered declarations and one uncovered one", line)
 	}
 }
 

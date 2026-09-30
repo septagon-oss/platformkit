@@ -55,8 +55,8 @@ var spec = rest.Spec[*contracts.Content]{
 // declaration against it at boot, so a route guarded by a permission that is
 // not here fails startup instead of denying everyone forever.
 var permissions = []module.Permission{
-	{Key: contracts.PermissionContentRead},
-	{Key: contracts.PermissionContentManage},
+	{Key: contracts.PermissionContentRead, Label: "read content"},
+	{Key: contracts.PermissionContentManage, Label: "manage content"},
 }
 
 // Module is the manifest. The implementation is constructed here, in one line,

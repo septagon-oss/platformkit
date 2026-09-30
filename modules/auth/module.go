@@ -192,7 +192,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 // permissions is what the manifest declares: one, guarding the two roles
 // routes. Every other route here is about the caller themselves. See
 // contracts/permissions.go.
-var permissions = []module.Permission{{Key: contracts.PermissionRoleManage}}
+var permissions = []module.Permission{{Key: contracts.PermissionRoleManage, Label: "manage roles"}}
 
 // SeedRoles provisions a newly created tenant through auth's own storage path,
 // independently of sessions, delivery and periodic jobs. Pass trusted defaults

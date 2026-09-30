@@ -174,6 +174,19 @@ func (m Module) Emits() []events.Declared {
 type Permission struct {
 	Key string
 
+	// Label is the grant in the words of the module that defines it: "read
+	// tasks", "manage roles". It is source-language text, the readable fallback
+	// handed to the same Locale.Text(key, fallback) seam every other label in
+	// this kernel uses, and the tenant's language for it lives under
+	// `permission.<key>` in the module's own catalogue file.
+	//
+	// It exists because a refusal has to tell a person what they lack, and a
+	// key does not: "AUTH_DENIED: this operation requires task:read" names a
+	// token and leaves the reader to guess whether guessing is safe. Validate
+	// refuses a permission with no label, and one labelled with its own key, so
+	// the field cannot be filled by copying the thing it explains.
+	Label string
+
 	// Operator says this permission belongs to the installation rather than to
 	// a customer: only the operator's own tenant may exercise it at all, and no
 	// wildcard satisfies it — a role has to name it.
@@ -279,6 +292,15 @@ func Validate(mods []Module) error {
 				add("module %q: permission %q is not %q", m.Name, p.Key, "<resource>:<action>")
 				continue
 			}
+			// A label nothing would read is a field that should not exist; a label
+			// equal to the key is the defect the field exists to close, and it is
+			// shippable by accident — the key copied twice — unless boot says no.
+			switch p.Label {
+			case "":
+				add("module %q: permission %q has no Label; a refusal has to name what is missing in words, not only as a key", m.Name, p.Key)
+			case p.Key:
+				add("module %q: permission %q is labelled with its own key; a Label is the grant in words", m.Name, p.Key)
+			}
 			if first, seen := owner[p.Key]; seen {
 				add("module %q: permission %q is already defined by module %q", m.Name, p.Key, first)
 				continue
@@ -371,12 +393,15 @@ func Validate(mods []Module) error {
 	return errors.New("module: invalid composition:\n  " + strings.Join(bad, "\n  "))
 }
 
+// security.access_requested is the ask that follows a refusal, emitted for the
+// same reason: no module ran, the person was refused by the kernel's own guard.
+//
 // KernelEvents are the events the kernel itself emits, which no module's manifest
 // can declare because no module raises them: security.denied is published by kit/app
 // for every attributable refused authorization (see kit/httpx Options.Denied). They
 // count as emitted for Validate and are expanded for a SubscribeAll module, so
 // modules/audit keeps them like any other event.
-var KernelEvents = []string{"security.denied"}
+var KernelEvents = []string{"security.denied", "security.access_requested"}
 
 // KernelName is the manifest name kit/app gives the kernel's own share of the
 // composition. It is named because it is read by a rule: KernelEvents are the

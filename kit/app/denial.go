@@ -24,14 +24,16 @@ const EventDenied = "security.denied"
 // outbox takes it from the context), so it is not repeated here; no request body or
 // header is, because an event is copied into a table administrators read.
 type Denied struct {
-	Status    int       `json:"status"`
-	Code      string    `json:"code"`
-	Detail    string    `json:"detail"`
-	Method    string    `json:"method"`
-	Path      string    `json:"path"`
-	Operation string    `json:"operation,omitempty"`
-	RequestID string    `json:"requestId,omitempty"`
-	UserID    uuid.UUID `json:"userId"`
+	Status     int       `json:"status"`
+	Code       string    `json:"code"`
+	Detail     string    `json:"detail"`
+	Method     string    `json:"method"`
+	Path       string    `json:"path"`
+	Permission string    `json:"permission,omitempty"`
+	Label      string    `json:"label,omitempty"`
+	Operation  string    `json:"operation,omitempty"`
+	RequestID  string    `json:"requestId,omitempty"`
+	UserID     uuid.UUID `json:"userId"`
 }
 
 // recordDenial is httpx.Options.Denied for this composition: one event, in a transaction
@@ -46,6 +48,7 @@ func recordDenial(conn *db.Conn, log *slog.Logger) func(context.Context, httpx.D
 		err := db.Run(tenancy.WithTenant(db.Detached(ctx), d.Tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			return events.Publish(ctx, tx, EventDenied, Denied{
 				Status: d.Status, Code: d.Code, Detail: d.Detail, Method: d.Method, Path: d.Path,
+				Permission: d.Permission, Label: d.Label,
 				Operation: d.Operation, RequestID: d.RequestID, UserID: d.Principal.UserID,
 			})
 		})

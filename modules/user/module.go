@@ -89,9 +89,9 @@ var spec = rest.Spec[*contracts.User]{
 // the manifest and not in contracts/ because it was the only thing there that
 // needed kit/module.
 var permissions = []module.Permission{
-	{Key: contracts.PermissionUserRead},
-	{Key: contracts.PermissionUserManage},
-	{Key: contracts.PermissionRegistrationApprove},
+	{Key: contracts.PermissionUserRead, Label: "read people"},
+	{Key: contracts.PermissionUserManage, Label: "manage people"},
+	{Key: contracts.PermissionRegistrationApprove, Label: "approve new accounts"},
 }
 
 // Module is the manifest, and the service it is built on: the auth module takes
