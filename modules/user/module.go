@@ -124,15 +124,9 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	if deps.Granting == nil {
 		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
 	}
-	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
-		panic("user.Module: Deps.Granting is an adapter with no Ask; wire the authorizer, do not hand the door an empty adapter")
-	}
-	// The same refusal, one field later: an adapter with nothing behind it answers
-	// "nobody may promote anybody", which reads as a working door and locks every
-	// promotion in every tenant this composition serves.
-	if deps.Granting == nil {
-		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
-	}
+	// An adapter with nothing behind it answers "nobody may promote anybody",
+	// which reads as a working door and locks every promotion in every tenant
+	// this composition serves.
 	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
 		panic("user.Module: Deps.Granting is an adapter with no Ask; wire the authorizer, do not hand the door an empty adapter")
 	}

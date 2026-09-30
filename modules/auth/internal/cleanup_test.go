@@ -118,7 +118,13 @@ func authCleanupFixture(t *testing.T, maxOpen int) (*sql.DB, *db.Conn, context.C
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "cleanup", Name: "Cleanup"}
 	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), tenant), conn)
 	hash := contracts.Hash(uuid.NewString())
-	users, _ := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: AdministeringRoles}})
+	// Granting is this harness's yes: it seeds a person with the user module
+	// before any service exists to ask, and the door itself is covered by the
+	// conformance suite in modules/user (see usercontracts.Granting).
+	users, _ := user.Module(user.Deps{
+		Administration: &usercontracts.AdministrationFunc{Ask: AdministeringRoles},
+		Granting:       &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }},
+	})
 	err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		person, err := users.Invite(ctx, tx, "ada@example.com", "Ada")
 		if err != nil {
