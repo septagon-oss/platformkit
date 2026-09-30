@@ -105,9 +105,16 @@ func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
 // TestTheCatalogOperationDescribesWhatAShellParses is the hole this delivery
 // closes. While the catalog route answered with `any`, its entry in the published
 // document described none of the body — and /api/v1/app/resources is the one
-// address a native shell is generated from. The type now reaches the document
-// because the composition names it on the mount (app.WorkspaceCatalogRoute), so
-// this case is red for a composition that loses the type again.
+// address a native shell is generated from. The type reaches the document because
+// the composition names it on the mount (app.WorkspaceCatalogRoute).
+//
+// This case reads the checked-in artefact, so what keeps it honest is the pair of
+// cases that read the running process: TestTheOpenAPIDocumentIsTheCompositionServed
+// boots the composition through appOptions and compares, and
+// review_round3_composition_publishes_its_own_contract_test.go reads the document
+// that process answers with and names the JSON key that is missing when the type is
+// erased. A composition that loses the type is red there; a case that reads only
+// this file would have stayed green beside a binary publishing {"schema":{}}.
 func TestTheCatalogOperationDescribesWhatAShellParses(t *testing.T) {
 	t.Parallel()
 	doc := wireDocument(t, mustReadOpenAPIGolden(t))
@@ -125,7 +132,10 @@ func TestTheCatalogOperationDescribesWhatAShellParses(t *testing.T) {
 	// optional ones are optional exactly as their tags say; a shell written against
 	// the document still reads a document that adds a key.
 	for _, name := range []string{"catalogVersion", "resources"} {
-		if wireProperty(doc, schema, name) == nil {
+		// Key presence, not wireProperty(...) == nil: wireMap returns the empty map
+		// rather than nil for a name that is not there, so that condition cannot hold
+		// and the assertion would be decoration. The entry loop below reads it this way.
+		if _, ok := wireMap(schema["properties"])[name]; !ok {
 			t.Errorf("the published catalog document has no %q: the shape a shell parses is not in the contract", name)
 		}
 	}
@@ -180,10 +190,14 @@ func TestEveryDeviceContractAddressAnswers(t *testing.T) {
 	}
 }
 
-// TestTheDocumentIsTheSameForEveryCallerExceptWhoMayCall is the tenant-first claim
-// of an artefact that carries no tenant data: the document is a property of the
-// composition, so the one thing that may differ between what an operator is told
-// and what a tenant's user is told is the authorization declaration on each route.
+// TestTheServedDocumentCarriesNoEphemeralBytes reads the artefact for the things
+// that belong to no run: a title, a build version, and no host, tenant, address or
+// mailbox from one test process. The tenant-first claim beside it — that the
+// document is a property of the composition, so the one thing that may differ
+// between what an operator is told and what a tenant's user is told is the
+// authorization declaration on each route — is proved per caller by
+// TestEveryDeviceContractAddressAnswers reading each route's own
+// x-platformkit-auth, which is the half of that claim this file publishes.
 func TestTheServedDocumentCarriesNoEphemeralBytes(t *testing.T) {
 	t.Parallel()
 	body := mustReadOpenAPIGolden(t)
@@ -377,7 +391,11 @@ func mustReadOpenAPIGolden(t *testing.T) []byte {
 // path of the configuration written for it so a case can bootstrap a tenant. Every
 // case here starts the same process the README's five commands start; a case that
 // spelled out its own module list would drift from apps/platformkit/modules.go the
-// way a hand-copied schema drifts from the type.
+// way a hand-copied schema drifts from the type — and so would a case that spelled
+// out its own app.Options, which is why this one takes them from appOptions.
+// Options written here arrive with WorkspaceCatalog nil, which start() then fills
+// with the product's mount; the document such a fixture serves is the fixture's, and
+// a contract gate comparing it proves nothing about what the composition wires.
 type deviceFixture struct {
 	path string
 	opts app.Options
@@ -387,8 +405,9 @@ func deviceComposition(t *testing.T) (config.Config, []module.Module, deviceFixt
 	t.Helper()
 	path, cfg := configure(t)
 	c := compose(cfg)
-	return cfg, c.modules, deviceFixture{path: path, opts: app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.All, Transport: memory.New(), Log: quiet(),
-	}}
+	opts := appOptions(cfg, c, app.All)
+	// The two fields a test process must name for itself, exactly as persona_test.go
+	// names them: an in-memory transport and a quiet log. Neither reaches the document.
+	opts.Transport, opts.Log = memory.New(), quiet()
+	return cfg, c.modules, deviceFixture{path: path, opts: opts}
 }

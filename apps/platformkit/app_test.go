@@ -40,7 +40,6 @@ import (
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui/page"
-	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
 // The two hosts the tests are served at. Two, because the claim worth proving
@@ -132,17 +131,16 @@ func install(t *testing.T, path string) {
 
 // start runs the application in the background and returns when it is listening.
 //
-// A case that does not name a catalog renderer gets the product's own: the
-// composition gate refuses a composition that registers resources and renders no
+// A case that does not name a catalog renderer gets the product's own mount —
+// apps/platformkit/fault.go's workspaceCatalog, not a second renderer written here:
+// the composition gate refuses a composition that registers resources and renders no
 // workspace document, and a test that skipped it would be starting something the
-// product would never boot.
+// product would never boot. A copy here is what let a contract gate pass while the
+// shipped binary described its catalog as an empty object.
 func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Options) {
 	t.Helper()
 	if opts.WorkspaceCatalog == nil {
-		opts.WorkspaceCatalog = app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
-			document := screens.Describe(ctx, resources)
-			return &document, nil
-		})
+		opts.WorkspaceCatalog = workspaceCatalog()
 	}
 	// Same for the installation's host: the control plane is served where the
 	// installation is reached, and a test that left it out would be starting a
