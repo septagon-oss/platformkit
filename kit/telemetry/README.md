@@ -74,12 +74,12 @@ The second is a tool this repository does not own: `tools/pillars.py` is the pro
 not the kernel's (`ls tools/` → `designexport locbudget`). Its absence leaves the brief's
 "measurably better" line no less answerable, because the indicator that tool computes for
 this pillar is a reading of one file — *OpenTelemetry in the kernel*, whether `go.mod` names
-`go.opentelemetry.io/otel` — and one command gives its value at both ends. `ba21b01` is the
-`main` commit this branch sits on:
+`go.opentelemetry.io/otel` — and one command gives its value at both ends. `6bfc64d` is the
+`origin/main` commit this branch sits on:
 
 ```sh
 grep -c 'go.opentelemetry.io/otel' go.mod                     # 8
-git show ba21b01:go.mod | grep -c 'go.opentelemetry.io/otel'  # 0
+git show 6bfc64d:go.mod | grep -c 'go.opentelemetry.io/otel'  # 0
 ```
 
 True here, false there. The branch's own `build(deps)` commit is the change that adds the
