@@ -1393,3 +1393,27 @@ func TestSidebarDisclosureListsTheSidebarsSectionsWhereTheSidebarIsNotShown(t *t
 		t.Errorf("DisclosureLabel does not name the summary: %s", named.String())
 	}
 }
+
+// TestACardWithAnAddressIsALink: a card given Href is an anchor to it, with the pointer and focus ring of a
+// clickable card, whether or not Clickable is set. The pets adoption list set Href and Hoverable and got a hover
+// shadow over an <article> that went nowhere; a UX walkthrough found no adopter could open an animal's page.
+func TestACardWithAnAddressIsALink(t *testing.T) {
+	for name, p := range map[string]CardProps{
+		"href only":          {Title: "Bento", Href: "/animals/bento"},
+		"href and hoverable": {Title: "Bento", Href: "/animals/bento", Hoverable: true, Variant: "outlined"},
+		"href and clickable": {Title: "Bento", Href: "/animals/bento", Clickable: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out := renderNodeToString(t, Card(p))
+			if !strings.HasPrefix(out, "<a ") || !strings.Contains(out, `href="/animals/bento"`) {
+				t.Fatalf("a card with an address rendered %q; it must be a link to it", out)
+			}
+			if !strings.Contains(out, clCardClickable.Compile()) {
+				t.Errorf("a card that is a link lacks the pointer and focus ring of a clickable card: %q", out)
+			}
+		})
+	}
+	if out := renderNodeToString(t, Card(CardProps{Title: "Bento", Hoverable: true})); strings.HasPrefix(out, "<a ") {
+		t.Errorf("a card with no address rendered a link: %q", out)
+	}
+}

@@ -41,7 +41,7 @@
       "exclude_suffixes": [
         "_test.go"
       ],
-      "max": 19513
+      "max": 19517
     },
     {
       "name": "apps",

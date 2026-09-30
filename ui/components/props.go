@@ -421,7 +421,7 @@ type CardProps struct {
 	Variant       string `json:"variant,omitempty"`       // default, elevated, outlined, plain
 	Padding       string `json:"padding,omitempty"`       // none, small, medium, large
 	Shadow        string `json:"shadow,omitempty"`        // none, small, medium, large
-	Clickable     bool   `json:"clickable,omitempty"`
+	Clickable     bool   `json:"clickable,omitempty"`     // pointer and focus styling; a card with an Href is a link and clickable whatever this says
 	Hoverable     bool   `json:"hoverable,omitempty"`
 	Href          string `json:"href,omitempty"`
 }
