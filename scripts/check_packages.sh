@@ -61,8 +61,11 @@ printf '%s\n' "$metadata" | awk -F '|' '
                 if (index(dep, p) != 1 && module[dep] != "" && contains(modules, module[dep])) bad = 0
             }
             # UUID exposes sql/driver values; that is not a database runner.
-            if (dep == "database/sql" && mode != "sql" && mode != "web") bad = 1
-            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web") bad = 1
+            # "trace" is kit/events: the W3C carrier is an interface over
+            # net/http.Header, so propagating a trace context reaches net/http while
+            # this package still opens no request and no connection.
+            if (dep == "database/sql" && mode != "sql" && mode != "web" && mode != "trace") bad = 1
+            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web" && mode != "trace") bad = 1
             if (bad) {
                 print "OUT OF BOUNDS: " name " transitively depends on " dep > "/dev/stderr"
                 failed = 1
@@ -81,10 +84,23 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
         # the bound that matters is the other direction, refused by check("kit/fault", "").
-        kernel = p "kit/config " identity " " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module"
+        # The OpenTelemetry API, and nothing above it: the API is what a package
+        # makes a span or records a number with, and it drags no exporter, no
+        # provider and no transport with it. The exporters, the SDK and gRPC belong
+        # to kit/app alone — the one package the runtime brief names as the home
+        # of a TracerProvider and a MeterProvider — which is why `providers` is the
+        # only list that admits them.
+        otel = "go.opentelemetry.io/otel go.opentelemetry.io/otel/metric go.opentelemetry.io/otel/trace go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp go.opentelemetry.io/auto/sdk github.com/go-logr/logr github.com/go-logr/stdr github.com/cespare/xxhash/v2 github.com/felixge/httpsnoop"
+        kernel = p "kit/config " identity " " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry"
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
-        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3"
+        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel
+        # The provider edge for measurement: kit/app is the only package whose
+        # closure may hold an exporter, an SDK or a collector transport. A span
+        # anywhere else in the kernel reaches the collector through the global, so
+        # nothing else needs these, and a second package that could install a
+        # provider is a second answer to where the traces went.
+        measurement = otel " go.opentelemetry.io/otel/sdk go.opentelemetry.io/otel/sdk/metric go.opentelemetry.io/otel/exporters/otlp/otlptrace go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc go.opentelemetry.io/otel/exporters/otlp/internal google.golang.org/grpc google.golang.org/protobuf github.com/cenkalti/backoff/v5 github.com/grpc-ecosystem/grpc-gateway/v2 golang.org/x/net golang.org/x/sys golang.org/x/text google.golang.org/genproto/googleapis/api google.golang.org/genproto/googleapis/rpc go.opentelemetry.io/proto/otlp"
         check("kit/entity", uuid)
         check("kit/entity/display", uuid " " p "kit/entity")
         check("kit/locale", "")
@@ -111,10 +127,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # count is stored, exactly as it chooses an event transport. The
         # presentation packages do not inherit the dependency, which is why the
         # interface is declared by the consumer instead of imported here.
-        check("kit/app", kernel " " p "kit/health " p "kit/limit " p "migrations", web, "web")
+        check("kit/app", kernel " " p "kit/health " p "kit/limit " p "kit/telemetry " p "migrations", web " " measurement, "web")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
-        check("kit/events", outbox, sql, "sql")
+        check("kit/events", outbox " " p "kit/telemetry", sql " " otel, "trace")
         check("kit/events/providers/nats", p "kit/config " delivery,
             uuid " github.com/nats-io/nats.go github.com/nats-io/nkeys github.com/nats-io/nuid github.com/klauspost/compress golang.org/x/crypto golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("kit/tenancy/providers/topaz", identity,
