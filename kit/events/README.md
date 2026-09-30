@@ -148,8 +148,8 @@ every event in the program already passes and is where the schema check lives;
 `Schema.Validate`, `Schema.JSONValue` and the golden-file guard this repository
 already had, each cure being a clause inside them rather than a new mechanism
 beside them; `platformkit_handled`'s claims, which are what make the
-`DeliverAll` re-delivery a log line instead of an incident; `dbtest.Schema` and
-`app.MigrationSources` in the new cases; and `module.KernelEvents`, adopted rather
+`DeliverAll` re-delivery a log line instead of an incident; `dbtest.Schema` in the
+new cases; and `module.KernelEvents`, adopted rather
 than replaced when the merged `security.denied` had to be typed, with
 `module.KernelName` added as the half that list was missing.
 **Added:** `schema.go`'s projection of a Go type into JSON Schema, because no
