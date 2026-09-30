@@ -265,6 +265,12 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", "a different passphrase", nobody); err != nil {
 				t.Errorf("the new password does not work: %v", err)
 			}
+			// And the machines the change signed out are on the trail: one
+			// auth.session_revoked per row its own revocation removed, between the
+			// two sign-ins it belongs to. The wrong-password attempt above published
+			// nothing, so the only names here are the logins and the one revocation.
+			published(t, f, contracts.EventLoggedIn, contracts.EventLoggedIn,
+				contracts.EventSessionRevoked, contracts.EventLoggedIn)
 		},
 
 		"asking to reset a password does the same work whoever asks": func(t *testing.T, f Fixture) {
