@@ -49,7 +49,7 @@ func TestEveryRequestedChannelEndsInTheLedger(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	svc := internal.NewService(directory{})
 	box := notification.NewMailbox()
-	send := internal.SendMail(box, directory{}, hosts{}, true)
+	send := internal.SendMail(box, directory{}, hosts{}, nil, true)
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		// Ada has an address: in-app is delivered with the row, email when the worker sends.
@@ -124,7 +124,7 @@ func TestADeletedNoticeIsSuppressedAndAFailedSendLeavesNoFalseRow(t *testing.T) 
 	}
 	// The relay refuses: the handler fails, its transaction rolls back.
 	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return internal.SendMail(failing{}, directory{}, hosts{}, true).Handler(ctx, tx, request(id, notificationtest.Ada))
+		return internal.SendMail(failing{}, directory{}, hosts{}, nil, true).Handler(ctx, tx, request(id, notificationtest.Ada))
 	})
 	if err == nil {
 		t.Fatal("a refused send reported success")
@@ -144,7 +144,7 @@ func TestADeletedNoticeIsSuppressedAndAFailedSendLeavesNoFalseRow(t *testing.T) 
 		if err := tx.DB().Exec(`UPDATE notifications SET deleted_at = now() WHERE id = ?`, id).Error; err != nil {
 			return err
 		}
-		if err := internal.SendMail(notification.NewMailbox(), directory{}, hosts{}, true).Handler(ctx, tx, request(id, notificationtest.Ada)); err != nil {
+		if err := internal.SendMail(notification.NewMailbox(), directory{}, hosts{}, nil, true).Handler(ctx, tx, request(id, notificationtest.Ada)); err != nil {
 			return err
 		}
 		if got := ledger(t, tx, id); got[len(got)-1] != "email suppressed" {

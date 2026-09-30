@@ -21,6 +21,7 @@ require (
 	github.com/open-feature/go-sdk-contrib/providers/ofrep v0.1.7
 	github.com/open-policy-agent/opa v1.21.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/wneessen/go-mail v0.8.1
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0

@@ -16,15 +16,6 @@ import (
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
 )
 
-// Mail is one outgoing mail server. It has the same shape as config.Mail, so
-// main converts one to the other in a line.
-type Mail = internal.Mail
-
-// SMTP is the production Mailer for a configured server. main wires it, or
-// the in-memory Mailbox when there is none, so the choice is visible in the
-// file that composes the application.
-var SMTP = internal.NewSMTP
-
 // Deps is what this module cannot make for itself.
 type Deps struct {
 	// Recipients turns a user id into an email address. The interface is
@@ -108,7 +99,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		// No periodic work: a notification is caused by something happening,
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
-		Subscriptions: []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Secure)},
+		Subscriptions: []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)},
 		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc) },
 	}
 }

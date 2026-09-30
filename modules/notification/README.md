@@ -9,8 +9,9 @@ entry; a subscription delivers the mail-marked rows through the composed
 logged, which is what a development machine wants.
 
 Compose it with `notification.Deps{Recipients, Senders, Providers, Mailer, Hosts,
-Secure}`: `SMTP` is the production mailer for `config.example.yaml`'s `mail` section
-(password through `PLATFORMKIT_MAIL_PASSWORD`), `NewMailbox()` the in-memory one, and
+Secure}`: the mailer is `providers/gomail` — `gomail.New(gomail.Config{…})` over
+`config.example.yaml`'s `mail` section (password through `PLATFORMKIT_MAIL_PASSWORD`),
+the dependency the register names — or `NewMailbox()`, the in-memory one, and
 `Senders` and `Providers` may each be nil — every nil is a named refusal inside the
 decision rather than a surprise at send time, and a deployment with no `Senders` speaks
 as the address in its own configuration for every tenant, which is what it did before
@@ -29,6 +30,18 @@ the recipient's, the tenant's, or the deployment's. `notification.Settings()` is
 behind those choices, over the caller's own rows, and `notification.Senders(verifier, keys)`
 the tenant's sending address, one row per tenant; neither is reached by a route here.
 
+Mail leaves as the tenant that raised it. `SendMail` reads `notification_senders` in
+the worker's own transaction and hands the row to the carrier, which puts the tenant's
+name and address in the `From:` **header** and signs it with DKIM (RFC 6376) under the
+row's selector; the **envelope** sender stays `mail.from` — one bare address, one per
+binary, still refused by `kit/config` with a display name attached, because `MAIL FROM`
+and `From:` answer different questions. A verified sender whose key this deployment does
+not hold is never sent unsigned. What the relay answers decides the ledger: a 5xx is
+`contracts.ErrPermanent`, which writes `failed` with the relay's own sentence and
+acknowledges the event, and anything else writes no row, rolls back and is retried on the
+kernel's ladder. A delivery the ledger already closed is not sent again — the worker reads
+the terminal row before it dials, which is the other half of migration 000030.
+
 The ledger is `notification_deliveries` (migration 000027), under the tenant's
 row-level security and append-only: a `requested` row when the notice is written, then a
 terminal row in the same transaction as the step that finishes the channel — `sent`, or
@@ -40,6 +53,29 @@ is a unique partial index over the `sent` rows, so a redelivered send is account
 and the worker acknowledges the retry instead of dead-lettering a delivery that
 happened. `delivery_ledger_coverage` — requested channels with a terminal row, over all
 requested channels — is `internal.Coverage`.
+
+## Composition
+
+**Reused** — the delivery ledger and its one writer (`internal.record`,
+`internal.Coverage`, migration 000027 with 000030's sent-once index), the channel
+vocabulary and the single decision (`contracts.Channel`, `contracts.Wants`,
+`contracts.Decide`), the outbox and its retry ladder (`kit/events`, `docs/adr/0004`),
+row-level security through `platformkit_tenant_match`, and the `Mailer` port with its
+second consumer in `modules/auth`, which keeps mailing a reset link that exists in no row.
+
+**Added** — `providers/gomail`, because the brief names `github.com/wneessen/go-mail` as
+this pillar's standard and the stdlib `net/smtp` conversation it replaced could neither
+sign a message nor carry a tenant's own header nor bound a wedged relay; and the worker's
+reading of the tenant's sender, its `contracts.ErrPermanent` split, and its skip over a
+closed delivery, because "a tenant sends from its own name" and "a suppressed notice has a
+row saying so" are both facts about the send and no existing unit reached the send.
+
+**Made reusable** — `providers/` as the place a carrier lives outside `internal/` (the
+`kit/events/providers/{memory,nats}` pattern, one package per SDK, so the module links no
+vendor library and a deployment that sends nothing imports nothing), `contracts.Permanent`
+as the one error a provider returns when another attempt would say the same thing, and
+`gomail_test.go`'s in-process relay, which any future carrier's test can copy to assert
+what went on the wire rather than what a mock said.
 
 ## Authorization
 

@@ -115,7 +115,7 @@ func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	svc := internal.NewService(directory{})
 	box := notification.NewMailbox()
-	sub := internal.SendMail(box, directory{}, hosts{}, true)
+	sub := internal.SendMail(box, directory{}, hosts{}, nil, true)
 	if sub.Module != "notification" || sub.Name != contracts.EventEmailRequested {
 		t.Fatalf("the subscription is %s to %s", sub.Module, sub.Name)
 	}

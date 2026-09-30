@@ -363,7 +363,7 @@ func TestAConversationWithTheSenderCommands(t *testing.T) {
 func TestARedeliveredSendWritesOneSentRow(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	svc := settings()
-	send := internal.SendMail(notification.NewMailbox(), directory{}, hosts{}, true)
+	send := internal.SendMail(notification.NewMailbox(), directory{}, hosts{}, nil, true)
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := svc.Notify(ctx, tx, contracts.Notice{Recipient: notificationtest.Ada, Title: "twice", Wants: contracts.WantsEmail})
 		if err != nil {

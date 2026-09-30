@@ -30,6 +30,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	gomail "github.com/septagon-oss/platformkit/modules/notification/providers/gomail"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
@@ -251,9 +252,12 @@ func mailer(cfg config.Config) notificationcontracts.Mailer {
 	if !cfg.Mail.Enabled() {
 		return notification.NewMailbox()
 	}
-	return notification.SMTP(notification.Mail{
+	// The header's address belongs to each tenant (contracts.Sender, read per
+	// message); this is the envelope, which is one per binary and stays the
+	// bare address kit/config insists on.
+	return gomail.New(gomail.Config{
 		Host: cfg.Mail.Host, Port: cfg.Mail.Port, Username: cfg.Mail.Username,
-		Password: cfg.Mail.Password, From: cfg.Mail.From,
+		Password: cfg.Mail.Password, EnvelopeFrom: cfg.Mail.From,
 	})
 }
 
