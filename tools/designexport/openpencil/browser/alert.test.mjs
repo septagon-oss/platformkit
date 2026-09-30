@@ -56,7 +56,7 @@ async function borderPixelsAndSemantics(browser, ck, graph, snapshot, expected, 
   } finally { image?.delete(); draw.destroy(); await page.close() }
 }
 
-test('real refusal forms inherit a centered editable Alert with optional consumer margins through two saves', async t => {
+test('real refusal forms inherit a top-aligned editable Alert with optional consumer margins through two saves', async t => {
   const run = await sourceFixture(t, `package main
 import (
   "encoding/json"
@@ -104,7 +104,7 @@ func main() {
       const observation = await captureExample(browser, snapshot, 'fixture/validation', options)
       const alert = observation.roots[0].children[0]
       assert.equal(alert.style['border-left-width'], '4px', 'the actual source accent must be retained')
-      assert.equal(alert.style['align-items'], 'center')
+      assert.equal(alert.style['align-items'], 'flex-start')
       assert.equal(alert.children[0].style['margin-top'], IconMargin ? '2px' : '0px')
       let { graph } = await buildComponentDocument(snapshot, options)
       // Baseline the editable file's float32 geometry, not the generator's
@@ -143,8 +143,8 @@ func main() {
         assert.ok(Math.abs(target().height - expected.children[0].bounds.height) <= 1 / 64)
         const [box, body] = graph.getChildren(target().id), margin = IconMargin ? box : null
         const icon = margin ? graph.getChildren(margin.id)[0] : box
-        const iconCenter = icon.y + (margin?.y ?? 0) + icon.height / 2 - (IconMargin ? 1 : 0)
-        assert.ok(Math.abs(iconCenter - body.y - body.height / 2) <= 1 / 64, 'Alert centers retain the source margin')
+        const iconTop = icon.y + (margin?.y ?? 0) - (IconMargin ? 2 : 0)
+        assert.ok(Math.abs(iconTop - body.y) <= 1 / 64, 'Alert top alignment retains the source margin')
         for (const [node, source, parent] of [[icon, expected.children[0].children[0], margin], [body, expected.children[0].children[1], null]]) {
           for (const field of ['x', 'y', 'width', 'height']) {
             const position = field === 'x' || field === 'y'

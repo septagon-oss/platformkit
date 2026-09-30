@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // GoProps returns a copyable Go declaration of the captured properties. Rich
@@ -31,6 +32,15 @@ func goLiteral(v reflect.Value) (string, error) {
 	if !v.IsValid() {
 		return "nil", nil
 	}
+	if v.Type() == reflect.TypeFor[time.Time]() {
+		value := v.Interface().(time.Time)
+		zone, offset := value.Zone()
+		location := "time.UTC"
+		if value.Location() != time.UTC {
+			location = fmt.Sprintf("time.FixedZone(%q, %d)", zone, offset)
+		}
+		return fmt.Sprintf("time.Date(%d, time.Month(%d), %d, %d, %d, %d, %d, %s)", value.Year(), value.Month(), value.Day(), value.Hour(), value.Minute(), value.Second(), value.Nanosecond(), location), nil
+	}
 	switch v.Kind() {
 	case reflect.Interface:
 		if v.IsNil() {
@@ -42,6 +52,9 @@ func goLiteral(v reflect.Value) (string, error) {
 			return "nil", nil
 		}
 		value, err := goLiteral(v.Elem())
+		if v.Elem().Kind() == reflect.Int64 || v.Elem().Kind() == reflect.Float64 {
+			value = v.Elem().Type().String() + "(" + value + ")"
+		}
 		return "new(" + value + ")", err
 	case reflect.String:
 		return strconv.Quote(v.String()), nil

@@ -212,7 +212,7 @@ var (
 
 	// Alert.
 	clAlertBase = style.New().
-			Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S3).Rounded(style.RadiusLG).
+			Display(style.DisplayFlex).FlexWrap().Items(style.ItemsStart).Gap(style.S3).Rounded(style.RadiusLG).
 			Border(style.Border1)
 	clAlertRegular  = style.New().Padding(style.S4)
 	clAlertCompact  = style.New().PaddingX(style.S3).PaddingY(style.S2)
@@ -228,7 +228,7 @@ var (
 
 	clAlertTitle   = style.New().FontWeight(style.FontSemibold).FontSize(style.TextSM)
 	clAlertMessage = style.New().FontSize(style.TextSM)
-	clAlertBody    = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1).Flex1()
+	clAlertBody    = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1).Flex1().MinWidth(style.S0).BreakWords()
 	clAlertIcon    = style.New().
 			Display(style.DisplayFlex).Height(style.S9).Width(style.S9).
 			FlexShrink0().Items(style.ItemsCenter).Justify(style.JustifyCenter).Rounded(style.RadiusFull)
@@ -236,8 +236,9 @@ var (
 			Items(style.ItemsCenter).Gap(style.S3).FontSize(style.TextSM)
 	clAlertClose = style.New().MarginLeft(style.SAuto).Display(style.DisplayInlineFlex).
 			FlexShrink0().Items(style.ItemsCenter).Justify(style.JustifyCenter).
-			Rounded(style.RadiusMD).Padding(style.S1_5).Cursor(style.CursorPointer).
+			Rounded(style.RadiusMD).Padding(style.S1_5).MinWidth(style.S11).MinHeight(style.S11).Cursor(style.CursorPointer).
 			Transition(style.TransitionColors).Merge(clFocusRing)
+	clRecoveryAction = style.New().MinWidth(style.S11).MinHeight(style.S11).MaxWScaled(style.MaxWFull).BreakWords()
 
 	// Inputs.
 	clFieldWrap     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5)
@@ -301,19 +302,28 @@ var (
 
 	// Modal is the governed centered-dialog / mobile-sheet overlay. The root
 	// also doubles as the empty HTMX swap target used by server-loaded forms.
-	clModalRoot = style.New().Position(style.PositionFixed).Inset(style.S0).ZIndex(style.ZModal).
-			Display(style.DisplayFlex).Justify(style.JustifyCenter).Padding(style.S4).
+	clModalBase = style.New().Position(style.PositionFixed).Inset(style.S0).ZIndex(style.ZModal).
+			Display(style.DisplayFlex).Padding(style.S4).
 			OverflowY(style.OverflowAuto)
+	clModalRoot       = clModalBase.Justify(style.JustifyCenter)
+	clDetailPlacement = map[string]style.ClassList{
+		"bottom": clModalBase.Justify(style.JustifyCenter).Items(style.ItemsEnd),
+		"end":    clModalBase.Justify(style.JustifyEnd).Items(style.ItemsStart),
+		"auto": clModalBase.Justify(style.JustifyCenter).Items(style.ItemsEnd).
+			Breakpoint(style.BreakpointMD, func(c style.ClassList) style.ClassList { return c.Justify(style.JustifyEnd).Items(style.ItemsStart) }),
+	}
+	clDetailPanel      = style.New().MinWidth(style.S0).Width(style.SFull).TextColor(style.FgPrimary)
 	clModalCentered    = style.New().Items(style.ItemsCenter)
 	clModalBottomSheet = style.New().Items(style.ItemsEnd).
 				Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Items(style.ItemsCenter) })
 	clModalOverlay = style.New().Position(style.PositionAbsolute).Inset(style.S0).
 			BgOpacity(style.SurfaceOverlay, string(style.Opacity50)).Transition(style.TransitionOpacity)
-	clModalPanel = style.New().Position(style.PositionRelative).Display(style.DisplayFlex).
+	clModalFrame = style.New().Position(style.PositionRelative).Display(style.DisplayFlex).
 			FlexDir(style.FlexCol).Width(style.SFull).MaxHeightViewport(style.VH85).
-			Overflow(style.OverflowHidden).
 			Border(style.Border1).BorderColor(style.BorderPrimary).
 			Bg(style.SurfacePrimary).Shadow(style.Shadow2XL).TextAlign(style.TextLeft)
+	clModalPanel     = clModalFrame.Overflow(style.OverflowHidden)
+	clDetailFrame    = clModalFrame.OverflowY(style.OverflowAuto)
 	clModalPanelSize = map[string]style.ClassList{
 		"small":  style.New().MaxWScaled(style.MaxWSM),
 		"medium": style.New().MaxWScaled(style.MaxWLG),
@@ -322,24 +332,27 @@ var (
 		"full":   style.New().MaxWScaled(style.MaxWFull),
 	}
 	clModalHeader = style.New().Display(style.DisplayFlex).Items(style.ItemsStart).
-			Justify(style.JustifyBetween).Gap(style.S4).PaddingX(style.S6).PaddingY(style.S4).
+			Justify(style.JustifyBetween).FlexWrap().Gap(style.S4).PaddingX(style.S6).PaddingY(style.S4).
 			Bg(style.SurfaceSecondary).FlexShrink0()
 	clModalTitleBlock  = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1).MinWidth(style.S0)
 	clModalTitle       = style.New().FontSize(style.TextLG).FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
 	clModalDescription = style.New().FontSize(style.TextSM).TextColor(style.FgMuted)
 	clModalBody        = style.New().Flex1().OverflowY(style.OverflowAuto).Padding(style.S6)
+	clDetailBody       = clModalBody.MinHeight(style.S24)
 	clModalFooter      = style.New().FlexShrink0().
-				Bg(style.SurfaceSecondary).PaddingX(style.S6).PaddingY(style.S4)
+				Display(style.DisplayFlex).FlexWrap().Gap(style.S3).Bg(style.SurfaceSecondary).PaddingX(style.S6).PaddingY(style.S4)
 	clModalSeparator = style.New().Width(style.SFull).Height(style.SPX).
 				Bg(style.BorderPrimary).FlexShrink0()
 	clModalClose = style.New().Display(style.DisplayInlineFlex).FlexShrink0().Items(style.ItemsCenter).
 			Justify(style.JustifyCenter).Rounded(style.RadiusMD).Padding(style.S1_5).
+			MinWidth(style.S11).MinHeight(style.S11).
 			TextColor(style.FgMuted).Bg(style.ColorTransparent).Border(style.Border0).
 			Cursor(style.CursorPointer).Transition(style.TransitionColors).
 			On(style.StateHover, func(c style.ClassList) style.ClassList { return c.TextColor(style.FgPrimary).Bg(style.SurfaceHover) }).
 			Merge(clFocusRing)
 	clModalCancel = style.New().Display(style.DisplayInlineFlex).Items(style.ItemsCenter).
 			Justify(style.JustifyCenter).Rounded(style.RadiusMD).Border(style.Border1).
+			MinWidth(style.S11).MinHeight(style.S11).
 			BorderColor(style.BorderPrimary).Bg(style.SurfacePrimary).PaddingX(style.S4).PaddingY(style.S2).
 			FontSize(style.TextSM).FontWeight(style.FontMedium).TextColor(style.FgSecondary).
 			Cursor(style.CursorPointer).Transition(style.TransitionColors).
@@ -494,14 +507,14 @@ var (
 
 	clEmpty = style.New().
 		Display(style.DisplayFlex).FlexDir(style.FlexCol).Items(style.ItemsCenter).
-		Justify(style.JustifyCenter).Gap(style.S3).TextAlign(style.TextCenter)
+		Justify(style.JustifyCenter).Gap(style.S3).TextAlign(style.TextCenter).MinWidth(style.S0).BreakWords()
 	clEmptyPad      = style.New().Padding(style.S12)
 	clEmptyBordered = style.New().Border(style.Border1).BorderColor(style.BorderPrimary).
 			BorderStyle(style.BorderStyle("dashed")).Rounded(style.RadiusLG)
 	clEmptyCompact = style.New().Padding(style.S6)
 	clEmptyTitle   = style.New().FontFamily(style.FontSerif).FontSize(style.TextLG).
-			FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
-	clEmptyDesc = style.New().FontSize(style.TextSM).TextColor(style.FgMuted).MaxWScaled(style.MaxWMD)
+			FontWeight(style.FontSemibold).TextColor(style.FgPrimary).Width(style.SFull).MaxWScaled(style.MaxWMD)
+	clEmptyDesc = style.New().FontSize(style.TextSM).TextColor(style.FgMuted).Width(style.SFull).MaxWScaled(style.MaxWMD)
 
 	clLink = style.New().TextColor(style.FgLink).Underline().UnderlineOffset(style.S2).
 		On(style.StateHover, func(c style.ClassList) style.ClassList { return c.TextColor(style.FgLinkHover) }).
@@ -534,14 +547,22 @@ var (
 	// header surface clickable.
 	clTableThSort  = style.New().PaddingX(style.S0).PaddingY(style.S0)
 	clTableSortBtn = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S1).
-			Width(style.SFull).PaddingX(style.S4).PaddingY(style.S3).
+			Width(style.SFull).PaddingX(style.S4).PaddingY(style.S3).MinWidth(style.S11).MinHeight(style.S11).
 			FontWeight(style.FontSemibold).FontSize(style.TextXS).Uppercase().
 			Tracking(style.TrackingWider).TextColor(style.FgMuted).
 			Bg(style.ColorTransparent).Border(style.Border0).Cursor(style.CursorPointer).
 			On(style.StateHover, func(c style.ClassList) style.ClassList { return c.TextColor(style.FgPrimary) }).
 			Merge(clFocusRing)
-	clTableRowAlt   = style.New().Bg(style.SurfaceSecondary)
-	clTableTdStrong = style.New().FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
+	clTableRowAlt    = style.New().Bg(style.SurfaceSecondary)
+	clTableTdStrong  = style.New().FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
+	clTableSelection = style.New().Display(style.DisplayInlineFlex).Items(style.ItemsCenter).Justify(style.JustifyCenter).
+				MinWidth(style.S11).MinHeight(style.S11).Cursor(style.CursorPointer)
+	clDataList    = style.New().SpaceY(style.S4).MinWidth(style.S0).TextColor(style.FgPrimary)
+	clDataCount   = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary)
+	clDataHeading = style.New().Display(style.DisplayFlex).FlexWrap().Gap(style.S3).Items(style.ItemsCenter).
+			FontSize(style.TextSM).FontWeight(style.FontSemibold).PaddingY(style.S3)
+	clDataDisclosure = style.New().FontSize(style.TextSM).FontWeight(style.FontSemibold).
+				PaddingY(style.S3).Merge(clFocusRing).MinHeight(style.S11).Cursor(style.CursorPointer)
 
 	// DetailList. The section copy and semantic description-list markup stay
 	// presentation-neutral; renderers use semanticRole as a machine key, never
@@ -712,9 +733,9 @@ var (
 	clSidebarFooterContent = style.New().MarginTop(style.S4)
 
 	// Pagination.
-	clPagination = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S1)
+	clPagination = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexWrap().Gap(style.S1)
 	clPageBtn    = style.New().Display(style.DisplayInlineFlex).Items(style.ItemsCenter).
-			Justify(style.JustifyCenter).MinWidth(style.S8).Height(style.S8).
+			Justify(style.JustifyCenter).MinWidth(style.S11).MinHeight(style.S11).
 			Rounded(style.RadiusMD).FontSize(style.TextSM).Merge(clFocusRing)
 	clPageIdle = style.New().TextColor(style.FgSecondary).
 			On(style.StateHover, hoverBg(style.SurfaceHover))
@@ -780,15 +801,13 @@ func ClassLists() []style.ClassList {
 func GalleryClassLists() []style.ClassList {
 	out := []style.ClassList{
 		clDividerH, clDividerV, clDividerText, clDividerTextLine, clDividerTextLabel,
-		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
 		// Media's panels stay here while only the gallery can produce them. Card's
 		// picture routes through Media too, so the first screen that passes a Status
 		// — a cut-out still being cut, an artwork somebody may not look at — has to
 		// move clMediaAbsent, clMediaFailed and clMediaRefused into the shell list
 		// with it, or that panel arrives unstyled on the page that needed it.
 		clMediaFigure, clMediaCaption, clMediaAbsent, clMediaFailed, clMediaRefused,
-		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
-		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay,
+		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay, clDetailPanel, clDetailFrame, clDetailBody,
 		clModalPanel, clModalHeader, clModalTitleBlock, clModalTitle,
 		clModalDescription, clModalBody, clModalFooter, clModalSeparator, clModalClose, clModalCancel,
 		clTabsRoot, clTabsRootHorizontal, clTabsRootVertical,
@@ -800,7 +819,7 @@ func GalleryClassLists() []style.ClassList {
 		clTabsBadge, clTabsPanels, clTabsPanel, clTabsLazy, clTabsLazyLabel,
 	}
 	for _, m := range []map[string]style.ClassList{
-		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize, clModalPanelSize, clAvatarSize,
+		clModalPanelSize, clAvatarSize, clDetailPlacement,
 	} {
 		for _, cl := range m {
 			out = append(out, cl)
@@ -823,7 +842,7 @@ func ShellClassLists() []style.ClassList {
 		clAvatar, clAvatarInitials, clAvatarLink, clAvatarLabel,
 		clBadgeBase, clBadgeDot, clBadgeCount, clBadgeRemove,
 		clAlertBase, clAlertRegular, clAlertCompact, clAlertBordered,
-		clAlertTitle, clAlertMessage, clAlertBody, clAlertIcon, clAlertActions, clAlertClose,
+		clAlertTitle, clAlertMessage, clAlertBody, clAlertIcon, clAlertActions, clAlertClose, clRecoveryAction,
 		clFieldWrap, clFieldWrapFull, clLabel, clHelp, clFieldErr, clRequired,
 		clInput, clInputNormal, clInputError, clInputReadOnly, clInputDisabled,
 		clInputIconWrap, clInputIconStart, clInputIconEnd, clInputPadStart, clInputPadEnd,
@@ -836,7 +855,11 @@ func ShellClassLists() []style.ClassList {
 		clHeadingBase, clSpinner, clVideo,
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
-		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clDetailList, clDetailHeader, clDetailTitle, clDetailDescription,
+		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
+		// Generated lists compose DataList, including its empty and loading states.
+		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
+		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
+		clDetailList, clDetailHeader, clDetailTitle, clDetailDescription,
 		clDetailItems, clDetailRow, clDetailRowSeparated, clDetailTerm,
 		clDetailTermDescription, clDetailValue,
 		clCardFrame, clCardSectioned, clCardBorder,
@@ -871,6 +894,7 @@ func ShellClassLists() []style.ClassList {
 		clBadgeVariant, clBadgeTone, clBadgeSize, clBadgeDotTone, clAlertVariant,
 		clIconSize, clIconTone, clInputSize, clInputTone, clSpinnerSize, clSpinnerTone,
 		clDetailValueTone, clTextTransform,
+		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize,
 	} {
 		for _, cl := range m {
 			out = append(out, cl)
@@ -896,7 +920,7 @@ func ShellClassLists() []style.ClassList {
 		out = append(out, style.New().LineClamp(lines))
 	}
 	for _, s := range clGapScale {
-		out = append(out, style.New().Gap(s))
+		out = append(out, style.New().Gap(s), style.New().MarginBottom(s))
 	}
 	for _, n := range []int{1, 2, 3, 4, 6, 12} {
 		out = append(out, style.New().GridCols(n))
