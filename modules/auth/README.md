@@ -1,8 +1,9 @@
 # Auth module
 
 `modules/auth` is signing in: sessions and passwords, single sign-on through
-one OpenID Connect provider, the roles that decide what a caller may do, and
-the three opt-in registration modes described in
+each tenant's own OpenID Connect provider (the installation may name one of its
+own, and a tenant's row names another), the roles that decide what a caller may
+do, and the three opt-in registration modes described in
 [ARCHITECTURE.md](../../ARCHITECTURE.md#start-at-the-composition). Routes live
 under `/api/v1/auth`, and the doors an anonymous caller may use — the ones
 the public surface serves — under `/api/v1/public/auth`; `role:manage` guards
@@ -18,8 +19,12 @@ like, and for which lockouts the control plane's invitation can still repair.
 
 Compose it after tenants and notification with `auth.Deps`, naming the user
 service, hosts, tenants, the mailer and, when wanted, one of `Registration`,
-`ApprovalRegistration` or `EmailRegistration`; the OIDC client secret arrives
-through `PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET`. Consumers import
+`ApprovalRegistration` or `EmailRegistration`; the installation's own OIDC
+client secret arrives through `PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET`, and a
+tenant that names its own provider through `Deps.OIDCProviders` and
+`Deps.Secrets`, which resolve the issuer and the secret reference that row
+holds — the reference is an environment variable's name and the secret is never
+stored. Consumers import
 [contracts/](contracts/) — the service, events, permissions and the
 [conformance suite](contracts/authtest/) — never `internal/`.
 `auth.AdministeringRoles` is the one package-level answer this module owes
@@ -31,7 +36,7 @@ another: which of a tenant's roles grant `role:manage`, which is what
 
 ### Permissions
 
-The manifest declares one permission, `role:manage` (`contracts.PermissionRoleManage` in `modules/auth/contracts/permissions.go`). It guards `auth-role-list` at `GET /api/v1/auth/roles` and `auth-role-set` at `PUT /api/v1/auth/roles/{name}` (`RegisterRoutes` in `modules/auth/internal/handler.go`). It also guards the nav entry `auth/roles` in `modules/auth/module.go`; `modules/admin` serves that screen. There is no `role:read`, and `modules/auth/contracts/permissions.go` says that is deliberate. The other routes name no permission. Login, forgot-password and reset-password are `httpx.Public()`. Logout, identity (me) and change-password are `httpx.SignedIn()` and act only on the caller.
+The manifest declares one permission, `role:manage` (`contracts.PermissionRoleManage` in `modules/auth/contracts/permissions.go`). It guards `auth-role-list` at `GET /api/v1/auth/roles` and `auth-role-set` at `PUT /api/v1/auth/roles/{name}` (`RegisterRoutes` in `modules/auth/internal/handler.go`). It also guards the nav entry `auth/roles` in `modules/auth/module.go`; `modules/admin` serves that screen. There is no `role:read`, and `modules/auth/contracts/permissions.go` says that is deliberate. The other routes name no permission. Login, forgot-password and reset-password are `httpx.Public()`. Logout, identity (me), change-password and the three session routes (`auth-session-list`, `auth-session-revoke`, `auth-session-revoke-all`) are `httpx.SignedIn()` and act only on the caller: the list names the machines this person is signed in on without ever carrying a session id, and the two revocations end one of them or all of them, including the request that asked.
 
 ### Object scope
 
@@ -52,3 +57,25 @@ The module declares no permission with `Operator: true`, and mounts no `Operator
 ### Provisioning
 
 `SeedRoles` creates `admin` (the `*` wildcard, plus the operator permissions in the operator tenant) and an empty `member` role when a tenant is created. The composition calls it from `seedRoles` in `apps/platformkit/modules.go`, passing `tenant:manage` and `billing:catalog` as operator permissions and its two personas as default roles: `coordinator` (`task:read`, `task:update`) and `observer` (`task:read`). `checkPersonas` refuses to compose when a persona grants a permission no composed module declares, or an operator one. `apps/platformkit/persona_test.go` is the persona proof (decision 0011, item 6). It signs in as admin, coordinator, observer and member, drives seven journeys as each, and asserts which are allowed and which are refused with which code. Roles are then changed through `PUT /api/v1/auth/roles/{name}` or the roles screen, by a holder of `role:manage`. A role in a client's `client.yaml` is not shown by the code read for this section.
+
+## Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** `contracts.Session` and its `id_hash` key, `SessionRef`,
+`httpx.Register` with `httpx.SignedIn`, `crud.ErrNotFound`, the `user_agent`
+and `ip` columns `000008` already keeps, `events.Declare`, and `modules/audit`,
+which records whatever the outbox carries; a per-tenant provider is
+`SetLocale`'s shape — the fact on the tenant's row, the mechanism in the
+module, the resolution inside the transaction the `Host` header already
+resolved. **Added:** `SessionListing` (a session row is a credential and a list
+a person reads is not, so `Session` could not be the response type without
+putting a live cookie in it), the ref-keyed revocation commands and
+`auth.session_revoked`, the row lock that makes two tabs revoke one session
+once, the six `oidc_*` columns on `tenants` with the two CHECKs that make half
+a provider unstatable, and `auth`'s `OIDCProviders`/`Secrets`/`Provisioner`
+ports — none of which anything existing carried, because `RevokeSessions` takes
+a user id and no list can name a session by one. **Made reusable:**
+`contracts.SessionRefOf`, for any later surface that names a session by ref; a
+provider cache keyed by issuer rather than by tenant, so two tenants sharing a
+door discover it once; and the discovery-port shape itself — a module that asks
+its composition per request instead of holding a client it resolved at boot.

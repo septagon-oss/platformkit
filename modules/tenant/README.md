@@ -43,6 +43,7 @@ None. `git grep` finds no `tenancy.Policy` use in `modules/tenant`. The routes a
 - `Bootstrap` in `modules/tenant/internal/handler.go` refuses to run when any tenant exists (`crud.ErrConflict`). It is the only writer of the operator flag: it sets `in.Operator = true`.
 - `NewTenant.Operator` is `json:"-"` (`modules/tenant/contracts/tenant.go`), so no request body can mark a tenant as the operator. `Service.Create` in `modules/tenant/internal/service.go` copies it from the input.
 - `invite` takes no password and no roles from the caller. The roles are chosen by the `Inviter`.
+- `SetOIDC` refuses half a provider: an issuer that is not a URL, is plain HTTP for a host that is not local, or carries a query; a client id that is empty; a secret reference that is not an environment variable's name; a registration mode outside `disabled | existing | provision`; and `provision` with no roles, which would be a door into an empty room. `migrations/000030` puts the same rule on the row as a CHECK, so a write that reaches the table by another route is refused there, and `modules/tenant/internal/oidc_test.go` is the case that tries it. Writing the same provider again changes nothing and publishes nothing.
 
 The code shows no ownership or separation-of-duties rule beyond these.
 
@@ -71,6 +72,19 @@ set travels on the host resolution `ByHost` already performs, because three owne
 `SetLocale`/`ValidLocale`/`EventLocaleSet`, the route, and `Deps.Languages` — the
 installation's own languages, which had no owner because the catalogue decided alone.
 **Made reusable:** a control-plane write that rechecks its own rules, publishes one
-event, and invalidates the cache whose truth it moved, which is the shape the next
+event, and invalidates the cache whose truth it moved, which is the shape a second
 `/tenants` command copies; and `tenant.locale_set`, which is what a second process
 will subscribe to when a TTL stops being good enough.
+
+The provider per tenant is the same delivery again. **Reused:** `SetOIDC` is
+`SetLocale`'s command shape and `SetOIDC`'s read, `OIDCOf`, is a tenant
+transaction reading its own row under the policy `000006` already puts over
+`tenants` — no new policy is created for it, which is the check that the fact is
+the tenant's and not a new privilege. **Added:** the six `oidc_*` columns, the
+two CHECKs that make half a provider unstatable rather than a 500, `SetOIDC` /
+`ClearOIDC` / `OIDCOf`, the `set-oidc` and `clear-oidc` routes and
+`tenant.oidc_set` / `tenant.oidc_cleared`. **Made reusable:** a secret that is
+never in a row — the column holds an environment variable's *name*, because
+`modules/audit` copies every payload it is handed — and a control-plane fact a
+lower module reads through its own port, so `modules/auth` resolves an issuer per
+request without importing this module.
