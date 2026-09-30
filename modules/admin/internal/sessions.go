@@ -174,9 +174,7 @@ func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.Se
 		}))
 		return page.View{Title: "Sessions", Language: writtenHere, Body: body}
 	}
-	for _, s := range items {
-		body = append(body, sessionCard(revokeOne, s))
-	}
+	body = append(body, sessionsTable(revokeOne, items))
 	// The count is the rows that are not this one, counted where they are. The
 	// command ends whatever the caller's own session is, wherever it sits, and the
 	// order this list arrives in is last_seen_at — a column the module slides at
@@ -200,37 +198,90 @@ func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.Se
 	return page.View{Title: "Sessions", Language: writtenHere, Body: body}
 }
 
-// sessionCard is one row of the answer: what it was signed in with, from where,
-// and the one button that ends it.
+// sessionsTable is the answer as one table: the device, when it was opened, when
+// it was last used, when it ends, where from, and the button that ends it.
 //
-// The ref is a hidden value and not the headline, which is the module's rule for
-// the list spelled out in contracts.SessionListing — a list a person reads off
-// their own screen must not read like a sheet of live credentials. The device
-// string is what the browser said, clipped by the module to 400 characters, and
-// an empty one says so rather than rendering a blank line.
-func sessionCard(revokeOne string, s *authcontracts.SessionListing) g.Node {
-	title := s.UserAgent
-	if title == "" {
-		title = "A device that would not say what it is"
+// It is a table for the reason the shell's own lists are tables — the question is
+// "was that me?" asked of several machines at once, and a person answers it by
+// comparing columns down a page, not by reading one paragraph per machine. Card
+// per session put every row's text on its own left edge and its own body size,
+// so the page the person actually reads was indented three times and set in four
+// sizes; the roles and tenants screens above never did. The one button that is
+// allowed to be loud on this page is the one the toolbar describes, and it is
+// drawn once: a list of fifteen sessions would otherwise be fifteen red fills
+// competing for the same click.
+//
+// The ref is a hidden value and never a cell, which is the module's rule for the
+// list spelled out in contracts.SessionListing — a list a person reads off their
+// own screen must not read like a sheet of live credentials. The device string is
+// what the browser said, clipped by the module to 400 characters, and an empty
+// one says so rather than rendering a blank row.
+func sessionsTable(revokeOne string, items []*authcontracts.SessionListing) g.Node {
+	rows := make([]components.TableRow, 0, len(items))
+	for _, s := range items {
+		rows = append(rows, components.TableRow{ID: s.Ref, Cells: map[string]any{
+			"device":    deviceNamed(s),
+			"current":   s.Current,
+			"signed_in": when(s.CreatedAt),
+			"last_used": when(s.LastSeenAt),
+			"ends":      when(s.ExpiresAt),
+			"from":      s.IP,
+		}})
 	}
-	description := "Signed in " + when(s.CreatedAt) + ". Last used " + when(s.LastSeenAt) + ". Ends " + when(s.ExpiresAt) + "."
-	if s.IP != "" {
-		description += " From " + s.IP + "."
+	return components.TableWithSlots(components.TableProps{
+		Columns: []components.TableColumn{
+			{Key: "device", Label: "Device", Primary: true},
+			{Key: "signed_in", Label: "Signed in"},
+			{Key: "last_used", Label: "Last used"},
+			{Key: "ends", Label: "Ends"},
+			{Key: "from", Label: "From"},
+			{Key: "end", Label: "End", Align: "right"},
+		},
+		Rows:  rows,
+		Label: "Your sessions, most recently seen first",
+	}, components.TableSlots{
+		Cell: func(row components.TableRow, c components.TableColumn) g.Node {
+			device := rest.Text(row.Cells["device"])
+			switch c.Key {
+			case "device":
+				if row.Cells["current"] != true {
+					return nil
+				}
+				return components.Flex(components.FlexProps{Gap: "2", Align: "center"},
+					g.Text(device),
+					components.Badge(components.BadgeProps{
+						Label: "This device", Tone: "success", Variant: "outline"}))
+			case "from":
+				if rest.Text(row.Cells["from"]) == "" {
+					// The session recorded no address: the row says so rather than
+					// leaving a blank somebody has to read as a missing value.
+					return g.Text("—")
+				}
+				return nil
+			case "end":
+				// The form belongs to the row it describes, so the button posts one
+				// ref and a person who tabs to it hears which session they are about
+				// to end. It is quiet on purpose: every row can end a session, so no
+				// row may out-shout the one action the page is for.
+				return components.Form(components.FormProps{Action: revokeOne, Label: "End the session on " + device},
+					components.Input(components.InputProps{
+						Type: "hidden", Name: "ref", Value: rest.Text(row.ID)}),
+					components.Button(components.ButtonProps{
+						Label: "End this session", Type: "submit", Variant: "secondary",
+						AriaLabel: "End the session on " + device}))
+			}
+			return nil
+		},
+	})
+}
+
+// deviceNamed is the row's headline: what the browser said, or the truth about a
+// session that arrived without a user agent.
+func deviceNamed(s *authcontracts.SessionListing) string {
+	if s.UserAgent == "" {
+		return "A device that would not say what it is"
 	}
-	header := components.CardProps{Title: title, Description: description}
-	children := []g.Node{}
-	if s.Current {
-		children = append(children, components.Badge(components.BadgeProps{
-			Label: "This device", Tone: "success", Variant: "outline"}))
-	}
-	children = append(children,
-		components.Input(components.InputProps{
-			Type: "hidden", Name: "ref", Value: s.Ref}),
-		components.Button(components.ButtonProps{Label: "End this session", Type: "submit", Tone: "danger"}))
-	// The form wraps the card, so the button belongs to the row it describes and
-	// a person who tabs to it hears which session they are about to end.
-	return components.Form(components.FormProps{Action: revokeOne, Label: "End the session on " + title},
-		append([]g.Node{components.Card(header)}, children...)...)
+	return s.UserAgent
 }
 
 // formValue is one field of a hand-written form, and the refusal when the body
