@@ -1731,6 +1731,12 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "hosts": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "slug": {
                 "type": "string"
               },
@@ -1742,6 +1748,7 @@
             "required": [
               "tenantId",
               "slug",
+              "hosts",
               "at"
             ],
             "type": "object"

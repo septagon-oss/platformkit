@@ -128,7 +128,12 @@ func (f *Fake) RemoveHost(ctx context.Context, _ db.Tx[db.System], id uuid.UUID,
 
 // Delete mirrors internal.Service.Delete: the confirmation, the operator's floor,
 // and the one column. The rows the tenant owns stay — a fake that garbage-collected
-// here would let a caller's code pass that the real database cannot reach.
+// here would let a caller's code pass that the real database cannot reach — and the
+// host keys go, because `host` is the routing table's one global key and the mirror
+// of a retired tenant holding a hostname would be a fake that served a customer who
+// is gone. A retired tenant is not found, by this verb as by every other read: the
+// fake used to answer a second delete with the row it had, which is the divergence
+// the case in conformance_lifecycle.go now closes.
 func (f *Fake) Delete(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, in contracts.Delete) (*contracts.Tenant, error) {
 	f.mu.Lock()
 	t, ok := f.live(id)
@@ -146,13 +151,13 @@ func (f *Fake) Delete(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, in 
 		return nil, fmt.Errorf("%w: %q is this installation's own tenant; deleting it closes the control plane it is reached through",
 			crud.ErrConflict, t.Slug)
 	}
-	if t.DeletedAt != nil {
-		defer f.mu.Unlock()
-		return f.copy(id)
-	}
 	at := db.Now()
 	t.DeletedAt, t.UpdatedAt = &at, at
 	f.tenants[id] = t
+	released := slices.Clone(t.Hosts)
+	for _, host := range released {
+		delete(f.hosts, host)
+	}
 	f.mu.Unlock()
 	// The slug is free again, because the unique index in migrations/000006 is
 	// partial on deleted_at IS NULL: the name a delete releases is the fact the
@@ -168,8 +173,8 @@ func (f *Fake) Delete(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, in 
 
 // live is a tenant that has not been retired — the fake's copy of the
 // `deleted_at IS NULL` that every read in the real service carries, and the
-// reason Get, List, ByHost and Active all answer the same way about a customer
-// somebody deleted. The caller holds the mutex.
+// reason Get, List, ByHost, Active and Delete itself all answer the same way about
+// a customer somebody deleted. The caller holds the mutex.
 func (f *Fake) live(id uuid.UUID) (contracts.Tenant, bool) {
 	t, ok := f.tenants[id]
 	if !ok || t.DeletedAt != nil {
@@ -179,7 +184,9 @@ func (f *Fake) live(id uuid.UUID) (contracts.Tenant, bool) {
 }
 
 // slugTaken is the partial index: a slug is taken while some live row holds it,
-// and a retired tenant stops holding it.
+// and a retired tenant stops holding it. So does it stop holding a host — the
+// `hosts` key is dropped by Delete, which is the same release seen from the side of
+// the global key migrations/000006 gives it.
 func (f *Fake) slugTaken(slug string) bool {
 	for _, t := range f.tenants {
 		if t.DeletedAt == nil && t.Slug == slug {
