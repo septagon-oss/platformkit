@@ -146,7 +146,7 @@ The cure is the client's own share — `css.VarRef` for the colour, its own hook
 own class for the selector (T-0139, T-0126).
 **A component's edge is now gated on every ground the kernel paints it on, including
 the one the layer mixes.** The entry below named two grounds for a line this
-repository paints on four. `clBadgeTone["neutral"]` and `clMediaRefused` draw
+repository paints on four. `clAlertVariant["neutral"]` and `clMediaRefused` draw
 `BorderColor(style.BorderPrimary)` on `surface-tertiary`, and `clButtonVariant`
 `["secondary"]` and `clModalCancel` keep that same line while
 `hoverBg(style.SurfaceHover)` moves the control's own fill out from under it — a

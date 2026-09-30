@@ -327,8 +327,8 @@ func StatusRolePairs() []RolePair { return slices.Clone(statusRolePairs) }
 // The grounds are the ones ui/components actually paints the line on, read out of
 // classlists.go rather than guessed: the card (surface-primary) and the page
 // canvas (surface-secondary) a field stands on (clInput/clInputNormal, clCardFrame
-// — round 14); the muted panel (surface-tertiary) a neutral badge and a refused
-// media panel draw their border on (clBadgeTone["neutral"], clMediaRefused); and
+// — round 14); the muted panel (surface-tertiary) a neutral alert and a refused
+// media panel draw their border on (clAlertVariant["neutral"], clMediaRefused); and
 // the control's own hovered fill (surface-hover), because clButtonVariant["secondary"]
 // and clModalCancel keep painting BorderColor(style.BorderPrimary) while
 // hoverBg(style.SurfaceHover) moves the fill underneath it — a ground the layer
