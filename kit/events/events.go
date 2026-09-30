@@ -112,7 +112,7 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	//
 	// Three members, not two: the request id that lets an operator quote this write in
 	// a trace travels beside the trace parent, in the baggage the router wrote — see
-	// migrations/000029. An absent member is written as NULL and not as the empty
+	// migrations/000031. An absent member is written as NULL and not as the empty
 	// string: the propagator answers "" for what it was not given, and a row that
 	// carries no trace is asked about with `traceparent IS NULL` — the query the
 	// migration says is ordinary, and one the empty string answers with an empty

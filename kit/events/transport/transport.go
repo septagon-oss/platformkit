@@ -55,7 +55,7 @@ type Event struct {
 	// when the publisher had nothing to leave, exactly as the pair above: the
 	// envelope carries it as a PlatformKit extension attribute beside the two the
 	// distributed tracing extension names, and it reaches the delivery's span and
-	// every span the handler opens below it. See migrations/000029.
+	// every span the handler opens below it. See migrations/000031.
 	Baggage string
 }
 

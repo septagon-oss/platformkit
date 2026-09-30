@@ -83,7 +83,7 @@ func traceContext(ctx context.Context) (parent, state, correlation string) {
 // request span to sit under, so the id is read out of the baggage the publisher left
 // and lands on this span and on every span the handler opens below it. An event with
 // only a trace and no baggage (a job that published it, or a row written before
-// migrations/000029) is the ordinary case and gives the trace alone.
+// migrations/000031) is the ordinary case and gives the trace alone.
 //
 // The tenant is named by id and not by slug, because this path has only the id: a
 // job that lists tenants or a request that resolved a host has both names, and a
