@@ -28,17 +28,17 @@ import (
 // by construction — which used to mean any customer's administrator could list,
 // create and suspend the tenants beside them, at their own host, with the
 // credentials they were legitimately given. What keeps it safe is that these
-// five routes declare httpx.OperatorPermission: the kernel refuses the request
+// nine routes declare httpx.OperatorPermission: the kernel refuses the request
 // at any tenant but the operator's own before it asks the roles table anything,
 // and no wildcard satisfies the grant even there.
 const path = "/tenants"
 
-// RegisterRoutes mounts the five control-plane routes.
+// RegisterRoutes mounts the nine control-plane routes.
 //
 // They are written by hand rather than mounted from a rest.Spec because a
 // tenant is not a crud.Entity: it carries no tenant_id, so the generic
 // repository — which stamps one from the transaction — has nothing to stamp.
-// That is the whole cost of the exception, and it is five short handlers.
+// That is the whole cost of the exception, and it is nine short handlers.
 //
 // Every one of them opens a transaction of its own. The request already holds a
 // tenant transaction, because recognising the caller was a query in it, and a
@@ -189,7 +189,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 	if invite == nil {
 		return
 	}
-	// The sixth route, and the one that makes the other five worth having.
+	// The last route, and the one that makes the others worth having.
 	//
 	// The control plane could create a tenant and could not put anybody in it.
 	// Every route that makes a user is a tenant route, authorized inside that
