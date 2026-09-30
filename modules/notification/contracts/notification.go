@@ -64,16 +64,48 @@ func (n *Notification) Validate(context.Context) error {
 
 // Notice is what a caller wants somebody told. It is the argument to Notify
 // rather than the entity, because the entity has an id, timestamps and a tenant
-// the server owns, and because Email is a decision about this notice rather
-// than a column of it: a request, not a promise. A recipient with no address
-// gets the row and no mail, and the send happens in the worker.
+// the server owns, and because what a caller asks for is a request and not a
+// promise: Wants is a ceiling, and the tenant's sender, the tenant's switches
+// and the person's own preferences decide which channels happen (Decide). A
+// notice that asks for three channels and gets one row in the ledger for each of
+// them has been accounted for even where two of them were refused.
 type Notice struct {
 	Recipient uuid.UUID
-	Title     string
-	Body      string
-	Link      string
-	Email     bool
+	// Intent names what happened, and it selects the template (per event, per
+	// locale) and the row of the person's preferences that applies. It is the
+	// caller's word, not a table this module keeps: "task.assigned" means
+	// something to the task module and nothing to this one, which is what lets
+	// a new kind of notice arrive without a change here. "" is a notice with no
+	// event of its own — the generic template, the blanket preference.
+	Intent string
+	// Class is what kind of notice this is, and today there are two answers:
+	// ClassStandard, and ClassSecurity, which is not subject to the person's
+	// opt-out or their quiet hours. The caller says which it is; this module
+	// never guesses from Intent, because Intent is the caller's vocabulary.
+	Class string
+	Title string
+	Body  string
+	Link  string
+	// Wants is the ceiling: which channels the caller would accept. Its zero
+	// value is in-app alone — the floor every notice has — so a caller that says
+	// nothing tells the person in the application and contacts nobody.
+	Wants Wants
 }
+
+// The two classes of notice. A class is not a channel and not an event: it is
+// how much this module obeys the person's settings about this one notice.
+const (
+	// ClassStandard is an ordinary notice: preferences and quiet hours decide.
+	ClassStandard = ""
+	// ClassSecurity is a notice about the person's own account — a password
+	// changed, a new session, a token about to expire. It is sent over the
+	// person's opt-out and outside their quiet hours, because opt-out exists so
+	// that people are not marketed to and not so that they cannot be told
+	// somebody took over their account. It is still suppressed where the
+	// channel itself cannot be used at all (no address, no verified sender,
+	// no provider), because that is not a choice this module is refusing.
+	ClassSecurity = "security"
+)
 
 // RecipientLookup is how this module turns a user id into an address without
 // naming the user module. The application satisfies it — apps/platformkit
@@ -103,10 +135,30 @@ type HostLookup interface {
 }
 
 // Message is one email, already rendered: the whole of what a Mailer is asked.
+//
+// It carries the sender rather than relying on the mailer to know one, because
+// the mailer is one object shared by every tenant this process serves: the name
+// in a header belongs to one of them, so it arrives with the message that needs
+// it. A nil Sender is the deployment's own address and no display name — which
+// is exactly what config.Mail.From still is, and still refuses to be anything
+// else.
 type Message struct {
-	To      string
+	To string
+	// Sender is the tenant's own: its name, its address, and the key to sign
+	// with. Nil means send as the deployment.
+	Sender *Sender
+	// ReplyTo is where an answer goes, "" for the sender's own address.
+	ReplyTo string
 	Subject string
-	Body    string
+	// Body is the plain-text message and HTML its alternative, both rendered in
+	// Lang. A message with no HTML is sent as text alone; a message with no
+	// text is refused, because a mail client that shows nobody a raw HTML
+	// source is the failure the text part exists to prevent.
+	Body string
+	HTML string
+	// Lang is the BCP-47 language Body and HTML are in, so the message says
+	// what it is written in.
+	Lang string
 }
 
 // Mailer sends one message. There is one production implementation, SMTP, and

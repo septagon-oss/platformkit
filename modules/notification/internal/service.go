@@ -54,7 +54,7 @@ func (s *Service) Notify(ctx context.Context, tx db.Tx[db.Tenant], n contracts.N
 			return nil, err
 		}
 	}
-	if !n.Email {
+	if !n.Wants.HasChannel(contracts.ChannelEmail) {
 		return row, nil
 	}
 	if err := record(tx, row.ID, ChannelEmail, OutcomeRequested, ""); err != nil {

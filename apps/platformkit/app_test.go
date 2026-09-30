@@ -874,7 +874,7 @@ func notify(t *testing.T, cfg config.Config, c composition, recipient uuid.UUID)
 	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := c.notify.Notify(ctx, tx, notificationcontracts.Notice{
 			Recipient: recipient, Title: "chiller-2 supply temp is out of band",
-			Body: "The task is waiting for somebody.", Link: "/admin/task/tasks", Email: true,
+			Body: "The task is waiting for somebody.", Link: "/admin/task/tasks", Wants: notificationcontracts.WantsEmail,
 		})
 		if err == nil {
 			id = row.ID

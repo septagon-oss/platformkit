@@ -6,18 +6,25 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
-// The channels and outcomes of the delivery ledger (migrations/000027). They are
-// the table's CHECK constraints spelled once in Go, so a value the table would
-// refuse cannot be written from here.
+// The channels and outcomes of the delivery ledger (migrations/000027), spelled
+// once in contracts/ so that a provider written outside this module names the
+// same values the table's CHECK does and this package keeps the strings it
+// writes. OutcomeFailed is here because the CHECK and Coverage both always had it
+// and nothing in Go could name it: a numerator written by hand is a drift.
 const (
-	ChannelInApp = "in_app"
-	ChannelEmail = "email"
+	ChannelInApp   = string(contracts.ChannelInApp)
+	ChannelEmail   = string(contracts.ChannelEmail)
+	ChannelPush    = string(contracts.ChannelPush)
+	ChannelWebPush = string(contracts.ChannelWebPush)
+	ChannelWebhook = string(contracts.ChannelWebhook)
 
-	OutcomeRequested  = "requested"
-	OutcomeSent       = "sent"
-	OutcomeSuppressed = "suppressed"
+	OutcomeRequested  = contracts.OutcomeRequested
+	OutcomeSent       = contracts.OutcomeSent
+	OutcomeSuppressed = contracts.OutcomeSuppressed
+	OutcomeFailed     = contracts.OutcomeFailed
 )
 
 // record appends one row to the delivery ledger, in the transaction of the step it

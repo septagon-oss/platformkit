@@ -60,7 +60,7 @@ func (f *Fake) Notify(ctx context.Context, _ db.Tx[db.Tenant], n contracts.Notic
 	row.ID, row.CreatedAt, row.UpdatedAt = uuid.New(), db.Now(), db.Now()
 	f.rows = append(f.rows, *row)
 	f.names = append(f.names, contracts.EventCreated)
-	if n.Email && f.addresses[n.Recipient] != "" {
+	if n.Wants.HasChannel(contracts.ChannelEmail) && f.addresses[n.Recipient] != "" {
 		f.names = append(f.names, contracts.EventEmailRequested)
 	}
 	return row, nil

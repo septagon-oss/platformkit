@@ -99,7 +99,7 @@ func TestAMailerThatFailsFailsTheSubscription(t *testing.T) {
 
 	err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := svc.Notify(ctx, tx, contracts.Notice{
-			Recipient: uuid.New(), Title: "Reset your password", Link: "/auth/reset", Email: true,
+			Recipient: uuid.New(), Title: "Reset your password", Link: "/auth/reset", Wants: contracts.WantsEmail,
 		})
 		if err != nil {
 			return err

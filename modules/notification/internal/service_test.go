@@ -123,7 +123,7 @@ func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := svc.Notify(ctx, tx, contracts.Notice{
 			Recipient: notificationtest.Ada, Title: "A task was assigned to you",
-			Body: "Chiller-2 supply temperature out of band", Link: "/admin/task/tasks/1", Email: true,
+			Body: "Chiller-2 supply temperature out of band", Link: "/admin/task/tasks/1", Wants: contracts.WantsEmail,
 		})
 		if err != nil {
 			return err
@@ -177,7 +177,7 @@ func TestTheOutboxCarriesNoMessage(t *testing.T) {
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		_, err := svc.Notify(ctx, tx, contracts.Notice{
 			Recipient: notificationtest.Ada, Title: "Reset your password",
-			Body: "Follow the link", Link: "/auth/reset?token=s3cr3t", Email: true,
+			Body: "Follow the link", Link: "/auth/reset?token=s3cr3t", Wants: contracts.WantsEmail,
 		})
 		return err
 	})

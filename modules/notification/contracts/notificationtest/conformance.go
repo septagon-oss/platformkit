@@ -98,7 +98,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"asking for mail asks the worker for it": func(t *testing.T, f Fixture) {
 			n := notice("A task was assigned to you")
-			n.Email = true
+			n.Wants = contracts.WantsInApp | contracts.WantsEmail
 			if _, err := f.Service.Notify(f.Ctx, f.Tx, n); err != nil {
 				t.Fatalf("Notify: %v", err)
 			}
@@ -109,7 +109,8 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"a recipient with no address gets the row and no mail": func(t *testing.T, f Fixture) {
 			n := notice("A task was assigned to you")
-			n.Recipient, n.Email = Bob, true
+			n.Recipient = Bob
+			n.Wants = contracts.WantsInApp | contracts.WantsEmail
 			got, err := f.Service.Notify(f.Ctx, f.Tx, n)
 			if err != nil {
 				t.Fatalf("Notify: %v", err)
