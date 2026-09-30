@@ -152,6 +152,40 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 			return out, rest.Fault(err)
 		})
 
+	// The two provider routes: which identity provider this tenant's people sign
+	// in against, and taking it away again. They are the control plane's because
+	// the row they write is the control plane's — a tenant transaction reads its
+	// own provider and may not choose it (migrations/000030) — and because which
+	// directory a company's people live in is a decision somebody makes about a
+	// customer, in the same shape as which languages they are served in.
+	httpx.Register(r, op("set-oidc", http.MethodPost, path+"/{id}/oidc", 0, "Say which identity provider a tenant signs in against",
+		"Sets the issuer, the client and the secret reference for one tenant, and what an address the provider vouches for and this tenant has no account for does: disabled, existing or provision. Setting the same values again changes nothing and publishes nothing. The secret itself is never written here: the reference names where it is kept, because a row is copied into the audit trail and a secret in a payload is a secret in the trail.",
+		[]string{contracts.EventOIDCSet}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *oidcInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.SetOIDC(ctx, tx, in.ID, in.Body)
+				out.Body = t
+				return err
+			})
+			return out, rest.Fault(err)
+		})
+
+	httpx.Register(r, op("clear-oidc", http.MethodPost, path+"/{id}/oidc/clear", 0, "Take a tenant's identity provider away",
+		"After this the tenant's single sign-on answers 404 and its people sign in with a password. People already signed in stay signed in: taking a company's single sign-on away is not a revocation of anybody's session, and revocations are somebody else's decision.",
+		[]string{contracts.EventOIDCCleared}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *idInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.ClearOIDC(ctx, tx, in.ID)
+				out.Body = t
+				return err
+			})
+			return out, rest.Fault(err)
+		})
+
 	if invite == nil {
 		return
 	}
@@ -206,6 +240,11 @@ func op(verb, method, at string, status int, summary, description string, publis
 		o.Extensions = map[string]any{httpx.EventsExtension: published}
 	}
 	return o
+}
+
+type oidcInput struct {
+	ID   uuid.UUID              `path:"id" format:"uuid" doc:"The tenant's id"`
+	Body contracts.OIDCSettings `required:"true"`
 }
 
 type idInput struct {

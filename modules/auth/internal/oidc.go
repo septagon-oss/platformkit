@@ -17,6 +17,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -24,11 +25,29 @@ import (
 )
 
 // OIDC is one OpenID Connect provider, as this module needs it.
+//
+// Registration and Roles come from the tenant's row and decide what a verified
+// address this tenant has no account for means; the rest are the four strings
+// that build an authorization request. The secret is here because the exchange
+// needs a string and not a reference — and it got here from the environment in
+// this request, never from a row.
 type OIDC struct {
 	Issuer       string
 	ClientID     string
 	ClientSecret string
 	RedirectPath string
+	Registration string
+	Roles        []string
+}
+
+// mode is this provider's registration mode, with the default spelled out: a
+// tenant that named nothing, and an installation configured before the choice
+// existed, both get today's behaviour.
+func (o OIDC) mode() string {
+	if o.Registration == "" {
+		return contracts.RegistrationExisting
+	}
+	return o.Registration
 }
 
 // stateCookie carries what the callback has to know and the authorization
@@ -49,37 +68,108 @@ const (
 	stateTTL    = 10 * time.Minute
 )
 
-// Provider is the lazily connected identity provider.
+// Provider is the lazily connected identity provider — for the tenant the
+// request resolved to, which is the whole of what changed when the issuer moved
+// from the process to the tenant.
 //
 // Lazily, because discovery is a network call: doing it in Module would make an
 // unreachable provider a process that will not start, and an identity provider
 // having a bad morning must not stop an application serving the people who are
 // already signed in.
+//
+// Per request, and that is not an implementation detail: `of` reads the
+// resolved tenant's row through contracts.OIDCProviders every time, so the
+// client id, the mode and the secret reference a sign-in uses are the ones that
+// tenant's, and 0028's shared-instance mode has nothing per process to unpick.
+// What is kept between requests is the discovery document, keyed by issuer —
+// the one fact that is genuinely the same for everybody who names that issuer.
 type Provider struct {
-	cfg     OIDC
-	cookies Cookies
-	secure  bool
+	// cfg is the installation's own default, and the fallback for a tenant with
+	// no row: the composition that configures one issuer for the whole
+	// application still works, unchanged, and answers exactly as it did before
+	// this struct grew a port.
+	cfg       OIDC
+	cookies   Cookies
+	secure    bool
+	providers contracts.OIDCProviders
+	secrets   contracts.Secrets
 
-	mu       sync.Mutex
-	provider *oidc.Provider
+	mu    sync.Mutex
+	found map[string]*oidc.Provider
 }
 
-// NewProvider prepares the provider. Nothing is dialled here.
-func NewProvider(cfg OIDC, cookies Cookies, secure bool) *Provider {
-	return &Provider{cfg: cfg, cookies: cookies, secure: secure}
+// NewProvider prepares the providers. Nothing is dialled here, and one of these
+// serves every tenant: the per-tenant part is the configuration it looks up,
+// not the object.
+func NewProvider(cfg OIDC, cookies Cookies, secure bool, providers contracts.OIDCProviders, secrets contracts.Secrets) *Provider {
+	return &Provider{cfg: cfg, cookies: cookies, secure: secure,
+		providers: providers, secrets: secrets, found: map[string]*oidc.Provider{}}
 }
 
-func (p *Provider) discover(ctx context.Context) (*oidc.Provider, error) {
+// of is this request's provider: the tenant's own when it has one, the
+// installation's default when the tenant named nothing, and nothing when there
+// is genuinely none — which answers 404 rather than 500, because "this company
+// has no single sign-on" is a fact about one tenant and not an outage.
+//
+// The secret is resolved here and nowhere else, per request, from the reference
+// the row holds: an installation that rotates a client secret rotates it in the
+// environment and needs no write to any table. A reference that resolves to
+// nothing is a 503 — the tenant *does* have single sign-on, and the deployment
+// has failed to give it the means — and it writes nothing.
+func (p *Provider) of(ctx context.Context, tx db.Tx[db.Tenant]) (OIDC, bool, error) {
+	if p.providers != nil {
+		settings, ok, err := p.providers.ProviderOf(ctx, tx)
+		if err != nil {
+			return OIDC{}, false, err
+		}
+		if ok && settings.Issuer != "" {
+			secret := ""
+			if p.secrets != nil {
+				secret, _ = p.secrets.Lookup(ctx, settings.SecretRef)
+			}
+			if secret == "" {
+				return OIDC{}, false, problem.New(http.StatusServiceUnavailable,
+					"this tenant's identity provider secret is not available to this installation")
+			}
+			return OIDC{Issuer: settings.Issuer, ClientID: settings.ClientID, ClientSecret: secret,
+				RedirectPath: p.redirect(settings.RedirectPath)}, true, nil
+		}
+	}
+	if p.cfg.Issuer == "" {
+		return OIDC{}, false, nil
+	}
+	return p.cfg, true, nil
+}
+
+// redirect is the path the provider sends the browser back to: the tenant's own
+// if it declared one, the installation's otherwise. A path rather than a URL,
+// because the URL is built from the request's host and a redirect URI a caller
+// could choose is an open redirect with a token attached.
+func (p *Provider) redirect(path string) string {
+	if path != "" {
+		return path
+	}
+	return p.cfg.RedirectPath
+}
+
+// discover returns the provider this issuer documents, from the cache if some
+// earlier request — at this tenant or another — already fetched it.
+//
+// The key is the issuer and nothing else. That is the assertion the two-issuer
+// test attacks: a cache keyed by anything less, or a single field, lets the
+// first tenant's discovery document answer for every tenant after it, which is
+// one process sending two companies' people to one directory.
+func (p *Provider) discover(ctx context.Context, issuer string) (*oidc.Provider, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.provider != nil {
-		return p.provider, nil
+	if found, ok := p.found[issuer]; ok {
+		return found, nil
 	}
-	provider, err := oidc.NewProvider(ctx, p.cfg.Issuer)
+	provider, err := oidc.NewProvider(ctx, issuer)
 	if err != nil {
-		return nil, fmt.Errorf("auth: discover %s: %w", p.cfg.Issuer, err)
+		return nil, fmt.Errorf("auth: discover %s: %w", issuer, err)
 	}
-	p.provider = provider
+	p.found[issuer] = provider
 	return provider, nil
 }
 
@@ -89,16 +179,16 @@ func (p *Provider) discover(ctx context.Context) (*oidc.Provider, error) {
 // every tenant is reached at its own host and a provider is registered against
 // each one. Nothing here is taken from a query parameter: a redirect URI a
 // caller could choose is an open redirect with a token attached.
-func (p *Provider) oauth(provider *oidc.Provider, host string) *oauth2.Config {
+func (p *Provider) oauth(cfg OIDC, provider *oidc.Provider, host string) *oauth2.Config {
 	scheme := "https"
 	if !p.secure {
 		scheme = "http"
 	}
 	return &oauth2.Config{
-		ClientID:     p.cfg.ClientID,
-		ClientSecret: p.cfg.ClientSecret,
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
 		Endpoint:     provider.Endpoint(),
-		RedirectURL:  scheme + "://" + host + p.cfg.RedirectPath,
+		RedirectURL:  scheme + "://" + host + cfg.RedirectPath,
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 	}
 }
@@ -107,7 +197,7 @@ func (p *Provider) oauth(provider *oidc.Provider, host string) *oauth2.Config {
 // are registered only when a provider is configured: a route that would answer
 // "this application has no identity provider" is a route with nothing to say,
 // and the boot gate counts what is mounted rather than what might have been.
-func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users contracts.Users, p *Provider) {
+func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users contracts.Users, provisioner contracts.Provisioner, p *Provider) {
 	app := surfaces.App
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-oidc-start",
@@ -122,14 +212,32 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		if !ok {
 			return nil, problem.New(http.StatusInternalServerError, "")
 		}
-		provider, err := p.discover(ctx)
+		// The tenant's provider, read inside the transaction this request's Host
+		// resolved: the reason two companies on one process sign in at two
+		// issuers. A tenant with none is a 404, and a tenant that turned single
+		// sign-off off is the same 404 answered before the provider is dialled —
+		// so "disabled" is not a page that discovers an issuer it will not use.
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cfg, ok, err := p.of(ctx, tx)
+		switch {
+		case err != nil:
+			return nil, rest.Fault(err)
+		case !ok:
+			return nil, problem.New(http.StatusNotFound, "this tenant has no single sign-on")
+		case cfg.mode() == contracts.RegistrationDisabled:
+			return nil, problem.New(http.StatusNotFound, "this tenant does not sign in with an identity provider")
+		}
+		provider, err := p.discover(ctx, cfg.Issuer)
 		if err != nil {
 			return nil, problem.New(http.StatusServiceUnavailable, "the identity provider cannot be reached right now")
 		}
 		state, nonce, verifier := random(), random(), oauth2.GenerateVerifier()
 		return &redirectOutput{
 			Status:    http.StatusSeeOther,
-			Location:  p.oauth(provider, r.Host).AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)),
+			Location:  p.oauth(cfg, provider, r.Host).AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)),
 			SetCookie: []http.Cookie{p.stash(state, nonce, verifier)},
 		}, nil
 	})
@@ -158,21 +266,46 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		if err != nil {
 			return nil, problem.New(http.StatusForbidden, "this sign-in did not start here, or it took too long")
 		}
-		provider, err := p.discover(ctx)
+		cfg, ok, err := p.of(ctx, tx)
+		switch {
+		case err != nil:
+			return nil, rest.Fault(err)
+		case !ok:
+			return nil, problem.New(http.StatusNotFound, "this tenant has no single sign-on")
+		case cfg.mode() == contracts.RegistrationDisabled:
+			return nil, problem.New(http.StatusForbidden, "this tenant does not sign in with an identity provider")
+		}
+		provider, err := p.discover(ctx, cfg.Issuer)
 		if err != nil {
 			return nil, problem.New(http.StatusServiceUnavailable, "the identity provider cannot be reached right now")
 		}
-		email, err := p.claim(ctx, provider, r.Host, in.Code, verifier, nonce)
+		email, err := p.claim(ctx, cfg, provider, r.Host, in.Code, verifier, nonce)
 		if err != nil {
 			return nil, problem.New(http.StatusForbidden, err.Error())
 		}
 		user, err := users.ByEmail(ctx, tx, email)
 		if errors.Is(err, crud.ErrNotFound) {
-			// No automatic provisioning. Being able to sign in at an identity
-			// provider says who somebody is; it does not say that this customer
-			// has an account for them, and inventing one would let anybody with
-			// an address at the provider's domain into the tenant.
-			return nil, problem.New(http.StatusForbidden, "there is no account here for that address")
+			// This is the tenant's registration mode, read a moment ago from its
+			// own row. `existing` — the default, and every tenant that predates
+			// the column — refuses: being able to sign in at an identity provider
+			// says who somebody is, not that this customer has an account for
+			// them. `provision` is the operator having said that here, the first
+			// does imply the second, and the person is made with the named roles
+			// and nothing else.
+			if cfg.mode() != contracts.RegistrationProvision || provisioner == nil {
+				return nil, problem.New(http.StatusForbidden, "there is no account here for that address")
+			}
+			id, err := provisioner.Provision(ctx, tx, email, email, cfg.Roles)
+			if err != nil {
+				return nil, rest.Fault(err)
+			}
+			// Read back rather than assumed: the person the provisioner made is
+			// the person this tenant's policy can see, and a session opened for a
+			// row nobody can read would be a session that identifies as nobody.
+			user, err = users.Get(ctx, tx, id)
+			if err != nil {
+				return nil, rest.Fault(err)
+			}
 		}
 		if err != nil {
 			return nil, rest.Fault(err)
@@ -194,8 +327,8 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 }
 
 // claim exchanges the code and returns the verified address the id token names.
-func (p *Provider) claim(ctx context.Context, provider *oidc.Provider, host, code, verifier, nonce string) (string, error) {
-	token, err := p.oauth(provider, host).Exchange(ctx, code, oauth2.VerifierOption(verifier))
+func (p *Provider) claim(ctx context.Context, cfg OIDC, provider *oidc.Provider, host, code, verifier, nonce string) (string, error) {
+	token, err := p.oauth(cfg, provider, host).Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		return "", errors.New("the identity provider refused that code")
 	}
@@ -203,7 +336,7 @@ func (p *Provider) claim(ctx context.Context, provider *oidc.Provider, host, cod
 	if !ok {
 		return "", errors.New("the identity provider returned no id token")
 	}
-	idToken, err := provider.Verifier(&oidc.Config{ClientID: p.cfg.ClientID}).Verify(ctx, raw)
+	idToken, err := provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}).Verify(ctx, raw)
 	if err != nil {
 		return "", errors.New("that id token does not verify")
 	}

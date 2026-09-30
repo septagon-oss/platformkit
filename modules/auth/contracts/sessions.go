@@ -19,12 +19,12 @@ import (
 // references rather than a set of live credentials. The ref is what
 // RevokeSession takes, so the page needs no second identifier and gains none.
 type SessionListing struct {
-	Ref       string    `json:"ref" example:"3f2a1c…" doc:"hex(sha256(session id)); what revoking takes"`
-	UserAgent string    `json:"userAgent,omitempty"`
-	IP        string    `json:"ip,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
+	Ref        string    `json:"ref" example:"3f2a1c…" doc:"hex(sha256(session id)); what revoking takes"`
+	UserAgent  string    `json:"userAgent,omitempty"`
+	IP         string    `json:"ip,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 	LastSeenAt time.Time `json:"lastSeenAt"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	ExpiresAt  time.Time `json:"expiresAt"`
 	// Current marks the session answering this request, so the one entry a
 	// person should not revoke by reflex is the one that says so. It is
 	// computed by comparing refs, not read from a column: the table holds no

@@ -141,8 +141,20 @@ func compose(cfg config.Config) composition {
 		// the form, and the one named is the tenant's ordinary member: the least
 		// of the two the seed provisions.
 		EmailRegistration: &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}},
-		OIDC:              auth.OIDC(cfg.Auth.OIDC),
-		PublicHost:        cfg.Server.PublicHost,
+		// The installation's own provider is the fallback; the tenant's row wins
+		// where it names one, which is what lets two tenants on this one process
+		// send their people to two issuers. The secret is resolved from the
+		// environment by reference, per request, so it is in no row, no outbox
+		// payload and no audit record.
+		OIDC:          auth.OIDCFromConfig(cfg.Auth.OIDC),
+		OIDCProviders: auth.TenantProvidersOf(tenants),
+		Secrets:       auth.EnvironmentSecrets{},
+		// Provision is refused rather than improvised: this application wires no
+		// Provisioner, so a tenant that sets `provision` behaves as `existing`
+		// and the operator is refused at the door instead of meeting an unknown
+		// person with no roles. The product that wants it wires one over the user
+		// module here, in one line, and decides which roles it hands out.
+		PublicHost: cfg.Server.PublicHost,
 	})
 
 	// The file service is returned beside its manifest, as user's and

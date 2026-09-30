@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -19,8 +20,60 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
+	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
+
+// OIDCFromConfig converts the application's own configuration block into this
+// module's struct, so that main writes one line and the module depends on a
+// struct of its own rather than on the configuration surface. The registration
+// mode is not in it: the mode is a tenant's fact now, and the installation's own
+// default provider has never had one to declare.
+func OIDCFromConfig(c config.OIDC) OIDC {
+	return OIDC{Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
+		RedirectPath: c.RedirectPath}
+}
+
+// EnvironmentSecrets is the Secrets this installation ships with: a reference is
+// an environment variable's name, which is the only secret store this repository
+// has (kit/config reads secrets from the environment and nowhere else). It is a
+// method on an empty struct rather than a function value because a composition
+// should be able to name the whole of what it wires.
+type EnvironmentSecrets struct{}
+
+// Lookup reads the variable the reference names. An unset name is false, and the
+// sign-in answers 503 for that tenant rather than exchanging a code with an empty
+// client secret.
+func (EnvironmentSecrets) Lookup(_ context.Context, ref string) (string, bool) {
+	return os.LookupEnv(ref)
+}
+
+// TenantProviders is the OIDCProviders over the tenant module: the read of the
+// tenant this request resolved to, spelled in this module's own terms so that
+// modules/auth never imports modules/tenant. The composition wires it; a test
+// wires a map.
+type TenantProviders interface {
+	OIDCOf(ctx context.Context, tx db.Tx[db.Tenant]) (*tenantcontracts.OIDCSettings, bool, error)
+}
+
+// tenantProviders is the adapter, and it is the only line in this module's
+// composition that knows both packages exist.
+// TenantProvidersOf is the composition's one line: the tenant module's read, in
+// this module's shape.
+func TenantProvidersOf(t TenantProviders) contracts.OIDCProviders { return provided{t} }
+
+type provided struct{ tenants TenantProviders }
+
+func (p provided) ProviderOf(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.OIDCProvider, bool, error) {
+	settings, ok, err := p.tenants.OIDCOf(ctx, tx)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	return &contracts.OIDCProvider{
+		Issuer: settings.Issuer, ClientID: settings.ClientID, SecretRef: settings.SecretRef,
+		RedirectPath: settings.RedirectPath, Registration: settings.Registration, Roles: settings.Roles,
+	}, true, nil
+}
 
 // OIDC is one OpenID Connect provider. It has the same shape as config.OIDC, so
 // main converts one to the other in a line, and this module depends on a struct
@@ -76,9 +129,34 @@ type Deps struct {
 	// sessions and tokens that have expired.
 	Tenants jobs.TenantLister
 
-	// OIDC is the optional identity provider. An empty issuer means there is
-	// none, and then the two OIDC routes are not registered at all.
+	// OIDC is the installation's own identity provider, and the fallback for a
+	// tenant that names none. An empty issuer means there is no default, and
+	// then the two OIDC routes are mounted only when OIDCProviders is wired —
+	// which is the case that lets two tenants sign in at two issuers in one
+	// process, each answering for its own host.
 	OIDC OIDC
+
+	// OIDCProviders answers "which provider does the tenant this request
+	// resolved to sign in against?", per request, from the transaction the Host
+	// header chose. A composition wires it over the tenant module's OIDCOf; a
+	// composition that wires nothing leaves the installation's own issuer as the
+	// only one there is, which is exactly how every deployment that exists today
+	// behaves.
+	OIDCProviders contracts.OIDCProviders
+
+	// Secrets resolves the reference a tenant's row holds into the client secret
+	// it names. The reference is what is in the database, the outbox and the
+	// audit trail; the secret is in the environment and in no row. A composition
+	// that wires none can sign nobody in through a tenant's own provider, and
+	// answers 503 rather than inventing an empty secret.
+	Secrets contracts.Secrets
+
+	// Provisioner makes the person a verified id token names when the tenant's
+	// registration mode is `provision`. Wiring it is the composition's answer to
+	// "may this installation create people from an IdP claim", because who may
+	// exist is the user module's decision and not this one's; with no
+	// Provisioner, `provision` refuses as `existing` does.
+	Provisioner contracts.Provisioner
 
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
@@ -174,9 +252,13 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			if deps.EmailRegistration != nil {
 				internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
 			}
-			if deps.OIDC.Issuer != "" {
-				internal.RegisterOIDCRoutes(s, svc, deps.Users,
-					internal.NewProvider(deps.OIDC, cookies, secure))
+			// The gate is "can any tenant here reach a provider", which is the
+			// installation's issuer or the port that resolves one per tenant —
+			// not the installation's issuer alone, which would refuse to mount
+			// the two legs for a deployment whose providers are all per-tenant.
+			if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
+				internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
+					internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
 			}
 		},
 	}

@@ -193,6 +193,36 @@ type SetLocale struct {
 	Supported []string `json:"supported" doc:"Every language this tenant is served in, besides the default"`
 }
 
+// The three registration modes migrations/000030's CHECK admits, named here for
+// the write and in modules/auth/contracts for the read. They are one vocabulary
+// spoken by two modules, and that is deliberate: the column's domain is the
+// schema's, and the module that stores a fact and the module that acts on it
+// each name the values in their own terms rather than one importing the other's
+// — which is what keeps modules/tenant from importing the module that signs
+// people in.
+const (
+	RegistrationDisabled  = "disabled"
+	RegistrationExisting  = "existing"
+	RegistrationProvision = "provision"
+)
+
+// OIDCSettings is which identity provider one tenant's people sign in against,
+// and what an address that provider vouches for means here. It is the same
+// record read and written: a command that took a narrower input than the read
+// returns would be two shapes to keep in step for no rule.
+//
+// SecretRef is a name and not a secret, for the reason migrations/000030 gives:
+// a row is copied into an outbox payload and into the audit trail, and a secret
+// in a payload is a secret in the trail.
+type OIDCSettings struct {
+	Issuer       string   `json:"issuer" maxLength:"512" doc:"The provider's own URL, https unless it is local" example:"https://id.acme.example/realms/people"`
+	ClientID     string   `json:"clientId" maxLength:"256" doc:"The client this application registers as at that provider"`
+	SecretRef    string   `json:"secretRef" maxLength:"64" doc:"Where the client secret is kept — an environment variable's name, never the secret" example:"PLATFORMKIT_OIDC_ACME_SECRET"`
+	RedirectPath string   `json:"redirectPath,omitempty" maxLength:"256" doc:"The path the provider sends the browser back to; empty is this installation's own"`
+	Registration string   `json:"registration,omitempty" doc:"disabled, existing or provision: what an address the provider vouches for and this tenant has no account for does"`
+	Roles        []string `json:"roles,omitempty" doc:"What a provisioned person is given, and only under provision"`
+}
+
 // Hook is something that has to happen inside the transaction that creates a
 // tenant. main hands this module a list of them.
 //
@@ -260,6 +290,38 @@ type Service interface {
 	// is copy, in a tenant-scoped table of its own, and that is a different
 	// capability with a different policy — not this one pretending to be it.
 	SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in SetLocale) (*Tenant, error)
+
+	// SetOIDC says which identity provider one tenant signs in against, and what
+	// an unknown-but-verified address does there. Setting the same values again
+	// changes nothing and publishes nothing, as every other command here does.
+	//
+	// It refuses half a provider — an issuer with no client, a provision mode
+	// with no roles, a secret reference that is not a name — because each is a
+	// configuration that cannot be exercised and reads, to whoever wrote it, as
+	// one that can. The pair of CHECKs in migrations/000030 is the same rule
+	// where SQL can see it; this is the part it cannot, and the reason the
+	// refusal names the field: an operator reading a 422 should not have to
+	// guess which of six columns they left empty.
+	//
+	// The event carries the reference and not a secret, for the reason the
+	// column gives: an outbox payload is copied into the audit trail.
+	SetOIDC(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in OIDCSettings) (*Tenant, error)
+
+	// ClearOIDC removes a tenant's provider, so single sign-on answers 404 there
+	// again. People already signed in stay signed in: a session is a row, and
+	// taking a company's SSO away is not a revocation of anybody's — the two are
+	// different decisions and the second one is the sessions page's or an
+	// administrator's, never a side effect of the first.
+	ClearOIDC(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// OIDCOf reads the provider of the tenant the transaction belongs to. It is
+	// the read the sign-in makes, per request, and it is the same tenant-scoped
+	// read HostsOf already is: the policy over tenants lets a tenant transaction
+	// read its own row and write nothing, so which provider a company signs in
+	// against is readable there and writable only by the control plane.
+	//
+	// It answers false, not an error, when this tenant has no provider.
+	OIDCOf(ctx context.Context, tx db.Tx[db.Tenant]) (*OIDCSettings, bool, error)
 
 	// Get is one tenant with its hosts.
 	Get(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
