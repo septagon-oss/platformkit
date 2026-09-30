@@ -207,10 +207,6 @@ func Ask(ctx context.Context, in AccessAsk) error {
 	return nil
 }
 
-// count spends both counters, and reports the refusal the spent one earns. The
-// counters are written by kit/limit in a detached cross-tenant transaction, so an
-// attempt stays counted even when the request's own transaction rolls back: a
-// caller cannot earn unlimited asks by causing the write to fail.
 // count spends both counters, and answers the refusal a spent one earns. The
 // counters are written by kit/limit in a detached cross-tenant transaction, so an
 // attempt stays counted even when the request's own transaction rolls back: a
