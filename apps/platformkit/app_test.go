@@ -412,7 +412,12 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	//
 	// Which languages a tenant is served in is in this list because it is the newest
 	// of these routes and the one a tenant would most like to write for itself: the
-	// tenant's own host is exactly where its absence has to show.
+	// tenant's own host is exactly where its absence has to show. The four lifecycle
+	// verbs beside it — rename, reactivate, remove-host, delete — are here for the same
+	// reason and the plain one: a route is not in this list because it is old, it is in
+	// it because a tenant could want to use it on itself, and these four end or reshape
+	// a customer. Each is a well-formed request the decoder would take and the service
+	// would act on at the installation's host, so the 404 answers the surface itself.
 	for _, probe := range []struct{ method, path, body string }{
 		{http.MethodGet, tenantPath, ""},
 		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
@@ -420,6 +425,10 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		{http.MethodGet, tenantPath + "/" + globexID.String(), ""},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/locale", `{"default":"pt-PT","supported":["en","pt-PT"]}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/rename", `{"name":"Globex Renewed"}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/reactivate", ""},
+		{http.MethodDelete, tenantPath + "/" + globexID.String() + "/hosts/evil.localhost", ""},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/delete", `{"confirm":"globex"}`},
 	} {
 		code, body = do(t, cfg, other, probe.method, globexHost, probe.path, probe.body)
 		if code != http.StatusNotFound {
