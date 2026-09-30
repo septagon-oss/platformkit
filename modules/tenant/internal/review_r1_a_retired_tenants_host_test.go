@@ -40,7 +40,11 @@ func TestARetiredTenantsHostIsServableAgain(t *testing.T) {
 	ctx := trace.With(t.Context(), trace.New())
 
 	var acme uuid.UUID
-	fail := func(what string, err error) { t.Fatalf("%s: %v", what, err) }
+	fail := func(what string, err error) {
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+	}
 
 	fail("install an installation and one customer", dbtest.System(ctx, conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		if _, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
