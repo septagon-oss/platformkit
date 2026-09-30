@@ -72,6 +72,11 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.Suspended](contracts.EventSuspended),
 			events.Declare[contracts.HostAdded](contracts.EventHostAdded),
 			events.Declare[contracts.LocaleSet](contracts.EventLocaleSet),
+			events.Declare[contracts.Renamed](contracts.EventRenamed),
+			events.Declare[contracts.HostRemoved](contracts.EventHostRemoved),
+			events.Declare[contracts.Reactivated](contracts.EventReactivated),
+			events.Declare[contracts.Deleted](contracts.EventDeleted),
+			events.Declare[contracts.LifecycleRecorded](contracts.EventLifecycleRecorded),
 		},
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above
