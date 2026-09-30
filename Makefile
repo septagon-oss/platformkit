@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up trace down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -166,5 +166,41 @@ image: ## Build the container image
 up: ## Start Postgres and NATS, and wait for both to be healthy
 	docker compose up -d --wait
 
-down: ## Stop Postgres and NATS and drop their volumes
-	docker compose down -v
+# The collector is a profile rather than a second service in `up` because the
+# two goals that must never fail — `make test` and `make check` — sit on `up`,
+# and a third container is a third thing that can fail: an image pull that
+# cannot be served offline, a port that is taken. A developer reads spans, not
+# test results, so the wait is behind its own goal.
+#
+# The port follows PLATFORMKIT_PG_PORT and PLATFORMKIT_NATS_PORT: one variable
+# moves the container's mapping and the two messages below, and a machine with
+# 4317 taken overrides it once.
+#
+# The wait watches the container and not the port, and that too is measured: the
+# published port is answered by docker-proxy, which accepts a connection whether
+# or not the process behind it is alive, so a dial reported "up" for a collector
+# that had already died of its configuration — and `--wait` reported "Healthy" for
+# the same dying process, because the scratch image declares no healthcheck and has
+# no shell to probe with. Status running with no restart recorded, held three
+# seconds, is the readiness there is. `up` is given --force-recreate because
+# Compose compares the Compose file and not the file a bind mount points at: with
+# the flag left out it reported the old container "Running" a minute after that
+# container's configuration had been edited under it.
+PLATFORMKIT_OTLP_PORT ?= 4317
+trace: ## Start the local OTLP collector that prints every span it receives
+	docker compose --profile telemetry up -d --force-recreate collector
+	@timeout 60 bash -c 'c=$$(docker compose --profile telemetry ps -q collector); \
+	  good=0; \
+	  while [ $$good -lt 3 ]; do \
+	    if [ "$$(docker inspect -f "{{.State.Status}} {{.RestartCount}}" $$c)" != "running 0" ]; then exit 1; fi; \
+	    good=$$((good + 1)); sleep 1; \
+	  done' \
+	  || { echo "collector is not up at 127.0.0.1:$(PLATFORMKIT_OTLP_PORT); its own log:"; docker compose --profile telemetry logs --tail 20 collector; exit 1; }
+	@echo "collector up on 127.0.0.1:$(PLATFORMKIT_OTLP_PORT): point telemetry.otlp_endpoint at that host:port and read spans with 'docker compose logs -f collector'"
+
+# The profile is named here as well, because `down` is the file's teardown: a
+# goal that stopped two containers and left a third holding port 4317 would half
+# finish the one job it has. It stays destructive of volumes, as before.
+down: ## Stop the services — the collector included — and drop their volumes
+	docker compose --profile telemetry down -v
+
