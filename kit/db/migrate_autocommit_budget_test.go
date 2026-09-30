@@ -21,6 +21,7 @@ package db_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -124,7 +125,9 @@ func TestTheLockBudgetStillRefusesAFileThatMustQueueBehindAWriter(t *testing.T) 
 		t.Fatalf("the file that created the table was refused: %v", err)
 	}
 
-	// A writer, holding the row for about a second: what an ADD COLUMN has to queue behind.
+	// A writer holding one row of the table: what an ADD COLUMN has to queue behind. It
+	// gives the row back once the run is queued behind it, which is the only moment the
+	// claim needs it held for — see releaseWhenQueued.
 	holder := dbtest.Open(t, migrateURL)
 	conn, err := holder.Conn(t.Context())
 	if err != nil {
@@ -140,28 +143,69 @@ func TestTheLockBudgetStillRefusesAFileThatMustQueueBehindAWriter(t *testing.T) 
 	if err := tx.QueryRowContext(ctx, "SELECT id FROM queued WHERE id = 1 FOR UPDATE").Scan(&id); err != nil {
 		t.Fatalf("the writer could not take the row: %v", err)
 	}
-	go func() {
-		// A Go-side pause: what holds the row is the open transaction, and ExecContext on
-		// a Conn already driving a transaction waits for that transaction to end.
-		time.Sleep(time.Second)
-		_ = tx.Rollback()
-	}()
 
 	lock := 100 * time.Millisecond
-	err = db.MigrateWith(ctx, migrateURL, db.MigrationBudget{LockTimeout: &lock},
-		db.MigrationSource{Owner: "queued", Files: fstest.MapFS{
-			"000001_probe.up.sql":  first,
-			"000002_column.up.sql": {Data: []byte("ALTER TABLE queued ADD COLUMN c text")},
-		}})
+	refused := make(chan error, 1)
+	go func() {
+		refused <- db.MigrateWith(ctx, migrateURL, db.MigrationBudget{LockTimeout: &lock},
+			db.MigrationSource{Owner: "queued", Files: fstest.MapFS{
+				"000001_probe.up.sql":  first,
+				"000002_column.up.sql": {Data: []byte("ALTER TABLE queued ADD COLUMN c text")},
+			}})
+	}()
+	err = releaseWhenQueued(t, holder, refused, tx.Rollback, lock)
 	if !errors.Is(err, db.ErrContended) {
 		t.Errorf("a file that could not take the table lock within %s returned %v; that wait is the one the lock budget exists to refuse", lock, err)
 	}
 	var columns int
-	if err := dbtest.Open(t, migrateURL).QueryRowContext(t.Context(),
+	if err := holder.QueryRowContext(t.Context(),
 		"SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'queued' AND column_name = 'c'").Scan(&columns); err != nil {
 		t.Fatal(err)
 	}
 	if columns != 0 {
 		t.Errorf("the refused file added its column anyway: the run that reports a contention applies nothing it had not already applied")
+	}
+}
+
+// releaseWhenQueued runs the file's error back and gives the held row back at the one
+// moment that keeps the refusal honest: once the run is sitting, ungranted, on the
+// table's ACCESS EXCLUSIVE lock, ten budgets' length later at the latest.
+//
+// A fixed pause on the Go side was the earlier shape and it was a coin toss. Before a
+// file is applied the run queues for the composition's advisory lock, and that queue is
+// patient by design and holds nothing back (see holdCompositionLock); the lock is keyed
+// per database, and every other test of every package here migrates against one. So the
+// run could arrive at its ALTER after the pause had ended and the writer had let go, and
+// apply the file this case exists to see refused — measured: <nil> after 2.017s, with the
+// column present. Holding the row until the queue appears removes the race, and releasing
+// it once the budget has had ten times its own length to refuse the wait is what still
+// answers for the budget: a run left without one lets the ALTER through and this case says
+// so with the file applied, rather than waiting for the package's own timeout.
+func releaseWhenQueued(t *testing.T, admin *sql.DB, refused <-chan error, release func() error, budget time.Duration) error {
+	t.Helper()
+	// to_regclass and not a bare relname: the queue has to be this test's table, in the
+	// schema the connection URL carries, and another test's schema may name a table the
+	// same. A granted lock is not a queue, so NOT granted is the whole question.
+	const queued = `SELECT count(*) FROM pg_locks
+		WHERE locktype = 'relation' AND NOT granted AND mode = 'AccessExclusiveLock'
+		  AND relation = to_regclass('queued')`
+	for {
+		select {
+		case err := <-refused:
+			return err
+		default:
+		}
+		var waiting int
+		if err := admin.QueryRowContext(t.Context(), queued).Scan(&waiting); err != nil {
+			t.Fatalf("the run's queue behind the writer could not be read: %v", err)
+		}
+		if waiting > 0 {
+			time.Sleep(10 * budget)
+			if err := release(); err != nil {
+				t.Errorf("the writer could not give the row back: %v", err)
+			}
+			return <-refused
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
