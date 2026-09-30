@@ -68,11 +68,25 @@ Two targets the brief names have no target in this repository, and the deviation
 here rather than in a reader's surprise: no `deploy/chart` values declare a collector,
 because this repository has never had a chart — the collector is the `telemetry` profile of
 [`compose.yaml`](../../compose.yaml) (`deploy/otel-collector.yaml`, brought up by `make
-trace`), which is where this tree deploys one thing; and no `tools/pillars.py` computes the
-indicator the brief quotes a before-and-after for, so that sentence is unmeasurable here
-rather than unmet.
+trace`), which is where this tree deploys one thing.
 
-The ratio this delivery reports for it — 80 of 81 boundaries carrying a tenant — was
+The second is a tool this repository does not own: `tools/pillars.py` is the programme's,
+not the kernel's (`ls tools/` → `designexport locbudget`). Its absence leaves the brief's
+"measurably better" line no less answerable, because the indicator that tool computes for
+this pillar is a reading of one file — *OpenTelemetry in the kernel*, whether `go.mod` names
+`go.opentelemetry.io/otel` — and one command gives its value at both ends. `ba21b01` is the
+`main` commit this branch sits on:
+
+```sh
+grep -c 'go.opentelemetry.io/otel' go.mod                     # 8
+git show ba21b01:go.mod | grep -c 'go.opentelemetry.io/otel'  # 0
+```
+
+True here, false there. The branch's own `build(deps)` commit is the change that adds the
+dependency, and the tool reads that same boolean off `origin/main`, so the tool's reading of
+it turns true the day this merges.
+
+The ratio this delivery reports beside it — 80 of 81 boundaries carrying a tenant — was
 measured against the reference application's own composition and is not recomputable from
 this tree: no committed symbol or tool counts the 81, which is the product's share. What is
 committed is the numerator's evidence, one case per kind of boundary that reads the tenant
