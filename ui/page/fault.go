@@ -33,6 +33,7 @@ package page
 // this file holds the mechanism and the English, and no other language.
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -207,6 +208,13 @@ func FaultHandler(s Shell) httpx.Fault {
 // support and an operator greps a log for; it is in the problem document and the log
 // line whatever the page says, and dropping it here would leave the page the only place
 // the refusal has no name. So the code is kept and the copy after it is what changes.
+// deniedPermission is the English sentence for a missing grant; the catalogue carries it as
+// deniedPermissionKey, with the permission as its one argument.
+const (
+	deniedPermission    = "You can't do this. You need the %s permission for it. Anyone who manages roles here can grant it: ask your administrator."
+	deniedPermissionKey = "fault.AUTH_DENIED.permission"
+)
+
 func fault(status int, detail string, loc *Locale, reference, back, backLabel string) View {
 	line := detail
 	if strings.TrimSpace(line) == "" {
@@ -222,6 +230,24 @@ func fault(status int, detail string, loc *Locale, reference, back, backLabel st
 				if code, _, named := strings.Cut(detail, ": "); named {
 					line = code + ": " + text
 				}
+			}
+		}
+	}
+	// A missing grant names the grant and who can give it (UX walkthroughs, 2026-09-30: an editor who signed
+	// in met "Não pode fazer isto." and could not say what to ask for; the administrator helping her could not
+	// tell what to give). The guard already wrote the permission into its detail and the translated sentence
+	// dropped it. A catalogue with the full sentence answers with it; one that carries only the short sentence
+	// keeps its language and gains the permission, so no shell answers a denial in two languages.
+	if code, rest, named := strings.Cut(detail, ": "); named && code == httpx.CodeDenied {
+		if permission, ok := strings.CutPrefix(rest, "this operation requires "); ok && permission != "" {
+			sentence := fmt.Sprintf(deniedPermission, permission)
+			switch {
+			case loc != nil && loc.Text(deniedPermissionKey, sentence, permission) != sentence:
+				line, language = code+": "+loc.Text(deniedPermissionKey, sentence, permission), loc.Language
+			case language != "":
+				line = line + " (" + permission + ")" // the shell's own short sentence, in its own language
+			default:
+				line = code + ": " + sentence
 			}
 		}
 	}
