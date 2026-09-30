@@ -307,12 +307,15 @@ func (s *Service) RemoveHost(ctx context.Context, tx db.Tx[db.System], id uuid.U
 		return nil, fmt.Errorf("%w: %q is %s's primary host, the name every absolute URL for this tenant is built on; make another host primary with add-host first",
 			crud.ErrConflict, key, t.Slug)
 	}
-	if err := tx.DB().Exec("DELETE FROM tenant_hosts WHERE tenant_id = ? AND host = ?", t.ID, key).Error; err != nil {
-		return nil, crud.Classify(err)
-	}
+	// Asked before the row is deleted, like every other command asks it: a verb that
+	// cannot audit both sides writes neither, and a DELETE kept ahead of this call
+	// would put the refusal back into the caller's good behaviour.
 	operator, err := s.audience(tx, t)
 	if err != nil {
 		return nil, err
+	}
+	if err := tx.DB().Exec("DELETE FROM tenant_hosts WHERE tenant_id = ? AND host = ?", t.ID, key).Error; err != nil {
+		return nil, crud.Classify(err)
 	}
 	if err := s.record(ctx, tx, t, operator, verbRemoveHost, contracts.EventHostRemoved, contracts.HostRemoved{
 		TenantID: t.ID, Host: key, At: db.Now(),
@@ -324,14 +327,35 @@ func (s *Service) RemoveHost(ctx context.Context, tx db.Tx[db.System], id uuid.U
 	return s.Get(ctx, tx, id)
 }
 
-// Delete retires a tenant. The write is one column — `deleted_at` — and every row
-// the tenant owns stays where it is, because a customer's history is not erased
-// by an operator's decision to stop serving them. What the delete does release is
-// the slug: the partial unique index of migrations/000006 keeps it only while
-// deleted_at IS NULL, so the name can be handed to a new customer later while the
+// Delete retires a tenant. The write on the row is one column — `deleted_at` — and
+// every row the tenant owns stays where it is, because a customer's history is not
+// erased by an operator's decision to stop serving them. What the delete releases
+// are the two names the platform routes on, and nothing else:
+//
+// The slug, because the partial unique index of migrations/000006 keeps it only
+// while deleted_at IS NULL, so it can be handed to a new customer later while the
 // old tenant stays invisible to every reader meanwhile — Get, List, ByHost and
 // Active all filter on that column, which is what makes four readers of a
 // half-written column into four readers of a verb.
+//
+// And the hosts, by removing the tenant_hosts rows. `tenant_hosts.host` is a global
+// PRIMARY KEY: this is the table that says which tenant a request belongs to before
+// there is a tenant-scoped transaction to ask, and it can only answer about a
+// tenant that is served. A retired tenant that kept its rows would reserve every
+// hostname it ever had forever — `RemoveHost` reaches a tenant through `lock`,
+// which filters deleted_at and answers not-found, and `AddHost` for the name would
+// be a primary-key violation against a row no reader can find. A hostname owned by
+// a customer nobody can see is not history, it is an outage for the next customer.
+// What is kept is what only that tenant reads: its rows in every tenant-scoped
+// table, its languages, and `contracts.Deleted`, which names the released hosts so
+// the trail records which names stopped resolving at which moment — the routing
+// table is a routing table, and the pairing lives in the audit from here on.
+//
+// `t.Hosts` is left as `lock` read it for the same reason: the route invalidates
+// exactly these cached resolutions, and a retired tenant is never read back, so the
+// list this returns describes the retirement rather than the present. A restore —
+// which this module does not have — would have to re-attach a host before the
+// tenant it returns could be signed into.
 //
 // The confirmation is what makes this verb mountable at all: a control-plane POST
 // that ends a customer has to be asked for twice, in two different shapes.
@@ -361,8 +385,14 @@ func (s *Service) Delete(ctx context.Context, tx db.Tx[db.System], id uuid.UUID,
 	if err := tx.DB().Model(t).Select("deleted_at", "updated_at").Updates(t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
+	// Tenants first, tenant_hosts after, in the one order every command here takes
+	// them, and after the column: a delete that failed to release a name would have
+	// retired the tenant and be retried, where the reverse would have orphaned one.
+	if err := tx.DB().Exec("DELETE FROM tenant_hosts WHERE tenant_id = ?", t.ID).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
 	return t, s.record(ctx, tx, t, operator, verbDelete, contracts.EventDeleted, contracts.Deleted{
-		TenantID: t.ID, Slug: t.Slug, At: at,
+		TenantID: t.ID, Slug: t.Slug, Hosts: slices.Clone(t.Hosts), At: at,
 	})
 }
 

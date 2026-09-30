@@ -313,12 +313,18 @@ type Service interface {
 	RemoveHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string) (*Tenant, error)
 
 	// Delete retires a tenant: `deleted_at` is written, the row and every row it
-	// owns stay where they are, and the slug is released by the partial index in
-	// migrations/000006, which is what lets the same name be created again later.
+	// owns stay where they are, and the two names the platform routes on are
+	// released — the slug by the partial index in migrations/000006, and the
+	// hosts by their rows, because `tenant_hosts.host` is a global key and a
+	// tenant that is not served cannot reserve a hostname from the next one. A
+	// retired customer's own rows, its languages and the trail are what a delete
+	// keeps, and `Deleted` names the hosts it released. What a restore — which
+	// this module does not have — would have to re-attach is a host.
 	// The installation's own tenant is refused: it is the door every one of these
 	// routes is walked through, and a delete that closed it could not be undone
-	// through it. Deleting an already deleted tenant changes nothing and
-	// publishes nothing.
+	// through it. A retired tenant is not found, by this verb as by every read:
+	// a retry that answered "already done" would be a reader that admits it can
+	// still see a customer nobody else can.
 	Delete(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in Delete) (*Tenant, error)
 
 	// SetLocale says which languages one tenant is served in, and which of them a

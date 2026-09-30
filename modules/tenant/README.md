@@ -32,7 +32,7 @@ It imports no other module; the modules above reach it through
 
 ### Permissions
 
-The manifest in `modules/tenant/module.go` (`permissions`) declares one key: `tenant:manage` (constant `PermissionTenantManage` in `modules/tenant/contracts/permissions.go`). It guards every route in the module and the "Tenants" nav entry for the screen `tenant/tenants`. `RegisterRoutes` in `modules/tenant/internal/handler.go` mounts eleven routes with it: `list`, `create`, `read`, `suspend`, `reactivate`, `rename`, `set-locale`, `add-host`, `remove-host`, `delete` and `invite`. The `invite` route is mounted only when `Deps.Invite` is set. Each of the eight lifecycle verbs — the four that move a fact (`rename`, `remove-host`, `reactivate`, `delete`) beside the four the module already had — carries this one permission, so no new grant was introduced with them, and each declares the events it publishes so `kit/app` refuses at boot a route that would publish something the manifest does not own.
+The manifest in `modules/tenant/module.go` (`permissions`) declares one key: `tenant:manage` (constant `PermissionTenantManage` in `modules/tenant/contracts/permissions.go`). It guards every route in the module and the "Tenants" nav entry for the screen `tenant/tenants`. `RegisterRoutes` in `modules/tenant/internal/handler.go` mounts eleven routes with it: `list`, `create`, `read`, `suspend`, `reactivate`, `rename`, `set-locale`, `add-host`, `remove-host`, `delete` and `invite`. The `invite` route is mounted only when `Deps.Invite` is set. Every verb the module has carries this one permission, so no new grant was introduced with the four that arrived here: the seven that move a lifecycle (`create`, `add-host`, `suspend`, `rename`, `reactivate`, `remove-host`, `delete`) and `set-locale`, which is a command but not a lifecycle change — it moves what a tenant is served in, not whether it is served, so it publishes `tenant.locale_set` and no operator mirror. Each declares the events it publishes so `kit/app` refuses at boot a route that would publish something the manifest does not own. The lifecycle has one verb this module does not answer: `export`, and with it `restore`. Neither is here — they are the pair that has to agree on a format for a customer's rows leaving and coming back, and until it lands a deleted tenant stays deleted, `Reactivate` answers it not-found, and `Delete` is the closest thing to a goodbye. `tenanttest` has no fake of a format either: the [fake](contracts/tenanttest/) retires a tenant the way the service does and no further.
 
 ### Object scope
 
@@ -47,7 +47,12 @@ None. `git grep` finds no `tenancy.Policy` use in `modules/tenant`. The routes a
 - `RemoveHost` refuses a tenant's primary host and its last one, naming the verb that
   would lift each refusal; `Suspend` and `Delete` refuse the installation's own tenant,
   which is the tenant every one of these routes is reached through.
-- `Delete` requires the tenant's slug repeated in `confirm`.
+- `Delete` requires the tenant's slug repeated in `confirm`, and releases the two
+  names the platform routes on — the slug, and the hosts the tenant answered at,
+  whose rows it removes, because `tenant_hosts.host` is a global key and a customer
+  who is not served cannot reserve a hostname from the next one. `tenant.deleted`
+  names the released hosts, which is where the pairing is kept once the routing
+  table stops recording it; everything else the tenant owns stays.
 - Every lifecycle verb publishes its event in the subject tenant's scope and
   `tenant.lifecycle_recorded` in the operator tenant's, in the transaction that wrote
   the column. An installation with no operator tenant gets

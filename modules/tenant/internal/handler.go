@@ -150,7 +150,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 		})
 
 	httpx.Register(r, op("reactivate", http.MethodPost, path+"/{id}/reactivate", 0, "Resume serving a suspended tenant",
-		"The inverse of a suspension: the tenant's hosts resolve again. Reactivating a tenant that is already served changes nothing and publishes nothing. A deleted tenant is not found — a delete releases the slug, and what brings a retired customer back is a restore, not this.",
+		"The inverse of a suspension: the tenant's hosts resolve again. Reactivating a tenant that is already served changes nothing and publishes nothing. A deleted tenant is not found — a delete releases the slug and the hosts, and what brings a retired customer back is a restore, not this.",
 		[]string{contracts.EventReactivated, contracts.EventLifecycleRecorded}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *idInput) (*itemOutput, error) {
@@ -206,7 +206,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 		})
 
 	httpx.Register(r, op("delete", http.MethodPost, path+"/{id}/delete", 0, "Retire a tenant",
-		"Writes deleted_at: the tenant's own row and every row it owns stay where they are, and the slug is released so the name can be given to a new customer later. The body repeats the slug, because a request that ends a customer is asked for twice. This installation's own tenant is refused, and a retired tenant is not found.",
+		"Writes deleted_at: the tenant's own row and every row it owns stay where they are, and the two names the platform routes on are released — the slug, and the hosts it answered at — so both can be given to a new customer later. The body repeats the slug, because a request that ends a customer is asked for twice. This installation's own tenant is refused, and a retired tenant is not found.",
 		[]string{contracts.EventDeleted, contracts.EventLifecycleRecorded}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *deleteInput) (*itemOutput, error) {
