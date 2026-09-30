@@ -13,7 +13,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
-	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/ui/page"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -24,7 +23,7 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 	install(t, path)
 	c := compose(cfg)
 	c.modules = append(c.modules, module.Module{Name: "locale_verification", Routes: func(r httpx.Surfaces) {
-		shell := page.Shell{Messages: page.FromCatalog(admin.Messages()), Frame: func(_ context.Context, r page.Request, body []g.Node) g.Node {
+		shell := page.Shell{Messages: catalogues(), Frame: func(_ context.Context, r page.Request, body []g.Node) g.Node {
 			return h.Main(h.Lang(r.Locale.Language), g.Group(body))
 		}}
 		ownedShell := shell

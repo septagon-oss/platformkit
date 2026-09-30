@@ -115,6 +115,29 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 			return out, rest.Fault(err)
 		})
 
+	httpx.Register(r, op("set-locale", http.MethodPost, path+"/{id}/locale", 0, "Say which languages a tenant is served in",
+		"Sets the language a request with no usable preference is answered in, and the set the browser's list is intersected with. Setting the same pair again changes nothing and publishes nothing. The languages a tenant may be answered in are a declaration about a customer, which is why this is the operator's route and not the tenant's: a tenant's own copy is a different capability, in a table a tenant can write.",
+		[]string{contracts.EventLocaleSet}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *localeInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.SetLocale(ctx, tx, in.ID, in.Body)
+				out.Body = t
+				return err
+			})
+			if err == nil {
+				// The cached resolution carries the tenant's languages with it, so
+				// the languages of a page are half a minute stale unless the
+				// resolution is forgotten here — the same reason a suspension does
+				// it, and the same one query this route already made.
+				for _, host := range out.Body.Hosts {
+					r.InvalidateHost(host)
+				}
+			}
+			return out, rest.Fault(err)
+		})
+
 	httpx.Register(r, op("add-host", http.MethodPost, path+"/{id}/hosts", http.StatusCreated, "Give a tenant another host",
 		"Adding a host the tenant already answers at changes nothing, unless it makes it the primary one. The primary host is what every absolute URL for this tenant is built on, so a link in a mail is a link to the name its people know.",
 		[]string{contracts.EventHostAdded}),
@@ -202,6 +225,11 @@ type hostInput struct {
 		// false: adding a name is not moving everybody's links to it.
 		Primary bool `json:"primary,omitempty" doc:"Make this the host absolute URLs for this tenant are built on"`
 	}
+}
+
+type localeInput struct {
+	ID   uuid.UUID           `path:"id" format:"uuid" doc:"The tenant's id"`
+	Body contracts.SetLocale `required:"true"`
 }
 
 type inviteInput struct {

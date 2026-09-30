@@ -39,6 +39,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // faultKeys is the one table from a refusal the kernel published to the catalog key this
@@ -74,11 +75,12 @@ var faultKeys = map[string]string{
 // written — an unlisted code is a sentence this package has not read, and a shell's
 // generic copy standing in for it would hide whatever that sentence says.
 //
-// A refusal with no code at all is keyed by its verdict, and only for the three
+// A refusal with no code at all is keyed by its verdict, and only for the four
 // verdicts whose sentence this layer writes because nobody else wrote it: the 404
 // of an address nobody mounted, the 405 of an address that does not take the verb
-// it was asked with, and the 500 of a handler that broke. Every one of those three
-// sentences is kit/httpx's own, written for the page this package renders it on.
+// it was asked with, the 500 of a handler that broke, and the 503 of a guard whose
+// own decision could not be made. Every one of those four sentences is kit/httpx's
+// own, written for the page this package renders it on.
 //
 // A 400, a 409 or a 422 is not one of them: it carries a sentence about the
 // caller's own request, written by a module or by the decoder, and translating
@@ -89,13 +91,23 @@ var faultKeys = map[string]string{
 // caller's request, and it is the refusal a derived client meets most often of
 // all — the catalog's write_path exists because the kernel keeps refusing clients
 // at the wrong verb.
+//
+// The 503 joins the 500 on the same ground as the other three: the sentences are
+// the kernel's about its own outage ("authorization is temporarily unavailable",
+// "the plan could not be read right now", "this host cannot be resolved right
+// now"), and a person cannot act on which subsystem is down — the guard logs each
+// one with its reason and sends Retry-After, so what the page owes the person is
+// that it is our side and it is for a moment. Which of them it was stays in the
+// problem document a monitor reads. Left untranslated it is the one refusal a
+// tenant served in Portuguese is handed in English on an outage — the outage being
+// the moment a person is most likely to be reading it.
 func faultKey(detail string, status int) (key string, lookup bool) {
 	if code, _, named := strings.Cut(detail, ": "); named {
 		key, shipped := faultKeys[code]
 		return key, shipped
 	}
 	switch status {
-	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError:
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError, http.StatusServiceUnavailable:
 		return "fault." + strconv.Itoa(status), true
 	}
 	return "", false
@@ -104,18 +116,26 @@ func faultKey(detail string, status int) (key string, lookup bool) {
 // refusalLocale is the language this refusal is answered in, or nil for a shell that ships
 // no catalog at all.
 //
-// The request's own Accept-Language is the only preference available, and that is a
-// consequence rather than a shortcut. Shell.Locale reads a URL, an account or a tenant
-// preference, and each of those needs something this response is the refusal to have: a
-// resolved tenant, an open transaction, a session that was accepted, or a handler to run
-// at all. A guard answers before any of them exist, so the language of a refusal can only
-// be the one the caller brought — which is also exactly what makes Vary: Accept-Language
-// the true thing to say about the response.
-func refusalLocale(m Messages, r *http.Request) *Locale {
+// It is the same contract every other page of this package uses — the tenant's set, the
+// caller's header filtered against it, the tenant's default behind that — and the tenant
+// arrives because the kernel resolves the address's host before it renders a refusal as a
+// page (kit/httpx's withHostTenant), which it may, because a host is a fact a refused
+// request still has. What a guard has no access to is everything Shell.Locale reads: a
+// URL, an account, a stored preference, each of which needs something this response is the
+// refusal to have — a session that was accepted, an open transaction, a handler to run at
+// all. Those are absent whatever the verdict, and the caller's own header is what is left
+// of the preference list — which is also exactly what makes Vary: Accept-Language the true
+// thing to say about the response.
+func refusalLocale(m Messages, r *http.Request, tenant tenancy.Tenant) *Locale {
 	if m == nil {
 		return nil
 	}
-	loc := SelectLocale(m, r.Header.Get("Accept-Language"))
+	// The tenant the request resolved to: the languages it is served in are as much a
+	// fact about a refusal as about any other page, and a tenant that declared one
+	// language was not refusing to be answered in another. An address whose host names no
+	// tenant — a domain nobody serves, a database that could not say — has no declaration
+	// to filter by, and the deployment's own catalog is then the only one standing.
+	loc := SelectLocale(m, TenantPreferences(Request{Tenant: tenant}, r.Header.Get("Accept-Language"))...)
 	return &loc
 }
 
@@ -137,7 +157,7 @@ func FaultHandler(s Shell) httpx.Fault {
 		}
 		ctx := r.Context()
 		req := read(ctx, s.Chrome)
-		loc := refusalLocale(s.Messages, r)
+		loc := refusalLocale(s.Messages, r, req.Tenant)
 		// The frame is given the negotiated language for the same reason the sentence is:
 		// a shell whose chrome has labels of its own renders them here as it does on every
 		// page Serve mounts, and not in English because the request was refused.

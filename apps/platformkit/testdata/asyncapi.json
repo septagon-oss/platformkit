@@ -1757,6 +1757,48 @@
       "summary": "Every tenant's delivery of tenant.host_added.",
       "title": "tenant.host_added"
     },
+    "tenant.locale_set": {
+      "address": "platformkit.*.tenant.locale_set",
+      "description": "Published at platformkit.{tenantId}.tenant.locale_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "tenant.locale_set": {
+          "contentType": "application/json",
+          "name": "tenant.locale_set",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "default": {
+                "type": "string"
+              },
+              "supported": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "default",
+              "supported",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "tenant — tenant.locale_set",
+          "title": "tenant.locale_set"
+        }
+      },
+      "summary": "Every tenant's delivery of tenant.locale_set.",
+      "title": "tenant.locale_set"
+    },
     "tenant.suspended": {
       "address": "platformkit.*.tenant.suspended",
       "description": "Published at platformkit.{tenantId}.tenant.suspended; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -2916,6 +2958,23 @@
         }
       ],
       "summary": "The tenant module publishes tenant.host_added.",
+      "tags": [
+        {
+          "name": "tenant"
+        }
+      ]
+    },
+    "tenant.locale_set": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/tenant.locale_set"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/tenant.locale_set/messages/tenant.locale_set"
+        }
+      ],
+      "summary": "The tenant module publishes tenant.locale_set.",
       "tags": [
         {
           "name": "tenant"

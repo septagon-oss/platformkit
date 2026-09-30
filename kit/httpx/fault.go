@@ -72,10 +72,16 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 // refuse with a huma context — writes the one problem document the request is owed.
 // A caller that asked this and then wrote a document of its own answered the same
 // refusal twice into one body, which is bytes no JSON parser accepts.
+//
+// This is where the refusal's tenant is resolved (withHostTenant), and it is the one
+// place the question can be asked without being asked twice: it is the only branch that
+// renders a page, and a page has a language. A refusal handed to a program is a code,
+// the same in every language, and owes no lookup.
 func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int, detail string) bool {
 	if a.opts.Fault == nil || !wantsDocument(r) {
 		return false
 	}
+	r = a.withHostTenant(r)
 	p := problem.New(status, detail)
 	if id != "" {
 		p.Instance = "urn:request:" + id

@@ -59,7 +59,19 @@ type Tenant struct {
 	// Before migrations/000020 the one chosen was whichever sorted first, so
 	// adding admin.acme.example.com silently moved every future link off
 	// acme.example.com and nobody chose that.
-	Hosts     []string   `json:"hosts" gorm:"-"`
+	Hosts []string `json:"hosts" gorm:"-"`
+	// DefaultLocale is the language this tenant's pages answer in when the request
+	// brought nothing its tenant serves — the browser's own list intersected with
+	// Locales, and this when that intersection is empty. It is a column and not a
+	// position in Locales because the loader reads it on every request and a
+	// position is a fact that moves when somebody reorders a list.
+	DefaultLocale string `json:"defaultLocale"`
+	// Locales are the languages this tenant is served in, besides the default.
+	// They are a set and not a ranking — the one position in this pair that means
+	// anything is DefaultLocale — and they live in their own table for the same
+	// reason Hosts do, loaded with the tenant for the same reason: a tenant that
+	// cannot say what it speaks is a page that guesses.
+	Locales   []string   `json:"locales" gorm:"-"`
 	CreatedAt time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 	DeletedAt *time.Time `json:"-"`
@@ -68,11 +80,18 @@ type Tenant struct {
 // TableName pins the table, so the entity and migrations/000006 agree.
 func (Tenant) TableName() string { return "tenants" }
 
-// Tenancy is this tenant as the kernel knows it: the three fields kit/tenancy
-// carries on a context. The conversion is here so that no other package decides
-// which of these fields the kernel gets.
+// Tenancy is this tenant as the kernel knows it: the identity kit/tenancy carries
+// on a context, and the languages a request that resolved it may be answered in.
+// The conversion is here so that no other package decides which of these fields the
+// kernel gets, and so that a tenant which declared nothing reaches the negotiation
+// with no languages rather than with a list holding an empty string — the
+// distinction a page reads as "the deployment's own default answers here".
 func (t *Tenant) Tenancy() tenancy.Tenant {
-	return tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator}
+	kernel := tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator}
+	if t.DefaultLocale != "" || len(t.Locales) > 0 {
+		kernel.Languages = &tenancy.Languages{Default: t.DefaultLocale, Others: t.Locales}
+	}
+	return kernel
 }
 
 // NewTenant is what creating one takes: a slug, a name, and the first host it
@@ -121,6 +140,57 @@ func ValidHost(host string) (string, error) {
 		return "", fmt.Errorf("host %q is not a hostname", host)
 	}
 	return host, nil
+}
+
+// localePattern is a BCP 47 language tag in the shape a language list is written
+// in: a primary subtag, then script, region and variant subtags of two to eight
+// characters each. It deliberately accepts more than the deployment has catalogues
+// for — which languages exist is the catalogues' business — and rejects the shapes
+// that are not a tag at all, because a locale stored badly is a preference that
+// never matches and a page that answers in the wrong language forever.
+var localePattern = regexp.MustCompile(`^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$`)
+
+// ValidLocale normalises one language tag to the form a negotiation compares it
+// in: lower-case language, Title-Case script, UPPER-CASE region, hyphens between.
+//
+// The case is not cosmetics. What a tenant stores is matched against what
+// `golang.org/x/text` spells a selected language as — `pt-PT`, not `pt-pt` — and
+// two spellings of one tag is a preference that never matches, which is the
+// quietest possible failure: the page answers, just not in the language anybody
+// chose.
+//
+// It is not a list of the languages the installation speaks, and it must not become
+// one: a kernel module that knew which languages exist could not serve a deployment
+// that ships a catalogue it never imagined.
+func ValidLocale(tag string) (string, error) {
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	if !localePattern.MatchString(tag) {
+		return "", fmt.Errorf("locale %q is not a language tag: a two or three letter language, then optional subtags of two to eight characters, joined by hyphens", tag)
+	}
+	parts := strings.Split(tag, "-")
+	for i, part := range parts {
+		switch {
+		case i == 0: // the language itself, which is lower-case in every spelling
+		case len(part) == 4: // a script: Latn, Cyrl
+			parts[i] = strings.ToUpper(part[:1]) + part[1:]
+		case len(part) == 2, len(part) == 3 && part[0] >= '0' && part[0] <= '9': // a region: PT, US, 419
+			parts[i] = strings.ToUpper(part)
+		}
+	}
+	return strings.Join(parts, "-"), nil
+}
+
+// SetLocale is what saying which languages one tenant is served in takes: the
+// default, and the list the negotiation may choose from.
+//
+// The default has to be in the list, which the module refuses rather than repairs:
+// a set written without its own default is a tenant whose fallback language is one
+// it does not serve, and the page would answer in a language nobody chose.
+type SetLocale struct {
+	Default string `json:"default" minLength:"2" maxLength:"35" doc:"The language a request with no usable preference is answered in" example:"pt-PT"`
+	// Supported is a set: duplicates are dropped and the order does not matter,
+	// because the only position that means anything is Default.
+	Supported []string `json:"supported" doc:"Every language this tenant is served in, besides the default"`
 }
 
 // Hook is something that has to happen inside the transaction that creates a
@@ -178,6 +248,18 @@ type Service interface {
 	// Suspend stops the tenant being served. Suspending it again changes
 	// nothing and publishes nothing.
 	Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// SetLocale says which languages one tenant is served in, and which of them a
+	// request that brought nothing usable is answered in. Setting the same pair
+	// again changes nothing and publishes nothing, as every other command here
+	// does: an operator's retry must not appear twice in an audit.
+	//
+	// It is a control-plane command and not a tenant's own, because the row it
+	// writes is on the control plane: migrations/000006 lets a tenant transaction
+	// read its own row and write nothing there. What a tenant may write for itself
+	// is copy, in a tenant-scoped table of its own, and that is a different
+	// capability with a different policy — not this one pretending to be it.
+	SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in SetLocale) (*Tenant, error)
 
 	// Get is one tenant with its hosts.
 	Get(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)

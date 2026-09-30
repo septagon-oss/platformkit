@@ -138,7 +138,7 @@ func TestTheTraceContinuesIntoTheDelivery(t *testing.T) {
 
 // The write's half of the same promise: a publisher with no span to leave behind
 // stores nothing, rather than the empty string the propagator answers for an absent
-// member. migrations/000028 and 000029 both say NULL is the ordinary case, and
+// member. migrations/000028 and 000031 both say NULL is the ordinary case, and
 // `WHERE traceparent IS NULL` is how a person asks the table which events were never
 // traced — a question the empty string answers with an empty result, and a row that
 // looks like a traced publish whose header was corrupted.

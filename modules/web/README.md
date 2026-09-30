@@ -42,4 +42,4 @@ None. The module declares no permission, so none is marked `Operator: true`, and
 
 ### Provisioning
 
-Nothing to grant, because the module holds no permission. A composition supplies `Deps.Site`, `Deps.Content`, `Deps.SignInPath` and `Deps.PublicFileURL`, and `Module` panics if any is missing. What visitors can see is decided by the content module's publishing state and the tenant's site settings, not by roles.
+Nothing to grant, because the module holds no permission. A composition supplies `Deps.Site`, `Deps.Content`, `Deps.SignInPath` and `Deps.PublicFileURL`, and `Module` panics if any is missing. `Deps.Messages` is the one optional input, and like `admin.Deps.Messages` it opts the shell into translated copy: what arrives through it is the refusal a visitor meets (`ui/page/messages/pt-PT.json` answers the 404 of a slug nobody published), because the bar, the footer and the empty states are Go strings here and `Site.view` declares `en` over them whatever the negotiation picked. What visitors can see is decided by the content module's publishing state and the tenant's site settings, not by roles.

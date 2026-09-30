@@ -9,7 +9,18 @@ it lists, so `Module` returns the service to `main` beside the manifest.
 installation's host only — and the switcher at `/app/tenant/tenants`; `tenant.Bootstrap` creates the
 first tenant inside `platformkit bootstrap`'s transaction.
 
-Compose it first, with `tenant.Deps{OnCreate, Invite}`: `OnCreate` hooks —
+Compose it first, with `tenant.Deps{OnCreate, Invite, Languages}` — `Languages`
+being the ones the installation's catalogues answer in, which are the most a tenant
+is ever served in. A new tenant is served in the one language its copy is written
+in, the column's default, and so is a tenant whose row predates
+`migrations/000029_tenant_locale.up.sql`: that file writes no rows, the read takes the
+default out of the set, and the column alone answers for a tenant with none beside it,
+because a tenant's set is a declaration and a create carries none. `POST
+/api/v1/ops/tenant/tenants/{id}/locale` is what declares
+more of them, and it refuses a language this installation has no copy for — a tenant
+served in a language nobody wrote is a page that declares it and shows the source
+copy (`tenant.locale_set` says so, and the host cache is invalidated for that
+tenant because the languages of a page changed): `OnCreate` hooks —
 `auth.SeedRoles` today — run inside the creating transaction, and `Invite`
 gives a tenant its first administrator (without one the route is not mounted).
 It imports no other module; the modules above reach it through
@@ -46,3 +57,20 @@ None. No route uses `httpx.Public()`. `Service.ByHost` is host resolution for th
 ### Provisioning
 
 The operator tenant is the first tenant, created by `Bootstrap`. Only a role in that tenant that lists `tenant:manage` explicitly can use the control plane. Tenants created through `create` get their roles from the `OnCreate` hooks in `Deps` (see `Deps.OnCreate` in `modules/tenant/module.go`; the README names `auth.SeedRoles`). The `invite` route gives a new tenant its first administrator. The code does not show a fixed persona for the operator role. Grant it with the auth module's roles API.
+
+## Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** `SetLocale` is `Suspend`'s command shape — `Get`, compare,
+`Select(...).Updates` of the two columns it changed, `events.PublishFor` inside the
+writing transaction, read-back — and a language is refused with `crud.ErrInvalid`
+like every other bad input here; `tenant_locales` is `tenant_hosts`' table shape and
+policy, so the new fact inherits the row-level scope rather than declaring one; the
+set travels on the host resolution `ByHost` already performs, because three owners ask
+"same tenant as before?" with `==` and a slice would answer that wrong. **Added:** `default_locale`, `tenant_locales`,
+`SetLocale`/`ValidLocale`/`EventLocaleSet`, the route, and `Deps.Languages` — the
+installation's own languages, which had no owner because the catalogue decided alone.
+**Made reusable:** a control-plane write that rechecks its own rules, publishes one
+event, and invalidates the cache whose truth it moved, which is the shape the next
+`/tenants` command copies; and `tenant.locale_set`, which is what a second process
+will subscribe to when a TTL stops being good enough.

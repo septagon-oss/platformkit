@@ -17,6 +17,14 @@
 -- two of, so the request id reaches the delivery span, and the handler's transaction
 -- spans below it, the way the request's own spans already do.
 --
+-- This file is 31 and not the 29 it was written as. The release that gave each tenant
+-- its languages took 000029_tenant_locale while this one held 29 for the baggage
+-- member, and one owner cannot apply two files at one version: the ledger keys on
+-- (owner, version) and kit/db refuses a repeated version in a source before that
+-- (migration_files.go, "invalid or repeated version"). The unreleased file is the one
+-- that moves, and it moves past the highest number anywhere in the composition,
+-- which is modules/audit's 000030_audit_trace.
+--
 -- Nullable, and NULL is the ordinary case rather than a defect: the baggage is empty
 -- whenever the publisher had no request to leave one behind — a periodic job, a
 -- worker reacting to another event, a request whose id Baggage itself will not carry
