@@ -1369,11 +1369,15 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// say so.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 29 — twelve files under migrations/ (1, 2, 3, 5, 6, 9, 12,
-	// 20, 21, 26, 28, 29) and seventeen under modules/*/migrations/ (4, 7, 8, 10,
-	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27), all distinct.
-	if len(before) != 29 {
-		t.Fatalf("the old layout applied %d files, want 29", len(before))
+	// this head prints 30 — twelve files under migrations/ (1, 2, 3, 5, 6, 9, 12,
+	// 20, 21, 26, 28, 29) and eighteen under modules/*/migrations/ (4, 7, 8, 10,
+	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 30), all distinct. The
+	// eighteenth is modules/audit's 000030_audit_trace, the first file a module owns
+	// at a version above the highest the kernel had reached: the rule is that a new
+	// file continues past the highest number anywhere in the composition, and a
+	// module's SQL is now part of "anywhere".
+	if len(before) != 30 {
+		t.Fatalf("the old layout applied %d files, want 30", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with
