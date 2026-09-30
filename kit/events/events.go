@@ -99,13 +99,41 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if id, ok := tenancy.ActorFrom(ctx); ok {
 		actor = id
 	}
+	// The trace context is whatever span the caller is inside, and empty otherwise,
+	// for the same reason and with the same consequence as the actor: the row records
+	// what caused the event, in the transaction that caused it, and the process that
+	// relays it is a different one, possibly one that started after this one exited.
+	// Three members, because the request id that lets an operator quote this write in
+	// a trace travels beside the trace parent, in the baggage the router wrote — see
+	// migrations/000029. An absent member is written as NULL and not as the empty
+	// string: the propagator answers "" for what it was not given, and a row that
+	// carries no trace is asked about with `traceparent IS NULL` — the query migrations
+	// says is ordinary, and one the empty string answers with an empty result set.
+	parent, state, correlation := absentAsNull(traceContext(ctx))
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor) VALUES (?, ?, ?, ?::jsonb, ?)",
-		uuid.New(), tenantID, name, string(body), actor,
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?)",
+		uuid.New(), tenantID, name, string(body), actor, parent, state, correlation,
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
 	return nil
+}
+
+// absentAsNull is the one place a propagation member the publisher was not given
+// becomes the NULL its column promises. The propagator yields the empty string for
+// what it does not hold, which is right for a carrier and wrong for a row: the
+// columns are nullable, "no trace" is the ordinary case rather than a defect, and
+// the only way a person can ask a table which of its rows were never traced is with
+// IS NULL. The empty string would make an untraced publish look like a traced one
+// with a corrupt header, and would answer that query with nothing.
+func absentAsNull(parent, state, correlation string) (any, any, any) {
+	null := func(v string) any {
+		if v == "" {
+			return nil
+		}
+		return v
+	}
+	return null(parent), null(state), null(correlation)
 }
 
 // Handler is what a module does with an event. It runs inside a transaction
@@ -161,13 +189,18 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				// Only the id is known here. It is all kit/db needs to scope
 				// the transaction, and it is what row-level security reads.
 				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
-				return db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				// One span per delivery, on the trace of the work that published the
+				// event rather than of the worker that woke up. See trace.go.
+				ctx, span := startDelivery(ctx, ev)
+				err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 					first, err := claim(tx, ev.ID, durable)
 					if err != nil || !first {
 						return err
 					}
 					return h(ctx, tx, ev)
 				})
+				endSpan(span, err)
+				return err
 			},
 			Dead: func(ctx context.Context, ev Event, cause error) error {
 				return deadLetter(ctx, conn, ev, durable, cause)
