@@ -594,10 +594,30 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if r.locked {
 		return nil
 	}
+	// The budgets come off before the ask and go back after it, so that every ask —
+	// the first one and the one after an autocommit file gives the lock up — waits on
+	// the caller's context and nothing else. Left on the session, the file's lock budget
+	// bounds the second ask, and a run that met another boot in front of it refuses at
+	// five seconds: the outcome the paragraph above exists to rule out, arriving through
+	// the one path that asks for the lock twice. kit/db/review_autocommit_lock_reask_test.go
+	// holds a gate across that second ask and fails on the refusal.
+	if err := r.noBudgets(ctx); err != nil {
+		return err
+	}
 	if _, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
 		return fmt.Errorf("db: migrate: lock: %w", r.refused(err))
 	}
 	r.locked = true
+	return r.budgets(ctx)
+}
+
+// noBudgets takes the session's two budgets off for one wait on the composition lock.
+// The pair is written out rather than reset to defaults, because the run's own budgets
+// are the ones `budgets` puts back on as soon as the lock is held.
+func (r *runner) noBudgets(ctx context.Context) error {
+	if _, err := r.conn.ExecContext(ctx, "SET lock_timeout TO '0'; SET statement_timeout TO '0'"); err != nil {
+		return fmt.Errorf("db: migrate: budgets off: %w", err)
+	}
 	return nil
 }
 
