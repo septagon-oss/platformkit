@@ -18,16 +18,23 @@ package internal_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
+	"github.com/septagon-oss/platformkit/modules/auth/internal"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -219,5 +226,77 @@ func TestStandingARoleDownNarrowsTheKeysThatPersonMinted(t *testing.T) {
 	if closed := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(issued.Token)); closed.Code != http.StatusForbidden {
 		t.Errorf("a key whose holder has been stood down still opens the roles route: %d %s — the scopes are read as stored rather than recomputed",
 			closed.Code, closed.Body.String())
+	}
+}
+
+// TestATenantsKeyIsNotACredentialAtAnotherTenant is the brief's own tenant-first
+// claim for this capability, and it is a database claim: the key row exists, it
+// is presented at another tenant's host, and the query that would look it up
+// returns nothing because row-level security does not show the row. Nothing in
+// the code compares two tenant ids, so nothing here can be broken by changing a
+// comparison — only by dropping the policy.
+func TestATenantsKeyIsNotACredentialAtAnotherTenant(t *testing.T) {
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
+	users := realUsers()
+	svc := internal.NewService(users, nil, internal.Delivery{})
+	seed(t, conn, acme)
+	seed(t, conn, globex)
+	ctx := httpx.WithConn(t.Context(), conn)
+
+	var key string
+	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		person, err := users.Invite(ctx, tx, "ada@acme.localhost", "")
+		if err != nil {
+			return err
+		}
+		// A password is what makes the person active: a key belongs to somebody
+		// who can sign in, and an invitation nobody has taken up authenticates
+		// nobody even with a valid row.
+		if err := users.SetPassword(ctx, tx, person.ID, authtest.Password); err != nil {
+			return err
+		}
+		if _, err := users.SetRoles(ctx, tx, person.ID, usercontracts.Roles{contracts.RoleAdmin}); err != nil {
+			return err
+		}
+		issued, err := svc.IssueToken(ctx, tx, person.ID, contracts.TokenIntent{
+			Name: "Deploy bot", Scopes: []string{contracts.PermissionRoleManage},
+		}, []tenancy.Grant{{Permission: contracts.PermissionRoleManage}})
+		if err != nil {
+			return err
+		}
+		key = issued.Token
+		// At its own tenant the same key is a caller.
+		r := httptest.NewRequest(http.MethodGet, "http://"+host+"/api/v1/auth/roles", nil)
+		r.Header.Set("Authorization", "Bearer "+key)
+		caller, ok, err := svc.Authenticate(ctx, tx, r)
+		if err != nil || !ok || caller.UserID != person.ID {
+			return fmt.Errorf("the key did not open its own tenant: ok=%v err=%v", ok, err)
+		}
+		if len(caller.Permissions) != 1 || caller.Permissions[0] != contracts.PermissionRoleManage {
+			return fmt.Errorf("the caller carries %v, want exactly the key's one scope", caller.Permissions)
+		}
+		if caller.Roles != nil {
+			return fmt.Errorf("a scoped caller carries roles %v: the scope exists to narrow them", caller.Roles)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = db.Run(tenancy.WithTenant(ctx, globex), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		r := httptest.NewRequest(http.MethodGet, "http://"+host+"/api/v1/auth/roles", nil)
+		r.Header.Set("Authorization", "Bearer "+key)
+		_, ok, err := svc.Authenticate(ctx, tx, r)
+		if err != nil {
+			return fmt.Errorf("another tenant's key was an outage rather than a stranger: %w", err)
+		}
+		if ok {
+			return errors.New("acme's bearer token opened a session at globex")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
