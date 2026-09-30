@@ -238,7 +238,10 @@ func lifecycleCases() map[string]func(*testing.T, Fixture) {
 		// The slug is released by the partial unique index of migrations/000006 — the
 		// one reason deleted_at is a column rather than a third status, and the
 		// reason a delete is reversible in the only sense the control plane cares
-		// about: the customer's rows are where they were.
+		// about: the customer's rows are where they were. The hosts are released by
+		// the verb itself, and the case below is why: `tenant_hosts.host` is a global
+		// key and a retired tenant cannot be allowed to reserve a name it does not
+		// serve.
 		"delete releases the slug and keeps the rows": func(t *testing.T, f Fixture) {
 			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
 			if err != nil {
@@ -257,7 +260,7 @@ func lifecycleCases() map[string]func(*testing.T, Fixture) {
 				t.Error("the second acme is the first one")
 			}
 			if _, err := f.Service.ByHost(f.Ctx, f.Tx, "acme.example.com"); !errors.Is(err, tenancy.ErrNoSuchHost) {
-				t.Errorf("the retired tenant's host = %v, want ErrNoSuchHost: its host row is where it was and it is not served", err)
+				t.Errorf("the retired tenant's host = %v, want ErrNoSuchHost: nothing serves a name a delete released", err)
 			}
 			all, err := f.Service.List(f.Ctx, f.Tx)
 			if err != nil {
@@ -266,6 +269,52 @@ func lifecycleCases() map[string]func(*testing.T, Fixture) {
 			if slices.ContainsFunc(all, func(o *contracts.Tenant) bool { return o.ID == created.ID }) {
 				t.Error("a deleted tenant is in the control plane's list")
 			}
+		},
+
+		// The other half of the release, and the half a routing table cannot leave
+		// out. `tenant_hosts.host` is the platform's key for "which customer is this
+		// request for?", so a retired tenant that kept its rows would hold every
+		// hostname it ever had forever: `RemoveHost` reaches a tenant through the
+		// same `deleted_at` filter every read uses, and `AddHost` for the name would
+		// be a conflict against a row no reader can find. What the delete keeps is
+		// what only the customer read — its rows and its languages — and the pairing
+		// of a retired customer with its names lives in `tenant.deleted` from here on.
+		"delete releases the tenant's hosts as well as its slug": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if _, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, "www.acme.example.com", false); err != nil {
+				t.Fatalf("AddHost: %v", err)
+			}
+			if _, err := f.Service.Delete(f.Ctx, f.Tx, created.ID, contracts.Delete{Confirm: "acme"}); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			// A retired customer is not found by its own verb either: a retry that
+			// answered "already done" would be a reader that can still see it.
+			if _, err := f.Service.Delete(f.Ctx, f.Tx, created.ID, contracts.Delete{Confirm: "acme"}); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("deleting a retired tenant again = %v, want ErrNotFound", err)
+			}
+			successor, err := f.Service.Create(f.Ctx, f.Tx, contracts.NewTenant{
+				Slug: "second", Name: "Second Corporation", Host: "acme.example.com",
+			})
+			if err != nil {
+				t.Fatalf("a hostname retired with a tenant is not servable again: %v", err)
+			}
+			resolved, err := f.Service.ByHost(f.Ctx, f.Tx, "acme.example.com")
+			if err != nil {
+				t.Fatalf("ByHost acme.example.com: %v", err)
+			}
+			if resolved.ID != successor.ID {
+				t.Errorf("acme.example.com resolves to %s, want the tenant just hosted there (%s)", resolved.ID, successor.ID)
+			}
+			// The name that was not the primary one is free too, and it is the one a
+			// retired tenant's `remove-host` could never have reached.
+			if _, err := f.Service.AddHost(f.Ctx, f.Tx, successor.ID, "www.acme.example.com", false); err != nil {
+				t.Errorf("the retired tenant's second host is not servable again: %v", err)
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventHostAdded,
+				contracts.EventDeleted, contracts.EventCreated, contracts.EventHostAdded)...)
 		},
 
 		"a deleted tenant is not reactivated, renamed, suspended or given a host": func(t *testing.T, f Fixture) {

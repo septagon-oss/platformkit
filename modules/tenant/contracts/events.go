@@ -113,9 +113,17 @@ type Reactivated struct {
 // where they were and the trail keeps them, which is why this is a soft
 // deletion's event and not a purge's: the payload of a purge would be the last
 // thing anybody had of a customer.
+//
+// Hosts are the names the delete released, as Created names the one it attached.
+// It is the same pair at either end of a customer: `tenant_hosts` is the routing
+// table and a retired tenant cannot hold names it does not serve, so after this
+// write the routing table no longer says which customer answered at those
+// addresses — this row is the audit record that it once did, and of when that
+// ended.
 type Deleted struct {
 	TenantID uuid.UUID `json:"tenantId"`
 	Slug     string    `json:"slug"`
+	Hosts    []string  `json:"hosts"`
 	At       time.Time `json:"at"`
 }
 
