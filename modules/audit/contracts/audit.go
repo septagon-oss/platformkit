@@ -44,6 +44,12 @@ type Event struct {
 	Actor      *uuid.UUID      `json:"actor,omitempty" format:"uuid" doc:"The user who caused it, absent for system work"`
 	EventID    uuid.UUID       `json:"eventId" format:"uuid" doc:"The event this row records"`
 	Payload    json.RawMessage `json:"payload" doc:"The event's payload, as its module published it"`
+	// TraceID is the trace the recorded event happened in, read off the trace
+	// context the publisher left on the outbox row (migrations/000028). It is the
+	// join between the trail and the trace backend, and it is absent — not zero —
+	// for an event nobody traced: a periodic job, or a deployment with no
+	// collector configured.
+	TraceID *uuid.UUID `json:"traceId,omitempty" format:"uuid" doc:"The trace this event happened in, absent when nobody traced it"`
 }
 
 // TableName pins the table, so the struct and migrations/000010 agree.

@@ -51,6 +51,14 @@ type Fault func(w http.ResponseWriter, r *http.Request, p *problem.Problem) bool
 // writer instead of this one; a second writer of problem bodies in this package is a
 // second answer to the question this file exists to ask once.
 func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail string) {
+	// The count is this writer's only where this writer is the answer. Inside the
+	// mounted API the response is held in a buffer and respond counts the status the
+	// client was finally given, once — which is what keeps a 500 that replaced a held
+	// 200, and the csrf refusal that never reached a router, one refusal each rather
+	// than two. See countRefusal.
+	if _, held := bufferFrom(r.Context()); !held {
+		countRefusal(r.Context(), status)
+	}
 	id := requestIDFrom(r.Context())
 	if a.show(w, r, id, status, detail) {
 		return
@@ -99,6 +107,13 @@ func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int
 // answer a client that asked for a value gets from the guards is therefore now the
 // shorter one, and it is the one every kernel-side refusal has always written.
 func (a *API) refuse(ctx huma.Context, status int, detail string) {
+	// No count here. Every refusal this writes is an answer of the mounted API, and
+	// respond counts those once, from the status the client was finally given, after
+	// the buffer has settled — so the guard's 403, the plan gate's 402 and the
+	// transaction's 500 arrive in the number beside the answers huma writes for
+	// itself, which no writer in this package sees. The status set below is what
+	// makes that visible to it.
+	//
 	// The unwrap sits behind the same test show makes, because it is the reason to
 	// reach past the huma context and it panics on a foreign one.
 	r, w := humachi.Unwrap(ctx)
