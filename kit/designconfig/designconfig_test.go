@@ -14,11 +14,11 @@ import (
 // where a file that would put an unreadable client on screen has to stop.
 func TestLoadClientDesignReadsTheSeedAndItsOverrides(t *testing.T) {
 	t.Parallel()
-	client, err := LoadClientDesign(os.DirFS("testdata/clients"), "pets")
+	client, err := LoadClientDesign(os.DirFS("testdata/clients"), "lantern")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if client.client.Seed.Brand != "#f0b978" || client.Slug() != "pets" {
+	if client.client.Seed.Brand != "#f0b978" || client.Slug() != "lantern" {
 		t.Errorf("loaded %+v", client)
 	}
 	pair, err := resolved(t, client)
