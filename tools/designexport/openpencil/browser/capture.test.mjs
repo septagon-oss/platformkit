@@ -34,7 +34,13 @@ test('authored Go color roles match Chromium across palettes and independent tra
       const sheet = new CSSStyleSheet()
       sheet.replaceSync(css)
       document.adoptedStyleSheets = [sheet]
-      const definitions = [...sheet.cssRules].filter(rule => rule.selectorText === ':root').flatMap(rule =>
+      // Every rule of this sheet sits inside one of the four cascade layers it
+      // states, so an authored role declaration is reached through the layer block
+      // that carries it: @layer tokens { :root { --pk-role-… } }. Reading the top
+      // level alone reads an empty sheet — the assertions below would then judge no
+      // declaration at all, which is how this read broke when the layers landed.
+      const rootRules = [...sheet.cssRules].flatMap(rule => rule.cssRules ? [...rule.cssRules] : [rule])
+      const definitions = rootRules.filter(rule => rule.selectorText === ':root').flatMap(rule =>
         [...rule.style].filter(name => name.startsWith('--pk-role-')).map(name => [name, rule.style.getPropertyValue(name)]))
       const sample = document.createElement('span'), results = []
       document.body.append(sample)
