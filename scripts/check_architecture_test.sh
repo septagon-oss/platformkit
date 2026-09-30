@@ -98,6 +98,21 @@ printf 'SELECT current_setting(%splatformkit.tenant_id%s, true) IS NOT NULL;\n' 
 bash "$scripts/check_gucs.sh" "$repo" >/dev/null
 rm -r "$repo/migrations"
 
+# A reviewed exemption (scripts/gucs-exempt.txt): a _test.go file with a reason is not
+# read; anything else in the file, a file that is not a test, or a row with no reason
+# is refused; and the exemption is announced, never silent.
+mkdir -p "$repo/scripts" "$repo/migrations"
+printf 'package migrations\nconst lead = "SELECT set_config(%splatformkit.system_access%s"\n' "'" "'" > "$repo/migrations/reads_test.go"
+rejects 'a test naming the setting with no exemption' 'OUT OF BOUNDS' bash "$scripts/check_gucs.sh" "$repo"
+printf 'migrations/reads_test.go matches a migration line as a string; it writes nothing\n' > "$repo/scripts/gucs-exempt.txt"
+said="$(bash "$scripts/check_gucs.sh" "$repo")"
+[[ "$said" == *"migrations/reads_test.go is exempt"* ]] || { echo "FAIL: an exemption was silent: $said" >&2; exit 1; }
+printf 'migrations/reads_test.go\n' > "$repo/scripts/gucs-exempt.txt"
+rejects 'an exemption with no reason' 'no reason' bash "$scripts/check_gucs.sh" "$repo"
+printf 'modules/a/internal/good.go it is fine\n' > "$repo/scripts/gucs-exempt.txt"
+rejects 'an exemption for a file that ships' 'only a _test.go file' bash "$scripts/check_gucs.sh" "$repo"
+rm -r "$repo/scripts" "$repo/migrations"
+
 # Tracked files deleted from the working tree do not become scanner failures.
 git -C "$repo" add .
 rm "$repo/modules/a/internal/good.go"

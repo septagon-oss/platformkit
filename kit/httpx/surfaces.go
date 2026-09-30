@@ -623,7 +623,7 @@ func (a *API) surface(next http.Handler) http.Handler {
 // answer: the verdict is this middleware's and the response is the host's.
 func (a *API) address(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if to, ok := alias(r.URL.Path); ok {
+		if to, ok := a.alias(r.URL.Path); ok {
 			target := to
 			if r.URL.RawQuery != "" {
 				target += "?" + r.URL.RawQuery
@@ -866,7 +866,7 @@ func (a *API) validateSurfaces() []string {
 		// nothing answers at the old address either. A route mounted there would
 		// be spent ahead of itself — the surfaces middleware answers the redirect
 		// first — so the module would ship a door nobody can open.
-		if to, moved := alias(m.path); moved {
+		if to, moved := a.alias(m.path); moved {
 			out = append(out, "httpx: "+where+" is mounted where the migration table redirects to "+to+
 				"; an alias is a redirect and not a second mount — mount the route at "+to+", or delete the row when the release that needs it is behind you")
 		}

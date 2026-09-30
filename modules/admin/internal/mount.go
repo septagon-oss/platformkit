@@ -138,6 +138,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	// will record them. A hand-written page counts as much as a generated one,
 	// and there is no second list to keep in step.
 	served := page.Served(s.Recorded())
+	own := ownScreens(served, resources)
 	for _, r := range resources {
 		served = append(served, r.Screen, r.Screen+"/new")
 	}
@@ -166,6 +167,15 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	}
 
 	for _, r := range resources {
+		if own[r.Screen] {
+			// The module wrote this resource's workspace pages itself, and they are what a person is
+			// sent to. Generating a second register at the same addresses is a collision the surface
+			// gate refuses at boot, so the module's own pages stand and the generated ones are not
+			// mounted. The resource keeps its API routes and its catalog entry either way.
+			slog.Default().Info("admin: a module serves its own workspace pages for a resource; the generated screens are not mounted",
+				"module", r.Module, "entity", r.Entity, "screen", r.Screen)
+			continue
+		}
 		screens.Mount(namespace(app, r.Module), shell, opts, r)
 	}
 	// The catalogue as the kernel read it off every manifest, taken here because
@@ -290,4 +300,21 @@ func fallback(value, or string) string {
 		return or
 	}
 	return value
+}
+
+// ownScreens is the resources whose workspace a module already serves: a GET a module recorded at the
+// resource's screen address or anywhere under it (its row, a command's form). It is asked of the recording
+// before this shell adds anything, because the shell is composed last and everything it finds there was
+// mounted by a module.
+func ownScreens(recorded []string, resources []httpx.Resource) map[string]bool {
+	own := map[string]bool{}
+	for _, r := range resources {
+		for _, path := range recorded {
+			if path == r.Screen || strings.HasPrefix(path, r.Screen+"/") {
+				own[r.Screen] = true
+				break
+			}
+		}
+	}
+	return own
 }

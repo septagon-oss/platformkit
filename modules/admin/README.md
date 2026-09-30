@@ -63,6 +63,15 @@ checks in both themes. These checks do not establish native editor fidelity or
 replace a screen-reader review. New product integrations must supply their selector
 and repeat these checks against their own examples and private asset routes.
 
+## Generated screens and a module's own pages
+
+The shell is composed last. It generates a register (list, new, row, commands) for every resource a module
+registered, at the address the kernel composes for it (`/app/<module>/<entity path>`). A module can write
+its own workspace pages for a resource instead, such as a working desk with panels the generated form does
+not have. It mounts at least one GET at that address or under it, and the shell then mounts none of the
+generated screens for that resource and logs one line at boot saying so. The resource keeps its API routes
+and its catalog entry. Every other resource keeps its register.
+
 ## Authorization
 
 ### Permissions

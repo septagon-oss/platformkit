@@ -407,6 +407,13 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	api.Declare(catalogue)
 
 	for _, m := range a.mods {
+		// A moved address is registered before any route, so the surface gate below
+		// can refuse a route mounted where a row redirects.
+		for _, mv := range m.Moved {
+			api.Alias(mv.From, mv.To)
+		}
+	}
+	for _, m := range a.mods {
 		if m.Routes != nil {
 			m.Routes(api.Surfaces(m.Name))
 		}

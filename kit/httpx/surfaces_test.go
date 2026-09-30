@@ -820,3 +820,54 @@ func TestTheCookiePromiseIsThePublicSurfacesOwn(t *testing.T) {
 		t.Errorf("a workspace answer carried %q; the surface that hands out sessions still hands out sessions", got)
 	}
 }
+
+// TestAModulesMovedAddressIsARedirectByTheKernelsRules is module.Module.Moved as the
+// kernel serves it: a composition's own row answers exactly as the kernel's table
+// does — 302 with the remainder and the query kept, 307 for a write, never cached,
+// no body — the most specific row wins over a general one registered before it, and
+// a route mounted where a row redirects is refused at the gate. A module that moves
+// a page writes one row, not a handler for the old address.
+func TestAModulesMovedAddressIsARedirectByTheKernelsRules(t *testing.T) {
+	s := newSurfaces(t)
+	s.api.Alias("/pets", "/app/pets")
+	s.api.Alias("/pets/animals", "/app/pets/animals")
+	for _, m := range []struct{ from, to string }{
+		{"/pets", "/app/pets"},
+		{"/pets/shop", "/app/pets/shop"},
+		{"/pets/animals/42?tab=notes", "/app/pets/animals/42?tab=notes"},
+	} {
+		got := dial(t, s.router, http.MethodGet, host, m.from)
+		if got.Code != http.StatusFound || got.Header().Get("Location") != m.to ||
+			got.Header().Get("Cache-Control") != "no-store" || got.Body.Len() != 0 {
+			t.Errorf("GET %s = %d to %q (%q, %d bytes), want 302 to %q, no-store, no body",
+				m.from, got.Code, got.Header().Get("Location"), got.Header().Get("Cache-Control"), got.Body.Len(), m.to)
+		}
+	}
+	post := httptest.NewRequest(http.MethodPost, "http://"+host+"/pets/animals/42/resolve", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, post)
+	if w.Code != http.StatusTemporaryRedirect || w.Header().Get("Location") != "/app/pets/animals/42/resolve" {
+		t.Errorf("POST to a moved address = %d to %q, want 307 keeping the method", w.Code, w.Header().Get("Location"))
+	}
+	if got := dial(t, s.router, http.MethodGet, host, "/petshop"); got.Code == http.StatusFound {
+		t.Errorf("/petshop was redirected by the /pets row; a row moves a path segment, never a string prefix")
+	}
+
+	other := newSurfaces(t)
+	httpx.Register(other.api.Surfaces("shop").App, huma.Operation{
+		OperationID: "stale", Method: http.MethodGet, Path: "/old",
+	}, httpx.SignedIn(), ok)
+	var at string
+	for _, m := range other.api.Mounted() {
+		if m.Module == "shop" && m.Method == http.MethodGet {
+			at = m.Path
+		}
+	}
+	if at == "" {
+		t.Fatal("the fixture's route was not recorded")
+	}
+	other.api.Alias(at, at+"-new") // a module moved the address the route still mounts at
+	if err := other.api.ValidateDeclarations(); err == nil || !strings.Contains(err.Error(), "redirect") {
+		t.Errorf("a route mounted where a module's row redirects passed the gate: %v", err)
+	}
+}

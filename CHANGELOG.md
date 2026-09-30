@@ -186,6 +186,28 @@ Two refusals that had no failing case now have one: two clients on one seed are 
 worn twice, and a third client whose own override breaks its own body role refuses the whole set rather
 than booting a roster with a client missing.
 
+**A test that must name a tenancy setting to read it can be exempted from the GUC gate, in a reviewed row.**
+`scripts/check_gucs.sh` reads text, so a test that matches a migration's `set_config('platformkit.…'` line as
+a string looks like a write. `scripts/gucs-exempt.txt` lists such files, one `<path> <reason>` per line.
+Only a `_test.go` file may be listed, since a test never ships, and a row without a reason is refused. Every
+exemption is printed on every run. Assembling the name from pieces to slip past the gate remains the wrong
+answer, because the gate then reads nothing.
+
+**A module declares the addresses it moved, and the kernel redirects them.** `module.Module.Moved` is a list
+of `{From, To}` whole paths. The kernel answers an old address, or anything under it, with the same redirect
+as its own migration table: 302 for a safe method, 307 for a write, the remainder and the query kept, never
+cached, no body. The surface gate refuses a route mounted where a row redirects. `module.Validate` refuses a
+relative path, a row pointing at itself, and one old address claimed by two modules. A module that moves a
+page now writes one row, not a handler for the old address (T-0104 had written 988 lines of them across
+eight modules).
+
+**A module's own workspace pages stand instead of the generated register.** The admin shell used to mount
+generated screens for every registered resource, even at addresses a module already served with its own
+page. The surface gate refuses two routes at one method and path, so such an application did not start.
+The pets client could not boot for exactly that reason (T-0126). The shell now leaves a resource's screens
+to the module when the module recorded any GET at or under that resource's screen address, and logs it at
+boot.
+
 **The reference application's personas are declared, and each is proven to do its own
 journeys and be refused the others'.** `apps/platformkit` seeds `coordinator`
 (`task:read`, `task:update`) and `observer` (`task:read`) with every tenant, beside
