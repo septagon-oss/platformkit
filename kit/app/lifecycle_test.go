@@ -398,12 +398,29 @@ func TestTheBrokerIsAskedOfTheRoleThatNeedsIt(t *testing.T) {
 	if _, err := worker.Start(t.Context()); err == nil || !strings.Contains(err.Error(), "broker is down") {
 		t.Errorf("worker Start = %v, want the transport's own error", err)
 	}
-	// Bounded, because a regression that opened the listener instead of refusing
-	// would otherwise block here until Go's package timeout, not report this case.
-	runCtx, cancelRun := context.WithTimeout(t.Context(), 5*time.Second)
+	// Bounded, because a boot that hung instead of refusing would otherwise block here
+	// until Go's package timeout rather than report this case. The bound is the
+	// backstop, not the check: Run migrates before it asks the role's transport
+	// (Start's documented order), and the wait for the composition's advisory lock is
+	// patient by design — bounded by the caller's context and nothing else
+	// (kit/db/migrate.go, holdCompositionLock). That lock is one key in one database,
+	// and every test schema this suite makes lives in that one database, so a boot here
+	// queues behind any migration run another package has under way, including
+	// kit/db's cases that hold pg_advisory_lock(7240101) from a second session while
+	// they watch a run queue behind it. At 5s this assertion was a stopwatch on that
+	// queue: in `make check` on 2026-09-30 it failed with "worker Run = db: migrate:
+	// lock: timeout: context deadline exceeded" — a wait cut short, not a refusal
+	// arriving. It now stands where this package's two drain cases already stand for a
+	// boot, and what watches for a listener that must not exist is the dial below,
+	// which is the observation the bound used to stand in for.
+	runCtx, cancelRun := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancelRun()
 	if err := worker.Run(runCtx); err == nil || !strings.Contains(err.Error(), "broker is down") {
 		t.Errorf("worker Run = %v, want the same refusal Start gives", err)
+	}
+	if c, dialErr := net.DialTimeout("tcp", cfg.Server.Addr, time.Second); dialErr == nil {
+		_ = c.Close()
+		t.Errorf("worker Run listened on %s while refusing a transport that does not exist", cfg.Server.Addr)
 	}
 
 	webOpts := opts
