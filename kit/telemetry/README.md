@@ -100,11 +100,12 @@ True here, false there. The branch's own `build(deps)` commit is the change that
 dependency, and the tool reads that same boolean off `origin/main`, so the tool's reading of
 it turns true the day this merges.
 
-The ratio this delivery reports beside it — 80 of 81 boundaries carrying a tenant — was
-measured against the reference application's own composition and is not recomputable from
-this tree: no committed symbol or tool counts the 81, which is the product's share. What is
-committed is the numerator's evidence, one case per kind of boundary that reads the tenant
-dimension back off the span, metric or row the boundary emits.
+The ratio this delivery reports beside it — 80 of the 81 operation and module-declared
+boundaries, the composition's own four relay and purge jobs excluded and named as excluded in
+`CHANGELOG.md` — was measured against that composition and is not recomputable from this tree:
+no committed symbol or tool counts the 81, which is the product's share. What is committed is the
+numerator's evidence, one case per kind of boundary that reads the tenant dimension back off the
+span, metric or row the boundary emits.
 
 The sampler is OpenTelemetry's default shape, `ParentBased(TraceIDRatioBased(…))`, so on the
 public surface a caller that sends a sampled `traceparent` decides how much of its own traffic
