@@ -172,6 +172,19 @@ type Senders interface {
 	For(ctx context.Context, tx db.Tx[db.Tenant]) (*Sender, error)
 }
 
+// DKIMKeys is where the composition keeps the private key that signs for a
+// domain. It is asked for at read time and never stored: a column would put
+// signing key material in a table that every backup copies and every analyst
+// with a replica can read, so the row holds the selector and the proof and this
+// port holds the key.
+//
+// Returning nil is an answer, not a failure: it means this installation cannot
+// sign as this sender, which suppresses the tenant's mail with a reason naming
+// the deployment rather than sending it unsigned.
+type DKIMKeys interface {
+	KeyFor(ctx context.Context, tx db.Tx[db.Tenant], s Sender) []byte
+}
+
 // SenderAdmin is what an administrator of the tenant does about it. Both
 // commands recheck the actor's grant and the tenant's own row inside their
 // transaction, and a refusal writes nothing, publishes nothing and returns no

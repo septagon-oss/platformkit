@@ -33,6 +33,26 @@ type Deps struct {
 	// names user. A nil lookup writes every row and sends no mail.
 	Recipients contracts.RecipientLookup
 
+	// Senders is the tenant's own sending address — its name, its domain, its
+	// DKIM pair and what proved them. The product builds it over its own
+	// configuration, because what proves a domain (a TXT record read by a
+	// resolver, an operator who looked, an installation with no egress at all) is
+	// the product's fact and not this module's.
+	//
+	// Nil is the other answer and it is not "no mail": it means this installation
+	// speaks as the address in its own configuration for every tenant it serves,
+	// which is what it did before per-tenant senders existed, and the decision
+	// says so rather than pretending the tenant chose it.
+	Senders contracts.Senders
+
+	// Providers are the carriers beyond mail — VAPID for a browser, T-0120's
+	// adapter for a phone, an HTTP client for a tenant's endpoint. A channel with
+	// no provider here is suppressed with a reason that names the deployment, so
+	// the ledger accounts for every channel a notice asked for whatever this list
+	// holds. Mail is not one of them: the module's own worker carries it, which is
+	// what Deps.Mailer is for.
+	Providers contracts.Providers
+
 	// Mailer sends the rendered message, in the worker.
 	Mailer contracts.Mailer
 
@@ -69,7 +89,10 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	if deps.Mailer == nil {
 		panic("notification.Module: Deps.Mailer is required; wire notification.NewMailbox() when there is no mail server")
 	}
-	svc := internal.NewService(deps.Recipients)
+	svc := internal.NewService(deps.Recipients,
+		internal.WithPreferences(internal.Prefs{}),
+		internal.WithSenders(deps.Senders),
+		internal.WithProviders(deps.Providers))
 	return svc, module.Module{
 		Name:        "notification",
 		Migrations:  Migrations.Files,
@@ -88,4 +111,28 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Subscriptions: []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Secure)},
 		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc) },
 	}
+}
+
+// Settings is this module's own answer about who may be told what: the channel
+// switches, the opt-out and the quiet window, as contracts.PreferenceService and
+// contracts.Preferences over the module's own two tables. It needs nothing from
+// the composition, because the rows are the module's and every read runs in the
+// caller's transaction under the tenant that transaction names.
+//
+// The screens and routes that reach it are the product's share of this brief:
+// every command here is scoped to the principal whose id it is handed, so the
+// page is a form over one's own rows and there is no shape of it that reaches
+// another person's choices.
+func Settings() contracts.PreferenceService { return internal.Prefs{} }
+
+// Senders is the tenant's own sending address as a contracts.Senders and a
+// contracts.SenderAdmin: the module keeps the row, the token, the refusal and the
+// audit, and the two collaborators below are what it cannot be the authority
+// about — whether a domain says so, and where the key that signs for it lives.
+// Either may be nil, and each nil is a named refusal rather than a surprise: a
+// deployment with no verifier cannot verify anything, and a deployment with no
+// key suppresses the mail it could not sign.
+func Senders(verifier contracts.SenderVerifier, keys contracts.DKIMKeys) (contracts.Senders, contracts.SenderAdmin) {
+	s := &internal.Senders{Verifier: verifier, Keys: keys}
+	return s, s
 }

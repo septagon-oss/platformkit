@@ -239,6 +239,16 @@ type Scope struct {
 	Now       time.Time
 	Available []Channel
 	Disabled  []Channel
+	// SenderOptional says that this installation may mail a person without the
+	// tenant having its own verified sender. It is the deployment's answer and
+	// not the tenant's: an installation that speaks as its own configured address
+	// (config's mail.from, whose domain the operators vouched for when they wrote
+	// it) sends for every tenant it serves, while an installation that put
+	// per-tenant identity in place refuses mail for a tenant that has not proved
+	// a domain, because the address in the header is the one thing that cannot be
+	// corrected after the mail left. Its zero value is the strict answer, so a
+	// scope built without thinking about it refuses rather than mails.
+	SenderOptional bool
 }
 
 func (s Scope) available(c Channel) bool {
@@ -290,7 +300,8 @@ type Decision struct {
 //
 // Whether the person has an address, a device or an endpoint at all is also not
 // here: that is a lookup, Decide takes no transaction, and the worker suppresses
-// what it cannot address in its own.
+// what it cannot address in its own. Neither is the deployment's own mail
+// identity, which is SenderOptional above rather than a row in a table.
 func Decide(wants Wants, class, intent string, prefs []Preference, quiet *QuietHours, sender *Sender, s Scope) Decision {
 	d := Decision{}
 	for _, c := range wants.AsChannels() {
@@ -301,13 +312,13 @@ func Decide(wants Wants, class, intent string, prefs []Preference, quiet *QuietH
 			d.Suppressed = append(d.Suppressed, Suppression{c, string(c) + " is not sent by this deployment", CorrectionDeployment})
 		case s.disabled(c):
 			d.Suppressed = append(d.Suppressed, Suppression{c, "this tenant switched " + string(c) + " off", CorrectionTenant})
-		case c == ChannelEmail && sender == nil:
+		case c == ChannelEmail && !s.SenderOptional && sender == nil:
 			d.Suppressed = append(d.Suppressed, Suppression{c,
 				"this tenant has no sender: mail is refused until its administrator sets one", CorrectionTenant})
-		case c == ChannelEmail && sender.Status != SenderVerified:
+		case c == ChannelEmail && !s.SenderOptional && sender.Status != SenderVerified:
 			d.Suppressed = append(d.Suppressed, Suppression{c,
 				"this tenant's sender " + sender.FromAddress + " has no verified DKIM record for " + sender.DKIMName() + " (status " + sender.Status + ")", CorrectionTenant})
-		case c == ChannelEmail && len(sender.Key) == 0:
+		case c == ChannelEmail && !s.SenderOptional && len(sender.Key) == 0:
 			d.Suppressed = append(d.Suppressed, Suppression{c,
 				"this deployment holds no DKIM key to sign as " + sender.DKIMName(), CorrectionDeployment})
 		case class != ClassSecurity && !Enabled(prefs, intent, c):
