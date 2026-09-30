@@ -64,7 +64,7 @@ None. No route uses `httpx.Public()`. `Service.ByHost` is host resolution for th
 
 ### The operator boundary
 
-`tenant:manage` is declared with `Operator: true` in `modules/tenant/module.go`. All six routes declare `httpx.OperatorPermission(contracts.PermissionTenantManage)`. The comment on `path` in `handler.go` explains the effect. The control plane is served on every tenant's host. The kernel refuses the request at any tenant other than the operator's own, before it reads the roles table, and the wildcard does not satisfy the grant even there. The module has no `OperatorRead` or `OperatorWrite` route, because it uses `httpx.OperatorPermission` directly.
+`tenant:manage` is declared with `Operator: true` in `modules/tenant/module.go`. All eleven routes declare `httpx.OperatorPermission(contracts.PermissionTenantManage)`, the four lifecycle verbs this delivery adds among them: the grant is one because the surface is one, and a route that needs a second key would be a different surface. The comment on `path` in `handler.go` explains the effect. The control plane is served on every tenant's host. The kernel refuses the request at any tenant other than the operator's own, before it reads the roles table, and the wildcard does not satisfy the grant even there. The module has no `OperatorRead` or `OperatorWrite` route, because it uses `httpx.OperatorPermission` directly.
 
 ### Provisioning
 
