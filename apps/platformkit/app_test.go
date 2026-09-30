@@ -1341,10 +1341,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
 	// 24 became 25 when modules/user/000025 added the handle column, 25 became 26
 	// when the kernel added 000026_module_schema, 26 became 27 when
-	// modules/notification/000027 added the delivery ledger, and 27 became 30 when
-	// measurement arrived: the kernel's 000028_tracing (the publisher's trace
-	// context on the outbox row), the kernel's 000029_outbox_baggage (the request id
-	// beside it) and modules/audit's 000030_audit_trace (the trace id on the trail).
+	// modules/notification/000027 added the delivery ledger, and the two releases
+	// after it added three more files to one sequence: the kernel's 000028_outbox_trace
+	// (the publisher's trace context on the outbox row), the kernel's
+	// 000029_outbox_baggage (the request id beside it) and modules/audit's
+	// 000030_audit_trace (the trace id on the trail), so the old layout ends at 30.
 	// They sit past 000027 rather than beside it because this fixture replays every
 	// owner's SQL under one owner, where the ledger's (owner, version) key refuses a
 	// second 27 — the versions one release ships are one sequence, not one per owner.

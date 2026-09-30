@@ -68,7 +68,7 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
-		Events:      contracts.Events,
+		Declared:    contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Content", Screen: "content/contents", Permission: contracts.PermissionContentRead},
 		},

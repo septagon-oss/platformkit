@@ -36,7 +36,13 @@ done
 # both boundaries is what refuses growth — ui/export, ui/source, a module's
 # internals — in either; the "web" mode is the one that admits both
 # database/sql and net/http.
-parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy modules/task/domain design ui/forms
+#
+# A package whose own boundary check() asserts below belongs in this list even
+# when nothing here needs it for a closure: go list reports metadata for what it
+# was asked about, and check() refuses an assertion it cannot measure as
+# "missing dependency metadata". Measuring a core through whatever reaches it
+# would leave the assertion resting on a caller that may stop calling tomorrow.
+parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
@@ -79,7 +85,11 @@ printf '%s\n' "$metadata" | awk -F '|' '
         identity = p "kit/tenancy " p "kit/internal/syscap"
         delivery = p "kit/events/transport " p "kit/events/internal/delivery"
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
-        outbox = identity " " delivery " " p "kit/db"
+        # kit/trace is in the outbox bound and the kernel one because the trace
+        # context of a request is stored with the event the request caused, and
+        # the relay hands it to the envelope: an event that could not name the
+        # call behind it would be a log line no event joins to.
+        outbox = identity " " delivery " " p "kit/db " p "kit/trace"
         # The recorded closure of the page composition layer (see the comment above parts).
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
@@ -91,7 +101,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # of a TracerProvider and a MeterProvider — which is why `providers` is the
         # only list that admits them.
         otel = "go.opentelemetry.io/otel go.opentelemetry.io/otel/metric go.opentelemetry.io/otel/trace go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp go.opentelemetry.io/auto/sdk github.com/go-logr/logr github.com/go-logr/stdr github.com/cespare/xxhash/v2 github.com/felixge/httpsnoop"
-        kernel = p "kit/config " identity " " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry"
+        # kit/trace and kit/telemetry both sit in the kernel list: the first carries
+        # the W3C trace context a caller sent as a value, the second names the
+        # vocabulary of a span and a number. Neither owns an exporter or a provider.
+        kernel = p "kit/config " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry"
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel
@@ -110,6 +123,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("kit/fault", "")
         check("kit/flags", uuid)
         check("kit/tenancy", uuid " " p "kit/internal/syscap")
+        # The W3C trace context is a value: the standard library and nothing
+        # else. It is a carrier, not a tracer, and its closure is the proof.
+        check("kit/trace", "")
         check("modules/task/domain", "")
         check("design", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
