@@ -140,7 +140,8 @@ func TestTheLockBudgetStillRefusesAFileThatMustQueueBehindAWriter(t *testing.T) 
 		t.Fatalf("the writer could not open a transaction: %v", err)
 	}
 	var id int64
-	if err := tx.QueryRowContext(ctx, "SELECT id FROM queued WHERE id = 1 FOR UPDATE").Scan(&id); err != nil {
+	var writer int64
+	if err := tx.QueryRowContext(ctx, "SELECT id, pg_backend_pid() FROM queued WHERE id = 1 FOR UPDATE").Scan(&id, &writer); err != nil {
 		t.Fatalf("the writer could not take the row: %v", err)
 	}
 
@@ -153,7 +154,7 @@ func TestTheLockBudgetStillRefusesAFileThatMustQueueBehindAWriter(t *testing.T) 
 				"000002_column.up.sql": {Data: []byte("ALTER TABLE queued ADD COLUMN c text")},
 			}})
 	}()
-	err = releaseWhenQueued(t, holder, refused, tx.Rollback, lock)
+	err = releaseWhenQueued(t, holder, refused, tx.Rollback, lock, writer)
 	if !errors.Is(err, db.ErrContended) {
 		t.Errorf("a file that could not take the table lock within %s returned %v; that wait is the one the lock budget exists to refuse", lock, err)
 	}
@@ -168,27 +169,40 @@ func TestTheLockBudgetStillRefusesAFileThatMustQueueBehindAWriter(t *testing.T) 
 }
 
 // releaseWhenQueued runs the file's error back and gives the held row back at the one
-// moment that keeps the refusal honest: once the run is sitting, ungranted, on the
-// table's ACCESS EXCLUSIVE lock, ten budgets' length later at the latest.
+// moment that keeps the refusal honest: once this run is sitting, ungranted, on this
+// table's ACCESS EXCLUSIVE lock behind this writer, ten budgets' length later at the
+// latest.
 //
 // A fixed pause on the Go side was the earlier shape and it was a coin toss. Before a
 // file is applied the run queues for the composition's advisory lock, and that queue is
 // patient by design and holds nothing back (see holdCompositionLock); the lock is keyed
 // per database, and every other test of every package here migrates against one. So the
-// run could arrive at its ALTER after the pause had ended and the writer had let go, and
-// apply the file this case exists to see refused — measured: <nil> after 2.017s, with the
-// column present. Holding the row until the queue appears removes the race, and releasing
-// it once the budget has had ten times its own length to refuse the wait is what still
-// answers for the budget: a run left without one lets the ALTER through and this case says
-// so with the file applied, rather than waiting for the package's own timeout.
-func releaseWhenQueued(t *testing.T, admin *sql.DB, refused <-chan error, release func() error, budget time.Duration) error {
+// run can arrive at its ALTER long after the Go-side pause ended and apply the file this
+// case exists to see refused — measured: <nil> after 2.017s, with the column present.
+//
+// Waiting for "a queue on the table" was the next shape, and it read the wrong session:
+// pg_locks is a cluster-wide view, so a lock wait in another database, or another run's
+// wait for another table whose relation OID is the one to_regclass returns here, releases
+// the writer while this run is still queueing for the advisory lock — and the ALTER then
+// finds the row free. The queue is therefore asked for by name: the waiting session's own
+// pg_blocking_pids must contain the writer's backend, which is this test's writer and
+// nobody else's. Nothing but this run being blocked behind this held row releases it.
+//
+// Releasing once the budget has had ten times its own length to refuse the wait is what
+// still answers for the budget: a run left without one lets the ALTER through and this
+// case says so with the file applied, rather than waiting for the package's own timeout.
+func releaseWhenQueued(t *testing.T, admin *sql.DB, refused <-chan error, release func() error, budget time.Duration, writer int64) error {
 	t.Helper()
 	// to_regclass and not a bare relname: the queue has to be this test's table, in the
-	// schema the connection URL carries, and another test's schema may name a table the
-	// same. A granted lock is not a queue, so NOT granted is the whole question.
-	const queued = `SELECT count(*) FROM pg_locks
-		WHERE locktype = 'relation' AND NOT granted AND mode = 'AccessExclusiveLock'
-		  AND relation = to_regclass('queued')`
+	// schema the connection URL carries, and another test's schema may name the table the
+	// same. A granted lock is not a queue, and a queue that does not name this writer is
+	// somebody else's wait, so both are excluded.
+	const queued = `SELECT count(*) FROM pg_locks l
+		WHERE l.locktype = 'relation' AND NOT l.granted AND l.mode = 'AccessExclusiveLock'
+		  AND l.relation = to_regclass('queued')
+		  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+		  AND l.pid <> $1
+		  AND pg_blocking_pids(l.pid) @> ARRAY[$1::integer]`
 	for {
 		select {
 		case err := <-refused:
@@ -196,7 +210,7 @@ func releaseWhenQueued(t *testing.T, admin *sql.DB, refused <-chan error, releas
 		default:
 		}
 		var waiting int
-		if err := admin.QueryRowContext(t.Context(), queued).Scan(&waiting); err != nil {
+		if err := admin.QueryRowContext(t.Context(), queued, writer).Scan(&waiting); err != nil {
 			t.Fatalf("the run's queue behind the writer could not be read: %v", err)
 		}
 		if waiting > 0 {
