@@ -53,15 +53,26 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	// one row's trail is an index lookup rather than a scan of the tenant's.
 	// See migrations/000023 and List.
 	err := tx.DB().Exec("INSERT INTO "+table+
-		" (tenant_id, occurred_at, name, actor, event_id, payload, records)"+
-		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?)"+
+		" (tenant_id, occurred_at, name, actor, event_id, payload, records, traceparent)"+
+		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?)"+
 		" ON CONFLICT (tenant_id, event_id) DO NOTHING",
 		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload),
-		pq.Array(mentioned(ev.Payload))).Error
+		pq.Array(mentioned(ev.Payload)), nilIfEmpty(ev.TraceParent)).Error
 	if err != nil {
 		return fmt.Errorf("audit: record %s: %w", ev.Name, err)
 	}
 	return nil
+}
+
+// nilIfEmpty stores the absence of a trace as NULL and not as the empty string,
+// because "this event arrived with no request behind it" and "it arrived with a
+// request that sent an empty header" are the same fact to this column and a
+// different fact to nobody.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // List is a page of this tenant's trail, newest first. It is a hand-written
