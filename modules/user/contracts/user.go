@@ -286,6 +286,24 @@ type Service interface {
 	// It is deliberately not a login door. Signing in by handle is a separate
 	// decision with an enumeration surface of its own, and it belongs to the auth
 	// module, which owns what a failed attempt costs.
+	// Holders is the people in this tenant holding at least one of roles, one id
+	// each: active, not soft-deleted, and it is User.CanAdminister that decides,
+	// so this query and the floor that protects the last administrator agree by
+	// construction rather than by two lists kept in step.
+	//
+	// It exists because "tell the people who can grant access" is a question
+	// about who *holds* a role, which is this module's column, while which roles
+	// grant is the auth module's table — the same split as Deps.Administration,
+	// joined by the composition and never by a read across a module's rows.
+	//
+	// An empty or nil roles answers an empty list and no error: "nothing was
+	// named" is not "everybody", and reading it that way would mail a tenant.
+	// Invited, pending and unverified people are excluded, because CanAdminister
+	// excludes them and an unaccepted invitation cannot tick a box — the
+	// difference between notifying everybody we appointed and notifying
+	// everybody who could act.
+	Holders(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error)
+
 	ByHandle(ctx context.Context, tx db.Tx[db.Tenant], handle string) (*User, error)
 
 	// ByEmail is the login lookup: the user of this tenant with that address,
