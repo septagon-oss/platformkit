@@ -75,15 +75,18 @@ const (
 	// and the case named at web.Deps.PublicFileURL in modules.go asks a real
 	// uploaded file whether the address answers, on the running server.
 	pinnedPublicFile = "/api/v1/public/file/files"
-	// pinnedDashboard is the workspace home a signed-in person can actually
-	// reach: the admin shell mounts it behind httpx.SignedIn(), which asks no
-	// permission, so it cannot refuse the person the refusal page is for.
+	// pinnedHome is the way on a refusal offers: the workspace root, which the
+	// admin shell claims as its own home and serves behind httpx.SignedIn() — a
+	// guard that asks no permission, so it cannot refuse the person this page is
+	// for.
 	//
-	// pinnedWorkspace stays "/app" and is not this. "/app" is a prefix, not an
-	// address — nothing serves the bare workspace root — so the one link on a
-	// refusal page pointed at an answer that was not there, which is the dead end
-	// the walkthroughs met: a person clicked the way out and was refused again.
-	pinnedDashboard = "/app/dashboard"
+	// The address was "/app/dashboard", which is where the same shell puts its
+	// dashboard when a product's home claimed the root first. This composition
+	// claims the root, so that fallback answered 404 and the one link on a refusal
+	// page led a person out of the application — the dead end the walkthroughs met,
+	// drawn in different ink. TestPinnedAddresses asks the running server that every
+	// pin here answers; the journey case follows the link the page itself emits.
+	pinnedHome = pinnedWorkspace
 	// pinnedUsers is the generated person screen's address, which is what an
 	// access notice links to: the page where a person's roles are ticked.
 	pinnedUsers = "/app/user/users"
@@ -108,7 +111,7 @@ func faultPage(c composition) httpx.Fault {
 	return page.FaultHandler(page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     func(_ context.Context, _ page.Request, body []g.Node) g.Node { return g.Group(body) },
-		Back:      pinnedDashboard,
+		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
 		// Who may hand out what the page refused, as a role and never as a name:
 		// the grant that gates role management is the auth module's fact, and its
@@ -182,7 +185,7 @@ func faultShell(c composition) page.Shell {
 	return page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     func(_ context.Context, _ page.Request, body []g.Node) g.Node { return g.Group(body) },
-		Back:      pinnedDashboard,
+		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
 		Granter:   c.granter,
 		Ask:       pinnedAsk,

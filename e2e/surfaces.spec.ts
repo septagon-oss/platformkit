@@ -85,10 +85,18 @@ test('the inquiry door that takes no GET answers a browser with a page', async (
   expect(res.status()).toBe(405);
   expect(res.headers()['content-type'], body).toContain('text/html');
   expect(body).toContain('this address does not accept GET requests');
-  // The way on is the workspace home, not the bare root: nothing serves /app
-  // itself, so a refusal whose one link leads there is the dead end this
-  // assertion exists to refuse. apps/platformkit/fault.go pins the address;
-  // TestARefusedPersonSeesWhatIsMissing... in apps/platformkit asserts the
-  // same constant from the Go side.
-  expect(body, 'a refusal page with no way out is a dead end').toContain('href="/app/dashboard"');
+  // The way on has to be an address that answers, which is the one thing a dead
+  // end is not. So the links are read off this answer rather than named here — a
+  // constant could match a link that leads nowhere, and did — and every workspace
+  // address the refusal offers is then asked what it serves. The sheet in <head>
+  // and the one link in the body are both asked, and neither may be a 404. The
+  // same question with a refused person's own session is
+  // TestTheWayOnARefusalOffersIsAnAddressThatServesTheWorkspace in
+  // apps/platformkit; apps/platformkit/fault.go pins the address either writes.
+  const offered = [...body.matchAll(/href="(\/app[^"]*)"/g)].map((m) => m[1]);
+  expect(offered.length, `the refusal page offers no workspace address at all: ${body}`).toBeGreaterThan(0);
+  for (const way of offered) {
+    const onward = await page.request.get(way);
+    expect(onward.status(), `the refusal's way on ${way} answers nothing`).not.toBe(404);
+  }
 });
