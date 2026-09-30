@@ -413,7 +413,11 @@ decides the tie. A consumer's class lists compile into the components layer
 beside the kernel's (one rule per shared utility), and its hand-written rules
 are placed in the client layer; a later layer wins normal declarations, so that
 last layer is the strongest of the four, and what protects a kernel component
-from it is the refusal below and not the ranking. Compose refuses a consumer rule
+from it is the refusal below and not the ranking. `!important` reverses that
+order, and the reversal is the point of the one important declaration the kernel
+authors: the `prefers-reduced-motion` fallback sits in `base`, so it outranks a
+consumer's `!important` animation in `client` and unlayered alike — an
+accessibility floor a page cannot shout over. Compose refuses a consumer rule
 that names, in whichever spelling a browser resolves to it, a kernel-rendered
 attribute, one of the classes the kernel's own markup carries, the
 root element, a `--pk-` property or a raw colour — its hex form or any
