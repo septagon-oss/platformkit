@@ -116,8 +116,13 @@ run_app() {
 	exec "$work/platformkit" "$@"
 }
 echo "e2e: one tenant and one administrator"
+# --language is the tenant's own declaration, not the deployment's: e2e/localization.spec.ts
+# drives a Portuguese browser and expects the sign-in page in Portuguese, and the only thing
+# that makes a tenant served in a second language is somebody saying so. A tenant created
+# without it is served in the one language the copy is written in.
 (run_app bootstrap --config "$work/config.yaml" \
-	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test) >/dev/null
+	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
+	--language pt-PT) >/dev/null
 
 if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ":$port "; then
 	echo "e2e: something is already listening on $port; set PLATFORMKIT_E2E_PORT." >&2

@@ -58,8 +58,9 @@ const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)do
 // Serve mounts one page as an operation, exactly like every JSON route: the
 // same recording, the same authorization declaration, the same transaction. It
 // is the edge: it reads the request into a Request, renders the View through
-// the frame, turns a SeeOther into the redirect and a 4xx problem into Fault,
-// and lets a 5xx keep the kernel's problem document and log line.
+// the frame, turns a SeeOther into the redirect and a 4xx problem into the same
+// refusal page a kernel guard renders — worded through the locale this shell
+// negotiated — and lets a 5xx keep the kernel's problem document and log line.
 func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler Handler[I]) {
 	if s.Messages != nil {
 		_ = SelectLocale(s.Messages) // validate the provider at composition
@@ -81,7 +82,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			if req, ok := httpx.RequestFrom(ctx); ok {
 				accepted = req.Header.Get("Accept-Language")
 			}
-			r.Locale = new(SelectLocale(s.Messages, preferred, accepted))
+			r.Locale = new(SelectLocale(s.Messages, TenantPreferences(r, preferred, accepted)...))
 		}
 		v, err := handler(ctx, r, in)
 		if err != nil {
@@ -94,9 +95,18 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			if status >= http.StatusInternalServerError {
 				return nil, err
 			}
-			fault := Fault(status, detail, s.Back, s.BackLabel)
-			fault.Sensitive = v.Sensitive
-			v = fault
+			// The refusal of a handler is the same page the kernel's guards render
+			// (fault.go) and is worded the same way: through the locale this shell just
+			// negotiated, with the sentence this shell ships for that verdict. A person
+			// who was refused by a module is looking at the page all the same, and the
+			// copy they are shown is not the reason the language was bought for the shell
+			// that mounted them. `fault` claims a language only over a sentence it
+			// actually replaced, so a verdict no catalogue speaks stays English and says
+			// so — and the reference is empty here because a handler's own 4xx carries no
+			// request id of its own.
+			refused := fault(status, detail, r.Locale, "", s.Back, s.BackLabel)
+			refused.Sensitive = v.Sensitive
+			v = refused
 		}
 		if r.Locale != nil {
 			if v.Language == "" {
