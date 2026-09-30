@@ -9,7 +9,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -204,13 +203,6 @@ func refusal(err error) error {
 		return problem.New(http.StatusUnauthorized, "those credentials are not right")
 	case errors.Is(err, contracts.ErrTooManyAttempts):
 		return problem.New(http.StatusTooManyRequests, "too many failed attempts for that address; wait and try again")
-	case errors.Is(err, crud.ErrConflict):
-		// The single sign-on leg can reach it: an identity provider vouches for an
-		// address, and the account behind it is one this tenant closed or has not
-		// yet approved. "Those credentials are not right" would blame the person
-		// for a secret they never had; what is true is that the account is not
-		// open, and the tenant's own control plane is where that changes.
-		return problem.New(http.StatusForbidden, "this account cannot sign in here")
 	}
 	return rest.Fault(err)
 }

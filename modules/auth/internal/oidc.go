@@ -332,11 +332,11 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		// reviewing, conflicts here: the identity provider knowing an address does
 		// not open it, and the request commits nothing.
 		if user, err = users.ConfirmAddress(ctx, tx, user.ID, email); err != nil {
-			return nil, refusal(err)
+			return nil, refusedAtTheDoor(err)
 		}
 		session, _, err := svc.Open(ctx, tx, user.ID, ClientOf(r))
 		if err != nil {
-			return nil, refusal(err)
+			return nil, refusedAtTheDoor(err)
 		}
 		return &redirectOutput{
 			Status: http.StatusSeeOther, Location: "/",
@@ -424,6 +424,20 @@ func random() string {
 		panic("auth: no randomness: " + err.Error())
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// refusedAtTheDoor is this leg's own answer to a sign-in that did not work, and
+// it is not the shared `refusal`: a provider confirmed the address, so the
+// person holding it did something right, and the account behind it is one this
+// tenant closed or has not yet approved. "Those credentials are not right"
+// would blame somebody for a secret they never had — and 401 on a password
+// route is a claim about a password, which is why this mapping lives here and
+// not in the login mapping every public credential route shares.
+func refusedAtTheDoor(err error) error {
+	if errors.Is(err, crud.ErrConflict) {
+		return problem.New(http.StatusForbidden, "this account cannot sign in here")
+	}
+	return refusal(err)
 }
 
 type callbackInput struct {
