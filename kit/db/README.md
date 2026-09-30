@@ -39,18 +39,30 @@ migration that cannot take a lock in five seconds of *waiting* stops. The statem
 budget defaults to no bound because a legitimate index build on a large table is the
 statement a duration bound would kill. **The one exception is the file in autocommit
 mode, which runs with the lock budget off and the statement budget as configured.**
-What that statement waits for is not a lock that stops writers but the transactions
+What that statement waits for is the transactions
 already in the database ceasing to be able to see the table — the wait `CONCURRENTLY`
-exists to make — and the server implements it as a lock wait, so a configured lock
-budget cancels it: measured on PostgreSQL 16, a build that finds one session holding a
-snapshot older than its own is cancelled at `55P03`, and what it leaves behind is an
-INVALID index that the file's own `IF NOT EXISTS`, the re-runnability the rule table
-demands of this mode, then excuses on the retry the refusal tells the operator to run —
-the rerun reports the file applied and the index does not exist. Waiting is also the
-shape of the queue for the composition lock, which has no budget on it either: that
-wait is taken off the session rather than left on it, because the lock is taken a
-second time mid-run, after an autocommit file, on a session that already carries the
-budgets. The same two values go on the session before
+exists to make — and the server implements it as a lock wait (`wait_event_type=Lock`,
+`wait_event=virtualxid`), so a configured lock budget reaches it and cancels it:
+measured on PostgreSQL 16, a build that finds one session holding a snapshot older
+than its own is cancelled at `55P03`, and what it leaves behind is an INVALID index
+that the file's own `IF NOT EXISTS`, the re-runnability the rule table demands of this
+mode, then excuses on the retry the refusal tells the operator to run — the rerun
+reports the file applied and the index does not exist. Two things about that wait are
+wider than the sentence above them, and an operator needs both. It is any older
+transaction, not one touching the table being built: measured on the same server, a
+build of one table waited 5.0s for a transaction whose only lock was a row of another.
+And with the lock budget off, nothing the runner owns ends the wait — `statement_timeout`
+is off by default and `app.Bootstrap` hands the run a context with no deadline of its
+own, so a boot stopped at this file waits as long as the oldest transaction in the
+database does. The one bound a deployment can put on it is
+`database.statement_timeout`, which is therefore a trade and not a safety: it refuses
+the build at that bound, and leaves the INVALID index above for the retry that then
+reports the file applied. Waiting is also the shape of the queue for the composition
+lock, which has no budget on it either: that wait is taken off the session rather than
+left on it, because the lock is taken a second time mid-run, after an autocommit file,
+on a session that by then still carries the statement budget — the lock budget came off
+for that file, and a statement budget bounds a lock wait as surely as it bounds the
+work done inside the lock. The same two values go on the session before
 every batch of a drain (`BackfillWith`, and through it `app.Drain`,
 `jobs.BackfillMigrations` and `platformkit migrate --drain`), because the fifty
 transactions behind a data file are the half that waits longest for rows the running

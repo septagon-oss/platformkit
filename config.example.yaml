@@ -61,7 +61,12 @@ database:
   # time stops and says it is contended, and may be run again), and no bound on a
   # statement at all — a legitimate index build on a large table is the statement
   # a duration bound would kill. Set statement_timeout only where a bound on the
-  # longest statement is worth refusing a real build for.
+  # longest statement is worth refusing a real build for, and know what that
+  # refusal costs: a nontransactional file (-- pkit: autocommit=true) is the one
+  # file the lock budget does not cover, so this is the only bound its wait has,
+  # and a build this stops is left INVALID — the retry the refusal asks for says
+  # the file is applied and does not rebuild the index. kit/db/README.md carries
+  # both halves.
   # lock_timeout: 5s
   # statement_timeout: 0
 

@@ -586,9 +586,13 @@ type runner struct {
 // files are given, so the budgets come off the session for the wait and go back on
 // afterwards. They have to be taken off rather than left alone: the queue for an
 // advisory lock is a lock wait like any other, and this lock is taken a second time
-// in the middle of a run — after an autocommit file, below — on a session that
-// already carries the budgets. The first call arrives here before any budget has been
-// put on the session, which is the only reason that one was patient. Measured: with
+// in the middle of a run — after an autocommit file, below. By that second call the
+// lock budget has just come off for the statement above it, so what this call still
+// takes off is the statement budget, and that is a real one: statement_timeout bounds
+// a statement's wait for a lock as surely as it bounds its work. The first call
+// arrives here before any budget has been put on the session, so both settings are
+// already at their default there; naming both is what makes the two arrivals mean the
+// same thing. Measured: with
 // lock_timeout in force, pg_advisory_lock answers 55P03 like any other wait.
 //
 // The patience is the right shape — the run that gets the lock second has the first
@@ -735,7 +739,11 @@ func (r *runner) noLockBudget(ctx context.Context) error {
 // unbudgeted takes both budgets off this session. It is for a wait the runner does not
 // mean to refuse at all — the queue for the composition lock — and so it has no
 // counterpart that puts them back: whoever needed the patience calls budgets itself
-// afterwards, which is what every statement in a run is preceded by anyway.
+// afterwards, which is what every statement in a run is preceded by anyway. The lock
+// budget is already off by the time the lock is taken a second time mid-run, because
+// the autocommit statement above it took it off, so the patience this removes for that
+// queue is the statement bound; it names both settings so the call means one thing at
+// either arrival rather than two things at one and one at the other.
 func (r *runner) unbudgeted(ctx context.Context) error {
 	if _, err := r.conn.ExecContext(ctx, "SET lock_timeout TO '0'; SET statement_timeout TO '0'"); err != nil {
 		return fmt.Errorf("db: migrate: budgets: %w", err)
