@@ -255,6 +255,12 @@ Two refusals that had no failing case now have one: two clients on one seed are 
 worn twice, and a third client whose own override breaks its own body role refuses the whole set rather
 than booting a roster with a client missing.
 
+**A card with an address is a link.** `components.Card` rendered an anchor only when `Clickable` was set as well
+as `Href`. A card with `Href` and `Hoverable` got a hover shadow over an `<article>` that went nowhere, which was
+every card on the pets adoption list: a UX walkthrough found an adopter could not open a single animal's page.
+`Href` now makes the card a link with the clickable styling, and `Clickable` alone still styles a card that
+handles its own interaction.
+
 **An event leaving the outbox is a CloudEvents 1.0 envelope, and the tenant is
 in its address.** The wire form was `transport.Event`'s own struct tags —
 `{"id","name","tenantId","payload","at","actor"}` — a private shape nothing
