@@ -1,0 +1,19 @@
+-- The request that caused the event, in the W3C form the outbox already keeps.
+--
+-- `platformkit_outbox` has carried `traceparent` since migrations/000028 and the
+-- relay hands it to every handler, but the trail did not keep it: an audit row
+-- could say who, what and when, and not which request it happened in. Joining a
+-- trail row to a trace was therefore a guess on the timestamp, which is the join
+-- that fails exactly when two things happened in the same second — and the case it
+-- fails on, an operator's lifecycle command that writes a row in two tenants at
+-- once, is two rows that are meant to be read as one act.
+--
+-- Nullable, with no default and no backfill: a row written before this file, or by
+-- an event that arrived with no caller behind it, carries no trace, and the absence
+-- is a fact rather than a gap to invent around — the same argument migrations/000028
+-- makes for the outbox column, and the reason this one is expand-only.
+--
+-- No index. Nothing queries the trail *by* trace yet; the requirement is that the
+-- row carries the identifier, and the two rows one command writes are joined by the
+-- value they hold. Adding a lookup later is another expand-only file.
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS traceparent text;

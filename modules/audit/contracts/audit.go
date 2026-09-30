@@ -44,6 +44,17 @@ type Event struct {
 	Actor      *uuid.UUID      `json:"actor,omitempty" format:"uuid" doc:"The user who caused it, absent for system work"`
 	EventID    uuid.UUID       `json:"eventId" format:"uuid" doc:"The event this row records"`
 	Payload    json.RawMessage `json:"payload" doc:"The event's payload, as its module published it"`
+	// TraceParent is the W3C trace context of the request that caused the event,
+	// copied verbatim from the envelope the outbox stored beside it
+	// (migrations/000028, and this column's 000030). It is the join a trail row
+	// otherwise has no way to make: which request this happened in. Empty when
+	// nobody caused it — a job, a replay, the bootstrap — which is why it is
+	// omitted rather than zero, the same reason Actor is.
+	//
+	// It is not an action taxonomy, an entity type or a before/after, none of which
+	// this module has ever kept: it is an identifier the kernel already carried,
+	// stored as it arrived and never interpreted.
+	TraceParent string `json:"traceparent,omitempty" gorm:"column:traceparent" doc:"The W3C trace id of the request that caused it" example:"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"`
 }
 
 // TableName pins the table, so the struct and migrations/000010 agree.
