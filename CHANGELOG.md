@@ -17,6 +17,33 @@ The pets client could not boot for exactly that reason (T-0126). The shell now l
 to the module when the module recorded any GET at or under that resource's screen address, and logs it at
 boot.
 
+**Every page's stylesheet is four cascade layers, and a consumer sheet gets exactly one
+of them.** `ui/css` emits `@layer` again: `ui.Compose` writes `@layer tokens, base,
+components, client;` as the sheet's first statement, puts the palette and role variables
+in `tokens`, the preflight in `base`, every resolved class list — the components' and
+the extras' together — in `components`, and every hand-written sheet a module or an
+application hands it in `client`. A layer ranks before specificity, and for normal
+declarations a later layer wins, so the client layer is the strongest of the four and
+what keeps a consumer's rule off a component is the gate below and not the ranking
+above: a consumer can neither write a later file nor name a more precise selector to
+win, because the name is refused first. The gate at
+that boundary is `ui.Compose`: a consumer sheet that states an `@layer` of its own,
+carries a brace, a comment start or `</style`, begins a rule with an at-keyword or a
+`;`, names a kernel-rendered attribute or one of the classes the sheet's own
+markup carries — by a `.`, or by comparing the contents of the `class` attribute —,
+`:root`, a `--pk-` property or a raw colour in
+any spelling a browser resolves them to is refused by panic — such a sheet is Go source
+wired at mount, and a refused composition ships no bytes rather than a stylesheet that
+lost a layer. That is a breaking change for a sheet written against an earlier
+kernel: composed against this tree, exported consumer sheet builders in the products
+checkout refuse that compose against the pin they carry today, each on a raw colour in
+a `box-shadow` or a
+`background-image`, or on a selector that names a kernel hook or one of the kernel's
+utility classes; a sheet assembled inline sits outside that count, and the count
+itself belongs to the sweep's own checkout rather than to this one.
+The cure is the client's own share — `css.VarRef` for the colour, its own hook or its
+own class for the selector (T-0139, T-0126).
+
 **The reference application's personas are declared, and each is proven to do its own
 journeys and be refused the others'.** `apps/platformkit` seeds `coordinator`
 (`task:read`, `task:update`) and `observer` (`task:read`) with every tenant, beside
