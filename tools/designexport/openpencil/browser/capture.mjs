@@ -182,10 +182,14 @@ export async function captureExample(browser, snapshot, exampleId, {
     const declarations = await page.evaluate(() => {
       // A sampled mode cannot prove an inactive override equivalent. Only one
       // unconditional root declaration may define a portable formula or alias.
-      const inspect = (rules, topLevel) => [...rules].flatMap(rule => [
+      // A cascade layer states no condition on the rule it carries, so a :root
+      // declaration reached through @layer is as unconditional as one at the top of
+      // the sheet; a media or supports block does state one, and a formula inside
+      // such a block stays unclaimed, as it was before the sheet had layers.
+      const inspect = (rules, unconditional) => [...rules].flatMap(rule => [
         ...[...(rule.style ?? [])].filter(name => name.startsWith('--')).map(name =>
-          [name, topLevel && rule.selectorText === ':root' ? rule.style.getPropertyValue(name).trim() : null]),
-        ...(rule.cssRules ? inspect(rule.cssRules, false) : []),
+          [name, unconditional && rule.selectorText === ':root' ? rule.style.getPropertyValue(name).trim() : null]),
+        ...(rule.cssRules ? inspect(rule.cssRules, unconditional && rule instanceof CSSLayerBlockRule) : []),
       ])
       return [...document.styleSheets].flatMap(sheet => inspect(sheet.cssRules, true))
     })
