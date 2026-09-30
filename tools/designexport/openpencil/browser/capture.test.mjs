@@ -34,7 +34,16 @@ test('authored Go color roles match Chromium across palettes and independent tra
       const sheet = new CSSStyleSheet()
       sheet.replaceSync(css)
       document.adoptedStyleSheets = [sheet]
-      const definitions = [...sheet.cssRules].filter(rule => rule.selectorText === ':root').flatMap(rule =>
+      // Every rule of this sheet sits inside one of the four cascade layers it
+      // states, so an authored role declaration is reached through the layer block
+      // that carries it: @layer tokens { :root { --pk-role-… } }. Reading the top
+      // level alone reads an empty sheet — the assertions below would then judge no
+      // declaration at all, which is how this read broke when the layers landed. A
+      // media or supports block is not descended: a :root rule inside one is a
+      // conditional override, not the authored definition this case compares.
+      const rootRules = [...sheet.cssRules].flatMap(rule =>
+        rule instanceof CSSLayerBlockRule ? [...rule.cssRules] : [rule])
+      const definitions = rootRules.filter(rule => rule.selectorText === ':root').flatMap(rule =>
         [...rule.style].filter(name => name.startsWith('--pk-role-')).map(name => [name, rule.style.getPropertyValue(name)]))
       const sample = document.createElement('span'), results = []
       document.body.append(sample)
@@ -1028,7 +1037,15 @@ test('browser capture settles all real loading indicators through source reduced
 test('browser capture still refuses explicit infinite or paused animations under reduced motion', async () => {
   for (const animation of ['pk-spin 1s linear infinite', 'pk-spin 1s linear 1 paused']) {
     const snapshot = structuredClone(source)
-    snapshot.css += `\n[data-component="button"] { animation: ${animation} !important; }`
+    // Authored on the element itself rather than appended to the sheet. The sheet's
+    // reduced-motion fallback sits inside @layer base, and for !important
+    // declarations an earlier layer wins — so a rule in a later layer, or unlayered,
+    // which is the weakest author !important of all, is overridden to
+    // `iteration-count: 1; duration: 0.01ms` by that fallback. An element whose own
+    // style attribute says it animates forever is what this refusal exists for, and
+    // an inline !important outranks every author rule however the sheet is layered.
+    const example = snapshot.examples.find(item => item.id === primary)
+    example.html = example.html.replace(/^<button /, `<button style="animation: ${animation} !important" `)
     const beforeSnapshot = structuredClone(snapshot)
     await assert.rejects(captureExample(browser, snapshot, primary), /requires finite, running source animations to settle/)
     assert.deepEqual(snapshot, beforeSnapshot)
