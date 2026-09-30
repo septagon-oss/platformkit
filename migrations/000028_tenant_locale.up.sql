@@ -45,13 +45,29 @@ CREATE POLICY tenant_locales_scope ON tenant_locales
 	USING (platformkit_is_system() OR tenant_id = platformkit_current_tenant_id())
 	WITH CHECK (platformkit_is_system());
 
--- Every tenant that exists today is served in the one language it was served in
--- yesterday, which is what the column's default says, so the set is backfilled from
--- the column rather than left empty: an empty set reads as "this tenant declared
--- nothing", and a deployment must not change which languages it answers in because
--- somebody ran a migration.
-INSERT INTO tenant_locales (tenant_id, locale)
-SELECT id, default_locale FROM tenants
-ON CONFLICT (tenant_id, locale) DO NOTHING;
+-- No row is written here, and the read is the reason. `localesOf`
+-- (modules/tenant/internal/service.go) takes the default out of the set on the way
+-- read — `WHERE tenant_id = ? AND locale <> ?` — so the language a tenant is served
+-- in by default reaches a request from the column above and never from this table.
+-- A tenant whose row predates this file and a tenant created after it answer the
+-- same browser in the same language, whether or not a row sits beside the column:
+-- the row a create or a `SetLocale` writes records a declaration somebody made about
+-- a tenant, which is what a migration makes none of. SQL does not know which
+-- catalogues the composition holds, so it could not backfill a set even if the set
+-- were read back; it could only ever write the one value the column already holds.
+--
+-- A `FROM tenants` write here would also be a write that writes nothing at the role
+-- this file's own policy describes. The runner sets `platformkit.system_access` on a
+-- system transaction and on a `phase=data` drain, and on a schema file's transaction
+-- not at all, so `WITH CHECK (platformkit_is_system())` answers such a write as it
+-- answers any other, and the policy 000001 puts over `tenants` — "outside any
+-- transaction of ours both helpers yield NULL or false, so the policy denies rather
+-- than leaks" — empties the source. At a migrate role that owns these tables and is
+-- no superuser the statement would be accepted, the version recorded, and no tenant
+-- given a language, which is the same outcome as writing nothing, told as a success.
+--
+-- data: exempt reason: this revision writes no rows, so no `phase=data` half stands
+-- beside it; migrations/README.md says what that line means and where a file that
+-- does write rows has to take them.
 
 COMMENT ON TABLE tenant_locales IS 'platformkit:tenant-scoping-exempt: control plane, read by the loader under system access';

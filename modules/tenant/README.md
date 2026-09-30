@@ -12,9 +12,11 @@ first tenant inside `platformkit bootstrap`'s transaction.
 Compose it first, with `tenant.Deps{OnCreate, Invite, Languages}` — `Languages`
 being the ones the installation's catalogues answer in, which are the most a tenant
 is ever served in. A new tenant is served in the one language its copy is written
-in, the column's default, exactly as `migrations/000028_tenant_locale.up.sql`
-backfills a tenant that predates the column: a tenant's set is a declaration and a
-create carries none. `POST /api/v1/ops/tenant/tenants/{id}/locale` is what declares
+in, the column's default, and so is a tenant whose row predates
+`migrations/000028_tenant_locale.up.sql`: that file writes no rows, the read takes the
+default out of the set, and the column alone answers for a tenant with none beside it,
+because a tenant's set is a declaration and a create carries none. `POST
+/api/v1/ops/tenant/tenants/{id}/locale` is what declares
 more of them, and it refuses a language this installation has no copy for — a tenant
 served in a language nobody wrote is a page that declares it and shows the source
 copy (`tenant.locale_set` says so, and the host cache is invalidated for that

@@ -213,6 +213,21 @@ an exception that can except a broken marker is a marker nobody can rely on.
 not as a missing key — because a refusal that names the wrong key sends the operator
 to a line that is already there.
 
+### A file that writes rows
+
+A schema half runs in one transaction, and in no system one: the runner sets
+`platformkit.system_access` inside a `RunSystem` transaction and inside a `phase=data`
+drain, and around a `.up.sql` never. An `INSERT … SELECT` in a schema file therefore
+runs as whatever role `migrate_url` names, under the policies the same release just
+installed — at a deployment whose migrate role owns these tables without being a
+superuser, the source such a policy filters is empty, the statement is accepted, and
+the version is recorded over a write that wrote nothing. Rows belong in a `phase=data`
+half beside the schema one, which the runner drains inside that marker. A file that
+writes none may say so in its commentary — `-- data: exempt reason: <sentence>` — which
+is prose the runner does not read and a reader of the ledger does, naming where the
+rows are written instead. No gate asks for the line yet; 000028_tenant_locale.up.sql
+carries one.
+
 ### What the runner refuses, and what to write instead
 
 Each refusal names its rule, says what the file does, and says what to do instead.

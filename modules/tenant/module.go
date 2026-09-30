@@ -45,8 +45,9 @@ type Deps struct {
 	// Languages are the languages the installation's catalogues answer in, and the
 	// most a tenant is ever served in. They do not decide what a new tenant is
 	// served in — a create declares nothing, and a tenant starts out in the one
-	// language its copy is written in, the same single row migrations/000028 gives a
-	// tenant that predates the column. They decide what SetLocale may be told: a
+	// language its copy is written in — the one language a tenant whose row predates
+	// migrations/000028 is served in too, which its column holds and no row of that
+	// file's is read for. They decide what SetLocale may be told: a
 	// tenant served in a language nobody wrote copy for is a page that declares that
 	// language and shows another one, so the composition, which is the thing that
 	// read the files, says what exists and the command refuses the rest.

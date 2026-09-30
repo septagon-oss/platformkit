@@ -77,12 +77,14 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	// Written from the value the database just chose rather than from a constant
 	// this module would have to keep in step with the migration, and it is the only
 	// language written here. The set behind it is a declaration, and on a create
-	// nobody has made one: migrations/000028 backfills a tenant that predates the
-	// column with exactly its default for the same reason, so a tenant created
-	// today and a tenant created before the migration are served in the same one
-	// language. Handing a new tenant the installation's whole set would make the
-	// migration's rule and this one disagree about two identical tenants, and it
-	// would answer a browser in a language whose only author was a composition.
+	// nobody has made one. A tenant whose row predates the column is left with this
+	// one language too, by the other half of the same rule: migrations/000028 writes
+	// no rows at all and `localesOf` takes the default out of the set on the way
+	// read, so the column alone answers for a tenant that has no row beside it, and a
+	// tenant created today and a tenant created before that file are served in the
+	// same one language. Handing a new tenant the installation's whole set would make
+	// the two disagree about two identical tenants, and it would answer a browser in a
+	// language whose only author was a composition.
 	// SetLocale is where a tenant's people start being served in a second language.
 	if err := s.serve(tx, t.ID, t.DefaultLocale); err != nil {
 		return nil, err
