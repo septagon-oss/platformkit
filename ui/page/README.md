@@ -144,3 +144,18 @@ an `xtext.Source` rather than a package-level catalogue — the shape any owner 
 publishes — and a refusal page that negotiates from what a refused request still has: the
 header the caller brought, and since `kit/httpx` resolves the address's host for a refusal
 it renders as a page, the tenant the person was standing in front of.
+
+
+## Composition (T-0184)
+
+**Reused** — `faultKeys`, `refusalLocale` and `Locale.Text`: the refusal page's
+parts are looked up through the same table, the same negotiated locale and the same
+seam the verdict's own sentence already used, and `ui/document`'s Toolbar, Alert,
+Text, Form, Button and Link draw them.
+**Added** — `Refusal` next to `Fault` in `ui/document`, and `Shell.Granter`/
+`Shell.Ask`: `Fault` draws one alert and one link and cannot carry a form, and a
+shell had no way to say who may hand out a missing grant or where an ask posts.
+**Made reusable** — `MountAccess`, the two page routes behind one kernel command,
+and `refusalParts`, the list the catalogue-coverage test reads: a part that ships
+without Portuguese is now a red test rather than an English line on a Portuguese
+page.

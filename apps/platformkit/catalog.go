@@ -3,6 +3,15 @@ package main
 import (
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/modules/admin"
+	"github.com/septagon-oss/platformkit/modules/audit"
+	"github.com/septagon-oss/platformkit/modules/auth"
+	"github.com/septagon-oss/platformkit/modules/billing"
+	"github.com/septagon-oss/platformkit/modules/content"
+	"github.com/septagon-oss/platformkit/modules/file"
+	"github.com/septagon-oss/platformkit/modules/site"
+	"github.com/septagon-oss/platformkit/modules/task"
+	"github.com/septagon-oss/platformkit/modules/tenant"
+	"github.com/septagon-oss/platformkit/modules/user"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
 )
@@ -29,5 +38,18 @@ func catalogues() xtext.Catalog {
 	return xtext.Load("en",
 		page.Catalogue(),
 		xtext.Source{FS: resource.Catalogues(), Name: "ui/resource"},
-		admin.Catalogue())
+		admin.Catalogue(),
+		// Each module's own permission labels, so a refusal names a grant in the
+		// language the tenant is served in and not in a key. Every module that
+		// defines a permission ships words for it; the coverage case in
+		// apps/platformkit is what makes shipping none a red test.
+		audit.Catalogue(),
+		auth.Catalogue(),
+		billing.Catalogue(),
+		content.Catalogue(),
+		file.Catalogue(),
+		site.Catalogue(),
+		task.Catalogue(),
+		tenant.Catalogue(),
+		user.Catalogue())
 }

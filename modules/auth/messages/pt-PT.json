@@ -1,0 +1,11 @@
+{
+  "permission.role:manage": {
+    "references": [
+      "modules/auth/module.go"
+    ],
+    "translation": "gerir funções",
+    "plural": {
+      "": "gerir funções"
+    }
+  }
+}
