@@ -124,20 +124,21 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	if writable {
 		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", r.Schema.Entity), Href: at + "/new"})}
 	}
-	body := []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: title, Subtitle: o.count(total, one)}, actions...),
-		table(o, r, at, title, rows, sort),
-	}
-	// A command over the whole collection posts beside the list it acts on, and
-	// above the pager so a person who changes page has not lost the door.
-	body = append(body, commandForms(o, r.Commands, at, true)...)
-	body = append(body, components.Pagination(components.PaginationProps{
+	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 		CurrentPage: pageNo, TotalPages: pages(total), BaseURL: at + "?sort=" + sort,
-		NavigationLabel: o.Text("screens.pagination", "Pagination"),
-		PreviousLabel:   o.Text("screens.previous", "Previous page"),
-		NextLabel:       o.Text("screens.next", "Next page"),
-	}))
+		NavigationLabel:  o.Text("screens.pagination", "Pagination"),
+		PreviousLabel:    o.Text("screens.previous", "Previous page"),
+		NextLabel:        o.Text("screens.next", "Next page"),
+		PageLabel:        o.Text("screens.page", "Go to page %s", "%d"),
+		CurrentPageLabel: o.Text("screens.current_page", "Page %s, current page", "%d"),
+	}
+	body := []g.Node{table(o, r, at, title, rows, sort, o.count(total, one), &pager, components.DataListSlots{
+		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title}, actions...)},
+		// Collection commands retain their native forms and precede the pager.
+		// Generated CRUD does not gain selected-row writes from a UI control.
+		Footer: commandForms(o, r.Commands, at, true),
+	})}
 	return document.View{Title: title, Body: body}
 }
 
@@ -257,7 +258,7 @@ func listName(one string) string { return one + "s" }
 //
 // The id is not a column. It is the row's identity and it is already the link's
 // href; a table that leads with a UUID is a table nobody can read.
-func table(o Options, r Resource, at, title string, rows []map[string]any, sort string) g.Node {
+func table(o Options, r Resource, at, title string, rows []map[string]any, sort, count string, pager *components.PaginationProps, slots components.DataListSlots) g.Node {
 	primary := known(r.Schema.Fields)
 	shown := []entity.Field{primary}
 	for _, f := range r.Schema.Fields {
@@ -272,20 +273,25 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 			Key: f.Name, Label: display.FieldLabel(f), Sortable: f.Type != entity.TypeList, Primary: i == 0,
 		})
 	}
-	out := make([]components.TableRow, 0, len(rows))
+	out := make([]components.DataRow, 0, len(rows))
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
 			cells[f.Name] = display.Display(f, row[f.Name])
 		}
-		out = append(out, components.TableRow{ID: display.Text(row["id"]), Cells: cells})
+		out = append(out, components.DataRow{TableRow: components.TableRow{ID: display.Text(row["id"]), Cells: cells}})
 	}
-	return components.TableWithSlots(components.TableProps{
+	state := components.ContentState{}
+	groups := []components.DataGroup{{Key: "rows", Rows: out}}
+	if len(rows) == 0 {
+		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity)}
+		groups = nil
+	}
+	p := components.DataListProps{
 		HTMXProps: components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
-		Sortable:  true, Columns: columns, Rows: out,
-		Label:     title,
-		EmptyText: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity),
-	}, components.TableSlots{
+		Columns:   columns, Groups: groups, Label: title, State: state, ResultCountText: count, Pagination: pager,
+	}
+	slots.TableSlots = components.TableSlots{
 		// Sorting is a link the server answers, not a script that reorders what
 		// is on the page: page two of a table sorted in the browser is page two
 		// of the wrong order.
@@ -318,7 +324,8 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 			return components.Link(components.LinkProps{
 				Label: display.Text(row.Cells[c.Key]), Href: at + "/" + row.ID})
 		},
-	})
+	}
+	return components.DataListWithSlots(p, slots)
 }
 
 // details is the detail screen: every field, in schema order, as a description

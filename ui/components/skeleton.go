@@ -79,6 +79,9 @@ func TableSkeleton(p TableSkeletonProps) g.Node {
 		tdClass = clTableTdC
 	}
 	cellLine := skeletonLine("sm", false)
+	if p.Interactive {
+		cellLine = cellLine.Merge(clRecoveryAction)
+	}
 
 	headCells := make([]g.Node, 0, cols)
 	for i := 0; i < cols; i++ {
