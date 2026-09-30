@@ -40,11 +40,35 @@ type Module struct {
 	// Permissions are the permission keys this module defines, "<resource>:<action>".
 	Permissions []Permission
 
-	// Events are the event names this module emits, "<name>.<event>". Every
-	// event a rest.Spec would publish has to appear here, or the app refuses to
-	// start: a module that emits something it never promised is an integration
-	// nobody can find.
+	// Events are the events this module emits, by name: "<module>.<event>",
+	// inside the module's own namespace. A name is all the kernel needs to
+	// refuse a route that would publish what no manifest promised, to name a
+	// subscription's subject, and to expand a SubscribeAll module — so a module
+	// whose payload it cannot describe (a hand-built document, a type that
+	// marshals itself) still gets to emit by naming the event here.
+	//
+	// Every event a rest.Spec would publish has to appear in this list or in
+	// Declared, or the app refuses to start: a module that emits something it
+	// never promised is an integration nobody can find. Module.Emits is the one
+	// list that says so; nothing reads these two fields separately.
 	Events []string
+
+	// Declared are the events this module emits, each named with the Go type of
+	// its payload: events.Declare[contracts.Invited](contracts.EventInvited).
+	// It is the typed form of Events, and the one a module composes from this
+	// repository's own contracts uses.
+	//
+	// The payload type is not decoration. It is projected into a JSON Schema
+	// (kit/events/schema.go), the outbox refuses a payload that is not one
+	// before the row is written, and the composition's AsyncAPI document is
+	// emitted from it (kit/app/asyncapi.go). An event named only in Events is
+	// the same list item with Payload nil, which is what events.Declared calls
+	// a payload the kernel does not describe: published unchecked, listed as
+	// uncovered rather than pretended to be.
+	//
+	// A name given in both fields is one event, described — Emits keeps the
+	// typed item and drops the bare name.
+	Declared []events.Declared
 
 	// Subscriptions are the events this module handles. The worker role
 	// subscribes each one; the name has to be an event some module emits.
@@ -118,6 +142,32 @@ type Module struct {
 // request under From keeps its remainder and its query.
 type Move struct {
 	From, To string
+}
+
+// Emits returns everything the module says it emits, in the one shape the
+// kernel checks: each typed declaration as it stands, and each bare name in
+// Events as that declaration with no payload type, which is the state
+// events.Declared reserves for a payload the kernel cannot describe. A name
+// given both ways is one event and appears once, as the typed declaration.
+//
+// Validate, Expand, the coverage line and the AsyncAPI document all read this
+// method rather than either field, so the two spellings of a manifest's event
+// list cannot disagree about what the composition emits.
+func (m Module) Emits() []events.Declared {
+	if len(m.Events) == 0 {
+		return m.Declared
+	}
+	typed := make(map[string]bool, len(m.Declared))
+	for _, d := range m.Declared {
+		typed[d.Name] = true
+	}
+	out := make([]events.Declared, 0, len(m.Declared)+len(m.Events))
+	for _, name := range m.Events {
+		if !typed[name] {
+			out = append(out, events.Declared{Name: name})
+		}
+	}
+	return append(out, m.Declared...)
 }
 
 // Permission is one thing a role can be granted.
@@ -249,13 +299,20 @@ func Validate(mods []Module) error {
 			add("module %q: adopts migration history and declares no Migrations", m.Name)
 		}
 
-		for _, e := range m.Events {
-			if !events.ValidName(e) {
-				add("module %q: event %q is not %q", m.Name, e, "<name>.<event>")
+		for _, e := range m.Emits() {
+			if !events.ValidName(e.Name) {
+				add("module %q: event %q is not %q", m.Name, e.Name, "<name>.<event>")
 				continue
 			}
-			if !strings.HasPrefix(e, m.Name+".") {
-				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e)
+			// The kernel's own manifest is the one exemption, and only for the
+			// events KernelEvents names: security.denied is raised by the kernel
+			// because the refusal is its — no module ran — so it carries the
+			// kernel's namespace and not the manifest's. Every other manifest
+			// still emits inside its own name, which is what makes a duplicate
+			// emitter impossible rather than merely discourled.
+			if !strings.HasPrefix(e.Name, m.Name+".") &&
+				!(m.Name == KernelName && slices.Contains(KernelEvents, e.Name)) {
+				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e.Name)
 			}
 		}
 	}
@@ -268,8 +325,8 @@ func Validate(mods []Module) error {
 		emitted[e] = true
 	}
 	for _, m := range mods {
-		for _, e := range m.Events {
-			emitted[e] = true
+		for _, e := range m.Emits() {
+			emitted[e.Name] = true
 		}
 	}
 	for _, m := range mods {
@@ -321,6 +378,13 @@ func Validate(mods []Module) error {
 // modules/audit keeps them like any other event.
 var KernelEvents = []string{"security.denied"}
 
+// KernelName is the manifest name kit/app gives the kernel's own share of the
+// composition. It is named because it is read by a rule: KernelEvents are the
+// only events that may be declared outside the emitting manifest's namespace
+// (Validate), and saying which manifest is the kernel's is the other half of
+// that sentence.
+const KernelName = "platformkit"
+
 // Expand turns every SubscribeAll manifest's one subscription into one per
 // event the composition emits, and returns the modules with that done.
 //
@@ -343,9 +407,9 @@ func Expand(mods []Module) []Module {
 		}
 	}
 	for _, m := range mods {
-		for _, e := range m.Events {
-			if !seen[e] {
-				seen[e], all = true, append(all, e)
+		for _, e := range m.Emits() {
+			if !seen[e.Name] {
+				seen[e.Name], all = true, append(all, e.Name)
 			}
 		}
 	}

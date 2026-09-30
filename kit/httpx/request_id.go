@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/trace"
 )
 
 // RequestIDHeader is the header a request id arrives in and leaves in.
@@ -34,14 +35,28 @@ func requestIDFrom(ctx context.Context) string {
 // keeping, so a trace that starts at a proxy stays one trace; otherwise a fresh
 // UUID. It is echoed in the response header, so a caller who sent none can
 // still quote it.
+//
+// It opens the distributed tracing context in the same breath, because the two
+// identify one thing and a request that had one and not the other would be a
+// log line no event could be joined to. A caller's own traceparent wins — that
+// is what makes a trace cross a boundary — and when there is none, the trace id
+// is the request id when the request id is hex, so the three identifiers of one
+// call (X-Request-ID, the log's request_id, the event's traceparent) are one
+// string. kit/trace refuses a header it cannot parse rather than trusting it.
 func (a *API) requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := givenID(r.Header.Get(RequestIDHeader))
 		if id == "" {
 			id = uuid.NewString()
 		}
+		ctx := r.Context()
+		if tc, ok := trace.Parse(r.Header.Get(trace.ParentHeader), r.Header.Get(trace.StateHeader)); ok {
+			ctx = trace.With(ctx, tc)
+		} else if tc, ok := trace.FromRequestID(id); ok {
+			ctx = trace.With(ctx, tc)
+		}
 		w.Header().Set(RequestIDHeader, id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, id)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, requestIDKey{}, id)))
 	})
 }
 
