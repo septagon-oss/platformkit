@@ -69,8 +69,9 @@ type contrastPair struct {
 // sees: text on the three surfaces, the accent used as text and the text set on
 // it, the focus ring on the three body surfaces it is drawn onto (sidebar-bg is a
 // fourth, ungated — see CHANGELOG), each status on its own badge, the sidebar's
-// two text tones on its own background, and a component's edge —
-// border-default on each literal ground it is painted on, at the graphic's floor —
+// two text tones on its own background, and the two boundaries a sheet paints by
+// name — border-default on each literal ground it is painted on and border-strong
+// on the one ground that draws it, both at the graphic's floor —
 // because the edge is the visual information that identifies the component:
 // ui/components fills a field with the same surface role as the card it stands on,
 // so the line is what says where it is.
@@ -157,6 +158,16 @@ var bodyContrast = []contrastPair{
 	{"border-default", "surface-primary", MinContrastGraphic},
 	{"border-default", "surface-canvas", MinContrastGraphic},
 	{"border-default", "surface-muted", MinContrastGraphic},
+	// A boundary is gated because a rule paints it, not because its token sounds
+	// important: border-strong is drawn by exactly one shipped rule, the 4 px
+	// quotation bar modules/web/internal/style.go gives every [data-prose]
+	// blockquote on the page canvas, so that one ground is the pair — and without
+	// it the token that paints a line a reader is shown was the one token a client
+	// could set to the colour of the ground behind it and still be issued the
+	// palette. The generator already repairs this token to MinContrast on all
+	// three surfaces and the shipped pair reaches it, so this pair is margin: what
+	// it buys is the refusal, which names the token to the client that erased it.
+	{"border-strong", "surface-canvas", MinContrastGraphic},
 }
 
 // Check reports the first body role of this theme that does not reach

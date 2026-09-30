@@ -10,10 +10,15 @@ stylesheet with `style.ThemeVars`.
 
 Start with `design.Default()`. To change a palette, copy `Light()` and `Dark()`,
 set the fields you need and pass the `Pair` to `ui.Compose`, `admin.Deps.Theme`
-and `web.Deps.Theme`; every rule above the tokens is written in terms of a
-role, so nothing else changes. `Theme.Typography` selects the display, body and
-mono stacks and `Theme.Shape` the button, card and modal radii; `Theme.Tokens()`
-is the ordered projection the stylesheet and the exports share.
+and `web.Deps.Theme`. The utility alphabet, the class lists and the roles they
+paint with are declared once and read by everyone, so nothing else changes; the
+hand-written rules are the exception and are named for what they are — `base()`
+and `componentState()` in [ui.go](../ui/ui.go), and a module's own sheet, reach
+for tokens — and every token those sheets paint is named by `bodyContrast` below,
+so a hand-written rule cannot paint a boundary no gate measures. `Theme.Typography`
+selects the display, body and mono stacks and `Theme.Shape` the button, card and
+modal radii; `Theme.Tokens()` is the ordered projection the stylesheet and the
+exports share.
 
 ## Identity from a seed, and the gate on it
 
@@ -23,12 +28,14 @@ refuses unless the pair passes both halves of the gate — `Pair.Check` and
 `Pair.CheckRoles` over `RoleLayer()` and `GatedRolePairs()` below. `Check` is
 WCAG 2.2 measured by `Luminance` and `Contrast`: every body role at 4.5:1 (SC
 1.4.3) — a status tone on every surface a card raises itself onto, not only the
-badge that carries its name — and the two graphical paints that carry
+badge that carries its name — and the three graphical paints that carry
 information at 3:1 (SC 1.4.11): the focus ring on each of the three body
-surfaces its `RingOffset` draws it onto, and `border-default`, which is a text
+surfaces its `RingOffset` draws it onto, `border-default`, which is a text
 field's only edge — `clInput` fills the field with the same surface role as the
 card `clCardFrame` paints, so the line, not the fill, is what says where the
-field is. The sidebar is a fourth ground a ringed
+field is — and `border-strong`, the 4 px quotation bar the site's article sheet
+gives every `[data-prose] blockquote` on its page canvas; each pair is gated on
+the ground a shipped rule draws it on. The sidebar is a fourth ground a ringed
 control sits on, ungated, and `surface-active` a fifth ground the layer mixes the
 same way as the hover fill and no shipped rule draws a line on; both are named in
 [CHANGELOG](../CHANGELOG.md) with their numbers. A

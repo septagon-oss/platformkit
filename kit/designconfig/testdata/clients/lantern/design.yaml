@@ -1,8 +1,8 @@
 # One client's whole visual identity: a seed and two named overrides.
-slug: pets
+slug: lantern
 seed:
-  sector: shelter
-  name: Pets
+  sector: crafts
+  name: Lantern
   brand: "#f0b978"
 tokens:
   light:
