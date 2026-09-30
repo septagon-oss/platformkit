@@ -21,6 +21,8 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	w3c "github.com/septagon-oss/platformkit/kit/trace"
+
 	"github.com/septagon-oss/platformkit/kit/telemetry"
 )
 
@@ -29,8 +31,40 @@ import (
 // which span this event happened under, and the baggage member carries the request
 // id the router put on the publisher's context. An untraced
 // publisher — a periodic job, or any process with no collector configured — leaves all
-// three absent, and the write stores an absent member as NULL (absentAsNull), which is
+// three absent, and the write stores an absent member as NULL (nilIfEmpty), which is
 // what the columns are for and what a query asks with IS NULL.
+//
+// The two trace members are read from two carriers, in this order:
+//
+//   - the context the OpenTelemetry propagator injects, which is the trace a
+//     collector holds when the process installed a provider, because it names the
+//     span that is open on this request rather than a context this process minted
+//     for itself;
+//   - kit/trace's carried context, which a request always leaves behind — parsed
+//     from the caller's own traceparent, or opened from the request id — and which is
+//     the same W3C format. A process that installed no provider, which every test
+//     binary and every deployment that points at no collector is, would otherwise
+//     write an event that names no trace at all.
+//
+// The order matters once and only: when both hold a value the process has a provider,
+// and the injected value is the one the spans this process exports are members of, so
+// picking the carried value would put the event under a trace no span belongs to.
+// The correlation member comes from the propagator alone, because kit/trace carries no
+// correlation value — that is what the baggage column is for.
+func carriedContext(ctx context.Context) (parent, state, correlation string) {
+	parent, state, correlation = traceContext(ctx)
+	if parent == "" {
+		if tc, ok := w3c.From(ctx); ok {
+			parent, state = tc.Parent(), tc.TraceState
+		}
+	}
+	return parent, state, correlation
+}
+
+// traceContext injects the publisher's context into a carrier and reads the three
+// members back. It reads nothing that the OpenTelemetry global does not hold: with no
+// provider installed the tracer hands back a span with no context, so an untraced
+// publisher yields three empty strings and the row stores three NULLs.
 func traceContext(ctx context.Context) (parent, state, correlation string) {
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)

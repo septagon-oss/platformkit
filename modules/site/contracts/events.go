@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The one event this module emits. There is no created and no deleted: the
@@ -13,7 +15,7 @@ import (
 const EventSettingsUpdated = "site.settings_updated"
 
 // Events is every event this module emits, for the manifest.
-var Events = []string{EventSettingsUpdated}
+var Events = []events.Declared{events.Declare[SettingsUpdated](EventSettingsUpdated)}
 
 // SettingsUpdated is the payload: what the site is now. It carries the values a
 // cache would key on rather than only an id, because the subscriber this exists

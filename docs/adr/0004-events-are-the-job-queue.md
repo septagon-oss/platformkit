@@ -61,8 +61,10 @@ instance in the cluster runs a job per tick.
   attempts that crash or wait before a handler starts. After a restart the last
   handler error may be unavailable; the record states that limitation.
   Dead letters and their claims remain until explicit operator review; relaying
-  alone does not replay them. The stream still has its configured seven-day
-  retention; terminal retry does not establish unbounded broker retention.
+  alone does not replay them, and the purge leaves the outbox row a dead letter
+  describes, because that row is the payload's only copy and a replay has to
+  stay reachable. The stream still has its configured seven-day retention;
+  terminal retry does not establish unbounded broker retention.
 - The relay takes no advisory lock, because `FOR UPDATE SKIP LOCKED` is already
   the concurrency control and a lock would only make one blocked relay stop
   every replica's relay. Every other periodic job does take one; `jobs.Job` says

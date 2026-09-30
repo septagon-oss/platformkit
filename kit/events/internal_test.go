@@ -244,6 +244,17 @@ func TestADriftedConsumerIsReconciled(t *testing.T) {
 	if !slices.Equal(info.Config.BackOff, delivery.Backoff) {
 		t.Errorf("backoff is %v, want %v", info.Config.BackOff, delivery.Backoff)
 	}
+	// And what it filters. The consumer this fixture made by hand carries the
+	// single filter_subject an older build asked for; the subscription has to
+	// come back with both addresses, because the previous build published at
+	// platformkit.<module>.<event> and a `*` matches exactly one token, so a
+	// consumer filtering only platformkit.*.<module>.<event> never sees that
+	// message at all — the stream keeps it, the relay stamps the row published,
+	// and no handler runs. A drift test that checked the ladder but not the
+	// filter set would pass over the loss.
+	if want := []string{"platformkit.*." + name, subject + name}; !slices.Equal(info.Config.FilterSubjects, want) {
+		t.Errorf("filter_subjects is %v, want %v", info.Config.FilterSubjects, want)
+	}
 
 	// And the subscription is a subscription: the handler receives.
 	deliver(t, transport, seen, name)
@@ -281,6 +292,14 @@ func TestAConsumerNATSCannotUpdateIsRecreated(t *testing.T) {
 	}
 	if info.Config.DeliverSubject == "" {
 		t.Error("the consumer is still a pull consumer")
+	}
+	// Recreated means the filter set is this build's too, window included: the
+	// settings a consumer cannot change in place are exactly the ones a rolling
+	// window depends on, and a recreate that lost the second address would put
+	// the previous build's events back out of reach on the deploy that was
+	// supposed to keep them.
+	if want := []string{"platformkit.*." + name, subject + name}; !slices.Equal(info.Config.FilterSubjects, want) {
+		t.Errorf("the recreated consumer filters %v, want %v", info.Config.FilterSubjects, want)
 	}
 	deliver(t, transport, seen, name)
 }
