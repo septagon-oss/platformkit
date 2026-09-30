@@ -379,7 +379,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// answered ahead of the headers was distinguishable from an unmounted address
 	// by five response headers, which is the one fact it exists to hide. See
 	// surfaces.go and headers.go.
-	root.Use(a.requestID, a.surface, a.headers, a.address)
+	root.Use(tracing, a.requestID, a.surface, a.headers, a.address)
 
 	// What chi itself answers when nothing matched, or matched but not for this verb.
 	//
@@ -436,7 +436,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// and before the handler, which is where the two things it does both belong:
 	// nothing above it reads a body, and the transaction it ends for a streaming
 	// route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
+	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
