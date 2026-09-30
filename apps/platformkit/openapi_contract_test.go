@@ -317,12 +317,28 @@ func wireAt(t *testing.T, doc map[string]any, address string) map[string]any {
 	return node
 }
 
-// refuseWireBreak fails with every rule the pair violates, so one run names all of
-// what a delivery broke rather than the first thing it broke.
+// refuseWireBreak reports every rule the pair violates — all of them, so one run
+// names everything a delivery broke rather than the first thing it broke — and then
+// stops the test. Stopping it is the point: the only caller that would otherwise go
+// on is the regeneration, and a rewrite that follows a refusal is the refusal's
+// opposite. Reporting with t.Error alone let the UPDATE_GOLDEN branch fall through
+// to os.WriteFile, so the flag wrote the document it had just named broken, and the
+// next run — the one make check does, with no flag and no message — compared the
+// served document against the broken file and called them equal. That measured
+// sequence is pinned by review_round1_wire_break_laundering_test.go.
+//
+// Nothing overrides a refusal, including UPDATE_GOLDEN=1. A planned break ships the
+// way this file's header and wire_compatibility_test.go say: land the new address,
+// register the old one as an alias row, delete that row a release later.
 func refuseWireBreak(t *testing.T, golden, served []byte) {
 	t.Helper()
-	for _, problem := range breakingWireChanges(t, golden, served) {
+	problems := breakingWireChanges(t, golden, served)
+	for _, problem := range problems {
 		t.Error(problem)
+	}
+	if len(problems) > 0 {
+		t.Fatalf("%s is left as it was: the rules above stand, and UPDATE_GOLDEN=1 regenerates a document that is stale, never one that is broken",
+			openapiGolden)
 	}
 }
 
