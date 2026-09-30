@@ -1,6 +1,8 @@
 package css_test
 
 import (
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,5 +147,157 @@ func TestMediaNestsAndIndents(t *testing.T) {
 	want := "@media (min-width: 40rem) {\n  .a {\n    display: flex;\n  }\n}"
 	if got := s.CSS(); got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestLayerStatementIsRenderedAheadOfEverythingItOrders(t *testing.T) {
+	t.Parallel()
+	s := css.NewSheet().Select(".a", css.Decl("color", css.Literal("red")))
+	s.LayerOrder("tokens", "client")
+	want := "@layer tokens, client;\n\n.a {\n  color: red;\n}"
+	if got := s.CSS(); got != want {
+		t.Fatalf("a statement added after the rules still precedes them:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestLayerBlockNestsAndIndents(t *testing.T) {
+	t.Parallel()
+	s := css.NewSheet()
+	s.Layer("client", func(inner *css.Sheet) {
+		inner.Select(".a", css.Decl("display", css.Literal("flex")))
+	})
+	want := "@layer client {\n  .a {\n    display: flex;\n  }\n}"
+	if got := s.CSS(); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestLayerNamesRefuseAnEscape(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []string{"Client", "tokens base", "1token", "", "tok; }"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Layer(%q) did not panic", bad)
+				}
+			}()
+			css.NewSheet().Layer(bad, func(*css.Sheet) {})
+		}()
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("LayerOrder(%q) did not panic", bad)
+				}
+			}()
+			css.NewSheet().LayerOrder("tokens", bad)
+		}()
+	}
+}
+
+func TestUsesLayersReadsThroughNestedAtRules(t *testing.T) {
+	t.Parallel()
+	plain := css.NewSheet().Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Select(".a", css.Decl("color", css.Literal("red")))
+	})
+	nested := css.NewSheet().Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Layer("client", func(in2 *css.Sheet) { in2.Select(".a", css.Decl("color", css.Literal("red"))) })
+	})
+	statement := css.NewSheet().LayerOrder("tokens")
+	if plain.UsesLayers() || !nested.UsesLayers() || !statement.UsesLayers() {
+		t.Fatal("UsesLayers missed a @layer or imagined one")
+	}
+}
+
+func TestWalkRulesVisitsNestedRulesInOrder(t *testing.T) {
+	t.Parallel()
+	s := css.NewSheet().Select(".a", css.Decl("color", css.Literal("red")))
+	s.Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Select(".b", css.Decl("color", css.Literal("blue")))
+	})
+	s.Keyframes("pulse", func(k *css.Keyframes) {
+		k.At("from", css.Decl("opacity", css.Literal("0")))
+	})
+	var seen []string
+	if err := s.WalkRules(func(sel string, _ []css.Declaration) error {
+		seen = append(seen, sel)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A keyframe stop is a rule the browser applies to the animating element, so
+	// a caller that reads the sheet reads it too, with the offset as its selector.
+	if len(seen) != 3 || seen[0] != ".a" || seen[1] != ".b" || seen[2] != "from" {
+		t.Fatalf("walked %v", seen)
+	}
+}
+
+// TestVerbatimVisitsEveryWordTheSheetWrites pins the walk a caller needs before
+// it places someone else's sheet inside a block: the emitted text of a rule is
+// the selector, each property and each rendered value, and the text before a
+// block — an at-rule prelude — is written verbatim too, so a reader of the rules
+// alone would miss the one place a client can put a brace outside a declaration.
+func TestVerbatimVisitsEveryWordTheSheetWrites(t *testing.T) {
+	t.Parallel()
+	s := css.NewSheet().Select(".a", css.Decl("color", css.VarRef("pk-color-fg-primary", "")))
+	s.Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Select(".b", css.Decl("opacity", css.Literal("0.5")))
+	})
+	s.Keyframes("pulse", func(k *css.Keyframes) {
+		k.At("from", css.Decl("opacity", css.Literal("0")))
+	})
+	var seen []string
+	if err := s.Verbatim(func(text string) error {
+		seen = append(seen, text)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".a", "color", "var(--pk-color-fg-primary)", "@media (min-width: 40rem)",
+		".b", "opacity", "0.5", "@keyframes pulse", "from", "opacity", "0"}
+	for _, w := range want {
+		if !slices.Contains(seen, w) {
+			t.Errorf("Verbatim did not visit %q; it visited %v", w, seen)
+		}
+	}
+	// The walk stops on the first refusal, which is how ui.Compose reports one.
+	visits := 0
+	err := s.Verbatim(func(string) error {
+		visits++
+		return errors.New("refused")
+	})
+	if err == nil || visits != 1 {
+		t.Fatalf("Verbatim visited %d words and returned %v", visits, err)
+	}
+}
+
+// TestHeadsVisitsTheTextAheadOfEveryBraceTheEmitterWrites pins the one thing that
+// separates Heads from Verbatim: it reports every text the emitter writes before a
+// `{` it supplies, in emission order and at any depth, and no text between the
+// braces. The at-keyword of a prelude is the emitter's, so a @media query reaches
+// the caller as the query it was handed and a @keyframes name as the name — the
+// `@` is not the caller's text, and a read that reported it would refuse every
+// at-rule a consumer is told to write.
+func TestHeadsVisitsTheTextAheadOfEveryBraceTheEmitterWrites(t *testing.T) {
+	t.Parallel()
+	s := css.NewSheet().Select(".a", css.Decl("color", css.Literal("red")))
+	s.Media("(min-width: 40rem)", func(in *css.Sheet) {
+		in.Select(".b", css.Decl("opacity", css.Literal("0.5")))
+	})
+	s.Keyframes("pulse", func(k *css.Keyframes) {
+		k.At("from", css.Decl("opacity", css.Literal("0")))
+	})
+	var seen []string
+	if err := s.Heads(func(text string) error {
+		seen = append(seen, text)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{".a", "(min-width: 40rem)", ".b", "pulse", "from"}; !slices.Equal(seen, want) {
+		t.Fatalf("Heads visited %v, want %v in emission order", seen, want)
+	}
+	visits := 0
+	if err := s.Heads(func(string) error { visits++; return errors.New("refused") }); err == nil || visits != 1 {
+		t.Fatalf("Heads visited %d heads and returned %v", visits, err)
 	}
 }
