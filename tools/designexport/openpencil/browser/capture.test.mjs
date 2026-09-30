@@ -1035,3 +1035,12 @@ test('browser capture still refuses explicit infinite or paused animations under
     assert.equal(browser.contexts().length, 0)
   }
 })
+
+test('capture retains closed disclosure content without waiting for its invisible spinner', async () => {
+  const exampleId = 'pk-ui.component.plan-comparison/pending-en'
+  const beforeSource = structuredClone(source)
+  const result = await captureExample(browser, source, exampleId)
+  assert.equal(result.exampleId, exampleId)
+  assert.equal(observed(result.roots).filter(node => node.tag === 'details').length, 2)
+  assert.deepEqual(source, beforeSource)
+})

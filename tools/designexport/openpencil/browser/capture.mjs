@@ -150,7 +150,10 @@ export async function captureExample(browser, snapshot, exampleId, {
           (async () => {
             while (true) {
               for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
-              const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState))
+              // A closed disclosure can retain a running, display-locked
+              // animation whose timeline never advances. It cannot paint.
+              const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
+                animation.effect?.target?.checkVisibility({ contentVisibilityAuto: true }))
               if (active.length === 0) return
               if (active.some(animation => animation.playState === 'paused' ||
                 !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {

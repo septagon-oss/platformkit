@@ -86,11 +86,14 @@ func TestComposeKeepsConsumerOverridesAfterSharedUtilities(t *testing.T) {
 func TestGalleryIsTheDifference(t *testing.T) {
 	t.Parallel()
 	app, gallery := string(ui.Compose(design.Default()).Body), string(ui.Gallery().Body)
-	if !strings.Contains(gallery, ".animate-pulse {") {
-		t.Fatal("the skeleton's rule is not in gallery.css")
+	if !strings.Contains(app, ".animate-pulse {") || !strings.Contains(app, ".p-12 {") {
+		t.Fatal("generated DataList loading/empty rules are absent from app.css")
 	}
-	if strings.Contains(app, ".animate-pulse {") {
-		t.Fatal("the skeleton's rule is in app.css, which no ordinary page needs")
+	if strings.Contains(gallery, ".animate-pulse {") || strings.Contains(gallery, ".p-12 {") {
+		t.Fatal("gallery.css repeats DataList state rules already in app.css")
+	}
+	if !strings.Contains(gallery, `.max-h-\[85vh\] {`) || strings.Contains(app, `.max-h-\[85vh\] {`) {
+		t.Fatal("the gallery-only modal height must stay in gallery.css alone")
 	}
 	if strings.Contains(gallery, "--pk-color-surface-primary:") {
 		t.Fatal("gallery.css repeats the tokens")
