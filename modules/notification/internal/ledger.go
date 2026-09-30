@@ -31,9 +31,19 @@ const (
 // describes: the row commits with that step or not at all, so the ledger can never
 // say a mail was sent by a transaction that rolled back.
 func record(tx db.Tx[db.Tenant], notification uuid.UUID, channel, outcome, reason string) error {
-	err := tx.DB().Exec(
-		`INSERT INTO notification_deliveries (tenant_id, notification_id, channel, outcome, reason) VALUES (?, ?, ?, ?, ?)`,
-		db.TenantOf(tx).ID, notification, channel, outcome, reason).Error
+	stmt := `INSERT INTO notification_deliveries (tenant_id, notification_id, channel, outcome, reason) VALUES (?, ?, ?, ?, ?)`
+	if outcome == OutcomeSent {
+		// A channel is sent once. The outbox redelivers a delivery it did not see
+		// acknowledged, and a provider that answered on the second attempt would
+		// otherwise write a second sent row — or, if this function checked first,
+		// race itself into the same double row. The database decides, and the
+		// answer to the redelivered attempt is "nothing to write", so the worker
+		// acknowledges the message instead of retrying a delivery that happened.
+		// Suppressed and failed stay repeatable: a channel that failed, was retried
+		// and then worked has to be able to say both.
+		stmt += ` ON CONFLICT (notification_id, channel) WHERE outcome = 'sent' DO NOTHING`
+	}
+	err := tx.DB().Exec(stmt, db.TenantOf(tx).ID, notification, channel, outcome, reason).Error
 	if err != nil {
 		return fmt.Errorf("notification: record %s %s for %s: %w", channel, outcome, notification, err)
 	}
