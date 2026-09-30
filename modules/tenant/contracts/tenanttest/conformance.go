@@ -256,8 +256,18 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if got := moved.Hosts; len(got) != 2 || got[0] != earlier {
 				t.Errorf("the hosts are %v after a promotion, want the promoted one first", got)
 			}
-			// Promoting a host that is already there is not a second addition.
-			published(t, f, audited(contracts.EventCreated, contracts.EventHostAdded)...)
+			// Promoting a host that is already there is not a second addition, but
+			// it is a change: the name every absolute URL for this tenant is built on
+			// moved, so the verb says so in both trails.
+			published(t, f, audited(contracts.EventCreated, contracts.EventHostAdded,
+				contracts.EventHostAdded)...)
+			// Asking again for the name that is already primary is the same act, so
+			// the second call says nothing: an operator's retry never doubles an audit.
+			if _, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, earlier, true); err != nil {
+				t.Fatalf("AddHost promoting the primary again: %v", err)
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventHostAdded,
+				contracts.EventHostAdded)...)
 		},
 
 		"set-locale says what the tenant is served in": func(t *testing.T, f Fixture) {

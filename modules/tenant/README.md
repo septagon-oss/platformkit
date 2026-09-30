@@ -55,7 +55,13 @@ None. `git grep` finds no `tenancy.Policy` use in `modules/tenant`. The routes a
   table stops recording it; everything else the tenant owns stays.
 - Every lifecycle verb publishes its event in the subject tenant's scope and
   `tenant.lifecycle_recorded` in the operator tenant's, in the transaction that wrote
-  the column. An installation with no operator tenant gets
+  the column, and asks that audit question before it writes: a verb that can audit
+  neither side writes neither. A promotion is one of those writes — `add-host` is the
+  only way to choose a tenant's primary host, and moving it publishes
+  `tenant.host_added` the way the arrival does, because which name a tenant's links
+  are built on is a fact two trails have to be able to date. Asking for the host that
+  is already primary, or for a host already here without the promotion, changes no
+  column and says nothing. An installation with no operator tenant gets
   `contracts.ErrNoOperatorTenant`, the route answers 503, and nothing is written: a
   lifecycle change auditable from one side is a change nobody can account for.
 - Every command reads its row `FOR UPDATE` before it compares it, because `kit/db`

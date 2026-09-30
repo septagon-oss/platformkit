@@ -213,12 +213,23 @@ func (f *Fake) AddHost(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, ho
 			f.mu.Unlock()
 			return nil, &crud.UniqueConflict{Constraint: "tenant_hosts_pkey"}
 		}
-		// A host the tenant already answers at. Promoting it is a change and
-		// adding it again is not, so only the first says anything.
-		if primary {
+		// A host the tenant already answers at. Moving the primary onto it is a
+		// change and says so the way the arrival says so; adding it again, or
+		// promoting the name that is already primary, is not a change and says
+		// nothing — the same three answers internal.Service.AddHost gives.
+		changed := primary && t.Hosts[0] != host
+		if changed {
 			t.Hosts = order(t.Hosts, host)
 			f.tenants[id] = t
 		}
+		f.mu.Unlock()
+		if changed {
+			f.publish(ctx, id, contracts.EventHostAdded)
+			if err := f.mirror(ctx, id); err != nil {
+				return nil, err
+			}
+		}
+		f.mu.Lock()
 		defer f.mu.Unlock()
 		return f.copy(id)
 	}
