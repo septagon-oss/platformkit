@@ -69,6 +69,16 @@ page for a navigation (see [ui/page](../../ui/page/README.md)). An htmx write is
 that parses a value — its controller reads the code and swaps nothing for a 4xx — so it is
 answered in JSON even though it asks with `Accept: text/html,*/*`.
 
+A refusal that becomes a page resolves the host it is a page *of* (`withHostTenant`,
+called by `show`, the one branch either refusal path takes when a renderer is registered).
+Which languages a request is answered in is the tenant's declaration and not the
+browser's, and the guards that answer ahead of routing — an address nobody mounted, the
+verb an address does not take, a cross-site write, a handler that panicked — run ahead of
+the operation middleware that resolves hosts, so the page they render would otherwise be
+worded by whoever brought the header. A host nobody serves has no tenant to declare a
+language, and that one refusal is negotiated from the request alone; a request whose
+context is already over gets no query at all.
+
 ### Built on what came before
 
 Decision 0022 asks a delivery to name what it composed rather than what it

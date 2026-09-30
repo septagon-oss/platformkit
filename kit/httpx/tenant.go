@@ -157,6 +157,39 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 	a.refuse(ctx, http.StatusServiceUnavailable, "this host cannot be resolved right now")
 }
 
+// withHostTenant hands a refusal the request that names its tenant.
+//
+// Host resolution is an operation middleware: it runs once a route has been chosen.
+// The refusals this package answers for itself — the address nobody mounted, the verb
+// an address does not take, the cross-site write, the handler that panicked — are
+// answered ahead of any route, on a request that therefore carries no tenant, and the
+// page one of them renders would then negotiate its language from the caller's
+// Accept-Language alone. Which languages a request is answered in is a fact about the
+// tenant behind its host and not about the header (ui/page.Served), so a guard that
+// answers in a language this tenant never declared answers in one it refused.
+//
+// A refusal is allowed to ask the question the route never got to ask. The answer is
+// already in the cache every request warms, the one query it may cost is bounded by
+// resolveTimeout, and a request whose context is already over gets no query at all.
+// A resolution that fails leaves the request as it arrived, which is the case the
+// deployment's own catalogue answers for: a host nobody serves has no tenant to
+// declare a language, and a database that is not answering has larger problems than
+// the language of a refusal page.
+//
+// The guards inside the huma chain need no such call: they run after a.tenant, which
+// either put a tenant on the request or refused the host for having none.
+func (a *API) withHostTenant(r *http.Request) *http.Request {
+	ctx := r.Context()
+	if _, resolved := tenancy.FromContext(ctx); resolved || ctx.Err() != nil {
+		return r
+	}
+	t, err := a.resolve(ctx, HostOnly(r.Host))
+	if err != nil {
+		return r
+	}
+	return r.WithContext(tenancy.WithTenant(ctx, t))
+}
+
 // HostOnly is the loader's key: the Host header without its port and without
 // the brackets an IPv6 literal carries, lower-cased, without the trailing dot a
 // fully qualified name may have. Normalising here means every TenantLoader is

@@ -32,10 +32,13 @@ func SelectLocale(messages Messages, preferences ...string) Locale {
 //
 // The tenant's list arrives through Request.Tenant, which is the host resolution's
 // own answer — the same query that says who this request belongs to says what it is
-// read in — so an unresolved host, and every guard that refuses before one exists,
-// has no list to restrict by and is negotiated from what it asked for. That is not a
-// hole: with no tenant there is no tenant preference to honour, and the deployment's
-// catalog is the only declaration left standing.
+// read in — so an address whose host names no tenant has no list to restrict by and
+// is negotiated from what it asked for. That is not a hole: with no tenant there is no
+// tenant preference to honour, and the deployment's catalog is the only declaration
+// left standing. A guard that refuses ahead of any handler is not such an address:
+// `kit/httpx` resolves the host of the refusal it renders as a page, and `FaultHandler`
+// filters through this same function, so the set a person's page obeys is the set the
+// refusal beside it obeys too.
 //
 // Matching is on the language a tag names, and the tag that goes on to the provider
 // is the tenant's. That is what "this browser speaks Portuguese" means when the
