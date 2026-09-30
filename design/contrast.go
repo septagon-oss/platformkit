@@ -148,7 +148,7 @@ var bodyContrast = []contrastPair{
 	// role as the card of clCardFrame, and clInputNormal draws the line in
 	// border-default, so on a card and on the page canvas behind it that hairline is
 	// the only thing that identifies the component and its extent; and
-	// clBadgeTone["neutral"] and clMediaRefused draw the same line on surface-muted.
+	// clAlertVariant["neutral"] and clMediaRefused draw the same line on surface-muted.
 	// The graphic's floor, not the text's: 3:1, the ratio SC 1.4.11 asks of it and
 	// the same one this list already holds the focus ring to. edgeRolePairs spells
 	// these three grounds and the fourth — surface-hover, the mix a hovered control
