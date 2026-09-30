@@ -151,7 +151,35 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// and every resolved value of both themes against the previous commit: 8 lines —
 	// per theme border-default and the three values derived from it — and 12 of the
 	// pair's 196 across the two commits together.
-	if legacy.SHA256 != "e4247c772f189d7976d48ef28f09fe4c196528126909b1b35e515d1dc17fff02" {
+	//
+	// Cascade layers: Compose now emits `@layer tokens, base, components,
+	// client;` and wraps each layer's rules in a block, so the exported sheet is
+	// the same declarations at one more level of nesting, and review round 1 of
+	// that change moved the kernel's own component-state rules out of @layer base
+	// into @layer components, ahead of the class lists, because a layer ranks
+	// before specificity and a dismissed modal was losing to the `flex` on its
+	// own element. Compared with origin/main at adcea9e, the revision this branch
+	// was rebased onto, a leaf-by-leaf diff of the v1 export before and after the
+	// layers change 2 of the 6,406 leaves above, /css and /sha256: no token, icon,
+	// example or schema moves, measured by exporting both revisions and walking
+	// the JSON. The digest its author recorded was that measurement on the tree they
+	// merged into — the sheet this commit builds carries one more change under it.
+	//
+	// Re-recorded here for the merge of the two: the cascade layers above and this
+	// branch's border colours land in one export for the first time, so the digest
+	// below is measured on this merged tree and describes a sheet neither side ever
+	// exported. Both parents were re-exported on the same machine and reproduced the
+	// digests they record exactly (e4247c77 at 8e87bdf, 259c5976 at dc4c5a9), which is
+	// what makes the diff below a measurement of this merge rather than of the harness:
+	// against this branch at 8e87bdf, 2 of the 6,406 leaves move — /css and /sha256 —
+	// for the layer blocks wrapped around declarations whose values do not change; and
+	// against origin/main at dc4c5a9, 7 move — /css, /sha256 and five colour values
+	// (light --pk-color-text-muted #5f6b65 -> #586461, --pk-color-border-default
+	// #cbc5b8 -> #7a7773 and --pk-color-border-strong #8f988f -> #636763, dark
+	// --pk-color-border-default #2c3b37 -> #6b807a and --pk-color-border-strong
+	// #5c6d67 -> #81928c), with the role declarations derived from them inside /css.
+	// No token name, icon, example HTML or source schema moves against either parent.
+	if legacy.SHA256 != "372f1db919e2e28053a2b1022cc3b64b9b0441959c199b9daaee1b36ee3ded59" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
@@ -260,7 +288,11 @@ func TestSourceLayoutUnknownOverridesAndUnobservedChildren(t *testing.T) {
 	}
 	for _, media := range []bool{false, true} {
 		sheet := css.NewSheet()
-		write := func(s *css.Sheet) { s.Select(".flex", css.Decl("flex-direction", css.Literal("column"))) }
+		// A consumer rule of its own, on a class the kernel renders nowhere: what
+		// invalidates the claim is that a sheet the kernel did not write reaches
+		// the page, which is true of any rule, and a sheet naming one of the
+		// kernel's own classes is refused at Compose before it can.
+		write := func(s *css.Sheet) { s.Select(".store-layout", css.Decl("flex-direction", css.Literal("column"))) }
 		if media {
 			sheet.Media("(min-width: 4000px)", write)
 		} else {
