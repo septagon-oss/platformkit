@@ -57,6 +57,8 @@ var Events = []events.Declared{
 	events.Declare[FactorWithdrawn](EventFactorWithdrawn),
 	events.Declare[RecoveryCodesIssued](EventRecoveryCodesIssued),
 	events.Declare[RecoveryCodeUsed](EventRecoveryCodeUsed),
+	events.Declare[APITokenIssued](EventAPITokenIssued),
+	events.Declare[APITokenRevoked](EventAPITokenRevoked),
 	events.Declare[RegistrationRequested](EventRegistrationRequested),
 	events.Declare[VerificationRequested](EventVerificationRequested),
 }
@@ -202,4 +204,35 @@ type RecoveryCodesIssued struct {
 type RecoveryCodeUsed struct {
 	UserID uuid.UUID `json:"userId"`
 	At     time.Time `json:"at"`
+}
+
+// A bearer key's two events. Neither carries the token or its hash: the trail is
+// read by people who must not be able to use what it records, and the two facts
+// that mean something about a key are that it was made and that it was stopped.
+// Uses are not audited — a key used on every request of a mobile session would
+// make the trail a write per request, which is the cost the session touch exists
+// to avoid — and last_used_at is the record a person reads instead.
+const (
+	EventAPITokenIssued  = "auth.api_token_issued"
+	EventAPITokenRevoked = "auth.api_token_revoked"
+)
+
+// APITokenIssued is the payload of EventAPITokenIssued.
+type APITokenIssued struct {
+	TokenID   uuid.UUID `json:"tokenId"`
+	Name      string    `json:"name"`
+	Scopes    []string  `json:"scopes"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	At        time.Time `json:"at"`
+}
+
+// APITokenRevoked is the payload of EventAPITokenRevoked. It carries the last
+// use as well as the expiry, because the question after a revocation is "what was
+// this key doing most recently", and the row that answered it is about to be gone.
+type APITokenRevoked struct {
+	TokenID    uuid.UUID `json:"tokenId"`
+	Name       string    `json:"name"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+	LastUsedAt time.Time `json:"lastUsedAt"`
+	At         time.Time `json:"at"`
 }

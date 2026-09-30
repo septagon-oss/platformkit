@@ -430,8 +430,11 @@ type Service interface {
 	// a grant that looks like authority and is not.
 	SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*Role, error)
 
-	// Purge deletes this tenant's expired sessions and spent tokens, in batches,
-	// and reports how many rows went. The hourly job calls it once per tenant.
+	// Purge deletes this tenant's expired sessions, spent tokens, spent recovery
+	// codes and API keys that have been expired or revoked for APITokenRetention,
+	// in batches, and reports how many rows went. The hourly job calls it once per
+	// tenant. It is the sweep that makes "revoked" mean the row is gone eventually
+	// as well as the key not working now.
 	Purge(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error)
 }
 

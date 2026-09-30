@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -88,6 +89,18 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	}
 
 	grant, _ := auth.grant()
+	// A credential that carries its own authority is held to it before the
+	// Authorizer is asked, and this is the one line that makes a scoped key mean
+	// something: without it, a token narrower than its holder would be checked
+	// against the holder's roles and the scope would be decoration. The check is
+	// an exact name, so a key never inherits a wildcard it was not given, and a
+	// key whose holder has since been stood down from the role arrives here with
+	// an empty list — the roles are rechecked on every request, in the resolution
+	// that built this one.
+	if p.Permissions != nil && !slices.Contains(p.Permissions, grant.Permission) {
+		a.deny(ctx, CodeDenied, "this credential does not carry "+grant.Permission)
+		return
+	}
 	// Before the Authorizer, and that order is the point of the declaration: a
 	// customer's administrator holds the wildcard in their own tenant, and asking
 	// the roles table first would answer a question about everybody's with the

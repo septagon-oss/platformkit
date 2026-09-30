@@ -157,6 +157,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Errors:      []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRoleSet}},
 	}, httpx.Permission(contracts.PermissionRoleManage), handleSetRole(svc, surfaces))
+
 }
 
 // sessionOf is the session id the caller presented, read back off the request

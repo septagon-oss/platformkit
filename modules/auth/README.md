@@ -144,3 +144,57 @@ refusal and the record in one statement.
   `Authorization: Bearer`, and no `Principal.Permissions`. Still open.
 * **No factor page.** The JSON routes are the surface; a screen would be the
   shell's, and this module's own nav entry is the sessions one.
+
+## Bearer tokens for a person's own integrations
+
+A session cookie proves a browser. Nothing proved a script until
+`000032_api_tokens.up.sql`: the only credential this platform accepted was a
+cookie, so a mobile shell or a deploy bot had to hold a person's password and
+impersonate their browser.
+
+```
+POST /api/v1/auth/tokens              SignedIn   mint a key; the token is in this response and nowhere else
+GET  /api/v1/auth/tokens              SignedIn   the person's own keys: name, scopes, expiry, last use, revoked
+POST /api/v1/auth/tokens/{id}/revoke  SignedIn   stop one key, leaving the person's own sessions alone
+```
+
+A key is a **narrowed** credential, never an escalated one. Its scopes are
+checked twice before a row exists — against every permission the application
+declares, and against what the holder's own roles already grant — and a scope
+that is the wildcard is refused outright. The authorizer is then held to the
+credential: `tenancy.Principal.Permissions` is a ceiling, and when it is not nil
+the roles are not consulted, because resolving them would answer a question about
+the holder rather than about the caller. That is the whole of why a scoped key
+carries no roles. `Allowed` follows the same rule the declaration does, from the
+same package, with the same `Grants` predicate — which is also why an
+administrator holding the wildcard can mint a narrow key at all.
+
+The intersection is recomputed from the roles on every request, so standing
+somebody down from a role narrows the keys they minted in the same transaction
+that did it; `TestStandingARoleDownNarrowsTheKeysThatPersonMinted` is that claim.
+`last_used_at` is throttled by `APITokenTouch` and **never** extends
+`expires_at`: a token that renews itself on use is an expiry in name only, which
+is the argument `SessionMaxLifetime` already makes about a session. `created_by`
+carries no cascade — deleting a person must not silently delete a key another
+integration depends on.
+
+The kernel's part is three lines and a field: `httpx.BearerOf` (RFC 7235's
+scheme, case-insensitive, and a request that names the scheme twice with two
+different credentials is refused rather than resolved), `credentialed` accepting
+a bearer, and an ambiguity check that answers such a request as **anonymous** —
+a caller who presented a cookie *and* a key is not more signed in, and which one
+they meant is not the kernel's to guess. `csrf.go` is unchanged and that is the
+point: its gate is the session cookie, and a bearer carries its own proof of
+intent. No cookie is ever set, rotated or cleared by a token request.
+
+### Open here, stated rather than approximated
+
+* `GET /api/v1/auth/me` answers a cookie session and refuses a bearer caller with
+  a 403 that says so. Its body is the person's roles and everything they grant,
+  which is wider than a scoped key may act as — reporting that to a narrowed
+  caller would be a `/me` that lies about the caller's own authority. A
+  "who am I, as this key" answer (the brief's `Identity.Token`) is unbuilt.
+* No page: keys are managed through the JSON routes.
+* Uses are not audited, and `last_used_at` is the record a person reads; the
+  trail keeps the two facts that mean something about a key, that it was made and
+  that it was stopped.

@@ -132,6 +132,19 @@ type Principal struct {
 	// Roles are the roles the credential carries, for an authorizer that wants
 	// them without a second lookup.
 	Roles []string
+	// Permissions is the authority the credential itself carries, and nil means
+	// it carries none: the roles decide, which is every request that has ever
+	// been served through here.
+	//
+	// A non-nil list is a ceiling, not an addition. An authorizer may grant what
+	// is on this list and nothing else, whatever the holder's roles say, and the
+	// roles are deliberately not consulted for such a caller: a scoped key is not
+	// an administrator who happens to be asking politely, and a role list beside
+	// it would be read by every role-shaped decision in the application as the
+	// authority the scope exists to narrow. So a bearer carries no Roles — see
+	// the auth module's bearer resolution, which hands over the intersection of
+	// the key's scopes and the holder's grants and no roles at all.
+	Permissions []string
 }
 
 // principalKey is unexported for the same reason contextKey is.

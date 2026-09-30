@@ -232,14 +232,25 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			// roles name a permission nothing defines any more.
 			svc.Declare(s.Permissions())
 			internal.RegisterRoutes(s, svc, cookies)
+			// A person's own keys, mounted always: unlike the factor routes
+			// there is no secret this needs from the deployment — the token is
+			// the secret, and it is hashed rather than sealed because it is
+			// never read back.
+			internal.RegisterTokenRoutes(s, svc)
 			// The factor key is the gate, and it is a deployment's setting
 			// rather than a fact about which other modules were composed: a
 			// composition with the key mounts the routes, one without it does
 			// not, and nothing here looks at a module list to decide.
-			if deps.FactorKey != "" {
-				svc.EnableFactors([]byte(deps.FactorKey))
-				internal.RegisterFactorRoutes(s, svc, cookies)
-			}
+			// The factor routes are mounted whether or not the deployment set a
+			// key, and with none they answer 503 — the refusal the spec names,
+			// and the reason they are not mounted conditionally: an operation
+			// that exists only sometimes leaves its four events declared and
+			// unreachable, which the application's own catalogue check (every
+			// declared event has a channel) is right to call a lie. A deployment
+			// without a key is told the door is shut rather than being handed a
+			// 404 that says nothing about why.
+			svc.EnableFactors([]byte(deps.FactorKey))
+			internal.RegisterFactorRoutes(s, svc, cookies)
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(s, svc)
 			}

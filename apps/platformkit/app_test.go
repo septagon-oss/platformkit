@@ -1289,6 +1289,32 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	var top int64
 	t.Helper()
 	all := fstest.MapFS{}
+	// An installation from before the split applied the files that existed then,
+	// which is everything up to the highest file the foundation itself shipped:
+	// the split moved those files to their modules, it did not add any. A file
+	// above that number postdates the release, so the ledger must not claim it was
+	// applied — there would be no row to re-own and kit/db would be right to call
+	// an applied file that no release ships a contradiction
+	// (migrate.go, "was applied but is missing from this release"). This is what
+	// lets a module ship a version above the kernel's highest without rewriting
+	// this fixture every time it does: modules/auth's 31 and 32 land here, apply
+	// normally in the upgrade, and are checked as new rows below.
+	var preSplitTop int64
+	for _, source := range sources {
+		if source.Owner != "platformkit" {
+			continue
+		}
+		entries, err := fs.ReadDir(source.Files, ".")
+		if err != nil {
+			t.Fatalf("read %s: %v", source.Owner, err)
+		}
+		for _, entry := range entries {
+			digits, _, _ := strings.Cut(entry.Name(), "_")
+			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > preSplitTop {
+				preSplitTop = version
+			}
+		}
+	}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
 		if err != nil {
@@ -1303,7 +1329,11 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 				t.Fatalf("two owners ship %s; the old layout had one of each", entry.Name())
 			}
 			digits, _, _ := strings.Cut(entry.Name(), "_")
-			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > top {
+			version, err := strconv.ParseInt(digits, 10, 64)
+			if err != nil || version > preSplitTop {
+				continue
+			}
+			if version > top {
 				top = version
 			}
 			all[entry.Name()] = &fstest.MapFile{Data: body}
@@ -1375,7 +1405,14 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// say so.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 30 — thirteen files under migrations/ (1, 2, 3, 5, 6, 9, 12,
+	// this head prints 32, of which the release this fixture is applied from
+	// shipped 30: thirteen under migrations/ and the seventeen module files at or
+	// below the kernel's own highest. The two this branch adds,
+	// modules/auth/000031_auth_factors and modules/auth/000032_api_tokens, are
+	// numbered above the kernel's 30 because every version from 1 to 30 is taken,
+	// and a release that postdates the split is not in the old installation's
+	// ledger — legacyLayout therefore leaves them out, see the comment there.
+	// The 30 that remain are thirteen under migrations/ (1, 2, 3, 5, 6, 9, 12,
 	// 20, 21, 26, 28, 29, 30) and seventeen under modules/*/migrations/ (4, 7, 8,
 	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27), all distinct.
 	if len(before) != 30 {
@@ -1390,15 +1427,20 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	ledger(owners, "SELECT version, owner FROM schema_migrations")
 	after := map[int64]string{}
 	ledger(after, "SELECT version, applied_at::text FROM schema_migrations")
-	if len(owners) != len(before) {
-		t.Fatalf("the upgrade left %d applied files, want the same %d", len(owners), len(before))
-	}
+	// The upgrade re-owns the old rows and applies the files that postdate them,
+	// so the ledger grows by exactly the new files and by nothing else: a fixture
+	// that re-ran an old file would be caught below by applied_at, and one that
+	// lost a row would be caught here.
+
 	for version, when := range before {
 		if after[version] != when {
 			t.Errorf("version %d was applied again: %s became %s", version, when, after[version])
 		}
 	}
-	// Each file now reads under the owner that ships it.
+	// Each file now reads under the owner that ships it — and every file this
+	// release ships is in the ledger, which is where the two files this branch
+	// adds (modules/auth 31 and 32, above the kernel's 30 and so absent from the
+	// old ledger) have to be accounted for: 32 files in the release, 32 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
@@ -1412,6 +1454,9 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 			}
 			want[version] = source.Owner
 		}
+	}
+	if len(owners) != len(want) {
+		t.Fatalf("the upgrade left %d applied files, want the %d this release ships", len(owners), len(want))
 	}
 	for version, owner := range want {
 		if owners[version] != owner {

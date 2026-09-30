@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -102,6 +103,19 @@ func RegisterFactorRoutes(surfaces httpx.Surfaces, factors contracts.Factors, co
 	}, httpx.Public(), handleVerifyFactor(factors, cookies))
 }
 
+// refusal503 is the one mapping this capability's outage-shaped failure needs:
+// ErrNoFactorKey is not the caller's fault and not a server bug — it is a
+// deployment that has not decided to offer a second factor yet — and it reads as
+// 503 with the reason in it, which is what "correctable, by the operator" means
+// in a response.
+func refusal503(err error) error {
+	if errors.Is(err, contracts.ErrNoFactorKey) {
+		return problem.New(http.StatusServiceUnavailable,
+			"this installation sets no factor key, so no second factor can be enrolled")
+	}
+	return rest.Fault(err)
+}
+
 // hostOf is the host a request arrived at, without the port: the label an
 // authenticator shows, and the value the OIDC leg already uses for its redirect.
 func hostOf(r *http.Request) string {
@@ -135,7 +149,7 @@ func handleBeginTOTP(factors contracts.Factors) func(context.Context, *struct{})
 		r, _ := httpx.RequestFrom(ctx)
 		enrolment, err := factors.BeginTOTP(ctx, tx, userID)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, refusal503(err)
 		}
 		// The host this request arrived at is the issuer label, because that host
 		// is how a tenant is reached here and the authenticator shows the label to
@@ -160,7 +174,7 @@ func handleFinishTOTP(factors contracts.Factors) func(context.Context, *finishTO
 		}
 		factor, codes, err := factors.FinishTOTP(ctx, tx, userID, in.Body.Secret, in.Body.Code)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, refusal503(err)
 		}
 		out := &recoveryCodesOutput{}
 		out.Body.Factor, out.Body.Codes = factor, codes

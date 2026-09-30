@@ -345,7 +345,29 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if verifications.Error != nil {
 		return 0, fmt.Errorf("auth: purge email verifications: %w", verifications.Error)
 	}
-	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected, nil
+	// A spent recovery code has answered its one question. Keeping the row would
+	// be keeping a list of which of a person's codes still work — the opposite of
+	// what the hash was for.
+	codes := tx.DB().Exec(
+		"DELETE FROM recovery_codes WHERE id IN ("+
+			"SELECT id FROM recovery_codes WHERE used_at IS NOT NULL LIMIT ?)", purgeBatch)
+	if codes.Error != nil {
+		return 0, fmt.Errorf("auth: purge the spent recovery codes: %w", codes.Error)
+	}
+	// A key that has been dead for a month is no longer a fact anybody reads: the
+	// revocation is on the trail with its name, its scope and its last use, which
+	// is what an incident review asks. The month is the difference between
+	// answering that question from a row and keeping a credential — a hash, but a
+	// row nonetheless — forever because deleting it was a little inconvenient.
+	keys := tx.DB().Exec(
+		"DELETE FROM api_tokens WHERE id IN ("+
+			"SELECT id FROM api_tokens WHERE expires_at <= now() - ?::interval"+
+			" OR revoked_at <= now() - ?::interval LIMIT ?)", retired, retired, purgeBatch)
+	if keys.Error != nil {
+		return 0, fmt.Errorf("auth: purge the retired api tokens: %w", keys.Error)
+	}
+	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected +
+		codes.RowsAffected + keys.RowsAffected, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason
@@ -356,6 +378,9 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 var (
 	purgeBatch = 1000
 	maxAge     = fmt.Sprintf("%d hours", int(contracts.SessionMaxLifetime/time.Hour))
+	// retired is how long a dead API key stays a row: long enough for whoever
+	// noticed to ask about it, short enough that the table is not a museum.
+	retired = fmt.Sprintf("%d hours", int(contracts.APITokenRetention/time.Hour))
 )
 
 // Logout ends a session. Ending one that is already gone is not an error: the

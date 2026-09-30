@@ -96,8 +96,14 @@ func handleIdentity(svc contracts.Service) func(context.Context, *struct{}) (*id
 		}
 		id, ok := sessionOf(ctx)
 		if !ok {
-			// SignedIn was satisfied, so somebody is here; they arrived with
-			// something other than a session cookie, which nothing issues yet.
+			// SignedIn was satisfied, so somebody is here — they simply arrived
+			// with a bearer key rather than a cookie session. This route reports
+			// a cookie session: its body is the person's roles and everything
+			// those grant, which is wider than a scoped key is allowed to act as,
+			// and answering a narrowed caller with the full list would be a
+			// /me that lies about the caller's own authority. A scoped caller
+			// gets the routes its scopes name; a "who am I, as this key" answer
+			// is named as open in the module README rather than approximated here.
 			return nil, problem.New(http.StatusForbidden, "this operation answers for a cookie session")
 		}
 		r, _ := httpx.RequestFrom(ctx)
