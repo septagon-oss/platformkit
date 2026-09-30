@@ -57,14 +57,17 @@ text. Negotiated pages emit `Content-Language`, `Vary: Accept-Language` and `Cac
 Control: private, no-store` so an account preference cannot leak through a shared
 response cache. Existing unconfigured shells retain their behavior; untranslated
 recovery notices keep their English tags. A refusal page (`FaultHandler`, the page a
-kernel guard answers a browser with) reads the same contract: it negotiates from the
-request's `Accept-Language` — a guard answers before a tenant, a session or a stored
-preference exists, so the header the caller brought is all there is to negotiate from —
-and shows the sentence this shell ships under `fault.<CODE>`, where the codes are
-`kit/httpx`'s published `Code*` constants and the table lives in `fault.go` — reached
-only if the shell that registers the renderer carries `Shell.Messages` itself, because a
-failure page composed without the catalog is the branch two lines below and the `fault.*`
-copy becomes sentences nobody reads. `Serve` routes a handler's own 4xx through the same
+kernel guard answers a browser with) reads the same contract: it intersects the request's
+`Accept-Language` with the languages of the tenant the address belongs to, and shows the
+sentence this shell ships under `fault.<CODE>`, where the codes are `kit/httpx`'s
+published `Code*` constants and the table lives in `fault.go`. A guard answers ahead of a
+session, a handler and any stored preference, but a host is a fact a refused request still
+has, so `kit/httpx` resolves it for a refusal it renders as a page (`withHostTenant`) and
+the tenant's set binds the refusal exactly as it binds the page beside it; only an address
+whose host names no tenant is negotiated from the header the caller brought. That copy is
+reached only if the shell that registers the renderer carries `Shell.Messages` itself,
+because a failure page composed without the catalog is the branch two lines below and the
+`fault.*` copy becomes sentences nobody reads. `Serve` routes a handler's own 4xx through the same
 renderer, so a module's refusal is worded the way a guard's is in the shell that mounted
 it. Every guard
 that can refuse a request a person may be looking at answers through that renderer
@@ -138,5 +141,6 @@ does a second lookup. **Added:** `TenantPreferences`, the intersection and the
 tenant's set behind it, and `languageBase`, which is the comparison the filter had to
 make to answer `pt-BR` in Portuguese. **Made reusable:** a `Catalogue()` that returns
 an `xtext.Source` rather than a package-level catalogue — the shape any owner of copy
-publishes — and a refusal page that negotiates from the request alone, which is the
-only language available to a guard that refuses before a tenant exists.
+publishes — and a refusal page that negotiates from what a refused request still has: the
+header the caller brought, and since `kit/httpx` resolves the address's host for a refusal
+it renders as a page, the tenant the person was standing in front of.

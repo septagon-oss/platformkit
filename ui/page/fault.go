@@ -116,22 +116,25 @@ func faultKey(detail string, status int) (key string, lookup bool) {
 // refusalLocale is the language this refusal is answered in, or nil for a shell that ships
 // no catalog at all.
 //
-// The request's own Accept-Language is the only preference available, and that is a
-// consequence rather than a shortcut. Shell.Locale reads a URL, an account or a tenant
-// preference, and each of those needs something this response is the refusal to have: a
-// resolved tenant, an open transaction, a session that was accepted, or a handler to run
-// at all. A guard answers before any of them exist, so the language of a refusal can only
-// be the one the caller brought — which is also exactly what makes Vary: Accept-Language
-// the true thing to say about the response.
+// It is the same contract every other page of this package uses — the tenant's set, the
+// caller's header filtered against it, the tenant's default behind that — and the tenant
+// arrives because the kernel resolves the address's host before it renders a refusal as a
+// page (kit/httpx's withHostTenant), which it may, because a host is a fact a refused
+// request still has. What a guard has no access to is everything Shell.Locale reads: a
+// URL, an account, a stored preference, each of which needs something this response is the
+// refusal to have — a session that was accepted, an open transaction, a handler to run at
+// all. Those are absent whatever the verdict, and the caller's own header is what is left
+// of the preference list — which is also exactly what makes Vary: Accept-Language the true
+// thing to say about the response.
 func refusalLocale(m Messages, r *http.Request, tenant tenancy.Tenant) *Locale {
 	if m == nil {
 		return nil
 	}
-	// The tenant the request resolved to, when a guard got that far: the languages it
-	// is served in are as much a fact about a refusal as about any other page. A guard
-	// that refused before a host resolved has no tenant to filter by, and the
-	// deployment's own catalog is then the only declaration standing — which is the
-	// answer the request would have been given anyway.
+	// The tenant the request resolved to: the languages it is served in are as much a
+	// fact about a refusal as about any other page, and a tenant that declared one
+	// language was not refusing to be answered in another. An address whose host names no
+	// tenant — a domain nobody serves, a database that could not say — has no declaration
+	// to filter by, and the deployment's own catalog is then the only one standing.
 	loc := SelectLocale(m, TenantPreferences(Request{Tenant: tenant}, r.Header.Get("Accept-Language"))...)
 	return &loc
 }
