@@ -86,13 +86,14 @@ The second is a tool this repository does not own: `tools/pillars.py` is the pro
 not the kernel's (`ls tools/` → `designexport locbudget`). Its absence leaves the brief's
 "measurably better" line no less answerable, because the indicator that tool computes for
 this pillar is a reading of one file — *OpenTelemetry in the kernel*, whether `go.mod` names
-`go.opentelemetry.io/otel` — and one command gives its value at both ends. `0c3a040` is the
-`origin/main` commit this branch sits on, which `git merge-base HEAD origin/main` prints and
-which every merge moves, so a merge restates it:
+`go.opentelemetry.io/otel` — and one command gives its value at both ends. No base SHA is
+quoted here, because a merge moves the `origin/main` commit this branch sits on and a quoted
+one goes stale the day it is written; the command names that base rather than a pin:
 
 ```sh
-grep -c 'go.opentelemetry.io/otel' go.mod                     # 8
-git show 0c3a040:go.mod | grep -c 'go.opentelemetry.io/otel'  # 0
+grep -c 'go.opentelemetry.io/otel' go.mod                                  # 8 here
+git show "$(git merge-base HEAD origin/main):go.mod" | grep -c 'go.opentelemetry.io/otel'
+    # and 0 there
 ```
 
 True here, false there. The branch's own `build(deps)` commit is the change that adds the
@@ -104,3 +105,10 @@ measured against the reference application's own composition and is not recomput
 this tree: no committed symbol or tool counts the 81, which is the product's share. What is
 committed is the numerator's evidence, one case per kind of boundary that reads the tenant
 dimension back off the span, metric or row the boundary emits.
+
+The sampler is OpenTelemetry's default shape, `ParentBased(TraceIDRatioBased(…))`, so on the
+public surface a caller that sends a sampled `traceparent` decides how much of its own traffic
+the operator keeps, and chooses the trace id the operator reads. No caller chooses whose tenant
+stands on a span or a number: that comes from the host the request resolved, never from a
+header. Whether the public surface should ignore an inbound `traceparent` instead is a
+product's share, not this package's.
