@@ -73,6 +73,18 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	if in.Name == "" {
 		return nil, fmt.Errorf("%w: a tenant needs a name", crud.ErrInvalid)
 	}
+	// Asked for before the row exists, so a create that cannot be audited from both
+	// sides writes no tenant at all: there is no operator tenant to ask in an
+	// installation that has never been bootstrapped, and that is exactly the case
+	// Bootstrap exists for — the tenant it creates is the operator's own, and needs
+	// no mirror.
+	operator := uuid.Nil
+	if !in.Operator {
+		var err error
+		if operator, err = s.installation(tx); err != nil {
+			return nil, err
+		}
+	}
 	at := db.Now()
 	t := &contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
@@ -119,7 +131,7 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 			return nil, fmt.Errorf("tenant: %s: %w", t.Slug, err)
 		}
 	}
-	return t, s.record(ctx, tx, t, verbCreate, contracts.EventCreated, contracts.Created{
+	return t, s.record(ctx, tx, t, operator, verbCreate, contracts.EventCreated, contracts.Created{
 		TenantID: t.ID, Slug: t.Slug, Name: t.Name, Host: host, At: at,
 	})
 }
@@ -150,7 +162,11 @@ func (s *Service) AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	if err := s.attach(tx, t, host, primary); err != nil {
 		return nil, err
 	}
-	err = s.record(ctx, tx, t, verbAddHost, contracts.EventHostAdded, contracts.HostAdded{
+	operator, err := s.audience(tx, t)
+	if err != nil {
+		return nil, err
+	}
+	err = s.record(ctx, tx, t, operator, verbAddHost, contracts.EventHostAdded, contracts.HostAdded{
 		TenantID: t.ID, Host: key, Primary: primary, At: db.Now(),
 	})
 	if err != nil {
@@ -186,13 +202,17 @@ func (s *Service) Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	if t.Status == contracts.StatusSuspended {
 		return t, nil
 	}
+	operator, err := s.audience(tx, t)
+	if err != nil {
+		return nil, err
+	}
 	t.Status, t.UpdatedAt = contracts.StatusSuspended, db.Now()
 	// The two columns this changed, and no others: writing the whole row would
 	// put every field back to what this transaction read.
 	if err := tx.DB().Model(t).Select("status", "updated_at").Updates(t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
-	return t, s.record(ctx, tx, t, verbSuspend, contracts.EventSuspended, contracts.Suspended{
+	return t, s.record(ctx, tx, t, operator, verbSuspend, contracts.EventSuspended, contracts.Suspended{
 		TenantID: t.ID, Slug: t.Slug, At: t.UpdatedAt,
 	})
 }
@@ -217,12 +237,16 @@ func (s *Service) Rename(ctx context.Context, tx db.Tx[db.System], id uuid.UUID,
 	if t.Name == name {
 		return t, nil
 	}
+	operator, err := s.audience(tx, t)
+	if err != nil {
+		return nil, err
+	}
 	from, at := t.Name, db.Now()
 	t.Name, t.UpdatedAt = name, at
 	if err := tx.DB().Model(t).Select("name", "updated_at").Updates(t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
-	return t, s.record(ctx, tx, t, verbRename, contracts.EventRenamed, contracts.Renamed{
+	return t, s.record(ctx, tx, t, operator, verbRename, contracts.EventRenamed, contracts.Renamed{
 		TenantID: t.ID, From: from, To: name, At: at,
 	})
 }
@@ -239,11 +263,15 @@ func (s *Service) Reactivate(ctx context.Context, tx db.Tx[db.System], id uuid.U
 	if t.Status == contracts.StatusActive {
 		return t, nil
 	}
+	operator, err := s.audience(tx, t)
+	if err != nil {
+		return nil, err
+	}
 	t.Status, t.UpdatedAt = contracts.StatusActive, db.Now()
 	if err := tx.DB().Model(t).Select("status", "updated_at").Updates(t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
-	return t, s.record(ctx, tx, t, verbReactivate, contracts.EventReactivated, contracts.Reactivated{
+	return t, s.record(ctx, tx, t, operator, verbReactivate, contracts.EventReactivated, contracts.Reactivated{
 		TenantID: t.ID, Slug: t.Slug, At: t.UpdatedAt,
 	})
 }
@@ -282,7 +310,11 @@ func (s *Service) RemoveHost(ctx context.Context, tx db.Tx[db.System], id uuid.U
 	if err := tx.DB().Exec("DELETE FROM tenant_hosts WHERE tenant_id = ? AND host = ?", t.ID, key).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
-	if err := s.record(ctx, tx, t, verbRemoveHost, contracts.EventHostRemoved, contracts.HostRemoved{
+	operator, err := s.audience(tx, t)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.record(ctx, tx, t, operator, verbRemoveHost, contracts.EventHostRemoved, contracts.HostRemoved{
 		TenantID: t.ID, Host: key, At: db.Now(),
 	}); err != nil {
 		return nil, err
@@ -320,12 +352,16 @@ func (s *Service) Delete(ctx context.Context, tx db.Tx[db.System], id uuid.UUID,
 		return nil, fmt.Errorf("%w: %q is this installation's own tenant; deleting it closes the control plane it is reached through",
 			crud.ErrConflict, t.Slug)
 	}
+	operator, err := s.audience(tx, t)
+	if err != nil {
+		return nil, err
+	}
 	at := db.Now()
 	t.DeletedAt, t.UpdatedAt = &at, at
 	if err := tx.DB().Model(t).Select("deleted_at", "updated_at").Updates(t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
-	return t, s.record(ctx, tx, t, verbDelete, contracts.EventDeleted, contracts.Deleted{
+	return t, s.record(ctx, tx, t, operator, verbDelete, contracts.EventDeleted, contracts.Deleted{
 		TenantID: t.ID, Slug: t.Slug, At: at,
 	})
 }
@@ -387,19 +423,29 @@ func (s *Service) loaded(tx db.Tx[db.System], t *contracts.Tenant) (*contracts.T
 // branch stops the duplicate, because the trail's idempotence key is
 // (tenant_id, event_id) and these are two event ids.
 func (s *Service) record(ctx context.Context, tx db.Tx[db.System], t *contracts.Tenant,
-	verb, name string, payload any) error {
+	operator uuid.UUID, verb, name string, payload any) error {
 	if err := events.PublishFor(ctx, tx, t.ID, name, payload); err != nil {
 		return err
 	}
-	if t.Operator {
+	if operator == uuid.Nil {
 		return nil
-	}
-	operator, err := s.installation(tx)
-	if err != nil {
-		return err
 	}
 	return events.PublishFor(ctx, tx, operator, contracts.EventLifecycleRecorded,
 		contracts.LifecycleRecorded{Verb: verb, TenantID: t.ID, Slug: t.Slug, At: db.Now()})
+}
+
+// audience is installation, unless the subject of the verb *is* the installation:
+// then there is one trail for both rows, uuid.Nil says "publish the verb and nothing
+// beside it", and nothing but this branch stops the duplicate row — the trail's
+// idempotence key is (tenant_id, event_id), and these are two event ids.
+//
+// The question is asked before the command writes, so that the refusal of an
+// unauditable verb writes nothing on the caller's transaction's good behaviour.
+func (s *Service) audience(tx db.Tx[db.System], subject *contracts.Tenant) (uuid.UUID, error) {
+	if subject.Operator {
+		return uuid.Nil, nil
+	}
+	return s.installation(tx)
 }
 
 // installation is the operator tenant's id and slug — the scope every lifecycle
