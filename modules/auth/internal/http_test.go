@@ -79,7 +79,10 @@ func mountOn(t *testing.T, conn *db.Conn, oidc auth.OIDC) (chi.Router, *db.Conn,
 func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration bool, configure ...func(*auth.Deps)) (chi.Router, *db.Conn, contracts.Auth) {
 	t.Helper()
 	mailbox, notices = &authtest.Mailbox{}, &authtest.Notices{}
-	users, userModule := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
+	users, userModule := user.Module(user.Deps{
+		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
+		Granting:       allowGranting,
+	})
 	var registrar contracts.RegistrationUsers
 	if registration {
 		registrar = users
