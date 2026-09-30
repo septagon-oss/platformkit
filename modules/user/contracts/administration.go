@@ -326,3 +326,54 @@ func held(u *User, administering []string) []string {
 	}
 	return out
 }
+
+// Granting answers whether the caller of the write in hand may put a role that
+// administers this tenant onto anybody.
+//
+// It is a port for the same reason Administration is: who holds the permission
+// that manages roles is the auth module's table, and this module may not read
+// it. The reference application answers it from the Authorizer the API already
+// holds, in apps/platformkit/modules.go.
+//
+// Without it, the roles screen is a self-service door: the generated command
+// takes the Spec's own write permission, so anybody who may write a user may put
+// an administering role on themselves — and the only floor beneath that was the
+// one about not taking the last administrator away, which a first grant does not
+// trip. SetRoles asks it only when the write *adds* an administering role the
+// person does not already hold, so taking roles away, moving between two
+// ordinary roles and re-saving the same set all stay possible for the
+// administrator who may write users and nothing else — including the repair
+// CheckedAdministration itself recommends, granting the role to somebody active
+// first.
+//
+// user.Deps.Granting is required, in the same words as Deps.Administration: a
+// composition that supplies none gets a panic naming this at boot rather than an
+// application whose promotions are unguarded.
+type Granting interface {
+	// May reports whether the caller on ctx may grant an administering role. An
+	// error is a decision that could not be made, and the write is refused: the
+	// opposite of the floor's rule, because this is a door being opened and not
+	// a lock being kept.
+	May(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error)
+}
+
+// GrantingFunc is the minimal adapter from a function to Granting. Take its
+// address, as with AdministrationFunc, so two Deps values stay comparable.
+type GrantingFunc struct {
+	Ask func(context.Context, db.Tx[db.Tenant]) (bool, error)
+}
+
+func (f *GrantingFunc) May(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error) {
+	if f == nil || f.Ask == nil {
+		return false, errors.New("user: Granting has no Ask")
+	}
+	return f.Ask(ctx, tx)
+}
+
+// RefuseUngrantable is the refusal a caller who may not promote anybody meets.
+// It names the rule and the repair, and it is the same shape as the floor's so a
+// form shows both above the same checkboxes.
+func RefuseUngrantable(role string) error {
+	return fmt.Errorf("%w: granting %q needs the permission that manages roles, which this caller does not hold",
+		crud.ErrInvalid, role)
+}
