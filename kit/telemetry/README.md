@@ -86,9 +86,8 @@ The second is a tool this repository does not own: `tools/pillars.py` is the pro
 not the kernel's (`ls tools/` → `designexport locbudget`). Its absence leaves the brief's
 "measurably better" line no less answerable, because the indicator that tool computes for
 this pillar is a reading of one file — *OpenTelemetry in the kernel*, whether `go.mod` names
-`go.opentelemetry.io/otel` — and one command gives its value at both ends. No base SHA is
-quoted here, because a merge moves the `origin/main` commit this branch sits on and a quoted
-one goes stale the day it is written; the command names that base rather than a pin:
+`go.opentelemetry.io/otel` — and one command gives its value at both ends. No base SHA is quoted
+here: a quoted base is stale the day somebody merges, so the command names that base, not a pin.
 
 ```sh
 grep -c 'go.opentelemetry.io/otel' go.mod                                  # 8 here
@@ -96,16 +95,17 @@ git show "$(git merge-base HEAD origin/main):go.mod" | grep -c 'go.opentelemetry
     # and 0 there
 ```
 
-True here, false there. The branch's own `build(deps)` commit is the change that adds the
-dependency, and the tool reads that same boolean off `origin/main`, so the tool's reading of
-it turns true the day this merges.
+True here, false there — and only while this branch stands off its base, which is all this pair
+claims: on `main` the merge is its own base, so both commands print 8 there and the block's own
+`# and 0 there` reads 8. The branch's own `build(deps)` commit is the change that adds the
+dependency, and the tool reads that same boolean off `origin/main`, so its reading turns true.
 
 The ratio this delivery reports beside it — 80 of the 81 operation and module-declared
-boundaries, the composition's own four relay and purge jobs excluded and named as excluded in
-`CHANGELOG.md` — was measured against that composition and is not recomputable from this tree:
-no committed symbol or tool counts the 81, which is the product's share. What is committed is the
-numerator's evidence, one case per kind of boundary that reads the tenant dimension back off the
-span, metric or row the boundary emits.
+boundaries, the composition's own four jobs (its relay, its two purges and its migration drain)
+excluded and named as excluded in `CHANGELOG.md` — was measured against that composition and is
+not recomputable from this tree: no committed symbol or tool counts the 81, which is the product's
+share. What is committed is the numerator's evidence, one case per kind of boundary that reads the
+tenant dimension back off the span, metric or row the boundary emits.
 
 The sampler is OpenTelemetry's default shape, `ParentBased(TraceIDRatioBased(…))`, so on the
 public surface a caller that sends a sampled `traceparent` decides how much of its own traffic
