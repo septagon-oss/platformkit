@@ -117,8 +117,17 @@ func TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted(t *testing
 			t.Errorf("the refusal names a person (%s); it may name a role and nothing else: %s", name, firstLineOf(html))
 		}
 	}
-	if !strings.Contains(html, `href="/app/dashboard"`) {
-		t.Errorf("the refusal offers no way on (/app/dashboard): %s", firstLineOf(html))
+	if !strings.Contains(html, `href="`+pinnedHome+`"`) {
+		t.Errorf("the refusal offers no way on (%s): %s", pinnedHome, firstLineOf(html))
+	}
+	// And the way on is asked of the running server as this person, not as a
+	// string in a page: an address that answers 404 is the dead end this brief
+	// exists to close, and TestPinnedAddresses asks its pins anonymously, where the
+	// answer at the workspace root is a redirect and not a page.
+	if code, ctype, page := askNavigate(t, cfg, member, acmeHost, pinnedHome); code != http.StatusOK ||
+		!strings.Contains(strings.ToLower(ctype), "text/html") {
+		t.Errorf("the refusal's way on %s = %d %s for the person it refused, want the workspace home: %s",
+			pinnedHome, code, ctype, firstLineOf(page))
 	}
 	if strings.Contains(html, `href="`+askDeniedScreen+`"`) {
 		t.Errorf("the refusal links back to the address that refused: %s", firstLineOf(html))
