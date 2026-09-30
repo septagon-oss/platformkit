@@ -410,9 +410,10 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx, which holds the
 	// installation host fixed and changes only the tenant.
 	//
-	// Which languages a tenant is served in is in this list because it is the newest
-	// of these routes and the one a tenant would most like to write for itself: the
-	// tenant's own host is exactly where its absence has to show.
+	// Which languages a tenant is served in, and which identity provider its people
+	// sign in against, are in this list because they are the newest of these routes
+	// and the two a tenant would most like to write for itself: the tenant's own
+	// host is exactly where their absence has to show.
 	for _, probe := range []struct{ method, path, body string }{
 		{http.MethodGet, tenantPath, ""},
 		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
@@ -420,6 +421,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		{http.MethodGet, tenantPath + "/" + globexID.String(), ""},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/locale", `{"default":"pt-PT","supported":["en","pt-PT"]}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/oidc", `{"issuer":"https://idp.globex.example","clientId":"platformkit","secretRef":"GLOBEX_OIDC_SECRET"}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/oidc/clear", ""},
 	} {
 		code, body = do(t, cfg, other, probe.method, globexHost, probe.path, probe.body)
 		if code != http.StatusNotFound {
