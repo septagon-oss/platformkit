@@ -87,16 +87,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            e2e/package-lock.json
-            tools/designexport/openpencil/package-lock.json
-
-      - name: Native design conformance
-        working-directory: tools/designexport/openpencil
-        run: |
-          npm ci --ignore-scripts
-          npm audit --omit=dev --audit-level=high
-          npm test
+          cache-dependency-path: e2e/package-lock.json
 
       - name: Install the browser
         working-directory: e2e
@@ -104,17 +95,18 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Native browser observations
-        working-directory: tools/designexport/openpencil
-        run: |
-          npx playwright install --with-deps chromium
-          npm run test:browser
-
-      - name: Corrected editor image builds without publishing
-        run: docker build -f tools/designexport/openpencil/Dockerfile -t platformkit-openpencil:check .
-
+      # Gate 10, and the step whose deadline the serial job used to reach. See the
+      # same split in .gitea/workflows/ci.yml, which is the workflow this repository
+      # actually runs: it names the two measurements this mirror is shaped by.
       - name: make e2e
         run: make e2e
+
+      # The editor build stays with the functional gates, as it does in the
+      # workflow this repository runs: a build needs no job network, no service and
+      # no Node, and splitting it from the steps that run the image it produces
+      # would make one job's artifact another job's precondition.
+      - name: Corrected editor image builds without publishing
+        run: docker build -f tools/designexport/openpencil/Dockerfile -t platformkit-openpencil:check .
 
       # Last, and deliberately. A ceiling that rose is a decision for an owner
       # to review, not a reason to stop the job before it has said whether the
@@ -123,3 +115,42 @@ jobs:
         env:
           BUDGET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: bash scripts/check_budget_ratchet.sh "$BUDGET_BASE"
+
+  # The design tool's own gates, mirrored from .gitea/workflows/ci.yml, which this
+  # repository's runner actually executes and whose comment carries the measured
+  # reason for the seam. This file's own `check` job carries twenty minutes and
+  # carried every gate: the Gitea run of the same tree took 43m16s of steps, so the
+  # shape below is the only one under which this job could ever have finished.
+  design:
+    # Only on GitHub: Gitea reads this directory too and runs .gitea/workflows for itself.
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Every design test embeds a real Go program and builds it before observing
+      # anything, so this job compiles against the pinned toolchain although it runs
+      # no Go gate.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tools/designexport/openpencil/package-lock.json
+
+      - name: Native design conformance
+        working-directory: tools/designexport/openpencil
+        run: |
+          npm ci --ignore-scripts
+          npm audit --omit=dev --audit-level=high
+          npm test
+
+      - name: Native browser observations
+        working-directory: tools/designexport/openpencil
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
