@@ -82,7 +82,7 @@ var roleLayer = map[string]ColorValue{
 	"surface-info":         roleRef("status-info"),
 	"surface-info-soft":    roleRef("status-infobg"),
 	"surface-disabled":     roleRef("surface-muted"),
-	"surface-hover":        roleMix(roleRef("text-primary"), 4, roleRef("surface-primary")),
+	"surface-hover":        roleMix(roleRef("text-primary"), HoverTintPercent, roleRef("surface-primary")),
 	"surface-active":       roleMix(roleRef("text-primary"), 8, roleRef("surface-primary")),
 	"surface-overlay":      roleMix(roleRef("sidebar-bg"), 55, ColorValue{Literal: "transparent"}),
 	"surface-inverse":      roleRef("sidebar-bg"),
@@ -324,13 +324,20 @@ func StatusRolePairs() []RolePair { return slices.Clone(statusRolePairs) }
 // asked for and less than a sentence, so the floor is MinContrastGraphic: the one
 // this layer already holds the focus ring to.
 //
-// Two grounds, because a field is painted on two things: the card
-// (surface-primary) and the page canvas (--pk-role-surface-secondary) behind a
-// field that is not inside a card. The muted panel (surface-tertiary) reaches the
-// same floor — the shipped pair measures 3.02:1 there and no reading of 800
-// generated themes falls under 3.50:1 — but is not gated, because no shipped rule
-// draws a field's line on a muted panel today and an unpainted pair has no
-// business in the list a client's file is refused by.
+// The grounds are the ones ui/components actually paints the line on, read out of
+// classlists.go rather than guessed: the card (surface-primary) and the page
+// canvas (surface-secondary) a field stands on (clInput/clInputNormal, clCardFrame
+// — round 14); the muted panel (surface-tertiary) a neutral badge and a refused
+// media panel draw their border on (clBadgeTone["neutral"], clMediaRefused); and
+// the control's own hovered fill (surface-hover), because clButtonVariant["secondary"]
+// and clModalCancel keep painting BorderColor(style.BorderPrimary) while
+// hoverBg(style.SurfaceHover) moves the fill underneath it — a ground the layer
+// mixes at HoverTintPercent of text-primary over surface-primary rather than a
+// token a client files, which is why the pair belongs to this list and not to the
+// token half in contrast.go. surface-active is mixed the same way and joins no
+// list: no shipped rule draws a line on it (grep style.SurfaceActive over ui/,
+// modules/ and apps/ answers only a test), and an unpainted pair has no business
+// in the list a client's file is refused by.
 //
 // What stays exempt is the decoration, not the boundary: a divider drawn between
 // two rows the reader has already found, and a tint, whose copy the body and
@@ -341,6 +348,8 @@ func StatusRolePairs() []RolePair { return slices.Clone(statusRolePairs) }
 var edgeRolePairs = []RolePair{
 	{Foreground: "border-primary", Background: "surface-primary", Min: MinContrastGraphic},
 	{Foreground: "border-primary", Background: "surface-secondary", Min: MinContrastGraphic},
+	{Foreground: "border-primary", Background: "surface-tertiary", Min: MinContrastGraphic},
+	{Foreground: "border-primary", Background: "surface-hover", Min: MinContrastGraphic},
 }
 
 // EdgeRolePairs returns the pairs whose role is to be seen rather than read: a

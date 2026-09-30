@@ -36,8 +36,9 @@ func roleValues() map[Color]design.ColorValue {
 func RoleColors() []design.ColorToken { return design.RoleLayer() }
 
 // BodyRolePairs returns the body-size text pairs this package's roles compose on
-// a theme's own surfaces, for design.Theme.CheckRoles. A caller that emits a
-// stylesheet hands these over with RoleColors: the token gate says what a theme
+// a theme's own surfaces, for design.Theme.CheckRoles. A caller that exports a
+// document hands these over with RoleColors (ui.Compose, which builds the served
+// sheet, measures nothing and trusts the door that handed it the pair): the token gate says what a theme
 // sets, these say what a reader is shown. design declares them in the layer's own
 // vocabulary; these are the same pairs spelled in the names this package emits,
 // because the sheet a caller gates is written in them — and
@@ -66,8 +67,8 @@ func emittedRolePairs(pairs []design.RolePair) []design.RolePair {
 // already holds it; a caller that gates what it ships gates both lists anyway.
 func TintedRolePairs() []design.RolePair { return emittedRolePairs(design.TintedRolePairs()) }
 
-// GatedRolePairs is the whole gated set: BodyRolePairs, TintedRolePairs and
-// StatusRolePairs. The
+// GatedRolePairs is the whole gated set: BodyRolePairs, TintedRolePairs,
+// StatusRolePairs and EdgeRolePairs. The
 // seam where a Pair becomes a stylesheet, an export or a Storybook hands these
 // to design.Pair.CheckRoles with RoleColors, which is the same pair of arguments
 // design.Client.Resolve reads — the two halves of one gate.

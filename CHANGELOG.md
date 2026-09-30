@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+**A component's edge is now gated on every ground the kernel paints it on, including
+the one the layer mixes.** The entry below named two grounds for a line this
+repository paints on four. `clBadgeTone["neutral"]` and `clMediaRefused` draw
+`BorderColor(style.BorderPrimary)` on `surface-tertiary`, and `clButtonVariant`
+`["secondary"]` and `clModalCancel` keep that same line while
+`hoverBg(style.SurfaceHover)` moves the control's own fill out from under it — a
+ground no token names, since `--pk-role-surface-hover` is `HoverTintPercent` (4 %) of
+`text-primary` mixed into `surface-primary`, two tokens a client may both override.
+Nothing refused a palette whose hovered button's boundary disappeared: the shipped
+dark pair read 3.10:1 there, and a `design.yaml` naming `border-default: #6f6c69`
+was accepted by the door at 3.01:1 on the card while painting the same boundary at
+2.71:1 on the fill under it (and 2.56:1 on the muted panel). `edgeRolePairs` now
+gates `border-primary` on `surface-primary`, `surface-secondary`, `surface-tertiary`
+and `surface-hover`, `bodyContrast` names the three literal grounds among them, and
+the generator repairs the emitted edge against the hover mix as well — which needed
+the ground to be mixed before the edge is chosen, so `TextPrimary` is now set ahead
+of `BorderDefault` in both branches. The shipped pair moved with it rather than sit
+on the new floor by a hair: `border-default` is `#85827d` → `#7a7773` in `light` and
+`#60756f` → `#6b807a` in `dark`, at the margin the generator emits (worst reading
+3.51:1 `light`, 3.53:1 `dark`, on the four gated grounds; `surface-active`, still
+ungated and still painted by no rule, now reads 3.75:1 and 3.23:1). Across 400
+generated seeds (800 themes) the closest gated reading is 3.50:1, no seed is
+refused, and the client pinned at the edge of the gate since round 9 (`light
+surface-primary: #0df7f7`) is still accepted, at 3.27:1 on its own hovered fill.
+`surface-active` stays ungated on the same argument this package has always used: a
+pair nothing paints has no business in the list a client is refused by.
+
 **A text field's edge is now measured, and the sentence that exempted it is
 corrected.** `design/contrast.go` stated its own scope as "Borders and tints carry
 no information and are not listed" while `ui/components/classlists.go` paints one
@@ -27,7 +54,9 @@ surface. Measured after the change: the shipped pair reads 3.43:1 on the card,
 3.33:1 on the canvas and 3.02:1 on the muted panel in both themes, and across 400
 generated seeds (800 themes) the closest reading is 3.90:1 — the muted panel is
 repaired against but not gated, because no shipped rule draws a field's line on one
-today, which is a fact about the components and not a floor left unmet. Six colours
+today, which is a fact about the components and not a floor left unmet (the entry
+above gates that panel and the hovered fill, and the numbers below are the ones the
+entry above supersedes). Six colours
 move and nothing else does: `border-default` and `border-strong` in each shipped
 theme (`light` `#cbc5b8` → `#85827d` and `#8f988f` → `#636763`, `dark` `#2c3b37` →
 `#60756f` and `#5c6d67` → `#81928c`) and, in a generated pair, the same two tokens
@@ -35,8 +64,9 @@ at the same floors; the two role declarations mixed from them move with them. A
 native screen is handed `--pk-color-border-default` as a colour, so this reaches
 `platformkit-mobile` through the token document, whose pinned digests are
 re-recorded here with their measurement — 12 of the pair's 196 measured lines
-(22 colour tokens and 76 resolved roles in each theme) differ, and no class, rule or
-example HTML does. Decorative dividers stay exempt: a line between two rows the
+differ (a theme prints 28 tokens and 70 resolved values: the 22 colour tokens, their
+passthroughs and 48 `--pk-role-*` variables), and no class, rule or example HTML
+does. Decorative dividers stay exempt: a line between two rows the
 reader has already found, and a tint whose copy the body pairs measure themselves.
 What is still ungated, and named rather than quietly dropped: `sidebar-bg` under a
 ringed control, and `surface-active`.

@@ -46,8 +46,11 @@ type TokenExport struct {
 // still painting an unreadable sentence — a component never sets
 // --pk-color-text-primary, it sets color: var(--pk-role-fg-secondary). Client.
 // Resolve runs both halves today, so this is not the only place a pair is
-// measured; it is the seam where a pair becomes a stylesheet, an export or a
-// Storybook, and it refuses whatever produced the pair.
+// measured; it is the seam where a pair becomes an exported document — a
+// Storybook, a native token sheet, a design export — and it refuses whatever
+// produced the pair. The sheet an installation serves is built by ui.Compose
+// which measures nothing: what reaches it is the pair a door above already
+// refused or handed over.
 func checkLegible(context string, themes ...design.Theme) error {
 	roles, pairs := style.RoleColors(), style.GatedRolePairs()
 	for _, theme := range themes {

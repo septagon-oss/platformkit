@@ -136,23 +136,22 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.SurfaceCanvas = surface(surfaceSat*1.6, 0.10)
 		theme.SurfacePrimary = surface(surfaceSat*1.5, 0.14)
 		theme.SurfaceMuted = surface(surfaceSat*1.4, 0.19)
-		// A field's edge is generated at the graphic's floor, not as a decoration.
-		// ui/components fills a field with surface-primary, the same role the card it
-		// stands on is painted with, so the line is the only thing that says where the
-		// field is, and GatedRolePairs measures it at MinContrastGraphic on the card
-		// and on the canvas alike. Walking it light is the same repair the ring gets;
-		// the strong border starts further along the same walk, so the two stay a step
-		// apart and the stronger of two edges is never the one that disappears: the
-		// strong border is repaired to the body floor, because "has to be seen" is a
-		// sentence about the edge that has to carry the weight of what it borders. The
-		// muted panel is the third ground a field can stand on: the edge is repaired
-		// against it too (no generated reading of it falls under 3.50:1) but not gated
-		// on it, because no shipped classlist draws a field's line on a muted panel
-		// today and an unpainted pair has no business in the list a client is refused
-		// by — which is a fact about the components, not a floor left unmet.
-		theme.BorderDefault = enforceAt(generatedEdgeFloor, surface(surfaceSat*1.3, 0.27), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
-		theme.BorderStrong = enforce(surface(surfaceSat*1.2, 0.45), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
+		// A field's edge, and a button's, at the graphic's floor. ui/components
+		// fills a field with surface-primary, the same role the card it stands on is
+		// painted with, so the line is the only thing that says where the field is, and
+		// GatedRolePairs measures it at MinContrastGraphic on the card, the canvas, the
+		// muted panel and the control's own hovered fill alike. Walking it light is the
+		// same repair the ring gets; the strong border starts further along the same
+		// walk, so the two stay a step apart and the stronger of two edges is never the
+		// one that disappears: the strong border is repaired to the body floor, because
+		// "has to be seen" is a sentence about the edge that has to carry the weight of
+		// what it borders. Three of the four grounds are literals a client can file; the
+		// fourth is hoverFill, the mix a hovered control moves its own fill onto, which
+		// no client writes and every client moves — so the edge is repaired against it
+		// here rather than left to the day someone hovers a secondary button.
 		theme.TextPrimary = hsv(hue, 0.10, 0.95)
+		theme.BorderDefault = enforceAt(generatedEdgeFloor, surface(surfaceSat*1.3, 0.27), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted, hoverFill(theme))
+		theme.BorderStrong = enforce(surface(surfaceSat*1.2, 0.45), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.TextMuted = enforce(hsv(hue, 0.14, 0.74), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentDefault = enforceTinted(hsv(hue, accentSat*0.75, 0.74), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentHover = enforceTinted(hsv(hue, accentSat*0.70, 0.86), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
@@ -165,11 +164,12 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.SurfaceCanvas = surface(surfaceSat, 0.945)
 		theme.SurfacePrimary = surface(surfaceSat*0.55, 0.995)
 		theme.SurfaceMuted = surface(surfaceSat*1.35, 0.90)
-		// The field's edge, at the graphic's floor: see the dark branch, where the
-		// same two lines and the reason for them are written out.
-		theme.BorderDefault = enforceAt(generatedEdgeFloor, surface(surfaceSat*1.1, 0.80), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
-		theme.BorderStrong = enforce(surface(surfaceSat, 0.52), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.TextPrimary = enforce(hsv(hue, 0.32, 0.12), theme.SurfaceCanvas, theme.SurfacePrimary)
+		// The field's edge and the hovered control's, at the graphic's floor: see
+		// the dark branch, where the same lines and the reason for them are written
+		// out. The text is settled first because the hover ground is mixed from it.
+		theme.BorderDefault = enforceAt(generatedEdgeFloor, surface(surfaceSat*1.1, 0.80), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted, hoverFill(theme))
+		theme.BorderStrong = enforce(surface(surfaceSat, 0.52), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.TextMuted = enforce(hsv(hue, 0.24, 0.46), theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentDefault = enforceTinted(hsv(hue, accentSat, 0.38), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentHover = enforceTinted(hsv(hue, min(1, accentSat*1.1), 0.30), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
@@ -257,6 +257,24 @@ func complement(hue float64) float64 { return math.Mod(hue+180, 360) }
 // ThePercentTheGeneratorCertifies pins the declaration to this constant, and
 // tintedRolePairs gates the pair it describes.
 const SoftTintPercent = 12.0
+
+// HoverTintPercent is how much of a theme's own text colour the role layer mixes
+// into a surface for the hovered state: roles.go declares --pk-role-surface-hover
+// as mix(text-primary HoverTintPercent%, surface-primary). It sits beside
+// SoftTintPercent for the same reason — the generator has to hold it, because
+// ui/components keeps a control's edge while its fill moves onto that mix
+// (clButtonVariant["secondary"], clModalCancel), and the mix is mixed from two
+// tokens a client may both override. Mixing a foreground into a surface always
+// costs contrast, so an edge certified against the literal surfaces alone says
+// nothing about the state a reader hovers into.
+const HoverTintPercent = 4.0
+
+// hoverFill resolves the ground a hovered control paints under its own edge: the
+// one ground no caller writes as a literal, because the layer mixes it from the
+// theme's own text and surface tokens and it moves when either moves.
+func hoverFill(theme Theme) string {
+	return hexColor(blend(mustParse(theme.TextPrimary), HoverTintPercent, mustParse(theme.SurfacePrimary)))
+}
 
 // ground is one background enforce measures a candidate against. Most are
 // colours a theme already holds; a tinted ground is the one a caller cannot name
@@ -457,7 +475,11 @@ func (t Theme) colorTable() map[string]SRGBA {
 // hsv renders one HSV triple as the #rrggbb literal a Theme field stores. Hue is
 // in degrees, saturation and value in [0,1].
 func hsv(hue, saturation, value float64) string {
-	color := hsvRGB(hue, saturation, value)
+	return hexColor(hsvRGB(hue, saturation, value))
+}
+
+// hexColor renders one parsed colour as the #rrggbb literal a Theme stores.
+func hexColor(color SRGBA) string {
 	return fmt.Sprintf("#%02x%02x%02x",
 		int(math.Round(color[0]*255)), int(math.Round(color[1]*255)), int(math.Round(color[2]*255)))
 }

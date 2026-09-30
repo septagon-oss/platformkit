@@ -136,9 +136,22 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// #8f988f -> #636763, dark #2c3b37 -> #60756f and #5c6d67 -> #81928c) and with
 	// them the two role declarations each theme derives from them
 	// (--pk-role-border-primary, and --pk-role-border-secondary, which mixes
-	// border-default into surface-primary). 12 of the pair's 196 measured lines —
-	// 22 colour tokens and 76 resolved roles in each of its two themes — differ; no class, no rule, no example HTML and no other colour moves.
-	if legacy.SHA256 != "0464ab40cab24ef34974b4dd79ba8d0c11428c498873150b1ad83b63cdbf3276" {
+	// border-default into surface-primary): 12 lines of the 196 a dump of both themes
+	// prints (28 tokens per theme — 22 colours, 3 font stacks, 3 radii — plus 70
+	// resolved values, the 22 colours again plus 48 --pk-role-* variables). No class,
+	// no rule, no example HTML and no other colour moves.
+	//
+	// Re-recorded once more for review round 15's finding, and it moves one value per
+	// theme again: the edge is now gated on the two grounds this commit adds, the
+	// muted panel a neutral badge and a refused media panel border on and the hovered
+	// fill a secondary button moves underneath its own line, and the shipped pair sat
+	// 0.02:1 and 0.10:1 over the floor on those. border-default moves to the margin
+	// the generator emits at (light #85827d -> #7a7773, dark #60756f -> #6b807a);
+	// border-strong and every non-border byte hold. Measured as a diff of every token
+	// and every resolved value of both themes against the previous commit: 8 lines —
+	// per theme border-default and the three values derived from it — and 12 of the
+	// pair's 196 across the two commits together.
+	if legacy.SHA256 != "e4247c772f189d7976d48ef28f09fe4c196528126909b1b35e515d1dc17fff02" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
