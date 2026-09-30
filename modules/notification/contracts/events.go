@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The three events this module emits. A subscriber names one of these constants
@@ -23,7 +25,11 @@ const (
 )
 
 // Events is every event this module emits, for the manifest.
-var Events = []string{EventCreated, EventEmailRequested, EventRead}
+var Events = []events.Declared{
+	events.Declare[Created](EventCreated),
+	events.Declare[EmailRequested](EventEmailRequested),
+	events.Declare[Read](EventRead),
+}
 
 // Created is the payload of EventCreated: somebody was told something.
 type Created struct {

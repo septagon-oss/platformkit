@@ -17,8 +17,71 @@ For an application that owns its own persistence, import the parts directly:
 forwards to the shared grammar. `events.Memory()` is gone: call `memory.New()`,
 so the SQL outbox package imports none of its own providers and the package gate
 holds it there. Existing outbox consumers can migrate those imports independently. The retry
-ladder, handler-attempt cap and seven-day retention have one internal owner;
-moving packages does not change stored subjects, stream names or durables.
+ladder, handler-attempt cap and seven-day retention have one internal owner.
+
+## The envelope, the subject and what a rollout has to expect
+
+The body on the broker is **CloudEvents 1.0 in structured content mode**:
+`specversion`, `id`, `source` (`/<module>`), `type` (the event name), `subject`,
+`time`, `datacontenttype`, `data`, plus `tenantid` as a **required** extension
+where the specification leaves extensions optional — an event with no tenant has
+no transaction to deliver it in — `traceparent`/`tracestate` when a request caused
+the event, and `baggage` when that request had an id to leave behind. `Event` stays
+the programming model and the outbox keeps
+storing columns; `MarshalJSON`/`UnmarshalJSON` in
+[`transport/cloudevents.go`](transport/cloudevents.go) own the wire form.
+
+The subject is `platformkit.<tenant>.<module>.<event>`
+([`transport/subject.go`](transport/subject.go)), so a tenant's backlog is an
+address and a durable can be per tenant (decision 0053 §1). Subscriptions keep
+one durable per (module, event) and filter `platformkit.*.<module>.<event>`, plus
+`platformkit.<module>.<event>` while the rollout window below is open
+(`transport.Filters`); an operator who wants one tenant's queue filters that
+tenant's exact subject. The stream is still `PLATFORMKIT` with `platformkit.>`.
+
+Four consequences, each a test rather than an assurance:
+
+* **The pre-envelope shape decodes and is never written**, and a subscription
+  answers it: the previous build published at `platformkit.<module>.<event>`,
+  three tokens, while this build's filter carries a tenant token that message
+  does not have, so a decoder nothing subscribes to is not a window. Deploy the
+  consumers first — publishers moved first write an address no old consumer's
+  filter can match, and only `DeliverAll` on the recreated consumer picks those
+  rows back up, within the week the stream keeps. When the last previous-build
+  publisher is gone the second filter goes, the consumer is made again, and the
+  window shuts. A pre-envelope document with no tenant or no event name is
+  refused in either form.
+* **A delivery whose document does not claim the address it arrived at is
+  terminated** by the provider that routed it, before any handler's transaction
+  opens (`transport.AddressMismatch`). A consumer's filter spells out the module
+  and the event and leaves the tenant a wildcard, and `Consume` opens its
+  transaction in the tenant the envelope names, so without this comparison a
+  message stored on one tenant's address and stamped as another's would be
+  handled inside the second tenant's rows on the strength of its body — a
+  boundary held up by convention, with the broker credential as its key. The
+  envelope's own `subject == Subject(tenantid, type)` proves only that the
+  document agrees with itself, which is what a self-consistent forgery satisfies.
+  `platformkit.<module>.<event>`, the previous build's address, names no tenant
+  and so contradicts nothing: refusing it would be refusing the bullet above.
+  Pinned by
+  `TestAMessageStoredOnOneTenantsAddressIsNotDeliveredInsideAnotherTenantsTransaction`
+  and by `TestADeliveryIsCheckedAgainstTheAddressItArrivedAt`.
+* **Every stored consumer is deleted and made again**, because it went from one
+  `filter_subject` to a `filter_subjects` set and NATS cannot change one in
+  place. It asks for
+  `DeliverAll`, so that is a re-delivery of the stream — and every replay is
+  claimed in `platformkit_handled` before the handler runs, which is why the
+  reconciliation `reconcile` logs a line rather than an incident. Independent
+  sinks that are not `Consume` must supply the same durable idempotency.
+* **The trace context is stored with the row** (`000028_outbox_trace.up.sql` and
+  `000029_outbox_baggage.up.sql`, all nullable) and carried onto the envelope by the
+  relay, because by relay time the request is gone. `kit/trace` fixes the W3C format and
+  collects nothing: it holds no span, no exporter and no sampling decision.
+  `kit/telemetry` names the vocabulary of a span, and this package opens two of them —
+  one relay pass, one delivery parented from the context stored on the row — so the
+  trace does continue into the handler. The provider and its exporter are installed by
+  `kit/app` alone: a composition that configures no endpoint propagates a context and
+  exports nothing. See [kit/telemetry](../telemetry/README.md).
 
 The NATS constructors have moved out of the SQL package. Replace
 `events.JetStream(...)` with `nats.JetStream(...)` and
@@ -42,10 +105,35 @@ and durable consumers. These are broker operations, not read-only readiness
 checks. The caller drains work and closes the returned `io.Closer` connection.
 No new configuration namespace, broker or lifecycle service is introduced.
 
+A module's manifest declares each event with the Go type of its payload
+(`events.Declare[contracts.Invited](contracts.EventInvited)`); the outbox refuses
+a payload that is not a projection of that type ([`schema.go`](schema.go)) inside
+the publisher's own transaction — a member the projection cannot describe
+constrains nothing, the same honest unknown the rendered schema answers with
+`true` — and `kit/app.AsyncAPI` renders the composition's
+catalogue from the same declaration
+(`apps/platformkit/testdata/asyncapi.json`) — as the message's `payload`, which
+is where AsyncAPI says a reader will look, and not wrapped in a member of its
+own. `events.Replay` is the operator's verb for a dead letter: it clears the
+claim and the terminal record, returns the row to pending, and records
+`platformkit.event_replayed` with the operator's actor and their stated reason.
+Both are required of the caller: a replay that cannot name who ordered it is
+refused before the transaction opens, and it writes nothing and emits nothing.
+`Purge` leaves an outbox row that a dead letter still describes, because that row
+is the payload's only copy and a replay of it has to be reachable; clearing the
+dead letter is what lets the history window take the row.
+
+## Limits
+
 Delivery is at least once. Independent sinks must provide their own durable
 idempotency and tenant checks; the transport cannot supply database isolation.
-Consumer reconciliation may replay events when an incompatible durable is
-recreated. Memory has no restart persistence and does not coordinate duplicate
+That sentence is about a reader that is not this provider — a bridge or a foreign
+consumer reads the subject as untyped text and decides its own tenancy from it.
+The one thing the provider does own is its own deliveries: the address it routed
+by has to be the address the event names, because that is how the tenant of
+`Consume`'s transaction is settled rather than guessed from a body. Neither is a
+substitute for row-level security, which is where the rows are actually scoped.
+Memory has no restart persistence and does not coordinate duplicate
 durables across processes. When using the SQL outbox, handling and terminal
 claims commit atomically, and unfinished memory deliveries leave rows pending.
 External effects still require provider idempotency.
@@ -57,3 +145,30 @@ and NATS settings described in [Contributing](../../CONTRIBUTING.md#verify-at-th
 Reserve the broker for that suite: its stream-drift test changes and reconciles
 shared stream settings. These checks do not qualify a deployed broker or a
 downstream application's handler idempotency.
+
+## Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt. **Reused:** the outbox's own `INSERT` in `write`, which is the one door
+every event in the program already passes and is where the schema check lives;
+`Schema.Validate`, `Schema.JSONValue` and the golden-file guard this repository
+already had, each cure being a clause inside them rather than a new mechanism
+beside them; `platformkit_handled`'s claims, which are what make the
+`DeliverAll` re-delivery a log line instead of an incident; `dbtest.Schema` in the
+new cases; and `module.KernelEvents`, adopted rather
+than replaced when the merged `security.denied` had to be typed, with
+`module.KernelName` added as the half that list was missing.
+**Added:** `schema.go`'s projection of a Go type into JSON Schema, because no
+existing unit could carry it — `kit/httpx/schemas.go` registers resource schemas
+by hand and holds no `reflect` at all, so there was nothing there to extend; the
+CloudEvents envelope on the wire, `transport.Event` having been a private struct
+of tags; `events.Replay`, the outbox having had no operator's verb; and the two
+nullable trace columns the envelope needs before the relay runs.
+**Made reusable:** `transport.Filters`, so a provider that must read a rolling
+window reads a list rather than re-deriving one; `events.Declare[T]`, which turns
+a payload type into a compile-time dependency of the manifest that names it;
+`Declared.Schema()` and `app.CoveredEvents`, so the coverage ratio is a number a
+test reads rather than one a release note claims; `UPDATE_GOLDEN=1` as the only
+writer of a checked-in contract; and `KernelName` with the `KernelEvents`
+exemption in `Validate`, which is the shape the next kernel-emitted event arrives
+in.

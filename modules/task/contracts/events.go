@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The six events this module emits. The first three are kit/rest's, published
@@ -24,7 +26,15 @@ const (
 )
 
 // Events is every event this module emits, for the manifest.
-var Events = []string{EventCreated, EventUpdated, EventDeleted, EventAssigned, EventResolved, EventSLABreached}
+var Events = []events.Declared{
+	// The first three are kit/rest's and carry the entity itself.
+	events.Declare[*Task](EventCreated),
+	events.Declare[*Task](EventUpdated),
+	events.Declare[*Task](EventDeleted),
+	events.Declare[Assigned](EventAssigned),
+	events.Declare[Resolved](EventResolved),
+	events.Declare[SLABreached](EventSLABreached),
+}
 
 // Assigned is the payload of EventAssigned: somebody is now responsible.
 type Assigned struct {

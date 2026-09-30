@@ -95,45 +95,53 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if err != nil {
 		return fmt.Errorf("events: %s: marshal the payload: %w", name, err)
 	}
+	// The promise the emitting module made in its manifest is checked here, at
+	// the one door, before anything is written. See catalog.go.
+	if err := checkPayload(name, body); err != nil {
+		return err
+	}
 	var actor any
 	if id, ok := tenancy.ActorFrom(ctx); ok {
 		actor = id
 	}
-	// The trace context is whatever span the caller is inside, and empty otherwise,
-	// for the same reason and with the same consequence as the actor: the row records
-	// what caused the event, in the transaction that caused it, and the process that
-	// relays it is a different one, possibly one that started after this one exited.
-	// Three members, because the request id that lets an operator quote this write in
+	// The trace context is stored beside the actor for the same reason the actor is:
+	// the relay publishes later, in a transaction of its own and with no request left
+	// to ask. Storing it here is what lets a delivery name the call that caused it.
+	// Absent is normal and stays absent — a periodic job, a handler reacting to
+	// another event. See kit/trace and kit/events/trace.go.
+	//
+	// Three members, not two: the request id that lets an operator quote this write in
 	// a trace travels beside the trace parent, in the baggage the router wrote — see
 	// migrations/000029. An absent member is written as NULL and not as the empty
 	// string: the propagator answers "" for what it was not given, and a row that
-	// carries no trace is asked about with `traceparent IS NULL` — the query migrations
-	// says is ordinary, and one the empty string answers with an empty result set.
-	parent, state, correlation := absentAsNull(traceContext(ctx))
+	// carries no trace is asked about with `traceparent IS NULL` — the query the
+	// migration says is ordinary, and one the empty string answers with an empty
+	// result set.
+	parent, state, correlation := carriedContext(ctx)
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?)",
-		uuid.New(), tenantID, name, string(body), actor, parent, state, correlation,
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage)"+
+			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?)",
+		uuid.New(), tenantID, name, string(body), actor,
+		nilIfEmpty(parent), nilIfEmpty(state), nilIfEmpty(correlation),
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
 	return nil
 }
 
-// absentAsNull is the one place a propagation member the publisher was not given
-// becomes the NULL its column promises. The propagator yields the empty string for
-// what it does not hold, which is right for a carrier and wrong for a row: the
-// columns are nullable, "no trace" is the ordinary case rather than a defect, and
-// the only way a person can ask a table which of its rows were never traced is with
-// IS NULL. The empty string would make an untraced publish look like a traced one
-// with a corrupt header, and would answer that query with nothing.
-func absentAsNull(parent, state, correlation string) (any, any, any) {
-	null := func(v string) any {
-		if v == "" {
-			return nil
-		}
-		return v
+// nilIfEmpty stores an absent value as NULL rather than the empty string: the
+// envelope omits an attribute that does not apply, and the row that carries it says
+// the same thing the envelope does. The propagator yields the empty string for what
+// it does not hold, which is right for a carrier and wrong for a row: the columns are
+// nullable, "no trace" is the ordinary case rather than a defect, and the only way a
+// person can ask a table which of its rows were never traced is with IS NULL. The
+// empty string would make an untraced publish look like a traced one with a corrupt
+// header, and would answer that query with nothing.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
 	}
-	return null(parent), null(state), null(correlation)
+	return s
 }
 
 // Handler is what a module does with an event. It runs inside a transaction
@@ -166,6 +174,15 @@ func (s Subscription) durable() string {
 // transaction in the event's own tenant, so a handler reaches the tenant's rows
 // the same way a request handler does and can publish events of its own into
 // the same transaction.
+//
+// "The event's own tenant" is the tenant the event names *and* the tenant its
+// delivery's address names, which is why a transport that routes by an address
+// checks the two agree before this sink runs (transport.AddressMismatch, and the
+// check its Subscribe contract asks for). Both sentences are one rule: a handler
+// runs in the tenant the event names, and a message stored on one tenant's
+// address while stamped as another's is not this kernel's event at all — its
+// body is the only thing that says otherwise, and a body is not the address the
+// broker routed by.
 //
 // Each delivery is claimed before the handler runs, so a handler sees each
 // event once however many times the transport delivers it. See claim.

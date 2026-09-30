@@ -38,11 +38,17 @@ type row struct {
 	CreatedAt time.Time
 	Actor     *uuid.UUID
 	// The publisher's trace context and its correlation member. Absent is NULL — see
-	// absentAsNull and the rows this file shipped before either column existed — and
+	// nilIfEmpty and the rows this file shipped before either column existed — and
 	// the relay reads all three as the empty string, because its own contract is the
 	// envelope's optional members, not the column's nullability. It does not read them
 	// into its own span — one batch is many unrelated traces — it carries them to the
 	// envelope, where kit/events puts them back on the handler's context. See trace.go.
+	//
+	// The three column tags are load-bearing. GORM maps a scanned field by snake_case,
+	// so TraceParent arrives as trace_parent: without the tag, naming the SELECT alias
+	// after the column is how a carried fact silently stops being carried. The tag
+	// binds field to column explicitly, which is why the aliases below can be the
+	// COALESCE that turns a NULL into the empty string this struct holds.
 	TraceParent string `gorm:"column:traceparent"`
 	TraceState  string `gorm:"column:tracestate"`
 	Baggage     string `gorm:"column:baggage"`
@@ -249,6 +255,10 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 	var moved int
 	err := db.RunSystem(ctx, conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var rows []row
+		// The aliases name the columns, and the row struct's tags name the fields, so
+		// GORM's snake_case mapping never gets a chance to miss them; the COALESCE is
+		// what turns a column that is NULL — the ordinary case, see nilIfEmpty — into
+		// the empty string the envelope's optional members are written for.
 		const q = `SELECT id, tenant_id, name, payload, created_at, actor,
 			COALESCE(traceparent, '') AS traceparent, COALESCE(tracestate, '') AS tracestate,
 			COALESCE(baggage, '') AS baggage FROM ` + table + `
@@ -300,6 +310,10 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
 			}
+			// The trace the request left in the row, carried onto the envelope
+			// the relay publishes. This transaction has no request of its own
+			// to substitute: a relay span started here would join the delivery
+			// to the wrong trace.
 			if err := t.Publish(ctx, ev); err != nil {
 				// The rows published so far are still unstamped, so they go
 				// again next tick. That is the at-least-once bargain.
@@ -326,12 +340,24 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 // outbox row or terminal failure record exists: losing that claim would replay
 // completed work when the pending row is relayed. Dead letters and their claims
 // require explicit operator review; they are never automatically purged.
+//
+// A dead letter keeps its outbox row with it. The row is the only place the
+// payload survives — the dead letter records the failure, not the body — so a
+// purge that took the row would leave an operator reviewing a terminal failure
+// whose payload is gone and whose replay answers that there is nothing to
+// replay. That is the write that takes the last copy away, and a dead letter is
+// still referring to the row when it happens, so the row stays. The cost is
+// bounded and worth naming: an unread dead letter keeps one JSONB row alive
+// past the window, and clearing it is the operator's verb — `events.Replay` or
+// an operator who decides the event will never run again deletes the dead
+// letter, after which the next purge takes the row.
+//
 // The database clock supplies the cutoff for all workers.
 func Purge(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, purgeToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		age := fmt.Sprintf("%d seconds", int(delivery.Keep.Seconds()))
-		if err := tx.DB().Exec("DELETE FROM "+table+
-			" WHERE published_at IS NOT NULL AND published_at < now() - ?::interval", age).Error; err != nil {
+		if err := tx.DB().Exec("DELETE FROM "+table+" o WHERE published_at IS NOT NULL AND published_at < now() - ?::interval"+
+			" AND NOT EXISTS (SELECT 1 FROM "+deadLetters+" d WHERE d.event_id = o.id)", age).Error; err != nil {
 			return fmt.Errorf("events: purge: %w", err)
 		}
 		if err := tx.DB().Exec("DELETE FROM "+handled+" h WHERE handled_at < now() - ?::interval"+
