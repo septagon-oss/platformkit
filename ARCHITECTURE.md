@@ -402,16 +402,66 @@ remains authoritative and consumers must review diagnostics before using files.
 Go functions returning HTML and declares the classes those functions can emit.
 [ui/style](ui/style/) resolves the declarations to CSS.
 [ui.Compose](ui/ui.go) combines the shared declarations and a consumer's own
-classes and rules into a stylesheet value. Deleting a component should not
-leave an independently maintained stylesheet behind.
+classes and rules into a stylesheet value. The result is four cascade layers —
+`tokens`, `base`, `components`, `client` — and the `@layer` order statement
+Compose emits is what says so: the kernel's ranking is the declared layer order,
+not file position. A layer ranks before specificity, so which layer a rule goes
+in is decided by what it must still win: the preflight sits in `base` where a
+class outspecifies it, and a rule about one of the kernel's own components sits
+in `components` beside the classes on that component, where its own selector
+decides the tie. A consumer's class lists compile into the components layer
+beside the kernel's (one rule per shared utility), and its hand-written rules
+are placed in the client layer; a later layer wins normal declarations, so that
+last layer is the strongest of the four, and what protects a kernel component
+from it is the refusal below and not the ranking. Compose refuses a consumer rule
+that names, in whichever spelling a browser resolves to it, a kernel-rendered
+attribute, one of the classes the kernel's own markup carries, the
+root element, a `--pk-` property or a raw colour — its hex form or any
+functional notation a browser computes a colour from (`rgb()`/`hsl()`,
+`lab()`/`lch()`, `oklab()`/`oklch()`, `hwb()`, `color()`, `color-mix()`), a named
+colour being a word a review catches rather than a pattern a gate can tell from a
+keyword, and over the value a browser computes rather than every byte of the
+value's text, with the argument of a `url()` reference and the contents of a
+quoted string stepped over because neither computes a colour — in a rule or a
+keyframe stop, and refuses it by the text it emits
+rather than the one it was handed: a brace, a
+comment start, a `--pk-` name after a semicolon or an at-keyword ahead of a brace
+Compose supplies would move the block it opened, and a rule outside every layer
+outranks the order statement; and the sequence that closes a `<style>` element,
+which a composed sheet is the content of on the gallery preview, would leave the
+sheet itself and reach markup. That refusal is by name, not by reachability: a
+rule beside the consumer's own class is refused too, because the kernel's
+attribute and class vocabularies are namespaces of its own markup and whether a
+selector could reach a
+kernel element is a question only a browser answers; a consumer renames its own
+hook. Those refusals are the contract of the sheet a page links, and `Compose` is
+where they sit: `ui/export`, the tool that renders a design proposal into a
+snapshot, composes the same four layers with `ui.ComposeDesign`, which places
+every rule identically and refuses none, because a capture exists to measure what
+a browser computes for a sheet a mount would refuse — an authored colour with no
+token yet, a margin on a component someone is proposing. The one style a page writes outside `Compose` is a value no Go sheet can
+carry: [modules/web](modules/web/) pins its tenant's accent in an unlayered
+inline declaration, guarded to `#rrggbb`, and unlayered is what lets a tenant
+palette outrank every layer. The vocabulary is `components.Hooks` for the
+components' markup and `renderedHooks` for the shell, the generated screens and
+the gallery, and the classes, which `kernelClasses` computes from
+`components.ClassLists()` and `composedClasses` widens per sheet to the lists it
+resolves; a test refuses either vocabulary a name the kernel renders that it
+omits. A bare type selector names neither
+vocabulary, so `dialog { display: block }` reaches the modal from the strongest
+layer and is the limit of the read, stated rather than closed. Deleting a
+component should not leave an independently maintained stylesheet behind. The candidates
+this shape was chosen from, each on the four questions the brief asked, are
+[ADR 0018](docs/adr/0018-cascade-layers-decide-precedence.md).
 
 [css.Sheet](ui/css/css.go) retains ordinary rule contribution order; only
 adjacent equal selectors share a block. Repeated declarations remain ordered
 so the browser can apply priorities, fallbacks and shorthand semantics. A later
 consumer override must not be merged into an earlier rule ahead of utilities,
 nor carry unrelated earlier declarations forward. Shared utility deduplication
-belongs to the style owner, before emission. The existing at-rule group still
-renders after ordinary rules; this is not an arbitrary CSS parser or minifier.
+belongs to the style owner, before emission. Layer order statements render
+ahead of everything they order; the remaining at-rule group still renders
+after ordinary rules; this is not an arbitrary CSS parser or minifier.
 
 [Gallery](ui/components/examples/gallery.go) captures the existing constructor calls with
 stable identities, typed properties and named Go slots. Passing a captured
