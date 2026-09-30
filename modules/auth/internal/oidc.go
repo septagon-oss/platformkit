@@ -304,9 +304,14 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 			if cfg.mode() != contracts.RegistrationProvision || provisioner == nil {
 				return nil, problem.New(http.StatusForbidden, "there is no account here for that address")
 			}
-			id, err := provisioner.Provision(ctx, tx, email, email, cfg.Roles)
-			if err != nil {
-				return nil, rest.Fault(err)
+			// `made` and not a second `err`: a `:=` here would shadow the lookup's
+			// ErrNotFound for the rest of the block, the guard below would still
+			// see it after a person had been made and read back, and the leg that
+			// provisioned somebody successfully would answer 404 — the row it just
+			// wrote reported as missing by the one request that wrote it.
+			id, made := provisioner.Provision(ctx, tx, email, email, cfg.Roles)
+			if made != nil {
+				return nil, rest.Fault(made)
 			}
 			// Read back rather than assumed: the person the provisioner made is
 			// the person this tenant's policy can see, and a session opened for a
