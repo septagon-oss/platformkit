@@ -140,10 +140,16 @@ refusal and the record in one statement.
   is a round of its own and this one did not take it; the `Kind` field on
   `Factor` and on the two factor events is where it lands when it does, and
   nothing above has to change for it.
-* **No bearer tokens** (the brief's item 4): no token table, nothing issued as
-  `Authorization: Bearer`, and no `Principal.Permissions`. Still open.
-* **No factor page.** The JSON routes are the surface; a screen would be the
-  shell's, and this module's own nav entry is the sessions one.
+* **Bearer tokens are in** (the brief's item 4) — see the next section, and its
+  own list of what is still open there.
+* **No factor page, and the sign-in page has no second step.** `ui` and the
+  admin shell never call `/api/v1/auth/challenge/verify` (nothing outside this
+  module names that path), so a person who enrols a factor through the JSON
+  routes cannot answer the second half from the reference app's sign-in page —
+  the page shows the refusal text and stops. The API path works and is tested;
+  the page work is the shell's, and until it lands, enrolling a factor from a
+  screen that does not know about the challenge route locks a person out of
+  that screen.
 
 ## Bearer tokens for a person's own integrations
 
@@ -185,7 +191,8 @@ a bearer, and an ambiguity check that answers such a request as **anonymous** �
 a caller who presented a cookie *and* a key is not more signed in, and which one
 they meant is not the kernel's to guess. `csrf.go` is unchanged and that is the
 point: its gate is the session cookie, and a bearer carries its own proof of
-intent. No cookie is ever set, rotated or cleared by a token request.
+intent. A token request never sets or rotates a session cookie; `POST /logout`
+still answers a cleared cookie, which for such a caller clears nothing.
 
 ### Open here, stated rather than approximated
 
