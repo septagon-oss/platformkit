@@ -37,7 +37,20 @@ that sets one for itself cannot leak it to the next; `database.lock_timeout` and
 a `MigrationBudget`. The budgets are the runner's patience, not the operator's: a
 migration that cannot take a lock in five seconds of *waiting* stops. The statement
 budget defaults to no bound because a legitimate index build on a large table is the
-statement a duration bound would kill. The same two values go on the session before
+statement a duration bound would kill. **The one exception is the file in autocommit
+mode, which runs with the lock budget off and the statement budget as configured.**
+What that statement waits for is not a lock that stops writers but the transactions
+already in the database ceasing to be able to see the table — the wait `CONCURRENTLY`
+exists to make — and the server implements it as a lock wait, so a configured lock
+budget cancels it: measured on PostgreSQL 16, a build that finds one session holding a
+snapshot older than its own is cancelled at `55P03`, and what it leaves behind is an
+INVALID index that the file's own `IF NOT EXISTS`, the re-runnability the rule table
+demands of this mode, then excuses on the retry the refusal tells the operator to run —
+the rerun reports the file applied and the index does not exist. Waiting is also the
+shape of the queue for the composition lock, which has no budget on it either: that
+wait is taken off the session rather than left on it, because the lock is taken a
+second time mid-run, after an autocommit file, on a session that already carries the
+budgets. The same two values go on the session before
 every batch of a drain (`BackfillWith`, and through it `app.Drain`,
 `jobs.BackfillMigrations` and `platformkit migrate --drain`), because the fifty
 transactions behind a data file are the half that waits longest for rows the running
