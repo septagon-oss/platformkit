@@ -785,3 +785,38 @@ func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 		t.Errorf("the boot line reads %q, want event_schema_coverage=2/3 for the kernel's two covered declarations and one uncovered one", line)
 	}
 }
+
+// TestAModulesMovedAddressIsServedAsARedirect is module.Module.Moved reaching the
+// kernel: a module that moved its route declares the old address in its manifest,
+// and the running application answers there with the kernel's redirect. Nothing
+// in the module handles the old address.
+func TestAModulesMovedAddressIsServedAsARedirect(t *testing.T) {
+	cfg, opts := compose(t)
+	moved := hello()
+	moved.Moved = []module.Move{{From: "/api/v1/greeting", To: "/api/v1/hello"}}
+	a, err := New(t.Context(), cfg, []module.Module{moved}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr)
+
+	req, _ := http.NewRequest(http.MethodGet, "http://"+cfg.Server.Addr+"/api/v1/greeting?lang=pt", nil)
+	req.Host = tenantHost
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET the old address: %v", err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != "/api/v1/hello?lang=pt" {
+		t.Errorf("the old address = %d to %q, want 302 to /api/v1/hello?lang=pt", res.StatusCode, res.Header.Get("Location"))
+	}
+
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}

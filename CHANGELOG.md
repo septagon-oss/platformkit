@@ -39,6 +39,14 @@ outbox row a dead letter still describes: the row is the payload's only copy, an
 a terminal failure the operator can read but never run again, with nothing left
 saying what it carried, is the evidence this change set exists to stop losing.
 
+**A module declares the addresses it moved, and the kernel redirects them.** `module.Module.Moved` is a list
+of `{From, To}` whole paths. The kernel answers an old address, or anything under it, with the same redirect
+as its own migration table: 302 for a safe method, 307 for a write, the remainder and the query kept, never
+cached, no body. The surface gate refuses a route mounted where a row redirects. `module.Validate` refuses a
+relative path, a row pointing at itself, and one old address claimed by two modules. A module that moves a
+page now writes one row, not a handler for the old address (T-0104 had written 988 lines of them across
+eight modules).
+
 **A module's own workspace pages stand instead of the generated register.** The admin shell used to mount
 generated screens for every registered resource, even at addresses a module already served with its own
 page. The surface gate refuses two routes at one method and path, so such an application did not start.
