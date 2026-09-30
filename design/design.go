@@ -99,14 +99,18 @@ func (t Typography) resolved() Typography {
 // Light is the default theme.
 func Light() Theme {
 	return Theme{
-		Name:            "light",
-		SurfaceCanvas:   "#f2efe7",
-		SurfacePrimary:  "#fffdf7",
-		SurfaceMuted:    "#e9e4d8",
-		TextPrimary:     "#15221f",
-		TextMuted:       "#586461",
-		BorderDefault:   "#cbc5b8",
-		BorderStrong:    "#8f988f",
+		Name:           "light",
+		SurfaceCanvas:  "#f2efe7",
+		SurfacePrimary: "#fffdf7",
+		SurfaceMuted:   "#e9e4d8",
+		TextPrimary:    "#15221f",
+		TextMuted:      "#586461",
+		// The field's edge, measured: border-default holds 3:1 on the card and the
+		// canvas it is drawn on (SC 1.4.11, the graphic's floor, because the line is
+		// what identifies the field) and border-strong reaches the body floor, since
+		// the edge that has to be seen carries the weight of what it borders.
+		BorderDefault:   "#85827d",
+		BorderStrong:    "#636763",
 		AccentDefault:   "#0f5d4e",
 		AccentHover:     "#0a493e",
 		AccentOn:        "#f9fff9",
@@ -130,14 +134,16 @@ func Light() Theme {
 // authority on paper reads as absent on ink.
 func Dark() Theme {
 	return Theme{
-		Name:            "dark",
-		SurfaceCanvas:   "#0e1614",
-		SurfacePrimary:  "#151f1d",
-		SurfaceMuted:    "#1e2a27",
-		TextPrimary:     "#eef3ec",
-		TextMuted:       "#a3b0aa",
-		BorderDefault:   "#2c3b37",
-		BorderStrong:    "#5c6d67",
+		Name:           "dark",
+		SurfaceCanvas:  "#0e1614",
+		SurfacePrimary: "#151f1d",
+		SurfaceMuted:   "#1e2a27",
+		TextPrimary:    "#eef3ec",
+		TextMuted:      "#a3b0aa",
+		// The same two edges at the other pole: 3:1 for the line that identifies a
+		// field, the body floor for the one that has to be seen.
+		BorderDefault:   "#60756f",
+		BorderStrong:    "#81928c",
 		AccentDefault:   "#4bbf9c",
 		AccentHover:     "#68d3b2",
 		AccentOn:        "#08201a",
