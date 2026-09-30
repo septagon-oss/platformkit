@@ -14,7 +14,9 @@ package admin_test
 // Three counts on the drawn page, all about the markup a browser would paint:
 //
 //   - exactly one filled submit control, which is the page's own action of
-//     ending every session but this one;
+//     ending every session but this one, and no row action painted at all: the
+//     probe counts a painted control by its own background, which the dark
+//     palette turns over, so the row actions carry no fill in either theme;
 //   - one quiet submit control per row that is not the caller's, each naming the
 //     device it ends, so a quiet action is not an anonymous one;
 //   - every quiet action still naming its row out loud, since the accessible
@@ -46,8 +48,15 @@ func TestTheSessionsScreenAsksForOneClickAtATime(t *testing.T) {
 	// own line — including the session that is asking, which the page ends by its
 	// own button rather than by a bulk action that would sign the person out of
 	// the page they are reading.
-	if got := submitCount(body, `data-variant="secondary"`); got != 3 {
+	if got := submitCount(body, `data-variant="ghost"`); got != 3 {
 		t.Errorf("%d quiet row actions, want one per session listed", got)
+	}
+	// And none of them is painted: the secondary variant fills with surface-
+	// primary, which is a light paper in one palette and #151f1d in the other, so
+	// a table of them passes "one thing to do" only for whoever prefers the light.
+	if got := submitCount(body, `data-variant="secondary"`); got != 0 {
+		t.Errorf("%d row actions paint a background, want none: above the one filled action "+
+			"this page is for, a painted row button is a second call to action", got)
 	}
 	for _, want := range []string{"End the session on Firefox on a laptop", "End the session on Safari on a phone"} {
 		if !strings.Contains(body, `aria-label="`+want+`"`) {

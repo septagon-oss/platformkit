@@ -261,13 +261,21 @@ func sessionsTable(revokeOne string, items []*authcontracts.SessionListing) g.No
 			case "end":
 				// The form belongs to the row it describes, so the button posts one
 				// ref and a person who tabs to it hears which session they are about
-				// to end. It is quiet on purpose: every row can end a session, so no
-				// row may out-shout the one action the page is for.
+				// to end. It is quiet on purpose, and on this page quiet has to mean
+				// unfilled in either palette: the design probe calls a control filled
+				// when its own background is opaque and its channels sum under 600, and
+				// surface-primary — what the secondary variant paints — is #fffdf7 in the
+				// light theme and #151f1d in the dark one. A table of secondary row
+				// buttons is therefore one thing to do under a light scheme and four
+				// under a dark one, while the floor ("one thing to do per view") is
+				// about what a person sees first and not about which media query their
+				// browser matched. So this row carries no fill at all, and the page
+				// paints one filled control above the fold whoever is looking at it.
 				return components.Form(components.FormProps{Action: revokeOne, Label: "End the session on " + device},
 					components.Input(components.InputProps{
 						Type: "hidden", Name: "ref", Value: rest.Text(row.ID)}),
 					components.Button(components.ButtonProps{
-						Label: "End this session", Type: "submit", Variant: "secondary",
+						Label: "End this session", Type: "submit", Variant: "ghost",
 						AriaLabel: "End the session on " + device}))
 			}
 			return nil
