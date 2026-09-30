@@ -1,0 +1,28 @@
+-- The publisher's correlation member, beside its trace members.
+--
+-- 000028 put the W3C *trace* context on the row, so a delivery is a child of the
+-- request that caused the event. That leaves the pair half-way: the operator who has
+-- the response in front of them quotes the request id it carried — X-Request-ID is
+-- the one identifier a person, a log line and a customer's ticket all agree on — and
+-- the worker's span could not answer it, because the id travels as W3C Baggage and
+-- Baggage is a third member of the same propagation set, which 000028 did not store.
+-- So a request that published an event was joinable to its delivery by trace id
+-- alone, and only by somebody who already had the trace id.
+--
+-- Baggage is the standard carrier for a correlation value that is not a trace parent
+-- (kit/telemetry names it and writes it), and this column is the same value the
+-- router put on the request's own context, injected by the same propagator and read
+-- back by the same one. Nothing here invents a header, a payload member or a second
+-- correlation system: it stores the third member of the set the row already carried
+-- two of, so the request id reaches the delivery span, and the handler's transaction
+-- spans below it, the way the request's own spans already do.
+--
+-- Nullable, and NULL is the ordinary case rather than a defect: the baggage is empty
+-- whenever the publisher had no request to leave one behind — a periodic job, a
+-- worker reacting to another event, a request whose id Baggage itself will not carry
+-- (kit/telemetry.WithRequestID refuses those) — and a row written before this file
+-- has nothing to carry at all. An expand, and an unsafe one it is not: one nullable
+-- column on a table whose readers name their columns (the relay), added without a
+-- default, so no row is rewritten and no rewrite is scheduled for the contract half.
+
+ALTER TABLE platformkit_outbox ADD COLUMN baggage text;
