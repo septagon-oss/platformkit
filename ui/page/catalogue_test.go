@@ -32,6 +32,10 @@ func raisedFaults(t *testing.T) []string {
 			keys = append(keys, key)
 		}
 	}
+	// The parts of the refusal page are looked up by name rather than by a code,
+	// and they are copy a person reads: a missing entry is the same defect one
+	// sentence down.
+	keys = append(keys, refusalParts...)
 	slices.Sort(keys)
 	return slices.Compact(keys)
 }

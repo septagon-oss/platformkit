@@ -96,9 +96,9 @@ var spec = rest.Spec[*contracts.Plan]{
 // Operator would fail startup rather than quietly letting a customer's wildcard
 // into the price list.
 var permissions = []module.Permission{
-	{Key: contracts.PermissionBillingRead},
-	{Key: contracts.PermissionBillingManage},
-	{Key: contracts.PermissionBillingCatalog, Operator: true},
+	{Key: contracts.PermissionBillingRead, Label: "read billing"},
+	{Key: contracts.PermissionBillingManage, Label: "manage billing"},
+	{Key: contracts.PermissionBillingCatalog, Operator: true, Label: "manage the plan catalogue"},
 }
 
 // Module is the manifest, and the plan answer beside it, as user's and
