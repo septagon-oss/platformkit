@@ -29,14 +29,17 @@ surfaces its `RingOffset` draws it onto, and `border-default`, which is a text
 field's only edge — `clInput` fills the field with the same surface role as the
 card `clCardFrame` paints, so the line, not the fill, is what says where the
 field is. The sidebar is a fourth ground a ringed
-control sits on, ungated, and the muted panel a fourth ground a field can stand
-on, repaired against but ungated because no shipped rule draws a line there
-today; both are named in [CHANGELOG](../CHANGELOG.md) with their numbers. A
+control sits on, ungated, and `surface-active` a fifth ground the layer mixes the
+same way as the hover fill and no shipped rule draws a line on; both are named in
+[CHANGELOG](../CHANGELOG.md) with their numbers. A
 generated foreground is repaired against two grounds no token pair reaches: the
 soft brand tint, `SoftTintPercent` of the accent mixed into a surface, which the
 kernel paints that accent's own colour on and which reads worse than its source
 surface, and the four status tints, which the generator walks toward white (or
-black) until the muted line a tinted panel carries reads on them. A generated
+black) until the muted line a tinted panel carries reads on them; a generated edge
+is repaired against a third such ground, the hovered fill `HoverTintPercent` of
+`text-primary` mixes into a surface, because `clButtonVariant["secondary"]` and
+`clModalCancel` keep the line while the fill moves onto it. A generated
 edge is emitted at 3.5:1, half a step over the floor that gates it, because the
 ground a client files is not the ground the generator drew: naming a
 `surface-primary` in `design.yaml` moves the card a field stands on, and an edge
@@ -67,8 +70,8 @@ the button that tone names (`clButtonTone` paints `fg-on-brand` on
 `surface-danger` at 14 px, which is what a generated list's delete form wears)
 plus `BodyRolePairs()`'s `fg-on-brand` on the accent a primary button is filled
 with, and `EdgeRolePairs()` at the graphic's floor over the boundary a component
-draws itself with — `border-primary` on the card and on the page canvas, the two
-grounds a text field stands on. They are names, references and percentages, so owning them costs this
+draws itself with — `border-primary` on the card, the page canvas, the muted panel
+and the hovered fill, the four grounds shipped rules draw that line on. They are names, references and percentages, so owning them costs this
 package nothing of its dependency rule, and the package that measures a ratio has
 to own what it measures: `Client.Resolve` gates a client's finished pair with
 `RoleLayer()` and `GatedRolePairs()`, while
