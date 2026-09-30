@@ -275,22 +275,19 @@ func (s *Service) slide(tx db.Tx[db.Tenant], session *contracts.Session) error {
 	return nil
 }
 
-// RevokeSessions ends every session this user has but one.
+// RevokeSessions ends every session this user has but one, and publishes one
+// auth.session_revoked per machine that left.
 //
 // It is the second half of every password change: the point of setting a new
 // password is that the old one stops working, and a session opened with the old
 // one is the old one still working. except keeps the session the person is
 // asking from, so changing a password does not sign you out of the page you
-// changed it on; the nil UUID keeps none.
-func (s *Service) RevokeSessions(_ context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error {
-	q := tx.DB().Where("user_id = ?", userID)
-	if except != uuid.Nil {
-		q = q.Where("id_hash <> ?", contracts.Hash(except.String()))
-	}
-	if err := q.Delete(&contracts.Session{}).Error; err != nil {
-		return fmt.Errorf("auth: revoke the sessions of %s: %w", userID, err)
-	}
-	return nil
+// changed it on; the nil UUID keeps none, which is also what RevokeAllSessions
+// asks for. Both are the same statement, in the same transaction as whatever
+// asked for them, and both leave the revocations on the trail.
+func (s *Service) RevokeSessions(ctx context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error {
+	_, err := s.revoke(ctx, tx, userID, except)
+	return err
 }
 
 // Purge deletes this tenant's expired sessions and spent tokens, a batch per

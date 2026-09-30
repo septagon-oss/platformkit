@@ -177,9 +177,18 @@ func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.Se
 	for _, s := range items {
 		body = append(body, sessionCard(revokeOne, s))
 	}
-	rest := len(items)
-	if items[0].Current {
-		rest--
+	// The count is the rows that are not this one, counted where they are. The
+	// command ends whatever the caller's own session is, wherever it sits, and the
+	// order this list arrives in is last_seen_at — a column the module slides at
+	// most once per SessionTouch, so the reading session legitimately sorts behind
+	// one used more recently. Peeking at the head of the list would then name one
+	// more ending than the click performs, and the person would have agreed to a
+	// different number than the one that happened.
+	rest := 0
+	for _, s := range items {
+		if !s.Current {
+			rest++
+		}
 	}
 	if rest > 0 {
 		body = append(body, components.Divider(components.DividerProps{Text: "Everywhere else"}),

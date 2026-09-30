@@ -77,8 +77,10 @@ type Deps struct {
 	Roles Roles
 
 	// Sessions is the auth module's session list and its two revocations, for
-	// the screen that module's second nav entry names. Like Roles, nil mounts
-	// nothing and the entry is reported unserved at boot.
+	// the screen that module serves at /app/auth/sessions. That screen declares
+	// no nav entry — kit/module refuses an entry naming no permission, and the
+	// product's navigation names it instead — so, unlike Roles, a nil here mounts
+	// nothing and reports nothing: no composition is missing an entry.
 	Sessions Sessions
 
 	// Theme is the installation's two palettes. The zero value is the palette

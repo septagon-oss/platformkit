@@ -359,7 +359,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 					t.Errorf("Reset(%q) = %v, want ErrCredentials", second, err)
 				}
 			}
-			published(t, f, contracts.EventLoggedIn, contracts.EventPasswordReset)
+			published(t, f, contracts.EventLoggedIn, contracts.EventSessionRevoked, contracts.EventPasswordReset)
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", "a different passphrase", nobody); err != nil {
 				t.Errorf("the reset password does not work: %v", err)
 			}

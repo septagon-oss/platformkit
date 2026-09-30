@@ -90,14 +90,31 @@ func (s *Service) RevokeSession(ctx context.Context, tx db.Tx[db.Tenant], userID
 	})
 }
 
-// RevokeAllSessions ends every session this person has and publishes one event
-// per row it removed, with All set. Each event names the machine that left —
-// which is what the trail is for — so the agent, the address and the expiry are
-// read out of the row as it goes rather than reconstructed afterwards.
+// RevokeAllSessions is the revocation that keeps nothing, and it is revoke with
+// the nil UUID as the session to keep — so the "everywhere" answer and the
+// password change's clause are one statement, one count and one event per row.
+func (s *Service) RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error) {
+	return s.revoke(ctx, tx, userID, uuid.Nil)
+}
+
+// revoke ends every session of this user that is not the session named, and
+// publishes one auth.session_revoked per row it removed, with All set only when
+// nothing was kept. Each event names the machine that left — which is what the
+// trail is for — so the agent, the address and the expiry are read out of the row
+// as it goes rather than reconstructed afterwards.
 //
-// There is no `except`, so the person who asked is signed out of the page they
-// asked on — which is what "everywhere" means, and what the route then makes
-// obvious by clearing the cookie and sending them to the sign-in page.
+// Keeping the nil UUID's hash is how "keep none" is said: no session hashes to
+// the digest of the zero UUID, so the clause is a tautology that costs no branch,
+// and the two commands above cannot drift into two statements with two behaviours.
+//
+// Both revocations publish, because both are revocations. The password change was
+// once the exception — the clause argument was that it is not a decision anybody
+// made on its own — and that argument inverted the moment the sessions screen put
+// an "end every session but this one" button behind this command: a person
+// deciding on their own, enclosed by nothing, on a surface whose JSON sibling
+// publishes per row. A state change that leaves no record is a state change the
+// trail cannot show, whichever command asked for it; the password change is now on
+// the trail too, one row per machine it signed out, next to its own change.
 //
 // The read and the delete are one statement, and that is the whole of the
 // concurrency claim. Read-then-delete, two of these racing each other was not
@@ -110,18 +127,20 @@ func (s *Service) RevokeSession(ctx context.Context, tx db.Tx[db.Tenant], userID
 // loser of that race now takes no rows, publishes nothing and reports none, and
 // nothing locks for the purpose: a row this command deletes is not a row another
 // command can be revising.
-func (s *Service) RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error) {
+func (s *Service) revoke(ctx context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) (int, error) {
 	type left struct {
 		ref    string
 		agent  string
 		ip     string
 		expiry time.Time
 	}
+	all := except == uuid.Nil
 	rows, err := tx.DB().Raw(
-		"DELETE FROM sessions WHERE user_id = ? RETURNING id_hash, user_agent, ip, expires_at", userID,
+		"DELETE FROM sessions WHERE user_id = ? AND id_hash <> ? RETURNING id_hash, user_agent, ip, expires_at",
+		userID, contracts.Hash(except.String()),
 	).Rows()
 	if err != nil {
-		return 0, fmt.Errorf("auth: revoke every session of %s: %w", userID, err)
+		return 0, fmt.Errorf("auth: revoke the sessions of %s: %w", userID, err)
 	}
 	// Collected before anything is published: the cursor holds this transaction's
 	// connection, and the outbox insert is another statement on it.
@@ -139,13 +158,13 @@ func (s *Service) RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], us
 		gone = append(gone, row)
 	}
 	if err := rows.Close(); err != nil {
-		return 0, fmt.Errorf("auth: revoke every session of %s: %w", userID, err)
+		return 0, fmt.Errorf("auth: revoke the sessions of %s: %w", userID, err)
 	}
 	at := db.Now()
 	for _, row := range gone {
 		err := events.Publish(ctx, tx, contracts.EventSessionRevoked, contracts.SessionRevoked{
 			UserID: userID, SessionRef: row.ref,
-			UserAgent: row.agent, IP: row.ip, ExpiresAt: row.expiry, All: true, At: at,
+			UserAgent: row.agent, IP: row.ip, ExpiresAt: row.expiry, All: all, At: at,
 		})
 		if err != nil {
 			return 0, err

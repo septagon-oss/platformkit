@@ -84,14 +84,21 @@ func (f *Fake) Grant(name string, permissions ...string) {
 	f.roles[name] = slices.Clone(permissions)
 }
 
-// RevokeSessions mirrors internal.Service.RevokeSessions.
+// RevokeSessions mirrors internal.Service.RevokeSessions, one event per session
+// that went: the password change's revocation and the person's "everywhere" are
+// the same fact, so the fake records it the same way for both.
 func (f *Fake) RevokeSessions(_ context.Context, _ db.Tx[db.Tenant], userID, except uuid.UUID) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	var gone int
 	for id, s := range f.sessions {
 		if s.UserID == userID && id != except {
 			delete(f.sessions, id)
+			gone++
 		}
+	}
+	f.mu.Unlock()
+	for range gone {
+		f.record(contracts.EventSessionRevoked)
 	}
 	return nil
 }
@@ -151,20 +158,19 @@ func (f *Fake) RevokeSession(_ context.Context, _ db.Tx[db.Tenant], userID uuid.
 	return nil
 }
 
-// RevokeAllSessions mirrors internal.Service.RevokeAllSessions, one event per
-// session that went.
-func (f *Fake) RevokeAllSessions(_ context.Context, _ db.Tx[db.Tenant], userID uuid.UUID) (int, error) {
+// RevokeAllSessions mirrors internal.Service.RevokeAllSessions: the same
+// revocation, keeping nothing, reporting how many went.
+func (f *Fake) RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error) {
 	f.mu.Lock()
 	gone := 0
-	for id, s := range f.sessions {
+	for _, s := range f.sessions {
 		if s.UserID == userID {
-			delete(f.sessions, id)
 			gone++
 		}
 	}
 	f.mu.Unlock()
-	for range gone {
-		f.record(contracts.EventSessionRevoked)
+	if err := f.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
+		return 0, err
 	}
 	return gone, nil
 }

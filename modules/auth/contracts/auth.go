@@ -329,14 +329,15 @@ type Service interface {
 	// that was deleted is a user with less authority, not a broken request.
 	Permissions(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]string, error)
 
-	// RevokeSessions ends every session this user has, except the one named.
-	// The nil UUID keeps none, which is "sign me out everywhere".
+	// RevokeSessions ends every session this user has, except the one named, and
+	// publishes one auth.session_revoked per row it removed.
 	//
 	// It takes the caller's transaction because it never happens on its own:
-	// every caller is changing the credential those sessions were opened with,
-	// and a revocation that committed apart from the change it belongs to is a
-	// window in which the old password is gone and the sessions it opened are
-	// not.
+	// every caller is either changing the credential those sessions were opened
+	// with, or a person deciding on their own screen which machines stop working;
+	// in both cases a revocation that committed apart from the change it belongs to
+	// is a window in which the old password is gone and the sessions it opened are
+	// not. The nil UUID keeps none, which is RevokeAllSessions.
 	RevokeSessions(ctx context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error
 
 	// Sessions lists this person's own live sessions, most recently seen first,
@@ -363,12 +364,10 @@ type Service interface {
 	// they are asking from, and publishes one auth.session_revoked per row it
 	// removed. It returns how many went, which is what the route reports.
 	//
-	// Unlike RevokeSessions it takes no `except`, because the person standing at
-	// this door has said they want every machine out; the caller who keeps their
-	// own session alive is changing a password, and that path keeps RevokeSessions
-	// with its `except` and publishes its own event instead. RevokeSessions stays
-	// silent for that reason: the revocation is a clause of the password change,
-	// not a decision anybody made on its own.
+	// It is RevokeSessions keeping the nil UUID — one statement, one count, one
+	// event per machine — and it differs from it only in having no exception:
+	// "everywhere" includes the machine asking, which is what the route then makes
+	// obvious by clearing the cookie and sending the person to the sign-in page.
 	RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error)
 
 	// ChangePassword sets a new password for somebody who is signed in, having

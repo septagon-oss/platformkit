@@ -36,9 +36,13 @@ type Shell struct {
 	// module's nav entry names. Nil mounts no screen, and then Mount reports
 	// the entry as unserved, which is what it is.
 	Roles Roles
-	// Sessions is the auth module's session list, for the screen that module's
-	// second nav entry names. Nil mounts no screen, and then Mount reports the
-	// entry as unserved, which is what it is.
+	// Sessions is the auth module's session list, for the screen it serves at
+	// /app/auth/sessions. That screen declares no nav entry here: kit/module
+	// refuses an entry that names no permission, and the two this module declares
+	// would both be wrong for it — so the product that owns the navigation names
+	// the entry beside the permission it seeds. Nil mounts no screen, and because
+	// nothing declares one, nothing is reported unserved either: a composition
+	// with no auth module has no session list to miss.
 	Sessions Sessions
 	Token    tenancy.SystemToken
 	// SignIn is the auth module's session route, which the sign-in form posts
