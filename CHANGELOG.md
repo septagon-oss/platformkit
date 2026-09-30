@@ -39,6 +39,13 @@ outbox row a dead letter still describes: the row is the payload's only copy, an
 a terminal failure the operator can read but never run again, with nothing left
 saying what it carried, is the evidence this change set exists to stop losing.
 
+**A test that must name a tenancy setting to read it can be exempted from the GUC gate, in a reviewed row.**
+`scripts/check_gucs.sh` reads text, so a test that matches a migration's `set_config('platformkit.…'` line as
+a string looks like a write. `scripts/gucs-exempt.txt` lists such files, one `<path> <reason>` per line.
+Only a `_test.go` file may be listed, since a test never ships, and a row without a reason is refused. Every
+exemption is printed on every run. Assembling the name from pieces to slip past the gate remains the wrong
+answer, because the gate then reads nothing.
+
 **A module declares the addresses it moved, and the kernel redirects them.** `module.Module.Moved` is a list
 of `{From, To}` whole paths. The kernel answers an old address, or anything under it, with the same redirect
 as its own migration table: 302 for a safe method, 307 for a write, the remainder and the query kept, never
