@@ -24,6 +24,15 @@ import (
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
+// allowGranting is the fixture's answer to user.Deps.Granting. These suites
+// seed people with roles before any auth service exists to ask, and the door
+// itself has its own cases: the conformance suite in modules/user drives the
+// port both ways (see usercontracts.Granting). A route reached through the
+// mounted router is still stopped by the kernel's own permission check first.
+var allowGranting = &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) {
+	return true, nil
+}}
+
 // realUsers is the user module's own service, reached the way any other module
 // reaches it: through modules/user, because modules/user/internal is closed to
 // everything outside that module. The compiler is the boundary (idea 3), and
@@ -31,8 +40,14 @@ import (
 func realUsers() usercontracts.Service {
 	// The same wiring apps/platformkit uses: the user module's floor asks the
 	// roles table who can still administer the tenant, and this is the function
-	// that answers it.
-	svc, _ := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
+	// that answers it. Granting is the fixture's yes: these suites seed people
+	// with roles before any auth service exists to ask, and the door itself has
+	// its own cases — the conformance suite in modules/user drives the port
+	// both ways (see usercontracts.Granting).
+	svc, _ := user.Module(user.Deps{
+		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
+		Granting:       allowGranting,
+	})
 	return svc
 }
 

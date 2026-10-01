@@ -14,7 +14,11 @@ import (
 // unwrap so that this package does not care which adapter huma was built on.
 func (a *API) carry(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestKey{}, r)))
+		ctx := withRefusalNote(r.Context())
+		if a.access != nil {
+			ctx = withAccessDoor(ctx, a.access)
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, requestKey{}, r)))
 	})
 }
 

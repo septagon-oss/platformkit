@@ -109,6 +109,19 @@ type Options struct {
 	// read.
 	WorkspaceCatalog func(api *httpx.API)
 
+	// Access is the reach an ask for access needs: the people in this tenant
+	// whose role grants role management, and the notice written to each. Nil
+	// leaves the kernel's ask door unmounted and the refusal page with no ask
+	// control, which is the honest answer — see httpx.Options.Access.
+	Access httpx.AskForAccess
+
+	// AccessPage mounts the browser's half of the same command (the form the
+	// refusal page posts to, and the confirmation page). The address is the
+	// kernel's, the body is the composition's, because kit may not import ui:
+	// ui/page.MountAccess is what a composition passes here. It is called with
+	// the workspace router and only when Access is wired.
+	AccessPage func(router *httpx.Router)
+
 	// Transport carries events between the relay and the handlers. An explicit
 	// value overrides nats.transport and Transports. Otherwise All defaults to
 	// memory and a separate Worker to JetStream; nats.transport can opt All
@@ -410,6 +423,9 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		// Every attributable refusal is an event and, where modules/audit is composed, an
 		// audit row: see recordDenial.
 		Denied: recordDenial(conn, a.log),
+		// The ask for access: the reach is the composition's, the record is the
+		// kernel's event, and the one limiter the composition already builds.
+		Access: a.opts.Access, Accessed: recordAccessRequest,
 	})
 
 	// The catalogue before the routes: a module that validates a permission
@@ -418,7 +434,7 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	var catalogue []tenancy.Grant
 	for _, m := range a.mods {
 		for _, p := range m.Permissions {
-			catalogue = append(catalogue, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+			catalogue = append(catalogue, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
 		}
 	}
 	api.Declare(catalogue)
@@ -504,6 +520,12 @@ func (a *App) composeGates(api *httpx.API) error {
 	// A5, and the route itself. The address is the kernel's; the body is the
 	// composition's, because kit may not import ui.
 	resources := api.Resources()
+	if a.opts.Access != nil {
+		mountAccessRequest(api)
+		if a.opts.AccessPage != nil {
+			a.opts.AccessPage(api.Surfaces("").App)
+		}
+	}
 	if a.opts.WorkspaceCatalog != nil {
 		a.opts.WorkspaceCatalog(api)
 	} else if len(resources) > 0 && a.opts.Role != Worker {
@@ -729,6 +751,7 @@ var kernelModule = module.Module{
 	Declared: []events.Declared{
 		events.Declare[events.ReplayRecord](events.EventReplayed),
 		events.Declare[Denied](EventDenied),
+		events.Declare[AccessRequested](EventAccessRequested),
 	},
 }
 

@@ -1,0 +1,29 @@
+{
+  "permission.billing:read": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "ler a faturação",
+    "plural": {
+      "": "ler a faturação"
+    }
+  },
+  "permission.billing:manage": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "gerir a faturação",
+    "plural": {
+      "": "gerir a faturação"
+    }
+  },
+  "permission.billing:catalog": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "gerir o catálogo de planos",
+    "plural": {
+      "": "gerir o catálogo de planos"
+    }
+  }
+}

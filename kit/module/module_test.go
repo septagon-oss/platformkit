@@ -50,7 +50,7 @@ func TestValidateAcceptsAWellFormedComposition(t *testing.T) {
 	mods := []Module{
 		{
 			Name:        "accounts",
-			Permissions: []Permission{{Key: "user:read"}},
+			Permissions: []Permission{{Key: "user:read", Label: "read people"}},
 			Declared:    []events.Declared{{Name: "accounts.user_created"}, {Name: "accounts.user_deleted"}},
 		},
 		{

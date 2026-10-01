@@ -186,7 +186,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	})
 	notes := module.Module{
 		Name:        "note",
-		Permissions: []module.Permission{{Key: "note:read"}, {Key: "note:write"}, {Key: "secret:read"}},
+		Permissions: []module.Permission{{Key: "note:read", Label: "read notes"}, {Key: "note:write", Label: "write notes"}, {Key: "secret:read", Label: "read secrets"}},
 		Declared:    spec.Declared(),
 		Nav: []module.NavEntry{
 			{Label: "Notes", Screen: "note/notes", Permission: "note:read"},
@@ -213,7 +213,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	// catalogue and only the operator writes it.
 	catalogue := module.Module{
 		Name:        "plan",
-		Permissions: []module.Permission{{Key: "plan:read"}, {Key: "plan:write", Operator: true}},
+		Permissions: []module.Permission{{Key: "plan:read", Label: "read plans"}, {Key: "plan:write", Operator: true, Label: "write plans"}},
 		Declared:    plans.Declared(),
 		Nav: []module.NavEntry{
 			{Label: "Plans", Screen: "plan/plans", Permission: "plan:read"},
@@ -230,7 +230,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	// to mount into, and the screen would fall back to the shell's own.
 	rolesModule := module.Module{
 		Name:        "auth",
-		Permissions: []module.Permission{{Key: "auth:manage"}},
+		Permissions: []module.Permission{{Key: "auth:manage", Label: "manage authentication"}},
 		Nav:         []module.NavEntry{{Label: "Roles", Screen: "auth/roles", Permission: "auth:manage"}},
 	}
 	deps := admin.Deps{

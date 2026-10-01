@@ -1,0 +1,20 @@
+{
+  "permission.task:read": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "ler tarefas",
+    "plural": {
+      "": "ler tarefas"
+    }
+  },
+  "permission.task:update": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "escrever tarefas",
+    "plural": {
+      "": "escrever tarefas"
+    }
+  }
+}

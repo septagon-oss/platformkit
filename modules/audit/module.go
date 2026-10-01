@@ -65,7 +65,7 @@ type Deps struct {
 // working module.
 const retentionDays = 365
 
-var permissions = []module.Permission{{Key: contracts.PermissionAuditRead}}
+var permissions = []module.Permission{{Key: contracts.PermissionAuditRead, Label: "read the audit trail"}}
 
 // Module is the manifest, and the service it is built on.
 func Module(deps Deps) module.Module {

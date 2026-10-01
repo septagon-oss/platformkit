@@ -76,8 +76,8 @@ type Deps struct {
 // declaration against it at boot, so a route guarded by a permission that is
 // not here fails startup instead of denying everyone forever.
 var permissions = []module.Permission{
-	{Key: contracts.PermissionFileRead},
-	{Key: contracts.PermissionFileManage},
+	{Key: contracts.PermissionFileRead, Label: "read files"},
+	{Key: contracts.PermissionFileManage, Label: "manage files"},
 }
 
 // Module is the manifest, and the service beside it.
