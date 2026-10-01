@@ -121,13 +121,28 @@ type NATS struct {
 	CACert   string `yaml:"ca_cert"`
 }
 
+// AppName is the slug this process serves, as the type every name two apps could
+// share is formed from. The empty setting is the deployment of one app and answers
+// the zero Name, which is what every constructor of kit/appname reads as "keep the
+// name this kernel formed before the app segment existed"; a setting that is
+// present and broken is refused. One door, so that a reader of `nats.app` and the
+// transport that builds itself from it cannot disagree about what empty means.
+func (n NATS) AppName() (appname.Name, error) {
+	if n.App == "" {
+		return "", nil
+	}
+	app, err := appname.Parse(n.App)
+	if err != nil {
+		return "", fmt.Errorf("nats.app: %w", err)
+	}
+	return app, nil
+}
+
 // Validate checks settings without opening files or connecting to the broker.
 // Diagnostics name keys without echoing endpoints or credentials.
 func (n NATS) Validate() error {
-	if n.App != "" {
-		if _, err := appname.Parse(n.App); err != nil {
-			return fmt.Errorf("nats.app: %w", err)
-		}
+	if _, err := n.AppName(); err != nil {
+		return err
 	}
 	if n.Transport != "" && n.Transport != "memory" && n.Transport != "jetstream" {
 		return errors.New("nats.transport must be memory, jetstream or empty for the role default")
