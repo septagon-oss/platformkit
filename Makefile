@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -99,6 +99,19 @@ mobile-e2e: ## Boot the app on a database of its own and drive it with one devic
 # <ref>" (or --dump <file>); scripts/rehearse_migrations.sh names the four exit codes.
 rehearse: ## Apply this tree's pending migrations to a copy of a production-shaped database
 	./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
+
+# The other half of "can this installation be put back". `make backup` writes one
+# dump plus a copy of the on-disk byte store and a manifest of digests; `make
+# restore-drill` puts a backup (or a fresh one) into a scratch database and compares
+# every byte and every table, printing restore_drill_pass_ratio. Operator steps in the
+# same class as rehearse — psql, pg_dump, pg_restore and a database it may create and
+# drop — and for the same reason they are not in `check`: `check` is what a pull
+# request must pass on a source tree, and these need a running cluster.
+backup: ## Write one dump of the database and a copy of the byte store, with a manifest of digests
+	./scripts/backup.sh $(BACKUP_ARGS)
+
+restore-drill: ## Put a backup back into a scratch database and prove the restore is byte-identical
+	./scripts/restore_drill.sh $(DRILL_ARGS)
 
 load-test: ## Compare bounded tenant work and database pool capacity
 	go test ./kit/jobs -run '^$$' -bench '^BenchmarkPerTenantCapacity$$' -benchtime=2s -count=3 -timeout=3m
