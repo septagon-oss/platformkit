@@ -40,13 +40,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 )
 
-// deleteChunk bounds one DEL command. The host invalidation a suspension triggers
-// carries every host of one tenant (modules/tenant calls InvalidateHost with the
-// whole set), so a batch is the normal case rather than the large one; one
-// command per key would be a request whose round trips grow with the tenant's
-// host list, and one command for all of them would be a command whose argument
-// list nobody bounded. 500 is a round trip with 500 arguments, which is the
-// shape a server answers comfortably.
+// deleteChunk bounds one DEL command. The port's Delete names as many keys as its
+// caller holds — Group.Forget one, a caller forgetting a whole set all of them — so a
+// batch is the shape of the command and not a large case: one command per key is a
+// request whose round trips grow with the caller's list, and one for all of them is an
+// argument list nobody bounded. 500 is a round trip with 500 arguments, which is the
+// shape a server answers. A suspension's invalidation is a Move: it names no keys.
 const deleteChunk = 500
 
 // connectBudget bounds the boot probe. It is deliberately not kit/cache's 250 ms

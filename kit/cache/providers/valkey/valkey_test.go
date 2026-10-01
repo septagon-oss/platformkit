@@ -102,10 +102,10 @@ func TestARequestCostsOneRoundTrip(t *testing.T) {
 }
 
 // TestDeletingAThousandKeysIsTwoCommands is the batching C9 cannot see: what one
-// invalidation of a tenant's whole host set costs on the wire. A suspension
-// invalidates every host the tenant has, and a delete that went one key per
-// command would make the operator's action cost as many round trips as the
-// tenant has hosts.
+// invalidation that names a thousand entries costs on the wire. The port's Delete is
+// variadic — Group.Forget names one, a caller forgetting a set names them all — and
+// one key per command would make that caller's action cost as many round trips as
+// it has keys. A suspension's invalidation is a Move instead: one INCR, no keys.
 func TestDeletingAThousandKeysIsTwoCommands(t *testing.T) {
 	url, app := address(t), run(t)
 	c := connect(t, url, app)
