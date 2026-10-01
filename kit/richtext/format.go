@@ -63,10 +63,11 @@ func (e *Refused) Error() string {
 
 // Key names the construct in the package's own vocabulary, so an application can
 // hold the sentence for it in its own catalogues. It is a slug rather than a
-// field because the vocabulary is closed: Validate raises these and nothing
-// else. An issue the table does not name — one whose remedy carries a number,
-// like the length ceiling — has no key and stays in the language it was written
-// in, which is the honest half of a catalogue that is only partly translated.
+// field because the vocabulary is closed: `Validate` and the fixed-point check in
+// `Normalise` raise these and nothing else. An issue the table does not name —
+// one whose remedy carries a number, like the length ceiling — has no key and
+// stays in the language it was written in, which is the honest half of a
+// catalogue that is only partly translated.
 func (i Issue) Key() string {
 	switch {
 	case strings.HasPrefix(i.Construct, "heading level "):
@@ -89,6 +90,7 @@ var constructKeys = map[string]string{
 	"math":             "math",
 	"emoji shortcode":  "emoji-shortcode",
 	"missing image":    "missing-image",
+	"unstorable text":  "unstorable-text",
 }
 
 // Localize returns the issue with its construct and its remedy in the language
@@ -371,6 +373,13 @@ func fenceWidth(code []string) int {
 }
 
 // Normalise validates a value and returns LF-terminated canonical Markdown.
+//
+// The canonical form is checked against the document it came from before it is
+// returned: it must parse, it must pass the validation the source passed, it must
+// project to the same readable words, and rewriting it must change nothing. A
+// value whose canonical form the parser would read differently is refused on the
+// write that found it — the alternative is a committed row that the next write
+// refuses and that renders as something other than what its author typed.
 func Normalise(source string) (string, error) {
 	d, err := Parse(source)
 	if err != nil {
@@ -379,6 +388,33 @@ func Normalise(source string) (string, error) {
 	if issues := Validate(d); len(issues) > 0 {
 		return "", &Refused{Issues: issues}
 	}
+	stored := canonical(d)
+	// Cutting a line short can change what the next parse makes of it: `<p\t` is
+	// a paragraph of text, the `<p` left after its tab is trimmed opens an HTML
+	// block. So the stored value is parsed and validated in its own right, and
+	// the issue names the line of the value that would have been stored.
+	value, err := Parse(stored)
+	if err != nil {
+		return "", err
+	}
+	if issues := Validate(value); len(issues) > 0 {
+		return "", &Refused{Issues: issues}
+	}
+	if canonical(value) != stored || PlainText(value) != PlainText(d) {
+		return "", &Refused{Issues: []Issue{{
+			Construct: "unstorable text", Line: 1,
+			Remedy: "Reword the passage so that it reads the same once it is saved.",
+			Class:  Correctable,
+		}}}
+	}
+	return stored, nil
+}
+
+// canonical serialises a validated document as LF-terminated Markdown. It reads
+// the source through the syntax tree, so every decision about what a line of the
+// source means is the parser's, and Normalise verifies the result of that reading
+// rather than trusting it.
+func canonical(d *Document) string {
 	// A text node's hard-break flag is the parser's decision that trailing
 	// spaces are syntax. Keep exactly two; trimming them would silently turn
 	// an allowed hard break into a soft break on the next parse.
@@ -537,7 +573,7 @@ func Normalise(source string) (string, error) {
 		out = out[:n]
 	}
 	if len(out) == 0 {
-		return "", nil
+		return ""
 	}
 	// Empty runs are one block separator. Preserving line indentation retains
 	// list and table structure, and a line of literal code keeps the blanks it
@@ -553,7 +589,7 @@ func Normalise(source string) (string, error) {
 	for i, line := range compact {
 		text[i] = line.text
 	}
-	return strings.Join(text, "\n") + "\n", nil
+	return strings.Join(text, "\n") + "\n"
 }
 
 // SourceHash is SHA-256 of canonical UTF-8 Markdown, encoded in lowercase hex.

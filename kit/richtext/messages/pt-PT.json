@@ -160,5 +160,17 @@
       "kit/rest/screens.go"
     ],
     "translation": "linha"
+  },
+  "richtext.unstorable-text.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "texto que não fica como foi escrito"
+  },
+  "richtext.unstorable-text.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Reescreva a passagem para que fique igual depois de guardada."
   }
 }

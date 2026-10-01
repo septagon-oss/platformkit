@@ -64,8 +64,16 @@ backtick run inside it, so a line of ``` held in the code stays data.
 Indentation a list item or a blockquote owns is left as the author wrote it: a
 step's second paragraph and a nested list keep their four spaces, and a bullet
 marker is rewritten only inside the single list the parser sees, so `* a` then
-`- b` stay two lists. `Normalise` is idempotent, so a body is stored once; an
-unterminated fence gains its closing line. Other equivalent Markdown spellings —
+`- b` stay two lists. What `Normalise` returns is checked against the document it
+came from before anything is written: it must parse, it must pass the validation
+the submitted text passed, it must keep the words the plain-text projection reads
+and it must be its own canonical form. Cutting a line short can change how the
+next parse reads it — `<p\t` is a paragraph of text, the `<p` left after its tab
+is trimmed opens an HTML block — and a source whose stored form fails that check
+is refused on the write that found it, because the alternative is a committed
+body the next write refuses. A body that passes is stored once: a second
+`Normalise` over it changes nothing. An unterminated fence gains its closing
+line. Other equivalent Markdown spellings —
 an ordered list written `1)` rather than `1.`, or `__bold__` rather than
 `**bold**` — can still yield distinct source hashes, so complete AST
 serialization remains open.

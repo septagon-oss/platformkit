@@ -160,5 +160,17 @@
       "kit/rest/screens.go"
     ],
     "translation": "line"
+  },
+  "richtext.unstorable-text.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "text storing would change"
+  },
+  "richtext.unstorable-text.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Reword the passage so that it reads the same once it is saved."
   }
 }
