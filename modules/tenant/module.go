@@ -12,6 +12,7 @@
 package tenant
 
 import (
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -56,6 +57,14 @@ type Deps struct {
 	// (apps/platformkit/catalog.go); this module names no tag. A composition that
 	// wires no catalogues passes nothing, and then nothing is checked against it.
 	Languages []string
+
+	// App is the composition's own slug — the app every tenant this control plane
+	// writes belongs to, and what every read is scoped to. It is the same value the
+	// event transport, the job lock and the cookie name are formed from
+	// (kit/appname), read from the one setting that names it (nats.app); the empty
+	// Name is the deployment of one app, whose tenants are the ones this module has
+	// always listed.
+	App appname.Name
 }
 
 // Module is the manifest, and the service it is built on.
@@ -63,7 +72,7 @@ type Deps struct {
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
 func Module(deps Deps) (contracts.Service, module.Module) {
-	svc := internal.NewService(deps.OnCreate, deps.Languages)
+	svc := internal.NewService(deps.OnCreate, deps.Languages, deps.App)
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,

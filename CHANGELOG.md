@@ -16,8 +16,18 @@ has. The delivery boundary reads the app back: `transport.AddressMismatch` takes
 itself now answers only at its own scoped address — a message routed at the previous build's address names no
 app, so it cannot be shown to be this app's, and is terminated rather than opened. The rollout filter stays
 wide on purpose and the check is what decides. An unset slug keeps both older addresses, as it always did.
-T-0228; what is not yet wired — the tenant row's `app`, the boundaries that read it, the durable rename
-migration — is listed under *Limits* in `kit/appname/README.md`.
+**A tenant belongs to one app, and the control plane answers inside that app.** `tenants` gained a
+non-null `app` column (`migrations/000030_tenant_app`), stamped when the composition creates a tenant and
+never rewritten: lookup by host, the active-tenant list, `Get`, `List` and the operator routes over them
+all filter on it, and `tenants_operator` is unique per app rather than per database. The back-fill proves
+its input or refuses. A tenant already in the table joins this app when every host it holds is one the
+boot declares in `app.hosts`, or when an operator named it in `app.tenant_apps`; anything else is listed
+by slug and the migration writes nothing. `db.MigrateDeclaring` is the one door a boot has for a fact the
+database does not hold, checked before a connection opens. A deployment that says nothing about itself
+may still migrate a database with nothing to place — which is every fresh installation — and may not
+migrate one with something to place and nothing to say about it.
+T-0228; what is not yet wired — the relay's claim, the durable rename migration — is listed under *Limits*
+in `kit/appname/README.md`.
 
 **A tenant signs its people in at its own issuer.** The installation had one issuer, one client and
 one secret for the whole process (`kit/config.OIDC`, one `*oidc.Provider` behind a mutex): two

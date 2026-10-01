@@ -55,26 +55,48 @@ elsewhere claims.
 
 What this branch does not do, in the order it costs:
 
-- **The tenant control plane is not scoped to the app.** `tenants` has no `app`
-  column, so there is no fact for `Get`, `List`, `ByHost` or the operator routes to
-  filter on, no back-fill that can prove every existing tenant belongs to the
-  composition booting the migration, and the operator index is still unique per
-  database rather than per app. This is the brief's item 5 and the review's third
-  HIGH; it needs a migration, RLS, the tenant module's Deps and its own tests, and
-  it is the next piece of work here, not a window.
-- **One boundary reads the app back; two more need the tenant row.** Delivery
+- **The tenant control plane is scoped to the app.** `tenants.app` exists
+  (`migrations/000030_tenant_app`), is stamped at the create from the composition's
+  own slug, is never rewritten, and every control-plane read — `Get`, `List`,
+  `ByHost` and the operator routes above them — filters on it. The back-fill proves
+  its input: a tenant already in the table joins this app when every host it holds
+  is one the boot declares (`app.hosts`), or when the operator named it in
+  `app.tenant_apps`; anything else is listed by slug and the run refuses.
+  `tenants_operator` is unique per app rather than per database.
+  What that does *not* include: an installation-scope control plane that addresses
+  every app of a deployment through one audited surface (the brief names it and
+  this is not it — an operator reaches an app's control plane inside that app), and
+  any placement of a tenant whose hosts and mapping both stay silent, which is a
+  refusal by design and stays one.
+- **The relay still claims every unpublished outbox row.** Its claim needs
+  `tenants.app` (which now exists) and a join that locks only the outbox rows,
+  `FOR UPDATE OF o SKIP LOCKED`; neither is written here. Until it is, two apps
+  sharing a database relay one another's rows — they land in the right subjects
+  because the address carries the app, and are then refused by delivery, so the
+  cost is a relay doing work it will refuse rather than a wrong handler running.
+- **The durable rename has no migration.** `Durable` forms `<app>+<module>+<event>`,
+  and no file copies `platformkit_handled` or rewrites `platformkit_dead_letters`
+  from the old names, so a deployment that starts naming its app re-runs handled
+  work and strands its dead letters. The row-placement door this branch adds
+  (`db.MigrateDeclaring`) is the door that file reads its slug from; the file is not here.
+- **One boundary reads the app back; two more need a join.** Delivery
   refuses a message whose *address* names another app, or names no app at all
   (`transport.AddressMismatch(app, subject, ev)`, which the NATS provider calls
   before its sink runs): that check needs only the address the broker routed by,
   and it is what makes the wide `Filters` window safe to read at all. What still
-  needs `tenants.app` is the check behind it — that the tenant the event names is
-  one this app holds, which an address cannot say — and the relay's claim, which
-  has no app to join on until that column exists.
+  needs `tenants.app`, which now exists, is the check behind it: that the tenant the
+  event names is one this app holds, which an address cannot say on its own.
 - **The reference composition names no app.** `nats.app` (kit/config) is the slug's
   one configuration key and the reference application leaves it empty, which is the
   single-app deployment: every name it forms is the name it formed before this
-  branch. Choosing the slug for `apps/platformkit`, and the browser test that signs
-  in to two apps on two hosts of one deployment, are the product's share.
+  branch, and every tenant it creates is stamped with the empty slug. Choosing the
+  slug for `apps/platformkit`, declaring its `app.hosts`, and the browser test that
+  signs in to two apps on two hosts of one deployment are the product's share.
+- **The slug's one key is `nats.app` and the deployment facts are `app.*`.** The
+  split is history: the slug landed on the transport's section before the migration
+  needed anything, and moving it now would rename a published key for no gain. A
+  boot that sets `app.hosts` without a slug is the single-app deployment declaring
+  where it is served, which is legal and is what places its existing tenants.
 - **The envelope carries no app field**, so `AddressMismatch` reads the app out of
   the address the broker routed by and not out of the document. A body that names
   an app is a second fact to check against the first, and it is a field the kernel

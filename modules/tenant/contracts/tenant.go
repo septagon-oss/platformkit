@@ -48,6 +48,17 @@ type Tenant struct {
 	// the one `platformkit bootstrap` created, and no route writes it — see
 	// NewTenant.
 	Operator bool `json:"operator"`
+	// App is the composition this tenant belongs to, in the slug kit/appname forms
+	// every shared name from. It is a column and it is written once, at the create,
+	// from the app the composition boots as — never from a request, and never
+	// rewritten, because a tenant that moved between apps would leave its rows under
+	// an app that never issued them.
+	//
+	// It is not in the API document. The app is a fact about the deployment, and
+	// every read that returns this row is already scoped to one app, so the label
+	// would say the same thing on every row of a response and name the deployment to
+	// whoever asked.
+	App string `json:"-"`
 	// Hosts are the names this tenant is served at, the primary one first. They
 	// live in their own table and are loaded with the tenant, because a tenant
 	// without its hosts is a row nobody can reach and an admin screen that

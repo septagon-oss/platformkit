@@ -43,7 +43,7 @@ func TestATenantNobodyChoseALanguageForIsServedInTheOneItsCopyIsWrittenIn(t *tes
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	// The installation speaks two languages, which is what apps/platformkit hands
 	// it: `xtext.Catalog.Languages()` of the reference composition.
-	svc := internal.NewService(nil, []string{"en", "pt-PT"})
+	svc := internal.NewService(nil, []string{"en", "pt-PT"}, "")
 
 	var created *contracts.Tenant
 	var stored []string
