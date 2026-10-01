@@ -17,6 +17,14 @@ package internal_test
 // Nothing here names a status code the module could answer some other way, and
 // nothing reads a sentence out of a refusal: the assertions are the ledger —
 // sessions, unused codes, rows left in one table.
+//
+// The file carries a third case that arrived from elsewhere. Two tabs answering
+// one live step at the challenge route used to be the proof that the replay guard
+// is the UPDATE (`WHERE last_step < ?`) rather than a comparison — see
+// `review_r5_two_tabs_answering_one_code_test.go`. Since `000033` the tab without
+// a refused sign-in behind it is turned away at the door and never reaches that
+// statement, so the proof lives where the statement is the only guard left: two
+// transactions, one step, no HTTP in sight.
 
 import (
 	"context"
@@ -25,6 +33,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -285,6 +294,102 @@ func proofSessions(t *testing.T, conn *db.Conn, person uuid.UUID) int {
 		t.Fatalf("count the sessions: %v", err)
 	}
 	return live
+}
+
+// TestTwoCallersSpendingOneStepOpenOneSession: one RFC 6238 step, two
+// transactions, one session. Both callers are past every door — the spend is
+// decided by the row, and the row has to refuse one of them.
+//
+// What it pins is the outcome review 5 asked for, and no more than that. The
+// losing caller is refused either by the guarded UPDATE, when it reaches a row the
+// winner has already written, or by the comparison in totpMatches a line earlier,
+// when it read the row before that write landed; which of the two happens is the
+// interleaving, and no case in this tree can force one. Drop the WHERE last_step <
+// ? and this still passes — the read carries the refusal instead — so the case
+// rules out a spend that lets a step answer twice, and says nothing about which of
+// the two statements is the one that stopped it. That is stated here rather than
+// claimed: the browser case this replaces made the stronger claim by accident of
+// its timing, not by design.
+func TestTwoCallersSpendingOneStepOpenOneSession(t *testing.T) {
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
+	users := realUsers()
+	svc := internal.NewService(users, nil, internal.Delivery{})
+	svc.EnableFactors([]byte("a factor key this deployment set"))
+	seed(t, conn, acme)
+	ctx := httpx.WithConn(t.Context(), conn)
+	const email = "ada@acme.example.com"
+
+	var secret string
+	err := db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		person, err := users.Invite(ctx, tx, email, email)
+		if err != nil {
+			return err
+		}
+		if err := users.SetPassword(ctx, tx, person.ID, authtest.Password); err != nil {
+			return err
+		}
+		enrolment, err := svc.BeginTOTP(ctx, tx, person.ID)
+		if err != nil {
+			return err
+		}
+		_, _, err = svc.FinishTOTP(ctx, tx, person.ID, enrolment.Secret, codeFor(t, enrolment.Secret, db.Now()))
+		secret = enrolment.Secret
+		return err
+	})
+	if err != nil {
+		t.Fatalf("enrol the factor: %v", err)
+	}
+	code := codeFor(t, secret, db.Now())
+
+	outcomes := make([]error, 2)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range outcomes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			outcomes[i] = db.Run(tenancy.WithTenant(ctx, acme), conn,
+				func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+					_, _, err := svc.VerifySecondFactor(ctx, tx, email, code, nobody)
+					return err
+				})
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	opened := 0
+	for _, err := range outcomes {
+		switch {
+		case err == nil:
+			opened++
+		case errors.Is(err, contracts.ErrCredentials):
+		default:
+			t.Fatalf("a caller spending one step = %v, want either the session or %v", err, contracts.ErrCredentials)
+		}
+	}
+	if opened != 1 {
+		t.Errorf("%d of 2 callers spent one live step, want exactly one: last_step is the replay refusal "+
+			"and the replay record in one statement, so a second transaction that also opens a session read "+
+			"a step the first had already taken (%v)", opened, outcomes)
+	}
+	var live, logins int64
+	err = db.Run(httpx.WithConn(tenancy.WithTenant(context.Background(), acme), conn), conn,
+		func(_ context.Context, tx db.Tx[db.Tenant]) error {
+			if err := tx.DB().Table("sessions").Where("expires_at > ?", db.Now()).Count(&live).Error; err != nil {
+				return err
+			}
+			return tx.DB().Table("platformkit_outbox").Where("name = ?", contracts.EventLoggedIn).
+				Count(&logins).Error
+		})
+	if err != nil {
+		t.Fatalf("read what the two callers left: %v", err)
+	}
+	if live != 1 || logins != 1 {
+		t.Errorf("%d live sessions and %d %s rows for one step spent twice, want one and one",
+			live, logins, contracts.EventLoggedIn)
+	}
 }
 
 func purge(t *testing.T, ctx context.Context, conn *db.Conn, svc *internal.Service) int {
