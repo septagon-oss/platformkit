@@ -214,11 +214,16 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
+# The three rehearsal scripts are gates over the gates: the architecture rules, the
+# budget ratchet, and the CI fixture the four jobs of .gitea/workflows/ci.yml stand
+# up through scripts/ci_setup.sh. A job that cannot start its database is a red tick
+# that says nothing about the change, so the file that starts it is checked here.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
+	bash scripts/ci_setup_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package
