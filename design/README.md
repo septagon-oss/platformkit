@@ -14,8 +14,8 @@ and `web.Deps.Theme`. The utility alphabet, the class lists and the roles they
 paint with are declared once and read by everyone, so nothing else changes; the
 hand-written rules are the exception and are named for what they are — `base()`
 and `componentState()` in [ui.go](../ui/ui.go), and a module's own sheet, reach
-for tokens — and every token those sheets paint is named by `bodyContrast` below,
-so a hand-written rule cannot paint a boundary no gate measures. `Theme.Typography`
+for tokens — and `bodyContrast` below measures every colour they paint, so no
+hand-written rule can paint a boundary no gate measures. `Theme.Typography`
 selects the display, body and mono stacks and `Theme.Shape` the button, card and
 modal radii; `Theme.Tokens()` is the ordered projection the stylesheet and the
 exports share.
