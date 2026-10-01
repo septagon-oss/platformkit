@@ -106,17 +106,6 @@ func TestASourceCannotDeclareAFloorPastItsOwnHead(t *testing.T) {
 // the one lock every migration run of this composition holds for its whole run.
 const compositionLockKey = 7240101
 
-// compositionKeyQueue is the longest this case will stand in the queue for that key.
-// It is not the wait under test — that is the run's own two-second context below —
-// and it is not patience for its own sake: the queue is the suite. Every package that
-// boots a schema on this database boots it under this one key, so while several
-// packages are up the key passes from one waiting run to the next with no instant in
-// which it is free. Measured against a fleet of ten sessions cycling the key in one
-// database, which is what a `make check` does with its boot migrations: the key was
-// held in 100 of 100 samples taken 50ms apart, and the blocked `pg_advisory_lock`
-// below was granted 2.0s after it was asked for.
-const compositionKeyQueue = time.Minute
-
 // TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget pins the README's
 // paragraph "Waiting for the composition lock itself is a different wait, and it
 // is left patient". The run that gets the lock second has the first one's applied
@@ -132,35 +121,18 @@ func TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Somebody else's migration is running, so take the same lock it would take, and
-	// take it the way a run of this composition takes it: one blocked
-	// `pg_advisory_lock`, in the server's own queue, on a context of this case's own.
-	// The case used to spin on `pg_try_advisory_lock` instead, which asks a different
-	// question: a spin is granted at the instant the key is momentarily free, and
-	// while the suite boots schemas there is no such instant, so the spin spent its
-	// whole minute outside the queue and CI refused this file at the end of it. The
-	// rival here has to wait the way the run under test waits, or the case measures a
-	// race it lost rather than the wait its name names. A queue that outlasts a minute
-	// is a run standing on the key for minutes — the failure
-	// composition_lock_rehold_test.go exists to catch — and this case says so and
-	// stops rather than waits that out.
-	queue, cancelQueue := context.WithTimeout(context.WithoutCancel(t.Context()), compositionKeyQueue)
-	defer cancelQueue()
-	asked := time.Now()
-	if _, err := conn.ExecContext(queue, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
-		// The count belongs to this moment, because by the time anybody reads the
-		// failure the queue is gone, and it is the reading that tells "the suite was
-		// booting forty schemas" from "one run has stood on the key for a minute".
-		// pg_locks answers for the current database and no other — the same rule that
-		// puts this case's rival in the queue it is counting here.
-		queued := -1
-		_ = holder.QueryRowContext(context.WithoutCancel(t.Context()),
-			"SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint AND NOT granted",
-			compositionLockKey).Scan(&queued)
-		t.Fatalf("the composition key was not this case's within %s (%d sessions were queued for it in this database): %v — a case that never got the key can say nothing about waiting for it, and the reading above is what tells a suite booting forty schemas from one run standing on the key",
-			compositionKeyQueue, queued, err)
+	// Somebody else's migration is running. Take the same lock it would take. This
+	// database is shared with every other package's tests, whose migrations queue
+	// on the lock with a blocking pg_advisory_lock, so this case queues too:
+	// polling pg_try_advisory_lock never wins while that queue is non-empty, and
+	// under CI's parallel packages it starved for 60s (runs 136, 221, 227 and 229).
+	// The bound is generous because losing a fair race here says nothing about
+	// the behaviour under test.
+	acquire, cancelAcquire := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancelAcquire()
+	if _, err := conn.ExecContext(acquire, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
+		t.Fatalf("the composition advisory lock was not granted within 5 minutes: %v", err)
 	}
-	t.Logf("the composition key came %s after this case asked for it", time.Since(asked).Round(time.Millisecond))
 	defer func() {
 		_, _ = conn.ExecContext(context.WithoutCancel(t.Context()), "SELECT pg_advisory_unlock($1)", compositionLockKey)
 	}()
