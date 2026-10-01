@@ -1532,30 +1532,32 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// CloudEvents envelope carries, 28 became 29 when the kernel added
 	// 000029_tenant_locale, and 29 became 30 when the kernel added
 	// 000030_tenant_oidc, the per-tenant issuer columns on `tenants`, which is
-	// numbered past both 29 and the highest file any module ships. The 29 in that
-	// chain is 29 and not the 28 it was written as, for
+	// numbered past both 29 and the highest file any module shipped until then.
+	// The 29 in that chain is 29 and not the 28 it was written as, for
 	// the same reason 27 moved to 28 above it: this fixture flattens every owner's
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
 	// in a source before that (migration_files.go, "invalid or repeated version").
-	// A new kernel file continues past the highest number anywhere in the
-	// composition.
+	// A new file continues past the highest number anywhere in the composition,
+	// whichever owner ships it: modules/file's retention hold and erasure proof is
+	// 000034 for that reason, and not the 30 it was written as when no owner held
+	// it — the kernel then shipped 000030_tenant_oidc, and this fixture would have
+	// flattened two files at one version into one ledger row.
 	// The number is the point of the assertion: an upgrade fixture that silently
 	// stopped counting a migration would pass while upgrading a real installation
 	// past a file it should have applied, so a new migration has to arrive here and
 	// say so.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 32, of which the release this fixture is applied from
-	// shipped 30: thirteen under migrations/ and the seventeen module files at or
-	// below the kernel's own highest. The two this branch adds,
-	// modules/auth/000031_auth_factors and modules/auth/000032_api_tokens, are
-	// numbered above the kernel's 30 because every version from 1 to 30 is taken,
-	// and a release that postdates the split is not in the old installation's
-	// ledger — legacyLayout therefore leaves them out, see the comment there.
-	// The 30 that remain are thirteen under migrations/ (1, 2, 3, 5, 6, 9, 12,
-	// 20, 21, 26, 28, 29, 30) and seventeen under modules/*/migrations/ (4, 7, 8,
-	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27), all distinct.
+	// this head prints 34 — thirteen under migrations/ and twenty-one under
+	// modules/*/migrations/, with distinct names and distinct versions throughout.
+	// The release this fixture is applied from shipped 30 of them: the thirteen
+	// under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the
+	// seventeen module files at or below the kernel's own highest (4, 7, 8, 10, 11,
+	// 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27). The four above the kernel's
+	// 30 — modules/auth's 31, 32 and 33 and modules/file's 34 — postdate the split,
+	// are not in the old installation's ledger, and legacyLayout leaves them out;
+	// the upgrade below applies them and counts them as new rows.
 	if len(before) != 30 {
 		t.Fatalf("the old layout applied %d files, want 30", len(before))
 	}
@@ -1579,9 +1581,9 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the two files this branch
-	// adds (modules/auth 31 and 32, above the kernel's 30 and so absent from the
-	// old ledger) have to be accounted for: 32 files in the release, 32 rows.
+	// release ships is in the ledger, which is where the four files above the
+	// kernel's 30 (modules/auth 31, 32 and 33 and modules/file 34, all absent from
+	// the old ledger) have to be accounted for: 34 files in the release, 34 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

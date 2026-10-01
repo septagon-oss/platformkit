@@ -686,6 +686,18 @@ for provenance_case in review5_rehearsal_provenance_test.sh review6_provenance_b
 done
 echo 'rehearsal step: the candidate line names the tree the binary was built from, at one uncommitted file and at five thousand'
 
+# The restore drill's own default path, which needs no cluster because the case
+# supplies the psql, pg_dump and pg_restore. `make restore-drill` names --files
+# whenever the deployment has a byte store and names no --from, so the drill takes
+# the backup it drills — and a drill that hands its own backup step nothing but a
+# connection refuses the only installation the flag was there for, every time. The
+# case asks the question the drill answers from its own arguments.
+if ! drill_out=$(bash "$scripts/restore_drill_store_test.sh" 2>&1); then
+	printf 'FAIL: the restore drill does not drill its own default path:\n%s\n' "$drill_out" >&2
+	exit 1
+fi
+echo 'restore drill: with --files named and no --from, the backup the drill takes for itself carries the store'
+
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
 sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p; /^toolchain[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"

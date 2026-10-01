@@ -52,3 +52,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  s3:
+    # The S3-compatible object store modules/file's S3 adapter is tested against
+    # (file.S3). SeaweedFS because it is Apache-2.0 and its image pulls without a
+    # registry login; the adapter speaks plain S3 through minio-go, so any
+    # S3-compatible store serves in its place. The credentials are this local
+    # stack's and nobody else's, and the bucket each test run makes is its own.
+    # Published on 8333 whatever else this stack is on: no other service of this
+    # repository answers there.
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: ["server", "-s3", "-dir=/data"]
+    environment:
+      AWS_ACCESS_KEY_ID: pkittest
+      AWS_SECRET_ACCESS_KEY: pkittestsecret
+    ports:
+      - "${PLATFORMKIT_S3_PORT:-8333}:8333"
+    healthcheck:
+      # Is the S3 endpoint answering? An anonymous bucket list is refused by
+      # design (403), and the refusal is the answer this probe wants, so the
+      # probe is a plain request whose exit code means "somebody is listening at
+      # the port the adapter dials" — curl without -f, which is exactly the flag
+      # that distinguishes "answered 403" from "nobody home". `make up` passes
+      # --wait, so a probe that can never be satisfied is a stack that never
+      # starts.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:8333/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
