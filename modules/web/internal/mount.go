@@ -22,6 +22,7 @@ import (
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
+	"github.com/septagon-oss/platformkit/ui/css"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -68,7 +69,7 @@ type Site struct {
 // Mount composes the stylesheet once and serves the two routes through the
 // composition layer. There are no controllers: the site runs no script.
 func Mount(surfaces httpx.Surfaces, s Site) {
-	sheet := ui.Compose(s.Theme, ui.Extra{Lists: lists()})
+	sheet := ui.Compose(s.Theme, ui.Extra{Lists: lists(), Sheets: []*css.Sheet{prose()}})
 	// The root claim. One module answers a tenant's host at "/", and Home says
 	// whether this one took it: a product with a storefront of its own is
 	// composed instead of this module, and a second claimant would be a boot
@@ -162,7 +163,7 @@ func (s Site) article(ctx context.Context, tx db.Tx[db.Tenant], settings *siteco
 	}
 	v := s.view(settings, r, c.Title, []g.Node{h.Article(
 		components.Heading(components.HeadingProps{Text: c.Title, Level: 1}),
-		components.Prose(components.ProseProps{HTML: html}))})
+		h.Div(g.Attr("data-prose", ""), components.Prose(components.ProseProps{HTML: html})))})
 	v.Head = append(v.Head, h.Meta(h.Name("description"), h.Content(richtext.MetaDescription(doc, 160))))
 	if first, ok := richtext.FirstImage(doc); ok && s.Files != nil {
 		if image, err := s.Files.Resolve(ctx, tx, first.ID, richtext.Public); err == nil {

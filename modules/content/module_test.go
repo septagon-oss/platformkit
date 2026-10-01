@@ -118,12 +118,15 @@ func TestThePatchRefusesTheFieldsARouteOwns(t *testing.T) {
 
 // TestThePublicRouteServesPublishedContentToAnybody is the whole point of
 // publishing: a reader with no session reads the rendered page, and only when
-// somebody published it. The HTML is what the sanitizer left, so a body with a
-// script in it is a page with no script in it.
+// somebody published it. Unsupported source is refused before publication.
 func TestThePublicRouteServesPublishedContentToAnybody(t *testing.T) {
 	_, router := mounted(t)
+	if code, body := call(t, router, http.MethodPost, path,
+		`{"slug":"unsafe","title":"Unsafe","body":"<script>alert(1)</script>"}`); code != http.StatusUnprocessableEntity || !strings.Contains(body, "raw HTML") {
+		t.Fatalf("unsafe source = %d %s, want a raw HTML refusal", code, body)
+	}
 	code, body := call(t, router, http.MethodPost, path,
-		`{"slug":"About Us","title":"About us","kind":"page","body":"# Hello\n\n<script>alert(1)</script>\n\nSome **bold** words."}`)
+		`{"slug":"About Us","title":"About us","kind":"page","body":"## Hello\n\nSome **bold** words."}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, body)
 	}
@@ -142,7 +145,7 @@ func TestThePublicRouteServesPublishedContentToAnybody(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET %s = %d %s, want 200", public+"about-us", code, body)
 	}
-	for _, want := range []string{`"slug":"about-us"`, `"kind":"page"`, "<h1", "<strong>bold</strong>", `"publishedAt"`} {
+	for _, want := range []string{`"slug":"about-us"`, `"kind":"page"`, "<h2", "<strong>bold</strong>", `"publishedAt"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the public page does not carry %s:\n%s", want, body)
 		}
@@ -199,7 +202,7 @@ func field(t *testing.T, body, name string) string {
 // renderer never runs.
 func TestThePublicPageIsConditional(t *testing.T) {
 	_, router := mounted(t)
-	code, out := call(t, router, http.MethodPost, path, `{"slug":"about-us","title":"About us","body":"# Hello"}`)
+	code, out := call(t, router, http.MethodPost, path, `{"slug":"about-us","title":"About us","body":"## Hello"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST = %d %s", code, out)
 	}
@@ -215,7 +218,7 @@ func TestThePublicPageIsConditional(t *testing.T) {
 		t.Fatalf("the public page = %d %s", first.Code, first.Body.String())
 	case tag == "":
 		t.Fatal("the public page carries no ETag, so every reader renders it again")
-	case !strings.Contains(first.Body.String(), "<h1"):
+	case !strings.Contains(first.Body.String(), "<h2"):
 		t.Errorf("the page did not render: %s", first.Body.String())
 	}
 
@@ -233,7 +236,7 @@ func TestThePublicPageIsConditional(t *testing.T) {
 	}
 
 	// And an edit moves the tag, or a reader keeps a page that has changed.
-	if code, out = call(t, router, http.MethodPatch, path+"/"+id, `{"body":"# Hello again"}`); code != http.StatusOK {
+	if code, out = call(t, router, http.MethodPatch, path+"/"+id, `{"body":"## Hello again"}`); code != http.StatusOK {
 		t.Fatalf("PATCH = %d %s", code, out)
 	}
 	if edited := get(t, router, public+"about-us", tag); edited.Code != http.StatusOK {
@@ -261,8 +264,8 @@ func TestABodyHasACeiling(t *testing.T) {
 	if code, out := call(t, router, http.MethodPost, path, body); code != http.StatusUnprocessableEntity {
 		t.Errorf("a body past the ceiling = %d %s, want 422", code, out[:min(len(out), 200)])
 	}
-	// Exactly the ceiling is stored, which is what makes it a boundary.
-	body = `{"slug":"just","title":"Just","body":"` + strings.Repeat("x", contracts.MaxBody) + `"}`
+	// Exactly the ceiling includes the canonical final LF and is stored.
+	body = `{"slug":"just","title":"Just","body":` + quote(strings.Repeat("x", contracts.MaxBody-1)+"\n") + `}`
 	if code, out := call(t, router, http.MethodPost, path, body); code != http.StatusCreated {
 		t.Errorf("a body of exactly the ceiling = %d %s", code, out[:min(len(out), 200)])
 	}
@@ -306,12 +309,18 @@ func TestASlugSurvivesItsLanguage(t *testing.T) {
 	}
 }
 
-// TestAMarkdownLinkSaysWhereItGoes. "[click](//evil.example)" reads like a path
-// within this site, in the source and in the rendered anchor, and every browser
-// resolves it against the current scheme and leaves the site.
+// TestAMarkdownLinkSaysWhereItGoes. Protocol-relative links look like site
+// paths in source but leave the site in a browser, so the write refuses them.
 func TestAMarkdownLinkSaysWhereItGoes(t *testing.T) {
 	_, router := mounted(t)
-	const body = `[a](//evil.example) [b](/\evil.example) [c](/about-us) [d](https://example.com) [e](#top)`
+	for _, unsafe := range []string{`[a](//evil.example)`, `[b](/\evil.example)`} {
+		code, out := call(t, router, http.MethodPost, path,
+			`{"slug":"links","title":"Links","body":`+quote(unsafe)+`}`)
+		if code != http.StatusUnprocessableEntity || !strings.Contains(out, "link destination") {
+			t.Errorf("unsafe link %q = %d %s, want a destination refusal", unsafe, code, out)
+		}
+	}
+	const body = `[c](/about-us) [d](https://example.com) [e](#top)`
 	code, out := call(t, router, http.MethodPost, path,
 		`{"slug":"links","title":"Links","body":`+quote(body)+`}`)
 	if code != http.StatusCreated {
@@ -323,10 +332,9 @@ func TestAMarkdownLinkSaysWhereItGoes(t *testing.T) {
 	}
 	html := get(t, router, public+"links", "").Body.String()
 	for _, want := range []string{
-		`https://evil.example`, // rewritten, and now visibly somebody else's
-		`/about-us`,            // an ordinary path is untouched
-		`https://example.com`,  // so is an ordinary absolute URL
-		`#top`,                 // and an anchor
+		`/about-us`,           // an ordinary path is untouched
+		`https://example.com`, // so is an ordinary absolute URL
+		`#top`,                // and an anchor
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the rendered page does not carry %s: %s", want, html)

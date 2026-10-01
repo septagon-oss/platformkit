@@ -22,5 +22,5 @@ func lists() []style.ClassList {
 	return []style.ClassList{clPage, clHeader, clBrand, clLogo, clTitle, clNav, clMain, clFooter, clFooterCopy}
 }
 
-// prose forwards older site stylesheet tests to the component's one owner.
-func prose() *css.Sheet { return components.ProseStyle() }
+// prose scopes the shared typography to this site's own article hook.
+func prose() *css.Sheet { return components.ProseStyleFor("[data-prose]") }

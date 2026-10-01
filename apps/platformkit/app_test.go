@@ -285,11 +285,14 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// the trail this test already read is something its plan includes.
 	//
 	// Content: written, published, and then read at the same host by a caller
-	// with no session at all — which is what publishing means. The script in
-	// the body is not in the page: the renderer leaves raw HTML out and the
-	// sanitizer refuses what is left.
+	// with no session at all — which is what publishing means. Raw HTML is
+	// refused on write, before it can become a published page.
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath,
+		`{"slug":"unsafe","title":"Unsafe","body":"<script>alert(1)</script>"}`); code != http.StatusUnprocessableEntity || !strings.Contains(body, "raw HTML") {
+		t.Fatalf("unsafe content = %d %s, want a raw HTML refusal", code, body)
+	}
 	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath,
-		`{"slug":"About Us","title":"About Acme","kind":"page","body":"# About\n\n<script>alert(1)</script>\n\nWe make **things**."}`)
+		`{"slug":"About Us","title":"About Acme","kind":"page","body":"## About\n\nWe make **things**."}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST %s = %d %s, want 201", contentPath, code, body)
 	}
@@ -305,7 +308,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		t.Fatalf("the published page = %d %s", code, body)
 	}
 	if strings.Contains(body, "<script") || strings.Contains(body, "alert(1)") {
-		t.Errorf("the published page carries the script somebody typed into it:\n%s", body)
+		t.Errorf("the published page carries unsafe markup:\n%s", body)
 	}
 
 	// Site: what a theme reads, saved by an administrator and read by nobody

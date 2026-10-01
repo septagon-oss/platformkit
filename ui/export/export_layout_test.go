@@ -123,10 +123,9 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the JSON. The digest below is that measurement on this merged tree, not a
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
-	// Prose is now a shared component: the v1 gallery adds its specimen and
-	// the common sheet gains its token-only rules. The link uses the primary
-	// text token so its underlined text meets contrast in light and dark.
-	if legacy.SHA256 != "baf7f5d301bd88a930fba965188f5d3de875bbfc007e7f43d505ee99f72c1192" {
+	// Prose is a shared component: its selector now reads the component's own
+	// data-component hook. The site owns data-prose in its client sheet.
+	if legacy.SHA256 != "3670b667b2df0b38e631f9612fe2db55d68681766d521f97b2e4fb4ce9939086" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration: got %s", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

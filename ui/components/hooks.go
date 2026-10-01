@@ -70,7 +70,6 @@ var Hooks = []string{
 	"data-pk-sort-icon",
 	"data-pk-value",
 	"data-pk-values",
-	"data-prose",
 	"data-semantic-role",
 	"data-sidebar-brand",
 	"data-sidebar-collapsed",
