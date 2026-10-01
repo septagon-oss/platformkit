@@ -34,6 +34,7 @@ func TestCatalogGolden(t *testing.T) {
 	t.Parallel()
 	tags := resource()
 	tags.Entity, tags.Path = "tag", "/api/v1/note/tags"
+	tags.Name.One, tags.Name.Other = "Tag", "Tags"
 	tags.Schema.Entity, tags.Schema.Path = "tag", "/api/v1/note/tags"
 	tags.Immutable = nil
 	// One command about a row and one about the collection, one with an
@@ -58,6 +59,7 @@ func TestCatalogGolden(t *testing.T) {
 	// and no route to serve either.
 	settings := resource()
 	settings.Entity, settings.Path, settings.Singleton = "setting", "/api/v1/note/settings", true
+	settings.Name.One, settings.Name.Other = "Setting", "Settings"
 	settings.Schema.Entity, settings.Schema.Path = "setting", "/api/v1/note/settings"
 	settings.Immutable = nil
 	catalog := screens.Catalog{Version: screens.CatalogVersion, Resources: []screens.Entry{

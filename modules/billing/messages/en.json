@@ -1,0 +1,16 @@
+{
+  "resource.billing.plan": {
+    "translation": "Plan",
+    "plural": {
+      "one": "Plan",
+      "other": "Plans"
+    }
+  },
+  "resource.billing.subscription": {
+    "translation": "Subscription",
+    "plural": {
+      "one": "Subscription",
+      "other": "Subscriptions"
+    }
+  }
+}

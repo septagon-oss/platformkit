@@ -16,5 +16,12 @@
     "plural": {
       "": "escrever tarefas"
     }
+  },
+  "resource.task.task": {
+    "translation": "Tarefa",
+    "plural": {
+      "one": "Tarefa",
+      "other": "Tarefas"
+    }
   }
 }

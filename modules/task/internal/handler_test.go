@@ -35,7 +35,7 @@ const path = "/api/v1/task/tasks"
 // resource they hang off, and the permission they ask for. Its Path is
 // relative — a Spec says where a resource sits in its own module, and the
 // surface and the module go on around it.
-var spec = rest.Spec[*contracts.Task]{
+var spec = rest.Spec[*contracts.Task]{Name: rest.Name{One: "Task", Other: "Tasks"},
 	Module: "task", Entity: "task", Path: "/tasks",
 	Read: contracts.PermissionTaskRead, Write: contracts.PermissionTaskUpdate,
 }

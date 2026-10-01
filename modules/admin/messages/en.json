@@ -1,0 +1,92 @@
+{
+  "admin.login.title": {
+    "translation": "Sign in",
+    "plural": {
+      "": "Sign in"
+    }
+  },
+  "admin.login.description": {
+    "translation": "Use the address this tenant knows you by.",
+    "plural": {
+      "": "Use the address this tenant knows you by."
+    }
+  },
+  "admin.login.email": {
+    "translation": "Email",
+    "plural": {
+      "": "Email"
+    }
+  },
+  "admin.login.password": {
+    "translation": "Password",
+    "plural": {
+      "": "Password"
+    }
+  },
+  "admin.dashboard.title": {
+    "translation": "Dashboard",
+    "plural": {
+      "": "Dashboard"
+    }
+  },
+  "admin.dashboard.subtitle": {
+    "translation": "What this tenant has, and whether the instance is well.",
+    "plural": {
+      "": "What this tenant has, and whether the instance is well."
+    }
+  },
+  "admin.dashboard.open": {
+    "translation": "Open %s",
+    "plural": {
+      "": "Open %s"
+    }
+  },
+  "admin.dashboard.healthy": {
+    "translation": "Every check passes.",
+    "plural": {
+      "": "Every check passes."
+    }
+  },
+  "admin.dashboard.not_ready": {
+    "translation": "Not ready: %s",
+    "plural": {
+      "": "Not ready: %s"
+    }
+  },
+  "admin.health.title": {
+    "translation": "Health",
+    "plural": {
+      "": "Health"
+    }
+  },
+  "admin.health.subtitle": {
+    "translation": "The checks behind /ready, one at a time.",
+    "plural": {
+      "": "The checks behind /ready, one at a time."
+    }
+  },
+  "admin.health.check": {
+    "translation": "Check",
+    "plural": {
+      "": "Check"
+    }
+  },
+  "admin.health.state": {
+    "translation": "State",
+    "plural": {
+      "": "State"
+    }
+  },
+  "admin.health.ok": {
+    "translation": "OK",
+    "plural": {
+      "": "OK"
+    }
+  },
+  "admin.health.failing": {
+    "translation": "Failing",
+    "plural": {
+      "": "Failing"
+    }
+  }
+}

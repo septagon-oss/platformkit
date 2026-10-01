@@ -36,7 +36,7 @@ func TestResourceMutationsUseTheLockedRow(t *testing.T) {
 		for _, mutation := range []string{"update", "invalid update", "delete"} {
 			t.Run(transport+"/"+mutation, func(t *testing.T) {
 				var hookPriority int
-				s := rest.Spec[*guardedTask]{
+				s := rest.Spec[*guardedTask]{Name: rest.Name{One: "Task", Other: "Tasks"},
 					Module: "tasks", Entity: "task", Path: "/task",
 					Read: "task:read", Write: "task:write", SoftDelete: true,
 					AfterDelete: func(_ context.Context, _ db.Tx[db.Tenant], task *guardedTask) error {

@@ -49,6 +49,7 @@ type Resource struct {
 	// mounts and links from. The composed addresses are Schema.Path — the API's
 	// own, on the surface the reads are on — and Screen below.
 	Module, Entity, Path string
+	Name                 entity.Name
 	// Screen is the workspace address of the generated screens: /app/<module>
 	// /<entity>. The kernel composed it at registration, from the module, the
 	// path and the surface a page can exist on, which is why neither the

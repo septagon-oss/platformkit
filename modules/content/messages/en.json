@@ -1,0 +1,9 @@
+{
+  "resource.content.content": {
+    "translation": "Content item",
+    "plural": {
+      "one": "Content item",
+      "other": "Content items"
+    }
+  }
+}

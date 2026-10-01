@@ -128,6 +128,9 @@ check-fixtures: ## Compile the Go program every design test embeds
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
 
+check-plurals: ## Refuse plural suffix construction in Go and catalogues
+	go run ./tools/checkplurals
+
 fmt-check: ## Fail when any file is not gofmt'd
 	@goroot="$$(go env GOROOT)" || exit $$?; \
 	out="$$("$$goroot/bin/gofmt" -l .)" || exit $$?; \
@@ -158,7 +161,7 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-plurals ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh

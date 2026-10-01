@@ -16,5 +16,12 @@
     "plural": {
       "": "gerir conteúdos"
     }
+  },
+  "resource.content.content": {
+    "translation": "Item de conteúdo",
+    "plural": {
+      "one": "Item de conteúdo",
+      "other": "Itens de conteúdo"
+    }
   }
 }

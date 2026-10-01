@@ -95,7 +95,7 @@ func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.T
 }
 func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
 
-var spec = rest.Spec[*Task]{
+var spec = rest.Spec[*Task]{Name: rest.Name{One: "Task", Other: "Tasks"},
 	Module: "tasks", Entity: "task", Path: "/task",
 	Read: "task:read", Write: "task:write", SoftDelete: true,
 }
@@ -700,10 +700,11 @@ func TestTwoPatchesOfDifferentFieldsBothSurvive(t *testing.T) {
 // fails at the mount site, like every other wiring mistake in this kernel.
 func TestSpecRefusesToMountNonsense(t *testing.T) {
 	for name, spec := range map[string]rest.Spec[*Task]{
-		"no path":        {Module: "tasks", Entity: "task", Path: "api", Read: "task:read", Write: "task:write"},
-		"no event name":  {Module: "Tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write"},
-		"bad permission": {Module: "tasks", Entity: "task", Path: "/api", Read: "read", Write: "task:write"},
-		"immutable nothing": {Module: "tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write",
+		"no name":        {Module: "tasks", Entity: "task", Path: "/api", Read: "task:read", Write: "task:write"},
+		"no path":        {Module: "tasks", Entity: "task", Name: rest.Name{One: "Task", Other: "Tasks"}, Path: "api", Read: "task:read", Write: "task:write"},
+		"no event name":  {Module: "Tasks", Entity: "task", Name: rest.Name{One: "Task", Other: "Tasks"}, Path: "/api", Read: "task:read", Write: "task:write"},
+		"bad permission": {Module: "tasks", Entity: "task", Name: rest.Name{One: "Task", Other: "Tasks"}, Path: "/api", Read: "read", Write: "task:write"},
+		"immutable nothing": {Module: "tasks", Entity: "task", Name: rest.Name{One: "Task", Other: "Tasks"}, Path: "/api", Read: "task:read", Write: "task:write",
 			Immutable: []string{"nonesuch"}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -750,7 +751,7 @@ func TestAWidgetNoScreenCanDrawIsRefusedAtMount(t *testing.T) {
 			t.Errorf("Mount refused for another reason: %v", recovered)
 		}
 	}()
-	rest.Spec[*Prefs]{Module: "prefs", Entity: "pref", Path: "/preferences",
+	rest.Spec[*Prefs]{Name: rest.Name{One: "Preference", Other: "Preferences"}, Module: "prefs", Entity: "pref", Path: "/preferences",
 		Read: "pref:read", Write: "pref:write"}.Mount(httpx.Surfaces{})
 }
 

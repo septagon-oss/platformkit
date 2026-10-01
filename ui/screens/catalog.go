@@ -39,6 +39,7 @@ type Catalog struct {
 // look at, they are not told exists.
 type Entry struct {
 	entity.Schema
+	Name *entity.Name `json:"name,omitempty"`
 	// Screen is the workspace address of the generated screen — /app/task/tasks
 	// — stated because the kernel composed it and a shell cannot derive it any
 	// more. It used to derive the screen's path from the API's, by cutting
@@ -110,6 +111,10 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // from without an authorizer.
 func Describe1(r httpx.Resource, writable bool) Entry {
 	e := Entry{Schema: r.Schema, Screen: r.Screen, Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton}
+	if r.Name.One != "" && r.Name.Other != "" {
+		name := r.Name
+		e.Name = &name
+	}
 	if writable {
 		e.WritePath = r.WritePath
 	}

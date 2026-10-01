@@ -1,35 +1,23 @@
 {
   "admin.login.title": {
-    "references": [
-      "modules/admin/internal/pages.go"
-    ],
     "translation": "Iniciar sessão",
     "plural": {
       "": "Iniciar sessão"
     }
   },
   "admin.login.description": {
-    "references": [
-      "modules/admin/internal/pages.go"
-    ],
     "translation": "Utilize o endereço associado à sua conta nesta organização.",
     "plural": {
       "": "Utilize o endereço associado à sua conta nesta organização."
     }
   },
   "admin.login.email": {
-    "references": [
-      "modules/admin/internal/pages.go"
-    ],
     "translation": "Email",
     "plural": {
       "": "Email"
     }
   },
   "admin.login.password": {
-    "references": [
-      "modules/admin/internal/pages.go"
-    ],
     "translation": "Palavra-passe",
     "plural": {
       "": "Palavra-passe"
@@ -42,6 +30,72 @@
     "translation": "ler a galeria de componentes",
     "plural": {
       "": "ler a galeria de componentes"
+    }
+  },
+  "admin.dashboard.title": {
+    "translation": "Painel",
+    "plural": {
+      "": "Painel"
+    }
+  },
+  "admin.dashboard.subtitle": {
+    "translation": "Os recursos desta organização e o estado da instalação.",
+    "plural": {
+      "": "Os recursos desta organização e o estado da instalação."
+    }
+  },
+  "admin.dashboard.open": {
+    "translation": "Abrir %s",
+    "plural": {
+      "": "Abrir %s"
+    }
+  },
+  "admin.dashboard.healthy": {
+    "translation": "Todas as verificações passaram.",
+    "plural": {
+      "": "Todas as verificações passaram."
+    }
+  },
+  "admin.dashboard.not_ready": {
+    "translation": "Não está pronto: %s",
+    "plural": {
+      "": "Não está pronto: %s"
+    }
+  },
+  "admin.health.title": {
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "admin.health.subtitle": {
+    "translation": "As verificações de /ready, uma de cada vez.",
+    "plural": {
+      "": "As verificações de /ready, uma de cada vez."
+    }
+  },
+  "admin.health.check": {
+    "translation": "Verificação",
+    "plural": {
+      "": "Verificação"
+    }
+  },
+  "admin.health.state": {
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "admin.health.ok": {
+    "translation": "OK",
+    "plural": {
+      "": "OK"
+    }
+  },
+  "admin.health.failing": {
+    "translation": "Com falha",
+    "plural": {
+      "": "Com falha"
     }
   }
 }

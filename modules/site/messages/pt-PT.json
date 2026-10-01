@@ -7,5 +7,12 @@
     "plural": {
       "": "gerir o site"
     }
+  },
+  "resource.site.settings": {
+    "translation": "Definição",
+    "plural": {
+      "one": "Definição",
+      "other": "Definições"
+    }
   }
 }

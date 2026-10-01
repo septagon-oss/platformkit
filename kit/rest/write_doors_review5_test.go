@@ -78,7 +78,7 @@ func mountCatalog(t *testing.T) (http.Handler, *sql.DB) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	rest.Spec[*Plan]{
+	rest.Spec[*Plan]{Name: rest.Name{One: "Plan", Other: "Plans"},
 		Module: "billing", Entity: "plan", Path: "/plans",
 		Read: "billing:read", Write: "billing:catalog",
 	}.Mount(api.Surfaces("billing"))

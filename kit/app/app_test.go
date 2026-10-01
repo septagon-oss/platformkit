@@ -421,7 +421,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 			Permissions: []module.Permission{{Key: "widget:read", Label: "read widgets"}, {Key: "widget:write", Label: "write widgets"}},
 			Declared:    declared,
 			Routes: func(s httpx.Surfaces) {
-				rest.Spec[*Widget]{
+				rest.Spec[*Widget]{Name: rest.Name{One: "Widget", Other: "Widgets"},
 					Module: "shop", Entity: "widget", Path: "/widgets",
 					Read: "widget:read", Write: "widget:write",
 				}.Mount(s)
@@ -445,7 +445,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 
 	// Declaring them is all it takes, and then the composition boots.
 	cfg, opts = compose(t)
-	declared := shop(rest.Spec[*Widget]{Module: "shop", Entity: "widget"}.Declared())
+	declared := shop(rest.Spec[*Widget]{Name: rest.Name{One: "Widget", Other: "Widgets"}, Module: "shop", Entity: "widget"}.Declared())
 	a, err = New(t.Context(), cfg, []module.Module{declared}, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -664,7 +664,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 		Permissions: []module.Permission{{Key: "widget:read", Label: "read widgets"}, {Key: "widget:write", Label: "write widgets"}},
 		Declared:    []events.Declared{{Name: "shop.widget.created"}, {Name: "shop.widget.updated"}, {Name: "shop.widget.deleted"}},
 		Routes: func(r httpx.Surfaces) {
-			rest.Spec[*Widget]{
+			rest.Spec[*Widget]{Name: rest.Name{One: "Widget", Other: "Widgets"},
 				Module: "shop", Entity: "widget", Path: "/widgets",
 				Read: "widget:read", Write: "widget:write",
 			}.Mount(r)

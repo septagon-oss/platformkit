@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/locale"
+	"golang.org/x/text/feature/plural"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"golang.org/x/text/message/catalog"
@@ -67,6 +68,7 @@ func Load(fallback string, sources ...Source) Catalog {
 	// and the source language too, whether or not a source shipped a file for it.
 	tags := []language.Tag{fallbackTag}
 	byTag := map[language.Tag]map[string]string{}
+	formsByTag := map[language.Tag]map[string]map[string]string{}
 	// merged and wroteBy hold the same copy keyed by the tag spelled out, and
 	// remember which source wrote it. The argument rule below is the composed
 	// catalogue's, so it needs the merged view and the names to say the refusal with.
@@ -74,7 +76,7 @@ func Load(fallback string, sources ...Source) Catalog {
 	wroteBy := map[string]map[string]string{}
 	var owned []ownedKey
 	for _, source := range sources {
-		entries := read(source, fallback)
+		entries, sourceForms := read(source, fallback)
 		// A source owns its prefixes against everyone who comes after it, so the
 		// guard is installed once its own files have been read, and the keys read
 		// from those files are checked against the earlier sources only.
@@ -91,6 +93,7 @@ func Load(fallback string, sources ...Source) Catalog {
 			}
 			if byTag[tag] == nil {
 				byTag[tag] = map[string]string{}
+				formsByTag[tag] = map[string]map[string]string{}
 				merged[tag.String()] = map[string]string{}
 				wroteBy[tag.String()] = map[string]string{}
 			}
@@ -100,6 +103,7 @@ func Load(fallback string, sources ...Source) Catalog {
 						source.Name, name, key, guard))
 				}
 				byTag[tag][key] = text
+				formsByTag[tag][key] = sourceForms[name][key]
 				merged[tag.String()][key] = text
 				wroteBy[tag.String()][key] = source.Name
 			}
@@ -110,13 +114,25 @@ func Load(fallback string, sources ...Source) Catalog {
 	messages := catalog.NewBuilder(catalog.Fallback(fallbackTag))
 	for tag, keys := range byTag {
 		for key, text := range keys {
-			if err := messages.SetString(tag, key, text); err != nil {
+			var err error
+			if forms := formsByTag[tag][key]; len(forms) > 0 {
+				selectors := make([]interface{}, 0, len(forms)*2)
+				for _, form := range []string{"zero", "one", "two", "few", "many", "other"} {
+					if copy, ok := forms[form]; ok {
+						selectors = append(selectors, form, copy)
+					}
+				}
+				err = messages.Set(tag, key, plural.Selectf(1, "%d", selectors...))
+			} else {
+				err = messages.SetString(tag, key, text)
+			}
+			if err != nil {
 				panic(fmt.Sprintf("xtext: %s cannot carry %q: %v", tag, key, err))
 			}
 		}
 	}
 	return &files{messages: messages, tags: tags, fallback: fallbackTag,
-		matcher: language.NewMatcher(tags)}
+		matcher: language.NewMatcher(tags), forms: formsByTag}
 }
 
 // Source is one owner's catalogues, as files, plus the key prefixes that
@@ -171,7 +187,7 @@ type entry struct {
 
 // read loads one source's files, refusing the catalogues that would make a
 // rendered page lie about what it says.
-func read(source Source, fallback string) map[string]map[string]string {
+func read(source Source, fallback string) (map[string]map[string]string, map[string]map[string]map[string]string) {
 	if source.FS == nil {
 		panic(fmt.Sprintf("xtext: %s is a catalog source with no files", source.Name))
 	}
@@ -184,6 +200,7 @@ func read(source Source, fallback string) map[string]map[string]string {
 	}
 	sort.Strings(paths)
 	entries := map[string]map[string]string{}
+	allForms := map[string]map[string]map[string]string{}
 	for _, path := range paths {
 		name := strings.TrimSuffix(path, ".json")
 		if _, err := language.Parse(name); err != nil {
@@ -198,6 +215,8 @@ func read(source Source, fallback string) map[string]map[string]string {
 			panic(fmt.Sprintf("xtext: %s/%s is not gotext JSON: %v", source.Name, path, err))
 		}
 		messages := make(map[string]string, len(file))
+		forms := make(map[string]map[string]string)
+		tag, _ := language.Parse(name)
 		for key, message := range file {
 			if strings.Contains(key, "#") {
 				panic(fmt.Sprintf("xtext: %s/%s carries %q: a plural key needs a selector this provider does not compose, and a form that is silently never chosen is worse than a boot that refuses it",
@@ -206,16 +225,60 @@ func read(source Source, fallback string) map[string]map[string]string {
 			if strings.TrimSpace(message.Translation) == "" {
 				panic(fmt.Sprintf("xtext: %s/%s has no copy for %s", source.Name, path, key))
 			}
-			if form, spelled := message.Plurals[""]; len(message.Plurals) > 0 && (!spelled || strings.TrimSpace(form) != message.Translation) {
-				panic(fmt.Sprintf("xtext: %s/%s says two different things about %s: the plural form and the translation must be the one copy a reader gets",
-					source.Name, path, key))
+			if form, spelled := message.Plurals[""]; len(message.Plurals) > 0 && spelled {
+				if strings.TrimSpace(form) != message.Translation || len(message.Plurals) != 1 {
+					panic(fmt.Sprintf("xtext: %s/%s says two different things about %s: the plural form and translation must be the one copy a reader gets", source.Name, path, key))
+				}
+			} else if len(message.Plurals) > 0 {
+				checkForms(source.Name, path, key, tag, message)
+				forms[key] = message.Plurals
 			}
 			messages[key] = message.Translation
 		}
 		entries[name] = messages
+		allForms[name] = forms
 	}
 	checkParity(source.Name, fallback, entries)
-	return entries
+	return entries, allForms
+}
+
+func checkForms(source, path, key string, tag language.Tag, message entry) {
+	allowed := map[string]bool{"zero": true, "one": true, "two": true, "few": true, "many": true, "other": true}
+	if message.Plurals["other"] == "" {
+		panic(fmt.Sprintf("xtext: %s/%s %s has no other plural form", source, path, key))
+	}
+	want := verbs(message.Translation)
+	for form, copy := range message.Plurals {
+		if !allowed[form] || strings.TrimSpace(copy) == "" || verbs(copy) != want {
+			panic(fmt.Sprintf("xtext: %s/%s %s has an invalid %q plural form", source, path, key, form))
+		}
+	}
+	if one, ok := message.Plurals["one"]; ok && one != message.Translation {
+		panic(fmt.Sprintf("xtext: %s/%s %s translation differs from one plural form", source, path, key))
+	}
+	for n := 0; n <= 200; n++ {
+		form := pluralForm(tag, int64(n))
+		if message.Plurals[form] == "" {
+			panic(fmt.Sprintf("xtext: %s/%s %s has no reachable %s plural form", source, path, key, form))
+		}
+	}
+}
+
+func pluralForm(tag language.Tag, count int64) string {
+	switch plural.Cardinal.MatchPlural(tag, int(count), 0, 0, 0, 0) {
+	case plural.Zero:
+		return "zero"
+	case plural.One:
+		return "one"
+	case plural.Two:
+		return "two"
+	case plural.Few:
+		return "few"
+	case plural.Many:
+		return "many"
+	default:
+		return "other"
+	}
 }
 
 // checkMergedVerbs holds the composed catalogue — not one source's files — to the
@@ -413,6 +476,7 @@ type files struct {
 	tags     []language.Tag
 	fallback language.Tag
 	matcher  language.Matcher
+	forms    map[language.Tag]map[string]map[string]string
 }
 
 // Languages is the set a request may be answered in, spelled as tags. A copy is
@@ -442,5 +506,5 @@ func (f *files) Select(preferences ...string) locale.Locale {
 		tag, index = f.fallback, slices.Index(f.tags, f.fallback)
 	}
 	return locale.Locale{Language: f.tags[index].String(),
-		Formatter: catalogFormatter{message.NewPrinter(tag, message.Catalog(f.messages))}}
+		Formatter: catalogFormatter{printer: message.NewPrinter(tag, message.Catalog(f.messages)), tag: f.tags[index], forms: f.forms[f.tags[index]]}}
 }

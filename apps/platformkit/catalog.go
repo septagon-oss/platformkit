@@ -27,9 +27,9 @@ import (
 // says; `ui/resource` claims nothing, so re-labelling "Delete" is a product's
 // ordinary decision and not a pull request into the foundation.
 //
-// "en" is the source language: the sentences in the Go code are English, so no
-// layer ships an English file, and an unsupported browser language is answered in
-// English from the text the call site passed rather than from a catalog entry.
+// "en" is the source language: the sentences in the Go code are English.
+// Resource names and admin-authored copy also have explicit English entries
+// so the pseudo-locale and coverage checks can inspect their source forms.
 // Which languages this deployment answers in is the set of files these directories
 // hold — the gate that fails when one of them is short is the loader's own
 // (kit/locale/providers/xtext), and the tenant's own supported set is negotiated

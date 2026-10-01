@@ -9,6 +9,13 @@ names and registering the `httpx.Resource` the admin generates screens from.
 and no id in the path. Read [rest.go](rest.go) first;
 [modules/task](../../modules/task/README.md) is the reference Spec.
 
+Every `Spec` and `Singleton` declares `Name: rest.Name{One, Other}`. Mount
+refuses a missing form and names the offending resource. The English forms
+also appear in the OpenAPI summaries; generated pages select a translated
+CLDR plural form at render time under `resource.<module>.<entity>`. Each owning
+module supplies complete English and Portuguese catalogue entries. Native
+resource discovery carries the declared forms as an optional `name` field.
+
 Beside the five routes, `Command` mounts a verb on a row or the collection
 with its own body and authorization, and `Operation` is a typed projection
 with a custom path sharing the transaction and error handling. Updates and

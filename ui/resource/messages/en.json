@@ -1,0 +1,15 @@
+{
+  "screens.count": {
+    "translation": "%d %s",
+    "plural": {
+      "one": "%d %s",
+      "other": "%d %s"
+    }
+  },
+  "screens.empty": {
+    "translation": "No %s yet.",
+    "plural": {
+      "": "No %s yet."
+    }
+  }
+}

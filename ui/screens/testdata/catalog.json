@@ -56,6 +56,10 @@
           "elem": "string"
         }
       ],
+      "name": {
+        "one": "Note",
+        "other": "Notes"
+      },
       "screen": "/app/note/notes",
       "immutable": [
         "status"
@@ -137,6 +141,10 @@
           "elem": "string"
         }
       ],
+      "name": {
+        "one": "Tag",
+        "other": "Tags"
+      },
       "screen": "/app/note/notes",
       "writable": false
     },
@@ -195,6 +203,10 @@
           "elem": "string"
         }
       ],
+      "name": {
+        "one": "Setting",
+        "other": "Settings"
+      },
       "screen": "/app/note/notes",
       "writable": true,
       "singleton": true
