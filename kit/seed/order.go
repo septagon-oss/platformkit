@@ -3,6 +3,7 @@ package seed
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -56,7 +57,8 @@ func Order(documents []Document, references []Reference, exists func(resource, k
 	for identity := range entries {
 		degree[identity] = 0
 	}
-	for identity, entry := range entries {
+	for _, identity := range slices.Sorted(maps.Keys(entries)) {
+		entry := entries[identity]
 		for _, ref := range references {
 			if ref.Resource != entry.Resource {
 				continue

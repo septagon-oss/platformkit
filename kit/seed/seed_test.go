@@ -1,6 +1,7 @@
 package seed
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -33,17 +34,17 @@ func TestLoadRejectsAmbiguousOrUnsafeInputBeforeWriting(t *testing.T) {
 
 func TestLoadPreservesSourcesAndKeepsKindsSeparate(t *testing.T) {
 	files := fstest.MapFS{
-		"seed/starter/contents.yaml": {Data: []byte("apiVersion: platformkit.seed/v1\nresource: contents\nrecords:\n  - key: home\n    fields: {title: Home, published: true}\n")},
+		"seed/starter/contents.yaml": {Data: []byte("apiVersion: platformkit.seed/v1\nresource: contents\nprune: True\nrecords:\n  - key: home\n    fields: {title: Home, published: true}\n")},
 		"seed/demo/tasks.json":       {Data: []byte(`{"apiVersion":"platformkit.seed/v1","resource":"tasks","records":[{"key":"tour","fields":{"title":"Take the tour"}}]}`)},
 	}
 	docs, err := Load(files, "seed", "starter", "demo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(docs) != 2 || docs[0].Records[0].Source.Line != 4 || docs[0].Records[0].Fields["published"] != true || docs[1].Records[0].Key != "tour" {
+	if len(docs) != 2 || !docs[0].Prune || docs[0].Records[0].Source.Line != 5 || docs[0].Records[0].Fields["published"] != true || docs[1].Records[0].Key != "tour" {
 		t.Fatalf("unexpected parsed documents: %+v", docs)
 	}
-	if docs[0].Records[0].Values["fields/title"].Line != 5 {
+	if docs[0].Records[0].Values["fields/title"].Line != 6 {
 		t.Fatalf("title source = %+v", docs[0].Records[0].Values["fields/title"])
 	}
 }
@@ -102,5 +103,24 @@ func TestRelativeDatesUseOneUTCClock(t *testing.T) {
 	}
 	if _, err := ResolveDate(now, "monday 24:00", false); err == nil {
 		t.Fatal("invalid clock accepted")
+	}
+}
+
+func TestDecideChangesOnlyManagedValues(t *testing.T) {
+	current := Snapshot{Present: true,
+		Fields:   map[string]any{"title": "Before", "humanNote": "keep"},
+		Commands: map[string]any{"publish": true},
+	}
+	target := Target{Fields: map[string]any{"title": "After"}, Commands: map[string]any{"publish": true}}
+	got := Decide(current, target)
+	if got.Action != Update || !reflect.DeepEqual(got.Changed, []string{"fields/title"}) {
+		t.Fatalf("decision = %+v", got)
+	}
+	current.Fields["title"] = "After"
+	if got := Decide(current, target); got.Action != Unchanged || len(got.Changed) != 0 {
+		t.Fatalf("unchanged decision = %+v", got)
+	}
+	if got := Decide(Snapshot{}, target); got.Action != Create {
+		t.Fatalf("new row decision = %+v", got)
 	}
 }

@@ -177,7 +177,7 @@ func parse(data []byte, filename, kind, resource string, files fs.FS) (Document,
 		if prune.Tag != "!!bool" {
 			return Document{}, fmt.Errorf("seed: %s: prune must be a boolean", source(filename, prune))
 		}
-		doc.Prune = prune.Value == "true"
+		doc.Prune = strings.EqualFold(prune.Value, "true")
 	}
 	items := fields["records"]
 	if items == nil || items.Kind != yaml.SequenceNode {

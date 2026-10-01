@@ -1,9 +1,9 @@
-# Seed contract (intended; T-0194 specify phase)
+# Seed contract (T-0194; partial implementation)
 
-This is the contract for `kit/seed`; none of the API, migration, command or
-fixtures below exists at this revision. The resolved checkout is
-`20afc2b0cf43b2bf2a1a046a799e49613243ddbd`. The existing consumer is the
-reference application's literal module composition in
+This is the intended contract for `kit/seed`. Its loader, reference orderer,
+date resolver and state comparator exist; writes, migrations, command and
+fixtures remain intended. Original trace: `20afc2b0cf43b2bf2a1a046a799e49613243ddbd`.
+The existing consumer is the reference application's literal module composition in
 [`apps/platformkit/modules.go`](../apps/platformkit/modules.go): tenant creation
 currently calls `seedRoles`, while the site journey in
 [`e2e/site.spec.ts`](../e2e/site.spec.ts) creates and publishes content and saves
@@ -14,8 +14,8 @@ The source paths above are the durable evidence in this repository.
 ## Ownership and reuse
 
 Each proposed deliverable has one reuse decision. `kit/seed` imports no module;
-the application names every resource writer in a Go slice. These lines describe
-intended work, not completed code.
+the application will name every resource writer in a Go slice. The table
+describes intended work, including the loader and graph now implemented.
 
 | Deliverable | Reuse decision |
 | --- | --- |
@@ -260,9 +260,9 @@ records:
 
 ## Public Go API and writer port
 
-The intended exported surface is below. Names and signatures are specified
-here so the implementation can be reviewed against them; they are not yet Go
-declarations. `New` copies its input slice, rejects nil writers and duplicate
+The intended exported surface is below. `Source`, `Record`, `Command`,
+`Reference` and `Decide` exist; other names remain design targets.
+`New` copies its input slice, rejects nil writers and duplicate
 aliases or `(module,entity)` pairs, and never discovers modules. `Clock.Now`
 is read once per invocation and
 converted to UTC. All methods take or receive an explicit tenant transaction.
