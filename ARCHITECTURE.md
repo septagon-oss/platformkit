@@ -730,9 +730,13 @@ and a generated CRUD journey in a browser.
 [loc-budget.json](loc-budget.json) and
 [packages-budget.json](packages-budget.json) hold current ceilings. Do not copy
 their numbers into prose; run `make check-loc` and `make check-packages`.
-[The verification workflow](.gitea/workflows/ci.yml) is the one that runs: `make
-check`, then `make check-race`, `govulncheck`, the native editor and browser
-checks, `make e2e`, and the budget ratchet last. It is Gitea's because GitHub
+[The verification workflow](.gitea/workflows/ci.yml) is the one that runs, as four
+jobs the two kernel runners take at once: `go-checks` (`make check`, and the budget
+ratchet last), `race-and-vuln` (`make check-race`, then `govulncheck`),
+`design-editor` (the native editor and browser checks) and `e2e` (`make e2e`). Each
+is bounded at twice its own measured p95, because one job that ran all of them in
+sequence was cut off at its deadline eight times on main with every test that had
+run already passed. It is Gitea's because GitHub
 Actions is disabled for this repository; [the retained GitHub
 workflows](.github/workflows/ci.yml) are kept in step with it and do not run
 merely because their files exist, exactly as [RELEASE.md](RELEASE.md) says of the
