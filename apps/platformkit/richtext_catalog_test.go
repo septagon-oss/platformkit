@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 )
@@ -102,7 +103,15 @@ func TestRichTextContentWriteRenderAndRefusal(t *testing.T) {
 	if code != http.StatusOK || field(t, body, "body") != normal {
 		t.Fatalf("refusal changed body: %d %s", code, body)
 	}
+	// The author is not the publisher. The same person who wrote the page is
+	// refused by name, and the refusal leaves the row a draft; the page goes live
+	// only when a second holder of the permission asks for it.
 	code, body = do(t, cfg, who, http.MethodPost, acmeHost, contentPath+"/"+id+"/publish", "")
+	if code != http.StatusConflict || !strings.Contains(body, "author") {
+		t.Fatalf("self-publication = %d %s, want a 409 naming authorship", code, body)
+	}
+	publisher := signIn(t, cfg, acmeHost, publisherIn(t, cfg, who, "publisher@acme.localhost"), publisherPass)
+	code, body = do(t, cfg, publisher, http.MethodPost, acmeHost, contentPath+"/"+id+"/publish", "")
 	if code != http.StatusOK {
 		t.Fatalf("publish = %d %s", code, body)
 	}
@@ -110,4 +119,25 @@ func TestRichTextContentWriteRenderAndRefusal(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, `id=\"pk-opening-hours\"`) {
 		t.Fatalf("public prose = %d %s", code, body)
 	}
+}
+
+// publisherPass is the passphrase the invited publisher signs in with.
+const publisherPass = "a passphrase for the publisher"
+
+// publisherIn invites somebody who may publish, sets their passphrase, and
+// returns the address to sign in as. The invitation carries the role in the same
+// request, so nobody is an administrator-elect with no grants for a moment.
+func publisherIn(t *testing.T, cfg config.Config, as *http.Client, email string) string {
+	t.Helper()
+	code, body := do(t, cfg, as, http.MethodPost, acmeHost, invitePath,
+		`{"email":"`+email+`","displayName":"The publisher","roles":["admin"]}`)
+	if code != http.StatusCreated {
+		t.Fatalf("invite %s = %d %s, want 201", email, code, body)
+	}
+	code, body = do(t, cfg, as, http.MethodPost, acmeHost, usersPath+"/"+field(t, body, "id")+"/set-password",
+		`{"password":"`+publisherPass+`"}`)
+	if code != http.StatusOK {
+		t.Fatalf("set-password for %s = %d %s, want 200", email, code, body)
+	}
+	return email
 }

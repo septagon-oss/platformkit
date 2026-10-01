@@ -9,6 +9,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 )
 
@@ -41,3 +42,13 @@ type richTextFieldError struct {
 
 func (e *richTextFieldError) Error() string { return fmt.Sprintf("%s: %s", e.field, e.refused.Error()) }
 func (e *richTextFieldError) Unwrap() error { return crud.ErrInvalid }
+
+// richTextProblem is the answer a request gets, with the refusals still in it.
+// The Problem is what the API serialises, in the language this repository
+// promises its wire contract in; the issues beside it are for the screen that
+// redraws the form in the language the reader asked with. See FieldErrorsIn.
+type richTextProblem struct {
+	*problem.Problem
+	field  string
+	issues []richtext.Issue
+}

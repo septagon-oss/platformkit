@@ -191,6 +191,21 @@ func (c *Content) Validate(ctx context.Context) error {
 	return nil
 }
 
+// PublishBy is the duty the module enforces itself: the person who wrote a page
+// is not the person who puts it in front of the world. Publish asks it of the
+// row's own author column and the caller on the context, so it holds with no
+// policy server composed and no application remembering to check.
+//
+// Content nobody is credited with — a seed, an import, a row a job wrote where
+// no person is acting — has no authorship to separate, so it publishes.
+func (c *Content) PublishBy(actor uuid.UUID) error {
+	if actor != uuid.Nil && c.AuthorID == actor {
+		return fmt.Errorf("%w: the author of this content cannot publish it: publication is another person's decision",
+			crud.ErrConflict)
+	}
+	return nil
+}
+
 // Service is the content lifecycle: the three transitions generic CRUD cannot
 // safely infer, and the one read the public site makes.
 //
@@ -203,7 +218,9 @@ type Service interface {
 	// Publish serves it to anybody, and records when. Publishing what is
 	// already published changes nothing — the publication time does not move,
 	// because a page has one — and archived content is refused: it is taken out
-	// of the archive first, which is what Unpublish does.
+	// of the archive first, which is what Unpublish does. The author of the page
+	// is refused by Content.PublishBy: writing a page and deciding it goes live
+	// are two people's decisions, and the check is this module's own.
 	Publish(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*Content, error)
 
 	// Unpublish takes it back to a draft, from published or from archived, and

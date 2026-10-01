@@ -310,6 +310,11 @@ func (r proseRenderer) link(w util.BufWriter, _ []byte, n ast.Node, entering boo
 		if !validLink(dest) {
 			return ast.WalkContinue, nil
 		}
+		// Validation accepts schemes case insensitively. The final sanitizer's
+		// allowlist uses lowercase spellings, so give it that same spelling.
+		if scheme, rest, ok := strings.Cut(dest, ":"); ok {
+			dest = strings.ToLower(scheme) + ":" + rest
+		}
 		_, _ = fmt.Fprintf(w, `<a href="%s"`, html.EscapeString(dest))
 		if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
 			_, _ = w.WriteString(` rel="noopener noreferrer nofollow ugc"`)

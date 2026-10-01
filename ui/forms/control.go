@@ -19,6 +19,7 @@ type ControlProps struct {
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
+	Text             func(key, fallback string) string
 }
 
 // widgetInputType names the <input> type each widget that draws an input asks
@@ -50,6 +51,12 @@ var widgetInputType = map[string]string{
 // Its capture retains "field/" plus the schema name and Core's Props contract.
 func Control(p ControlProps) g.Node {
 	f := p.Field.Definition
+	word := func(key, fallback string) string {
+		if p.Text == nil {
+			return fallback
+		}
+		return p.Text(key, fallback)
+	}
 	label, name := cmp.Or(p.Field.Label, f.Name), f.Name
 	base := components.InputProps{
 		ComponentProps: components.ComponentProps{ID: p.ID},
@@ -91,16 +98,16 @@ func Control(p ControlProps) g.Node {
 		}, components.Textarea).Node
 		// TODO(T-0181): replace this native disclosure when the shared disclosure lands.
 		return h.Div(area, h.Details(
-			h.Summary(g.Text("Formatting help")),
+			h.Summary(g.Text(word("forms.richtext.help", "Formatting help"))),
 			h.Ul(
-				h.Li(g.Text("Paragraphs: leave a blank line; a hard break ends with \\.")),
-				h.Li(g.Text("Headings: ## through ####.")),
-				h.Li(g.Text("Bold **text**, italic *text*, strike ~~text~~, inline `code`.")),
-				h.Li(g.Text("Links: [label](https://example.com) or [label](/page).")),
-				h.Li(g.Text("Lists: - item, 1. item or - [ ] task; up to three levels.")),
-				h.Li(g.Text("Quote: > text; code: ```language; rule: ---.")),
-				h.Li(g.Text("Tables: | heading | with a | --- | separator.")),
-				h.Li(g.Text("Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first.")),
+				h.Li(g.Text(word("forms.richtext.paragraphs", "Paragraphs: leave a blank line; a hard break ends with \\."))),
+				h.Li(g.Text(word("forms.richtext.headings", "Headings: ## through ####."))),
+				h.Li(g.Text(word("forms.richtext.marks", "Bold **text**, italic *text*, strike ~~text~~, inline `code`."))),
+				h.Li(g.Text(word("forms.richtext.links", "Links: [label](https://example.com) or [label](/page)."))),
+				h.Li(g.Text(word("forms.richtext.lists", "Lists: - item, 1. item or - [ ] task; up to three levels."))),
+				h.Li(g.Text(word("forms.richtext.blocks", "Quote: > text; code: ```language; rule: ---."))),
+				h.Li(g.Text(word("forms.richtext.tables", "Tables: | heading | with a | --- | separator."))),
+				h.Li(g.Text(word("forms.richtext.images", "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."))),
 			),
 		))
 	case f.Widget == "checkbox" || f.Type == entity.TypeBool:

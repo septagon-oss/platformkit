@@ -234,6 +234,12 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
 		Action:    action, CancelURL: r.Screen, Title: title,
+		Text: func(key, fallback string) string {
+			if o.Locale == nil {
+				return fallback
+			}
+			return o.Locale.Text(key, fallback)
+		},
 	})
 }
 

@@ -102,8 +102,8 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 					return page.View{}, httpx.SeeOther(at + "/" + rest.Text(row["id"]))
 				}
 			}
-			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
+			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
 			return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), sent, errs, detail, true), nil
 		})
 
@@ -135,8 +135,8 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 					return page.View{}, httpx.SeeOther(item)
 				}
 			}
-			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
+			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
 			return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
 		})
 
@@ -283,10 +283,24 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 					return page.View{}, httpx.SeeOther(at)
 				}
 			}
-			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
+			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
 			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
 		})
+}
+
+// words is this request's formatter for the copy a package owns but does not
+// speak: a message key and the English to show where no catalogue was composed.
+// It is the shape rest.FieldErrorsIn asks for, and kit/richtext.Catalogues holds
+// the sentences for a refused Markdown field.
+func words(o Options, req page.Request) func(key, fallback string) string {
+	loc := localized(o, req)
+	return func(key, fallback string) string {
+		if loc.Locale == nil {
+			return fallback
+		}
+		return loc.Locale.Text(key, fallback)
+	}
 }
 
 // localized is the shell's options with this request's language. Options is a

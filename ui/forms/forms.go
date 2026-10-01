@@ -46,6 +46,7 @@ type Options struct {
 	Namespace                              string
 	Action, CancelURL, Title               string
 	CancelLabel, SubmitLabel, FailureTitle string
+	Text                                   func(key, fallback string) string
 }
 
 // ErrNamespace reports an unusable instance scope before any example is returned.
@@ -172,7 +173,7 @@ func example(id string, model Model, options Options) examples.Example {
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
 			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
-			Value: value, Error: model.Errors[f.Name], Immutable: immutable}))
+			Value: value, Error: model.Errors[f.Name], Immutable: immutable, Text: options.Text}))
 	}
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{

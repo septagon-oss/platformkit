@@ -1,0 +1,164 @@
+{
+  "richtext.invalid-utf8.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Codificação de texto inválida"
+  },
+  "richtext.invalid-utf8.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use texto em UTF-8."
+  },
+  "richtext.raw-html.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "HTML em bruto não suportado"
+  },
+  "richtext.raw-html.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Escreva Markdown em vez de HTML."
+  },
+  "richtext.heading-level.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Nível de título não suportado"
+  },
+  "richtext.heading-level.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use títulos de ## a ####; o título da página é o título principal."
+  },
+  "richtext.link-destination.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Destino de ligação não suportado"
+  },
+  "richtext.link-destination.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use https:, http:, mailto:, tel:, um caminho do site ou uma âncora."
+  },
+  "richtext.image-source.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Fonte de imagem não suportada"
+  },
+  "richtext.image-source.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Carregue a imagem para que fique guardada com este site."
+  },
+  "richtext.inline-image.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Imagem no meio do texto não suportada"
+  },
+  "richtext.inline-image.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Coloque a imagem isolada numa linha."
+  },
+  "richtext.image-in-table.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Imagem dentro de uma tabela não suportada"
+  },
+  "richtext.image-in-table.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Coloque a imagem fora da tabela."
+  },
+  "richtext.list-nesting.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Aninhamento de listas não suportado"
+  },
+  "richtext.list-nesting.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use no máximo três níveis de lista."
+  },
+  "richtext.footnote.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Nota de rodapé não suportada"
+  },
+  "richtext.footnote.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use as construções Markdown suportadas."
+  },
+  "richtext.definition-list.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Lista de definições não suportada"
+  },
+  "richtext.definition-list.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use as construções Markdown suportadas."
+  },
+  "richtext.math.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Matemática não suportada"
+  },
+  "richtext.math.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use as construções Markdown suportadas."
+  },
+  "richtext.emoji-shortcode.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Código curto de emoji não suportado"
+  },
+  "richtext.emoji-shortcode.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use as construções Markdown suportadas."
+  },
+  "richtext.missing-image.message": {
+    "references": [
+      "kit/richtext/render.go"
+    ],
+    "translation": "A imagem não está disponível"
+  },
+  "richtext.missing-image.remedy": {
+    "references": [
+      "kit/richtext/render.go"
+    ],
+    "translation": "Carregue a imagem para que fique guardada com este site."
+  },
+  "richtext.line": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "linha"
+  }
+}

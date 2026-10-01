@@ -659,7 +659,10 @@ func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 // wrote its own would be a second opinion about what a 404 means.
 func Fault(err error) error {
 	if fieldErr, ok := errors.AsType[*richTextFieldError](err); ok {
-		p := problem.New(http.StatusUnprocessableEntity, fieldErr.Error())
+		p := &richTextProblem{
+			Problem: problem.New(http.StatusUnprocessableEntity, fieldErr.Error()),
+			field:   fieldErr.field, issues: fieldErr.refused.Issues,
+		}
 		for _, issue := range fieldErr.refused.Issues {
 			p.Errors = append(p.Errors, fmt.Sprintf("%s: line %d: %s: %s", fieldErr.field, issue.Line, issue.Construct, issue.Remedy))
 		}

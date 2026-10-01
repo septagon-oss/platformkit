@@ -60,6 +60,50 @@ func (e *Refused) Error() string {
 	return "richtext: refused: " + strings.Join(parts, "; ")
 }
 
+// Key names the construct in the package's own vocabulary, so an application can
+// hold the sentence for it in its own catalogues. It is a slug rather than a
+// field because the vocabulary is closed: Validate raises these and nothing
+// else. An issue the table does not name — one whose remedy carries a number,
+// like the length ceiling — has no key and stays in the language it was written
+// in, which is the honest half of a catalogue that is only partly translated.
+func (i Issue) Key() string {
+	switch {
+	case strings.HasPrefix(i.Construct, "heading level "):
+		return "heading-level"
+	default:
+		return constructKeys[i.Construct]
+	}
+}
+
+var constructKeys = map[string]string{
+	"invalid UTF-8":    "invalid-utf8",
+	"raw HTML":         "raw-html",
+	"link destination": "link-destination",
+	"image source":     "image-source",
+	"inline image":     "inline-image",
+	"image in table":   "image-in-table",
+	"list nesting":     "list-nesting",
+	"footnote":         "footnote",
+	"definition list":  "definition-list",
+	"math":             "math",
+	"emoji shortcode":  "emoji-shortcode",
+	"missing image":    "missing-image",
+}
+
+// Localize returns the issue with its message and remedy in the language text
+// supplies, falling back to the English an application has not translated. The
+// construct, line and class are untouched, because they are the machine-readable
+// half of the refusal.
+func (i Issue) Localize(text func(key, fallback string) string) Issue {
+	key := i.Key()
+	if key == "" || text == nil {
+		return i
+	}
+	i.Message = text("richtext."+key+".message", i.Message)
+	i.Remedy = text("richtext."+key+".remedy", i.Remedy)
+	return i
+}
+
 // Parse checks UTF-8 and builds the CommonMark/GFM syntax tree.
 func Parse(source string) (*Document, error) {
 	if !utf8.ValidString(source) {
@@ -115,6 +159,8 @@ func (d *Document) line(n ast.Node) int {
 
 var (
 	imageURL    = regexp.MustCompile(`^pk-file:([0-9a-fA-F-]{36})$`)
+	setextRule  = regexp.MustCompile(`^\s*[=-]+\s*$`)
+	atxStart    = regexp.MustCompile(`^\s*#{1,6}(?:\s|$)`)
 	unsupported = []struct {
 		re   *regexp.Regexp
 		name string
@@ -125,6 +171,14 @@ var (
 		{regexp.MustCompile(`:[a-z][a-z0-9_+-]+:`), "emoji shortcode"},
 	}
 )
+
+// isPunctuation is CommonMark's ESCAPABLE_CHARACTER: an ASCII punctuation
+// character. A backslash before anything else is a literal backslash, which is
+// why the escape pass below only blanks this set.
+func isPunctuation(b byte) bool {
+	const marks = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+	return b != '\n' && strings.IndexByte(marks, b) >= 0
+}
 
 func validLink(raw string) bool {
 	if strings.HasPrefix(raw, "//") || strings.HasPrefix(raw, "/\\") || strings.ContainsAny(raw, "\x00\n\r\t\\") {
@@ -205,7 +259,47 @@ func Validate(d *Document) []Issue {
 		}
 		return ast.WalkContinue, nil
 	})
-	for i, line := range strings.Split(string(d.source), "\n") {
+	// Regex-only checks cover syntax Goldmark treats as ordinary text. Mask
+	// literal code first: neither a fenced block nor an inline code span can
+	// introduce an unsupported Markdown construct.
+	prose := append([]byte(nil), d.source...)
+	mask := func(start, stop int) {
+		for i := start; i < stop; i++ {
+			if prose[i] != '\n' {
+				prose[i] = ' '
+			}
+		}
+	}
+	_ = ast.Walk(d.root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n.(type) {
+		case *ast.CodeBlock, *ast.FencedCodeBlock:
+			for i := 0; i < n.Lines().Len(); i++ {
+				segment := n.Lines().At(i)
+				mask(segment.Start, segment.Stop)
+			}
+		case *ast.CodeSpan:
+			for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+				segment := child.(*ast.Text).Segment
+				mask(segment.Start, segment.Stop)
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	// A backslash before ASCII punctuation is CommonMark's escape: the character
+	// after it is data, so `\:smile:` is a smiley nobody asked for and `\[^x]`
+	// a footnote nobody wrote. Blank the pair the same way literal code above
+	// is blanked, so the line keeps its length and its column count. `\\:smile:`
+	// stays a shortcode, because there the first backslash escapes the second.
+	for i := 0; i < len(prose)-1; i++ {
+		if prose[i] == '\\' && isPunctuation(prose[i+1]) {
+			prose[i], prose[i+1] = ' ', ' '
+			i++
+		}
+	}
+	for i, line := range strings.Split(string(prose), "\n") {
 		for _, rule := range unsupported {
 			if rule.re.MatchString(line) {
 				issues = append(issues, Issue{rule.name, i + 1, "Unsupported " + rule.name, "Use the supported Markdown constructs.", Correctable})
@@ -225,45 +319,142 @@ func Normalise(source string) (string, error) {
 	if issues := Validate(d); len(issues) > 0 {
 		return "", &Refused{Issues: issues}
 	}
-	var out []string
-	for _, line := range strings.Split(string(d.source), "\n") {
-		out = append(out, strings.TrimRight(line, " \t"))
+	// A text node's hard-break flag is the parser's decision that trailing
+	// spaces are syntax. Keep exactly two; trimming them would silently turn
+	// an allowed hard break into a soft break on the next parse.
+	hardBreak := map[int]bool{}
+	setext := map[int]int{}
+	var newlines []int
+	for i, b := range d.source {
+		if b == '\n' {
+			newlines = append(newlines, i)
+		}
 	}
-	for len(out) > 0 && out[0] == "" {
+	lineAt := func(offset int) int { return sort.SearchInts(newlines, offset) }
+	_ = ast.Walk(d.root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		if v, ok := n.(*ast.Text); ok && v.HardLineBreak() {
+			line := lineAt(v.Segment.Stop)
+			hardBreak[line] = true
+		}
+		if v, ok := n.(*ast.Heading); ok && n.Parent() == d.root && n.Lines().Len() == 1 {
+			line := lineAt(n.Lines().At(0).Start)
+			setext[line] = v.Level
+		}
+		return ast.WalkContinue, nil
+	})
+	// The lines of a code block are data. Trailing spaces inside a fence are
+	// part of the value the author stored, and a blank line inside one is part
+	// of it too, so neither the trimming, nor the blank-run compaction, nor the
+	// heading rewrite below may touch them.
+	protected := map[int]bool{}
+	bullets := map[int]bool{}
+	_ = ast.Walk(d.root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch v := n.(type) {
+		case *ast.List:
+			// `*`, `+` and `-` open the same list. Store one spelling of it, so
+			// two documents with one syntax tree have one hash. Ordered markers
+			// keep their number: that number is the list's start, not a style.
+			if v.IsOrdered() || v.Marker == '-' {
+				return ast.WalkContinue, nil
+			}
+			for item := v.FirstChild(); item != nil; item = item.NextSibling() {
+				// The marker itself is not in the tree: the item's first block
+				// starts just after it, on the marker's own line.
+				if child := item.FirstChild(); child != nil && child.Lines().Len() > 0 {
+					bullets[lineAt(child.Lines().At(0).Start)] = true
+				}
+			}
+		case *ast.CodeBlock, *ast.FencedCodeBlock:
+			for i := 0; i < n.Lines().Len(); i++ {
+				segment := n.Lines().At(i)
+				last := segment.Start
+				if segment.Stop > segment.Start {
+					last = segment.Stop - 1
+				}
+				for line := lineAt(segment.Start); line <= lineAt(last); line++ {
+					protected[line] = true
+				}
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+
+	type stored struct {
+		text    string
+		literal bool // copied out of a code block, unchanged
+	}
+	var out []stored
+	lines := strings.Split(string(d.source), "\n")
+	for i := 0; i < len(lines); i++ {
+		line, literal := lines[i], protected[i]
+		if !literal {
+			line = strings.TrimRight(line, " \t")
+			if hardBreak[i] && strings.HasSuffix(lines[i], "  ") {
+				line += "  "
+			}
+			if bullets[i] {
+				lead := strings.TrimLeft(line, " \t")
+				if len(lead) > 0 && strings.IndexByte("*+-", lead[0]) >= 0 {
+					line = line[:len(line)-len(lead)] + "-" + lead[1:]
+				}
+			}
+			// A Setext heading and its ATX spelling are the same parsed heading.
+			// Store one spelling, leaving the following block adjacent as before.
+			if level := setext[i]; level >= 2 && level <= 4 && i+1 < len(lines) &&
+				!atxStart.MatchString(lines[i]) && setextRule.MatchString(lines[i+1]) {
+				line = strings.Repeat("#", level) + " " + strings.TrimSpace(line)
+				i++
+			}
+		}
+		out = append(out, stored{line, literal})
+	}
+	for len(out) > 0 && out[0].text == "" && !out[0].literal {
 		out = out[1:]
 	}
-	for len(out) > 0 && out[len(out)-1] == "" {
-		out = out[:len(out)-1]
+	for n := len(out) - 1; n >= 0 && out[n].text == "" && !out[n].literal; n-- {
+		out = out[:n]
 	}
 	if len(out) == 0 {
 		return "", nil
 	}
 	// Indented code is accepted input but stored as fenced code.
 	for i := 0; i < len(out); i++ {
-		if !strings.HasPrefix(out[i], "    ") || (i > 0 && out[i-1] != "") {
+		if !strings.HasPrefix(out[i].text, "    ") || (i > 0 && out[i-1].text != "") {
 			continue
 		}
 		end := i
-		for end < len(out) && strings.HasPrefix(out[end], "    ") {
+		for end < len(out) && strings.HasPrefix(out[end].text, "    ") {
 			end++
 		}
-		code := []string{"```"}
+		code := []stored{{text: "```"}}
 		for _, line := range out[i:end] {
-			code = append(code, strings.TrimPrefix(line, "    "))
+			code = append(code, stored{strings.TrimPrefix(line.text, "    "), true})
 		}
-		code = append(code, "```")
+		code = append(code, stored{text: "```"})
 		out = append(append(out[:i:i], code...), out[end:]...)
 		i += len(code) - 1
 	}
 	// Empty runs are one block separator. Preserving line indentation retains
-	// list and table structure and makes a second pass byte-identical.
-	compact := out[:0]
+	// list and table structure, and a line of literal code keeps the blanks it
+	// was written with, which is what makes a second pass byte-identical.
+	compact := make([]stored, 0, len(out))
 	for _, line := range out {
-		if line != "" || len(compact) == 0 || compact[len(compact)-1] != "" {
+		if last := len(compact) - 1; line.text != "" || len(compact) == 0 ||
+			compact[last].text != "" || compact[last].literal {
 			compact = append(compact, line)
 		}
 	}
-	return strings.Join(compact, "\n") + "\n", nil
+	text := make([]string, len(compact))
+	for i, line := range compact {
+		text[i] = line.text
+	}
+	return strings.Join(text, "\n") + "\n", nil
 }
 
 // SourceHash is SHA-256 of canonical UTF-8 Markdown, encoded in lowercase hex.

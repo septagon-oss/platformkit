@@ -1,24 +1,18 @@
 import { expect, test } from '@playwright/test';
+import { fillContentForm, makePublisher, publishAs, signInForContent } from './steps/content';
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
+const publisherPass = 'Second-publisher!';
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/app/admin/login');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  await signInForContent(page, email, password);
 });
 
 test('an editor saves Markdown and sees shared prose on the detail view', async ({ page }) => {
   const slug = `richtext-${Date.now()}`;
   const markdown = '## Opening hours  \n\n- Monday\n- Tuesday\n\n[Website](https://example.com)\n\n```go\nfmt.Println(1)\n```';
-  await page.goto('/app/content/contents/new');
-  await page.getByLabel('Slug').fill(slug);
-  await page.getByLabel('Title').fill('Opening hours');
-  await page.getByLabel('Kind').selectOption('page');
-  await page.getByLabel('Body').fill(markdown);
+  await fillContentForm(page, { slug, title: 'Opening hours', kind: 'page', body: markdown });
   await expect(page.getByText('Formatting help')).toBeVisible();
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page).toHaveURL(/\/app\/content\/contents\/[0-9a-f-]{36}$/);
@@ -35,10 +29,7 @@ test('an editor saves Markdown and sees shared prose on the detail view', async 
 
 test('a refused construct keeps the Markdown and identifies each line', async ({ page }) => {
   const markdown = '<script>alert(1)</script>\n![x](https://example.com/x.png)';
-  await page.goto('/app/content/contents/new');
-  await page.getByLabel('Slug').fill(`refused-${Date.now()}`);
-  await page.getByLabel('Title').fill('Refused example');
-  await page.getByLabel('Body').fill(markdown);
+  await fillContentForm(page, { slug: `refused-${Date.now()}`, title: 'Refused example', body: markdown });
   const refused = page.waitForResponse(response => new URL(response.url()).pathname === '/app/content/contents' && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Save' }).click();
   expect((await refused).status()).toBe(422);
@@ -50,16 +41,19 @@ test('a refused construct keeps the Markdown and identifies each line', async ({
   await expect(page.getByText(/Upload the image so it is stored with this site/).first()).toBeVisible();
 });
 
-test('a published page serves the same prose and a bounded meta description', async ({ page }) => {
+test('a published page serves the same prose and a bounded meta description', async ({ page, browser }) => {
   const slug = `published-prose-${Date.now()}`;
+  const publisher = `publisher-${Date.now()}@e2e.test`;
+  await makePublisher(page, publisher, publisherPass);
   const body = '## Introduction\n\n' + 'Readable words. '.repeat(20);
   const created = await page.request.post('/api/v1/content/contents', {
     data: { slug, title: 'Published prose', kind: 'page', body },
   });
   expect(created.status(), await created.text()).toBe(201);
   const { id } = await created.json();
-  const published = await page.request.post(`/api/v1/content/contents/${id}/publish`);
-  expect(published.status(), await published.text()).toBe(200);
+  // The person who wrote the page is not the person who serves it: the module
+  // refuses that, so the journey publishes as the second account it just made.
+  await publishAs(browser, publisher, publisherPass, id);
   await page.goto(`/app/content/contents/${id}`);
   const adminProse = await page.locator('[data-component="prose"]').innerHTML();
   const publicRead = await page.request.get(`/api/v1/public/content/contents/${slug}`);

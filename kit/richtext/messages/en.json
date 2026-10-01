@@ -1,0 +1,164 @@
+{
+  "richtext.invalid-utf8.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Invalid text encoding"
+  },
+  "richtext.invalid-utf8.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use UTF-8 text."
+  },
+  "richtext.raw-html.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported raw HTML"
+  },
+  "richtext.raw-html.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Write Markdown instead of HTML."
+  },
+  "richtext.heading-level.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported heading level"
+  },
+  "richtext.heading-level.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use headings ## through ####; the page title is the top heading."
+  },
+  "richtext.link-destination.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported link destination"
+  },
+  "richtext.link-destination.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use https:, http:, mailto:, tel:, a site path or an anchor."
+  },
+  "richtext.image-source.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported image source"
+  },
+  "richtext.image-source.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Upload the image so it is stored with this site."
+  },
+  "richtext.inline-image.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported inline image"
+  },
+  "richtext.inline-image.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Put the image alone on its own line."
+  },
+  "richtext.image-in-table.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported image in table"
+  },
+  "richtext.image-in-table.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Put the image outside the table."
+  },
+  "richtext.list-nesting.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported list nesting"
+  },
+  "richtext.list-nesting.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use at most three list levels."
+  },
+  "richtext.footnote.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported footnote"
+  },
+  "richtext.footnote.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use the supported Markdown constructs."
+  },
+  "richtext.definition-list.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported definition list"
+  },
+  "richtext.definition-list.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use the supported Markdown constructs."
+  },
+  "richtext.math.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported math"
+  },
+  "richtext.math.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use the supported Markdown constructs."
+  },
+  "richtext.emoji-shortcode.message": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Unsupported emoji shortcode"
+  },
+  "richtext.emoji-shortcode.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use the supported Markdown constructs."
+  },
+  "richtext.missing-image.message": {
+    "references": [
+      "kit/richtext/render.go"
+    ],
+    "translation": "Image is unavailable"
+  },
+  "richtext.missing-image.remedy": {
+    "references": [
+      "kit/richtext/render.go"
+    ],
+    "translation": "Upload the image so it is stored with this site."
+  },
+  "richtext.line": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "line"
+  }
+}

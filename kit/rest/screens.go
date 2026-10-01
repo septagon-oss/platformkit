@@ -12,6 +12,8 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -284,6 +286,36 @@ func Writable(values map[string]any, immutable []string) map[string]any {
 	return out
 }
 
+// FieldErrorsIn is FieldErrors for a screen that does not speak English. A
+// rich-text refusal carries its structured issues beside the problem, because
+// the English sentences are the contract the JSON API answers with and a form
+// redrawn in another language must not print them at a reader who asked in
+// theirs. text is that language's formatter — the same one that names the form's
+// own labels — and each issue's key is in its package's catalogue.
+//
+// Every other refusal is prose this package cannot take apart, so it comes back
+// from FieldErrors as it stands.
+func FieldErrorsIn(err error, fields []crud.Field, text func(key, fallback string) string) (map[string]string, string) {
+	var refused *richTextProblem
+	if text == nil || !errors.As(err, &refused) {
+		return FieldErrors(err, fields)
+	}
+	_, known := crud.FieldNamed(fields, refused.field)
+	out, lines := map[string]string{}, make([]string, 0, len(refused.issues))
+	for _, issue := range refused.issues {
+		issue = issue.Localize(text)
+		line := fmt.Sprintf("%s %d: %s: %s", text("richtext.line", "line"), issue.Line, issue.Message, issue.Remedy)
+		lines = append(lines, line)
+		if known {
+			out[refused.field] = strings.TrimPrefix(out[refused.field]+"; "+line, "; ")
+		}
+	}
+	if !known {
+		return nil, strings.Join(lines, "; ")
+	}
+	return out, strings.Join(lines, "; ")
+}
+
 // invalid is a 422 about one field, in the shape FieldErrors reads back.
 func invalid(field, why string) error {
 	p := problem.New(http.StatusUnprocessableEntity, field+" "+why)
@@ -300,7 +332,7 @@ func invalid(field, why string) error {
 // substring, so a message about "subtitle" marked "title" — the wrong control,
 // with the right message, which is the confusing half of both.
 func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
-	p, ok := err.(*problem.Problem)
+	p, ok := errors.AsType[*problem.Problem](err)
 	if !ok {
 		return nil, err.Error()
 	}
