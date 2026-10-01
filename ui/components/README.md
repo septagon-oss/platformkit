@@ -147,6 +147,10 @@ pagination labels belong to the caller. Validation errors return no component
 bytes. A row's opaque Revision is only passed to its caller-owned action slot;
 the component never generates revision fields or treats a checkbox as authority.
 
+A refused list must also clear columns, filter/sort/view choices, result and
+selection metadata, pagination, HTMX controls and every slot. Retaining any of
+these rejects both HTML rendering and typed example capture before export.
+
 ## Detail panels
 
 [DetailSheet and SidePanel](detail_panel.go) share Modal's header/body/action frame.
@@ -253,7 +257,8 @@ coincident points reachable in the list. Tiles require a caller-owned same-origi
 URL template and attribution; this package provides no tile service or credential.
 Failed tiles keep an explicit fallback. Polar coordinates remain exact in the list
 without a relocated Web Mercator marker. DetailSheet composition is optional and
-must match the selected authorized point. No selection is persisted globally.
+must match the selected authorized point. `SelectedID` itself must name one of the
+supplied points; stale IDs are rejected before rendering. No selection is persisted globally.
 
 [PhotoGallery and Masonry](photos.go) reuse Media and Modal. Declared image dimensions
 reserve image geometry; full images remain in inert templates until selected.
