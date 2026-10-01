@@ -62,7 +62,8 @@ func mount(t *testing.T) chi.Router {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, m := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: administering}})
+	_, m := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: administering},
+		Granting: &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }}})
 	m.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -322,7 +323,7 @@ func TestAModuleWithNoRoleSystemIsRefusedAtComposition(t *testing.T) {
 			t.Fatalf("composing without an Administration panicked with %v, want the field named", reason)
 		}
 	}()
-	user.Module(user.Deps{})
+	user.Module(user.Deps{Granting: &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }}})
 	t.Fatal("composing without an Administration was allowed")
 }
 

@@ -40,7 +40,7 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 	})
 	notes := module.Module{
 		Name:        "note",
-		Permissions: []module.Permission{{Key: "note:read"}, {Key: "note:write"}},
+		Permissions: []module.Permission{{Key: "note:read", Label: "read notes"}, {Key: "note:write", Label: "write notes"}},
 		Declared:    spec.Declared(),
 		Routes: func(s httpx.Surfaces) {
 			spec.Mount(s)
@@ -55,7 +55,7 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 	}
 	catalogue := module.Module{
 		Name:        "plan",
-		Permissions: []module.Permission{{Key: "plan:read"}, {Key: "plan:write", Operator: true}},
+		Permissions: []module.Permission{{Key: "plan:read", Label: "read plans"}, {Key: "plan:write", Operator: true, Label: "write plans"}},
 		Declared:    plans.Declared(),
 		Routes:      func(s httpx.Surfaces) { plans.Mount(s) },
 	}

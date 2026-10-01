@@ -418,7 +418,7 @@ func TestAnAnswerNobodyGotIsNotAFreePass(t *testing.T) {
 	unreachable := errors.New("the roles table is not readable right now")
 	svc := internal.NewService(&contracts.AdministrationFunc{Ask: func(context.Context, db.Tx[db.Tenant]) ([]string, error) {
 		return nil, unreachable
-	}})
+	}}, alwaysGrant)
 
 	var id uuid.UUID
 	err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

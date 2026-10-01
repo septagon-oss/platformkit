@@ -20,7 +20,8 @@ func TestFakeConforms(t *testing.T) {
 		// answered "no role system", and every floor case would pass vacuously.
 		fake := usertest.NewFakeWithAdministration([]string{usertest.Administering})
 		run(usertest.Fixture{Ctx: t.Context(), Service: fake, Published: fake.Published,
-			Delete: func(id uuid.UUID) error { return fake.Delete(t.Context(), id) }})
+			Delete:   func(id uuid.UUID) error { return fake.Delete(t.Context(), id) },
+			Granting: fake.AllowGranting})
 	})
 }
 

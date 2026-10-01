@@ -1,0 +1,20 @@
+{
+  "permission.content:read": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "ler conteúdos",
+    "plural": {
+      "": "ler conteúdos"
+    }
+  },
+  "permission.content:manage": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "gerir conteúdos",
+    "plural": {
+      "": "gerir conteúdos"
+    }
+  }
+}
