@@ -12,7 +12,11 @@ door cannot be bypassed by a caller who found it slower than writing the string.
 behind a constructor: the transport, the relay's address, the scheduler's lock, the cookie, the limiter, the local
 file store and the AsyncAPI document each take the app rather than forming a name. The slug arrives as one
 configuration key, `nats.app`, and an unset one is the single-app deployment, which keeps every name it already
-has. T-0228; what is not yet wired — the tenant row's `app`, the boundaries that read it, the durable rename
+has. The delivery boundary reads the app back: `transport.AddressMismatch` takes the app, and an app that names
+itself now answers only at its own scoped address — a message routed at the previous build's address names no
+app, so it cannot be shown to be this app's, and is terminated rather than opened. The rollout filter stays
+wide on purpose and the check is what decides. An unset slug keeps both older addresses, as it always did.
+T-0228; what is not yet wired — the tenant row's `app`, the boundaries that read it, the durable rename
 migration — is listed under *Limits* in `kit/appname/README.md`.
 
 **A tenant signs its people in at its own issuer.** The installation had one issuer, one client and

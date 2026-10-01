@@ -340,7 +340,7 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 		// same shape as the branch above: the copy is undeliverable as addressed,
 		// the outbox still holds the row, and the correctly addressed copy — the
 		// one the relay wrote — is a different message on a different subject.
-		if err := transport.AddressMismatch(msg.Subject, ev); err != nil {
+		if err := transport.AddressMismatch(j.app, msg.Subject, ev); err != nil {
 			slog.ErrorContext(ctx, "events: message at an address its document does not claim",
 				"subject", msg.Subject, "event", ev.Name, "id", ev.ID, "tenant", ev.TenantID, "error", err)
 			_ = msg.Term()
