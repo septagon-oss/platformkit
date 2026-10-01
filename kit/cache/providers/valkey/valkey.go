@@ -16,6 +16,13 @@
 // ever stored, and an invalidation that works by matching a prefix is an
 // invalidation that can match somebody else's key. A Move here is one INCR of a
 // key named in full by kit/cache.
+//
+// One server-side promise this adapter cannot make for an operator: the counter a
+// Move raises is written with no TTL, and the store must never evict it. An absent
+// counter reads as generation 0, which believes again the entries written before the
+// first move — so maxmemory-policy has to be noeviction, or maxmemory left unset.
+// docs/cache.md holds the sentence, and compose.yaml names the policy for the store
+// `make up` starts.
 package valkey
 
 import (

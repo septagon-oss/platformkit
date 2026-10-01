@@ -410,9 +410,13 @@ func (s *store) entryKey(k Key) string {
 // invalidation reads.
 //
 // The counter outlives every entry under it and never expires: a generation that
-// quietly reset to zero would reopen the window a move exists to close. The keys
-// it costs are bounded by the namespaces of this installation, which an attacker
-// choosing request data cannot widen.
+// quietly reset to zero would reopen the window a move exists to close. Expiry is
+// not the only way it can be lost — a store evicting on memory pressure takes an idle
+// counter, and openGeneration reads an absent one as generation 0, which believes the
+// entries written before the first move again. So an operator's maxmemory-policy may
+// not evict it: docs/cache.md, and compose.yaml's noeviction. The keys it costs are
+// bounded by the namespaces of this installation, which an attacker choosing request
+// data cannot widen.
 func (s *store) generationKey(scope Scope) string {
 	return CacheKey(s.app, scope.tenant, scope.ns+"#")
 }

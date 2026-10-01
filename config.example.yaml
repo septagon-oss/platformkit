@@ -95,6 +95,10 @@ cache:
   # are refused: put the secret in PLATFORMKIT_CACHE_PASSWORD.
   url: ""
   password: ""
+  # The store may never evict a key: the counter an invalidation raises has no TTL,
+  # and an evicted one reads back as generation 0, which believes again what the
+  # first invalidation closed. maxmemory-policy noeviction, or no maxmemory at all —
+  # docs/cache.md, and the store `make up` starts.
 
 log:
   # debug | info | warn | error

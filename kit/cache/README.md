@@ -33,3 +33,20 @@ Sessions, permission grants and entitlements are never cached here, in this proc
 in any store: `modules/auth`'s own kernel says a permission cache is a window in which
 a revoked grant still works. The read path for those is the transaction under
 row-level security. [docs/cache.md](../../docs/cache.md) holds the table.
+
+## Limits
+
+- **The store may never evict a generation counter.** A counter is written with no TTL
+  and an absent counter reads as generation 0, so an evicted counter reopens every entry
+  written under the generation a `Move` closed. `maxmemory-policy noeviction` (or no
+  `maxmemory` at all) is the requirement; `compose.yaml` states it, and
+  [docs/cache.md](../../docs/cache.md) says why. A `volatile-*` policy is safe — the
+  counter has no TTL for it to take.
+- **`Group[V]` has no in-tree consumer.** It ships, it runs the same conformance suite as
+  everything else here, and the client-composition caches it was written for are in the
+  applications that install these modules, not in this repository. `kit/httpx`'s host
+  resolution is the only cache composed here.
+- **One namespace granularity.** A `Move` closes a whole `Scope`, so an invalidation
+  costs every other entry under it one reload. A finer generation, one per entry, is the
+  same mechanism at one key per entry and waits on a deployment that measures the
+  difference.
