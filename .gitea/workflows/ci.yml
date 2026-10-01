@@ -27,6 +27,11 @@ jobs:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
+      # The object store the S3 adapter's cases dial. They fail rather than skip
+      # without one, as the NATS transport's do, so the fixture belongs here: this
+      # job stands up its own services rather than the compose stack the Makefile's
+      # localhost:8333 default belongs to.
+      PLATFORMKIT_TEST_S3_ENDPOINT: s3:8333
       GOFLAGS: -p=4
     services:
       postgres:
@@ -67,6 +72,29 @@ jobs:
           echo "container=$container" >> "$GITHUB_OUTPUT"
           for i in $(seq 1 30); do
             if curl -fsS http://nats:8222/healthz >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
+      # The S3-compatible object store modules/file's S3 adapter is tested against,
+      # on this job's network under the name the endpoint above names. Image,
+      # credentials and port are compose.yaml's s3 service, so the store this job
+      # tests is the store `make up` starts. The probe is that service's own
+      # healthcheck: an anonymous bucket list is refused by design (403), and the
+      # refusal is what says somebody is listening.
+      - name: Start the object store
+        id: s3
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+        run: |
+          test -n "$JOB_NETWORK"
+          container=$(docker run -d --network "$JOB_NETWORK" --network-alias s3 \
+            -e AWS_ACCESS_KEY_ID=pkittest -e AWS_SECRET_ACCESS_KEY=pkittestsecret \
+            chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d server -s3 -dir=/data)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://s3:8333/; then exit 0; fi
             sleep 1
           done
           docker logs "$container"
