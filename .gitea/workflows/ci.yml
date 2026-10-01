@@ -1,5 +1,21 @@
 # Verification only. The runner supplies a dedicated Docker daemon and a fresh
 # job network; no workstation services or deployment credentials are required.
+#
+# Four jobs, not one. The single `check` job ran make check, race, govulncheck,
+# the design suite, its browser verification and e2e back to back under one limit;
+# at 45 minutes that cut off runs 192, 193, 204, 210, 237, 243, 245 and 257 with
+# every test that had run passed (task T-0219 read each of those logs: no
+# `--- FAIL:` line anywhere, `context deadline exceeded` on the step in flight).
+# Raising the limit to 75 was a retry in another form. Split, the work is four
+# independent jobs that the two kernel runners — `stitch-core` and
+# `stitch-core-2` — take at once, each bounded at twice its own measured p95
+# rather than at whatever the longest neighbour needed. The measurements and the
+# arithmetic beside every number below are from the 13 `ci.yml` runs on main at
+# number ≥ 180, step spans read from each step's own `::group::` marker.
+#
+# The fixture the jobs share — the database client, Postgres, NATS, the app role —
+# is one script, `scripts/ci_setup.sh`, which each job calls with the units its
+# suite dials. A fixture written four times is a fixture that drifts.
 name: ci
 
 on:
@@ -15,40 +31,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    # This self-hosted capacity accepts trusted same-repository changes only.
+  # go-checks is the whole `make check`: build, vet, fmt, the budget and tenancy
+  # greps, the architecture rehearsals and every Go test in the tree — so this is
+  # the job that owes the object store, because modules/file's S3 adapter's cases
+  # fail rather than skip without one.
+  go-checks:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # 45 cut off runs 192, 193, 204, 210, 237 and 243 after every test that ran had passed: the job runs
-    # make check, race, govulncheck, the design editor's browser verification and e2e in sequence. Task
-    # T-0219 splits it across the two kernel runners; until then the limit leaves room.
-    timeout-minutes: 75
+    # 2 × the measured p95 of what this job runs: `make check` p95 464s over 13
+    # runs (min 323, p50 372, max 526), the ratchet 0.3s, the setup and checkout
+    # about 55s — 1040s. The ceiling catches a job that lost a server, not one
+    # that is merely slow: at 45 minutes the same work had already been cut off
+    # eight times on main.
+    timeout-minutes: 18
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
-      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
-      # The Valkey conformance suite runs here rather than skipping: the Makefile
-      # points this variable at whatever `make up` publishes when a caller does not
-      # set it, and the job sets it, so the one production adapter of kit/cache is
-      # exercised by the gate that ships it and not only by hand.
-      PLATFORMKIT_TEST_VALKEY_URL: redis://valkey:6379
-      # The object store the S3 adapter's cases dial. They fail rather than skip
-      # without one, as the NATS transport's do, so the fixture belongs here: this
-      # job stands up its own services rather than the compose stack the Makefile's
-      # localhost:8333 default belongs to.
+      # The object store the S3 adapter's cases dial. It is this job's own concern
+      # because it is the only job that runs them; the step below starts the store
+      # under this alias, and modules/file's workflow_store_fixture_test reads both
+      # halves of that arrangement out of this file.
       PLATFORMKIT_TEST_S3_ENDPOINT: s3:8333
       GOFLAGS: -p=4
-    services:
-      postgres:
-        image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
-        env:
-          POSTGRES_PASSWORD: platformkit
-          POSTGRES_DB: platformkit
-        options: >-
-          --health-cmd "pg_isready -U postgres -d platformkit"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -60,40 +65,16 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Install the database client
-        run: |
-          apt-get update
-          apt-get install --yes --no-install-recommends postgresql-client
-
-      - name: Start NATS with JetStream on this job's network
-        id: nats
+      - name: Start the database and the message bus
+        id: setup
         env:
           JOB_NETWORK: ${{ job.container.network }}
-          # Each container this job starts by hand is named after the run that started it, from the same
-          # run id the image tag below is built from. The cleanup step at the end of the job needs a
-          # handle that outlives the step which made the container: a step the job's own deadline cuts off
-          # never finishes writing $GITHUB_OUTPUT, so the id it recorded is lost, and a container still
-          # running is what makes `docker image rm` refuse below and the job's network unremovable. The
-          # run id is known to every step without any output, so a name is a handle the job cannot lose.
-          CONTAINER_NAME: platformkit-${{ github.run_id }}-nats
-        run: |
-          test -n "$JOB_NETWORK"
-          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias nats \
-            nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3 \
-            --jetstream --http_port 8222)
-          echo "container=$container" >> "$GITHUB_OUTPUT"
-          for i in $(seq 1 30); do
-            if curl -fsS http://nats:8222/healthz >/dev/null; then exit 0; fi
-            sleep 1
-          done
-          docker logs "$container"
-          exit 1
+        run: bash scripts/ci_setup.sh postgres nats
 
       # The S3-compatible object store modules/file's S3 adapter is tested against,
       # on this job's network under the name the endpoint above names. Image,
-      # credentials and port are compose.yaml's s3 service, so the store this job
-      # tests is the store `make up` starts. The probe is that service's own
+      # credentials and port are compose.yaml's own s3 service, so the store this
+      # job tests is the store `make up` starts. The probe is that service's own
       # healthcheck: an anonymous bucket list is refused by design (403), and the
       # refusal is what says somebody is listening.
       - name: Start the object store
@@ -113,50 +94,110 @@ jobs:
           docker logs "$container"
           exit 1
 
-      - name: Create the platformkit_app role
-        env:
-          PGPASSWORD: platformkit
-        run: psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
-
-      # noeviction, as compose.yaml names it: the generation counter a Move raises is
-      # written with no TTL, and a store that evicts it reads back as generation 0,
-      # which believes again the entries the first Move closed. docs/cache.md.
-      - name: Start Valkey on this job's network
-        id: valkey
-        env:
-          JOB_NETWORK: ${{ job.container.network }}
-          CONTAINER_NAME: platformkit-${{ github.run_id }}-valkey
-        run: |
-          test -n "$JOB_NETWORK"
-          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias valkey \
-            valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507 \
-            --maxmemory-policy noeviction)
-          echo "container=$container" >> "$GITHUB_OUTPUT"
-          for i in $(seq 1 30); do
-            if docker exec "$container" valkey-cli ping 2>/dev/null | grep -q PONG; then exit 0; fi
-            sleep 1
-          done
-          docker logs "$container"
-          exit 1
-
       - name: make check
         run: make check
 
-      # Second, and load-bearing: the outbox, the request transaction, the advisory
-      # locks over a tenant's administration, the limit counters and the router under
-      # the race detector. The Makefile target has existed since the concurrency
-      # kernel and CONTRIBUTING has said CI runs it, but no workflow ever called it —
-      # so the one gate that would notice a lock released before the commit that needs
-      # it has only ever run in a contributor's shell. It stays a separate step from
-      # `make check` because -race roughly doubles the suite; the packages it covers
-      # are the Makefile's standing RACE_PACKAGES list, widened by the commit that put
-      # advisory locks in modules/auth and modules/user.
+      # Last, and deliberately. A ceiling that rose is a decision for an owner
+      # to review, not a reason to stop the job before it has said whether the
+      # code works. The cleanup below still runs, because it runs always().
+      - name: Budgets only ratchet down
+        env:
+          BUDGET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bash scripts/check_budget_ratchet.sh "$BUDGET_BASE"
+
+      - name: Remove this job's manually created resources
+        if: always()
+        env:
+          POSTGRES_CONTAINER: ${{ steps.setup.outputs.postgres }}
+          NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
+          S3_CONTAINER: ${{ steps.s3.outputs.container }}
+        run: bash scripts/ci_cleanup.sh "$POSTGRES_CONTAINER" "$NATS_CONTAINER" "$S3_CONTAINER"
+
+  # Second, and load-bearing: the outbox, the request transaction, the advisory
+  # locks over a tenant's administration, the limit counters and the router under
+  # the race detector. The Makefile target has existed since the concurrency
+  # kernel and CONTRIBUTING has said CI runs it, but no workflow ever called it —
+  # so the one gate that would notice a lock released before the commit that needs
+  # it has only ever run in a contributor's shell. It is its own job rather than a
+  # later step of the first because -race roughly doubles the suite: measured at
+  # p95 420s on its own, it used to sit behind 464s of `make check` in one job and
+  # arrive at the deadline with its verdict unsaid. govulncheck rides along with
+  # it: it consumes the build cache the race run just filled, and nothing else
+  # needs a moment of it.
+  race-and-vuln:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: pkit-ci-linux-amd64
+    # 2 × the measured p95: `make check-race` p95 420s (min 219, p50 294, max 433)
+    # plus govulncheck p95 20s plus about 55s of setup — 960s.
+    timeout-minutes: 16
+    env:
+      PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
+      GOFLAGS: -p=4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Start the database and the message bus
+        id: setup
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+        run: bash scripts/ci_setup.sh postgres nats
+
       - name: make check-race
         run: make check-race
 
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      - name: Remove this job's manually created resources
+        if: always()
+        env:
+          POSTGRES_CONTAINER: ${{ steps.setup.outputs.postgres }}
+          NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
+        run: bash scripts/ci_cleanup.sh "$POSTGRES_CONTAINER" "$NATS_CONTAINER"
+
+  # The design tooling and its browsers. Every one of its steps that launches a
+  # Chromium used to sit between `make check-race` and `make e2e`, which is the
+  # moment the runner had just stopped being asked for memory by a Go suite and
+  # started being asked by node: runs 219, 225, 235, 239 and 271 came back
+  # `locator.click: Target crashed` and `Unable to capture screenshot` with no
+  # assertion anywhere in the log. Here this job's browsers are the only thing
+  # this job runs, and no Go suite compiles beside them.
+  design-editor:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: pkit-ci-linux-amd64
+    # 2 × the measured p95 of the sum over 7 complete runs: min 1740s, p50 1745s,
+    # p95 1835s → 3670s. The number is ugly and it says why: two of its steps
+    # install a Chromium from two different Playwright pins (this directory pins
+    # playwright 1.62.1, e2e pins @playwright/test ^1.63.0), and the second install
+    # cannot reuse the first build. Aligning those pins is measured to take about
+    # 850s off this job, which would make the honest limit 34 minutes; that change
+    # touches the design owner's own dependency and is not smuggled into a split.
+    timeout-minutes: 62
+    env:
+      # The suites below build and run Go programs the design tests embed, so this
+      # job needs the compiler the Makefile's own toolchain line names. It needs no
+      # database and no NATS: nothing under tools/designexport opens either.
+      GOFLAGS: -p=4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -172,16 +213,12 @@ jobs:
           npm test
 
       - name: Install the browser
-        working-directory: e2e
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
+        working-directory: tools/designexport/openpencil
+        run: npx playwright install --with-deps chromium
 
       - name: Native browser observations
         working-directory: tools/designexport/openpencil
-        run: |
-          npx playwright install --with-deps chromium
-          npm run test:browser
+        run: npm run test:browser
 
       - name: Corrected editor image builds without publishing
         env:
@@ -198,11 +235,9 @@ jobs:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
           PLATFORMKIT_OPENPENCIL_URL: http://openpencil:8080
-          CONTAINER_NAME: platformkit-${{ github.run_id }}-editor
         run: |
           test -n "$JOB_NETWORK"
-          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias openpencil \
+          container=$(docker run -d --network "$JOB_NETWORK" --network-alias openpencil \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
             --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -221,16 +256,16 @@ jobs:
           # of main's own pushes that way (`e32fb81a`, `063b6535`, job logs read by task T-0110
           # round 26). Root reports it refused this branch's head `2be69fa1` too; that run's log
           # was unreadable from here — the forge API answers 403 to an unauthenticated checkout.
-          # The directory already states the bound for its other browser suite —
-          # `npm run test:browser` passes `--test-concurrency=2` — and this is the step that
-          # never named one.
+          # The directory states a bound for its other browser suite too —
+          # `npm run test:browser` runs `--test-concurrency=2`, two browsers and nothing
+          # else in this job — and this is the step that never named one.
           # Measured here at this head against this image and the step's own docker flags, on a
           # box at load 18-31 with 38 GB free: unbound, 31 tests in 413.2 s of wall over 475.6 s
           # of test time (ratio 1.15, so at least two files overlap); bound, 31 tests in 441.3 s
           # over 438.6 s (ratio 0.99, and the process tree held one Chromium). Both forms pass
           # all 31 here; only the bound form cannot starve a neighbour. The cost is the overlap:
           # T-0110 round 26 put the same step at 12m49s unbound on CI's runner against about
-          # 15m24s serial, inside the job's 45 minutes. No assertion, skip, retry or reordering.
+          # 15m24s serial, inside this job's own limit. No assertion, skip, retry or reordering.
           node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
 
       - name: Verify both font profiles and visible editable preview text
@@ -239,7 +274,6 @@ jobs:
         env:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
-          CONTAINER_NAME: platformkit-${{ github.run_id }}
         run: |
           test -n "$JOB_NETWORK"
           for profile in latin complete; do
@@ -248,8 +282,7 @@ jobs:
               complete) target=complete-preview; test_file=complete-fonts.test.mjs ;;
             esac
             export PLATFORMKIT_OPENPENCIL_URL="http://openpencil-$target:8080"
-            docker rm -f "$CONTAINER_NAME-$profile" >/dev/null 2>&1 || true
-            container=$(docker run -d --name "$CONTAINER_NAME-$profile" --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
+            container=$(docker run -d --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
               --read-only --cap-drop ALL --security-opt no-new-privileges:true \
               --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
               --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -263,51 +296,75 @@ jobs:
             node --import ./register.mjs --test "preview/$test_file"
           done
 
-      - name: make e2e
-        run: make e2e
-
-      # Last, and deliberately. A ceiling that rose is a decision for an owner
-      # to review, not a reason to stop the job before it has said whether the
-      # code works. The cleanup below still runs, because it runs always().
-      - name: Budgets only ratchet down
-        env:
-          BUDGET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: bash scripts/check_budget_ratchet.sh "$BUDGET_BASE"
-
       - name: Remove this job's manually created resources
         if: always()
         env:
-          NATS_CONTAINER: ${{ steps.nats.outputs.container }}
-          VALKEY_CONTAINER: ${{ steps.valkey.outputs.container }}
           EDITOR_CONTAINER: ${{ steps.editor.outputs.container }}
           PREVIEW_CONTAINER: ${{ steps.preview.outputs.latin }}
           COMPLETE_PREVIEW_CONTAINER: ${{ steps.preview.outputs.complete }}
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
-          NATS_NAME: platformkit-${{ github.run_id }}-nats
-          VALKEY_NAME: platformkit-${{ github.run_id }}-valkey
-          EDITOR_NAME: platformkit-${{ github.run_id }}-editor
-          PREVIEW_NAME: platformkit-${{ github.run_id }}
         run: |
           status=0
-          # Each container is dropped by the id its own step recorded, when that step finished, and by the
-          # run's name always. Both handles reach the same container, and the name is the one a step cut
-          # off mid-flight still leaves behind: run 245 lost the editor's id that way and its container
-          # held the run's image against the three removals below, which are deliberately not forced.
-          # A handle that names nothing is not a failure — the step that would have made that container
-          # may never have run.
-          drop() {
-            for handle in "$@"; do
-              [ -n "$handle" ] || continue
-              docker inspect "$handle" >/dev/null 2>&1 || continue
-              docker rm -f "$handle" || status=1
-            done
-          }
-          drop "$NATS_CONTAINER" "$NATS_NAME"
-          drop "$VALKEY_CONTAINER" "$VALKEY_NAME"
-          drop "$EDITOR_CONTAINER" "$EDITOR_NAME"
-          drop "$PREVIEW_CONTAINER" "$PREVIEW_NAME-latin"
-          drop "$COMPLETE_PREVIEW_CONTAINER" "$PREVIEW_NAME-complete"
+          bash scripts/ci_cleanup.sh "$EDITOR_CONTAINER" "$PREVIEW_CONTAINER" "$COMPLETE_PREVIEW_CONTAINER" || status=1
           if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
           if docker image inspect "$IMAGE-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-preview" || status=1; fi
           if docker image inspect "$IMAGE-complete-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-complete-preview" || status=1; fi
           exit "$status"
+
+  # The journey a person walks: scripts/e2e.sh boots the app on a database of its
+  # own and drives it with one Playwright spec. It used to be the last step of a
+  # 50-minute job, which is where a job that had already spent its budget on
+  # browsers reached it — run 192 is the one that died there with `context deadline
+  # exceeded` and nothing failing. Now it is a job of its own, and its own limit.
+  e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: pkit-ci-linux-amd64
+    # 2 × the measured p95: `make e2e` p95 113s over 7 runs (min 102, p50 104) plus
+    # the browser install's 57s plus about 55s of setup — 450s.
+    timeout-minutes: 8
+    env:
+      PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
+      GOFLAGS: -p=4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Start the database and the message bus
+        id: setup
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+        run: bash scripts/ci_setup.sh postgres nats
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: ''
+          package-manager-cache: false
+
+      # npm ci here, and `make e2e` re-checks the tree against the lock itself:
+      # scripts/e2e.sh installs when node_modules disagrees with package-lock.json,
+      # and this is the step that pays for the browser binary the spec needs.
+      - name: Install the browser
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: make e2e
+        run: make e2e
+
+      - name: Remove this job's manually created resources
+        if: always()
+        env:
+          POSTGRES_CONTAINER: ${{ steps.setup.outputs.postgres }}
+          NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
+        run: bash scripts/ci_cleanup.sh "$POSTGRES_CONTAINER" "$NATS_CONTAINER"
