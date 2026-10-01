@@ -38,7 +38,7 @@ const (
 func changeFixture(t *testing.T, gateOn bool) (config.Config, []module.Module, app.Options, string) {
 	t.Helper()
 	path, cfg := configure(t)
-	cfg.Flags = map[string]bool{siteSettingsFlag: gateOn}
+	cfg.Flags = &config.Flags{Values: map[string]bool{siteSettingsFlag: gateOn}}
 	c := compose(cfg)
 	opts := appOptions(cfg, c, app.All)
 	opts.Transport, opts.Log = memory.New(), quiet()

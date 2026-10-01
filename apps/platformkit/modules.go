@@ -191,7 +191,10 @@ func compose(cfg config.Config) composition {
 	// The installation's flags, read by kit/config out of the flags block and
 	// evaluated per tenant. One evaluator is built here and handed to the one door
 	// that asks a question of it — see configFlags and siteSettingsFlag.
-	flagEval := configFlags(cfg.Flags)
+	var flagEval configFlags
+	if cfg.Flags != nil {
+		flagEval = cfg.Flags.Values
+	}
 	sites, siteModule := site.Module(site.Deps{Gate: settingsGate{eval: flagEval}})
 	_, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
@@ -261,7 +264,7 @@ func compose(cfg config.Config) composition {
 	// manifest — so the six proposal routes are mounted, the three permissions are
 	// declared, and the settings door answers 409 with the proposal address when the
 	// installation turns the switch on.
-	mods = append(mods, change.Module(change.Deps{Subjects: changeSubjects(sites)}))
+	mods = append(mods, change.Module(change.Deps{Subjects: changeSubjects(sites, site.NewLockedReader())}))
 	// The shell is last, and for the same kind of reason audit is next to last:
 	// it generates a screen for every resource the modules above it mounted, so
 	// composing it earlier would generate screens for a prefix of the

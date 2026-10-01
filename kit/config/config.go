@@ -49,12 +49,22 @@ type Config struct {
 	// subscription's entitlement (kit/flags says so of the contract this satisfies);
 	// it decides only whether an optional product behaviour runs. Which key means
 	// what is the consumer's fact, written beside the consumer —
-	// apps/platformkit/change.go names the one this application reads.
+	// apps/platformkit/change.go names the one this application reads — and a key
+	// spelled wrong is refused at load rather than ignored (dec.KnownFields).
 	//
-	// An absent key is not false-by-invisibility: the consumer passes an explicit
-	// fallback, and a key nobody reads is a line in the loader's own refusal
-	// (dec.KnownFields) rather than a dormant setting.
-	Flags map[string]bool `yaml:"flags"`
+	// A pointer, so that Config stays comparable: a map field would make the whole
+	// configuration incomparable, and the exported API gate refuses that as the
+	// break it is (`old is comparable, new is not`). An installation that says
+	// nothing about flags has none, which is a nil pointer and not an empty map.
+	Flags *Flags `yaml:"flags"`
+}
+
+// Flags is the flags block: one boolean per key. See Config.Flags for why the
+// block is a pointer and what a flag may and may not decide.
+type Flags struct {
+	// Values is the map itself, one level down so a deployment that names no flag
+	// writes no `flags:` block at all rather than an empty nested one.
+	Values map[string]bool `yaml:"values"`
 }
 
 // Bootstrap is what the first-run command cannot decide for itself: the first

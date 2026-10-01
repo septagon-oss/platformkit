@@ -39,6 +39,13 @@ type Deps struct {
 // not here fails startup instead of denying everyone forever.
 var permissions = []module.Permission{{Key: contracts.PermissionSiteManage, Label: "manage the site"}}
 
+// NewLockedReader returns the same settings service Module builds, as the one
+// interface a caller about to write needs (see contracts.LockedReader for why that
+// is a second interface and not a method on Service). It costs a second value
+// because a Service has no fields — everything it needs arrives with the
+// transaction — so there is nothing here to keep in step with anything else.
+func NewLockedReader() contracts.LockedReader { return internal.NewService() }
+
 // Module is the manifest, and the service it is built on.
 //
 // The three routes this module used to write by hand are rest.Singleton now:

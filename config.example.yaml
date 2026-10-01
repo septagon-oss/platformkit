@@ -154,8 +154,9 @@ files:
   # deployment that lets anybody sign up must not have.
   quota_bytes: 1073741824
 
-# Feature flags. One boolean per key, read the way every other value here is
-# read: through kit/config, with an environment override, and refused at load if
+# Feature flags, under `values:` because the block is a pointer to the map and an
+# installation with no flags writes no `flags:` section at all. One boolean per
+# key, read the way every other value here is read: through kit/config, with an environment override, and refused at load if
 # the key is spelled wrong. A flag never grants a permission, narrows a tenant's
 # scope or replaces a plan's entitlement (kit/flags/README.md); it switches an
 # optional product behaviour on or off for this installation.
@@ -167,4 +168,5 @@ files:
 # named in apps/platformkit/change.go, beside the consumer that reads it, and an
 # absent key means off rather than whatever the loader's zero value happened to be.
 flags:
-  change.control.site-settings: false
+  values:
+    change.control.site-settings: false
