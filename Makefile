@@ -187,8 +187,14 @@ fmt-check: ## Fail when any file is not gofmt'd
 # two halves are composed and where the only test that can watch a write in one
 # module queue behind a write in the other lives.
 # RACE_PACKAGES overrides the list when a change reaches somewhere else.
+# modules/change is in the standing list rather than one change's override because
+# the whole point of the object is a lock: the proposal is taken FOR UPDATE before
+# the subject is, and two applies of two proposals over one subject settle by that
+# order. An author who cannot run the two commands concurrently cannot tell a lock
+# that works from a lock that is merely written down.
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
-	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... ./apps/platformkit
+	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
+	./modules/change/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
