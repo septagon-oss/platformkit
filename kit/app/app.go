@@ -611,7 +611,7 @@ func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Cont
 // outbox relay and the two tables the kernel writes that nothing but time makes
 // smaller. A module's own jobs are appended to this list by work; nothing here
 // reaches a module's table.
-func kernelJobs(transport events.Transport) []jobs.Job {
+func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 	return []jobs.Job{
 		// Parallel, because SKIP LOCKED is already the concurrency control, and
 		// bounded, because a transport that blocks would otherwise hold the
@@ -621,7 +621,7 @@ func kernelJobs(transport events.Transport) []jobs.Job {
 		{Name: "outbox-relay", Every: relayEvery, Parallel: true, Run: func(ctx context.Context, conn *db.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, relayTimeout)
 			defer cancel()
-			return events.Relay(ctx, conn, transport)
+			return events.RelayApp(ctx, conn, transport, app)
 		}},
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
@@ -655,7 +655,7 @@ func (a *App) drainMigrations() jobs.Job {
 // module's subscriptions. probes is the handler it serves, or nil when the web half
 // of the same process is already serving them.
 func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
-	scheduled := append(kernelJobs(transport), a.drainMigrations())
+	scheduled := append(kernelJobs(transport, a.opts.App), a.drainMigrations())
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)
