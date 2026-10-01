@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/septagon-oss/platformkit/kit/appname"
 	"io/fs"
+	"maps"
 	"net"
 	"net/mail"
 	"net/url"
@@ -49,7 +50,7 @@ type Config struct {
 }
 
 // App is the composition's own declaration, read at the migrating boot and put on
-// that session by kit/db (db.MigrateDeclaring) for migrations/000034_tenant_app
+// that session by kit/db (db.MigrateDeclaring) for migrations/000035_tenant_app
 // to place tenants with. It is a declaration and not a request: nothing at run
 // time consults it, and a deployment that names no slug and no hosts is the
 // single-app deployment migrating a database that has no tenants to place.
@@ -271,6 +272,17 @@ type Files struct {
 	// gigabyte; a negative number means no quota, which is what a
 	// single-tenant installation wants and a public sign-up must not have.
 	QuotaBytes int64 `yaml:"quota_bytes"`
+	// Retention is how long each class of file lives, keyed by the `kind` an
+	// upload carried. It is a table and not a column because a class is the
+	// product's word and a duration is the deployment's: this package parses the
+	// durations and modules/file matches one token against the other, and a kind
+	// the table does not name is never deleted, only logged.
+	//
+	// A duration is Go's own spelling — "720h", "45m" — the same one
+	// server.read_timeout is written in. There is no environment variable per
+	// class and no row in the kernel's key table: one class per line is a
+	// config-file thing, which is what modules/file.Deps.Retention says too.
+	Retention map[string]time.Duration `yaml:"retention"`
 }
 
 // The defaults. Twenty-five megabytes is what a mail attachment limit taught
@@ -464,6 +476,20 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if c.Files.MaxBytes < 1 {
 		return Config{}, fmt.Errorf("config %s: files.max_bytes is %d; a limit is a number of bytes", path, c.Files.MaxBytes)
+	}
+	// A retention table is a promise that bytes get removed, so the two ways to
+	// write one by mistake are refused here rather than discovered by the sweep.
+	// An empty key is the worst of them: every upload that named no class has
+	// kind '', and the widest policy in this application is one keyed on nothing
+	// — which is also why the module keeps a kind it was never given a policy
+	// for instead of guessing.
+	for _, kind := range slices.Sorted(maps.Keys(c.Files.Retention)) {
+		switch keep := c.Files.Retention[kind]; {
+		case kind == "":
+			return Config{}, fmt.Errorf("config %s: files.retention has an entry with no class name; an empty key is the upload that named no class, which is not a class", path)
+		case keep <= 0:
+			return Config{}, fmt.Errorf("config %s: files.retention.%s is %s; how long a class lives is a positive duration written Go's way, like 720h", path, kind, keep)
+		}
 	}
 	return c, nil
 }

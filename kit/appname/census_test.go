@@ -123,6 +123,11 @@ var census = []rule{
 		pattern: regexp.MustCompile(`String\(\) \+ "/" \+ key`),
 		allow: []allowed{
 			{"kit/appname/appname.go", 3, "owner"},
+			// An object name is a tenant prefix and a key, which is the shape
+			// this pattern reads as a limit key. The line is an assertion about
+			// what the bucket holds, not a name any code forms, and the census
+			// names it rather than editing another owner's test.
+			{"modules/file/s3_test.go", 1, "exempt: a test reads an object name back from the bucket; a prefix and a key are the shape this rule also reads as a limit key"},
 		},
 	},
 	{

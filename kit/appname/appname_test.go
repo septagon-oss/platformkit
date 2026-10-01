@@ -248,8 +248,11 @@ func TestTheUnsetAppSegmentKeepsTheNamesOneAppAlreadyUses(t *testing.T) {
 	if got := appname.RateLimitKey(none, tenantA, "writes"); got != tenantA.String()+"/writes" {
 		t.Errorf("the unset app forms limit key %q", got)
 	}
-	if got := appname.StoragePath(none, tenantA, fileKey); got != fileKey.String()[:2]+"/"+fileKey.String() {
+	if got := appname.StoragePath(none, tenantA, fileKey); got != tenantA.String()+"/"+fileKey.String()[:2]+"/"+fileKey.String() {
 		t.Errorf("the unset app stores a file at %q", got)
+	}
+	if got := appname.PreviousStoragePath(fileKey); got != fileKey.String()[:2]+"/"+fileKey.String() {
+		t.Errorf("the release before the scope wrote a file at %q", got)
 	}
 	if got := appname.ConnectionName("platformkit-worker", none); got != "platformkit-worker" {
 		t.Errorf("the unset app names its connection %q", got)

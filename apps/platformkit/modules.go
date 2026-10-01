@@ -213,6 +213,13 @@ func compose(cfg config.Config) composition {
 	_, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
 		QuotaBytes: cfg.Files.QuotaBytes,
+		// Which class lives how long is the deployment's table (files.retention
+		// in the config file) and who to walk is the tenant module's answer; this
+		// line only hands the two to the module. A deployment that names no class
+		// schedules no sweep at all — the same file.Module call, no job — which is
+		// why the reference application ships the table empty: the classes are
+		// whatever this product's uploads name them, and nothing here invents one.
+		Retention: cfg.Files.Retention, Tenants: active,
 	})
 
 	mods := []module.Module{

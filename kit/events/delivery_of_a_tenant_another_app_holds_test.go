@@ -18,7 +18,7 @@ import (
 // TestDeliveryRefusesAnEventWhoseTenantAnotherAppHolds is the boundary the brief
 // names for delivery: "refuses an event whose tenant is not its app's, before any
 // handler transaction opens". The tenant control plane now answers inside one app
-// (migrations/000034_tenant_app, modules/tenant), so the fact the check needs —
+// (migrations/000035_tenant_app, modules/tenant), so the fact the check needs —
 // which app holds this tenant — is a column, and the durable is a consumer name
 // the delivery already knows.
 //

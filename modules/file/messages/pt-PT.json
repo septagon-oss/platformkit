@@ -16,5 +16,23 @@
     "plural": {
       "": "gerir ficheiros"
     }
+  },
+  "permission.file:erase": {
+    "references": [
+      "modules/file/module.go"
+    ],
+    "translation": "apagar ficheiros",
+    "plural": {
+      "": "apagar ficheiros"
+    }
+  },
+  "permission.file:retain": {
+    "references": [
+      "modules/file/module.go"
+    ],
+    "translation": "reter ficheiros",
+    "plural": {
+      "": "reter ficheiros"
+    }
   }
 }

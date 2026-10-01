@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -36,7 +38,10 @@ var faults = []int{
 	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
 }
 
-// RegisterRoutes mounts the six routes a file has.
+// RegisterRoutes mounts the twelve operations a file has, over seven paths: the
+// list, one read, the upload, the content door twice (GET and HEAD), the public
+// door twice, the delete, the grant, the hold placed and released, and the
+// subject erasure.
 //
 // There is no rest.Spec, and the reason is one sentence: a Spec's create route
 // takes a JSON body, and a file arrives as bytes. The list and the read below
@@ -122,6 +127,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 				return nil, err
 			}
 			up.Visibility = in.Visibility
+			up.Kind = in.Kind
 			// transaction and not transaction(ctx): the per-request transaction
 			// is lazy, and this route is the one that must not open it before
 			// the body has arrived. See contracts.Tx.
@@ -177,10 +183,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 		Method:        http.MethodDelete,
 		Path:          path + "/{id}",
 		Summary:       "Delete a file",
-		Description:   "Removes the record now and the bytes once this commits: a blob delete cannot be rolled back, so it is done by whoever handles file.deleted.",
+		Description:   "Removes the record now and the bytes once this commits: a blob delete cannot be rolled back, so it is done by whoever handles file.deleted. A file under a live hold is refused with 409 and nothing is written.",
 		Tags:          []string{"file"},
 		DefaultStatus: http.StatusNoContent,
-		Errors:        faults,
+		Errors:        append(slices.Clone(faults), http.StatusConflict),
 		Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventDeleted}},
 	}, httpx.Permission(contracts.PermissionFileManage),
 		func(ctx context.Context, in *idInput) (*struct{}, error) {
@@ -192,6 +198,102 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 				return nil, fault(err)
 			}
 			return nil, nil
+		})
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-grant",
+		Method:      http.MethodGet,
+		Path:        path + "/{id}/grant",
+		Summary:     "Mint a time-limited URL for a private file",
+		Description: "A URL that serves the bytes until it expires, with no request to this application in the path. A public file is refused: it already has an open door. A store that cannot sign one is refused with 501.",
+		Tags:        []string{"file"},
+		Errors:      append(slices.Clone(faults), http.StatusNotImplemented),
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *grantInput) (*rest.Item[*contracts.Grant], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			grant, err := svc.Grant(ctx, tx, in.ID, in.Expires)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.Grant]{Body: grant}, nil
+		})
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-retain",
+		Method:      http.MethodPost,
+		Path:        path + "/{id}/hold",
+		Summary:     "Place or replace a retention hold",
+		Description: "Keeps one file past whatever its retention class says. An until in the past is refused: a hold that has already expired holds nothing.",
+		Tags:        []string{"file"},
+		Errors:      faults,
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRetained}},
+	}, httpx.Permission(contracts.PermissionFileRetain),
+		func(ctx context.Context, in *retainInput) (*rest.Item[*contracts.Hold], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			var until *time.Time
+			reason := ""
+			if in.Body != nil {
+				until, reason = in.Body.Until, in.Body.Reason
+			}
+			hold, err := svc.Retain(ctx, tx, in.ID, until, reason)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.Hold]{Body: hold}, nil
+		})
+
+	httpx.Register(app, huma.Operation{
+		OperationID:   "file-file-release",
+		Method:        http.MethodDelete,
+		Path:          path + "/{id}/hold",
+		Summary:       "Release a retention hold",
+		Description:   "The file goes back to its class's policy. No hold is not an error.",
+		Tags:          []string{"file"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        faults,
+		Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventReleased}},
+	}, httpx.Permission(contracts.PermissionFileRetain),
+		func(ctx context.Context, in *idInput) (*struct{}, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := svc.Release(ctx, tx, in.ID); err != nil {
+				return nil, fault(err)
+			}
+			return nil, nil
+		})
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-erase",
+		Method:      http.MethodPost,
+		Path:        path + "/erase",
+		Summary:     "Erase a subject's files",
+		Description: "Removes every file this subject uploaded and the bytes beside each one, and leaves one proof row per blob with the digest that is gone and the reason it was asked for. One held file refuses the whole erasure with 409 and names it; a subject with no files answers a receipt of zero and writes nothing.",
+		Tags:        []string{"file"},
+		Errors:      append(slices.Clone(faults), http.StatusConflict),
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventDeleted, contracts.EventErased}},
+	}, httpx.Permission(contracts.PermissionFileErase),
+		func(ctx context.Context, in *eraseInput) (*rest.Item[*contracts.ErasureReceipt], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			subject, reason := uuid.Nil, ""
+			if in.Body != nil {
+				subject, reason = in.Body.Subject, in.Body.Reason
+			}
+			receipt, err := svc.EraseSubject(ctx, tx, subject, reason)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.ErasureReceipt]{Body: receipt}, nil
 		})
 }
 
@@ -285,14 +387,77 @@ func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 // else does: an upload past the limit is 413, which is the only answer a caller
 // can act on by sending something smaller.
 func fault(err error) error {
-	if errors.Is(err, contracts.ErrTooLarge) || errors.Is(err, contracts.ErrQuota) {
+	switch {
+	case errors.Is(err, contracts.ErrTooLarge), errors.Is(err, contracts.ErrQuota):
 		return problem.New(http.StatusRequestEntityTooLarge, err.Error())
+	// A caller asked for an expiry this module will not sign, or a grant for a
+	// file anybody can already read. Both are the request's to fix, which is
+	// what 422 means, and rest.Fault has no way to know that a sentinel this
+	// module invented is not an outage.
+	case errors.Is(err, contracts.ErrInvalidExpiry), errors.Is(err, contracts.ErrPublicFile),
+		errors.Is(err, contracts.ErrInvalidKey):
+		return problem.New(http.StatusUnprocessableEntity, err.Error())
+	// The store this deployment wired cannot sign. Nothing in the request
+	// changes that, so it is not a 4xx, and it is not a 500 either: nothing is
+	// broken, this capability was simply not wired.
+	case errors.Is(err, contracts.ErrNotSignable):
+		return problem.New(http.StatusNotImplemented, err.Error())
+	// A hold is why this removal did not happen, and it is the caller's to act
+	// on — release the hold or stop asking — which makes it a conflict and not
+	// an outage. rest.Fault's ErrConflict arm cannot see it: this sentinel is
+	// the module's, and nothing about it says the kernel's word for "those two
+	// states cannot both be true". The two routes that refuse say 409 in their
+	// declarations, and this is where that promise is kept.
+	case errors.Is(err, contracts.ErrHeld):
+		return problem.Conflict(err.Error())
+	default:
+		return rest.Fault(err)
 	}
-	return rest.Fault(err)
 }
 
 type idInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"The file's id"`
+}
+
+// grantInput is a download link with an expiry. The zero is
+// contracts.DefaultGrantExpiry and not a default tag, so that a caller that
+// named nothing and a caller that named fifteen minutes are the same request
+// rather than one that kit/httpx has to know about.
+type grantInput struct {
+	ID      uuid.UUID     `path:"id" format:"uuid" doc:"The file's id"`
+	Expires time.Duration `query:"expires" default:"0" doc:"How long the URL lives, as a Go duration; at most 24h"`
+}
+
+// retainInput is the hold's body beside the file it names. The body is a
+// pointer to its own struct and not flat fields on this one, which is how
+// kit/rest spells a command body (commandInput) and not a style choice: huma
+// reads a body from a nested struct field, and the JSON fields of a struct that
+// also carries a path tag are no body at all — a route written that way answers
+// every request as though the caller had sent nothing, and says so in a schema
+// whose request body has no properties in it.
+type retainInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"The file to hold"`
+	Body *retainBody
+}
+
+type retainBody struct {
+	// The two bounds are the column's own: file_holds.reason is CHECKed not empty
+	// and contracts.MaxHoldReason is the width the entity refuses to go past. They
+	// are written here in the schema's literals because a struct tag cannot name a
+	// constant — the same reason eraseBody carries its 500 — and they are written
+	// at all because a schema that promises no width tells a caller a 4 kB sentence
+	// is a request, and the answer they get is a 422 about somebody else's column.
+	Until  *time.Time `json:"until,omitempty" format:"date-time" doc:"When the hold expires; omit to hold until released" required:"false"`
+	Reason string     `json:"reason" minLength:"1" maxLength:"500" doc:"Why it is held" example:"court order 2026-0412"`
+}
+
+type eraseInput struct {
+	Body *eraseBody
+}
+
+type eraseBody struct {
+	Subject uuid.UUID `json:"subject" format:"uuid" doc:"The subject whose files are being erased"`
+	Reason  string    `json:"reason" maxLength:"500" doc:"Why, for the audit trail: kept with every removal this erasure makes, in the work order and in the proof row beside the digest"`
 }
 
 type listInput struct {
@@ -308,4 +473,10 @@ type listInput struct {
 // made in the URL.
 type uploadInput struct {
 	Visibility string `query:"visibility" enum:"private,public" default:"private" doc:"Who may read the file once it is stored"`
+	// Kind is the retention class the product is filing this under. It is a
+	// query parameter for the same reason visibility is: a form field can
+	// arrive after the file part, and a class the sweep reads has to be decided
+	// before the bytes are stored. An empty kind means no class, and a file with
+	// no class is never swept.
+	Kind string `query:"kind" default:"" maxLength:"32" doc:"Retention class, as the product names it"`
 }

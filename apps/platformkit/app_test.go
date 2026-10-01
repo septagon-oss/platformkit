@@ -1304,7 +1304,7 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	// ships a contradiction
 	// (migrate.go, "was applied but is missing from this release"). This is what
 	// lets anyone ship a version above the boundary without rewriting this fixture
-	// every time they do: modules/auth's 31, 32 and 33 and the kernel's own 34 all
+	// every time they do: modules/auth's 31, 32 and 33, modules/file's 34 and the kernel's own 35 all
 	// skip the old ledger, apply normally in the upgrade, and are checked as new
 	// rows below.
 	//
@@ -1399,31 +1399,42 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kernel added 000028_outbox_trace, which gives the outbox the trace columns the
 	// CloudEvents envelope carries, 28 became 29 when the kernel added
 	// 000029_tenant_locale, and 29 became 30 when the kernel added
-	// 000030_tenant_oidc, the per-tenant issuer columns on `tenants`. The 29 in that
-	// chain is 29 and not the 28 it was written as, for
+	// 000030_tenant_oidc, the per-tenant issuer columns on `tenants`, which is
+	// numbered past both 29 and the highest file any module shipped until then.
+	// The 29 in that chain is 29 and not the 28 it was written as, for
 	// the same reason 27 moved to 28 above it: this fixture flattens every owner's
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
 	// in a source before that (migration_files.go, "invalid or repeated version").
-	// Every version is one file across the composition, kernel and modules alike:
-	// this branch's 000034_tenant_app numbered itself past 31, 32 and 33, which
-	// modules/auth took while it was in review, rather than onto a taken version.
+	// Every version is one file across the composition, kernel and modules alike.
+	// A new file continues past the highest number anywhere in the composition,
+	// whichever owner ships it: modules/file's retention hold and erasure proof is
+	// 000034 for that reason, and not the 30 it was written as when no owner held
+	// it — the kernel then shipped 000030_tenant_oidc, and this fixture would have
+	// flattened two files at one version into one ledger row. This branch's
+	// 000035_tenant_app numbered itself past that 34 rather than onto it, for the
+	// same reason it took itself past 31, 32 and 33, which modules/auth took while
+	// it was in review.
 	//
-	// 30 stays 30 for that file, and for modules/auth's three above the boundary,
-	// because preSplitVersion is now stated rather than read off the kernel's own
-	// highest — see the comment there for why the derivation stopped working once
-	// the modules numbered past it. A file above the boundary is not absent from
-	// this test: it is the new row the upgrade below has to produce, and the two
-	// counts below compare the ledger against every file the release ships.
+	// 30 stays 30 for that file and for the five above the boundary, because
+	// preSplitVersion is now stated rather than read off the kernel's own highest —
+	// see the comment there for why the derivation stopped working once the modules
+	// numbered past it. A file above the boundary is not absent from this test: it
+	// is the new row the upgrade below has to produce, and the two counts below
+	// compare the ledger against every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 34 — fourteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20,
-	// 21, 26, 28, 29, 30, 34) and twenty under modules/*/migrations/ (4, 7, 8, 10,
-	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33), all distinct.
-	// The 30 at or below preSplitVersion are thirteen under migrations/ (1, 2, 3, 5,
-	// 6, 9, 12, 20, 21, 26, 28, 29, 30) and seventeen under modules/*/migrations/
-	// (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27); the four
-	// above it are 31, 32, 33 and 34.
+	// this head prints 35 — fourteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20,
+	// 21, 26, 28, 29, 30, 35) and twenty-one under modules/*/migrations/ (4, 7, 8,
+	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 34), all
+	// distinct. The release this fixture is applied from shipped 30 of them: the
+	// thirteen at or below preSplitVersion under migrations/ (1, 2, 3, 5, 6, 9, 12,
+	// 20, 21, 26, 28, 29, 30) and the seventeen under modules/*/migrations/ (4, 7,
+	// 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27). The five above the
+	// boundary — modules/auth's 31, 32 and 33, modules/file's 34 and the kernel's
+	// own 35 — postdate it, are not in the old installation's ledger, and
+	// legacyLayout leaves them out; the upgrade below applies them and counts them
+	// as new rows.
 	if len(before) != 30 {
 		t.Fatalf("the old layout applied %d files, want 30", len(before))
 	}
@@ -1447,9 +1458,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the four that postdate the
-	// boundary (modules/auth's 31, 32 and 33 and this branch's 34) have to be
-	// accounted for: 34 files in the release, 34 rows.
+	// release ships is in the ledger, which is where the five files above the
+	// kernel's 30 (modules/auth 31, 32 and 33, modules/file 34 and the kernel's own
+	// 35, all absent from the old ledger) have to be accounted for: 35 files in the
+	// release, 35 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

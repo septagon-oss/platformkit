@@ -1,38 +1,62 @@
 package internal
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/septagon-oss/platformkit/kit/appname"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
-	"regexp"
 
-	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/appname"
+	"github.com/septagon-oss/platformkit/kit/db"
+
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 )
 
 // Local is contracts.Storage on the filesystem, which is what a laptop, a
-// single machine and a mounted volume all are. The implementations that speak
-// to an object store live outside this repository.
+// single machine and a mounted volume all are.
 //
-// A key is a UUID, checked here as well as generated here, and that is the
-// whole path-traversal argument: there is no caller-supplied component in a key
-// to escape a directory with, and the check makes that true of a caller this
-// package cannot see. The first two characters are a subdirectory, because a
-// directory with a million entries is slow in every filesystem worth naming.
+// A key is a UUID, checked here as well as generated here, and a tenant is a
+// UUID the scope carried, checked the same way: there is no caller-supplied
+// component in either path to escape a directory with, and the checks make that
+// true of a caller this package cannot see.
+//
+// Bytes live in the owning tenant's own directory. It is not the containment,
+// which the key check already is: it is that a tenant's bytes are then a
+// directory, which is what makes "copy this tenant out" and "list what this
+// tenant holds" operations a walk does rather than a scan of a million files
+// that name nobody. An app that names itself gets one directory above that, its
+// own slug, because a server hosts many apps over one mounted volume (decision
+// 0074) and the tenant is only a label between two of them: without the segment
+// two apps that minted the same tenant id would write one another's paths.
+//
+// Three positions are therefore in play, and every one of them is named by a
+// constructor in kit/appname rather than spelled here:
+//
+//	<app>/<tenant>/<key>            an app that names itself writes here
+//	<tenant>/<2 hex>/<key>          the deployment of one app, which has no slug
+//	<2 hex>/<key>                   a release before the port carried a scope
+//
+// The older two are still read, because a store that cannot read what it wrote
+// is not a store; the shard that the oldest layout needed — a flat directory of
+// a million names is slow in every filesystem worth naming — has never been
+// needed inside a tenant's own directory, and an operator who wants one moves
+// the bytes rather than getting a second shape from this adapter.
 type Local struct {
 	dir string
 
 	// app is the slug whose name every stored object's path carries; with the
-	// tenant it is what keeps two apps sharing one volume or one bucket from
-	// writing one path. Empty is the deployment of one app, whose files sit where
-	// they were written before this segment existed.
+	// tenant it is what keeps two apps sharing one volume from writing one path.
+	// Empty is the deployment of one app, whose files sit where they were written
+	// before this segment existed.
 	app appname.Name
 }
 
@@ -42,42 +66,52 @@ type Local struct {
 func NewLocal(dir string) *Local { return NewLocalOf(appname.Name(""), dir) }
 
 // NewLocalOf is NewLocal for a deployment that names its app: a stored object
-// lands under <app>/<tenant>/<key> — the tenant is the one of the request that
-// wrote it (see Local.tenant) — so two apps on one mounted volume cannot write
-// one another's bytes and an operator can point a quota, a bucket policy or a
-// `du` at one tenant's bytes. The persisted key is still the caller's UUID.
+// lands under <app>/<tenant>/<key> — the tenant is the one Scope names, never
+// anything a caller wrote — so two apps on one mounted volume cannot write one
+// another's bytes and an operator can point a quota, a bucket policy or a `du`
+// at one app's bytes and then at one tenant's. The persisted key is still the
+// caller's UUID.
 //
-// Nothing reads the older `<dir>/<key[:2]>/<key>` position: an installation whose
-// volume already holds bytes writes them nowhere new, it starts naming its app at
-// a boot that moves them (`mv <dir>/<key[:2]>/<key> <dir>/<app>/<tenant>/<key>`, one
-// move per blob, the row's tenant named in its own table), or it builds a second
-// read path in the adapter. kit/appname/README.md's Stored-files row states the
-// same thing as the window that is not open, which is the honest version of what
-// an earlier draft of this comment claimed the code did.
+// An installation that already holds bytes at the un-prefixed positions keeps
+// reading them: Get, Delete and Prove look at every position below, so the move
+// (`mv <dir>/<tenant>/<2>/<key> <dir>/<app>/<tenant>/<key>`, one move per blob)
+// is a boot's step and not this adapter's, and a deployment that never takes it
+// still serves what it holds.
 func NewLocalOf(app appname.Name, dir string) *Local {
 	return &Local{dir: dir, app: app}
 }
 
 var _ contracts.Storage = (*Local)(nil)
+var _ contracts.Prover = (*Local)(nil)
+var _ contracts.Reconciler = (*Local)(nil)
 
-// key is a UUID, lower case, and nothing else.
-var key = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+// names is every position these bytes could sit at under this adapter's root,
+// newest first, or an error for a scope and key this package could not have
+// minted — a scope with no tenant in it among them, which is the refusal that
+// keeps an app's blobs out of one directory shared by every tenant of it.
+func (l *Local) names(s contracts.Scope, k contracts.Key) ([]string, error) {
+	if _, err := s.ObjectName(k); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(k.String())
+	if err != nil {
+		return nil, fmt.Errorf("file: %q is not a storage key; a key is a UUID", k)
+	}
+	return l.positions(s.TenantID(), id), nil
+}
 
-// path is where the bytes for a key live, or an error for a key this package
-// did not mint, or for an app that names itself with no tenant in the call.
-func (l *Local) path(ctx context.Context, k string) (string, error) {
-	if !key.MatchString(k) {
-		return "", fmt.Errorf("file: %q is not a storage key; a key is a UUID", k)
+// positions is those names for two UUIDs this package already believes: where a
+// store that names its app writes, the same name with no app segment — the
+// volume of a deployment that has not named its app yet, which an app that names
+// itself still reads — and the flat directory from before the port carried a
+// scope at all. Whichever of them holds the bytes, the key is one this module
+// minted once, so at most one of them does.
+func (l *Local) positions(tenant, id uuid.UUID) []string {
+	names := []string{l.join(appname.StoragePath(l.app, tenant, id))}
+	if l.app.Named() {
+		names = append(names, l.join(appname.StoragePath(appname.Name(""), tenant, id)))
 	}
-	id, err := uuid.Parse(k)
-	if err != nil {
-		return "", fmt.Errorf("file: %q is not a storage key; a key is a UUID", k)
-	}
-	tenant, err := l.tenant(ctx)
-	if err != nil {
-		return "", err
-	}
-	return l.join(appname.StoragePath(l.app, tenant, id)), nil
+	return append(names, l.join(appname.PreviousStoragePath(id)))
 }
 
 // join is the adapter's root with a name from kit/appname under it. One line
@@ -87,81 +121,17 @@ func (l *Local) path(ctx context.Context, k string) (string, error) {
 // from a constructor in that package, whichever of them the caller needed.
 func (l *Local) join(rel string) string { return filepath.Join(l.dir, rel) }
 
-// tenant is whose bytes this call is about.
-//
-// The persisted key is a UUID and names nothing, so the only thing that says
-// whose bytes a blob is, is where they sit (appname.StoragePath) — and the row
-// that holds the key belongs to the tenant whose request wrote it. The tenant is
-// therefore read from the call: an upload and a download arrive in their
-// request's context, and the removal subscription arrives in the transaction
-// events.Consume scoped to the event's tenant. Refusing a call that names none
-// is the point: writing an app's bytes under the nil UUID is one directory for
-// every tenant of the app again, which is the layout the segment replaced while
-// wearing the new name. With no slug set no path holds a tenant and the question
-// does not arise — that deployment's layout is unchanged.
-func (l *Local) tenant(ctx context.Context) (uuid.UUID, error) {
-	if !l.app.Named() {
-		return uuid.Nil, nil
-	}
-	if t, ok := tenancy.FromContext(ctx); ok && t.ID != uuid.Nil {
-		return t.ID, nil
-	}
-	return uuid.Nil, fmt.Errorf("file: app %s stores under a tenant's directory and this call names none: the request or transaction that wrote the key says whose tenant the bytes belong to", l.app)
-}
-
-// locate is a Delete's path: the exact one when the call names the tenant, and
-// otherwise the store's own walk for the key beneath this app's prefix.
-//
-// Exactly one caller arrives with no tenant: the reconciliation sweep. An orphan
-// is by definition the blob no row references, so there is no row to ask whose
-// tenant it was, and the sweep runs under system access because the question
-// crosses every tenant by construction (see Reconcile). Searching is not a
-// widening of scope: this package mints each key once, so at most one path under
-// the app's own prefix holds it, and the walk never leaves that prefix. A Get
-// never takes this branch — a read that cannot name a tenant has no business
-// reading anybody's bytes.
-func (l *Local) locate(ctx context.Context, k string) (string, error) {
-	at, err := l.path(ctx, k)
-	if err == nil {
-		return at, nil
-	}
-	_, named := tenancy.FromContext(ctx)
-	if !l.app.Named() || named || !key.MatchString(k) {
-		// Either the layout names no tenant, which path answered above, or the
-		// call did name one, or the key is not one this package minted: in every
-		// one of those cases the walk would have nothing to do with the failure.
-		return "", err
-	}
-	var found string
-	root := l.join(appname.StorageRoot(l.app))
-	walkErr := filepath.WalkDir(root, func(at string, e fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return err
-		case !e.IsDir() && e.Name() == k:
-			found = at
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if walkErr != nil && !errors.Is(walkErr, fs.ErrNotExist) {
-		return "", fmt.Errorf("file: look for %s under %s: %w", k, root, walkErr)
-	}
-	if found == "" {
-		// Nothing at the key, which Delete answers as success rather than error.
-		return "", nil
-	}
-	return found, nil
-}
-
 // Put writes the bytes, refusing a key that already exists: a key is minted per
-// upload, so a collision is a bug rather than a replacement. size is ignored —
-// a filesystem needs no length up front.
-func (l *Local) Put(ctx context.Context, k string, r io.Reader, _ int64) error {
-	at, err := l.path(ctx, k)
+// upload, so a collision is a bug rather than a replacement. size is ignored — a
+// filesystem needs no length up front — and so is meta, which is the honest
+// answer for a filesystem: a byte served out of here is served by this process,
+// and response.go is where its headers are written.
+func (l *Local) Put(_ context.Context, s contracts.Scope, k contracts.Key, r io.Reader, _ int64, _ contracts.Meta) error {
+	found, err := l.names(s, k)
 	if err != nil {
 		return err
 	}
+	at := found[0]
 	if err := os.MkdirAll(filepath.Dir(at), 0o700); err != nil {
 		return fmt.Errorf("file: make %s: %w", filepath.Dir(at), err)
 	}
@@ -183,37 +153,181 @@ func (l *Local) Put(ctx context.Context, k string, r io.Reader, _ int64) error {
 	return nil
 }
 
-// Get opens the bytes, or ErrNoBlob when there are none.
-func (l *Local) Get(ctx context.Context, k string) (io.ReadCloser, error) {
-	at, err := l.path(ctx, k)
+// Get opens the bytes, or ErrNoBlob when there are none. The first name a store
+// holds them at wins, which is what lets an installation read what a previous
+// release wrote while writing what it names now.
+func (l *Local) Get(_ context.Context, s contracts.Scope, k contracts.Key) (io.ReadCloser, error) {
+	names, err := l.names(s, k)
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(at)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, contracts.ErrNoBlob
+	for _, name := range names {
+		f, err := os.Open(name)
+		switch {
+		case err == nil:
+			return f, nil
+		case errors.Is(err, fs.ErrNotExist):
+			// Nothing at this name; the next one is a previous release's.
+		default:
+			// A read failure is an outage, and answering it as ErrNoBlob would
+			// turn a broken volume into a tenant's missing files.
+			return nil, fmt.Errorf("file: open %s: %w", name, err)
+		}
 	}
-	if err != nil {
-		return nil, fmt.Errorf("file: open %s: %w", at, err)
-	}
-	return f, nil
+	return nil, contracts.ErrNoBlob
 }
 
-// Delete removes the bytes. A key with nothing at it is not an error: the
-// worker that calls this retries, and a retry that failed because the first
-// attempt succeeded would never stop. Which path holds them is locate's
-// question: the tenant's own directory when the call names a tenant, the app's
-// own tree when the caller is the sweep that cannot name one.
-func (l *Local) Delete(ctx context.Context, k string) error {
-	at, err := l.locate(ctx, k)
+// Delete removes the bytes wherever this adapter has ever written them: the
+// tenant's own directory under this app's segment, the same position with no app
+// segment, and the flat layout from before the port carried a scope. A key with
+// nothing at it is not an error: the worker that calls this retries, and a retry
+// that failed because the first attempt succeeded would never stop.
+func (l *Local) Delete(_ context.Context, s contracts.Scope, k contracts.Key) error {
+	names, err := l.names(s, k)
 	if err != nil {
 		return err
 	}
-	if at == "" {
-		return nil
+	return l.erase(names...)
+}
+
+// Prove is contracts.Prover on the filesystem, and the filesystem can answer it:
+// a bucket with versioning switched on can hold copies a delete cannot reach, and
+// a directory holds one file under one name or it holds nothing. The answer is
+// therefore the honest one rather than the store's silence — and the difference
+// matters, because a store that does not implement Prover leaves every erasure's
+// verified_at NULL, so an installation running on disk would have no certified
+// erasure ever, whatever the README promised about the certificate.
+//
+// Every name a delete wrote to is counted, for the same reason Delete removes
+// all three: a key whose bytes are still lying in one older directory is a copy
+// that is still here, and a certificate stamped over a delete that missed it
+// would be a record that lied. Anything that is neither present nor absent — a
+// broken volume, a directory in the place of a blob — is an error, because
+// "cannot tell" answered as "gone" is the same lie in a different coat.
+func (l *Local) Prove(_ context.Context, s contracts.Scope, k contracts.Key) (int, error) {
+	names, err := l.names(s, k)
+	if err != nil {
+		return 0, err
 	}
-	if err := os.Remove(at); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("file: remove %s: %w", at, err)
+	seen := 0
+	for _, candidate := range names {
+		switch _, err := os.Stat(candidate); {
+		case err == nil:
+			seen++
+		case errors.Is(err, fs.ErrNotExist):
+			// Nothing at this name, which is the answer the certificate wants.
+		case err != nil:
+			return 0, fmt.Errorf("file: prove %s is gone: %w", candidate, err)
+		}
+	}
+	return seen, nil
+}
+
+// remove is Delete for a tenant the caller names directly, which is the one
+// thing a sweep may do and a request may not: it is reached only through
+// Reconciler.RemoveBlob, whose transaction argument is a db.Tx[db.System], and it
+// still composes each path from two validated UUIDs rather than from a name.
+func (l *Local) remove(tenant uuid.UUID, id uuid.UUID) error {
+	if tenant == uuid.Nil {
+		return errors.New("file: remove needs the tenant the object lives under")
+	}
+	return l.erase(l.positions(tenant, id)...)
+}
+
+// erase removes every named position, a name with nothing at it already removed.
+func (l *Local) erase(names ...string) error {
+	for _, name := range names {
+		if err := os.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("file: remove %s: %w", name, err)
+		}
 	}
 	return nil
+}
+
+// Blobs is contracts.Reconciler on the filesystem: every object written before
+// before, each with the tenant whose directory it is in.
+//
+// It walks the store's own root and reads each entry's modification time, which
+// is when the upload finished writing it. A directory that is neither a tenant id
+// nor this app's own segment, and a file that is not a key, are skipped: they are
+// not something this package wrote, and a sweep that deleted what it did not
+// recognise would be a sweep that deletes a backup somebody left here — or, with
+// two apps sharing one volume, another app's bytes.
+func (l *Local) Blobs(_ context.Context, _ db.Tx[db.System], before time.Time) ([]contracts.Blob, error) {
+	var out []contracts.Blob
+	err := filepath.WalkDir(l.dir, func(at string, e fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case e.IsDir():
+			return nil
+		}
+		id, ok := minted(e.Name())
+		if !ok {
+			return nil // not a key this package wrote; see the note above
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		if !info.ModTime().Before(before) {
+			return nil
+		}
+		tenant, ok := l.tenantOf(at, id)
+		if !ok {
+			return nil
+		}
+		out = append(out, contracts.Blob{TenantID: tenant, Key: contracts.Key(id.String())})
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("file: walk %s: %w", l.dir, err)
+	}
+	slices.SortFunc(out, func(a, b contracts.Blob) int {
+		if c := cmp.Compare(a.TenantID.String(), b.TenantID.String()); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Key, b.Key)
+	})
+	return out, nil
+}
+
+// tenantOf is whose object this is, from where it sits. <app>/<tenant>/<key> is
+// that tenant's in an app that names itself — and only when the first segment is
+// this store's own slug, because two apps mounted at one root each see the
+// other's directory and neither is the other's to sweep. <tenant>/<2>/<key> is
+// that tenant's in the deployment that names none, and is what an app that names
+// itself reads from before its own boot named it. The flat <dir>/<2>/<key> a
+// release before the scope wrote is nobody's that this package can name, so it
+// reports uuid.Nil and the sweep treats it as a blob no row claims.
+func (l *Local) tenantOf(at string, key uuid.UUID) (uuid.UUID, bool) {
+	rel, err := filepath.Rel(l.dir, at)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	switch len(parts) {
+	case 3:
+		if l.app.Named() && parts[0] == l.app.String() && parts[2] == key.String() {
+			return minted(parts[1])
+		}
+		if parts[2] != key.String() || parts[1] != key.String()[:2] {
+			return uuid.Nil, false
+		}
+		return minted(parts[0])
+	case 2:
+		if parts[1] != key.String() || parts[0] != key.String()[:2] {
+			return uuid.Nil, false
+		}
+		return uuid.Nil, true // written before the port carried a tenant
+	}
+	return uuid.Nil, false
+}
+
+// minted is a name that is a UUID and nothing else — which is the same test for
+// a tenant's directory as for a key's file, because both are UUIDs this module
+// minted and neither is anything a caller wrote.
+func minted(name string) (uuid.UUID, bool) {
+	id, err := uuid.Parse(name)
+	return id, err == nil && id != uuid.Nil
 }

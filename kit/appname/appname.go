@@ -314,31 +314,26 @@ func CacheKey(app Name, tenant uuid.UUID, key string) string {
 // <app>/<tenant>/<key>. The persisted key stays the caller's UUID and the tenant
 // stays the row's — this is one adapter's physical layout, and it names both
 // owners so two apps sharing a volume or a bucket never write one path.
-// With no slug set the layout is the one every volume already holds — the key's
-// own first two characters as a fan-out directory — because moving bytes that are
-// already written is an operator's step and not this function's.
+// With no slug set the layout is the one a deployment of one app already holds:
+// the tenant's own directory, with the key's first two characters as a fan-out
+// inside it, because a directory with a million entries is slow in every
+// filesystem worth naming and an operator's `mv` of bytes already written is a
+// boot's step and not this function's.
 func StoragePath(app Name, tenant, key uuid.UUID) string {
 	if !app.Named() {
-		return key.String()[:2] + "/" + key.String()
+		shard := key.String()[:2]
+		return tenant.String() + "/" + shard + "/" + key.String()
 	}
 	return app.token() + "/" + tenant.String() + "/" + key.String()
 }
 
-// StorageRoot is the one app's half of that layout: the directory inside an
-// adapter's root that holds its stored bytes, and the empty string for the
-// deployment that names no app, whose blobs sit in the root itself.
-//
-// StoragePath names one object's position; this names the prefix a caller has to
-// walk when no object can be named — the reconciliation sweep looking for the blob
-// no row references, which is exactly the blob whose tenant no row can state
-// (modules/file's Reconcile). Without it that caller would spell the app segment as
-// a path component by hand, which is the inline spelling this package exists to be
-// the only source of.
-func StorageRoot(app Name) string {
-	if !app.Named() {
-		return ""
-	}
-	return app.token() + "/"
+// PreviousStoragePath is where a release before the port carried a scope wrote
+// these bytes: the key's own two-character fan-out under the adapter's root, with
+// no tenant and no app above it. An adapter reads it so an installation's existing
+// uploads keep working; nothing writes there, which is why an app that names
+// itself and an app that does not share the name and share the bytes.
+func PreviousStoragePath(key uuid.UUID) string {
+	return key.String()[:2] + "/" + key.String()
 }
 
 // Source is the CloudEvents `source` of an event: the app and the module that
