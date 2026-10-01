@@ -71,3 +71,24 @@ sentence is a door that crashes the request that asks it.
 Prerequisites: an entity embedding `crud.Base` with a `TableName`, its
 migration, and the permissions the manifest declares. Tests need the
 development database: `make up`, then `make test TEST_PACKAGES=./kit/rest`.
+
+## Composition (T-0185)
+
+**Reused** — `kit/httpx`'s closed four guards (`Public`, `SignedIn`, `Permission`,
+`OperatorPermission`) and the `mayUse` that already answered all three questions for a
+command; the five verb strings the operation ids (`<module>-<entity>-<verb>`) and this
+package's own `writes` map are already built from; `Singleton`'s precedent of refusing
+rather than handing back a closure whose route does not exist; and `ui/screens`'s
+`derived` rule, which prints a catalogue key only once the derivation has stopped being
+true. **Added** — `Spec.Operations`, `Spec.ReadAuth` and `Spec.WriteAuth`, `httpx.CRUD`
+with `CRUDValues`, `httpx.Resource.Offers`/`OperationWords` and `screens.Entry.Operations`:
+nothing existing said which of the five routes a resource has — `Singleton.Write == ""`
+is a singleton's shape and its own doc says a Spec is not one, `CommandOptions.Auth` is
+one command's guard, and a shell could not learn that the address behind its New button
+mounts no POST. **Made reusable** — the operation set travels as one value from the Spec
+to the router, the registered resource, the generated pages, the catalogue entry and the
+OpenAPI document, so the route table, the doors and the wire cannot disagree about one
+resource; `Offers` and `OperationWords` are the two accessors any later shell reads; and
+the ratchet written beside the versioned catalogue
+(`apps/platformkit/catalog_version_test.go`) is the pattern for every additive key that
+catalogue gains next.
