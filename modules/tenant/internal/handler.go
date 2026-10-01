@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -105,11 +106,15 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				return err
 			})
 			if err == nil {
-				// The resolution cache believes a host for half a minute, and
-				// a suspension that takes effect in half a minute is a
-				// suspension somebody has to explain.
-				for _, host := range out.Body.Hosts {
-					r.InvalidateHost(host)
+				// The resolution cache believes a host for half a minute, and a
+				// suspension that takes effect in half a minute is a suspension
+				// somebody has to explain. One Delete for the tenant's whole set of
+				// hosts, and a failure that could not be sent is a log line: the
+				// suspension is committed, the entry expires within hostTTL anyway,
+				// and unwinding it because a cache is down is the worse outage.
+				if derr := r.InvalidateHost(out.Body.Hosts...); derr != nil {
+					slog.WarnContext(ctx, "tenant: the suspension is committed but its host resolutions were not forgotten",
+						"tenant", out.Body.ID, "error", derr)
 				}
 			}
 			return out, rest.Fault(err)
@@ -127,12 +132,13 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				return err
 			})
 			if err == nil {
-				// The cached resolution carries the tenant's languages with it, so
-				// the languages of a page are half a minute stale unless the
-				// resolution is forgotten here — the same reason a suspension does
-				// it, and the same one query this route already made.
-				for _, host := range out.Body.Hosts {
-					r.InvalidateHost(host)
+				// The cached resolution carries the tenant's languages with it, so the
+				// languages of a page are half a minute stale unless the resolution is
+				// forgotten here — the same reason a suspension does it, and the same
+				// one command this route already made.
+				if derr := r.InvalidateHost(out.Body.Hosts...); derr != nil {
+					slog.WarnContext(ctx, "tenant: the languages are set but their resolutions were not forgotten",
+						"tenant", out.Body.ID, "error", derr)
 				}
 			}
 			return out, rest.Fault(err)

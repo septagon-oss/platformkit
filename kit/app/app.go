@@ -26,6 +26,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -400,6 +401,7 @@ func useJetStream(mode string, role Role) (bool, error) {
 // that fails a gate never takes the port.
 func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error) {
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		PublicHost:   a.cfg.Server.PublicHost,
 		Docs:         a.cfg.Server.Docs,
 		Tenants:      a.opts.Tenants,

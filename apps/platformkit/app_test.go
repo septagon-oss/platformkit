@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -569,6 +570,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
 		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
 		// The installation is where the control plane is served, and this is the
@@ -697,6 +699,7 @@ func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
 		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
 		Installation: cfg.Server.InstallationHost,

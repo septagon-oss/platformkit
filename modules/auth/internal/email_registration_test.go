@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -209,6 +210,7 @@ func TestEmailVerificationCannotCrossTenantHosts(t *testing.T) {
 	emailSignup(&deps)
 	svc, mod := auth.Module(deps)
 	api, tenants := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Conn: conn, Authorize: svc, Authenticate: svc.Authenticate,
 		Tenants: verificationSites{host: acme, "globex.localhost": globex}, Log: slog.New(slog.DiscardHandler),
 	})

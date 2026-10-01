@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -58,6 +59,7 @@ func mountProvision(t *testing.T, providers contracts.OIDCProviders, secrets con
 	seed(t, conn, acme)
 	seed(t, conn, globex)
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: twoSites{}, Conn: conn,
 		Authorize: svc, Authenticate: svc.Authenticate, Log: slog.New(slog.DiscardHandler),
 	})
