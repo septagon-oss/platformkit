@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The restore drill: put a backup back and prove what came out is what went in.
 #
-#	scripts/restore_drill.sh (--from BACKUP_DIR | --url URL) [--keep]
+#	scripts/restore_drill.sh (--from BACKUP_DIR | --url URL)
+#		   [--files DIR] [--app-url URL] [--keep]
 #
 # A backup that has never been restored is a hope, not a copy. ADR 0011 makes the
 # rehearsal a release step for migrations; this is its other half, the one about
@@ -14,13 +15,39 @@
 # PLATFORMKIT_TEST_ADMIN_URL) takes one first, so the drill always drills the backup
 # and never the live server.
 #
-# Three checks, each counted, because they fail apart from one another:
+# --files is the installation's own byte store (the directory file.Local writes
+# to). It is what makes the object half a comparison rather than a tautology:
+# restoring the backup and re-reading that copy asks whether `cp` copies. Say it
+# and the drill also asks whether the backup carried what the installation holds
+# right now, in both directions. Leave it out and the byte half can only say the
+# backup still reads like itself, which is what the closing line then says.
 #
-#   objects   every file the manifest names is re-read where the byte store was
-#             restored to and its digest compared with the one taken when the
-#             backup ran. This is the byte-identical half: a blob that comes back
-#             different is exactly the failure this module's shape (rows in
-#             Postgres, bytes in a store) makes possible, and no row check sees it.
+# --app-url is the *application's* connection — the unprivileged role, not the
+# owner — and it defaults to PLATFORMKIT_TEST_DATABASE_URL, which is what `make
+# restore-drill` already exports. The same read of the source and of the restore
+# asks which tables that role can SELECT from, and the two sets have to agree.
+# A restore the application cannot open is not a restore of this
+# installation however faithfully its bytes came back. The dump carries the grants
+# (scripts/backup.sh dumps them for exactly this check), so a restore that lost
+# them arrives as a failed drill rather than a pass that locks the application out
+# of every table.
+#
+# Each check is counted, because they fail apart from one another:
+#
+#   objects   three questions when --files names the store — does the backup name
+#             exactly the objects the installation holds (both directions), do the
+#             installation's current bytes still read as the manifest recorded
+#             them, and did the restored copy come back digest for digest — and
+#             only the last when it names nothing. A blob the backup dropped is
+#             the failure this module's shape (rows in Postgres, bytes in a store)
+#             makes possible, and no row check sees it: the rows say a file
+#             exists while the store says it does not.
+#   grants    the set of tables the application's own role can read, read the same
+#             way on both sides and compared. This proves reachability, not
+#             equality — a value read under row-level security needs a tenant,
+#             which is the rows half's job as the owner. A table the installation
+#             itself never granted to the role is shut on both sides: said, and not
+#             counted as a failure.
 #   rows      every public table is read in both databases as one value — its row
 #             count and an md5 over the rows' text in a fixed order — and the two
 #             values compared. This is the half a byte check cannot see: the rows
@@ -42,7 +69,8 @@
 # Exit codes, so a pipeline can tell them apart:
 #
 #	0  every check passed, and the ratio is printed
-#	1  a check failed — a byte, a row set, or a dump that differs from itself
+#	1  a check failed — a byte, a missing or extra object, a table the application
+#	   role cannot read, a row set, or a dump that differs from itself
 #	2  the drill could not run: no tool, no connection, no backup, nothing to sample
 #
 # It creates and drops exactly one database, platformkit_drill_<pid>.
@@ -51,7 +79,9 @@ set -Eeuo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 url="${PLATFORMKIT_TEST_ADMIN_URL:-}"
+app_url="${PLATFORMKIT_TEST_DATABASE_URL:-}"
 from=""
+files=""
 keep=0
 
 die() { echo "restore drill: $*" >&2; exit 2; }
@@ -62,6 +92,8 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--from) [ $# -ge 2 ] || die "--from wants a backup directory"; from="$2"; shift 2 ;;
 	--url) [ $# -ge 2 ] || die "--url wants a connection"; url="$2"; shift 2 ;;
+	--files) [ $# -ge 2 ] || die "--files wants the installation's byte store"; files="${2%/}"; shift 2 ;;
+	--app-url) [ $# -ge 2 ] || die "--app-url wants a connection"; app_url="$2"; shift 2 ;;
 	--keep) keep=1; shift ;;
 	*) die "unknown argument: $1 (see the header)" ;;
 	esac
@@ -107,15 +139,57 @@ manifest="$from/manifest.sha256"
 
 source_db="$(psql "$url" -qtAX -c 'SELECT current_database()')" || die "cannot open $url"
 scratch_url="$(with_database "$url" "$scratch")"
+# The application's own connection is not optional: the question this drill owes is
+# whether the installation can be put back into use, and only its role can answer
+# that. `make restore-drill` exports it; a hand-run drill passes --app-url.
+[ -n "$app_url" ] || die "no application connection: pass --app-url or set PLATFORMKIT_TEST_DATABASE_URL — a restore only its owner can open is not a restore"
+app_scratch_url="$(with_database "$app_url" "$scratch")"
 matched=0
 checked=0
 rows_failed=0
+compared_the_installation=0
 
 # --- objects -----------------------------------------------------------------
-# The byte store's restore is a copy of what the backup carried, and every digest
-# the manifest took before anything moved is asked of the file that arrived.
+manifest_objects() { awk 'NF==2 && $1 ~ /^[0-9a-f]{64}$/ && $2 !~ /\.dump$/ {print $1"  "$2}' "$manifest"; }
+
 if [ -d "$from/objects" ]; then
+	# Restoring is a copy of what the backup carried, and every digest the manifest
+	# took before anything moved is asked of the file that arrived. On its own that
+	# half asks only whether `cp` copied; --files is what makes it a comparison.
 	cp -a -- "$from/objects" "$work/objects"
+	if [ -n "$files" ]; then
+		[ -d "$files" ] || die "no object store directory at $files"
+		compared_the_installation=1
+		# Direction one, as one counted check: the two listings are the same set.
+		# An object the installation holds and the backup does not name is a blob
+		# this backup would have lost; one the manifest names and the store no
+		# longer holds is the same sentence about the other side.
+		checked=$((checked + 1))
+		in_store="$(cd "$files" && find . -type f -print | sed 's#^\./##' | LC_ALL=C sort)"
+		in_manifest="$(manifest_objects | awk '{print $2}' | LC_ALL=C sort)"
+		if [ "$in_store" = "$in_manifest" ]; then
+			matched=$((matched + 1))
+		else
+			lost="$(comm -23 <(printf '%s\n' "$in_store") <(printf '%s\n' "$in_manifest") | tr '\n' ' ')"
+			extra="$(comm -13 <(printf '%s\n' "$in_store") <(printf '%s\n' "$in_manifest") | tr '\n' ' ')"
+			fail "$files holds objects this backup does not carry [${lost:-none}] and the backup carries objects the store does not hold [${extra:-none}] — one backup is one instant, and either list says a restore from it would not reproduce this store"
+		fi
+		# Direction two: the bytes the backup digested are still the bytes there.
+		# Same name, different content is the drift a name-only listing cannot see.
+		checked=$((checked + 1))
+		drifted=""
+		while read -r want name; do
+			here="$(sha256sum -- "$files/$name" 2>/dev/null | cut -d' ' -f1 || true)"
+			[ "$here" = "$want" ] || drifted="$drifted $name(reads ${here:-nothing})"
+		done < <(manifest_objects)
+		if [ -z "$drifted" ]; then
+			matched=$((matched + 1))
+		else
+			fail "the backup's digests no longer describe $files:${drifted} — the store moved after the manifest was taken, so this backup is not a copy of it"
+		fi
+	else
+		note "objects: no --files, so the byte half compares the backup against the copy the drill restored and never opens the installation's store"
+	fi
 	while read -r want name; do
 		case "${name:-}" in
 		'' | \#*) continue ;;
@@ -127,7 +201,15 @@ if [ -d "$from/objects" ]; then
 		else
 			fail "object $name came back ${have:-with nothing at it}, the manifest recorded $want"
 		fi
-	done < <(awk 'NF==2 && $1 ~ /^[0-9a-f]{64}$/ && $2 !~ /\.dump$/ {print $1"  "$2}' "$manifest")
+	done < <(manifest_objects)
+elif [ -n "$files" ]; then
+	# The installation has a byte store and this backup carried nothing for it. The
+	# rows would come back naming files no restore can serve, and no other check
+	# here would notice: the rows half compares rows with rows.
+	compared_the_installation=1
+	checked=$((checked + 1))
+	count_live="$(find "$files" -type f | wc -l | tr -d ' ')"
+	fail "$files holds $count_live objects and $from carries no byte store at all — a restore of this backup puts the rows back with nothing for them to point at"
 else
 	note "objects: this backup carries no byte store, so the byte half counts nothing"
 fi
@@ -140,8 +222,12 @@ psql "$url" -q -c "CREATE DATABASE $scratch" >/dev/null || die "cannot create $s
 # an unrecognised parameter — and a drill that dies on its own tooling is a step that
 # gets switched off. The line is dropped and said out loud; every other statement
 # error still stops the drill, because ON_ERROR_STOP is on.
+# The dump carries the grants, so the restore applies them: scripts/backup.sh
+# dumps privileges for exactly this reason. Roles are still not dumped — creating
+# platformkit_app is the cluster owner's job — but a database that comes back with
+# no privileges on its tables is a database nobody but its owner can open.
 restore_script="$work/restore.sql"
-pg_restore --no-owner --no-privileges -f "$restore_script" "$dump" ||
+pg_restore --no-owner -f "$restore_script" "$dump" ||
 	die "pg_restore could not render $dump as a script"
 if grep -q '^SET transaction_timeout = 0;$' "$restore_script"; then
 	grep -v '^SET transaction_timeout = 0;$' "$restore_script" > "$restore_script.filtered"
@@ -205,6 +291,59 @@ while IFS= read -r table; do
 	fi
 done <<< "$both"
 
+# --- grants ------------------------------------------------------------------
+# The same tables, read as the role the installation actually runs as, on both
+# sides. The owner connection answers nothing here: it holds every table by
+# construction, so a restore that brought no grants back at all still reads
+# perfectly to it. One bounded query per table — reachability, not values, because
+# a value read under row-level security needs a tenant and the rows half above
+# already compares those as the owner. Both sides are read rather than the restore
+# alone: a table the installation itself never granted to the role is nobody's
+# failed restore, while one readable in the source and shut in the copy is exactly
+# one.
+checked=$((checked + 1))
+# readable_in <connection> — the tables the application's role can SELECT from,
+# in the same sorted shape list_tables gives. A failed read says nothing about
+# the restore on its own (a table the installation itself never granted to the
+# role is nobody's drill failure); the same read of both sides says a great deal.
+readable_in() {
+	local conn="$1" table err
+	while IFS= read -r table; do
+		[ -n "$table" ] || continue
+		if err="$(psql "$conn" -qtAX -v ON_ERROR_STOP=1 -c "SELECT 1 FROM \"public\".$table LIMIT 1" 2>&1 >/dev/null)"; then
+			printf '%s\n' "$table"
+		else
+			printf '%s: %s\n' "$table" "$(printf '%s' "$err" | head -1)" >&2
+		fi
+	done <<< "$(list_tables "$conn")" | LC_ALL=C sort
+}
+app_source_url="$(with_database "$app_url" "$source_db")"
+app_source_err="$work/app-source.err"
+app_scratch_err="$work/app-scratch.err"
+readable_source="$(readable_in "$app_source_url" 2>"$app_source_err")"
+readable_scratch="$(readable_in "$app_scratch_url" 2>"$app_scratch_err")"
+shut="$(comm -23 <(printf '%s\n' "$tables_restored") <(printf '%s\n' "$readable_scratch") | tr '\n' ' ')"
+app_err="$(head -1 "$app_scratch_err" 2>/dev/null || true)"
+if [ -n "$tables_restored" ] && [ -z "$readable_scratch" ]; then
+	# The two sides could agree by both reading nothing, and that is the one shape
+	# this check must never pass on: an app connection that cannot connect at all,
+	# or a restore with no grants left on it, both look like this.
+	fail "the application's own role reads no table of $scratch at all (${app_err:-no read error named}) — a restored database nothing but its owner can query is not a restored installation"
+elif [ "$readable_source" = "$readable_scratch" ]; then
+	matched=$((matched + 1))
+	if [ -n "$shut" ]; then
+		note "$shut the application's role reads in neither database"
+	fi
+else
+	lost="$(comm -23 <(printf '%s\n' "$readable_source") <(printf '%s\n' "$readable_scratch") | tr '\n' ' ')"
+	gained="$(comm -13 <(printf '%s\n' "$readable_source") <(printf '%s\n' "$readable_scratch") | tr '\n' ' ')"
+	why=""
+	if [ -n "$app_err" ]; then
+		why=" — the first read that failed in $scratch: $app_err"
+	fi
+	fail "the application's own role reads a different set of tables after the restore: [${lost:-none}] it can read in $source_db and not in $scratch, [${gained:-none}] it can read in $scratch and not in $source_db — the first names a restore that came back shut against the installation it is supposed to serve, the second one that hands the role more than the installation does$why"
+fi
+
 # --- dump --------------------------------------------------------------------
 # Both dumps drop the restoring client's own \restrict / \unrestrict lines: pg_dump
 # 17.5+ mints a random token around a dump that could carry passwords, so two dumps
@@ -233,4 +372,8 @@ if [ "$failed" -ne 0 ]; then
 	fi
 	exit 1
 fi
-note "$from restored byte-identical across $matched checks"
+if [ "$compared_the_installation" -ne 0 ]; then
+	note "$from restored byte-identical across $matched checks"
+else
+	note "$from restored to the same bytes and rows across $matched checks — the byte half compared the backup with the copy the drill restored and never opened the installation's store: pass --files to compare that too"
+fi

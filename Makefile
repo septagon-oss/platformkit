@@ -101,17 +101,31 @@ rehearse: ## Apply this tree's pending migrations to a copy of a production-shap
 	./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
 
 # The other half of "can this installation be put back". `make backup` writes one
-# dump plus a copy of the on-disk byte store and a manifest of digests; `make
-# restore-drill` puts a backup (or a fresh one) into a scratch database and compares
-# every byte and every table, printing restore_drill_pass_ratio. Operator steps in the
-# same class as rehearse — psql, pg_dump, pg_restore and a database it may create and
-# drop — and for the same reason they are not in `check`: `check` is what a pull
-# request must pass on a source tree, and these need a running cluster.
-backup: ## Write one dump of the database and a copy of the byte store, with a manifest of digests
-	./scripts/backup.sh $(BACKUP_ARGS)
+# dump — with the grants on its tables, so the restore can be opened as the
+# application and not only as its owner — plus a copy of the on-disk byte store and
+# a manifest of digests; `make restore-drill` puts a backup (or a fresh one) into a
+# scratch database, compares every object with the installation's own store and
+# every table both as the owner and through the application's role, and prints
+# restore_drill_pass_ratio. Operator steps in the same class as rehearse — psql,
+# pg_dump, pg_restore and a database it may create and drop — and for the same
+# reason they are not in `check`: `check` is what a pull request must pass on a
+# source tree, and these need a running cluster. A backup is one database, never one
+# tenant: the rows and the bytes of every tenant live together, so `TENANT` is
+# refused rather than silently dropped.
+PLATFORMKIT_FILES_DIR ?= data/files
+# Passed only when the directory is there: a deployment on an object store has no
+# byte store on this disk to carry or compare, and one whose files.dir points
+# somewhere else overrides by putting its own --files in BACKUP_ARGS or DRILL_ARGS.
+STORE_ARGS = $(if $(wildcard $(PLATFORMKIT_FILES_DIR)),--files $(PLATFORMKIT_FILES_DIR))
+refuse-tenant = @if [ -n "$$TENANT" ]; then echo "$(1): one backup is one database, not one tenant — TENANT is not read; point --url at the database you mean" >&2; exit 2; fi
 
-restore-drill: ## Put a backup back into a scratch database and prove the restore is byte-identical
-	./scripts/restore_drill.sh $(DRILL_ARGS)
+backup: ## Write one dump of the database and a copy of the byte store, with a manifest of digests
+	$(call refuse-tenant,backup)
+	./scripts/backup.sh $(STORE_ARGS) $(BACKUP_ARGS)
+
+restore-drill: ## Put a backup back and prove the bytes and the application's read of the tables came back
+	$(call refuse-tenant,restore drill)
+	./scripts/restore_drill.sh $(STORE_ARGS) $(DRILL_ARGS)
 
 load-test: ## Compare bounded tenant work and database pool capacity
 	go test ./kit/jobs -run '^$$' -bench '^BenchmarkPerTenantCapacity$$' -benchtime=2s -count=3 -timeout=3m
