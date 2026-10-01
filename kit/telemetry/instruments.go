@@ -46,7 +46,8 @@ type Instruments struct {
 	// lagLedger in kit/events/relay.go.
 	OutboxLag metric.Float64Gauge
 	// Refusals counts the answers the kernel gave a client it would not serve,
-	// by class. It counts refusals and not errors: a 500 the handler returned is
+	// by class. It counts refusals and not errors: every answer of a declared
+	// operation — the 500 a handler returned and the 500 a panic unwound to — is
 	// already in the latency histogram with an error status on its span, and what
 	// nobody sees without this is the request that was refused on purpose.
 	Refusals metric.Int64Counter

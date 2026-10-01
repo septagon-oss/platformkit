@@ -154,10 +154,21 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 		// by tenant is the number this runtime promises not to publish: one process,
 		// many tenants, and an aggregate that cannot say whose requests are slow
 		// answers the question nobody asked.
+		//
+		// Deferred, so the bar belongs to every answer this request got and not to the
+		// answers that came back up a call stack: a panicking handler unwinds past a
+		// statement placed after next, and respond — below this middleware — is what
+		// turns that panic into the 500 the client was given. The histogram is the
+		// denominator of every latency question, so the shape of an answer cannot
+		// decide whether its seconds are in it: if only the refusal counter notices a
+		// request that fell over, an operator reads "refusals up, latency flat" and
+		// triages the wrong thing at the moment it costs most.
 		start := time.Now()
 		tctx := tenancy.WithTenant(ctx.Context(), t)
+		defer func() {
+			observeOperation(tctx, ctx.Operation(), time.Since(start).Seconds())
+		}()
 		next(huma.WithContext(ctx, tctx))
-		observeOperation(tctx, ctx.Operation(), time.Since(start).Seconds())
 		return
 	}
 	unknown := errors.Is(err, tenancy.ErrNoSuchHost)
