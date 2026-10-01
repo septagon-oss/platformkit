@@ -659,7 +659,20 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)
-		subs = append(subs, m.Subscriptions...)
+		for _, s := range m.Subscriptions {
+			// The composition owns this fact. A subscription belongs to the app
+			// that composes the module that declared it, and a module never names
+			// an app — that is the deployment's, from configuration (Options.App),
+			// and the same line above hands it to the job scheduler and the one
+			// inside kernelJobs hands it to the relay's claim. What it names is the
+			// durable: the JetStream consumer on the one stream, the deliver group
+			// its replicas join, and half the key of the handled ledger (see
+			// kit/appname.Durable). Left unset here, two compositions of one module
+			// name one consumer, and the second app load-balances the first's
+			// tenants' work into its own handlers.
+			s.App = a.opts.App
+			subs = append(subs, s)
+		}
 	}
 	if err := events.Consume(ctx, conn, transport, subs); err != nil {
 		return err
