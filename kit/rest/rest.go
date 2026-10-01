@@ -410,6 +410,31 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
 }
 
+// CreateRow, UpdateRow and DeleteRow are this resource's write orchestration at
+// the door an in-process caller stands at. The JSON routes and the generated
+// screens go through the same three bodies; a seed writer, or any composition-time
+// caller that is not a person's request, stands here. The reason they are
+// exported and not copied is that the three things a write must never skip are
+// inside those bodies — the row lock, the tenant recheck a DELETE cannot get from
+// row-level security alone, and the event that announces the change — and a
+// second spelling of them in an application is a spelling that can drift.
+// Authorization is not one of them: a route asks httpx, a seed run asks its
+// Authorizer, and neither answer belongs in this file.
+func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	return s.createRow(ctx, tx, e)
+}
+
+// UpdateRow patches the columns `values` names, of this Spec's own schema, and
+// is the one door that keeps a caller from writing a field the Spec declared
+// immutable: the check is inside the merge those columns go through.
+func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
+	return s.updateRow(ctx, tx, id, crud.Fields[T](), values)
+}
+
+func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	return s.deleteRow(ctx, tx, id)
+}
+
 // CommandOptions is what a command may differ from its Spec in. It is a struct
 // and not two more parameters because a command that differs in nothing has to
 // be able to say so in one word: rest.CommandOptions{}.

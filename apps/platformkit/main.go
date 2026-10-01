@@ -1,7 +1,9 @@
 // Command platformkit is the reference application: one binary, one image, and
-// four subcommands — `run`, which serves, `bootstrap`, which creates the first
+// five subcommands — `run`, which serves, `bootstrap`, which creates the first
 // tenant of an empty installation, `start`, which runs the whole thing from
-// nothing on a laptop, and `migrate`, which applies the pending schema and exits.
+// nothing on a laptop, `seed`, which fills one tenant from the application's own
+// seed through the owners' write paths, and `migrate`, which applies the pending
+// schema and exits.
 //
 // It is short on purpose. Everything it does is read a configuration, compose
 // the modules, choose the three implementations the kernel cannot choose for
@@ -39,6 +41,8 @@ func main() {
 		err = bootstrap(args)
 	case "start":
 		err = startApp(args)
+	case "seed":
+		err = seedCommand(args)
 	case "migrate":
 		err = migrate(args)
 	default:

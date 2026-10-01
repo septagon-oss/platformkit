@@ -31,9 +31,12 @@ import (
 // named field instead of a new argument.
 type Deps struct{}
 
-// spec is the entity's presence in the application: five routes, two
-// permissions, three events and the schema a generated screen reads.
-var spec = rest.Spec[*contracts.Content]{
+// Spec is the entity's presence in the application: five routes, two
+// permissions, three events and the schema a generated screen reads. It is
+// exported because the write it describes is the one write path content has: an
+// application that seeds a page, or writes one from a process that is not a
+// person's request, goes through it rather than through a copy of what it does.
+var Spec = rest.Spec[*contracts.Content]{
 	Module:     "content",
 	Entity:     "content",
 	Path:       "/contents",
@@ -78,8 +81,8 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes: func(s httpx.Surfaces) {
-			spec.Mount(s)
-			internal.RegisterRoutes(s, spec, svc)
+			Spec.Mount(s)
+			internal.RegisterRoutes(s, Spec, svc)
 		},
 	}
 }

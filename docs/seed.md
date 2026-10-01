@@ -1,9 +1,14 @@
 # Seed contract (T-0194; partial implementation)
 
-This is the intended contract for `kit/seed`. Its loader, reference orderer,
-date resolver, state comparator, generic writer service, tenant bridge and
-provenance migrations exist. Application writers, audit attribution, command,
-hook and fixtures remain intended. Original trace:
+This is the intended contract for `kit/seed`. Delivered: the loader, reference
+orderer, date resolver, state comparator, generic writer service, tenant bridge
+and provenance migrations, the reference application's two writers and its
+`platformkit seed` command with `make seed`, and the starter and demo fixtures
+under `apps/platformkit/seed/`. Not delivered: the tenant-create hook — which
+needs the provisioning permit below and nothing weaker — and a permit type, an
+`--as` grant check beyond the composition's own authorizer, the typed `Problem`
+codes and the audit column for a file and line. Where this document says
+`RunCommand`, the kernel door is `app.RunCommand`. Original trace:
 `20afc2b0cf43b2bf2a1a046a799e49613243ddbd`.
 The existing consumer is the reference application's literal module composition in
 [`apps/platformkit/modules.go`](../apps/platformkit/modules.go): tenant creation
@@ -593,8 +598,11 @@ Postgres lock before entering the same engine. The fake does **not** claim to
 prove RLS, a database commit, or file-storage rollback. The executable cases
 below are to be placed under `kit/seed` in the implementation phase and run
 against the fake; the SQL adapter runs the same decision cases plus the
-database cases. No executable fake exists yet; `TestSeedKeysAreIsolatedByDatabaseRLS`
-in `kit/seed/keys_test.go` is the one case that reaches Postgres today.
+database cases. The names in the table below are the intended set, not the delivered one. The
+delivered cases are `kit/seed/{keys,service,demo_row,prune_gone_row}_test.go` and
+`apps/platformkit/seed_owners_test.go`, which applies the reference seed through
+the composition it is declared in; each is named for the behaviour it pins rather
+than for a row of this table.
 
 | Case name | Fake setup and action | Required result |
 | --- | --- | --- |

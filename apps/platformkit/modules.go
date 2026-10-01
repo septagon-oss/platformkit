@@ -28,6 +28,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/billing"
 	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
 	"github.com/septagon-oss/platformkit/modules/content"
+	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
@@ -55,9 +56,13 @@ type composition struct {
 	modules []module.Module
 	tenants tenantcontracts.Service
 	users   usercontracts.Service
-	auth    authcontracts.Auth
-	notify  notificationcontracts.Service
-	mail    notificationcontracts.Mailer
+	// contents is carried for the seed: a page has one write path, and the seed
+	// runs the lifecycle half of it through the content service. Everything that
+	// serves a page reaches it through its routes.
+	contents contentcontracts.Service
+	auth     authcontracts.Auth
+	notify   notificationcontracts.Service
+	mail     notificationcontracts.Mailer
 	// plans answers what a tenant's subscription includes, for the operations
 	// that declare a feature.
 	plans httpx.Entitler
@@ -274,7 +279,7 @@ func compose(cfg config.Config) composition {
 
 	roles.auth = auths
 	checkPersonas(mods)
-	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
+	return composition{modules: mods, tenants: tenants, users: users, contents: contents, auth: auths,
 		notify: notify, mail: mail, plans: plans, messages: installed,
 		access: accessReach{users: users, notify: notify, may: roles.May},
 		// The words a refusal is allowed to use: the label of the grant that gates

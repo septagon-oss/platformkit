@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -93,6 +93,19 @@ run: config.yaml ## Run the reference app; a missing config.yaml is created from
 # config.yaml is never overwritten, whatever the example's timestamp says.
 config.yaml:
 	cp config.example.yaml config.yaml
+
+# The reference application's own seed, applied through the write path each
+# resource already has: a page through content's, a person through the user
+# module's invitation. Two names are enough to say which run this is — the tenant
+# by its slug and the person by their address, whose roles answer for every write.
+# Whether the demo records are in scope is the tenant's own row's answer, not
+# DEMO's: seed refuses for a tenant whose row says false. DRY=1 prints the plan and
+# writes nothing; the plan it prints is the one a real run would have decided.
+SEED_TENANT ?=
+SEED_AS ?=
+seed: config.yaml ## Seed one tenant from this tree's seed files; SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]
+	@test -n '$(SEED_TENANT)' -a -n '$(SEED_AS)' || { echo 'usage: make seed SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]' >&2; exit 2; }
+	cd apps/platformkit && go run . seed --config ../../config.yaml --tenant '$(SEED_TENANT)' --as '$(SEED_AS)' $(if $(DEMO),--demo,) $(if $(DRY),--dry-run,)
 
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
