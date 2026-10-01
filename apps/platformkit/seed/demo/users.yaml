@@ -1,0 +1,16 @@
+# Three people, so a demonstration has somebody to assign work to and somebody
+# to refuse. An invited user holds no password: the auth module's own invitation
+# carries the link that sets one, which is why no secret appears in this file and
+# why the loader refuses a field that would look like one.
+apiVersion: platformkit.seed/v1
+resource: users
+records:
+  - key: marta@example.test
+    fields:
+      displayName: Marta Oliveira
+  - key: devin@example.test
+    fields:
+      displayName: Devin Ali
+  - key: amara@example.test
+    fields:
+      displayName: Amara Bock

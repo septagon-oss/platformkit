@@ -1,0 +1,25 @@
+# The reference application's starter seed: the two pages a tenant's public
+# site is made of from the moment it exists. Everything here goes through the
+# content module's own write path, so a seeded page is a page — validated,
+# authored, and announced by the same events a person in the browser produces.
+apiVersion: platformkit.seed/v1
+resource: contents
+records:
+  - key: home
+    fields:
+      kind: page
+      title: Home
+      body: |
+        # Welcome
+
+        This site is served by PlatformKit. Edit or remove this page at any time.
+    commands:
+      - name: publish
+  - key: about
+    fields:
+      kind: page
+      title: About us
+      body: |
+        # About us
+
+        Tell the people who arrive here who you are.

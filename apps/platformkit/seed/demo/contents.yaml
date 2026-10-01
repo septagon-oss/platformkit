@@ -1,0 +1,54 @@
+# The demo half of the reference seed, applied only to a tenant whose own row
+# says demo. Five pages, so a demonstration opens on a site rather than on an
+# empty list. They are ordinary content rows: nothing here is a fixture type.
+apiVersion: platformkit.seed/v1
+resource: contents
+records:
+  - key: getting-started
+    fields:
+      kind: page
+      title: Getting started
+      body: |
+        # Getting started
+
+        Sign in, then work through the five pages of this site.
+    commands:
+      - name: publish
+  - key: guide
+    fields:
+      kind: page
+      title: Guide
+      body: |
+        # Guide
+
+        How the site is put together, and who can change what.
+    commands:
+      - name: publish
+  - key: pricing
+    fields:
+      kind: page
+      title: Pricing
+      body: |
+        # Pricing
+
+        What a plan costs, and what it includes.
+    commands:
+      - name: publish
+  - key: changelog
+    fields:
+      kind: post
+      title: Changelog
+      body: |
+        # Changelog
+
+        The most recent change first.
+    commands:
+      - name: publish
+  - key: contact
+    fields:
+      kind: page
+      title: Contact
+      body: |
+        # Contact
+
+        Where to send a question nobody has answered yet.
