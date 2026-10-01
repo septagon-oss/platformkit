@@ -100,6 +100,21 @@ func faultPage(messages page.Messages) httpx.Fault {
 	})
 }
 
+// workspaceCatalog is the mount for the document a native shell reads to know what
+// this application has. The kernel owns the address and ui owns the body, and this
+// is the one line that joins them. It is written once on purpose: every entry point
+// and the test harness mount this same mount, so the document a gate compares
+// against is the one this file wires — the contract gate cannot pass on a copy of
+// the renderer while the shipped binary publishes another. The renderer's type is
+// carried on the call, so the OpenAPI document names the fields a shell parses
+// rather than an empty object — see app.WorkspaceCatalogRoute.
+func workspaceCatalog() func(api *httpx.API) {
+	return app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
+		document := screens.Describe(ctx, resources)
+		return &document, nil
+	})
+}
+
 // appOptions is the composition every entry point of this binary shares. It exists so
 // that the line wiring the failure page is one line rather than two — an entry point
 // that spells its own options out drifts, and the drift is invisible until somebody is
@@ -113,18 +128,14 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 		// address that serves the control plane, and the console of the
 		// installation itself — /ops — answers there and nowhere else.
 		Installation: app.Installation{Host: cfg.Server.InstallationHost},
-		// The document a native shell reads to know what this application has.
-		// The kernel owns the address and ui owns the body, and this is the one
-		// line that joins them.
-		WorkspaceCatalog: func(ctx context.Context, resources []httpx.Resource) (any, error) {
-			return screens.Describe(ctx, resources), nil
-		},
-		Tenants:      c.tenants,
-		Authorize:    c.auth,
-		Entitle:      c.plans,
-		Authenticate: c.auth.Authenticate,
-		Fault:        faultPage(c.messages),
-		Role:         role,
-		Transports:   transports(),
+		// The document a native shell reads; see workspaceCatalog.
+		WorkspaceCatalog: workspaceCatalog(),
+		Tenants:          c.tenants,
+		Authorize:        c.auth,
+		Entitle:          c.plans,
+		Authenticate:     c.auth.Authenticate,
+		Fault:            faultPage(c.messages),
+		Role:             role,
+		Transports:       transports(),
 	}
 }

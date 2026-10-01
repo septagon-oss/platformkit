@@ -75,15 +75,23 @@ func compose(t *testing.T) (config.Config, Options) {
 		// document is the composition's — kit may not import ui — so a test
 		// composition supplies one the way the product supplies screens.Describe.
 		// TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot reads it back.
-		WorkspaceCatalog: func(_ context.Context, resources []httpx.Resource) (any, error) {
+		WorkspaceCatalog: WorkspaceCatalogRoute(func(_ context.Context, resources []httpx.Resource) (*workspaceBody, error) {
 			names := make([]string, 0, len(resources))
 			for _, r := range resources {
 				names = append(names, r.Module+"/"+r.Entity)
 			}
-			return map[string]any{"resources": names}, nil
-		},
+			return &workspaceBody{Resources: names}, nil
+		}),
 	}
 	return cfg, opts
+}
+
+// workspaceBody is this fixture's catalog document. It is a named type rather
+// than a map because the route carries the body's type to the OpenAPI document —
+// which is the whole reason Options.WorkspaceCatalog is a mount and not a
+// function returning `any`.
+type workspaceBody struct {
+	Resources []string `json:"resources"`
 }
 
 // freeAddr picks a port the kernel has just confirmed is free.

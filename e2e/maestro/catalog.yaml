@@ -1,0 +1,55 @@
+# The one device journey this repository owns and runs: a signed-in device reads
+# the workspace catalog at the address the kernel owns it at, and the screen one of
+# its entries names answers.
+#
+# This is the claim only a device can make. The composition test in
+# apps/platformkit/openapi_contract_test.go proves the address answers and that the
+# document describes the body; nothing but a device proves that a device which
+# signed in can *use* what it read. Nothing here names a tenant: every value comes
+# from the environment, which scripts/mobile_e2e.sh boots from its own database.
+#
+# The testIDs are the shell's, at the pinned APK this job installs: sign-in, server,
+# email, password and submit on its sign-in form, home on its home screen, the
+# per-resource open-${module}-${entity} on each entry it drew, and resource-list on
+# the list a generated entry opens. `task`/`task` is the reference composition's own
+# module (apps/platformkit/modules.go), so the entry this step taps is one this
+# repository put in the catalog.
+appId: ${APP_ID}
+env:
+  APP_ID: dev.septagon.platformkit.ci
+---
+# The way in. These nine steps duplicate the shell's own e2e/flows/sign-in.yaml: a
+# shared sub-flow would mean this repository depending on a file in a repository it
+# does not own, which is a decision for the mobile owner, not an accident to write
+# here. It is recorded under Limits for exactly that reason.
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "sign-in"
+- tapOn:
+    id: "server"
+- eraseText
+- inputText: ${SERVER}
+- tapOn:
+    id: "email"
+- inputText: ${EMAIL}
+- tapOn:
+    id: "password"
+- inputText: ${PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "submit"
+- extendedWaitUntil:
+    visible:
+      id: "home"
+    timeout: 30000
+
+# The contract: an entry the kernel wrote is on the screen, and tapping it draws the
+# generated screen it named — which is the whole reason Entry.Screen exists (see
+# ui/screens/catalog.go) and the reason the published document now names it.
+- tapOn:
+    id: "open-task-task"
+- extendedWaitUntil:
+    visible:
+      id: "resource-list"
+    timeout: 20000
