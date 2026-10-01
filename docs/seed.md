@@ -1,8 +1,10 @@
 # Seed contract (T-0194; partial implementation)
 
 This is the intended contract for `kit/seed`. Its loader, reference orderer,
-date resolver and state comparator exist; writes, migrations, command and
-fixtures remain intended. Original trace: `20afc2b0cf43b2bf2a1a046a799e49613243ddbd`.
+date resolver, state comparator, generic writer service, tenant bridge and
+provenance migrations exist. Application writers, audit attribution, command,
+hook and fixtures remain intended. Original trace:
+`20afc2b0cf43b2bf2a1a046a799e49613243ddbd`.
 The existing consumer is the reference application's literal module composition in
 [`apps/platformkit/modules.go`](../apps/platformkit/modules.go): tenant creation
 currently calls `seedRoles`, while the site journey in
@@ -471,7 +473,7 @@ its own typed refusal, which is preserved with the same source wrapper.
    No stale `Plan` is applied. This checkout's content/task/user Specs have no
    revision API; they use row locking until T-0138's owner revision exists.
 5. `seed_keys` is a kernel-owned table, one transactional
-   `000030_seed_keys.up.sql` migration (no down file), with
+   `000031_seed_keys.up.sql` migration (no down file), with
    `(tenant_id,module,entity,key)` as primary key, `kind` and nullable `record_id` as
    read fields, `tenant_id NOT NULL`, `ENABLE` and `FORCE ROW LEVEL SECURITY`,
    and the same `platformkit_tenant_match(tenant_id)` `USING`/`WITH CHECK`
@@ -515,7 +517,7 @@ its own typed refusal, which is preserved with the same source wrapper.
    a downstream flagship owns the same flags and its literal client switch.
    `make seed CLIENT=<slug>` is a thin invocation of that command; no server
    is started. A tenant creation hook reads `NewTenant.Demo`, persisted on
-   `Tenant` by a transactional `000031_tenant_demo.up.sql` migration and carried
+   `Tenant` by a transactional `000030_tenant_demo.up.sql` migration and carried
    by `tenancy.Tenant`; only creation sets it. Starter applies for every
    tenant, demo only when that flag is true.
 

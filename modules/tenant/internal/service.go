@@ -60,6 +60,7 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 		// Never from a request body: NewTenant.Operator is json:"-", so the
 		// only caller that can set it is Bootstrap.
 		Operator:  in.Operator,
+		Demo:      in.Demo,
 		CreatedAt: at, UpdatedAt: at,
 	}
 	if err := tx.DB().Omit("Hosts", "Locales", "DefaultLocale").Create(t).Error; err != nil {

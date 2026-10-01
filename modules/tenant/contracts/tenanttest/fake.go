@@ -106,6 +106,7 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 	t := contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
 		Hosts: []string{host}, DefaultLocale: start,
+		Demo:      in.Demo,
 		CreatedAt: at, UpdatedAt: at,
 	}
 	f.tenants[t.ID], f.hosts[host] = t, t.ID

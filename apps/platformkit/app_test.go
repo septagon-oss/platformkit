@@ -1424,6 +1424,8 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// the upgrade below applies them and counts them as new rows.
 	if len(before) != 30 {
 		t.Fatalf("the old layout applied %d files, want 30", len(before))
+	if len(before) != 30 {
+		t.Fatalf("the old layout applied %d files, want 30", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with

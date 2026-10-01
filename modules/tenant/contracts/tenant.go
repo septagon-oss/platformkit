@@ -48,6 +48,12 @@ type Tenant struct {
 	// the one `platformkit bootstrap` created, and no route writes it — see
 	// NewTenant.
 	Operator bool `json:"operator"`
+	// Demo says this tenant was created as a walkthrough tenant, so the
+	// application's demo seed records are its own. `platformkit bootstrap` never
+	// sets it and no command writes the column afterwards: the seed refuses a
+	// demo request for a tenant whose row says false, so a request cannot make
+	// itself one — see docs/seed.md.
+	Demo bool `json:"demo"`
 	// Hosts are the names this tenant is served at, the primary one first. They
 	// live in their own table and are loaded with the tenant, because a tenant
 	// without its hosts is a row nobody can reach and an admin screen that
@@ -87,7 +93,7 @@ func (Tenant) TableName() string { return "tenants" }
 // with no languages rather than with a list holding an empty string — the
 // distinction a page reads as "the deployment's own default answers here".
 func (t *Tenant) Tenancy() tenancy.Tenant {
-	kernel := tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator}
+	kernel := tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator, Demo: t.Demo}
 	if t.DefaultLocale != "" || len(t.Locales) > 0 {
 		kernel.Languages = &tenancy.Languages{Default: t.DefaultLocale, Others: t.Locales}
 	}
@@ -109,6 +115,13 @@ type NewTenant struct {
 	// writer is Bootstrap, which is the one write in the application with no
 	// caller to authorize and can only ever happen once.
 	Operator bool `json:"-"`
+	// Demo says the tenant being created is a walkthrough tenant. Unlike
+	// Operator it is in the body, because the create route is already guarded by
+	// the operator permission and creating a demo tenant is the ordinary way to
+	// get one; the flag names which seed records the tenant may be given, never
+	// who may reach the control plane. It is written here or not at all — see
+	// migrations/000030_tenant_demo.up.sql.
+	Demo bool `json:"demo" required:"false" default:"false"`
 }
 
 // slugPattern is a DNS label: what a slug has to be if it is ever going to be a

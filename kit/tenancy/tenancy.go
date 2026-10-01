@@ -31,6 +31,9 @@ type Tenant struct {
 	// to list, create and suspend the tenants beside them. The column is
 	// written by the bootstrap and by nothing else; see Grant and docs/adr/0006.
 	Operator bool
+	// Demo is a creation-time tenant property. A seed request cannot upgrade an
+	// ordinary tenant into a walkthrough tenant by passing a flag.
+	Demo bool
 	// Languages are what this tenant is served in, or nil when the tenant declared
 	// nothing and the deployment's own default answers. The host resolution reads
 	// them with the rest of the row, which is what makes "which language is this

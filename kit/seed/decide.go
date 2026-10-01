@@ -4,12 +4,16 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+
+	"github.com/google/uuid"
 )
 
 // Snapshot is the owner's canonical state of seed-managed values. A writer
 // excludes timestamps, server fields and unrelated human-managed values.
 type Snapshot struct {
 	Present  bool
+	ID       uuid.UUID
+	Revision int64
 	Fields   map[string]any
 	Commands map[string]any
 }
